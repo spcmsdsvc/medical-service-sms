@@ -1,0 +1,756 @@
+{% extends "layout.html" %}
+{% block content %}
+
+<div class="analytics-page">
+    <div class="analytics-hero mb-4">
+        <div>
+            <div class="analytics-eyebrow">Management Intelligence</div>
+            <h3 class="fw-bold mb-1">
+                <i class="fa-solid fa-chart-pie me-2"></i>Analytics
+            </h3>
+            <div class="small opacity-75">Schedule volume, branch load, engineer workload, task status, and operational insights.</div>
+        </div>
+
+        <div class="analytics-filter-card no-print">
+            <div class="d-flex flex-wrap align-items-end gap-2">
+                <div>
+                    <label class="xsmall fw-bold text-muted text-uppercase">Branch</label>
+                    <select id="analytics-branch" class="form-select form-select-sm">
+                        <option value="ALL">All Branches</option>
+                        {% if current_user.role == 'regional_admin' %}
+                        <option value="REGIONAL">Cebu + Davao</option>
+                        {% endif %}
+                        <option value="Manila">Manila</option>
+                        <option value="Cebu">Cebu</option>
+                        <option value="Davao">Davao</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="xsmall fw-bold text-muted text-uppercase">From</label>
+                    <input type="date" id="analytics-start" class="form-control form-control-sm">
+                </div>
+                <div>
+                    <label class="xsmall fw-bold text-muted text-uppercase">To</label>
+                    <input type="date" id="analytics-end" class="form-control form-control-sm">
+                </div>
+                <button class="btn btn-primary btn-sm fw-bold" onclick="loadAnalytics()">
+                    <i class="fa-solid fa-rotate me-1"></i>Apply
+                </button>
+                <button class="btn btn-outline-secondary btn-sm fw-bold" onclick="setAnalyticsPreset('month')">This Month</button>
+                <button class="btn btn-outline-secondary btn-sm fw-bold" onclick="setAnalyticsPreset('week')">This Week</button>
+                <button class="btn btn-success btn-sm fw-bold" onclick="exportAnalyticsCSV()">
+                    <i class="fa-solid fa-file-csv me-1"></i>Export
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="analytics-range-label" class="analytics-range-label mb-3">
+        Loading analytics...
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <div class="analytics-card card p-3">
+                <div class="analytics-icon bg-primary-subtle text-primary"><i class="fa-solid fa-calendar-day"></i></div>
+                <div class="small text-muted fw-bold text-uppercase">Today</div>
+                <div id="total-today" class="fw-bold fs-3">0</div>
+                <div class="xsmall text-muted">Schedules today</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="analytics-card card p-3">
+                <div class="analytics-icon bg-info-subtle text-info"><i class="fa-solid fa-calendar-week"></i></div>
+                <div class="small text-muted fw-bold text-uppercase">This Week</div>
+                <div id="total-week" class="fw-bold fs-3">0</div>
+                <div class="xsmall text-muted">Current week volume</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="analytics-card card p-3">
+                <div class="analytics-icon bg-warning-subtle text-warning"><i class="fa-solid fa-calendar-days"></i></div>
+                <div class="small text-muted fw-bold text-uppercase">This Month</div>
+                <div id="total-month" class="fw-bold fs-3">0</div>
+                <div class="xsmall text-muted">Month-to-date volume</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="analytics-card card p-3">
+                <div class="analytics-icon bg-success-subtle text-success"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="small text-muted fw-bold text-uppercase">Completed</div>
+                <div id="total-completed" class="fw-bold fs-3">0</div>
+                <div class="xsmall text-muted">Completed in range</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <div class="insight-card card p-3 h-100">
+                <div class="small text-muted fw-bold text-uppercase">Busiest Branch</div>
+                <div id="insight-branch" class="fw-bold fs-5 mt-1">—</div>
+                <div id="insight-branch-sub" class="xsmall text-muted">No data yet</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="insight-card card p-3 h-100">
+                <div class="small text-muted fw-bold text-uppercase">Top Workload</div>
+                <div id="insight-engineer" class="fw-bold fs-5 mt-1">—</div>
+                <div id="insight-engineer-sub" class="xsmall text-muted">No data yet</div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="insight-card card p-3 h-100">
+                <div class="small text-muted fw-bold text-uppercase">Most Common Type</div>
+                <div id="insight-category" class="fw-bold fs-5 mt-1">—</div>
+                <div id="insight-category-sub" class="xsmall text-muted">No data yet</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-lg-6">
+            <div class="card p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold mb-0"><i class="fa-solid fa-location-dot me-2 text-primary"></i>Branch Distribution</h6>
+                    <span class="badge bg-light text-dark border">Chart + Count</span>
+                </div>
+                <div id="branch-chart" class="mini-chart mb-3"></div>
+                <div id="branch-data" class="analytics-bars"></div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold mb-0"><i class="fa-solid fa-layer-group me-2 text-primary"></i>Schedule Type Breakdown</h6>
+                    <span class="badge bg-light text-dark border">Category Mix</span>
+                </div>
+                <div id="category-chart" class="mini-chart mb-3"></div>
+                <div id="category-data" class="analytics-bars"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <div class="col-lg-5">
+            <div class="card p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold mb-0"><i class="fa-solid fa-list-check me-2 text-primary"></i>Open Technical Status</h6>
+                    <span class="badge bg-light text-dark border">Follow-up View</span>
+                </div>
+                <div id="status-chart" class="mini-chart mb-3"></div>
+                <div id="status-data" class="analytics-bars"></div>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold mb-0"><i class="fa-solid fa-user-gear me-2 text-primary"></i>Engineer Workload</h6>
+                    <span class="badge bg-light text-dark border">Top 15</span>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Engineer</th>
+                                <th>Branch</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end">Active</th>
+                                <th class="text-end">Completed</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="engineer-data">
+                            <tr><td colspan="6" class="text-muted text-center py-3">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="xsmall text-muted mt-2">
+                    Green = light load, Yellow = moderate load, Red = high workload for selected range.
+                </div>
+                <div id="engineer-mobile-workload" class="analytics-mobile-workload-list mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.analytics-hero {
+    background: linear-gradient(135deg, #0d6efd, #243b6b);
+    color: #fff;
+    border-radius: 18px;
+    padding: 18px;
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: center;
+    box-shadow: 0 10px 28px rgba(13, 110, 253, 0.18);
+}
+
+.analytics-eyebrow {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    opacity: 0.72;
+}
+
+.analytics-filter-card {
+    background: #fff;
+    color: #111827;
+    border-radius: 14px;
+    padding: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.analytics-range-label {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 10px 12px;
+    font-size: 0.84rem;
+    color: #374151;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+}
+
+.analytics-card, .insight-card {
+    position: relative;
+    overflow: hidden;
+    min-height: 132px;
+    transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.analytics-card:hover, .insight-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(0,0,0,0.08);
+}
+
+.analytics-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+}
+
+.analytics-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.analytics-bar-row {
+    display: grid;
+    grid-template-columns: 135px 1fr 50px;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.82rem;
+}
+
+.analytics-bar-label {
+    font-weight: 800;
+    color: #374151;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.analytics-bar-track {
+    height: 10px;
+    border-radius: 999px;
+    background: #eef2f7;
+    overflow: hidden;
+}
+
+.analytics-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0d6efd, #60a5fa);
+    border-radius: 999px;
+}
+
+.analytics-bar-value {
+    text-align: right;
+    font-weight: 900;
+    color: #111827;
+}
+
+.mini-chart {
+    min-height: 118px;
+    display: flex;
+    align-items: end;
+    gap: 8px;
+    padding: 12px 10px 6px;
+    border: 1px solid #eef2f7;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #fff, #f8fbff);
+}
+
+.chart-col {
+    flex: 1;
+    min-width: 34px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: end;
+    gap: 5px;
+}
+
+.chart-bar {
+    width: 100%;
+    min-height: 4px;
+    border-radius: 8px 8px 2px 2px;
+    background: linear-gradient(180deg, #0d6efd, #84b7ff);
+}
+
+.chart-label {
+    font-size: 0.62rem;
+    color: #6b7280;
+    font-weight: 800;
+    max-width: 68px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.workload-pill {
+    border-radius: 999px;
+    padding: 3px 8px;
+    font-size: 0.68rem;
+    font-weight: 900;
+}
+
+.xsmall { font-size: 0.68rem; }
+
+/* MOBILE ANALYTICS UPGRADE */
+.analytics-mobile-workload-list {
+    display: none;
+}
+
+.analytics-mobile-engineer-card {
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    border-radius: 1rem;
+    padding: 0.9rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+
+.analytics-mobile-engineer-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.analytics-mobile-engineer-name {
+    color: #0f172a;
+    font-weight: 900;
+    font-size: 0.95rem;
+    line-height: 1.2;
+}
+
+.analytics-mobile-engineer-branch {
+    color: #64748b;
+    font-size: 0.72rem;
+    font-weight: 800;
+    margin-top: 0.22rem;
+}
+
+.analytics-mobile-load {
+    border-radius: 999px;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.64rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.analytics-mobile-load-light {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.analytics-mobile-load-moderate {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.analytics-mobile-load-high {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.analytics-mobile-engineer-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.55rem;
+}
+
+.analytics-mobile-engineer-metrics div {
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    border-radius: 0.85rem;
+    padding: 0.65rem;
+    text-align: center;
+}
+
+.analytics-mobile-engineer-metrics label {
+    display: block;
+    color: #64748b;
+    font-size: 0.62rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    margin-bottom: 0.15rem;
+}
+
+.analytics-mobile-engineer-metrics strong {
+    color: #0f172a;
+    font-size: 1rem;
+    font-weight: 900;
+}
+
+.analytics-mobile-empty {
+    border: 1px dashed #cbd5e1;
+    background: #f8fafc;
+    color: #64748b;
+    border-radius: 1rem;
+    padding: 1.3rem;
+    text-align: center;
+    font-weight: 800;
+    display: grid;
+    gap: 0.4rem;
+}
+
+@media (max-width: 992px) {
+    .analytics-hero { align-items: stretch; flex-direction: column; }
+    .analytics-filter-card { width: 100%; }
+}
+
+@media (max-width: 768px) {
+    .container-fluid {
+        padding-left: 0.85rem;
+        padding-right: 0.85rem;
+    }
+
+    .analytics-hero {
+        padding: 1rem;
+        border-radius: 1.1rem;
+    }
+
+    .analytics-hero h3 {
+        font-size: 1.15rem;
+        line-height: 1.25;
+    }
+
+    .analytics-filter-card .d-flex {
+        flex-direction: column;
+        align-items: stretch !important;
+    }
+
+    .analytics-filter-card .btn,
+    .analytics-filter-card .form-control,
+    .analytics-filter-card .form-select {
+        width: 100%;
+        min-height: 2.55rem;
+        border-radius: 0.85rem;
+        font-weight: 800;
+    }
+
+    .analytics-range-label {
+        font-size: 0.78rem;
+        line-height: 1.45;
+        border-radius: 1rem;
+    }
+
+    .analytics-card,
+    .insight-card {
+        min-height: auto;
+        border-radius: 1rem;
+    }
+
+    .row.g-3.mb-3 > [class*="col-"],
+    .row.g-3.mb-4 > [class*="col-"] {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+
+    .mini-chart {
+        overflow-x: auto;
+        justify-content: flex-start;
+        min-height: 136px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .chart-col {
+        min-width: 58px;
+    }
+
+    .analytics-bar-row {
+        grid-template-columns: 92px 1fr 38px;
+        gap: 0.45rem;
+        font-size: 0.74rem;
+    }
+
+    .table-responsive {
+        display: none;
+    }
+
+    .analytics-mobile-workload-list {
+        display: block;
+    }
+}
+</style>
+
+<script>
+let lastAnalyticsData = null;
+
+function parseLocalDate(value){
+    const parts = (value || '').split('-').map(Number);
+    if(parts.length !== 3 || parts.some(isNaN)) return new Date();
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
+function formatLocalDate(dateObj){
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+}
+
+function setAnalyticsPreset(mode){
+    const now = new Date();
+    let start = new Date(now);
+    let end = new Date(now);
+
+    if(mode === 'week'){
+        const mondayOffset = (now.getDay() + 6) % 7;
+        start.setDate(now.getDate() - mondayOffset);
+        end = new Date(start);
+        end.setDate(start.getDate() + 6);
+    }else{
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+
+    document.getElementById('analytics-start').value = formatLocalDate(start);
+    document.getElementById('analytics-end').value = formatLocalDate(end);
+    loadAnalytics();
+}
+
+function topEntry(obj){
+    const entries = Object.entries(obj || {}).sort((a,b)=>Number(b[1])-Number(a[1]));
+    return entries.length ? entries[0] : null;
+}
+
+function renderInsights(data){
+    const branch = topEntry(data.branches);
+    const category = topEntry(data.categories);
+    const engineer = (data.engineers || [])[0];
+
+    document.getElementById('insight-branch').innerText = branch ? branch[0] : '—';
+    document.getElementById('insight-branch-sub').innerText = branch ? `${branch[1]} assignment(s) in selected range` : 'No branch data';
+
+    document.getElementById('insight-category').innerText = category ? category[0] : '—';
+    document.getElementById('insight-category-sub').innerText = category ? `${category[1]} schedule(s)` : 'No category data';
+
+    document.getElementById('insight-engineer').innerText = engineer ? engineer.name : '—';
+    document.getElementById('insight-engineer-sub').innerText = engineer ? `${engineer.count} schedule assignment(s)` : 'No workload data';
+}
+
+function renderMiniChart(targetId, dataObj){
+    const target = document.getElementById(targetId);
+    const entries = Object.entries(dataObj || {}).sort((a,b)=>b[1]-a[1]).slice(0, 6);
+
+    if(!entries.length){
+        target.innerHTML = `<div class="text-muted small m-auto">No chart data</div>`;
+        return;
+    }
+
+    const maxVal = Math.max(...entries.map(x=>Number(x[1]) || 0), 1);
+    target.innerHTML = entries.map(([label, value])=>{
+        const height = Math.max(8, Math.round((Number(value) / maxVal) * 88));
+        return `
+            <div class="chart-col" title="${label}: ${value}">
+                <div class="chart-bar" style="height:${height}px"></div>
+                <div class="chart-label">${label}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderBars(targetId, dataObj){
+    const target = document.getElementById(targetId);
+    const entries = Object.entries(dataObj || {}).sort((a,b)=>b[1]-a[1]);
+
+    if(!entries.length){
+        target.innerHTML = `<div class="text-muted small text-center py-3">No data found.</div>`;
+        return;
+    }
+
+    const maxVal = Math.max(...entries.map(x=>Number(x[1]) || 0), 1);
+    target.innerHTML = entries.map(([label, value])=>{
+        const width = Math.max(4, Math.round((Number(value) / maxVal) * 100));
+        return `
+            <div class="analytics-bar-row">
+                <div class="analytics-bar-label" title="${label}">${label}</div>
+                <div class="analytics-bar-track"><div class="analytics-bar-fill" style="width:${width}%"></div></div>
+                <div class="analytics-bar-value">${value}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function escapeHtml(value){
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function getWorkloadMeta(count){
+    if(count >= 10) return { label: 'High', cls: 'analytics-mobile-load-high', icon: 'fa-triangle-exclamation' };
+    if(count >= 6) return { label: 'Moderate', cls: 'analytics-mobile-load-moderate', icon: 'fa-gauge-high' };
+    return { label: 'Light', cls: 'analytics-mobile-load-light', icon: 'fa-circle-check' };
+}
+
+function renderEngineerMobileWorkload(engineers){
+    const target = document.getElementById('engineer-mobile-workload');
+    if(!target) return;
+
+    if(!engineers || !engineers.length){
+        target.innerHTML = `
+            <div class="analytics-mobile-empty">
+                <i class="fa-solid fa-user-clock"></i>
+                <span>No workload found.</span>
+            </div>`;
+        return;
+    }
+
+    target.innerHTML = engineers.map(e => {
+        const meta = getWorkloadMeta(Number(e.count || 0));
+        return `
+            <div class="analytics-mobile-engineer-card">
+                <div class="analytics-mobile-engineer-top">
+                    <div>
+                        <div class="analytics-mobile-engineer-name">${escapeHtml(e.name || 'Engineer')}</div>
+                        <div class="analytics-mobile-engineer-branch">${escapeHtml(e.branch || 'No branch')}</div>
+                    </div>
+                    <span class="analytics-mobile-load ${meta.cls}">
+                        <i class="fa-solid ${meta.icon} me-1"></i>${meta.label}
+                    </span>
+                </div>
+                <div class="analytics-mobile-engineer-metrics">
+                    <div><label>Total</label><strong>${escapeHtml(e.count ?? 0)}</strong></div>
+                    <div><label>Active</label><strong>${escapeHtml(e.active ?? 0)}</strong></div>
+                    <div><label>Completed</label><strong>${escapeHtml(e.completed ?? 0)}</strong></div>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+function renderMobileAnalyticsSummary(data){
+    const range = document.getElementById('analytics-range-label');
+    if(!range || !data?.range) return;
+
+    range.classList.add('analytics-range-label-mobile-ready');
+}
+
+function renderEngineerTable(engineers){
+    const body = document.getElementById('engineer-data');
+    renderEngineerMobileWorkload(engineers);
+
+    if(!engineers || !engineers.length){
+        body.innerHTML = `<tr><td colspan="6" class="text-muted text-center py-3">No workload found.</td></tr>`;
+        return;
+    }
+
+    body.innerHTML = engineers.map(e=>{
+        let pillClass = 'bg-success-subtle text-success';
+        let label = 'Light';
+        let countClass = 'text-success';
+
+        if(e.count >= 10){
+            pillClass = 'bg-danger-subtle text-danger';
+            label = 'High';
+            countClass = 'text-danger';
+        }else if(e.count >= 6){
+            pillClass = 'bg-warning-subtle text-warning';
+            label = 'Moderate';
+            countClass = 'text-warning';
+        }
+
+        return `
+            <tr>
+                <td class="fw-bold">${escapeHtml(e.name)}</td>
+                <td><span class="badge bg-light text-dark border">${escapeHtml(e.branch || '')}</span></td>
+                <td class="text-end fw-bold ${countClass}">${escapeHtml(e.count)}</td>
+                <td class="text-end">${escapeHtml(e.active)}</td>
+                <td class="text-end">${escapeHtml(e.completed)}</td>
+                <td><span class="workload-pill ${pillClass}">${label}</span></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function analyticsQueryString(){
+    const start = document.getElementById('analytics-start').value;
+    const end = document.getElementById('analytics-end').value;
+    const branch = document.getElementById('analytics-branch').value;
+    return `start_date=${encodeURIComponent(start)}&end_date=${encodeURIComponent(end)}&branch=${encodeURIComponent(branch)}`;
+}
+
+function exportAnalyticsCSV(){
+    window.location.href = `/export_analytics_summary?${analyticsQueryString()}`;
+}
+
+async function loadAnalytics(){
+    try{
+        const res = await fetch(`/get_analytics_summary?${analyticsQueryString()}`);
+        const data = await res.json();
+        lastAnalyticsData = data;
+
+        if(!res.ok){
+            document.getElementById('analytics-range-label').innerText = data.message || "Unable to load analytics.";
+            return;
+        }
+
+        document.getElementById('total-today').innerText = data.today || 0;
+        document.getElementById('total-week').innerText = data.week || 0;
+        document.getElementById('total-month').innerText = data.month || 0;
+        document.getElementById('total-completed').innerText = data.completed || 0;
+
+        document.getElementById('analytics-range-label').innerHTML =
+            `<strong>Selected Range:</strong> ${data.range.start_date} to ${data.range.end_date}
+             <span class="ms-2 text-muted">Branch: ${data.branch_label || 'All Branches'} • Total schedules: ${data.range_total} • Active: ${data.active} • Assignments: ${data.assignment_total}</span>`;
+
+        renderInsights(data);
+        renderMiniChart('branch-chart', data.branches);
+        renderMiniChart('category-chart', data.categories);
+        renderMiniChart('status-chart', data.open_statuses);
+        renderBars('branch-data', data.branches);
+        renderBars('category-data', data.categories);
+        renderBars('status-data', data.open_statuses);
+        renderEngineerTable(data.engineers);
+        renderMobileAnalyticsSummary(data);
+
+    }catch(e){
+        console.error(e);
+        document.getElementById('analytics-range-label').innerText = "Network error while loading analytics.";
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+    const branchSelect = document.getElementById('analytics-branch');
+    if(branchSelect){
+        branchSelect.addEventListener('change', loadAnalytics);
+    }
+    setAnalyticsPreset('month');
+});
+</script>
+
+{% endblock %}

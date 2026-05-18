@@ -1,0 +1,1161 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="card shadow-sm border-0 p-4 bg-white">
+        <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+            <h2 class="h4 mb-0"><i class="fa-solid fa-handshake me-2 text-success"></i>Client Management</h2>
+            <div class="btn-group">
+                {% if current_user.role in ['superadmin', 'regional_admin'] %}
+                <input type="file" id="csv-file" accept=".csv" style="display:none" onchange="handleImport(this)">
+                <button class="btn btn-outline-primary btn-sm" id="client-import-btn" onclick="document.getElementById('csv-file').click()">
+                    <i class="fa-solid fa-file-import me-1"></i>Import CSV
+                </button>
+                {% endif %}
+
+                <button class="btn btn-outline-success btn-sm" onclick="window.location.href='/export_clients'">Export</button>
+                <button class="btn btn-outline-dark btn-sm" onclick="window.print()">Print</button>
+
+                {% if current_user.role in ['superadmin', 'regional_admin'] %}
+                <button class="btn btn-primary btn-sm ms-2" onclick="openAddModal()">+ Add New Client</button>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="row g-2 mb-4 no-print bg-light p-3 rounded">
+            <div class="col-md-6"><label class="small fw-bold">SEARCH NAME</label><input type="text" id="s-name" class="form-control form-control-sm" oninput="applyFilters()"></div>
+            <div class="col-md-6"><label class="small fw-bold">SEARCH ADDRESS</label><input type="text" id="s-addr" class="form-control form-control-sm" oninput="applyFilters()"></div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Name</th>
+                        <th>Address</th>
+                        <th>Main Contact</th>
+                        <th>Phone</th>
+                        <th class="no-print text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="client-table-body"></tbody>
+            </table>
+        </div>
+
+        <div id="client-mobile-list" class="client-mobile-list no-print"></div>
+
+        <div class="directory-count-footer no-print mt-3 p-3 rounded-3 bg-light border d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div>
+                <div class="small text-muted text-uppercase fw-bold">Directory Count</div>
+                <div class="fw-bold text-dark" id="client-count-label">Showing 0 of 0 medical centers</div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <span class="count-chip bg-white border text-muted">
+                    <i class="fa-solid fa-address-book me-1 text-success"></i>
+                    <span id="client-contact-count">0 contacts</span>
+                </span>
+                <span class="count-chip bg-white border text-muted">
+                    <i class="fa-solid fa-filter me-1 text-primary"></i>
+                    <span id="client-filter-state">No active filter</span>
+                </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- VIEW MODAL -->
+<div class="modal fade no-print" id="viewModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="mb-0" id="view-client-name">Contact Details</h5>
+                <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0" id="view-details-content"></div>
+        </div>
+    </div>
+</div>
+
+
+<!-- PRODUCT VIEW MODAL -->
+<div class="modal fade no-print" id="productViewModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content shadow-lg border-0">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">Product Details</h5>
+                <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="product-view-content"></div>
+        </div>
+    </div>
+</div>
+
+<!-- EDIT/ADD MODAL -->
+<div class="modal fade no-print" id="clientModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="modal-title">Client Details</h5>
+                <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-client-id">
+                <div class="row">
+                    <div class="col-md-6 mb-3"><label class="small fw-bold">Company Name</label><input type="text" id="c-name" class="form-control" oninput="liveDuplicateCheck(); autoCompleteClient()"></div>
+                    <div class="col-md-6 mb-3"><label class="small fw-bold">Office Address</label><input type="text" id="c-address" class="form-control" oninput="liveDuplicateCheck(); autoCompleteClient()"></div>
+                </div>
+                <hr>
+                <div class="alert alert-warning border-0 small py-2 d-none" id="client-contact-only-note">
+                    <i class="fa-solid fa-user-lock me-1"></i>
+                    Engineer access: you may add or edit contact rows only. Client name/address and delete are restricted.
+                </div>
+
+                <div id="contacts-container"></div>
+                <button class="btn btn-outline-primary btn-sm mt-2" onclick="addContact()">+ Add Contact</button>
+
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+<button class="btn btn-outline-success btn-sm" onclick="exportClientExcel()">Export Excel</button>
+                <button class="btn btn-success btn-sm px-4" onclick="saveClient()">Save Client</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- IMPORT RESULT TOAST -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3 no-print" style="z-index: 3000;">
+    <div id="importToast" class="toast border-0 shadow-lg" role="alert">
+        <div id="importToastHeader" class="toast-header text-white bg-success">
+            <i id="importToastIcon" class="fa-solid fa-circle-check me-2"></i>
+            <strong class="me-auto" id="importToastTitle">Import Complete</strong>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body bg-white" id="importToastBody"></div>
+    </div>
+</div>
+
+<script>
+let clientModalInstance, viewModalInstance, clientsData = [], clientSummary = { total_clients: 0, total_contacts: 0, clients_with_contacts: 0 };
+
+let autoTimer;
+
+async function autoCompleteClient(){
+    clearTimeout(autoTimer);
+    autoTimer = setTimeout(async ()=>{
+        const name = document.getElementById('c-name').value;
+        const address = document.getElementById('c-address').value;
+
+        if(!name) return;
+
+        const res = await fetch(`/search_clients?q=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}`);
+        const data = await res.json();
+
+        let box = document.getElementById('auto-box');
+
+        if(!box){
+            box = document.createElement('div');
+            box.id = 'auto-box';
+            box.className = 'list-group position-absolute w-100 shadow';
+            document.getElementById('c-name').parentElement.appendChild(box);
+        }
+
+        box.innerHTML = "";
+
+        if(data.length === 0){
+            box.style.display = 'none';
+            return;
+        }
+
+        data.forEach(item=>{
+            const el = document.createElement('a');
+            el.className = 'list-group-item list-group-item-action';
+            el.innerHTML = `<b>${item.name}</b><br><small>${item.address || ''} • ${item.score*100}% match</small>`;
+            el.onclick = ()=>{
+                document.getElementById('c-name').value = item.name;
+                document.getElementById('c-address').value = item.address;
+                box.style.display = 'none';
+            };
+            box.appendChild(el);
+        });
+
+        box.style.display = 'block';
+
+    },300);
+}
+
+
+
+// FIX: hide autocomplete when clicking outside
+document.addEventListener('click', function(e){
+    const box = document.getElementById('auto-box');
+    const inputName = document.getElementById('c-name');
+    const inputAddr = document.getElementById('c-address');
+
+    if(!box) return;
+
+    if(
+        !box.contains(e.target) &&
+        e.target !== inputName &&
+        e.target !== inputAddr
+    ){
+        box.style.display = 'none';
+    }
+});
+
+let duplicateTimer;
+
+async function liveDuplicateCheck(){
+    clearTimeout(duplicateTimer);
+    duplicateTimer = setTimeout(async ()=>{
+        const name = document.getElementById('c-name').value;
+        const address = document.getElementById('c-address').value;
+
+        if(!name) return;
+
+        const res = await fetch(`/check_client_duplicate?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}`);
+        const data = await res.json();
+
+        let warn = document.getElementById('dup-warning');
+
+        if(!warn){
+            warn = document.createElement('div');
+            warn.id = 'dup-warning';
+            warn.className = 'alert alert-warning mt-2';
+            document.getElementById('c-name').parentElement.appendChild(warn);
+        }
+
+        if(data.match){
+            warn.style.display = 'block';
+            warn.innerHTML = `⚠ Possible duplicate:<br><b>${data.name}</b> (${data.address || 'No address'})`;
+        } else {
+            warn.style.display = 'none';
+        }
+
+    }, 400);
+}
+
+let contactCount = 0;
+
+const authRoleVal = "{{ current_user.role }}";
+const isAdminUser = ['superadmin', 'regional_admin'].includes(authRoleVal);
+
+const isEngineerUser = authRoleVal === 'engineer';
+const canManageClientContacts = isAdminUser || isEngineerUser;
+
+function isContactOnlyClientEdit(){
+    return isEngineerUser && !isAdminUser;
+}
+
+
+function showImportToast(type, title, message){
+    const header = document.getElementById('importToastHeader');
+    const icon = document.getElementById('importToastIcon');
+    const titleEl = document.getElementById('importToastTitle');
+    const bodyEl = document.getElementById('importToastBody');
+
+    header.className = `toast-header text-white ${type === 'success' ? 'bg-success' : 'bg-danger'}`;
+    icon.className = `fa-solid ${type === 'success' ? 'fa-circle-check' : 'fa-triangle-exclamation'} me-2`;
+    titleEl.innerText = title;
+    bodyEl.innerHTML = message;
+
+    new bootstrap.Toast(document.getElementById('importToast'), { delay: 6000 }).show();
+}
+
+function buildImportSummary(data){
+    if(!data) return "Import finished.";
+
+    const parts = [];
+    if(typeof data.created !== 'undefined') parts.push(`<strong>${data.created}</strong> created`);
+    if(typeof data.updated !== 'undefined') parts.push(`<strong>${data.updated}</strong> updated`);
+    if(typeof data.skipped !== 'undefined') parts.push(`<strong>${data.skipped}</strong> skipped`);
+    if(typeof data.unresolved_owners !== 'undefined' && data.unresolved_owners > 0) {
+        parts.push(`<strong>${data.unresolved_owners}</strong> unmatched owner(s)`);
+    }
+
+    return parts.length ? parts.join(" • ") : (data.message || "Import finished.");
+}
+
+
+async function handleImport(input){
+    if(!isAdminUser) return;
+    if(!input.files || !input.files[0]) return;
+
+    const file = input.files[0];
+    if(!file.name.toLowerCase().endsWith('.csv')){
+        showImportToast('error', 'Invalid File', 'Please choose a valid CSV file.');
+        input.value = "";
+        return;
+    }
+
+    const importBtn = document.getElementById('client-import-btn');
+    const originalHtml = importBtn ? importBtn.innerHTML : '';
+
+    if(importBtn){
+        importBtn.disabled = true;
+        importBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Importing...';
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const res = await fetch('/import_clients', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCSRFToken() },
+            body: formData
+        });
+
+        const data = await res.json().catch(()=>({}));
+
+        if(res.ok){
+            await loadClients();
+            showImportToast(
+                'success',
+                'Client Import Complete',
+                `${buildImportSummary(data)}<div class="small text-muted mt-1">${data.message || ''}</div>`
+            );
+        }else{
+            showImportToast('error', 'Client Import Failed', data.message || 'Import failed. Please check your CSV file.');
+        }
+    } catch(err) {
+        showImportToast('error', 'Client Import Failed', 'Network or server error during import.');
+    } finally {
+        if(importBtn){
+            importBtn.disabled = false;
+            importBtn.innerHTML = originalHtml;
+        }
+        input.value = "";
+    }
+}
+
+
+let productViewModal;
+
+document.addEventListener('DOMContentLoaded', () => { 
+    clientModalInstance = new bootstrap.Modal(document.getElementById('clientModal')); 
+    viewModalInstance = new bootstrap.Modal(document.getElementById('viewModal')); 
+    productViewModal = new bootstrap.Modal(document.getElementById('productViewModal'));
+    loadClients(); 
+});
+
+function openProductModal(id){
+    fetch('/get_products')
+    .then(res=>res.json())
+    .then(products=>{
+        const p = products.find(x=>x.serial_number == id);
+
+        if(!p) return;
+
+        const today = new Date();
+        const end = p.end_warranty ? new Date(p.end_warranty) : null;
+        const isActive = end && end >= today;
+
+        const badge = isActive 
+            ? '<span class="badge bg-success">Active</span>'
+            : '<span class="badge bg-danger">Expired</span>';
+
+        document.getElementById('product-view-content').innerHTML = `
+            <div class="p-2">
+
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="fw-bold fs-5">${p.name || '-'}</div>
+                    ${badge}
+                </div>
+
+                <div class="text-muted small mb-3">
+                    Serial Number: ${p.serial_number || '-'}
+                </div>
+
+                <hr>
+
+                <div class="mb-2">
+                    <strong>Client:</strong> ${p.client_name || '-'}
+                </div>
+
+                <div class="mb-2">
+                    <strong>Warranty Start:</strong> ${p.start_warranty || '-'}
+                </div>
+
+                <div class="mb-3">
+                    <strong>Warranty End:</strong> ${p.end_warranty || '-'}
+                </div>
+
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn btn-sm btn-outline-primary" onclick="window.location.href='/products_page'">
+                        Open Full Page
+                    </button>
+                    <button class="btn btn-sm btn-outline-warning" onclick="editProduct('${p.serial_number}')">
+                        Edit
+                    </button>
+                </div>
+
+            </div>
+        `;
+
+        productViewModal.show();
+    });
+}
+
+
+function toggleSection(id, el){
+    const section = document.getElementById(id);
+    if(!section) return;
+
+    const isHidden = section.style.display === 'none';
+    section.style.display = isHidden ? 'block' : 'none';
+
+    if(el){
+        el.innerHTML = (isHidden ? '▼ ' : '▶ ') + el.innerText.replace('▶','').replace('▼','').trim();
+    }
+}
+
+
+function setClientModalContactOnlyMode(contactOnly){
+    const nameField = document.getElementById('c-name');
+    const addressField = document.getElementById('c-address');
+    const note = document.getElementById('client-contact-only-note');
+
+    if(nameField) nameField.disabled = contactOnly;
+    if(addressField) addressField.disabled = contactOnly;
+    if(note) note.classList.toggle('d-none', !contactOnly);
+}
+
+function addContact(name="", phone="", email=""){
+    contactCount++;
+    const div = document.createElement('div');
+    div.className = "border rounded p-2 mb-2";
+    const removeButton = isAdminUser
+        ? `<button class="btn btn-sm btn-outline-danger" onclick="this.parentElement.parentElement.remove()">Remove</button>`
+        : `<span class="badge bg-light text-muted border">No delete access</span>`;
+
+    div.innerHTML = `
+        <div class="d-flex justify-content-between">
+            <strong>Contact ${contactCount}</strong>
+            ${removeButton}
+        </div>
+        <div class="row mt-2">
+            <div class="col-md-4"><input class="form-control form-control-sm cp" placeholder="Name" value="${name}"></div>
+            <div class="col-md-4"><input class="form-control form-control-sm cn" placeholder="Phone" value="${phone}"></div>
+            <div class="col-md-4"><input class="form-control form-control-sm ce" placeholder="Email" value="${email}"></div>
+        </div>`;
+    document.getElementById('contacts-container').appendChild(div);
+}
+
+function openAddModal(){
+    if(!isAdminUser) return;
+    setClientModalContactOnlyMode(false);
+    document.getElementById('modal-title').innerText = "Add New Client";
+    document.getElementById('edit-client-id').value = "";
+    document.getElementById('c-name').value = "";
+    document.getElementById('c-address').value = "";
+    document.getElementById('contacts-container').innerHTML = "";
+    contactCount = 0;
+    addContact();
+    clientModalInstance.show();
+}
+
+function openEditModal(id){
+    if(!canManageClientContacts) return;
+    const c = clientsData.find(x => x.id === id);
+    const contactOnly = isContactOnlyClientEdit();
+    setClientModalContactOnlyMode(contactOnly);
+
+    document.getElementById('modal-title').innerText = contactOnly ? "Edit Client Contacts" : "Modify Client";
+    document.getElementById('edit-client-id').value = id;
+    document.getElementById('c-name').value = c.name;
+    document.getElementById('c-address').value = c.address;
+
+    document.getElementById('contacts-container').innerHTML = "";
+    contactCount = 0;
+
+    let i = 1;
+    while(c[`cp${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+        addContact(c[`cp${i}`], c[`cn${i}`], c[`ce${i}`]);
+        i++;
+    }
+
+    if(contactCount === 0) addContact();
+
+    clientModalInstance.show();
+}
+
+
+
+async function saveClient(){
+    if(!canManageClientContacts) return;
+
+    const id = document.getElementById('edit-client-id').value;
+    const name = document.getElementById('c-name').value;
+    const address = document.getElementById('c-address').value;
+
+    if(!id && isAdminUser){
+        const check = await fetch(`/check_client_duplicate?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}`);
+        const checkData = await check.json();
+
+        if(checkData.match){
+
+            if(confirm(`Duplicate found:
+
+${checkData.name} (${checkData.address || 'No address'})
+
+Open existing client?`)){
+                await loadClients();
+                openEditModal(checkData.id);
+            }
+
+            return;
+        }
+    }
+
+    let data = { name, address };
+
+    document.querySelectorAll('#contacts-container > div').forEach((c, i)=>{
+        let idx = i + 1;
+        data[`cp${idx}`] = c.querySelector('.cp').value;
+        data[`cn${idx}`] = c.querySelector('.cn').value;
+        data[`ce${idx}`] = c.querySelector('.ce').value;
+    });
+
+    const url = id ? `/update_client/${id}` : '/add_client';
+    const method = id ? 'PUT' : 'POST';
+
+    const res = await fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken()},
+        body: JSON.stringify(data)
+    });
+
+    if(res.ok){
+        clientModalInstance.hide();
+        loadClients();
+    } else {
+        const err = await res.json().catch(()=>({}));
+        alert(err.message || "Error saving client");
+    }
+}
+
+
+
+
+async function loadClients() { 
+    const [res, summaryRes] = await Promise.all([
+        fetch('/get_clients'),
+        fetch('/get_clients_summary')
+    ]);
+
+    clientsData = await res.json(); 
+    clientSummary = await summaryRes.json().catch(() => ({ total_clients: clientsData.length, total_contacts: 0, clients_with_contacts: 0 }));
+    renderTable(clientsData); 
+}
+
+
+function escapeHtml(value){
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function getPrimaryClientContact(c){
+    let i = 1;
+    while(c[`cp${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+        const name = c[`cp${i}`] || '';
+        const phone = c[`cn${i}`] || '';
+        const email = c[`ce${i}`] || '';
+        if(name || phone || email){
+            return { name, phone, email };
+        }
+        i++;
+    }
+    return { name: '', phone: '', email: '' };
+}
+
+function getClientContactSummary(c){
+    const total = countContactsForClient(c);
+    if(total === 0) return 'No contacts saved';
+    return `${total} contact${total === 1 ? '' : 's'} saved`;
+}
+
+function renderClientMobileCards(data){
+    const container = document.getElementById('client-mobile-list');
+    if(!container) return;
+
+    if(!data.length){
+        container.innerHTML = `
+            <div class="client-mobile-empty">
+                <i class="fa-solid fa-hospital-user"></i>
+                <span>No clients match your filter.</span>
+            </div>`;
+        return;
+    }
+
+    container.innerHTML = data.map(c => {
+        const contact = getPrimaryClientContact(c);
+        const contactSummary = getClientContactSummary(c);
+        const phoneAction = contact.phone
+            ? `<a class="client-mobile-icon-action" href="tel:${escapeHtml(contact.phone)}" title="Call"><i class="fa-solid fa-phone"></i></a>`
+            : `<button class="client-mobile-icon-action disabled" disabled title="No phone"><i class="fa-solid fa-phone"></i></button>`;
+
+        const emailAction = contact.email
+            ? `<a class="client-mobile-icon-action" href="mailto:${escapeHtml(contact.email)}" title="Email"><i class="fa-solid fa-envelope"></i></a>`
+            : `<button class="client-mobile-icon-action disabled" disabled title="No email"><i class="fa-solid fa-envelope"></i></button>`;
+
+        const mapAction = c.address
+            ? `<a class="client-mobile-icon-action" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address)}" title="Map"><i class="fa-solid fa-map-location-dot"></i></a>`
+            : `<button class="client-mobile-icon-action disabled" disabled title="No address"><i class="fa-solid fa-map-location-dot"></i></button>`;
+
+        const adminActions = isAdminUser
+            ? `
+                <button class="client-mobile-btn client-mobile-edit" onclick="openEditModal(${c.id})">
+                    <i class="fa-solid fa-pen"></i>Edit
+                </button>
+                <button class="client-mobile-btn client-mobile-delete" onclick="deleteClient(${c.id})">
+                    <i class="fa-solid fa-trash"></i>Delete
+                </button>`
+            : '';
+
+        const contactEditAction = (!isAdminUser && canManageClientContacts)
+            ? `
+                <button class="client-mobile-btn client-mobile-edit" onclick="openEditModal(${c.id})">
+                    <i class="fa-solid fa-address-book"></i>Edit Contacts
+                </button>`
+            : '';
+
+        return `
+            <div class="client-mobile-card">
+                <div class="client-mobile-card-top">
+                    <div class="client-mobile-main">
+                        <div class="client-mobile-name" onclick="viewContacts(${c.id})">${escapeHtml(c.name || 'Unnamed Client')}</div>
+                        <div class="client-mobile-address">
+                            <i class="fa-solid fa-location-dot"></i>
+                            <span>${escapeHtml(c.address || 'No address saved')}</span>
+                        </div>
+                    </div>
+                    <div class="client-mobile-icon-actions">
+                        ${phoneAction}
+                        ${emailAction}
+                        ${mapAction}
+                    </div>
+                </div>
+
+                <div class="client-mobile-contact-box">
+                    <div class="client-mobile-contact-title">
+                        <i class="fa-solid fa-user-tie"></i>
+                        <span>${escapeHtml(contact.name || 'No primary contact')}</span>
+                    </div>
+                    <div class="client-mobile-contact-lines">
+                        <span>${escapeHtml(contact.phone || 'No phone')}</span>
+                        <span>${escapeHtml(contact.email || 'No email')}</span>
+                    </div>
+                    <button class="client-mobile-view-contact" onclick="viewContacts(${c.id})">
+                        <i class="fa-solid fa-address-book"></i>${escapeHtml(contactSummary)}
+                    </button>
+                </div>
+
+                ${(adminActions || contactEditAction) ? `<div class="client-mobile-actions">${adminActions}${contactEditAction}</div>` : ''}
+            </div>`;
+    }).join('');
+}
+
+function countContactsForClient(c){
+    let count = 0;
+    let i = 1;
+    while(c[`cp${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+        count++;
+        i++;
+    }
+    return count;
+}
+
+function updateClientCountFooter(filteredData){
+    const total = clientSummary.total_clients || clientsData.length || 0;
+    const shown = filteredData.length;
+    const filteredContacts = filteredData.reduce((sum, c) => sum + countContactsForClient(c), 0);
+
+    const nameFilter = document.getElementById('s-name')?.value.trim();
+    const addrFilter = document.getElementById('s-addr')?.value.trim();
+    const hasFilter = Boolean(nameFilter || addrFilter);
+
+    const label = document.getElementById('client-count-label');
+    const contacts = document.getElementById('client-contact-count');
+    const state = document.getElementById('client-filter-state');
+
+    if(label) label.innerText = `Showing ${shown} of ${total} medical centers`;
+    if(contacts) contacts.innerText = `${filteredContacts} contact${filteredContacts === 1 ? '' : 's'} in current view`;
+    if(state) state.innerText = hasFilter ? 'Filtered results' : 'No active filter';
+}
+
+
+function renderTable(data) {
+    const body = document.getElementById('client-table-body'); 
+    body.innerHTML = "";
+    updateClientCountFooter(data);
+    renderClientMobileCards(data);
+
+    data.forEach(c => {
+        let hasMore = false;
+        let i = 2;
+        while(c[`cp${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+            hasMore = true;
+            i++;
+        }
+
+        const contactDisplay = hasMore 
+            ? `<span class="text-primary text-decoration-underline" style="cursor:pointer" onclick="viewContacts(${c.id})">${escapeHtml(c.cp1 || '-')} <span class="badge bg-info ms-1" style="font-size:10px">+ More</span></span>` 
+            : escapeHtml(c.cp1 || '-');
+
+        body.innerHTML += `
+        <tr>
+            <td>
+<span class="fw-semibold text-primary" style="cursor:pointer;" onclick="viewContacts(${c.id})">
+${escapeHtml(c.name)}
+</span>
+</td>
+            <td><small>${escapeHtml(c.address || '-')}</small></td>
+            <td>${contactDisplay}</td>
+            <td>${escapeHtml(c.cn1 || '-')}</td>
+            <td class="text-end no-print">
+                <div class="btn-group">
+
+                    ${isAdminUser ? `
+<button class="btn btn-sm btn-outline-warning" onclick="openEditModal(${c.id})">Edit</button>
+<button class="btn btn-sm btn-outline-danger" onclick="deleteClient(${c.id})">Delete</button>
+` : ''}
+
+                    ${canManageClientContacts && !isAdminUser ? `
+<button class="btn btn-sm btn-outline-primary" onclick="openEditModal(${c.id})">Edit Contacts</button>
+` : ''}
+
+                    <button class="btn btn-sm btn-outline-dark" onclick="viewContacts(${c.id})">View</button>
+                </div>
+            </td>
+        </tr>`;
+    });
+}
+
+
+
+
+async function viewContacts(id){
+    const c = clientsData.find(x => x.id === id);
+    document.getElementById('view-client-name').innerText = c.name;
+
+    let html = `
+    <div class="p-3 border-bottom d-flex justify-content-between align-items-start">
+        <div>
+            <div class="fw-bold fs-5">${c.name}</div>
+            <div class="text-muted small">${c.address || "No address provided"}</div>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-success" onclick="window.open('/export_client_excel/${c.id}')">Export Excel</button>
+            <button class="btn btn-sm btn-outline-dark" onclick="printClientReport()">Print</button>
+        </div>
+    </div>
+    `;
+
+    // CONTACTS SECTION
+    let i = 1;
+    let hasContacts = false;
+
+    html += `
+    <div class="p-2">
+        <div class="fw-bold text-primary mb-2" style="cursor:pointer" onclick="toggleSection('contacts-sec', this)">
+            ▶ Contacts
+        </div>
+        <div id="contacts-sec">
+    `;
+
+    while(c[`cp${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+        hasContacts = true;
+
+        html += `
+        <div class="list-group-item p-2" style="cursor:pointer" >
+            <div class="fw-semibold small mb-1">Contact ${i}</div>
+            <div class="small"><strong>Name:</strong> ${c[`cp${i}`] || '-'}</div>
+            <div class="small"><strong>Phone:</strong> ${c[`cn${i}`] || '-'}</div>
+            <div class="small"><strong>Email:</strong> ${c[`ce${i}`] || '-'}</div>
+        </div>`;
+        i++;
+    }
+
+    if(!hasContacts){
+        html += `<div class="text-muted text-center p-3">No contacts available</div>`;
+    }
+
+    html += `</div></div>`;
+
+    // PRODUCTS
+    const res = await fetch('/get_products');
+    const products = await res.json();
+    const clientProducts = products.filter(p => p.client_id === id);
+
+    html += `
+    <div class="p-2 border-top">
+        <div class="fw-bold text-success mb-2" style="cursor:pointer" onclick="toggleSection('products-sec', this)">
+            ▶ Equipment / Products
+        </div>
+        <div id="products-sec">
+    `;
+
+    if(clientProducts.length === 0){
+        html += `<div class="text-muted text-center p-3">No products linked</div>`;
+    } else {
+        clientProducts.forEach(p=>{
+            const today = new Date();
+            const end = p.end_warranty ? new Date(p.end_warranty) : null;
+            const status = end && end >= today ? "Active" : "Expired";
+
+            html += `
+            <div class="list-group-item p-2" style="cursor:pointer" onclick="openProductModal('${p.serial_number}')">
+                <div class="fw-bold text-dark">${p.name || '-'}</div>
+                <div class="small"><strong>Serial Number:</strong> ${p.serial_number || '-'}</div>
+                <div class="small"><strong>Warranty:</strong> ${status}</div>
+            </div>`;
+        });
+    }
+
+    html += `</div></div>`;
+
+    document.getElementById('view-details-content').innerHTML = html;
+    viewModalInstance.show();
+}
+
+
+
+
+async function deleteClient(id){
+    if(!isAdminUser) return;
+    if(confirm("Are you sure you want to delete this client?")){
+        await fetch(`/delete_client/${id}`, {
+            method: 'DELETE',
+            headers: {'X-CSRFToken': getCSRFToken()}
+        });
+        loadClients();
+    }
+}
+
+function exportClientExcel(){
+    const id = document.getElementById('edit-client-id').value;
+    if(!id){
+        alert("Please save client first before exporting.");
+        return;
+    }
+    window.open(`/export_client_excel/${id}`);
+}
+
+
+function printClientReport(){
+    const content = document.getElementById('view-details-content').innerHTML;
+    const win = window.open('');
+    win.document.write(`
+        <html>
+        <head>
+            <title>Client Report</title>
+            <style>
+                body{font-family:Arial;font-size:12px;padding:20px;}
+                .fw-bold{font-weight:bold;}
+                .small{font-size:11px;}
+                .section{margin-top:15px;}
+            </style>
+        </head>
+        <body>${content}</body>
+        </html>
+    `);
+    win.document.close();
+    win.print();
+}
+
+
+
+
+function editProduct(id){
+    window.location.href = '/products_page?edit=' + id;
+}
+
+function applyFilters(){
+    const nameFilter = document.getElementById('s-name').value.toLowerCase();
+    const addrFilter = document.getElementById('s-addr').value.toLowerCase();
+
+    const filtered = clientsData.filter(c => {
+        const nameMatch = (c.name || "").toLowerCase().includes(nameFilter);
+        const addrMatch = (c.address || "").toLowerCase().includes(addrFilter);
+        return nameMatch && addrMatch;
+    });
+
+    renderTable(filtered);
+}
+</script>
+
+
+
+<style>
+    .directory-count-footer {
+        font-size: 0.88rem;
+    }
+
+    .count-chip {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 6px 10px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    @media print {
+        .directory-count-footer,
+        .client-mobile-list {
+            display: none !important;
+        }
+    }
+
+    /* MOBILE CLIENTS PAGE UPGRADE */
+    .client-mobile-list {
+        display: none;
+        margin-top: 1rem;
+    }
+
+    .client-mobile-card {
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        border-radius: 1.05rem;
+        padding: 0.95rem;
+        margin-bottom: 0.75rem;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .client-mobile-card-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+
+    .client-mobile-main {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .client-mobile-name {
+        color: #0f172a;
+        font-size: 0.98rem;
+        font-weight: 900;
+        line-height: 1.2;
+        cursor: pointer;
+    }
+
+    .client-mobile-address {
+        margin-top: 0.45rem;
+        display: grid;
+        grid-template-columns: 1rem 1fr;
+        gap: 0.45rem;
+        color: #64748b;
+        font-size: 0.75rem;
+        font-weight: 700;
+        line-height: 1.25;
+    }
+
+    .client-mobile-icon-actions {
+        display: flex;
+        gap: 0.4rem;
+        flex-shrink: 0;
+    }
+
+    .client-mobile-icon-action {
+        width: 2.15rem;
+        height: 2.15rem;
+        border-radius: 999px;
+        border: 1px solid #dbeafe;
+        background: #eff6ff;
+        color: #0d6efd;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+    }
+
+    .client-mobile-icon-action.disabled {
+        background: #f8fafc;
+        color: #94a3b8;
+        border-color: #e2e8f0;
+    }
+
+    .client-mobile-contact-box {
+        margin-top: 0.85rem;
+        padding: 0.75rem;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.9rem;
+    }
+
+    .client-mobile-contact-title {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: #0f172a;
+        font-size: 0.82rem;
+        font-weight: 900;
+    }
+
+    .client-mobile-contact-lines {
+        display: grid;
+        gap: 0.25rem;
+        margin-top: 0.45rem;
+        color: #64748b;
+        font-size: 0.74rem;
+        font-weight: 700;
+    }
+
+    .client-mobile-contact-lines span {
+        overflow-wrap: anywhere;
+    }
+
+    .client-mobile-view-contact {
+        margin-top: 0.65rem;
+        border: none;
+        background: #fff;
+        color: #0d6efd;
+        border-radius: 0.75rem;
+        padding: 0.55rem 0.7rem;
+        font-size: 0.72rem;
+        font-weight: 900;
+        width: 100%;
+    }
+
+    .client-mobile-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.55rem;
+        margin-top: 0.85rem;
+    }
+
+    .client-mobile-btn {
+        border: none;
+        min-height: 2.45rem;
+        border-radius: 0.85rem;
+        font-size: 0.78rem;
+        font-weight: 900;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+    }
+
+    .client-mobile-edit {
+        background: #0d6efd;
+        color: #fff;
+    }
+
+    .client-mobile-delete {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .client-mobile-empty {
+        border: 1px dashed #cbd5e1;
+        background: #f8fafc;
+        color: #64748b;
+        border-radius: 1rem;
+        padding: 1.3rem;
+        text-align: center;
+        font-weight: 800;
+        display: grid;
+        gap: 0.4rem;
+    }
+
+    @media (max-width: 768px) {
+        .container-fluid {
+            padding-left: 0.85rem;
+            padding-right: 0.85rem;
+        }
+
+        .container-fluid > .card {
+            padding: 1rem !important;
+            border-radius: 1.1rem;
+        }
+
+        .container-fluid > .card > .d-flex.justify-content-between {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 0.85rem;
+        }
+
+        .container-fluid h2.h4 {
+            font-size: 1.12rem;
+            line-height: 1.25;
+        }
+
+        .container-fluid .btn-group {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.5rem;
+        }
+
+        .container-fluid .btn-group .btn {
+            border-radius: 0.8rem !important;
+            margin-left: 0 !important;
+            min-height: 2.45rem;
+            font-size: 0.75rem;
+            font-weight: 900;
+        }
+
+        .row.g-2.mb-4.no-print {
+            margin-left: 0;
+            margin-right: 0;
+            padding: 0.85rem !important;
+            border-radius: 1rem !important;
+        }
+
+        .row.g-2.mb-4.no-print .col-md-6 {
+            margin-bottom: 0.55rem;
+        }
+
+        .row.g-2.mb-4.no-print input {
+            min-height: 2.55rem;
+            border-radius: 0.85rem;
+            font-weight: 700;
+        }
+
+        .table-responsive {
+            display: none;
+        }
+
+        .client-mobile-list {
+            display: block;
+        }
+
+        .directory-count-footer {
+            align-items: flex-start !important;
+        }
+
+        #clientModal .modal-dialog,
+        #viewModal .modal-dialog {
+            margin: 0.75rem;
+        }
+
+        #clientModal .modal-body,
+        #clientModal .modal-footer,
+        #viewModal .modal-body {
+            padding: 1rem !important;
+        }
+
+        #clientModal .modal-footer {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.55rem;
+        }
+
+        #clientModal .modal-footer .btn {
+            width: 100%;
+            min-height: 2.6rem;
+        }
+    }
+</style>
+
+{% endblock %}

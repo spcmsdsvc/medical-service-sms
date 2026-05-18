@@ -1,0 +1,1095 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<!-- 
+    ===========================================================================
+    MEDICAL SERVICE SYSTEM - OPERATIONS DASHBOARD
+    ===========================================================================
+    Version: 5.4.5 (PH Time Header Alignment)
+    This module provides a bird's-eye view of technical operations.
+    
+    KEY LOGIC:
+    1. GREETING: Personalized hero greeting utilizing logged-in username.
+    2. WIDGET SWAP (v5.2): 
+       - ENGINEERS see their specific "My Active Tasks".
+       - ADMINS see a live-refreshing "Recent System Activity" log.
+    3. ANALYTICS: High-level counters for personnel, medical centers, and assets.
+    4. MULTI-DAY GROUPING: Technical tasks spanning consecutive days are merged.
+    5. DATA CLEANING: Excludes HR categories (Leave/Training) from technical views.
+    ===========================================================================
+-->
+
+<div class="container py-4">
+    
+    <!-- DASHBOARD BRANDING HEADER (PERSONALIZED) -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div class="branding-group">
+            <h2 class="h4 mb-0 fw-bold">
+                <i class="fa-solid fa-hand-wave me-2 text-primary"></i>
+                Welcome back, {{ current_user.username.capitalize() }}!
+            </h2>
+            <p class="text-muted small mb-0">
+                Operational Overview of MEDICAL SERVICE Technical Visits
+            </p>
+        </div>
+        
+        <!-- v5.4.5 UI Fix: Date moved beside the time in a combined badge -->
+        <div class="header-clock-container">
+            <span class="badge bg-dark px-3 py-2 shadow-sm font-monospace" style="font-size: 0.9rem;">
+                <i class="fa-solid fa-calendar-day me-2 text-info"></i>
+                <span id="current-date" class="me-3"></span>
+                <i class="fa-solid fa-clock me-2 text-warning"></i>
+                <span id="system-clock">00:00:00 AM</span>
+            </span>
+        </div>
+    </div>
+
+    <!-- ANALYTICS MATRIX -->
+    <div class="row mb-4 g-3">
+        
+        <!-- PERSONNEL COUNTER -->
+        <div class="col-md-4">
+            <div class="card p-4 text-center bg-white border-0 shadow-sm rounded-4 transition-hover">
+                <h6 class="small fw-bold text-muted text-uppercase mb-2">Total Personnel</h6>
+                <h2 class="display-6 fw-bold mb-1 text-primary" id="count-engineers">0</h2>
+                <a href="/engineers_page" class="small text-primary text-decoration-none fw-bold">View Directory →</a>
+            </div>
+        </div>
+
+        <!-- MEDICAL CENTER COUNTER -->
+        <div class="col-md-4">
+            <div class="card p-4 text-center bg-white border-0 shadow-sm rounded-4 transition-hover">
+                <h6 class="small fw-bold text-muted text-uppercase mb-2">Medical Centers</h6>
+                <h2 class="display-6 fw-bold mb-1 text-success" id="count-clients">0</h2>
+                <a href="/clients_page" class="small text-success text-decoration-none fw-bold">Manage Clients →</a>
+            </div>
+        </div>
+
+        <!-- ASSET INVENTORY COUNTER -->
+        <div class="col-md-4">
+            <div class="card p-4 text-center bg-white border-0 shadow-sm rounded-4 transition-hover">
+                <h6 class="small fw-bold text-muted text-uppercase mb-2">Products</h6>
+                <h2 class="display-6 fw-bold mb-1 text-warning" id="count-products">0</h2>
+                <a href="/products_page" class="small text-warning text-decoration-none fw-bold">Inventory List →</a>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- MOBILE DASHBOARD QUICK ACTIONS -->
+    <div class="dashboard-mobile-quick-actions mb-4">
+        <a href="/timeline" class="dashboard-mobile-action-card dashboard-mobile-action-primary">
+            <i class="fa-solid fa-calendar-days"></i>
+            <span>Timeline</span>
+        </a>
+        <a href="/engineers_page" class="dashboard-mobile-action-card">
+            <i class="fa-solid fa-user-gear"></i>
+            <span>Engineers</span>
+        </a>
+        <a href="/clients_page" class="dashboard-mobile-action-card">
+            <i class="fa-solid fa-hospital"></i>
+            <span>Clients</span>
+        </a>
+        <a href="/activity_page" class="dashboard-mobile-action-card">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+            <span>Logs</span>
+        </a>
+    </div>
+
+    <!-- v5.2 ROLE-BASED WIDGET SECTION -->
+    {% if current_user.role == 'engineer' %}
+    <!-- ENGINEER-ONLY: MY ACTIVE TASKS -->
+    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-primary">
+        <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 fw-bold text-primary">
+                <i class="fa-solid fa-user-check me-2"></i>
+                My Active Tasks
+            </h5>
+            <a href="/timeline" class="btn btn-sm btn-outline-primary fw-bold">
+                Open My Full Calendar
+            </a>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light text-uppercase small fw-bold text-muted">
+                        <tr>
+                            <th class="ps-4">Scheduled Date</th>
+                            <th>Medical Facility</th>
+                            <th>Task Details</th>
+                            <th class="text-end pe-4">Current Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="my-tasks-body">
+                        <!-- Personal tasks filtered by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="no-my-tasks" class="text-center p-4 d-none">
+                <p class="text-muted small italic mb-0">No active tasks assigned to you currently.</p>
+            </div>
+            <div id="my-tasks-mobile-list" class="dashboard-mobile-card-list p-3"></div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- OPEN TECHNICAL TASKS REGISTRY (COMPANY-WIDE) -->
+    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4">
+        
+        <div class="card-header bg-white py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3">
+            
+            <div class="header-label">
+                <h5 class="mb-0 fw-bold text-dark">
+                    <i class="fa-solid fa-list-check me-2 text-danger"></i>
+                    All Open Technical Tasks
+                </h5>
+                <p class="xsmall text-muted mb-0 italic">Excludes Personnel Leave and internal Training records</p>
+            </div>
+            
+            <div class="d-flex gap-2 align-items-center">
+                
+                <!-- Status Workflow Filter -->
+                <select id="filter-status" class="form-select form-select-sm border-primary shadow-none" onchange="filterAndRender()">
+                    <option value="">All Open Statuses</option>
+                    <option value="In Progress">In Progress</option>
+                    <option value="For Continuation">For Continuation</option>
+                    <option value="Waiting for P.O">Waiting for P.O</option>
+                    <option value="Waiting for Parts">Waiting for Parts</option>
+                </select>
+                
+                <!-- Sorting Controller Group -->
+                <div class="btn-group">
+                    <button id="sort-btn" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleSort()">
+                        <i class="fa-solid fa-sort me-1"></i> Sort: Latest Scheduled
+                    </button>
+                    <a href="/timeline" class="btn btn-sm btn-primary shadow-sm fw-bold">
+                        <i class="fa-solid fa-calendar-days me-1"></i>Open Calendar Grid
+                    </a>
+                </div>
+
+            </div>
+
+        </div>
+
+        <div class="card-body p-0">
+            
+            <div class="table-responsive open-tasks-scroll">
+                <table class="table table-hover align-middle mb-0">
+                    
+                    <thead class="table-light text-uppercase small fw-bold text-muted sticky-top">
+                        <tr>
+                            <th class="ps-4" style="width: 25%;">Scheduled Date / Range</th>
+                            <th style="width: 15%;">Medical Engineer</th>
+                            <th style="width: 20%;">Facility Name</th>
+                            <th style="width: 20%;">Technical Task</th>
+                            <th style="width: 10%;">Technical Status</th>
+                            <th class="text-end pe-4" style="width: 10%;">Created On</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="open-tasks-body">
+                        <!-- Technical visits are dynamically mapped here via JavaScript -->
+                    </tbody>
+
+                </table>
+            </div>
+
+            <div id="open-tasks-mobile-list" class="dashboard-mobile-card-list p-3"></div>
+
+            <!-- Zero State Result UI -->
+            <div id="no-tasks-msg" class="text-center p-5 d-none text-muted">
+                <div class="empty-icon-container mb-3">
+                    <i class="fa-solid fa-circle-check fa-4x text-success opacity-25"></i>
+                </div>
+                <h5 class="fw-bold">No Pending technical tasks detected.</h5>
+            </div>
+
+        </div>
+
+    </div>
+
+    {% if current_user.role != 'engineer' %}
+    <!-- ADMIN-ONLY: RECENT SYSTEM ACTIVITY (Auto-refresh enabled) -->
+    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-info">
+        <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0 fw-bold text-info">
+                    <i class="fa-solid fa-bolt-lightning me-2"></i>
+                    Recent System Activity
+                </h5>
+                <div class="xsmall text-muted mt-1">Showing latest 15 system activities</div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <a href="/activity_page" class="btn btn-sm btn-outline-info fw-bold">
+                    <i class="fa-solid fa-clock-rotate-left me-1"></i>View All Logs
+                </a>
+                <span class="badge bg-light text-muted border small d-inline-flex align-items-center gap-2">
+                    <span class="live-dot"></span>
+                    Live Feed (5s)
+                </span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive" style="max-height: 220px; overflow-y: auto;">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light text-uppercase small fw-bold text-muted sticky-top">
+                        <tr>
+                            <th class="ps-4">Timestamp</th>
+                            <th>User</th>
+                            <th>Action Performed</th>
+                        </tr>
+                    </thead>
+                    <tbody id="activity-log-body">
+                        <!-- Fetched via fetchActivityLog() -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="activity-mobile-list" class="dashboard-mobile-card-list dashboard-mobile-activity-feed p-3"></div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+<script>
+    // --- APP INITIALIZATION ---
+    const loggedInUser = "{{ current_user.username }}";
+    const userRole = "{{ current_user.role }}";
+
+    // v5.4.5: Real-time Manila Ticker and Date
+    function updateClock() {
+        const now = new Date();
+        const clockOptions = { 
+            timeZone: 'Asia/Manila', 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit', 
+            hour12: true 
+        };
+        const dateOptions = {
+            timeZone: 'Asia/Manila',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+        };
+
+        const manilaTime = new Intl.DateTimeFormat('en-US', clockOptions).format(now);
+        const manilaDate = new Intl.DateTimeFormat('en-US', dateOptions).format(now);
+        
+        document.getElementById('system-clock').innerText = manilaTime;
+        document.getElementById('current-date').innerText = manilaDate;
+    }
+
+    setInterval(updateClock, 1000);
+    updateClock();
+    
+    // Global Dataset Context
+    let allOpenTasksRaw = []; 
+    let currentSortMode = 'scheduled_latest'; 
+
+    /**
+     * MASTER DATA LOADER:
+     * Dispatches concurrent fetch requests to sync dashboard metrics from server.
+     */
+    async function loadDashboard() {
+        console.log("Synchronizing Service Dashboard Metrics...");
+        
+        try {
+            const [engs, clis, prods, tasks] = await Promise.all([
+                fetch('/get_engineers').then(r => r.json()),
+                fetch('/get_clients').then(r => r.json()),
+                fetch('/get_products').then(r => r.json()),
+                fetch('/get_open_tasks').then(r => r.json())
+            ]);
+
+            document.getElementById('count-engineers').innerText = engs.length;
+            document.getElementById('count-clients').innerText = clis.length;
+            document.getElementById('count-products').innerText = prods.length;
+
+            const hrCategories = [
+                "Sick Leave", 
+                "Vacation Leave", 
+                "Emergency Leave", 
+                "Paternity Leave", 
+                "Maternity Leave", 
+                "Training"
+            ];
+            
+            allOpenTasksRaw = tasks.filter(t => !hrCategories.includes(t.task));
+            
+            // Branch logic for personalization
+            if (userRole === 'engineer') {
+                renderMyTasks();
+            } else {
+                fetchActivityLog();
+                // Set the auto-refresh interval for Admin Feed (5 seconds)
+                setInterval(fetchActivityLog, 5000);
+            }
+
+            filterAndRender();
+
+        } catch (dashboardError) {
+            console.error("CRITICAL: Dashboard Data Stream Failed:", dashboardError);
+        }
+    }
+
+    /**
+     * NEW v5.2: Admin Live Feed Logic.
+     * Fetches the latest system activity.
+     */
+    let lastActivitySignature = "";
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function dashboardStatusClass(status) {
+        const value = String(status || '').toLowerCase();
+        if (value.includes('waiting for p.o')) return 'dashboard-status-po';
+        if (value.includes('waiting for parts')) return 'dashboard-status-parts';
+        if (value.includes('continuation')) return 'dashboard-status-continuation';
+        return 'dashboard-status-progress';
+    }
+
+    function buildDashboardTaskMobileCard(task, options = {}) {
+        const compact = Boolean(options.compact);
+        return `
+            <div class="dashboard-mobile-task-card">
+                <div class="dashboard-mobile-card-top">
+                    <div>
+                        <div class="dashboard-mobile-card-date">${escapeHtml(task.display_range || task.task_date || 'No date')}</div>
+                        <div class="dashboard-mobile-card-title">${escapeHtml(task.client || 'No facility')}</div>
+                    </div>
+                    <span class="dashboard-mobile-status ${dashboardStatusClass(task.status)}">${escapeHtml(task.status || 'In Progress')}</span>
+                </div>
+                <div class="dashboard-mobile-card-body">
+                    <div class="dashboard-mobile-card-row">
+                        <i class="fa-solid fa-user-gear"></i>
+                        <span>${escapeHtml(task.engineer || loggedInUser || 'Engineer')}</span>
+                    </div>
+                    <div class="dashboard-mobile-card-row">
+                        <i class="fa-solid fa-screwdriver-wrench"></i>
+                        <span>${escapeHtml(task.task || 'No task details')}</span>
+                    </div>
+                    ${compact ? '' : `
+                    <div class="dashboard-mobile-card-row">
+                        <i class="fa-solid fa-clock"></i>
+                        <span>Created ${escapeHtml(formatCreatedOn(task.created_at))}</span>
+                    </div>`}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderMobileTaskList(containerId, tasks, options = {}) {
+        const container = document.getElementById(containerId);
+        if(!container) return;
+
+        if(!tasks || !tasks.length){
+            container.innerHTML = '';
+            return;
+        }
+
+        container.innerHTML = tasks.map(task => buildDashboardTaskMobileCard(task, options)).join('');
+    }
+
+    function renderMobileActivityList(logs, shouldHighlight = false) {
+        const container = document.getElementById('activity-mobile-list');
+        if(!container) return;
+
+        if(!logs || !logs.length){
+            container.innerHTML = `
+                <div class="dashboard-mobile-empty-card">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <span>No recent activity yet.</span>
+                </div>`;
+            return;
+        }
+
+        container.innerHTML = logs.map((log, index) => {
+            const meta = getActivityMeta(log.action);
+            const readableAction = formatActivityText(log.action);
+            const highlightClass = shouldHighlight && index === 0 ? 'dashboard-mobile-activity-new' : '';
+
+            return `
+                <div class="dashboard-mobile-activity-card ${highlightClass}">
+                    <div class="dashboard-mobile-activity-top">
+                        <span class="dashboard-mobile-activity-user">${escapeHtml(log.user)}</span>
+                        <span class="activity-type ${meta.badge}">
+                            <i class="fa-solid ${meta.icon} me-1"></i>${meta.label}
+                        </span>
+                    </div>
+                    <div class="dashboard-mobile-activity-action">${escapeHtml(readableAction)}</div>
+                    <div class="dashboard-mobile-activity-time">
+                        <i class="fa-regular fa-clock me-1"></i>${escapeHtml(log.date)} ${escapeHtml(log.time)}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function getActivityMeta(actionText) {
+        const text = String(actionText || '').toLowerCase();
+
+        if (text.includes('password') || text.includes('unauthorized') || text.includes('denied')) {
+            return { label: 'Security', icon: 'fa-shield-halved', badge: 'activity-security' };
+        }
+        if (text.includes('export')) {
+            return { label: 'Export', icon: 'fa-file-export', badge: 'activity-export' };
+        }
+        if (text.includes('client') || text.includes('medical center')) {
+            return { label: 'Client', icon: 'fa-hospital', badge: 'activity-client' };
+        }
+        if (text.includes('product') || text.includes('equipment') || text.includes('inventory')) {
+            return { label: 'Product', icon: 'fa-boxes-stacked', badge: 'activity-product' };
+        }
+        if (text.includes('engineer') || text.includes('technical staff') || text.includes('personnel') || text.includes('profile')) {
+            return { label: 'Engineer', icon: 'fa-user-gear', badge: 'activity-engineer' };
+        }
+        if (text.includes('schedule') || text.includes('calendar') || text.includes('record') || text.includes('bulk-purged')) {
+            return { label: 'Schedule', icon: 'fa-calendar-check', badge: 'activity-schedule' };
+        }
+
+        return { label: 'System', icon: 'fa-circle-info', badge: 'activity-system' };
+    }
+
+    function formatActivityText(actionText) {
+        const raw = String(actionText || '').trim();
+        if (!raw) return 'System activity recorded';
+
+        let text = raw
+            .replace(/^Added calendar schedule:/i, 'Schedule added:')
+            .replace(/^Updated calendar schedule:/i, 'Schedule updated:')
+            .replace(/^Wiped technical record:/i, 'Schedule deleted:')
+            .replace(/^Bulk-purged/i, 'Bulk deleted')
+            .replace(/^Added new client:/i, 'Client added:')
+            .replace(/^Modified details for client:/i, 'Client updated:')
+            .replace(/^Permanently removed Client:/i, 'Client deleted:')
+            .replace(/^Added equipment:/i, 'Product added:')
+            .replace(/^Updated product details:/i, 'Product updated:')
+            .replace(/^Purged product record:/i, 'Product deleted:')
+            .replace(/^Added technical staff:/i, 'Engineer added:')
+            .replace(/^Updated profile for:/i, 'Engineer updated:')
+            .replace(/^Permanently removed personnel:/i, 'Engineer deleted:')
+            .replace(/^Exported Weekly Schedule Snapshot/i, 'Exported weekly schedule')
+            .replace(/^Exported the Client Database/i, 'Exported client database')
+            .replace(/^Exported the Personnel Directory/i, 'Exported personnel directory')
+            .replace(/^Exported the Product Inventory/i, 'Exported product inventory');
+
+        if (text.length > 105) {
+            text = text.slice(0, 102).trim() + '...';
+        }
+
+        return text;
+    }
+
+    async function fetchActivityLog() {
+        const res = await fetch('/get_recent_activity');
+        const logs = await res.json();
+        const target = document.getElementById('activity-log-body');
+
+        if(!target) return;
+
+        if (!logs.length) {
+            target.innerHTML = `
+                <tr>
+                    <td colspan="3" class="text-center text-muted small py-4">
+                        <i class="fa-solid fa-clock-rotate-left me-1"></i>
+                        No recent activity yet.
+                    </td>
+                </tr>`;
+            renderMobileActivityList([]);
+            return;
+        }
+
+        const newSignature = logs.map(l => `${l.date}|${l.time}|${l.user}|${l.action}`).join('||');
+        const shouldHighlight = lastActivitySignature && newSignature !== lastActivitySignature;
+        lastActivitySignature = newSignature;
+
+        renderMobileActivityList(logs, shouldHighlight);
+
+        target.innerHTML = "";
+        logs.forEach((l, index) => {
+            const meta = getActivityMeta(l.action);
+            const readableAction = formatActivityText(l.action);
+            const highlightClass = shouldHighlight && index === 0 ? 'activity-new-row' : '';
+
+            target.innerHTML += `
+                <tr class="small activity-row ${highlightClass}">
+                    <td class="ps-4 text-muted font-monospace activity-time">
+                        ${escapeHtml(l.date)}
+                        <span class="fw-bold text-dark">${escapeHtml(l.time)}</span>
+                    </td>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-light text-dark border">${escapeHtml(l.user)}</span>
+                            <span class="activity-type ${meta.badge}">
+                                <i class="fa-solid ${meta.icon} me-1"></i>${meta.label}
+                            </span>
+                        </div>
+                    </td>
+                    <td class="text-muted activity-action" title="${escapeHtml(l.action)}">
+                        ${escapeHtml(readableAction)}
+                    </td>
+                </tr>`;
+        });
+    }
+
+    /**
+     * Personalization Logic.
+     * Filters the dataset to show only tasks assigned to the current user.
+     */
+    function renderMyTasks() {
+        const targetBody = document.getElementById('my-tasks-body');
+        const emptyMsg = document.getElementById('no-my-tasks');
+
+        if(!targetBody) return;
+
+        const myTasks = allOpenTasksRaw.filter(t => String(t.engineer || '').toLowerCase().includes(loggedInUser.toLowerCase()));
+
+        targetBody.innerHTML = "";
+
+        if (myTasks.length === 0) {
+            emptyMsg.classList.remove('d-none');
+            renderMobileTaskList('my-tasks-mobile-list', []);
+        } else {
+            emptyMsg.classList.add('d-none');
+            renderMobileTaskList('my-tasks-mobile-list', myTasks, { compact: true });
+
+            myTasks.forEach(task => {
+                targetBody.innerHTML += `
+                    <tr class="small">
+                        <td class="ps-4 fw-bold text-primary">${escapeHtml(task.task_date)}</td>
+                        <td><strong>${escapeHtml(task.client)}</strong></td>
+                        <td class="text-muted">${escapeHtml(task.task)}</td>
+                        <td class="text-end pe-4"><span class="badge bg-primary shadow-none py-2 px-3" style="font-size: 0.6rem;">${escapeHtml(task.status)}</span></td>
+                    </tr>`;
+            });
+        }
+    }
+
+    /**
+     * AGGREGATION LOGIC:
+     * Consolidates multi-day technical visits.
+     */
+    function groupTasksByRange(tasksList) {
+        if (!tasksList.length) return [];
+        
+        const taskGroups = {};
+        tasksList.forEach(item => {
+            const compositeKey = `${item.engineer}|${item.client}|${item.task}|${item.status}`;
+            if (!taskGroups[compositeKey]) {
+                taskGroups[compositeKey] = [];
+            }
+            taskGroups[compositeKey].push(item);
+        });
+
+        const mergedResults = [];
+        
+        for (let key in taskGroups) {
+            let instances = taskGroups[key];
+            instances.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
+
+            let sequenceBuffer = [instances[0]];
+            
+            for (let i = 1; i <= instances.length; i++) {
+                let previousRec = instances[i - 1];
+                let currentRec = instances[i];
+                let isSequential = false;
+                if (currentRec) {
+                    let dP = new Date(previousRec.task_date);
+                    let dC = new Date(currentRec.task_date);
+                    if (Math.ceil(Math.abs(dC - dP) / (1000 * 60 * 60 * 24)) === 1) isSequential = true;
+                }
+
+                if (isSequential) {
+                    sequenceBuffer.push(currentRec);
+                } else {
+                    let rStart = sequenceBuffer[0];
+                    let rEnd = sequenceBuffer[sequenceBuffer.length - 1];
+                    let s = new Date(rStart.task_date);
+                    let e = new Date(rEnd.task_date);
+                    let mon = s.toLocaleString('default', { month: 'short' });
+                    let year = s.getFullYear();
+                    let rangeLabel = s.getTime() === e.getTime()
+                        ? s.toISOString().split('T')[0]
+                        : `${s.toISOString().split('T')[0]} → ${e.toISOString().split('T')[0]}`;
+                    
+                    mergedResults.push({
+                        ...rStart,
+                        display_range: rangeLabel,
+                        raw_sort_date: rStart.task_date
+                    });
+                    
+                    if (currentRec) sequenceBuffer = [currentRec];
+                }
+            }
+        }
+        return mergedResults;
+    }
+
+    function toggleSort() {
+        const label = document.getElementById('sort-btn');
+
+        if (currentSortMode === 'scheduled_latest') {
+            currentSortMode = 'scheduled_oldest';
+            label.innerHTML = '<i class="fa-solid fa-sort me-1"></i> Sort: Oldest Scheduled';
+        } else if (currentSortMode === 'scheduled_oldest') {
+            currentSortMode = 'created_latest';
+            label.innerHTML = '<i class="fa-solid fa-sort me-1"></i> Sort: Latest Created';
+        } else {
+            currentSortMode = 'scheduled_latest';
+            label.innerHTML = '<i class="fa-solid fa-sort me-1"></i> Sort: Latest Scheduled';
+        }
+
+        filterAndRender();
+    }
+
+    function formatCreatedOn(value) {
+        if (!value) return "-";
+
+        // Backend sends format like: YYYY-MM-DD HH:MM
+        const parts = String(value).split(" ");
+        if (parts.length < 2) return value;
+
+        const datePart = parts[0];
+        const timePart = parts[1];
+
+        const d = new Date(`${datePart}T${timePart}:00`);
+        if (isNaN(d.getTime())) return value;
+
+        return d.toLocaleString('en-US', {
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    }
+
+    function filterAndRender() {
+        const activeFilter = document.getElementById('filter-status').value;
+        const targetBody = document.getElementById('open-tasks-body');
+
+        let processedList = groupTasksByRange(allOpenTasksRaw);
+        let filteredTasks = processedList.filter(t => !activeFilter || t.status === activeFilter);
+
+        filteredTasks.sort((a, b) => {
+            const scheduledA = new Date(a.raw_sort_date || a.task_date);
+            const scheduledB = new Date(b.raw_sort_date || b.task_date);
+            const createdA = new Date(a.created_at);
+            const createdB = new Date(b.created_at);
+
+            if (currentSortMode === 'scheduled_oldest') {
+                return scheduledA - scheduledB;
+            }
+
+            if (currentSortMode === 'created_latest') {
+                return createdB - createdA;
+            }
+
+            return scheduledB - scheduledA;
+        });
+
+        targetBody.innerHTML = "";
+
+        if (filteredTasks.length === 0) {
+            document.getElementById('no-tasks-msg').classList.remove('d-none');
+            renderMobileTaskList('open-tasks-mobile-list', []);
+        } else {
+            document.getElementById('no-tasks-msg').classList.add('d-none');
+            renderMobileTaskList('open-tasks-mobile-list', filteredTasks);
+
+            filteredTasks.forEach(task => {
+                let statusCSS = "bg-primary";
+                if (task.status === "Waiting for P.O") statusCSS = "bg-warning text-dark";
+                else if (task.status === "Waiting for Parts") statusCSS = "bg-info";
+                else if (task.status === "For Continuation") statusCSS = "bg-dark";
+
+                targetBody.innerHTML += `
+                    <tr class="small">
+                        <td class="ps-4"><span class="fw-bold text-primary">${escapeHtml(task.display_range)}</span></td>
+                        <td><strong>${escapeHtml(task.engineer)}</strong></td>
+                        <td>${escapeHtml(task.client)}</td>
+                        <td class="text-muted">${escapeHtml(task.task)}</td>
+                        <td><span class="badge ${statusCSS} shadow-none py-2 px-3" style="font-size: 0.65rem;">${escapeHtml(task.status)}</span></td>
+                        <td class="text-end pe-4 text-muted font-monospace">${escapeHtml(formatCreatedOn(task.created_at))}</td>
+                    </tr>`;
+            });
+        }
+    }
+    
+    // Application Entry
+    loadDashboard();
+</script>
+
+<style>
+    /* ENTERPRISE DESIGN CSS */
+    .rounded-4 { border-radius: 1rem !important; }
+    .shadow-sm { box-shadow: 0 .125rem .25rem rgba(0,0,0,.04) !important; }
+    .table-hover tbody tr:hover { 
+        background-color: #f8f9ff; 
+        transition: 0.2s ease-in-out;
+    }
+    .font-monospace { font-family: 'Courier New', Courier, monospace; }
+    .transition-hover { transition: 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
+    .transition-hover:hover { 
+        transform: translateY(-5px); 
+        box-shadow: 0 8px 24px rgba(0,0,0,0.08) !important; 
+    }
+    .xsmall { font-size: 0.65rem; }
+    .italic { font-style: italic; }
+
+    /* RECENT ACTIVITY UX UPGRADE */
+    .live-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #22c55e;
+        display: inline-block;
+        box-shadow: 0 0 0 rgba(34, 197, 94, 0.7);
+        animation: livePulse 1.6s infinite;
+    }
+
+    @keyframes livePulse {
+        0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.65); }
+        70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+
+    .activity-row {
+        transition: background-color 0.3s ease;
+    }
+
+    .activity-new-row {
+        animation: newActivityFade 3.5s ease forwards;
+    }
+
+    @keyframes newActivityFade {
+        0% { background-color: #e7f1ff; }
+        100% { background-color: transparent; }
+    }
+
+    .activity-type {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 3px 7px;
+        font-size: 0.62rem;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .activity-schedule { background: #e7f1ff; color: #0d6efd; }
+    .activity-client { background: #e9f8ef; color: #198754; }
+    .activity-product { background: #fff6db; color: #946200; }
+    .activity-engineer { background: #f1f3f5; color: #343a40; }
+    .activity-export { background: #f3e8ff; color: #7e22ce; }
+    .activity-security { background: #ffe8e8; color: #dc3545; }
+    .activity-system { background: #eef2ff; color: #4f46e5; }
+
+    .activity-action {
+        max-width: 520px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .activity-time {
+        white-space: nowrap;
+    }
+
+
+    .open-tasks-scroll {
+        max-height: 520px;
+        overflow-y: auto;
+    }
+
+    .open-tasks-scroll thead th {
+        top: 0;
+        z-index: 5;
+        background: #f8f9fa;
+        box-shadow: 0 1px 0 rgba(0,0,0,0.06);
+    }
+
+    /* MOBILE DASHBOARD UPGRADE */
+    .dashboard-mobile-quick-actions,
+    .dashboard-mobile-card-list {
+        display: none;
+    }
+
+    .dashboard-mobile-action-card {
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        color: #334155;
+        border-radius: 1rem;
+        padding: 0.9rem 0.75rem;
+        text-decoration: none;
+        font-weight: 900;
+        font-size: 0.78rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.38rem;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+    }
+
+    .dashboard-mobile-action-card i { font-size: 1.05rem; }
+
+    .dashboard-mobile-action-primary {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    .dashboard-mobile-task-card,
+    .dashboard-mobile-activity-card,
+    .dashboard-mobile-empty-card {
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        border-radius: 1rem;
+        padding: 0.9rem;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+        margin-bottom: 0.75rem;
+    }
+
+    .dashboard-mobile-card-top,
+    .dashboard-mobile-activity-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.7rem;
+        margin-bottom: 0.65rem;
+    }
+
+    .dashboard-mobile-card-date {
+        color: #0d6efd;
+        font-size: 0.76rem;
+        font-weight: 900;
+        margin-bottom: 0.15rem;
+    }
+
+    .dashboard-mobile-card-title {
+        color: #0f172a;
+        font-size: 0.95rem;
+        font-weight: 900;
+        line-height: 1.2;
+    }
+
+    .dashboard-mobile-card-body {
+        display: grid;
+        gap: 0.45rem;
+    }
+
+    .dashboard-mobile-card-row {
+        display: grid;
+        grid-template-columns: 1.1rem 1fr;
+        gap: 0.5rem;
+        color: #64748b;
+        font-size: 0.78rem;
+        font-weight: 700;
+        line-height: 1.25;
+    }
+
+    .dashboard-mobile-card-row i {
+        color: #0d6efd;
+        margin-top: 0.1rem;
+    }
+
+    .dashboard-mobile-status {
+        white-space: nowrap;
+        border-radius: 999px;
+        padding: 0.35rem 0.55rem;
+        font-size: 0.62rem;
+        font-weight: 900;
+    }
+
+    .dashboard-status-progress { background: #e7f1ff; color: #0d6efd; }
+    .dashboard-status-po { background: #fff6db; color: #946200; }
+    .dashboard-status-parts { background: #e0f2fe; color: #0369a1; }
+    .dashboard-status-continuation { background: #f1f5f9; color: #334155; }
+
+    .dashboard-mobile-activity-user {
+        font-weight: 900;
+        color: #0f172a;
+        font-size: 0.82rem;
+    }
+
+    .dashboard-mobile-activity-action {
+        color: #475569;
+        font-size: 0.82rem;
+        font-weight: 700;
+        line-height: 1.35;
+        margin-bottom: 0.5rem;
+    }
+
+    .dashboard-mobile-activity-time {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 800;
+    }
+
+    .dashboard-mobile-activity-new { animation: newActivityFade 3.5s ease forwards; }
+
+    .dashboard-mobile-empty-card {
+        color: #64748b;
+        text-align: center;
+        font-size: 0.82rem;
+        font-weight: 800;
+    }
+
+    @media (max-width: 768px) {
+        .container.py-4 { padding: 0.9rem !important; }
+
+        .container.py-4 > .d-flex.justify-content-between {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 0.8rem;
+        }
+
+        .branding-group h2 {
+            font-size: 1.15rem;
+            line-height: 1.25;
+        }
+
+        .branding-group p { font-size: 0.78rem; }
+
+        .header-clock-container,
+        .header-clock-container .badge {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            white-space: normal;
+        }
+
+        .row.mb-4.g-3 > [class*="col-"] {
+            flex: 0 0 100%;
+            max-width: 100%;
+        }
+
+        .row.mb-4.g-3 .card {
+            text-align: left !important;
+            padding: 1rem !important;
+        }
+
+        .row.mb-4.g-3 .card h2 { font-size: 1.75rem; }
+
+        .dashboard-mobile-quick-actions {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.55rem;
+        }
+
+        .card-header {
+            align-items: flex-start !important;
+            gap: 0.75rem;
+        }
+
+        .card-header .d-flex,
+        .card-header .btn-group {
+            width: 100%;
+            flex-wrap: wrap;
+        }
+
+        .card-header .btn,
+        .card-header select {
+            min-height: 2.55rem;
+        }
+
+        .table-responsive table {
+            display: none;
+        }
+
+        .dashboard-mobile-card-list {
+            display: block;
+        }
+
+        #no-tasks-msg { padding: 1.5rem !important; }
+
+        .open-tasks-scroll {
+            max-height: none;
+            overflow: visible;
+        }
+    }
+
+</style>
+
+{% if session.get('force_pw_change') %}
+<div id="forcePwOverlay">
+    <div class="forcePwCard">
+        <div class="text-center mb-3">
+            <i class="fa-solid fa-lock text-danger" style="font-size: 2rem;"></i>
+            <h5 class="fw-bold mt-2">Security Required</h5>
+            <p class="text-muted small mb-0">
+                You must change your password before continuing.
+            </p>
+        </div>
+
+        <input type="password" id="newPw" class="form-control mb-3" placeholder="New Password">
+
+        <button class="btn btn-danger w-100 fw-bold" onclick="submitPw()">
+            Update Password
+        </button>
+
+        <p class="small text-muted mt-3 text-center">
+            Minimum 8 characters with upper, lower, number
+        </p>
+    </div>
+</div>
+
+<script>
+function submitPw(){
+    const pw = document.getElementById('newPw').value;
+    if(pw.length < 8){ alert('Minimum 8 characters required'); return; }
+
+    fetch('/force_change_password_api', {
+        method: 'POST',
+        headers: {
+            'Content-Type':'application/json',
+            'X-CSRFToken': getCSRFToken()
+        },
+        body: JSON.stringify({ new_password: pw })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if(data.status === 'success'){
+            location.reload();
+        } else {
+            alert(data.message || 'Password not valid');
+        }
+    });
+}
+</script>
+{% endif %}
+
+<style>
+#forcePwOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.75);
+    backdrop-filter: blur(4px);
+    z-index: 99999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.forcePwCard {
+    background: white;
+    padding: 30px;
+    border-radius: 16px;
+    width: 320px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+}
+</style>
+
+{% endblock %}

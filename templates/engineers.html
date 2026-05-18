@@ -1,0 +1,830 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<!-- 
+    ===========================================================================
+    MEDICAL SERVICE SYSTEM - TECHNICAL PERSONNEL DIRECTORY
+    ===========================================================================
+    Module: Version 5.2.1 (Manual Employee ID Overhaul)
+    File: engineers.html
+    
+    Update Log:
+    - Replaced auto-increment ID with manual Employee ID.
+    - Added unique Employee ID input to management modal.
+    - Integrated Manila, Cebu, and Davao branch office logic.
+    - Preserved SuperAdmin/Regional Admin modification privileges.
+    ===========================================================================
+-->
+
+<div class="container-fluid">
+    <div class="card shadow-sm border-0 p-4 bg-white">
+        
+        <!-- HEADER SECTION -->
+        <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+            <h2 class="h4 mb-0">
+                <i class="fa-solid fa-user-gear me-2 text-primary"></i>
+                Technical Personnel Directory
+            </h2>
+            <div class="btn-group">
+                <button class="btn btn-outline-success btn-sm" onclick="window.location.href='/export_engineers'">
+                    <i class="fa-solid fa-file-excel me-1"></i>Export
+                </button>
+                <button class="btn btn-outline-dark btn-sm" onclick="window.print()">
+                    <i class="fa-solid fa-print me-1"></i>Print
+                </button>
+                
+                <!-- v5.0 Privilege Guard: Engineers are View-Only -->
+                {% if current_user.role in ['superadmin', 'regional_admin'] %}
+                <button class="btn btn-primary btn-sm ms-2" onclick="openAddModal()">
+                    <i class="fa-solid fa-user-plus me-1"></i>Add Engineer
+                </button>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- PRINT HEADER -->
+        <div class="d-none d-print-block text-center mb-3">
+            <h2>TECHNICAL PERSONNEL DIRECTORY - MEDICAL SERVICE</h2>
+            <hr>
+        </div>
+
+        {% if current_user.role == 'engineer' and not current_user.engineer_profile %}
+        <div class="alert alert-warning no-print small" id="engineer-profile-link-warning">
+            <i class="fa-solid fa-triangle-exclamation me-1"></i>
+            Your login is not linked to an Engineer profile yet. Please ask admin to link your account before editing contact details.
+        </div>
+        {% endif %}
+
+        <!-- PERSONNEL TABLE -->
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th style="width: 15%;">Employee ID</th>
+                        <th style="width: 15%;">Branch</th>
+                        <th style="width: 30%;">Full Name</th>
+                        <th style="width: 10%;">Initials</th>
+                        <th style="width: 20%;">Contact Info</th>
+                        <th class="no-print text-end" style="width: 10%;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="eng-table-body">
+                    <!-- Rows populated via loadEngineers() -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- MOBILE ENGINEER DIRECTORY -->
+        <div class="engineer-mobile-toolbar no-print">
+            <div class="engineer-mobile-search-wrap">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="search" id="engineer-mobile-search" placeholder="Search engineer, ID, branch, email..." oninput="renderEngineerMobileCards()">
+            </div>
+            <select id="engineer-mobile-branch-filter" onchange="renderEngineerMobileCards()">
+                <option value="">All Branches</option>
+                <option value="Manila">Manila</option>
+                <option value="Cebu">Cebu</option>
+                <option value="Davao">Davao</option>
+            </select>
+        </div>
+        <div id="engineer-mobile-list" class="engineer-mobile-list no-print"></div>
+
+    </div>
+</div>
+
+<!-- ENGINEER MANAGEMENT MODAL (ADD/EDIT) -->
+<div class="modal fade no-print" id="engModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content shadow-lg border-0 rounded-4 overflow-hidden">
+            
+            <div class="modal-header bg-primary text-white border-0 py-3">
+                <h5 id="modal-title" class="mb-0 fw-bold">Engineer Details</h5>
+                <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            
+            <div class="modal-body p-4">
+                <!-- Hidden DB Primary Key -->
+                <input type="hidden" id="edit-eng-db-id">
+                
+                <div class="mb-3">
+                    <label class="small fw-bold text-muted text-uppercase d-block mb-1">Company Branch</label>
+                    <select id="e-branch" class="form-select shadow-none">
+                        <option value="">Select Location...</option>
+                        <option value="Manila">Manila</option>
+                        <option value="Cebu">Cebu</option>
+                        <option value="Davao">Davao</option>
+                    </select>
+                </div>
+
+                <!-- NEW v5.2.1: Manual Employee ID Input -->
+                <div class="mb-3">
+                    <label class="small fw-bold text-muted text-uppercase d-block mb-1">Employee ID (Unique)</label>
+                    <input type="text" id="e-emp-id" class="form-control shadow-none" placeholder="e.g. MS-2024-001">
+                </div>
+
+                <div class="mb-3">
+                    <label class="small fw-bold text-muted text-uppercase d-block mb-1">Full Name</label>
+                    <input type="text" id="e-name" class="form-control shadow-none" oninput="autoInitials()" placeholder="Enter first and last name">
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="small fw-bold text-muted text-uppercase d-block mb-1">Initials</label>
+                        <input type="text" id="e-initials" class="form-control shadow-none" maxlength="5" placeholder="JD">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="small fw-bold text-muted text-uppercase d-block mb-1">Mobile Number</label>
+                        <input type="text" id="e-phone" class="form-control shadow-none" placeholder="09XX XXX XXXX">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="small fw-bold text-muted text-uppercase d-block mb-1">Email Address</label>
+                    <input type="email" id="e-email" class="form-control shadow-none" placeholder="engineer@medicalservice.com">
+                </div>
+
+                <div class="alert alert-info border-0 small py-2 mb-0" id="engineer-modal-info">
+                    <i class="fa-solid fa-circle-info me-2"></i>
+                    <strong>Auto-Account:</strong> A secure temporary password will be generated and shown once after account creation.
+                </div>
+            </div>
+            
+            <div class="modal-footer border-0 p-4 pt-0">
+                <button class="btn btn-light btn-sm px-4 fw-bold" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-success btn-sm px-4 fw-bold shadow-sm" onclick="saveEngineer()">
+                    <i class="fa-solid fa-floppy-disk me-1"></i>Save Personnel Record
+                </button>
+            </div>
+            
+        </div>
+    </div>
+</div>
+
+<script>
+    /**
+     * GLOBAL APP STATE
+     */
+    let engModal;
+    let engineersData = [];
+    const authRole = "{{ current_user.role }}";
+    const isSuperAdmin = authRole === "superadmin";
+    const isRegionalAdmin = authRole === "regional_admin";
+    const isEngineer = authRole === "engineer";
+    const regionalAllowedBranches = ["Cebu", "Davao"];
+    const loggedInEngineerId = "{{ current_user.engineer_profile.id if current_user.engineer_profile else '' }}";
+    const loggedInEngineerEmail = "{{ current_user.engineer_profile.email|lower if current_user.engineer_profile and current_user.engineer_profile.email else '' }}";
+
+    document.addEventListener('DOMContentLoaded', () => { 
+        engModal = new bootstrap.Modal(document.getElementById('engModal')); 
+        loadEngineers(); 
+    });
+
+    function canEditEngineerContact(engineer){
+        if(isSuperAdmin || isRegionalAdmin) return true;
+
+        if(isEngineer && engineer){
+            const idMatches = loggedInEngineerId && String(engineer.id || '') === String(loggedInEngineerId);
+            const emailMatches = loggedInEngineerEmail && String(engineer.email || '').trim().toLowerCase() === String(loggedInEngineerEmail).trim().toLowerCase();
+            return Boolean(idMatches || emailMatches);
+        }
+
+        return false;
+    }
+
+    function setEngineerModalContactOnlyMode(contactOnly){
+        ['e-branch', 'e-emp-id', 'e-name', 'e-initials'].forEach(id => {
+            const field = document.getElementById(id);
+            if(field) field.disabled = contactOnly;
+        });
+
+        const infoBox = document.getElementById('engineer-modal-info');
+        if(infoBox){
+            if(contactOnly){
+                infoBox.className = 'alert alert-warning border-0 small py-2 mb-0';
+                infoBox.innerHTML = '<i class="fa-solid fa-user-lock me-2"></i><strong>Engineer Access:</strong> You may update only your own mobile number and email address.';
+            }else{
+                infoBox.className = 'alert alert-info border-0 small py-2 mb-0';
+                infoBox.innerHTML = '<i class="fa-solid fa-circle-info me-2"></i><strong>Auto-Account:</strong> A secure temporary password will be generated and shown once after account creation.';
+            }
+        }
+    }
+
+    function escapeHtml(value){
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+    }
+
+    function getEngineerActionButtons(e){
+        if (isSuperAdmin || isRegionalAdmin) {
+            return `
+                <div class="engineer-mobile-actions">
+                    <button class="engineer-mobile-btn engineer-mobile-edit" onclick="openEditModal(${e.id})">
+                        <i class="fa-solid fa-pen"></i>Edit
+                    </button>
+                    <button class="engineer-mobile-btn engineer-mobile-delete" onclick="deleteEngineer(${e.id})">
+                        <i class="fa-solid fa-trash"></i>Delete
+                    </button>
+                </div>`;
+        }
+
+        if (canEditEngineerContact(e)) {
+            return `
+                <div class="engineer-mobile-actions">
+                    <button class="engineer-mobile-btn engineer-mobile-edit" onclick="openEditModal(${e.id})">
+                        <i class="fa-solid fa-address-card"></i>Edit Contact
+                    </button>
+                </div>`;
+        }
+
+        return `<div class="engineer-mobile-readonly"><i class="fa-solid fa-lock me-1"></i>Read Only</div>`;
+    }
+
+    function getFilteredEngineersForMobile(){
+        const searchValue = String(document.getElementById('engineer-mobile-search')?.value || '').trim().toLowerCase();
+        const branchValue = String(document.getElementById('engineer-mobile-branch-filter')?.value || '').trim();
+
+        return (engineersData || []).filter(e => {
+            const branch = e.branch || 'Manila';
+            const searchable = [
+                e.employee_id,
+                e.name,
+                e.initials,
+                e.phone,
+                e.email,
+                branch
+            ].map(v => String(v || '').toLowerCase()).join(' ');
+
+            const matchesSearch = !searchValue || searchable.includes(searchValue);
+            const matchesBranch = !branchValue || branch === branchValue;
+            return matchesSearch && matchesBranch;
+        });
+    }
+
+    function renderEngineerMobileCards(){
+        const container = document.getElementById('engineer-mobile-list');
+        if(!container) return;
+
+        const filtered = getFilteredEngineersForMobile();
+
+        if(!filtered.length){
+            container.innerHTML = `
+                <div class="engineer-mobile-empty">
+                    <i class="fa-solid fa-user-slash"></i>
+                    <span>No engineers match your search.</span>
+                </div>`;
+            return;
+        }
+
+        container.innerHTML = filtered.map(e => {
+            const branch = e.branch || 'Manila';
+            const initials = e.initials || '--';
+            const phone = e.phone || '';
+            const email = e.email || '';
+            const telAction = phone
+                ? `<a class="engineer-mobile-icon-action" href="tel:${escapeHtml(phone)}"><i class="fa-solid fa-phone"></i></a>`
+                : `<button class="engineer-mobile-icon-action disabled" disabled><i class="fa-solid fa-phone"></i></button>`;
+            const mailAction = email
+                ? `<a class="engineer-mobile-icon-action" href="mailto:${escapeHtml(email)}"><i class="fa-solid fa-envelope"></i></a>`
+                : `<button class="engineer-mobile-icon-action disabled" disabled><i class="fa-solid fa-envelope"></i></button>`;
+
+            return `
+                <div class="engineer-mobile-card">
+                    <div class="engineer-mobile-card-top">
+                        <div class="engineer-mobile-avatar">${escapeHtml(initials)}</div>
+                        <div class="engineer-mobile-main">
+                            <div class="engineer-mobile-name">${escapeHtml(e.name || 'Unnamed Engineer')}</div>
+                            <div class="engineer-mobile-subline">
+                                <span class="engineer-mobile-id">${escapeHtml(e.employee_id || 'No ID')}</span>
+                                <span class="engineer-mobile-branch">${escapeHtml(branch)}</span>
+                            </div>
+                        </div>
+                        <div class="engineer-mobile-icon-actions">
+                            ${telAction}
+                            ${mailAction}
+                        </div>
+                    </div>
+
+                    <div class="engineer-mobile-contact">
+                        <div><i class="fa-solid fa-phone"></i><span>${escapeHtml(phone || 'No phone saved')}</span></div>
+                        <div><i class="fa-solid fa-envelope"></i><span>${escapeHtml(email || 'No email saved')}</span></div>
+                    </div>
+
+                    ${getEngineerActionButtons(e)}
+                </div>`;
+        }).join('');
+    }
+
+    /**
+     * MASTER DATA LOADER
+     * Updated v5.2.1: Now renders the manual Employee ID.
+     */
+    async function loadEngineers() {
+        const res = await fetch('/get_engineers');
+        const data = await res.json();
+        engineersData = data;
+
+        const body = document.getElementById('eng-table-body'); 
+        body.innerHTML = "";
+
+        data.forEach(e => {
+            let actions = "";
+
+            // Version 5.3 Security Guards
+            if (isSuperAdmin || isRegionalAdmin) {
+                actions = `
+                    <td class="text-end no-print">
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline-warning" onclick="openEditModal(${e.id})"><i class="fa-solid fa-pen"></i></button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteEngineer(${e.id})"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </td>`;
+            } else if (canEditEngineerContact(e)) {
+                actions = `
+                    <td class="text-end no-print">
+                        <button class="btn btn-sm btn-outline-primary" onclick="openEditModal(${e.id})">
+                            <i class="fa-solid fa-address-card me-1"></i>Edit Contact
+                        </button>
+                    </td>`;
+            } else {
+                actions = `<td class="text-end no-print"><span class="text-muted xsmall italic">Read Only</span></td>`;
+            }
+
+            body.innerHTML += `
+                <tr>
+                    <td class="font-monospace fw-bold text-dark">${escapeHtml(e.employee_id)}</td>
+                    <td><span class="badge border text-dark bg-light">${escapeHtml(e.branch || 'Manila')}</span></td>
+                    <td><strong>${escapeHtml(e.name)}</strong></td>
+                    <td><span class="text-muted small">${escapeHtml(e.initials)}</span></td>
+                    <td>
+                        <div class="xsmall text-muted"><i class="fa-solid fa-phone me-1"></i>${escapeHtml(e.phone || '-')}</div>
+                        <div class="xsmall text-muted"><i class="fa-solid fa-envelope me-1"></i>${escapeHtml(e.email || '-')}</div>
+                    </td>
+                    ${actions}
+                </tr>`;
+        });
+
+        renderEngineerMobileCards();
+    }
+    
+    /**
+     * UI HELPER: Generates initials automatically.
+     */
+    function autoInitials() { 
+        const name = document.getElementById('e-name').value; 
+        document.getElementById('e-initials').value = name.split(' ')
+            .filter(w => w.length > 0)
+            .map(w => w[0])
+            .join('')
+            .toUpperCase(); 
+    }
+
+    /**
+     * MODAL OPS: Reset fields for addition.
+     */
+    function openAddModal() { 
+        if(!(isSuperAdmin || isRegionalAdmin)) return;
+        setEngineerModalContactOnlyMode(false);
+        document.getElementById('modal-title').innerText = "Register New Personnel"; 
+        document.getElementById('edit-eng-db-id').value = ""; 
+        document.querySelectorAll('#engModal input').forEach(i => i.value = ""); 
+        document.getElementById('e-branch').value = "";
+        engModal.show(); 
+    }
+
+    
+    /**
+     * MODAL OPS: Populate fields for modification.
+     */
+    function openEditModal(dbId) { 
+        const eng = engineersData.find(x => x.id == dbId);
+        if(!canEditEngineerContact(eng)) return;
+
+        const contactOnly = isEngineer && !(isSuperAdmin || isRegionalAdmin);
+        setEngineerModalContactOnlyMode(contactOnly);
+
+        document.getElementById('modal-title').innerText = contactOnly ? "Update My Contact Information" : "Modify Personnel Record"; 
+        document.getElementById('edit-eng-db-id').value = dbId; 
+
+        document.getElementById('e-emp-id').value = eng.employee_id;
+        document.getElementById('e-name').value = eng.name; 
+        document.getElementById('e-initials').value = eng.initials; 
+        document.getElementById('e-phone').value = eng.phone || ""; 
+        document.getElementById('e-email').value = eng.email || ""; 
+        document.getElementById('e-branch').value = eng.branch || "Manila"; 
+
+        engModal.show(); 
+    }
+
+    /**
+     * DATABASE PERSISTENCE: Save Engineer and Trigger Auto-Provisioning.
+     */
+    async function saveEngineer() {
+        const dbId = document.getElementById('edit-eng-db-id').value;
+        const selectedEngineer = engineersData.find(x => String(x.id) === String(dbId));
+        const isSelfContactUpdate = isEngineer && !(isSuperAdmin || isRegionalAdmin) && canEditEngineerContact(selectedEngineer);
+
+        if(!(isSuperAdmin || isRegionalAdmin) && !isSelfContactUpdate) return;
+
+        const data = { 
+            employee_id: document.getElementById('e-emp-id').value.trim(),
+            name: document.getElementById('e-name').value.trim(), 
+            initials: document.getElementById('e-initials').value.trim(),
+            phone: document.getElementById('e-phone').value.trim(),
+            email: document.getElementById('e-email').value.trim(),
+            branch: document.getElementById('e-branch').value
+        };
+
+        if(!isSelfContactUpdate && (!data.employee_id || !data.name || !data.initials)) {
+            return alert("Required fields missing: Employee ID, Name, and Initials are mandatory.");
+        }
+
+        const url = dbId ? `/update_engineer/${dbId}` : '/add_engineer';
+        const method = dbId ? 'PUT' : 'POST';
+
+        const res = await fetch(url, { 
+            method: method, 
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            }, 
+            body: JSON.stringify(data) 
+        });
+
+        const respData = await res.json().catch(() => ({}));
+
+        if (res.ok) { 
+            engModal.hide(); 
+            loadEngineers(); 
+
+            if (respData.temp_password) {
+                document.getElementById('cred-username').value = respData.username;
+                document.getElementById('cred-password').value = respData.temp_password;
+                const credModal = new bootstrap.Modal(document.getElementById('credModal'));
+                credModal.show();
+            }
+
+        } else {
+            alert(respData.message || "Database Error: Ensure the Employee ID is unique.");
+        }
+    }
+
+    /**
+     * DATABASE PERSISTENCE: Wipe Record.
+     */
+    async function deleteEngineer(dbId) { 
+        if(!(isSuperAdmin || isRegionalAdmin)) return;
+        if(confirm("Permanently remove this engineer? This will also delete their system login account.")) { 
+            const res = await fetch(`/delete_engineer/${dbId}`, { 
+                method: 'DELETE',
+                headers: { 'X-CSRFToken': getCSRFToken() } // SECURITY TOKEN ADDED
+            }); 
+            if(res.ok) loadEngineers(); 
+            else alert("Action failed on server.");
+        } 
+    }
+</script>
+
+<style>
+    /* PERSONNEL MANAGEMENT STYLING */
+    .table-hover tbody tr:hover { background-color: rgba(13, 110, 253, 0.03); }
+    .font-monospace { font-family: 'Courier New', Courier, monospace; }
+    .xsmall { font-size: 0.65rem; }
+    .italic { font-style: italic; }
+    .rounded-4 { border-radius: 1rem !important; }
+
+    /* MOBILE ENGINEERS PAGE UPGRADE */
+    .engineer-mobile-toolbar,
+    .engineer-mobile-list {
+        display: none;
+    }
+
+    .engineer-mobile-toolbar {
+        gap: 0.65rem;
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .engineer-mobile-search-wrap {
+        position: relative;
+        flex: 1;
+    }
+
+    .engineer-mobile-search-wrap i {
+        position: absolute;
+        left: 0.85rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #64748b;
+        font-size: 0.85rem;
+    }
+
+    .engineer-mobile-search-wrap input,
+    #engineer-mobile-branch-filter {
+        width: 100%;
+        min-height: 2.65rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 0.9rem;
+        background: #fff;
+        color: #0f172a;
+        font-size: 0.84rem;
+        font-weight: 800;
+        box-shadow: none;
+    }
+
+    .engineer-mobile-search-wrap input {
+        padding: 0.75rem 0.85rem 0.75rem 2.35rem;
+    }
+
+    #engineer-mobile-branch-filter {
+        max-width: 9rem;
+        padding: 0.75rem 0.85rem;
+    }
+
+    .engineer-mobile-card {
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        border-radius: 1.05rem;
+        padding: 0.95rem;
+        margin-bottom: 0.75rem;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .engineer-mobile-card-top {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .engineer-mobile-avatar {
+        width: 2.65rem;
+        height: 2.65rem;
+        border-radius: 0.9rem;
+        background: #e7f1ff;
+        color: #0d6efd;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: 0.86rem;
+        flex-shrink: 0;
+    }
+
+    .engineer-mobile-main {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .engineer-mobile-name {
+        color: #0f172a;
+        font-size: 0.98rem;
+        font-weight: 900;
+        line-height: 1.2;
+    }
+
+    .engineer-mobile-subline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-top: 0.35rem;
+    }
+
+    .engineer-mobile-id,
+    .engineer-mobile-branch {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.28rem 0.5rem;
+        font-size: 0.64rem;
+        font-weight: 900;
+    }
+
+    .engineer-mobile-id {
+        background: #f1f5f9;
+        color: #334155;
+        font-family: 'Courier New', Courier, monospace;
+    }
+
+    .engineer-mobile-branch {
+        background: #ecfdf5;
+        color: #047857;
+    }
+
+    .engineer-mobile-icon-actions {
+        display: flex;
+        gap: 0.4rem;
+    }
+
+    .engineer-mobile-icon-action {
+        width: 2.2rem;
+        height: 2.2rem;
+        border-radius: 999px;
+        border: 1px solid #dbeafe;
+        background: #eff6ff;
+        color: #0d6efd;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        text-decoration: none;
+    }
+
+    .engineer-mobile-icon-action.disabled {
+        background: #f8fafc;
+        color: #94a3b8;
+        border-color: #e2e8f0;
+    }
+
+    .engineer-mobile-contact {
+        display: grid;
+        gap: 0.45rem;
+        margin-top: 0.85rem;
+        color: #64748b;
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .engineer-mobile-contact div {
+        display: grid;
+        grid-template-columns: 1.1rem 1fr;
+        gap: 0.5rem;
+        min-width: 0;
+    }
+
+    .engineer-mobile-contact span {
+        overflow-wrap: anywhere;
+    }
+
+    .engineer-mobile-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.55rem;
+        margin-top: 0.9rem;
+    }
+
+    .engineer-mobile-btn {
+        border: none;
+        min-height: 2.45rem;
+        border-radius: 0.85rem;
+        font-size: 0.78rem;
+        font-weight: 900;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+    }
+
+    .engineer-mobile-edit {
+        background: #0d6efd;
+        color: #fff;
+    }
+
+    .engineer-mobile-delete {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .engineer-mobile-readonly {
+        margin-top: 0.9rem;
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 900;
+        text-align: center;
+        background: #f8fafc;
+        border-radius: 0.85rem;
+        padding: 0.65rem;
+    }
+
+    .engineer-mobile-empty {
+        border: 1px dashed #cbd5e1;
+        background: #f8fafc;
+        color: #64748b;
+        border-radius: 1rem;
+        padding: 1.3rem;
+        text-align: center;
+        font-weight: 800;
+        display: grid;
+        gap: 0.4rem;
+    }
+
+    @media (max-width: 768px) {
+        .container-fluid {
+            padding-left: 0.85rem;
+            padding-right: 0.85rem;
+        }
+
+        .container-fluid > .card {
+            padding: 1rem !important;
+            border-radius: 1.1rem;
+        }
+
+        .container-fluid > .card > .d-flex.justify-content-between {
+            flex-direction: column;
+            align-items: flex-start !important;
+            gap: 0.85rem;
+        }
+
+        .container-fluid h2.h4 {
+            font-size: 1.12rem;
+            line-height: 1.25;
+        }
+
+        .container-fluid .btn-group {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.5rem;
+        }
+
+        .container-fluid .btn-group .btn {
+            border-radius: 0.8rem !important;
+            margin-left: 0 !important;
+            min-height: 2.45rem;
+            font-size: 0.75rem;
+            font-weight: 900;
+        }
+
+        .table-responsive {
+            display: none;
+        }
+
+        .engineer-mobile-toolbar {
+            display: flex;
+        }
+
+        .engineer-mobile-list {
+            display: block;
+        }
+
+        #engModal .modal-dialog {
+            margin: 0.75rem;
+        }
+
+        #engModal .modal-body,
+        #engModal .modal-footer {
+            padding: 1rem !important;
+        }
+
+        #engModal .modal-footer {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.55rem;
+        }
+
+        #engModal .modal-footer .btn {
+            width: 100%;
+            min-height: 2.6rem;
+        }
+    }
+</style>
+
+<!-- TEMP PASSWORD MODAL -->
+<div class="modal fade no-print" id="credModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">Account Created</h5>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2">
+<b>Username:</b> <input id="cred-username" class="form-control d-inline w-auto" readonly>
+<button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyText('cred-username')">Copy</button>
+</div>
+                <div>
+<b>Password:</b> <input id="cred-password" class="form-control d-inline w-auto" readonly>
+<button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyText('cred-password')">Copy</button>
+</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<div class="toast position-fixed bottom-0 end-0 m-3 text-bg-success border-0" id="copyToast">
+  <div class="d-flex">
+    <div class="toast-body">Copied to clipboard</div>
+    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+  </div>
+</div>
+
+<script>
+function copyText(id){
+    const input = document.getElementById(id);
+
+    if(!input) return;
+
+    input.select();
+    input.setSelectionRange(0, 99999);
+
+    try {
+        document.execCommand("copy");
+        new bootstrap.Toast(document.getElementById('copyToast')).show();
+    } catch (err) {
+        alert("Copy failed");
+    }
+}
+</script>
+
+{% endblock %}

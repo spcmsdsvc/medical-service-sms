@@ -1,0 +1,404 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<!-- 
+    ===========================================================================
+    MEDICAL SERVICE SYSTEM - SECURITY & IDENTITY MANAGEMENT
+    ===========================================================================
+    Module: Version 5.4.1 (IAM Overhaul & regional_admin badge logic)
+    File: settings.html
+-->
+
+<div class="container py-4">
+    
+    <div class="row g-4">
+        
+        <!-- COLUMN 1: INDIVIDUAL ACCOUNT SECURITY -->
+        <div class="col-md-5">
+            <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+                
+                <div class="card-header bg-primary text-white py-3 border-0">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fa-solid fa-user-shield me-2"></i>My Account Security
+                    </h5>
+                </div>
+                
+                <div class="card-body p-4 bg-white">
+                    
+                    <div class="text-center mb-4">
+                        <div class="bg-light d-inline-block p-3 rounded-circle mb-3 border">
+                            <i class="fa-solid fa-key fa-2x text-primary"></i>
+                        </div>
+                        <h5 class="fw-bold mb-1">Change My Password</h5>
+                        <p class="text-muted small">Logged in as: <span class="badge bg-secondary px-3">{{ current_user.username }}</span></p>
+                    </div>
+
+                    <hr class="opacity-25 mb-4">
+
+                    <div class="mb-3">
+                        <label class="small fw-bold text-muted text-uppercase mb-1 d-block">New Password</label>
+                        <div class="input-group shadow-sm">
+                            <span class="input-group-text bg-white border-end-0"><i class="fa-solid fa-lock text-muted"></i></span>
+                            <input type="password" id="new-pw" class="form-control border-start-0 py-2" placeholder="Min. 4 characters">
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="small fw-bold text-muted text-uppercase mb-1 d-block">Confirm Password</label>
+                        <div class="input-group shadow-sm">
+                            <span class="input-group-text bg-white border-end-0"><i class="fa-solid fa-check-double text-muted"></i></span>
+                            <input type="password" id="confirm-pw" class="form-control border-start-0 py-2" placeholder="Repeat new password">
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary w-100 fw-bold py-2 shadow-sm rounded-3" onclick="updatePassword()">
+                        <i class="fa-solid fa-floppy-disk me-2"></i>Update My Credentials
+                    </button>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- COLUMN 2: ADMINISTRATIVE PERSONNEL MANAGEMENT -->
+        {% if current_user.role in ['superadmin', 'regional_admin'] %}
+        <div class="col-md-7">
+            <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
+                
+                <div class="card-header bg-dark text-white py-3 border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fa-solid fa-users-gear me-2 text-info"></i>System User Management
+                    </h5>
+                    <span class="badge bg-info text-dark small fw-bold">Admin Console</span>
+                </div>
+                
+                <div class="card-body p-0 bg-white">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light text-muted small fw-bold text-uppercase">
+                                <tr>
+                                    <th class="ps-4">Username</th>
+                                    <th>Role</th>
+                                    <th class="text-end pe-4">Administrative Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for acc in users %}
+                                <tr>
+                                    <td class="ps-4">
+                                        <div class="fw-bold text-dark">{{ acc.username }}</div>
+                                        <div class="xsmall text-muted">ID: #00{{ acc.id }}</div>
+                                    </td>
+                                    <td>
+                                        {% set display_role = acc.display_role if acc.display_role is defined else acc.role|capitalize %}
+                                        {% if display_role == 'Superadmin' %}
+                                            <span class="badge bg-danger">Superadmin</span>
+                                        {% elif display_role == 'Manager' %}
+                                            <span class="badge bg-purple text-white">Manager</span>
+                                        {% elif display_role == 'Scheduler' %}
+                                            <span class="badge bg-warning text-dark">Scheduler</span>
+                                        {% elif display_role == 'Administrator' %}
+                                            <span class="badge bg-success">Administrator</span>
+                                        {% elif display_role == 'Engineer' %}
+                                            <span class="badge bg-primary">Engineer</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">{{ display_role }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end pe-4">
+                                        <div class="btn-group">
+                                            <button class="btn btn-sm btn-outline-dark fw-bold" 
+                                                    data-id="{{ acc.id }}" 
+                                                    data-user="{{ acc.username }}"
+                                                    {% if acc.can_reset_password is defined and not acc.can_reset_password %}disabled title="Restricted by hierarchy policy"{% endif %}
+                                                    onclick="promptAdminReset(this)">
+                                                <i class="fa-solid fa-user-lock me-1"></i>Reset Password
+                                            </button>
+
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="settings-mobile-user-list p-3">
+                        {% for acc in users %}
+                        {% set display_role = acc.display_role if acc.display_role is defined else acc.role|capitalize %}
+                        <div class="settings-mobile-user-card">
+                            <div class="settings-mobile-user-top">
+                                <div>
+                                    <div class="settings-mobile-username">{{ acc.username }}</div>
+                                    <div class="settings-mobile-userid">ID: #00{{ acc.id }}</div>
+                                </div>
+
+                                <div>
+                                    {% if display_role == 'Superadmin' %}
+                                        <span class="badge bg-danger">Superadmin</span>
+                                    {% elif display_role == 'Manager' %}
+                                        <span class="badge bg-purple text-white">Manager</span>
+                                    {% elif display_role == 'Scheduler' %}
+                                        <span class="badge bg-warning text-dark">Scheduler</span>
+                                    {% elif display_role == 'Administrator' %}
+                                        <span class="badge bg-success">Administrator</span>
+                                    {% elif display_role == 'Engineer' %}
+                                        <span class="badge bg-primary">Engineer</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">{{ display_role }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <button class="settings-mobile-reset-btn"
+                                    data-id="{{ acc.id }}"
+                                    data-user="{{ acc.username }}"
+                                    {% if acc.can_reset_password is defined and not acc.can_reset_password %}disabled title="Restricted by hierarchy policy"{% endif %}
+                                    onclick="promptAdminReset(this)">
+                                <i class="fa-solid fa-user-lock me-1"></i>Reset Password
+                            </button>
+
+                            {% if acc.can_reset_password is defined and not acc.can_reset_password %}
+                            <div class="settings-mobile-policy-note">
+                                <i class="fa-solid fa-shield-halved me-1"></i>Restricted by hierarchy policy
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="card-footer bg-light border-0 py-3 ps-4">
+                    <p class="mb-0 xsmall text-muted italic">
+                        <i class="fa-solid fa-circle-info me-1"></i>
+                        Note: Administrative password changes take effect immediately.
+                    </p>
+                </div>
+
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+
+    <!-- Page Footer -->
+    <div class="text-center mt-5">
+        <p class="text-muted small">&copy; 2026 MEDICAL SERVICE v5.0. Internal Security Module.</p>
+    </div>
+
+</div>
+
+<script>
+    /**
+     * SELF-SERVICE LOGIC:
+     */
+    async function updatePassword() {
+        const passwordField = document.getElementById('new-pw').value;
+        const confirmField = document.getElementById('confirm-pw').value;
+
+        if (!passwordField || passwordField.length < 4) { 
+            alert("Security Error: Password must be at least 4 characters."); 
+            return; 
+        }
+        
+        if (passwordField !== confirmField) { 
+            alert("Validation Error: Passwords do not match."); 
+            return; 
+        }
+
+        const res = await fetch('/change_password', { 
+            method: 'POST', 
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            }, 
+            body: JSON.stringify({ new_password: passwordField }) 
+        });
+
+        if (res.ok) { 
+            alert("Success: Credentials updated. Please sign in again."); 
+            location.href = "/logout"; 
+        } else {
+            const err = await res.json();
+            alert("Update Failed: " + err.message);
+        }
+    }
+
+    /**
+     * ADMINISTRATIVE OVERRIDE LOGIC:
+     */
+    async function promptAdminReset(buttonElement) {
+        const userId = buttonElement.getAttribute('data-id');
+        const username = buttonElement.getAttribute('data-user');
+        
+        const newPass = prompt(`Enter new password for account: ${username.toUpperCase()}`);
+        if (!newPass) return;
+        if (newPass.length < 4) return alert("Error: Minimum 4 characters required.");
+
+        const res = await fetch('/change_password', { 
+            method: 'POST', 
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            }, 
+            body: JSON.stringify({ 
+                new_password: newPass,
+                target_user_id: userId 
+            }) 
+        });
+
+        if (res.ok) {
+            alert(`Password for ${username} has been successfully updated.`);
+        } else {
+            const err = await res.json().catch(() => ({}));
+            alert("Error: " + (err.message || "Administrative override failed."));
+        }
+    }
+
+    /**
+     * ROLE ESCALATION LOGIC:
+     */
+    async function promoteToAdmin(buttonElement) {
+        const userId = buttonElement.getAttribute('data-id');
+        const username = buttonElement.getAttribute('data-user');
+
+        if (!confirm(`Grant Administrative privileges to ${username}?`)) return;
+
+        const res = await fetch(`/make_user_admin/${userId}`, { 
+            method: 'POST',
+            headers: { 'X-CSRFToken': getCSRFToken() }
+        });
+        if (res.ok) {
+            alert(`${username} is now a System Administrator.`);
+            location.reload();
+        } else {
+            alert("Error: Promotion failed.");
+        }
+    }
+</script>
+
+<style>
+    .rounded-4 { border-radius: 1rem !important; }
+    .xsmall { font-size: 0.65rem; }
+    .italic { font-style: italic; }
+    .table-hover tbody tr:hover { background-color: rgba(13, 110, 253, 0.03); }
+    .input-group-text { border-color: #dee2e6; }
+    .form-control:focus { border-color: #0d6efd; box-shadow: none; }
+    .bg-purple { background-color: #6f42c1 !important; }
+
+    /* MOBILE SETTINGS PAGE UPGRADE */
+    .settings-mobile-user-list {
+        display: none;
+    }
+
+    .settings-mobile-user-card {
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        border-radius: 1rem;
+        padding: 0.95rem;
+        margin-bottom: 0.75rem;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+    }
+
+    .settings-mobile-user-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.75rem;
+        margin-bottom: 0.85rem;
+    }
+
+    .settings-mobile-username {
+        color: #0f172a;
+        font-weight: 900;
+        font-size: 0.96rem;
+        line-height: 1.2;
+    }
+
+    .settings-mobile-userid {
+        color: #64748b;
+        font-family: monospace;
+        font-size: 0.72rem;
+        font-weight: 800;
+        margin-top: 0.2rem;
+    }
+
+    .settings-mobile-reset-btn {
+        width: 100%;
+        min-height: 2.55rem;
+        border: 1px solid #0f172a;
+        background: #0f172a;
+        color: #fff;
+        border-radius: 0.85rem;
+        font-size: 0.8rem;
+        font-weight: 900;
+    }
+
+    .settings-mobile-reset-btn:disabled {
+        background: #f1f5f9;
+        color: #94a3b8;
+        border-color: #e2e8f0;
+    }
+
+    .settings-mobile-policy-note {
+        margin-top: 0.6rem;
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 800;
+        text-align: center;
+    }
+
+    @media (max-width: 768px) {
+        .container.py-4 {
+            padding: 0.85rem !important;
+        }
+
+        .row.g-4 > [class*="col-"] {
+            flex: 0 0 100%;
+            max-width: 100%;
+        }
+
+        .card {
+            border-radius: 1.1rem !important;
+        }
+
+        .card-header {
+            padding: 0.95rem !important;
+        }
+
+        .card-header h5 {
+            font-size: 1rem;
+            line-height: 1.25;
+        }
+
+        .card-body {
+            padding: 1rem !important;
+        }
+
+        .input-group {
+            box-shadow: none !important;
+        }
+
+        .input-group-text,
+        .form-control {
+            min-height: 2.65rem;
+        }
+
+        .btn {
+            min-height: 2.65rem;
+            border-radius: 0.85rem !important;
+        }
+
+        .table-responsive {
+            display: none;
+        }
+
+        .settings-mobile-user-list {
+            display: block;
+        }
+
+        .card-footer {
+            padding: 0.95rem !important;
+        }
+    }
+</style>
+{% endblock %}
