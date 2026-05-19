@@ -6,6 +6,11 @@
     <!-- NEW SECURITY META TAG -->
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>MEDICAL SERVICE - Management System</title>
+    <!-- Performance: warm CDN connections before Bootstrap/FontAwesome load. -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+    <link rel="dns-prefetch" href="//cdn.jsdelivr.net">
+    <link rel="dns-prefetch" href="//cdnjs.cloudflare.com">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -660,9 +665,42 @@
 
 
 <script>
-/* PWA STEP 5H — SERVICE WORKER REGISTRATION + OFFLINE TSR PRECACHE */
+/* PWA STEP 5H — SERVICE WORKER REGISTRATION + THROTTLED OFFLINE PRECACHE */
 (function(){
     if(!('serviceWorker' in navigator)) return;
+
+    const PWA_PRECACHE_KEY = 'medicalServicePwaFieldRoutesCachedAt';
+    const PWA_PRECACHE_TTL_MS = 24 * 60 * 60 * 1000; // once per browser/day
+
+    function shouldPrecacheFieldRoutes(){
+        try{
+            const lastRun = parseInt(sessionStorage.getItem(PWA_PRECACHE_KEY) || localStorage.getItem(PWA_PRECACHE_KEY) || '0', 10);
+            return !lastRun || (Date.now() - lastRun) > PWA_PRECACHE_TTL_MS;
+        }catch(err){
+            return true;
+        }
+    }
+
+    function markFieldRoutesPrecached(){
+        try{
+            const now = String(Date.now());
+            sessionStorage.setItem(PWA_PRECACHE_KEY, now);
+            localStorage.setItem(PWA_PRECACHE_KEY, now);
+        }catch(err){
+            // Storage may be blocked; safe to ignore.
+        }
+    }
+
+    function requestFieldRoutePrecache(registration){
+        if(!shouldPrecacheFieldRoutes()) return;
+
+        const targetWorker = navigator.serviceWorker.controller || (registration && registration.active);
+        if(!targetWorker) return;
+
+        targetWorker.postMessage({ type: 'CACHE_FIELD_ROUTES' });
+        markFieldRoutesPrecached();
+        console.info('[PWA] Field route precache requested once for this session/day.');
+    }
 
     window.addEventListener('load', async function(){
         try{
@@ -671,20 +709,12 @@
             });
 
             console.info('[PWA] Service worker registered', registration.scope);
-
             window.__PWA_READY__ = true;
 
-            if (navigator.serviceWorker.controller) {
-                navigator.serviceWorker.controller.postMessage({
-                    type: 'CACHE_FIELD_ROUTES'
-                });
-            } 
-
-            if (registration.active) {
-                registration.active.postMessage({
-                 type: 'CACHE_FIELD_ROUTES'
-                });
-            }
+            // Optimization Phase 4A:
+            // Do not ask the service worker to recache Timeline/Offline TSR/Login on every page load.
+            // Repeated recaching can make unrelated pages feel slow even when backend routes are fast.
+            requestFieldRoutePrecache(registration);
 
         }catch(err){
             console.warn('[PWA] Service worker registration failed', err);
