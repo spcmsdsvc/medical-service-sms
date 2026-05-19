@@ -312,6 +312,7 @@ PERFORMANCE_LOG_PATHS = {
     '/clients_page',
     '/products_page',
     '/settings',
+    '/admin/storage-health',
     '/get_timeline_data',
     '/get_shift_details',
     '/get_clients',
@@ -3615,6 +3616,215 @@ def add_path_to_backup_zip(zip_handle, source_path, archive_prefix):
             file_count += 1
 
     return file_count
+
+
+
+def bytes_to_human_size(byte_count):
+    """Return a readable file size string for storage health reporting."""
+    try:
+        size_value = float(byte_count or 0)
+    except (TypeError, ValueError):
+        size_value = 0.0
+
+    units = ['B', 'KB', 'MB', 'GB', 'TB']
+    unit_index = 0
+    while size_value >= 1024 and unit_index < len(units) - 1:
+        size_value /= 1024.0
+        unit_index += 1
+
+    if unit_index == 0:
+        return f"{int(size_value)} {units[unit_index]}"
+    return f"{size_value:.2f} {units[unit_index]}"
+
+
+def get_file_size_safe(path_value):
+    """Return file size in bytes, or 0 if the file cannot be read."""
+    try:
+        if path_value and os.path.isfile(path_value):
+            return os.path.getsize(path_value)
+    except OSError:
+        pass
+    return 0
+
+
+def get_directory_storage_snapshot(root_path, label='Directory', largest_limit=10):
+    """Measure a directory recursively for the Storage Health API."""
+    root_path = os.path.abspath(root_path) if root_path else ''
+    snapshot = {
+        'label': label,
+        'path': root_path,
+        'exists': bool(root_path and os.path.exists(root_path)),
+        'size_bytes': 0,
+        'size_human': '0 B',
+        'file_count': 0,
+        'directory_count': 0,
+        'largest_files': []
+    }
+
+    if not snapshot['exists']:
+        return snapshot
+
+    largest_files = []
+
+    if os.path.isfile(root_path):
+        file_size = get_file_size_safe(root_path)
+        snapshot['size_bytes'] = file_size
+        snapshot['file_count'] = 1
+        snapshot['largest_files'] = [{
+            'name': os.path.basename(root_path),
+            'relative_path': os.path.basename(root_path),
+            'path': root_path,
+            'size_bytes': file_size,
+            'size_human': bytes_to_human_size(file_size),
+            'modified_at': datetime.fromtimestamp(os.path.getmtime(root_path)).strftime('%Y-%m-%d %H:%M')
+        }]
+        snapshot['size_human'] = bytes_to_human_size(file_size)
+        return snapshot
+
+    for current_root, dirs, files in os.walk(root_path):
+        snapshot['directory_count'] += len(dirs)
+        for filename in files:
+            file_path = os.path.join(current_root, filename)
+            try:
+                file_size = os.path.getsize(file_path)
+                modified_at = datetime.fromtimestamp(os.path.getmtime(file_path)).strftime('%Y-%m-%d %H:%M')
+            except OSError:
+                continue
+
+            snapshot['size_bytes'] += file_size
+            snapshot['file_count'] += 1
+            relative_path = os.path.relpath(file_path, root_path).replace('\\', '/')
+            largest_files.append({
+                'name': filename,
+                'relative_path': relative_path,
+                'path': file_path,
+                'size_bytes': file_size,
+                'size_human': bytes_to_human_size(file_size),
+                'modified_at': modified_at
+            })
+
+    largest_files.sort(key=lambda item: item.get('size_bytes', 0), reverse=True)
+    snapshot['largest_files'] = largest_files[:largest_limit]
+    snapshot['size_human'] = bytes_to_human_size(snapshot['size_bytes'])
+    return snapshot
+
+
+def get_storage_limit_bytes():
+    """Return configured storage limit from STORAGE_LIMIT_GB Railway variable."""
+    raw_limit = clean_str(os.environ.get('STORAGE_LIMIT_GB'))
+    if not raw_limit:
+        raw_limit = '5'
+
+    try:
+        limit_gb = float(raw_limit)
+    except (TypeError, ValueError):
+        limit_gb = 5.0
+
+    limit_gb = max(limit_gb, 0)
+    return int(limit_gb * 1024 * 1024 * 1024), limit_gb
+
+
+def get_storage_health_report():
+    """Build storage usage details for Railway/local operations."""
+    db_path = get_active_sqlite_database_path()
+    database_snapshot = get_directory_storage_snapshot(db_path, label='SQLite Database', largest_limit=1)
+
+    upload_roots = get_backup_upload_roots()
+    upload_snapshots = []
+    seen_roots = set()
+    for upload_root in upload_roots:
+        normalized = os.path.abspath(upload_root).replace('\\', '/').rstrip('/').lower()
+        if normalized in seen_roots:
+            continue
+        seen_roots.add(normalized)
+        upload_snapshots.append(get_directory_storage_snapshot(upload_root, label='Uploads', largest_limit=10))
+
+    active_upload_snapshot = get_directory_storage_snapshot(app.config.get('UPLOAD_FOLDER'), label='Active Reports Folder', largest_limit=10)
+
+    unique_storage_paths = {}
+    if db_path and os.path.isfile(db_path):
+        unique_storage_paths[os.path.abspath(db_path)] = get_file_size_safe(db_path)
+
+    for root_snapshot in upload_snapshots:
+        root_path = root_snapshot.get('path')
+        if not root_path or not os.path.exists(root_path):
+            continue
+        for current_root, _, files in os.walk(root_path):
+            for filename in files:
+                file_path = os.path.abspath(os.path.join(current_root, filename))
+                if file_path in unique_storage_paths:
+                    continue
+                try:
+                    unique_storage_paths[file_path] = os.path.getsize(file_path)
+                except OSError:
+                    continue
+
+    total_used_bytes = sum(unique_storage_paths.values())
+    limit_bytes, limit_gb = get_storage_limit_bytes()
+    remaining_bytes = max(limit_bytes - total_used_bytes, 0) if limit_bytes else None
+    usage_percent = round((total_used_bytes / limit_bytes) * 100, 2) if limit_bytes else 0
+
+    if usage_percent >= 90:
+        status = 'critical'
+        status_label = 'Critical'
+    elif usage_percent >= 75:
+        status = 'warning'
+        status_label = 'Warning'
+    else:
+        status = 'healthy'
+        status_label = 'Healthy'
+
+    all_largest_files = []
+    for root_snapshot in upload_snapshots:
+        all_largest_files.extend(root_snapshot.get('largest_files') or [])
+    all_largest_files.sort(key=lambda item: item.get('size_bytes', 0), reverse=True)
+
+    return {
+        'status': 'success',
+        'storage_status': status,
+        'storage_status_label': status_label,
+        'generated_at_manila': get_manila_time().isoformat(),
+        'configured_limit_gb': limit_gb,
+        'limit_bytes': limit_bytes,
+        'limit_human': bytes_to_human_size(limit_bytes),
+        'used_bytes': total_used_bytes,
+        'used_human': bytes_to_human_size(total_used_bytes),
+        'remaining_bytes': remaining_bytes,
+        'remaining_human': bytes_to_human_size(remaining_bytes) if remaining_bytes is not None else '',
+        'usage_percent': usage_percent,
+        'database': database_snapshot,
+        'active_upload_folder': active_upload_snapshot,
+        'upload_roots': upload_snapshots,
+        'total_file_count': len(unique_storage_paths),
+        'largest_files': all_largest_files[:15],
+        'environment': {
+            'railway': bool(os.environ.get('RAILWAY_ENVIRONMENT')),
+            'database_path': db_path,
+            'upload_folder': app.config.get('UPLOAD_FOLDER')
+        },
+        'recommendation': (
+            'Storage is healthy.' if usage_percent < 75 else
+            'Storage is above 75%. Review large TSR/report uploads and prepare upgrade or cleanup.' if usage_percent < 90 else
+            'Storage is above 90%. Download backup immediately and upgrade/clean up before uploads fail.'
+        )
+    }
+
+
+@app.route('/admin/storage-health')
+@login_required
+def admin_storage_health():
+    """Superadmin-only storage health API for Railway Hobby/Pro monitoring."""
+    if not is_superadmin_user():
+        return denied('Only superadmins can view storage health.')
+
+    try:
+        return jsonify(get_storage_health_report())
+    except Exception as storage_error:
+        print(f"[STORAGE] Storage health failed: {storage_error}", flush=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'Storage health could not be calculated. Please check server logs.'
+        }), 500
 
 
 @app.route('/admin/download-backup')
