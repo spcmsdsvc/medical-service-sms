@@ -228,11 +228,22 @@ function archivePreviewUrl(rawUrl){
   url.searchParams.set('scope', currentArchiveScope());
   return url.pathname + url.search;
 }
-function openTSRPreviewFromButton(button){
+function openTSRPreviewFromButton(button, event){
+  if(event){
+    event.preventDefault();
+    event.stopPropagation();
+  }
   const previewUrl = button?.dataset?.previewUrl || '';
   const downloadUrl = button?.dataset?.downloadUrl || '';
   const filename = button?.dataset?.filename || 'TSR file';
-  openTSRPreview(previewUrl, downloadUrl, filename);
+
+  if(!previewUrl){
+    showStatus('warning', 'Preview link is not available for this TSR file.', 'fa-triangle-exclamation');
+    return false;
+  }
+
+  openTSRPreview(previewUrl, downloadUrl || previewUrl, filename);
+  return false;
 }
 function openTSRPreview(previewUrl, downloadUrl, filename){
   const modalEl = document.getElementById('tsrPreviewModal');
@@ -337,15 +348,40 @@ async function loadTSRArchive(){
     return;
   }
   if(body) body.innerHTML = data.rows.map(row => {
-    const files = (row.files || []).map(file => `<div class="archive-file-entry"><div class="archive-file-name">${escapeHtml(file.name)}</div><div class="archive-file-actions"><button type="button" class="archive-preview-btn" data-preview-url="${escapeHtml(file.preview_url || file.download_url)}" data-download-url="${escapeHtml(file.download_url)}" data-filename="${escapeHtml(file.name)}" onclick="openTSRPreviewFromButton(this)"><i class="fa-solid fa-eye"></i>Preview</button><a class="archive-file-link archive-download-btn" href="${escapeHtml(archiveDownloadUrl(file.download_url))}"><i class="fa-solid fa-file-arrow-down"></i>Download</a></div></div>`).join('');
+    const files = (row.files || []).map(file => `<div class="archive-file-entry"><div class="archive-file-name">${escapeHtml(file.name)}</div><div class="archive-file-actions"><button type="button" class="archive-preview-btn" data-preview-url="${escapeHtml(file.preview_url || file.download_url)}" data-download-url="${escapeHtml(file.download_url)}" data-filename="${escapeHtml(file.name)}" onclick="return openTSRPreviewFromButton(this, event)"><i class="fa-solid fa-eye"></i>Preview</button><a class="archive-file-link archive-download-btn" href="${escapeHtml(archiveDownloadUrl(file.download_url))}"><i class="fa-solid fa-file-arrow-down"></i>Download</a></div></div>`).join('');
     return `<tr><td>${escapeHtml(row.date)}</td><td class="fw-bold">${escapeHtml(row.client)}</td><td>${escapeHtml(row.product)}<div class="small text-muted">${escapeHtml(row.serial)}</div></td><td>${escapeHtml(row.task)}</td><td>${escapeHtml(row.engineers)}</td><td><div class="archive-file-list">${files}</div></td></tr>`;
   }).join('');
   if(mobile) mobile.innerHTML = data.rows.map(row => {
-    const files = (row.files || []).map(file => `<div class="archive-file-entry"><div class="archive-file-name">${escapeHtml(file.name)}</div><div class="archive-file-actions"><button type="button" class="archive-preview-btn" data-preview-url="${escapeHtml(file.preview_url || file.download_url)}" data-download-url="${escapeHtml(file.download_url)}" data-filename="${escapeHtml(file.name)}" onclick="openTSRPreviewFromButton(this)"><i class="fa-solid fa-eye"></i>Preview</button><a class="archive-file-link archive-download-btn" href="${escapeHtml(archiveDownloadUrl(file.download_url))}"><i class="fa-solid fa-file-arrow-down"></i>Download</a></div></div>`).join('');
+    const files = (row.files || []).map(file => `<div class="archive-file-entry"><div class="archive-file-name">${escapeHtml(file.name)}</div><div class="archive-file-actions"><button type="button" class="archive-preview-btn" data-preview-url="${escapeHtml(file.preview_url || file.download_url)}" data-download-url="${escapeHtml(file.download_url)}" data-filename="${escapeHtml(file.name)}" onclick="return openTSRPreviewFromButton(this, event)"><i class="fa-solid fa-eye"></i>Preview</button><a class="archive-file-link archive-download-btn" href="${escapeHtml(archiveDownloadUrl(file.download_url))}"><i class="fa-solid fa-file-arrow-down"></i>Download</a></div></div>`).join('');
     return `<div class="reports-mobile-card"><div class="reports-mobile-card-title">${escapeHtml(row.client)}</div><div class="reports-mobile-card-meta">${escapeHtml(row.date)} · ${escapeHtml(row.task)}</div><div class="reports-mobile-card-meta">${escapeHtml(row.product)} ${row.serial ? '('+escapeHtml(row.serial)+')' : ''}</div><div class="reports-mobile-card-meta">${escapeHtml(row.engineers)}</div><div class="reports-mobile-card-files">${files}</div></div>`;
   }).join('');
 }
 function exportReportsSummary(){ setDefaultReportDates(); window.location.href = `/export_reports_summary?${reportParams().toString()}`; }
+
+// Defensive archive action handling:
+// Some browsers/PWA contexts can treat dynamically rendered archive controls as
+// normal navigation/submission and reload Reports before the TSR route is called.
+// Capture the click, stop the reload, then open the exact generated route.
+document.addEventListener('click', event => {
+  const previewButton = event.target.closest('.archive-preview-btn');
+  if(previewButton){
+    openTSRPreviewFromButton(previewButton, event);
+    return;
+  }
+
+  const downloadLink = event.target.closest('.archive-download-btn');
+  if(downloadLink){
+    event.preventDefault();
+    event.stopPropagation();
+    const href = downloadLink.getAttribute('href');
+    if(!href || href === '#'){
+      showStatus('warning', 'Download link is not available for this TSR file.', 'fa-triangle-exclamation');
+      return;
+    }
+    window.location.assign(href);
+  }
+}, true);
+
 document.addEventListener('hidden.bs.modal', event => {
   if(event.target && event.target.id === 'tsrPreviewModal'){
     const frame = document.getElementById('tsr-preview-frame');
