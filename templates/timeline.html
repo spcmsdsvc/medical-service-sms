@@ -5626,8 +5626,6 @@ async function loadGrid() {
         }
         
         
-        timelineTypedTitleCache.clear();
-
         syncMobileTimelineData(data);
         updateTimelineRangeLabels(data);
 
@@ -5737,10 +5735,10 @@ async function loadGrid() {
                         const canManageThisSchedule = canManageExistingScheduleForRow(eng, s);
                         let isLeave = HR_CATEGORIES.includes(s.task);
                         let isWork = s.client_id ? true : false;
-                        let isTraining = !isLeave && !isWork && !parseTypedScheduleTitleCached(s.task).category;
+                        let isTraining = !isLeave && !isWork && !parseTypedScheduleTitle(s.task).category;
                         
                         // Technical Workflow Color Assignments
-                        const typedSchedule = parseTypedScheduleTitleCached(s.task);
+                        const typedSchedule = parseTypedScheduleTitle(s.task);
                         let isOffice = typedSchedule.category === "Office";
                         let isTravel = typedSchedule.category === "Travel";
                         let isPullout = typedSchedule.category === "Pullout";
@@ -5831,7 +5829,7 @@ async function loadGrid() {
                                 ${isHoliday ? '<i class="fa-solid fa-calendar-day schedule-type-icon text-holiday-purple"></i>' : ''}
                                 ${isTraining ? '<i class="fa-solid fa-graduation-cap schedule-type-icon text-secondary"></i>' : ''}
                                 ${isLeave ? '<i class="fa-solid fa-user-clock schedule-type-icon text-danger"></i>' : ''}
-                                ${formatScheduleTitleForCardCached(s.task)}
+                                ${formatScheduleTitleForCard(s.task)}
                             </div>
 
                             ${isWork ? renderSiteVisitFlagBadges(s.task) : ''}
@@ -5845,7 +5843,7 @@ async function loadGrid() {
 
                             ${canManageThisSchedule ? `
                             <div class="schedule-overlay">
-                                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); openEditModal(${getTimelineCardPayloadHtml(s)}, ${eng.id}, '${day.iso}')">Edit</button>
+                                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); openEditModal(${JSON.stringify(s).replace(/"/g, '&quot;')}, ${eng.id}, '${day.iso}')">Edit</button>
                                 ${isWork && s.status === "Completed" && fileCount > 0 ? `<button class="btn btn-success btn-sm tsr-send-btn" title="Send TSR to Client" onclick="event.stopPropagation(); openTSRClientEmailModal(${s.id})"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
                                 <button class="btn btn-danger btn-sm delete-btn" data-eid="${eng.id}" data-ename='${JSON.stringify(eng.name)}' data-shiftid="${s.id}" data-shiftdate="${day.iso}">Delete</button>
                             </div>
@@ -5898,7 +5896,6 @@ async function loadGrid() {
         }
 
         timelineCache = {};
-        clearTimelineCardPayloadCache();
         invalidateMobileRenderCache();
 
         const mobileFastMode = shouldUseRoleAwareMobileTimeline();
@@ -6392,58 +6389,7 @@ if(shift.engineers){
     }
 
 
-    
-const timelineCardPayloadCache = new Map();
-
-function clearTimelineCardPayloadCache(){
-    timelineCardPayloadCache.clear();
-}
-
-function getTimelineCardPayloadHtml(shift){
-    const shiftId = shift?.id || '';
-    const updatedKey = shift?.updated_at || shift?.updatedAt || '';
-    const cacheKey = `${shiftId}|${updatedKey}|${shift?.status || ''}|${shift?.task || ''}|${shift?.time_start || ''}|${shift?.time_end || ''}`;
-
-    if(timelineCardPayloadCache.has(cacheKey)){
-        return timelineCardPayloadCache.get(cacheKey);
-    }
-
-    const payload = JSON.stringify(shift || {}).replace(/"/g, '&quot;');
-    timelineCardPayloadCache.set(cacheKey, payload);
-
-    // Keep memory bounded for long calendar sessions.
-    if(timelineCardPayloadCache.size > 750){
-        const firstKey = timelineCardPayloadCache.keys().next().value;
-        timelineCardPayloadCache.delete(firstKey);
-    }
-
-    return payload;
-}
-
-const timelineTypedTitleCache = new Map();
-
-function parseTypedScheduleTitleCached(title){
-    const key = String(title || '');
-    if(timelineTypedTitleCache.has(key)){
-        return timelineTypedTitleCache.get(key);
-    }
-
-    const parsed = parseTypedScheduleTitle(key);
-    timelineTypedTitleCache.set(key, parsed);
-
-    if(timelineTypedTitleCache.size > 500){
-        const firstKey = timelineTypedTitleCache.keys().next().value;
-        timelineTypedTitleCache.delete(firstKey);
-    }
-
-    return parsed;
-}
-
-function formatScheduleTitleForCardCached(title){
-    return parseTypedScheduleTitleCached(title).displayTitle;
-}
-
-function escapeHtml(value){
+    function escapeHtml(value){
         return String(value ?? '')
             .replaceAll('&', '&amp;')
             .replaceAll('<', '&lt;')
