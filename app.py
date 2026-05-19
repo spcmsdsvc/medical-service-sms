@@ -184,18 +184,33 @@ if os.environ.get('RAILWAY_ENVIRONMENT'):
     # One-time safe restore:
     # If Railway volume DB is missing/empty/fresh-bootstrap-sized, copy the bundled
     # legacy scheduler.db from the deployed app folder into the persistent volume.
-    # This restores existing users, engineers, clients, products, schedules, and reports metadata.
+    # If FORCE_RESTORE_SCHEDULER_DB=true is set temporarily in Railway Variables,
+    # overwrite /data/scheduler.db once and keep a timestamped backup first.
     try:
+        force_restore_scheduler_db = (
+            os.environ.get('FORCE_RESTORE_SCHEDULER_DB', '').strip().lower()
+            in {'1', 'true', 'yes', 'on'}
+        )
+
         should_restore_legacy_db = (
             os.path.exists(legacy_db_path)
             and (
-                not os.path.exists(railway_db_path)
+                force_restore_scheduler_db
+                or not os.path.exists(railway_db_path)
                 or os.path.getsize(railway_db_path) < 10240
             )
         )
 
         if should_restore_legacy_db:
             import shutil
+            if os.path.exists(railway_db_path):
+                backup_existing_db_path = (
+                    railway_db_path + '.before_restore_' +
+                    datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+                )
+                shutil.copy2(railway_db_path, backup_existing_db_path)
+                print(f'[DATABASE] Existing Railway DB backed up to {backup_existing_db_path}.', flush=True)
+
             shutil.copy2(legacy_db_path, railway_db_path)
             print('[DATABASE] Restored bundled scheduler.db into Railway volume /data/scheduler.db.', flush=True)
     except Exception as db_restore_error:
