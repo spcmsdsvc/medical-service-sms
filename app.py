@@ -8759,10 +8759,16 @@ def import_products():
 def ensure_runtime_sqlite_migrations_before_request():
     """Run lightweight SQLite compatibility migrations before normal routes.
 
-    Needed when app is started by flask/ngrok/import path instead of python app.py.
+    Needed when app is started by gunicorn/Railway instead of python app.py.
+    Also ensures a fresh Railway volume database has all base tables before
+    column/index migrations run.
     """
     if request.endpoint == 'static':
         return
+
+    # Safe on existing SQLite databases; creates tables only when missing.
+    db.create_all()
+
     ensure_shift_file_original_filename_column()
     ensure_schedule_delete_indexes()
 
