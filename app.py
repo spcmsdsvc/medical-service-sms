@@ -1864,6 +1864,51 @@ def is_mobile_request():
 
 # --- AUTHENTICATION MODULE ---
 
+
+
+_timeline_performance_indexes_ready = False
+
+
+def ensure_timeline_performance_indexes():
+    """Create safe SQLite indexes for faster Timeline/Reports queries.
+
+    These are additive and safe on existing production databases.
+    They do not change data or business logic.
+    """
+    global _timeline_performance_indexes_ready
+
+    if _timeline_performance_indexes_ready:
+        return
+
+    index_statements = [
+        "CREATE INDEX IF NOT EXISTS idx_shift_start_time ON shift (start_time)",
+        "CREATE INDEX IF NOT EXISTS idx_shift_group_id ON shift (group_id)",
+        "CREATE INDEX IF NOT EXISTS idx_shift_client_id ON shift (client_id)",
+        "CREATE INDEX IF NOT EXISTS idx_shift_product_id ON shift (product_id)",
+        "CREATE INDEX IF NOT EXISTS idx_shift_parent_shift_id ON shift (parent_shift_id)",
+        "CREATE INDEX IF NOT EXISTS idx_shift_override_engineer_id ON shift (override_engineer_id)",
+        "CREATE INDEX IF NOT EXISTS idx_shift_engineer_shift_id ON shift_engineer (shift_id)",
+        "CREATE INDEX IF NOT EXISTS idx_shift_engineer_engineer_id ON shift_engineer (engineer_id)",
+        "CREATE INDEX IF NOT EXISTS idx_shift_file_shift_id ON shift_file (shift_id)",
+        "CREATE INDEX IF NOT EXISTS idx_shift_file_uploaded_at ON shift_file (uploaded_at)",
+        "CREATE INDEX IF NOT EXISTS idx_activity_log_timestamp ON activity_log (timestamp)",
+        "CREATE INDEX IF NOT EXISTS idx_tsr_knowledge_serial ON tsr_knowledge_entry (serial_number)",
+        "CREATE INDEX IF NOT EXISTS idx_tsr_knowledge_product ON tsr_knowledge_entry (product_name)",
+        "CREATE INDEX IF NOT EXISTS idx_online_tsr_shift_id ON online_tsr_submission (shift_id)"
+    ]
+
+    try:
+        with db.engine.begin() as connection:
+            for statement in index_statements:
+                connection.exec_driver_sql(statement)
+
+        _timeline_performance_indexes_ready = True
+        print("[PERFORMANCE] Timeline/report SQLite indexes verified.", flush=True)
+    except Exception as index_error:
+        print(f"[PERFORMANCE] Unable to verify timeline/report indexes: {index_error}", flush=True)
+        raise
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
