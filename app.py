@@ -3280,13 +3280,142 @@ def products_page():
 def settings_page():
     """ Profile hub for Credential Rotation and Admin Management """
     all_accounts = []
+    backup_superadmin = is_superadmin_user()
     if is_admin_authorized():
         all_accounts = User.query.order_by(User.username).all()
         for account in all_accounts:
             account.display_role = get_display_role(account)
             can_reset, _ = can_reset_password_for_user(account)
             account.can_reset_password = can_reset
-    return render_template('settings.html', users=all_accounts)
+    return render_template(
+        'settings.html',
+        users=all_accounts,
+        backup_superadmin=backup_superadmin
+    )
+
+
+def get_active_sqlite_database_path():
+    """Return the active SQLite database file path for backup export."""
+    database_path = getattr(db.engine.url, 'database', None)
+
+    if database_path:
+        if not os.path.isabs(database_path):
+            database_path = os.path.join(basedir, database_path)
+        return os.path.abspath(database_path)
+
+    return os.path.join(basedir, 'scheduler.db')
+
+
+def get_backup_upload_root():
+    """Return upload root so reports and future upload subfolders are backed up."""
+    upload_folder = os.path.abspath(app.config.get('UPLOAD_FOLDER') or os.path.join(basedir, 'static/uploads/reports'))
+
+    # Railway stores reports in /data/uploads/reports. Back up /data/uploads so
+    # future upload subfolders are included without another code change.
+    if upload_folder.replace('\\', '/').endswith('/uploads/reports'):
+        return os.path.dirname(upload_folder)
+
+    return upload_folder
+
+
+def add_path_to_backup_zip(zip_handle, source_path, archive_prefix):
+    """Add one file or directory to a backup ZIP, preserving relative paths."""
+    source_path = os.path.abspath(source_path)
+
+    if not os.path.exists(source_path):
+        return 0
+
+    file_count = 0
+
+    if os.path.isfile(source_path):
+        zip_handle.write(source_path, os.path.join(archive_prefix, os.path.basename(source_path)))
+        return 1
+
+    for root, _, files in os.walk(source_path):
+        for filename in files:
+            full_path = os.path.join(root, filename)
+            if not os.path.isfile(full_path):
+                continue
+
+            # Never include old backup ZIPs inside a new backup.
+            if filename.lower().endswith('.zip') and 'backup' in filename.lower():
+                continue
+
+            relative_path = os.path.relpath(full_path, source_path)
+            archive_name = os.path.join(archive_prefix, relative_path)
+            zip_handle.write(full_path, archive_name)
+            file_count += 1
+
+    return file_count
+
+
+@app.route('/admin/download-backup')
+@login_required
+def download_system_backup():
+    """Superadmin-only manual backup download for SQLite DB and uploads."""
+    if not is_superadmin_user():
+        return denied('Only superadmins can download system backups.')
+
+    db.session.commit()
+
+    timestamp = get_manila_time().strftime('%Y%m%d_%H%M%S')
+    backup_filename = f"medical_service_backup_{timestamp}.zip"
+    temp_file = tempfile.NamedTemporaryFile(prefix='medical_service_backup_', suffix='.zip', delete=False)
+    temp_file_path = temp_file.name
+    temp_file.close()
+
+    db_path = get_active_sqlite_database_path()
+    upload_root = get_backup_upload_root()
+
+    try:
+        with zipfile.ZipFile(temp_file_path, 'w', zipfile.ZIP_DEFLATED) as backup_zip:
+            db_count = add_path_to_backup_zip(backup_zip, db_path, 'database')
+            upload_count = add_path_to_backup_zip(backup_zip, upload_root, 'uploads')
+
+            manifest = {
+                'generated_at_manila': get_manila_time().isoformat(),
+                'generated_by': getattr(current_user, 'username', 'unknown'),
+                'database_path': db_path,
+                'database_included': bool(db_count),
+                'upload_root': upload_root,
+                'upload_file_count': upload_count,
+                'app': 'MEDICAL SERVICE Scheduler'
+            }
+            backup_zip.writestr('backup_manifest.json', json.dumps(manifest, indent=2))
+
+        db.session.add(ActivityLog(
+            user=(getattr(current_user, 'username', '') or 'Superadmin').capitalize(),
+            action=f"Downloaded system backup: {backup_filename}"
+        ))
+        db.session.commit()
+
+        response = send_file(
+            temp_file_path,
+            as_attachment=True,
+            download_name=backup_filename,
+            mimetype='application/zip'
+        )
+        response.headers['Cache-Control'] = 'no-store'
+
+        @response.call_on_close
+        def cleanup_backup_file():
+            try:
+                os.remove(temp_file_path)
+            except OSError:
+                pass
+
+        return response
+
+    except Exception as backup_error:
+        try:
+            os.remove(temp_file_path)
+        except OSError:
+            pass
+        print(f"[BACKUP] Manual backup failed: {backup_error}", flush=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'System backup could not be generated. Please check server logs.'
+        }), 500
 
 
 

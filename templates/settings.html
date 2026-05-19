@@ -59,6 +59,31 @@
             </div>
         </div>
 
+        {% if backup_superadmin %}
+        <div class="col-md-7">
+            <div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4 settings-backup-card">
+                <div class="card-header bg-success text-white py-3 border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fa-solid fa-database me-2"></i>System Backup
+                    </h5>
+                    <span class="badge bg-light text-success small fw-bold">Superadmin Only</span>
+                </div>
+                <div class="card-body p-4 bg-white">
+                    <p class="text-muted small mb-3">
+                        Download a ZIP backup containing the active scheduler database and uploaded TSR/report files.
+                        Save the downloaded file to OneDrive, Google Drive, or an external drive.
+                    </p>
+                    <a class="btn btn-success fw-bold rounded-3 shadow-sm" href="{{ url_for('download_system_backup') }}">
+                        <i class="fa-solid fa-download me-2"></i>Download System Backup
+                    </a>
+                    <div class="xsmall text-muted mt-3">
+                        Recommended before major updates and at least once per week during rollout.
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- COLUMN 2: ADMINISTRATIVE PERSONNEL MANAGEMENT -->
         {% if current_user.role in ['superadmin', 'regional_admin'] %}
         <div class="col-md-7">
@@ -284,6 +309,7 @@
     .input-group-text { border-color: #dee2e6; }
     .form-control:focus { border-color: #0d6efd; box-shadow: none; }
     .bg-purple { background-color: #6f42c1 !important; }
+    .settings-backup-card { border-left: 5px solid #198754 !important; }
 
     /* MOBILE SETTINGS PAGE UPGRADE */
     .settings-mobile-user-list {
