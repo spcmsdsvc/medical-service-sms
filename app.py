@@ -3307,16 +3307,49 @@ def get_active_sqlite_database_path():
     return os.path.join(basedir, 'scheduler.db')
 
 
-def get_backup_upload_root():
-    """Return upload root so reports and future upload subfolders are backed up."""
-    upload_folder = os.path.abspath(app.config.get('UPLOAD_FOLDER') or os.path.join(basedir, 'static/uploads/reports'))
+def get_backup_upload_roots():
+    """Return existing upload roots that may contain TSR/report files.
 
-    # Railway stores reports in /data/uploads/reports. Back up /data/uploads so
-    # future upload subfolders are included without another code change.
-    if upload_folder.replace('\\', '/').endswith('/uploads/reports'):
-        return os.path.dirname(upload_folder)
+    Railway deployments may store uploads in /data/uploads/reports, while local
+    or older deployments may still use static/uploads/reports. Backing up all
+    existing candidates prevents missing PDFs when the active upload folder
+    differs from the expected Railway path.
+    """
+    candidates = []
 
-    return upload_folder
+    configured_upload = clean_str(app.config.get('UPLOAD_FOLDER'))
+    if configured_upload:
+        candidates.append(configured_upload)
+
+    candidates.extend([
+        '/data/uploads',
+        '/data/uploads/reports',
+        os.path.join(basedir, 'static', 'uploads'),
+        os.path.join(basedir, 'static', 'uploads', 'reports')
+    ])
+
+    upload_roots = []
+    seen = set()
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+
+        abs_candidate = os.path.abspath(candidate)
+        normalized = abs_candidate.replace('\\', '/').rstrip('/')
+
+        if normalized.endswith('/uploads/reports'):
+            abs_candidate = os.path.dirname(abs_candidate)
+            normalized = abs_candidate.replace('\\', '/').rstrip('/')
+
+        if normalized in seen:
+            continue
+
+        if os.path.exists(abs_candidate):
+            seen.add(normalized)
+            upload_roots.append(abs_candidate)
+
+    return upload_roots
 
 
 def add_path_to_backup_zip(zip_handle, source_path, archive_prefix):
@@ -3328,9 +3361,18 @@ def add_path_to_backup_zip(zip_handle, source_path, archive_prefix):
 
     file_count = 0
 
+    archive_prefix = archive_prefix.replace('\\', '/').strip('/')
+
     if os.path.isfile(source_path):
         zip_handle.write(source_path, os.path.join(archive_prefix, os.path.basename(source_path)))
         return 1
+
+    # Add a directory marker so uploads/reports is visible even when empty.
+    zip_handle.writestr(f"{archive_prefix}/", "")
+
+    reports_dir = os.path.join(source_path, 'reports')
+    if os.path.isdir(reports_dir):
+        zip_handle.writestr(f"{archive_prefix}/reports/", "")
 
     for root, _, files in os.walk(source_path):
         for filename in files:
@@ -3366,19 +3408,35 @@ def download_system_backup():
     temp_file.close()
 
     db_path = get_active_sqlite_database_path()
-    upload_root = get_backup_upload_root()
+    upload_roots = get_backup_upload_roots()
 
     try:
         with zipfile.ZipFile(temp_file_path, 'w', zipfile.ZIP_DEFLATED) as backup_zip:
             db_count = add_path_to_backup_zip(backup_zip, db_path, 'database')
-            upload_count = add_path_to_backup_zip(backup_zip, upload_root, 'uploads')
+            upload_count = 0
+            uploaded_roots_manifest = []
+
+            if upload_roots:
+                for upload_root in upload_roots:
+                    root_name = os.path.basename(upload_root.rstrip(os.sep)) or 'uploads'
+                    archive_prefix = 'uploads' if root_name == 'uploads' else f"uploads/{root_name}"
+                    added_count = add_path_to_backup_zip(backup_zip, upload_root, archive_prefix)
+                    upload_count += added_count
+                    uploaded_roots_manifest.append({
+                        'path': upload_root,
+                        'archive_prefix': archive_prefix,
+                        'file_count': added_count
+                    })
+            else:
+                backup_zip.writestr('uploads/', '')
+                backup_zip.writestr('uploads/reports/', '')
 
             manifest = {
                 'generated_at_manila': get_manila_time().isoformat(),
                 'generated_by': getattr(current_user, 'username', 'unknown'),
                 'database_path': db_path,
                 'database_included': bool(db_count),
-                'upload_root': upload_root,
+                'upload_roots': uploaded_roots_manifest,
                 'upload_file_count': upload_count,
                 'app': 'MEDICAL SERVICE Scheduler'
             }
