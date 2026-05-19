@@ -126,8 +126,21 @@ app.config['SMTP_PORT'] = int(os.environ.get('SMTP_PORT', '587'))
 app.config['SMTP_TIMEOUT'] = int(os.environ.get('SMTP_TIMEOUT', '8'))
 app.config['SMTP_USERNAME'] = os.environ.get('SMTP_USERNAME', 'jonamar@shimadzu.com.ph')
 app.config['SMTP_PASSWORD'] = os.environ.get('SMTP_PASSWORD')
-app.config['SMTP_SENDER_EMAIL'] = os.environ.get('SMTP_SENDER_EMAIL', app.config['SMTP_USERNAME'])
-app.config['SMTP_SENDER_NAME'] = os.environ.get('SMTP_SENDER_NAME', 'SPC-Medical Service Scheduler')
+
+# Sender identity used by Brevo/SMTP.
+# Railway currently uses MAIL_SENDER_EMAIL / MAIL_SENDER_NAME, while older code
+# used SMTP_SENDER_EMAIL / SMTP_SENDER_NAME. Support both, with SMTP_* taking
+# priority when present.
+app.config['SMTP_SENDER_EMAIL'] = (
+    os.environ.get('SMTP_SENDER_EMAIL') or
+    os.environ.get('MAIL_SENDER_EMAIL') or
+    app.config['SMTP_USERNAME']
+)
+app.config['SMTP_SENDER_NAME'] = (
+    os.environ.get('SMTP_SENDER_NAME') or
+    os.environ.get('MAIL_SENDER_NAME') or
+    'SPC-Medical Service Scheduler'
+)
 app.config['EMAIL_NOTIFICATIONS_ENABLED'] = os.environ.get('EMAIL_NOTIFICATIONS_ENABLED', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
 app.config['EMAIL_PROVIDER'] = os.environ.get('EMAIL_PROVIDER', 'brevo').strip().lower()
 app.config['BREVO_API_KEY'] = os.environ.get('BREVO_API_KEY')
