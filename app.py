@@ -7924,10 +7924,13 @@ def get_shift_delete_candidates(base_shift, delete_mode, start_date=None, end_da
     """Resolve delete candidates without mutating the database.
 
     delete_mode values:
-    - single: clicked schedule only
-    - engineer_range: schedules for one engineer in selected date range
-    - linked_chain: all base + linked override schedules in the clicked group
-    - linked_range: base + linked override schedules in selected date range within clicked group
+    - single: clicked schedule row only. If the clicked row is a shared
+      multi-engineer base shift, final delete detaches only engineer_id.
+    - engineer_range: schedules touching one engineer in selected date range.
+      Shared rows are detached for that engineer only during final delete.
+    - linked_chain: all base + linked custom-time schedules in the clicked group
+    - linked_range: all base + linked custom-time schedules in selected dates
+      within the clicked group
     """
     if not base_shift:
         return []
@@ -7943,7 +7946,9 @@ def get_shift_delete_candidates(base_shift, delete_mode, start_date=None, end_da
         if not engineer_id or not start_date or not end_date:
             return []
 
-        return (
+        # Keep this row-based for preview, but final delete is engineer-aware:
+        # shared multi-engineer shifts are detached, not fully deleted.
+        rows = (
             db.session.query(Shift)
             .join(ShiftEngineer, Shift.id == ShiftEngineer.shift_id)
             .filter(
@@ -7954,28 +7959,40 @@ def get_shift_delete_candidates(base_shift, delete_mode, start_date=None, end_da
             .order_by(Shift.start_time.asc(), Shift.id.asc())
             .all()
         )
+        return list({shift.id: shift for shift in rows}.values())
 
-    group_id = base_shift.group_id
-    if not group_id:
-        candidates = [base_shift]
+    base_group_id = base_shift.group_id
+
+    if base_group_id:
+        base_rows = (
+            Shift.query
+            .filter(Shift.group_id == base_group_id)
+            .order_by(Shift.start_time.asc(), Shift.id.asc())
+            .all()
+        )
     else:
-        query = Shift.query.filter(Shift.group_id == group_id)
+        base_rows = [base_shift]
 
-        if delete_mode == 'linked_range':
-            if not start_date or not end_date:
-                return []
-            query = query.filter(
-                func.date(Shift.start_time) >= start_date,
-                func.date(Shift.start_time) <= end_date
-            )
+    # Be defensive with older data: some override rows may have parent_shift_id
+    # set but group_id missing/outdated. Include them via parent links too.
+    base_ids = [shift.id for shift in base_rows if shift and shift.id]
+    linked_overrides = get_linked_time_overrides_for_shift_ids(base_ids)
 
-        candidates = query.order_by(Shift.start_time.asc(), Shift.id.asc()).all()
+    candidates = base_rows + linked_overrides
 
-    # Unique by ID while preserving order.
+    if delete_mode == 'linked_range':
+        if not start_date or not end_date:
+            return []
+        candidates = [
+            shift for shift in candidates
+            if shift and shift.start_time and start_date <= shift.start_time.date() <= end_date
+        ]
+
     unique = {}
     for shift in candidates:
-        unique[shift.id] = shift
-    return list(unique.values())
+        if shift and shift.id:
+            unique[shift.id] = shift
+    return sorted(unique.values(), key=lambda s: (s.start_time or datetime.min, s.id or 0))
 
 
 def build_delete_preview_payload(candidates, delete_mode):
@@ -8007,33 +8024,100 @@ def build_delete_preview_payload(candidates, delete_mode):
     }
 
 
-def delete_shift_rows_with_cleanup(candidates):
-    """Delete Shift rows and their assignment links.
+def build_deleted_shift_snapshot(shift):
+    """Create a stable notification snapshot before mutating/deleting a shift."""
+    return {
+        'id': shift.id,
+        'title': shift.title,
+        'date_iso': shift.start_time.date().isoformat() if shift.start_time else '',
+        'date_label': shift.start_time.strftime('%B %d, %Y') if shift.start_time else '',
+        'time_label': f"{shift.start_time.strftime('%I:%M %p')} - {shift.end_time.strftime('%I:%M %p')}" if shift.start_time and shift.end_time else '',
+        'client_name': shift.client.name if shift.client else 'N/A',
+        'product_name': shift.product.name if shift.product else 'N/A'
+    }
+
+
+def detach_engineer_from_shift_for_delete(shift, engineer_id):
+    """Remove one engineer from a shared base shift without deleting the job.
+
+    Returns True when the shift remains after detaching. Returns False when the
+    shift should still be deleted because no other engineer assignment remains.
+    """
+    if not shift or not engineer_id or is_shift_time_override(shift):
+        return False
+
+    assigned_ids = get_shift_assigned_engineer_ids(shift)
+    if int(engineer_id) not in [int(eid) for eid in assigned_ids if eid]:
+        return True
+
+    if len(set(map(int, assigned_ids))) <= 1:
+        return False
+
+    ShiftEngineer.query.filter_by(
+        shift_id=shift.id,
+        engineer_id=engineer_id
+    ).delete(synchronize_session=False)
+
+    remaining_ids = [
+        se.engineer_id
+        for se in ShiftEngineer.query.filter_by(shift_id=shift.id).all()
+        if se.engineer_id and int(se.engineer_id) != int(engineer_id)
+    ]
+
+    if remaining_ids:
+        shift.engineer_id = remaining_ids[0]
+        return True
+
+    return False
+
+
+def delete_shift_rows_with_cleanup(candidates, delete_mode=None, engineer_id=None):
+    """Delete or detach schedule rows safely.
 
     Physical report files are intentionally not removed here because the same
     stored filename may be referenced by linked parent/override rows.
+
+    Important multi-engineer behavior:
+    - single + shared base shift + engineer_id: detach only the clicked engineer
+    - engineer_range + shared base shift + engineer_id: detach that engineer only
+    - linked_chain/linked_range: delete the full linked schedule rows
     """
     deleted_ids = []
+    detached_ids = []
     notified_snapshots = []
+    mode = clean_str(delete_mode) or 'single'
 
-    for shift in candidates:
+    unique_candidates = []
+    seen_ids = set()
+    for shift in candidates or []:
+        if not shift or shift.id in seen_ids:
+            continue
+        seen_ids.add(shift.id)
+        unique_candidates.append(shift)
+
+    for shift in unique_candidates:
         assigned_engineer_ids = get_shift_assigned_engineer_ids(shift)
-        snapshot = {
-            'id': shift.id,
-            'title': shift.title,
-            'date_iso': shift.start_time.date().isoformat() if shift.start_time else '',
-            'date_label': shift.start_time.strftime('%B %d, %Y') if shift.start_time else '',
-            'time_label': f"{shift.start_time.strftime('%I:%M %p')} - {shift.end_time.strftime('%I:%M %p')}" if shift.start_time and shift.end_time else '',
-            'client_name': shift.client.name if shift.client else 'N/A',
-            'product_name': shift.product.name if shift.product else 'N/A'
-        }
+        snapshot = build_deleted_shift_snapshot(shift)
+
+        should_detach_only = (
+            mode in {'single', 'engineer_range'} and
+            engineer_id and
+            int(engineer_id) in [int(eid) for eid in assigned_engineer_ids if eid] and
+            not is_shift_time_override(shift) and
+            len(set(map(int, assigned_engineer_ids))) > 1
+        )
+
+        if should_detach_only and detach_engineer_from_shift_for_delete(shift, engineer_id):
+            detached_ids.append(shift.id)
+            notified_snapshots.append((snapshot, [engineer_id]))
+            continue
 
         delete_shift_engineer_links(shift.id)
         db.session.delete(shift)
         deleted_ids.append(shift.id)
         notified_snapshots.append((snapshot, assigned_engineer_ids))
 
-    return deleted_ids, notified_snapshots
+    return deleted_ids, notified_snapshots, detached_ids
 
 
 @app.route('/preview_delete_shifts', methods=['POST'])
@@ -8074,13 +8158,21 @@ def preview_delete_shifts():
         })
 
     affected_ids = sorted({
-        engineer_id
+        affected_engineer_id
         for shift in candidates
-        for engineer_id in get_shift_assigned_engineer_ids(shift)
-        if engineer_id
+        for affected_engineer_id in get_shift_assigned_engineer_ids(shift)
+        if affected_engineer_id
     })
 
-    if not can_modify_schedule_for_engineer_ids(affected_ids):
+    # Row-aware delete: single/engineer_range against a shared multi-engineer
+    # row removes only engineer_id, so authorization should validate that target
+    # engineer rather than every teammate on the shared row.
+    if delete_mode in {'single', 'engineer_range'} and engineer_id:
+        affected_ids_for_auth = [engineer_id]
+    else:
+        affected_ids_for_auth = affected_ids
+
+    if not can_modify_schedule_for_engineer_ids(affected_ids_for_auth):
         return denied('You are not authorized to delete one or more schedules in this preview.')
 
     return jsonify(build_delete_preview_payload(candidates, delete_mode))
@@ -8117,17 +8209,22 @@ def delete_shifts_previewed():
         return jsonify({'status': 'success', 'count': 0, 'deleted_ids': []})
 
     affected_ids = sorted({
-        engineer_id
+        affected_engineer_id
         for shift in candidates
-        for engineer_id in get_shift_assigned_engineer_ids(shift)
-        if engineer_id
+        for affected_engineer_id in get_shift_assigned_engineer_ids(shift)
+        if affected_engineer_id
     })
 
-    if not can_modify_schedule_for_engineer_ids(affected_ids):
+    if delete_mode in {'single', 'engineer_range'} and engineer_id:
+        affected_ids_for_auth = [engineer_id]
+    else:
+        affected_ids_for_auth = affected_ids
+
+    if not can_modify_schedule_for_engineer_ids(affected_ids_for_auth):
         return denied('You are not authorized to delete one or more selected schedules.')
 
     preview_payload = build_delete_preview_payload(candidates, delete_mode)
-    deleted_ids, notified_snapshots = delete_shift_rows_with_cleanup(candidates)
+    deleted_ids, notified_snapshots, detached_ids = delete_shift_rows_with_cleanup(candidates, delete_mode=delete_mode, engineer_id=engineer_id)
     db.session.commit()
 
     actor_name = current_user.username.capitalize()
@@ -8153,8 +8250,9 @@ def delete_shifts_previewed():
 
     return jsonify({
         'status': 'success',
-        'count': len(deleted_ids),
+        'count': len(deleted_ids) + len(detached_ids),
         'deleted_ids': deleted_ids,
+        'detached_ids': detached_ids,
         'preview': preview_payload
     })
 
@@ -8263,7 +8361,7 @@ def delete_shift(id):
             return denied('You are not authorized to delete this schedule.')
 
         title = target.title
-        deleted_ids, notified_snapshots = delete_shift_rows_with_cleanup([target])
+        deleted_ids, notified_snapshots, _detached_ids = delete_shift_rows_with_cleanup([target], delete_mode='linked_chain')
         db.session.commit()
         log_activity(f"Wiped technical record: {title}")
 
@@ -8324,10 +8422,10 @@ def batch_delete_shifts():
     if preview_only:
         return jsonify(preview_payload)
 
-    deleted_ids, notified_snapshots = delete_shift_rows_with_cleanup(purge_list)
+    deleted_ids, notified_snapshots, detached_ids = delete_shift_rows_with_cleanup(purge_list, delete_mode='engineer_range', engineer_id=eng_id)
     db.session.commit()
 
-    count = len(deleted_ids)
+    count = len(deleted_ids) + len(detached_ids)
     log_activity(f"Bulk-purged {count} entries for {engineer.name}")
 
     for snapshot, assigned_engineer_ids in notified_snapshots:
@@ -8338,7 +8436,7 @@ def batch_delete_shifts():
             current_user.username if current_user and current_user.is_authenticated else 'Scheduler'
         )
 
-    return jsonify({'status': 'success', 'count': count, 'deleted_ids': deleted_ids})
+    return jsonify({'status': 'success', 'count': count, 'deleted_ids': deleted_ids, 'detached_ids': detached_ids})
 
 
 # --- PERSONNEL HR ACTIONS ---

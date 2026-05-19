@@ -7083,6 +7083,7 @@ async function openTSRClientEmailModal(shiftId){
         if(type === 'today'){
             startInput.value = formatDeleteISO(base);
             endInput.value = formatDeleteISO(base);
+            resetDeletePreview();
             return;
         }
         if(type === 'next7'){
@@ -7154,11 +7155,14 @@ async function openTSRClientEmailModal(shiftId){
         const confirmBtn = document.getElementById('confirm-delete-previewed-btn');
         const items = preview.items || [];
         if(box) box.classList.remove('d-none');
-        if(count) count.innerText = `${preview.count || 0} schedule(s)`;
+        if(count) count.innerText = `${preview.count || 0} schedule row(s)`;
         if(summary){
             const engineerLabel = (preview.affected_engineers || []).join(', ') || 'No engineer';
             const rangeLabel = preview.start_date && preview.end_date ? `${preview.start_date} to ${preview.end_date}` : 'Selected schedule';
-            summary.innerText = `${rangeLabel} • ${engineerLabel}`;
+            const modeLabel = getDeleteMode() === 'single'
+                ? 'Clicked engineer/card only when shared'
+                : (getDeleteMode() === 'engineer_range' ? 'Engineer cleanup only when shared' : 'Full linked schedule delete');
+            summary.innerText = `${rangeLabel} • ${engineerLabel} • ${modeLabel}`;
         }
         if(list){
             if(!items.length){
@@ -7247,8 +7251,8 @@ async function openTSRClientEmailModal(shiftId){
             renderDeletePreview(previewResult);
         }
 
-        const previewCount = document.getElementById('delete-preview-count')?.innerText || 'selected schedule(s)';
-        if(!confirm(`Permanently delete ${previewCount}?`)) return;
+        const previewCount = document.getElementById('delete-preview-count')?.innerText || 'selected schedule row(s)';
+        if(!confirm(`Proceed with this delete operation for ${previewCount}? Shared multi-engineer rows will detach only the selected engineer for Single/Engineer Range modes.`)) return;
 
         const response = await fetch('/delete_shifts_previewed', {
             method: 'POST',
@@ -7272,13 +7276,20 @@ async function openTSRClientEmailModal(shiftId){
         await refreshTimelineGrid();
     }
 
+    function getDeleteContextEngineerName(engineerId){
+        const idValue = String(engineerId || '');
+        const match = (engineerMaster || []).find(e => String(e.id) === idValue);
+        return match?.name || document.querySelector(`#engineer-card-container-inner [data-id="${idValue}"] span`)?.innerText || 'Selected engineer';
+    }
+
     async function deleteShift(){
         clearMobileSmartCache();
         const tid = document.getElementById('f-id').value;
         if(!tid) return;
+        await loadEngineerList();
         const contextDate = document.getElementById('f-edit-context-date')?.value || document.getElementById('f-start-date')?.value || '';
         const contextEngineer = document.getElementById('f-edit-context-engineer-id')?.value || document.getElementById('f-eng-id')?.value || '';
-        showDeleteOptions(contextEngineer, 'Selected engineer', tid, contextDate);
+        showDeleteOptions(contextEngineer, getDeleteContextEngineerName(contextEngineer), tid, contextDate);
     }
 
     function openBatchDeleteModal(eid, ename){
@@ -7330,12 +7341,19 @@ async function openTSRClientEmailModal(shiftId){
         document.querySelectorAll('input[name="delete-mode"]').forEach(input => {
             input.onchange = updateDeleteModeUI;
         });
+        [startInput, endInput].forEach(input => {
+            if(input && input.dataset.deleteRangeBound !== '1'){
+                input.dataset.deleteRangeBound = '1';
+                input.addEventListener('change', resetDeletePreview);
+                input.addEventListener('input', resetDeletePreview);
+            }
+        });
         setDeleteMode('single');
         resetDeletePreview();
         deleteOptionModal = bootstrap.Modal.getOrCreateInstance(modalEl);
-                const confirmDeleteBtn = document.getElementById('confirm-delete-previewed-btn');
+        const confirmDeleteBtn = document.getElementById('confirm-delete-previewed-btn');
         if(confirmDeleteBtn) confirmDeleteBtn.disabled = false;
-deleteOptionModal.show();
+        deleteOptionModal.show();
     }
 
 
