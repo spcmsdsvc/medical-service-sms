@@ -5617,31 +5617,41 @@ async function loadGrid() {
         const headerRow = document.getElementById('grid-header');
         const gridBody = document.getElementById('grid-body');
         
-        // Reset and generate date slot headers
-        headerRow.innerHTML = '<th style="min-width: 200px; position: sticky; left: 0; z-index: 12; background: #212529; color: white; border-right: 2px solid #444;">Engineer Name</th>';
-        gridBody.innerHTML = "";
-        
+        // Reset and generate date slot headers with a single DOM write.
+        const headerCells = [
+            '<th style="min-width: 200px; position: sticky; left: 0; z-index: 12; background: #212529; color: white; border-right: 2px solid #444;">Engineer Name</th>'
+        ];
+
         data.days.forEach(function(day) {
-            headerRow.innerHTML += `
+            headerCells.push(`
                 <th class="text-center" style="min-width: 140px;">
                     <span class="d-block text-uppercase small">${day.display_day}</span>
                     <small class="text-info">${day.display_date}</small>
-                </th>`;
+                </th>`);
         });
+
+        headerRow.innerHTML = headerCells.join('');
+        const timelineBodyRows = [];
         
         /**
          * REQUIREMENT: BRANCH-BASED DIVISION
          * We iterate through each branch (Manila, Cebu, Davao) and render their engineers.
          */
         const branches = ["Manila", "Cebu", "Davao"];
-        
+        const engineersByBranch = data.engineers.reduce(function(map, engineer){
+            const branchName = engineer.branch || "Manila";
+            if(!map[branchName]) map[branchName] = [];
+            map[branchName].push(engineer);
+            return map;
+        }, {});
+
         branches.forEach(function(currentBranch) {
             // Logical check: If filter is set to a specific branch, skip other branches.
             // Regional mode shows Cebu + Davao together for Kevin/regional_admin.
             if (branchFilter === "REGIONAL" && !regionalAllowedBranches.includes(currentBranch)) return;
             if (branchFilter !== "ALL" && branchFilter !== "REGIONAL" && branchFilter !== currentBranch) return;
 
-            const engineersInBranch = data.engineers.filter(e => e.branch === currentBranch);
+            const engineersInBranch = engineersByBranch[currentBranch] || [];
             
             // Skip rendering the branch divider if no engineers are found in this branch
             if (engineersInBranch.length === 0) return;
@@ -5649,7 +5659,7 @@ async function loadGrid() {
             const branchWeeklyCount = calculateBranchWeeklyCount(data.schedule, engineersInBranch, data.days);
 
             // Render Branch Divider Row
-            gridBody.innerHTML += `
+            timelineBodyRows.push(`
                 <tr class="branch-divider">
                     <td colspan="${data.days.length + 1}" class="bg-dark text-white p-1 ps-3 small fw-bold">
                         <div class="d-flex justify-content-between align-items-center gap-2">
@@ -5657,7 +5667,7 @@ async function loadGrid() {
                             ${timelineIntelligenceEnabled ? `<span class="branch-workload-badge no-print"><i class="fa-solid fa-chart-simple me-1"></i>${branchWeeklyCount} schedule${branchWeeklyCount === 1 ? '' : 's'} this week</span>` : ''}
                         </div>
                     </td>
-                </tr>`;
+                </tr>`);
 
             // Render Personnel Rows for this branch
             engineersInBranch.forEach(function(eng) {
@@ -5692,8 +5702,8 @@ async function loadGrid() {
                 // Map Day Slots per engineer
                 data.days.forEach(function(day) {
                     const shiftList = data.schedule[eng.id][day.iso];
-                    let cellDataHtml = "";
-                    
+                    const cellCards = [];
+
                     shiftList.forEach(function(s) {
                         const canManageThisSchedule = canManageExistingScheduleForRow(eng, s);
                         let isLeave = HR_CATEGORIES.includes(s.task);
@@ -5751,7 +5761,7 @@ async function loadGrid() {
                             ? `${t12(s.time_start)}–${t12(s.time_end)}`
                             : '';
 
-                        cellDataHtml += `
+                        cellCards.push(`
                         <div class="schedule-card ${
                             bgHex === 'office-pink' ? 'schedule-office' :
                             bgHex === 'travel-purple' ? 'schedule-travel' :
@@ -5812,8 +5822,10 @@ async function loadGrid() {
                             </div>
                             ` : ''}
 
-                        </div>`;
+                        </div>`);
                     });
+
+                    const cellDataHtml = cellCards.join('');
 
                     const dayScheduleCount = shiftList.length;
                     const dayWorkloadLevel = getWorkloadLevel(dayScheduleCount);
@@ -5837,9 +5849,12 @@ async function loadGrid() {
                             ${canStartInThisCell ? '<div class="text-center text-muted small py-1 add-hint no-print" style="opacity:0.1">+ Add</div>' : '<div class="text-center text-muted xsmall py-1 no-print auth-readonly-hint">View only</div>'}
                         </td>`;
                 });
-                gridBody.innerHTML += rowHtml + "</tr>";
+                timelineBodyRows.push(rowHtml + "</tr>");
             });
         });
+
+        gridBody.innerHTML = timelineBodyRows.join('');
+
         // bind clicks after render
         bindCellClicks();
         renderMobileStickyActionBar();
