@@ -81,6 +81,80 @@
                     </div>
                 </div>
             </div>
+
+            <div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4 settings-storage-card">
+                <div class="card-header bg-info text-dark py-3 border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fa-solid fa-hard-drive me-2"></i>Storage Health
+                    </h5>
+                    <span id="storage-status-badge" class="badge bg-light text-secondary small fw-bold">Checking...</span>
+                </div>
+                <div class="card-body p-4 bg-white">
+                    <div id="storage-health-loading" class="text-muted small fw-bold">
+                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Checking Railway/storage usage...
+                    </div>
+
+                    <div id="storage-health-content" class="d-none">
+                        <div class="storage-meter mb-3">
+                            <div class="storage-meter-fill" id="storage-meter-fill" style="width: 0%;"></div>
+                        </div>
+
+                        <div class="row g-3 mb-3">
+                            <div class="col-6 col-lg-3">
+                                <div class="storage-stat">
+                                    <div class="storage-stat-label">Used</div>
+                                    <div class="storage-stat-value" id="storage-used">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-lg-3">
+                                <div class="storage-stat">
+                                    <div class="storage-stat-label">Limit</div>
+                                    <div class="storage-stat-value" id="storage-limit">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-lg-3">
+                                <div class="storage-stat">
+                                    <div class="storage-stat-label">Remaining</div>
+                                    <div class="storage-stat-value" id="storage-remaining">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-lg-3">
+                                <div class="storage-stat">
+                                    <div class="storage-stat-label">Usage</div>
+                                    <div class="storage-stat-value" id="storage-percent">--</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="storage-breakdown mb-3">
+                            <div class="storage-breakdown-row">
+                                <span><i class="fa-solid fa-database me-2 text-primary"></i>Database</span>
+                                <strong id="storage-database">--</strong>
+                            </div>
+                            <div class="storage-breakdown-row">
+                                <span><i class="fa-solid fa-folder-open me-2 text-warning"></i>Uploads / Reports</span>
+                                <strong id="storage-uploads">--</strong>
+                            </div>
+                            <div class="storage-breakdown-row">
+                                <span><i class="fa-solid fa-file-lines me-2 text-success"></i>Total Files</span>
+                                <strong id="storage-files">--</strong>
+                            </div>
+                        </div>
+
+                        <div class="small text-muted fw-bold" id="storage-recommendation">
+                            Storage recommendation will appear here.
+                        </div>
+
+                        <button type="button" class="btn btn-outline-info btn-sm fw-bold rounded-3 mt-3" onclick="loadStorageHealth(true)">
+                            <i class="fa-solid fa-rotate me-1"></i>Refresh Storage Health
+                        </button>
+                    </div>
+
+                    <div id="storage-health-error" class="alert alert-warning small d-none mb-0">
+                        Storage health could not be loaded. Please check server logs.
+                    </div>
+                </div>
+            </div>
         </div>
         {% endif %}
 
@@ -279,6 +353,93 @@
         }
     }
 
+
+    /**
+     * STORAGE HEALTH LOGIC:
+     */
+    function setStorageText(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value || '--';
+    }
+
+    function setStorageStatusBadge(data) {
+        const badge = document.getElementById('storage-status-badge');
+        if (!badge) return;
+
+        const status = (data.storage_status || '').toLowerCase();
+        badge.textContent = data.storage_status_label || 'Unknown';
+        badge.className = 'badge small fw-bold';
+
+        if (status === 'healthy') {
+            badge.classList.add('bg-success', 'text-white');
+        } else if (status === 'warning') {
+            badge.classList.add('bg-warning', 'text-dark');
+        } else if (status === 'critical') {
+            badge.classList.add('bg-danger', 'text-white');
+        } else {
+            badge.classList.add('bg-secondary', 'text-white');
+        }
+    }
+
+    async function loadStorageHealth(forceRefresh=false) {
+        const loading = document.getElementById('storage-health-loading');
+        const content = document.getElementById('storage-health-content');
+        const error = document.getElementById('storage-health-error');
+
+        if (loading) loading.classList.remove('d-none');
+        if (error) error.classList.add('d-none');
+
+        try {
+            const res = await fetch('/admin/storage-health' + (forceRefresh ? '?refresh=1' : ''), {
+                credentials: 'same-origin',
+                cache: 'no-store'
+            });
+            const data = await res.json();
+
+            if (!res.ok || data.status !== 'success') {
+                throw new Error(data.message || 'Storage health request failed.');
+            }
+
+            setStorageStatusBadge(data);
+            setStorageText('storage-used', data.used_human);
+            setStorageText('storage-limit', data.limit_human);
+            setStorageText('storage-remaining', data.remaining_human);
+            setStorageText('storage-percent', `${data.usage_percent}%`);
+            setStorageText('storage-database', data.database ? data.database.size_human : '--');
+            setStorageText('storage-uploads', data.active_upload_folder ? data.active_upload_folder.size_human : '--');
+            setStorageText('storage-files', String(data.total_file_count || 0));
+            setStorageText('storage-recommendation', data.recommendation || 'Storage status checked.');
+
+            const meter = document.getElementById('storage-meter-fill');
+            if (meter) {
+                const usage = Math.max(0, Math.min(100, Number(data.usage_percent || 0)));
+                meter.style.width = `${usage}%`;
+                meter.classList.remove('storage-meter-warning', 'storage-meter-critical');
+                if (usage >= 90) {
+                    meter.classList.add('storage-meter-critical');
+                } else if (usage >= 75) {
+                    meter.classList.add('storage-meter-warning');
+                }
+            }
+
+            if (content) content.classList.remove('d-none');
+        } catch (err) {
+            console.error('Storage health failed:', err);
+            if (error) {
+                error.textContent = 'Storage health could not be loaded. Please check server logs.';
+                error.classList.remove('d-none');
+            }
+        } finally {
+            if (loading) loading.classList.add('d-none');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        if (document.getElementById('storage-health-content')) {
+            loadStorageHealth();
+        }
+    });
+
     /**
      * ROLE ESCALATION LOGIC:
      */
@@ -310,6 +471,63 @@
     .form-control:focus { border-color: #0d6efd; box-shadow: none; }
     .bg-purple { background-color: #6f42c1 !important; }
     .settings-backup-card { border-left: 5px solid #198754 !important; }
+
+    .settings-storage-card { border-left: 5px solid #0dcaf0 !important; }
+    .storage-meter {
+        width: 100%;
+        height: 14px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: #e2e8f0;
+        border: 1px solid #cbd5e1;
+    }
+    .storage-meter-fill {
+        height: 100%;
+        border-radius: 999px;
+        background: #198754;
+        transition: width 0.35s ease;
+    }
+    .storage-meter-fill.storage-meter-warning { background: #ffc107; }
+    .storage-meter-fill.storage-meter-critical { background: #dc3545; }
+    .storage-stat {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.9rem;
+        padding: 0.8rem;
+        min-height: 82px;
+    }
+    .storage-stat-label {
+        color: #64748b;
+        font-size: 0.68rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.35rem;
+    }
+    .storage-stat-value {
+        color: #0f172a;
+        font-size: 1rem;
+        font-weight: 900;
+        line-height: 1.2;
+        word-break: break-word;
+    }
+    .storage-breakdown {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.9rem;
+        overflow: hidden;
+    }
+    .storage-breakdown-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.7rem 0.85rem;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 0.82rem;
+    }
+    .storage-breakdown-row:last-child {
+        border-bottom: 0;
+    }
 
     /* MOBILE SETTINGS PAGE UPGRADE */
     .settings-mobile-user-list {
