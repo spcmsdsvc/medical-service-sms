@@ -3195,8 +3195,6 @@ document.addEventListener('input', function(e){
                 };
                 box.appendChild(div);
             });
-        // bind clicks after render
-        bindCellClicks();
     }
 });
 
@@ -5549,6 +5547,18 @@ if (selectedVal === "Leave") {
     });
 
 
+function nextTimelineRenderFrame(){
+    return new Promise(resolve => {
+        if(typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function'){
+            window.requestAnimationFrame(() => resolve());
+        }else{
+            setTimeout(resolve, 0);
+        }
+    });
+}
+
+
+
 async function loadGrid() {
         console.log("Synchronizing Grid Data for offset: " + weekOffset);
 
@@ -5657,7 +5667,7 @@ async function loadGrid() {
                 </th>`);
         });
 
-        headerRow.innerHTML = headerCells.join('');
+        const timelineHeaderHtml = headerCells.join('');
         const timelineBodyRows = [];
         
         /**
@@ -5880,9 +5890,16 @@ async function loadGrid() {
             });
         });
 
-        gridBody.innerHTML = timelineBodyRows.join('');
+        const timelineBodyHtml = timelineBodyRows.join('');
 
-        // bind clicks after render
+        // Optimization Phase 2B:
+        // Batch the heavy header/body DOM write into one animation frame.
+        // This keeps week/branch switching smoother on large ALL-branch calendars.
+        await nextTimelineRenderFrame();
+        headerRow.innerHTML = timelineHeaderHtml;
+        gridBody.innerHTML = timelineBodyHtml;
+
+        // One delegated listener handles all cells; no per-cell listener rebuild needed.
         bindCellClicks();
         renderMobileStickyActionBar();
         setTimeout(syncTimelineHorizontalScroll, 0);
@@ -7414,7 +7431,8 @@ async function openTSRClientEmailModal(shiftId){
 
 
 function handleCellClick(event){
-    const td = event.currentTarget;
+    const td = event.target.closest('td[data-cell-click="1"]');
+    if(!td) return;
 
     // ignore clicks coming from schedule items or controls
     if(document.body.classList.contains('dragging-schedule') ||
@@ -7443,10 +7461,11 @@ function handleCellClick(event){
 
 
 function bindCellClicks(){
-    document.querySelectorAll('td[data-cell-click]').forEach(td=>{
-        td.removeEventListener('click', handleCellClick);
-        td.addEventListener('click', handleCellClick);
-    });
+    const gridBody = document.getElementById('grid-body');
+    if(!gridBody || gridBody.dataset.cellClickDelegated === '1') return;
+
+    gridBody.dataset.cellClickDelegated = '1';
+    gridBody.addEventListener('click', handleCellClick);
 }
 
 
