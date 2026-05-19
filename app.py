@@ -171,7 +171,17 @@ csrf = CSRFProtect(app)
 # --- DATABASE ENGINE CONFIGURATION ---
 
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'scheduler.db')
+
+# Railway persistent SQLite database support.
+# IMPORTANT: Railway container storage under /app is temporary and is wiped on redeploy.
+# The database must live inside the attached Railway volume at /data.
+if os.environ.get('RAILWAY_ENVIRONMENT'):
+    os.makedirs('/data', exist_ok=True)
+    DATABASE_PATH = os.path.join('/data', 'scheduler.db')
+else:
+    DATABASE_PATH = os.path.join(basedir, 'scheduler.db')
+
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + DATABASE_PATH
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # --- FILE UPLOAD SYSTEM CONFIGURATION ---
