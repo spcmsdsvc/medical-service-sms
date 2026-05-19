@@ -3363,8 +3363,16 @@ async function loadEngineerOptions(){
     let weekOffset = 0;
     let timelineLoadSeq = 0;
 
-function buildFreshTimelineUrl(offset, branch){
-    return `/get_timeline_data?offset=${offset}&branch=${encodeURIComponent(branch)}&_fresh=${Date.now()}`;
+function shouldUseTimelineLitePayload(){
+    // Optimization Phase 2A:
+    // Desktop grid can load lighter schedule payloads, then fetch full details only when Edit is opened.
+    // Keep role-aware mobile on full payload for now because mobile quick-status and TSR cards depend on file counts.
+    return !shouldUseRoleAwareMobileTimeline();
+}
+
+function buildFreshTimelineUrl(offset, branch, litePayload=false){
+    const liteParam = litePayload ? '&lite=true' : '';
+    return `/get_timeline_data?offset=${offset}&branch=${encodeURIComponent(branch)}${liteParam}&_fresh=${Date.now()}`;
 }
     let timelineCache = {};
     const TIMELINE_CACHE_TTL_MS = 30000;
@@ -5548,7 +5556,7 @@ async function loadGrid() {
             }
 
             try{
-                const res = await fetch(buildFreshTimelineUrl(weekOffset, branchFilter), { cache: 'no-store' });
+                const res = await fetch(buildFreshTimelineUrl(weekOffset, branchFilter, shouldUseTimelineLitePayload()), { cache: 'no-store' });
                 if(!res.ok){
                     throw new Error(`Timeline data request failed: ${res.status}`);
                 }
@@ -6167,12 +6175,41 @@ async function loadGrid() {
         setTimeout(()=>{ document.getElementById('f-cli-search')?.focus(); }, 200); 
     }
     
+    async function fetchFullShiftDetailsForEdit(shift){
+        // Optimization Phase 2A: when the grid uses lite payloads, heavy file/details data
+        // is fetched only when the edit modal is opened.
+        if(!shift || !shift.id) return shift;
+
+        const hasFullFileData = Array.isArray(shift.file_details) && shift.file_details.length;
+        const hasLegacyFileData = Array.isArray(shift.files) && shift.files.length;
+        if(hasFullFileData || hasLegacyFileData){
+            return shift;
+        }
+
+        try{
+            const response = await fetch(`/get_shift_details/${shift.id}?_fresh=${Date.now()}`, {
+                cache: 'no-store',
+                credentials: 'same-origin'
+            });
+            const payload = await response.json().catch(() => ({}));
+            if(response.ok && payload && payload.status === 'success' && payload.shift){
+                return Object.assign({}, shift, payload.shift);
+            }
+            console.warn('Full shift detail fetch failed', payload);
+        }catch(detailError){
+            console.warn('Unable to fetch full shift details', detailError);
+        }
+
+        return shift;
+    }
+
     /**
      * Logic: EDIT MODE preparation. Populates data and reveals technical sections.
      * Updated: Populates multi-file attachment list with deletion capability.
      */
     async function openEditModal(shift, engId, date) { 
         await loadMasterData(); await loadEngineerOptions(); await loadEngineerList(); 
+        shift = await fetchFullShiftDetailsForEdit(shift);
         const targetEngineer = engineerMaster.find(e => String(e.id) === String(engId));
         if(!canManageScheduleForEngineer(targetEngineer)){
             alert("You are not authorized to edit this schedule.");
@@ -8015,7 +8052,7 @@ async function generatePrint(){
     let engineersMap = {};
 
     for (let i = 0; i < weeksNeeded; i++) {
-        const res = await fetch(buildFreshTimelineUrl(offsetStart + i, selectedBranch), { cache: 'no-store' });
+        const res = await fetch(buildFreshTimelineUrl(offsetStart + i, selectedBranch, false), { cache: 'no-store' });
         const data = await res.json();
 
         data.engineers.forEach(e=>{

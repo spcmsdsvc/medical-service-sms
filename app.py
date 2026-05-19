@@ -4044,6 +4044,7 @@ def get_timeline_data():
     """
     offset = clean_int(request.args.get('offset', 0)) or 0
     branch_filter = clean_str(request.args.get('branch')) or 'ALL'
+    timeline_lite = parse_bool_flag(request.args.get('lite'), default=False)
 
     # Regional admin view policy:
     # - may view ALL branches and Manila schedules
@@ -4148,8 +4149,10 @@ def get_timeline_data():
                 'client_id': shift.client_id,
                 'product_id': shift.product_id,
                 'status': shift.status,
-                'files': [get_shift_file_display_name(file_record) or file_record.filename for file_record in shift.files],
-                'file_details': [
+                # Keep default legacy payload unchanged.
+                # When timeline_lite=true, skip heavy per-file metadata so the grid can load faster.
+                'files': [] if timeline_lite else [get_shift_file_display_name(file_record) or file_record.filename for file_record in shift.files],
+                'file_details': [] if timeline_lite else [
                     {
                         'id': file_record.id,
                         'filename': get_shift_file_display_name(file_record) or file_record.filename,
@@ -4199,6 +4202,94 @@ def get_timeline_data():
         'schedule': schedule_mapping,
         'branch_filter': branch_filter,
         'current_range': f"{week_span[0].strftime('%B %d')} - {week_span[6].strftime('%B %d, %Y')}"
+    })
+
+
+
+@app.route('/get_shift_details/<int:shift_id>')
+@login_required
+def get_shift_details(shift_id):
+    """Return full schedule details for edit/modal use.
+
+    Optimization Phase 2A backend foundation:
+    - /get_timeline_data can later run in lite mode for faster grid loading.
+    - The edit modal can fetch this endpoint only when a user opens a schedule.
+    - Existing default timeline behavior remains unchanged until frontend is patched.
+    """
+    ensure_shift_file_original_filename_column()
+
+    shift = (
+        Shift.query
+        .options(
+            joinedload(Shift.client),
+            joinedload(Shift.product),
+            joinedload(Shift.engineer),
+            selectinload(Shift.files)
+        )
+        .filter(Shift.id == shift_id)
+        .first()
+    )
+
+    if not shift:
+        return jsonify({'status': 'error', 'message': 'Schedule not found.'}), 404
+
+    if not can_work_on_existing_schedule_shift(shift):
+        return denied('You are not allowed to view this schedule.')
+
+    assigned_engineer_ids = get_shift_assigned_engineer_ids(shift)
+
+    if shift.group_id:
+        group_rows = (
+            db.session.query(
+                func.min(func.date(Shift.start_time)),
+                func.max(func.date(Shift.start_time))
+            )
+            .filter(Shift.group_id == shift.group_id)
+            .first()
+        )
+        start_date = group_rows[0] if group_rows and group_rows[0] else shift.start_time.date().isoformat()
+        end_date = group_rows[1] if group_rows and group_rows[1] else shift.end_time.date().isoformat()
+    else:
+        start_date = shift.start_time.date().isoformat() if shift.start_time else ''
+        end_date = shift.end_time.date().isoformat() if shift.end_time else ''
+
+    return jsonify({
+        'status': 'success',
+        'shift': {
+            'id': shift.id,
+            'client_name': shift.client.name if shift.client else "",
+            'client_address': shift.client.address if shift.client else "",
+            'product_name': shift.product.name if shift.product else "",
+            'task': shift.title,
+            'time_start': shift.start_time.strftime("%H:%M") if shift.start_time else '',
+            'time_end': shift.end_time.strftime("%H:%M") if shift.end_time else '',
+            'client_id': shift.client_id,
+            'product_id': shift.product_id,
+            'status': shift.status,
+            'files': [get_shift_file_display_name(file_record) or file_record.filename for file_record in shift.files],
+            'file_details': [
+                {
+                    'id': file_record.id,
+                    'filename': get_shift_file_display_name(file_record) or file_record.filename,
+                    'disk_filename': file_record.filename,
+                    'display_name': get_shift_file_display_name(file_record),
+                    'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if is_tsr_filename(get_shift_file_display_name(file_record) or file_record.filename) else '',
+                    'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else ''
+                }
+                for file_record in shift.files
+            ],
+            'engineers': assigned_engineer_ids,
+            'day_owner_engineer_id': shift.engineer_id,
+            'day_owner_engineer_name': shift.engineer.name if shift.engineer else '',
+            'day_owner_engineer_initials': shift.engineer.initials if shift.engineer else '',
+            'start_date': str(start_date),
+            'end_date': str(end_date),
+            'group_id': shift.group_id,
+            'parent_shift_id': shift.parent_shift_id,
+            'override_engineer_id': shift.override_engineer_id,
+            'override_kind': shift.override_kind,
+            'is_time_override': is_shift_time_override(shift)
+        }
     })
 
 
