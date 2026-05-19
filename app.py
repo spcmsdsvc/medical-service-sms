@@ -4548,27 +4548,147 @@ def get_tsr_archive():
     })
 
 
+def _tsr_archive_error_response(message, status_code=404):
+    """Return a visible archive error instead of silently redirecting to Reports."""
+    print(f"[TSR-ARCHIVE] {message}", flush=True)
+
+    if (
+        request.path.startswith('/preview_tsr_archive_pdf_meta') or
+        request.path.startswith('/preview_tsr_archive_pdf_page') or
+        request.path.startswith('/preview_tsr_archive_content') or
+        'application/json' in (request.headers.get('Accept') or '')
+    ):
+        return jsonify({'status': 'error', 'message': message}), status_code
+
+    safe_message = html.escape(message)
+    reports_url = url_for('reports_page')
+    return Response(
+        f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TSR Archive Notice</title>
+  <style>
+    body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#f8fafc;color:#0f172a;font-family:Arial,sans-serif;padding:18px;}}
+    .card{{max-width:680px;background:#fff;border-radius:18px;padding:24px;box-shadow:0 12px 34px rgba(15,23,42,.12);border:1px solid #e5e7eb;}}
+    h1{{font-size:1.15rem;margin:0 0 8px;}}
+    p{{color:#475569;line-height:1.5;}}
+    code{{background:#f1f5f9;padding:2px 6px;border-radius:6px;}}
+    a{{display:inline-block;margin-top:10px;background:#0d6efd;color:#fff;text-decoration:none;font-weight:900;padding:10px 14px;border-radius:10px;}}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Unable to open TSR file</h1>
+    <p>{safe_message}</p>
+    <p>This page is shown instead of silently reloading Reports so the problem can be identified.</p>
+    <a href="{reports_url}">Back to Reports</a>
+  </main>
+</body>
+</html>""",
+        status=status_code,
+        mimetype='text/html',
+        headers={'Cache-Control': 'no-store'}
+    )
+
+
+def _unique_existing_paths(paths):
+    """Return unique existing file paths from a candidate list."""
+    found = []
+    seen = set()
+    for candidate in paths:
+        if not candidate:
+            continue
+        normalized = os.path.abspath(candidate)
+        key = normalized.replace('\\', '/').lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if os.path.isfile(normalized):
+            found.append(normalized)
+    return found
+
+
+def get_tsr_archive_file_candidate_paths(disk_name, display_name=None):
+    """Return possible storage paths for TSR archive files.
+
+    Railway stores current files in /data/uploads/reports. Older local/live
+    builds may have files under static/uploads/reports, and restored backups may
+    contain either the randomized disk filename or the original display name.
+    """
+    safe_disk_name = os.path.basename(clean_str(disk_name) or '')
+    safe_display_name = os.path.basename(clean_str(display_name) or '')
+    names = []
+    for name in (safe_disk_name, safe_display_name, derive_original_filename_from_stored_filename(safe_disk_name)):
+        if name and name not in names:
+            names.append(name)
+
+    roots = []
+    for root in (
+        app.config.get('UPLOAD_FOLDER'),
+        '/data/uploads/reports',
+        '/data/uploads',
+        os.path.join(basedir, 'static', 'uploads', 'reports'),
+        os.path.join(basedir, 'static', 'uploads')
+    ):
+        root = clean_str(root)
+        if root and root not in roots:
+            roots.append(root)
+
+    candidates = []
+    for root in roots:
+        for name in names:
+            candidates.append(os.path.join(root, name))
+            candidates.append(os.path.join(root, 'reports', name))
+
+    return candidates
+
+
 def _resolve_tsr_archive_file_for_preview(file_id):
-    """Return validated TSR archive file info for preview routes."""
+    """Return validated TSR archive file info for preview/download routes."""
+    print(f"[TSR-ARCHIVE] Resolving file_id={file_id} path={request.path}", flush=True)
+
     file_rec = db.session.get(ShiftFile, file_id)
     if not file_rec:
-        return None, redirect(url_for('reports_page'))
+        return None, _tsr_archive_error_response(f'TSR file record #{file_id} was not found.', 404)
 
     shift = db.session.get(Shift, file_rec.shift_id)
     scope = tsr_archive_requested_scope()
     if not user_can_view_shift_tsr_archive(shift, scope):
-        return None, redirect(url_for('reports_page'))
+        return None, _tsr_archive_error_response(
+            f'You do not have permission to open TSR file #{file_id} with scope={scope}.',
+            403
+        )
 
     display_name = get_shift_file_display_name(file_rec)
     disk_name = get_shift_file_disk_name(file_rec)
     if not existing_files_have_tsr([display_name, disk_name]):
-        return None, redirect(url_for('reports_page'))
+        return None, _tsr_archive_error_response(
+            f'File #{file_id} is not recognized as a TSR file: {display_name or disk_name or "unnamed"}.',
+            400
+        )
 
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
-    if not os.path.exists(file_path):
-        return None, redirect(url_for('reports_page'))
+    candidate_paths = get_tsr_archive_file_candidate_paths(disk_name, display_name)
+    found_paths = _unique_existing_paths(candidate_paths)
+    if not found_paths:
+        print(
+            f"[TSR-ARCHIVE] Missing physical file for file_id={file_id}; "
+            f"disk_name={disk_name}; display_name={display_name}; "
+            f"checked={candidate_paths[:8]}",
+            flush=True
+        )
+        return None, _tsr_archive_error_response(
+            'The TSR record exists in the database, but the physical file was not found in the active upload folders. '
+            f'Disk filename: {disk_name or "blank"}. Display filename: {display_name or "blank"}.',
+            404
+        )
 
-    ext = disk_name.rsplit('.', 1)[-1].lower() if '.' in disk_name else ''
+    file_path = found_paths[0]
+    ext_source = display_name or disk_name or file_path
+    ext = ext_source.rsplit('.', 1)[-1].lower() if '.' in ext_source else ''
+
+    print(f"[TSR-ARCHIVE] Resolved file_id={file_id} to {file_path}", flush=True)
     return {
         'file_rec': file_rec,
         'shift': shift,
@@ -4844,27 +4964,20 @@ def preview_tsr_archive_content(file_id):
 @login_required
 def download_tsr_archive_file(file_id):
     """Authenticated TSR archive download with engineer/admin visibility guard."""
-    file_rec = db.session.get(ShiftFile, file_id)
-    if not file_rec:
-        return redirect(url_for('reports_page'))
+    resolved, error_response = _resolve_tsr_archive_file_for_preview(file_id)
+    if error_response:
+        return error_response
 
-    shift = db.session.get(Shift, file_rec.shift_id)
-    scope = tsr_archive_requested_scope()
-    if not user_can_view_shift_tsr_archive(shift, scope):
-        return redirect(url_for('reports_page'))
-
-    display_name = get_shift_file_display_name(file_rec)
-    disk_name = get_shift_file_disk_name(file_rec)
-    if not existing_files_have_tsr([display_name, disk_name]):
-        return redirect(url_for('reports_page'))
-
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
-    if not os.path.exists(file_path):
-        return redirect(url_for('reports_page'))
-
-    clean_download_name = get_shift_file_display_name(file_rec) or derive_original_filename_from_stored_filename(disk_name) or disk_name
-    response = send_file(file_path, as_attachment=True, download_name=clean_download_name)
+    disk_name = resolved['disk_name']
+    clean_download_name = (
+        resolved['display_name'] or
+        derive_original_filename_from_stored_filename(disk_name) or
+        disk_name or
+        f'tsr_file_{file_id}'
+    )
+    response = send_file(resolved['file_path'], as_attachment=True, download_name=clean_download_name)
     response.headers['Content-Disposition'] = f'attachment; filename="{clean_download_name}"'
+    response.headers['Cache-Control'] = 'no-store'
     return response
 
 
