@@ -177,7 +177,31 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 # The database must live inside the attached Railway volume at /data.
 if os.environ.get('RAILWAY_ENVIRONMENT'):
     os.makedirs('/data', exist_ok=True)
-    DATABASE_PATH = os.path.join('/data', 'scheduler.db')
+
+    legacy_db_path = os.path.join(basedir, 'scheduler.db')
+    railway_db_path = os.path.join('/data', 'scheduler.db')
+
+    # One-time safe restore:
+    # If Railway volume DB is missing/empty/fresh-bootstrap-sized, copy the bundled
+    # legacy scheduler.db from the deployed app folder into the persistent volume.
+    # This restores existing users, engineers, clients, products, schedules, and reports metadata.
+    try:
+        should_restore_legacy_db = (
+            os.path.exists(legacy_db_path)
+            and (
+                not os.path.exists(railway_db_path)
+                or os.path.getsize(railway_db_path) < 10240
+            )
+        )
+
+        if should_restore_legacy_db:
+            import shutil
+            shutil.copy2(legacy_db_path, railway_db_path)
+            print('[DATABASE] Restored bundled scheduler.db into Railway volume /data/scheduler.db.', flush=True)
+    except Exception as db_restore_error:
+        print(f'[DATABASE] Legacy scheduler.db restore skipped: {db_restore_error}', flush=True)
+
+    DATABASE_PATH = railway_db_path
 else:
     DATABASE_PATH = os.path.join(basedir, 'scheduler.db')
 
