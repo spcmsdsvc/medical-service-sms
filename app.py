@@ -101,6 +101,7 @@ import requests
 import base64
 import zipfile
 import zlib
+import tempfile
 from email.message import EmailMessage
 from email.utils import formataddr
 
