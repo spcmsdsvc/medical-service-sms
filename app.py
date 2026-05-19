@@ -175,7 +175,12 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # --- FILE UPLOAD SYSTEM CONFIGURATION ---
 
-UPLOAD_FOLDER = os.path.join(basedir, 'static/uploads/reports')
+# Railway persistent upload storage support
+if os.environ.get('RAILWAY_ENVIRONMENT'):
+    UPLOAD_FOLDER = '/data/uploads/reports'
+else:
+    UPLOAD_FOLDER = os.path.join(basedir, 'static/uploads/reports')
+
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_UPLOAD_MB', '25')) * 1024 * 1024
 
