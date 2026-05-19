@@ -3402,9 +3402,10 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
     const isEngineer = authRole === "engineer";
     // Detection of user's home branch to set auto-filter
     const userBranch = "{{ current_user.engineer_profile.branch if current_user.engineer_profile else 'ALL' }}";
-    // Named leadership/scheduler accounts default to ALL branches even if linked to a Manila engineer profile.
+    // Named leadership/scheduler accounts default to ALL branches even if linked to an engineer profile.
+    // Any superadmin account also defaults to ALL unless it is the regional_admin role.
     const defaultAllBranchUsers = ["jonamar", "rodito", "robert", "diary", "hanna"];
-    const shouldDefaultAllBranches = defaultAllBranchUsers.includes(loggedInUserLower);
+    const shouldDefaultAllBranches = !isRegionalAdmin && (isSuperAdmin || defaultAllBranchUsers.includes(loggedInUserLower));
     // Regional Admin/Kevin can view Cebu and Davao together, but not Manila schedule actions.
     const regionalAllowedBranches = ["Cebu", "Davao"];
 
@@ -5306,10 +5307,28 @@ if (selectedVal === "Leave") {
         weekOffset = savedState.weekOffset;
 
         const branchEl = document.getElementById('branch-filter');
-        if(branchEl && savedState.branch){
-            const hasOption = Array.from(branchEl.options || []).some(opt => opt.value === savedState.branch);
-            if(hasOption){
-                branchEl.value = savedState.branch;
+        if(branchEl){
+            // Superadmins/schedulers must always open Calendar on ALL branches,
+            // even if this browser previously saved Cebu/Manila/Davao.
+            // Regional admin remains untouched and uses Cebu + Davao regional view.
+            if(shouldDefaultAllBranches){
+                branchEl.value = "ALL";
+                return true;
+            }
+
+            if(isRegionalAdmin){
+                const hasRegionalOption = Array.from(branchEl.options || []).some(opt => opt.value === "REGIONAL");
+                if(hasRegionalOption){
+                    branchEl.value = "REGIONAL";
+                    return true;
+                }
+            }
+
+            if(savedState.branch){
+                const hasOption = Array.from(branchEl.options || []).some(opt => opt.value === savedState.branch);
+                if(hasOption){
+                    branchEl.value = savedState.branch;
+                }
             }
         }
 
@@ -7790,12 +7809,15 @@ window.addEventListener('resize', function(){ syncTimelineHorizontalScroll(); up
             restoredTimelineView = applyTimelineSnapshotViewState(loadTimelineOfflineSnapshot());
         }
         if (!restoredTimelineView) {
-            if (shouldDefaultAllBranches) {
-                document.getElementById('branch-filter').value = "ALL";
-            } else if (isRegionalAdmin) {
-                document.getElementById('branch-filter').value = "REGIONAL";
-            } else if (userBranch !== "ALL") {
-                document.getElementById('branch-filter').value = userBranch;
+            const branchEl = document.getElementById('branch-filter');
+            if (branchEl) {
+                if (shouldDefaultAllBranches) {
+                    branchEl.value = "ALL";
+                } else if (isRegionalAdmin) {
+                    branchEl.value = "REGIONAL";
+                } else if (userBranch !== "ALL") {
+                    branchEl.value = userBranch;
+                }
             }
         }
 
