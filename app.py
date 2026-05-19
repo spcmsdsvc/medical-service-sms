@@ -766,6 +766,46 @@ def bootstrap_user(username, role, plain_password=None):
     return user, temp_password, True
 
 
+_emergency_superadmin_bootstrap_ready = False
+
+
+def ensure_emergency_superadmin_from_env():
+    """Create/reset Jonamar superadmin only when SEED_PASSWORD_JONAMAR is present.
+
+    This is for fresh Railway volume recovery when /data/scheduler.db is empty.
+    Remove SEED_PASSWORD_JONAMAR from Railway Variables after login works.
+    """
+    global _emergency_superadmin_bootstrap_ready
+
+    if _emergency_superadmin_bootstrap_ready:
+        return
+
+    seed_password = os.environ.get('SEED_PASSWORD_JONAMAR')
+    if not seed_password:
+        _emergency_superadmin_bootstrap_ready = True
+        return
+
+    username = 'jonamar'
+    user = User.query.filter_by(username=username).first()
+
+    if user:
+        user.password = generate_password_hash(seed_password)
+        user.role = 'superadmin'
+        user.must_change_password = True
+        print("[BOOTSTRAP] Reset jonamar superadmin password from SEED_PASSWORD_JONAMAR.", flush=True)
+    else:
+        db.session.add(User(
+            username=username,
+            password=generate_password_hash(seed_password),
+            role='superadmin',
+            must_change_password=True
+        ))
+        print("[BOOTSTRAP] Created jonamar superadmin from SEED_PASSWORD_JONAMAR.", flush=True)
+
+    db.session.commit()
+    _emergency_superadmin_bootstrap_ready = True
+
+
 # --- AUTHORIZATION POLICY HELPERS ---
 
 DEVELOPER_SUPERADMIN_USERNAME = 'jonamar'
@@ -8768,6 +8808,9 @@ def ensure_runtime_sqlite_migrations_before_request():
 
     # Safe on existing SQLite databases; creates tables only when missing.
     db.create_all()
+
+    # Fresh Railway volume emergency login bootstrap.
+    ensure_emergency_superadmin_from_env()
 
     ensure_shift_file_original_filename_column()
     ensure_schedule_delete_indexes()
