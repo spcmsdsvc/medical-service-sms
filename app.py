@@ -49,7 +49,8 @@ from flask import (
     redirect, 
     url_for, 
     flash,
-    send_file
+    send_file,
+    g
 , session)
 
 from flask_sqlalchemy import SQLAlchemy
@@ -102,6 +103,7 @@ import base64
 import zipfile
 import zlib
 import tempfile
+import time
 from email.message import EmailMessage
 from email.utils import formataddr
 
@@ -293,6 +295,82 @@ if not os.path.exists(UPLOAD_FOLDER):
         print(f"CRITICAL ERROR: Directory initialization failure: {folder_err}")
 
 db = SQLAlchemy(app)
+
+
+# --- LIGHTWEIGHT PERFORMANCE DIAGNOSTICS ---
+# Logs route response time only. Does not change page/API behavior.
+PERFORMANCE_LOG_ENABLED = os.environ.get('PERFORMANCE_LOG_ENABLED', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
+PERFORMANCE_LOG_MIN_MS = float(os.environ.get('PERFORMANCE_LOG_MIN_MS', '0') or 0)
+
+PERFORMANCE_LOG_PATHS = {
+    '/',
+    '/timeline',
+    '/reports_page',
+    '/analytics_page',
+    '/activity_page',
+    '/engineers_page',
+    '/clients_page',
+    '/products_page',
+    '/settings',
+    '/get_timeline_data',
+    '/get_shift_details',
+    '/get_clients',
+    '/get_products',
+    '/get_engineers',
+    '/get_open_tasks',
+    '/get_recent_activity',
+    '/get_activity_logs',
+    '/get_activity_filter_options',
+    '/get_analytics_summary',
+    '/get_reports_summary',
+    '/get_tsr_archive',
+    '/get_offline_tsr_schedule_options',
+    '/search_tsr_knowledge',
+    '/get_tsr_knowledge_quick_picks'
+}
+
+
+def should_log_performance_path(path):
+    """Return True for pages/APIs useful for diagnosing loading slowness."""
+    if not PERFORMANCE_LOG_ENABLED or not path:
+        return False
+
+    if path in PERFORMANCE_LOG_PATHS:
+        return True
+
+    monitored_prefixes = (
+        '/preview_tsr_archive',
+        '/download_tsr_archive',
+        '/search_clients',
+        '/search_products',
+        '/export_'
+    )
+    return path.startswith(monitored_prefixes)
+
+
+@app.before_request
+def start_performance_timer():
+    if should_log_performance_path(request.path):
+        g._perf_start = time.perf_counter()
+
+
+@app.after_request
+def log_performance_timer(response):
+    start_time = getattr(g, '_perf_start', None)
+    if start_time is None:
+        return response
+
+    duration_ms = (time.perf_counter() - start_time) * 1000
+    if duration_ms >= PERFORMANCE_LOG_MIN_MS:
+        query_string = request.query_string.decode('utf-8', errors='ignore')
+        path_label = request.path + (f"?{query_string}" if query_string else "")
+        print(
+            f"[PERF] {request.method} {path_label} -> {response.status_code} in {duration_ms:.1f} ms",
+            flush=True
+        )
+
+    response.headers['X-Response-Time-ms'] = f"{duration_ms:.1f}"
+    return response
 
 
 _shift_file_original_filename_ready = False
