@@ -1915,6 +1915,18 @@ def offline_page():
 
 
 
+def build_shift_datetime_bounds(start_date, end_date):
+    """Return inclusive-exclusive datetime bounds for indexed Shift.start_time filtering.
+
+    Avoids wrapping Shift.start_time in func.date(), which slows SQLite on Railway
+    because indexes on start_time cannot be used efficiently.
+    """
+    start_dt = datetime.combine(start_date, datetime.min.time())
+    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+    return start_dt, end_dt
+
+
+
 @app.route('/offline-tsr')
 @login_required
 def offline_tsr_page():
@@ -1942,6 +1954,7 @@ def get_offline_tsr_schedule_options():
     today = get_manila_today()
     start_window = today - timedelta(days=7)
     end_window = today + timedelta(days=45)
+    start_dt, end_dt = build_shift_datetime_bounds(start_window, end_window)
 
     query = (
         Shift.query
@@ -1951,8 +1964,8 @@ def get_offline_tsr_schedule_options():
             joinedload(Shift.engineer),
             selectinload(Shift.files)
         )
-        .filter(func.date(Shift.start_time) >= start_window)
-        .filter(func.date(Shift.start_time) <= end_window)
+        .filter(Shift.start_time >= start_dt)
+        .filter(Shift.start_time < end_dt)
         .order_by(Shift.start_time.asc())
     )
 
@@ -3727,6 +3740,8 @@ def get_timeline_data():
     }
 
     if visible_engineer_ids:
+        week_start_dt, week_end_dt = build_shift_datetime_bounds(week_start, week_end)
+
         weekly_shifts = (
             Shift.query
             .options(
@@ -3734,10 +3749,8 @@ def get_timeline_data():
                 joinedload(Shift.product),
                 selectinload(Shift.files)
             )
-            .filter(
-                func.date(Shift.start_time) >= week_start,
-                func.date(Shift.start_time) <= week_end
-            )
+            .filter(Shift.start_time >= week_start_dt)
+            .filter(Shift.start_time < week_end_dt)
             .order_by(Shift.start_time.asc())
             .all()
         )
@@ -5580,7 +5593,11 @@ def ensure_schedule_delete_indexes():
     index_ddls = [
         "CREATE INDEX IF NOT EXISTS idx_shift_group_start_delete ON shift (group_id, start_time)",
         "CREATE INDEX IF NOT EXISTS idx_shift_start_delete ON shift (start_time)",
-        "CREATE INDEX IF NOT EXISTS idx_shiftengineer_engineer_shift_delete ON shift_engineer (engineer_id, shift_id)"
+        "CREATE INDEX IF NOT EXISTS idx_shiftengineer_engineer_shift_delete ON shift_engineer (engineer_id, shift_id)",
+        "CREATE INDEX IF NOT EXISTS idx_shift_start_status_timeline ON shift (start_time, status)",
+        "CREATE INDEX IF NOT EXISTS idx_shift_branch_owner_timeline ON shift (engineer_id, start_time)",
+        "CREATE INDEX IF NOT EXISTS idx_shiftengineer_shift_engineer_timeline ON shift_engineer (shift_id, engineer_id)",
+        "CREATE INDEX IF NOT EXISTS idx_shiftfile_shift_uploaded_timeline ON shift_file (shift_id, uploaded_at)"
     ]
 
     for ddl in index_ddls:
@@ -8549,6 +8566,7 @@ def ensure_runtime_sqlite_migrations_before_request():
     if request.endpoint == 'static':
         return
     ensure_shift_file_original_filename_column()
+    ensure_schedule_delete_indexes()
 
 
 @app.before_request
