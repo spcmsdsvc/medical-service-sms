@@ -7172,10 +7172,12 @@ def extract_text_from_report_file(file_path, filename):
 
 
 def get_tsr_files_for_shift(shift):
-    """Return stored TSR files attached to a shift.
+    """Return stored TSR files attached to a shift for client email sending.
 
-    filename is the server/disk filename.
-    display_name is the original/client-facing filename.
+    Uses the same Railway/local path fallback strategy as the working TSR
+    archive preview/download resolver, so email detection and email attachments
+    can find files stored under /data/uploads/reports, restored backups, or
+    older static upload folders.
     """
     ensure_shift_file_original_filename_column()
 
@@ -7183,21 +7185,33 @@ def get_tsr_files_for_shift(shift):
         return []
 
     files = []
-    for file_rec in shift.files:
+    for file_rec in getattr(shift, 'files', []) or []:
         display_name = get_shift_file_display_name(file_rec)
-        if not is_tsr_filename(display_name) and not is_tsr_filename(file_rec.filename):
+        disk_name = get_shift_file_disk_name(file_rec)
+
+        if not existing_files_have_tsr([display_name, disk_name]):
             continue
 
-        safe_filename = get_shift_file_disk_name(file_rec)
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], safe_filename)
-        if os.path.exists(file_path):
-            files.append({
-                'id': file_rec.id,
-                'filename': safe_filename,
-                'display_name': display_name or safe_filename,
-                'path': file_path,
-                'uploaded_at': file_rec.uploaded_at.isoformat() if file_rec.uploaded_at else ''
-            })
+        candidate_paths = get_tsr_archive_file_candidate_paths(disk_name, display_name)
+        found_paths = _unique_existing_paths(candidate_paths)
+
+        if not found_paths:
+            print(
+                f"[EMAIL-CLIENT] TSR file record exists but physical file was not found; "
+                f"shift_id={getattr(shift, 'id', None)}; file_id={getattr(file_rec, 'id', None)}; "
+                f"disk_name={disk_name}; display_name={display_name}; checked={candidate_paths[:8]}",
+                flush=True
+            )
+            continue
+
+        file_path = found_paths[0]
+        files.append({
+            'id': file_rec.id,
+            'filename': disk_name,
+            'display_name': display_name or disk_name,
+            'path': file_path,
+            'uploaded_at': file_rec.uploaded_at.isoformat() if file_rec.uploaded_at else ''
+        })
 
     return files
 
