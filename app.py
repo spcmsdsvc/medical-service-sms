@@ -7174,44 +7174,109 @@ def extract_text_from_report_file(file_path, filename):
 def get_tsr_files_for_shift(shift):
     """Return stored TSR files attached to a shift for client email sending.
 
-    Uses the same Railway/local path fallback strategy as the working TSR
-    archive preview/download resolver, so email detection and email attachments
-    can find files stored under /data/uploads/reports, restored backups, or
-    older static upload folders.
+    The Send Email to Client modal can be opened from:
+    - the exact shift where a TSR was uploaded/generated
+    - another day in the same multi-day group
+    - a linked time-override / multi-engineer row
+
+    Earlier logic checked only ``shift.files``. That made the modal say no TSR
+    was attached even when the linked schedule chain already had one. This
+    helper now searches the selected shift plus its linked completion chain,
+    while keeping the same archive path resolver and duplicate protection.
     """
     ensure_shift_file_original_filename_column()
 
     if not shift:
         return []
 
+    candidate_shifts = []
+    seen_shift_ids = set()
+
+    def add_candidate_shift(candidate):
+        if not candidate or not getattr(candidate, 'id', None):
+            return
+        if candidate.id in seen_shift_ids:
+            return
+        seen_shift_ids.add(candidate.id)
+        candidate_shifts.append(candidate)
+
+    add_candidate_shift(shift)
+
+    try:
+        for linked_shift in get_tsr_completion_linked_shifts(shift):
+            add_candidate_shift(linked_shift)
+    except Exception as linked_error:
+        print(
+            f"[EMAIL-CLIENT] Linked TSR file scan fallback failed for shift_id={getattr(shift, 'id', None)}: {linked_error}",
+            flush=True
+        )
+
+    # Extra-safe fallback for older records that may not be fully covered by
+    # get_tsr_completion_linked_shifts(), especially parent/child override rows.
+    try:
+        if getattr(shift, 'parent_shift_id', None):
+            add_candidate_shift(db.session.get(Shift, shift.parent_shift_id))
+
+        child_rows = Shift.query.filter_by(parent_shift_id=shift.id).all()
+        for child_shift in child_rows:
+            add_candidate_shift(child_shift)
+
+        if getattr(shift, 'group_id', None):
+            group_rows = Shift.query.filter_by(group_id=shift.group_id).all()
+            for group_shift in group_rows:
+                add_candidate_shift(group_shift)
+    except Exception as fallback_error:
+        print(
+            f"[EMAIL-CLIENT] Fallback linked TSR file scan failed for shift_id={getattr(shift, 'id', None)}: {fallback_error}",
+            flush=True
+        )
+
     files = []
-    for file_rec in getattr(shift, 'files', []) or []:
-        display_name = get_shift_file_display_name(file_rec)
-        disk_name = get_shift_file_disk_name(file_rec)
+    seen_file_ids = set()
 
-        if not existing_files_have_tsr([display_name, disk_name]):
-            continue
+    for candidate_shift in candidate_shifts:
+        for file_rec in getattr(candidate_shift, 'files', []) or []:
+            if getattr(file_rec, 'id', None) in seen_file_ids:
+                continue
 
-        candidate_paths = get_tsr_archive_file_candidate_paths(disk_name, display_name)
-        found_paths = _unique_existing_paths(candidate_paths)
+            display_name = get_shift_file_display_name(file_rec)
+            disk_name = get_shift_file_disk_name(file_rec)
 
-        if not found_paths:
-            print(
-                f"[EMAIL-CLIENT] TSR file record exists but physical file was not found; "
-                f"shift_id={getattr(shift, 'id', None)}; file_id={getattr(file_rec, 'id', None)}; "
-                f"disk_name={disk_name}; display_name={display_name}; checked={candidate_paths[:8]}",
-                flush=True
-            )
-            continue
+            if not existing_files_have_tsr([display_name, disk_name]):
+                continue
 
-        file_path = found_paths[0]
-        files.append({
-            'id': file_rec.id,
-            'filename': disk_name,
-            'display_name': display_name or disk_name,
-            'path': file_path,
-            'uploaded_at': file_rec.uploaded_at.isoformat() if file_rec.uploaded_at else ''
-        })
+            candidate_paths = get_tsr_archive_file_candidate_paths(disk_name, display_name)
+            found_paths = _unique_existing_paths(candidate_paths)
+
+            if not found_paths:
+                print(
+                    f"[EMAIL-CLIENT] TSR file record exists but physical file was not found; "
+                    f"selected_shift_id={getattr(shift, 'id', None)}; "
+                    f"source_shift_id={getattr(candidate_shift, 'id', None)}; "
+                    f"file_id={getattr(file_rec, 'id', None)}; "
+                    f"disk_name={disk_name}; display_name={display_name}; checked={candidate_paths[:8]}",
+                    flush=True
+                )
+                continue
+
+            seen_file_ids.add(file_rec.id)
+            file_path = found_paths[0]
+            files.append({
+                'id': file_rec.id,
+                'shift_id': candidate_shift.id,
+                'selected_shift_id': getattr(shift, 'id', None),
+                'filename': disk_name,
+                'display_name': display_name or disk_name,
+                'path': file_path,
+                'uploaded_at': file_rec.uploaded_at.isoformat() if file_rec.uploaded_at else ''
+            })
+
+    if not files:
+        print(
+            f"[EMAIL-CLIENT] No linked TSR files found for selected_shift_id={getattr(shift, 'id', None)}; "
+            f"checked_shift_ids={sorted(seen_shift_ids)}",
+            flush=True
+        )
 
     return files
 
