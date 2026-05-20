@@ -7171,6 +7171,60 @@ def extract_text_from_report_file(file_path, filename):
     return ''
 
 
+TSR_EMBEDDED_TEXT_KEYWORDS = (
+    'TECHNICAL SERVICE REPORT',
+    'TECHNICAL SERVICES REPORT',
+    'TECHNICAL REPORT',
+    'SERVICE REPORT',
+    'TSR NO',
+    'TSR NUMBER',
+    'TSR #',
+    'TSR#'
+)
+
+
+def text_looks_like_tsr_document(extracted_text):
+    """Return True when extracted PDF text looks like a Technical Service Report.
+
+    This is intentionally keyword-based and lightweight. It supports searchable
+    PDFs without adding OCR/Tesseract dependencies to Railway.
+    """
+    normalized_text = re.sub(r'\s+', ' ', extracted_text or '').upper()
+    if not normalized_text:
+        return False
+
+    if any(keyword in normalized_text for keyword in TSR_EMBEDDED_TEXT_KEYWORDS):
+        return True
+
+    # Conservative fallback for PDFs that use abbreviated labels only.
+    return (
+        'TSR' in normalized_text and
+        any(context in normalized_text for context in ('CUSTOMER', 'CLIENT', 'SERVICE', 'EQUIPMENT'))
+    )
+
+
+def report_file_content_looks_like_tsr(file_path, filename):
+    """Scan embedded text from searchable PDF files to identify TSR attachments.
+
+    Filename detection remains the fast path. This fallback only reads normal
+    PDF text and does not OCR scanned/image-only TSRs.
+    """
+    filename = filename or ''
+    ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+    if ext != 'pdf':
+        return False
+
+    try:
+        extracted_text = extract_text_from_report_file(file_path, filename)
+        return text_looks_like_tsr_document(extracted_text)
+    except Exception as scan_error:
+        print(
+            f"[EMAIL-CLIENT] Embedded PDF TSR scan failed for {filename}: {scan_error}",
+            flush=True
+        )
+        return False
+
+
 def get_tsr_files_for_shift(shift):
     """Return stored TSR files attached to a shift for client email sending.
 
@@ -7179,10 +7233,12 @@ def get_tsr_files_for_shift(shift):
     - another day in the same multi-day group
     - a linked time-override / multi-engineer row
 
-    Earlier logic checked only ``shift.files``. That made the modal say no TSR
-    was attached even when the linked schedule chain already had one. This
-    helper now searches the selected shift plus its linked completion chain,
-    while keeping the same archive path resolver and duplicate protection.
+    Detection now uses two safe layers:
+    1. Fast filename/original-filename detection containing TSR.
+    2. Searchable PDF embedded-text scan for files whose filename does not say TSR.
+
+    OCR/image-only TSR scanning is intentionally not included here because it
+    would require heavier Railway system dependencies.
     """
     ensure_shift_file_original_filename_column()
 
@@ -7241,26 +7297,40 @@ def get_tsr_files_for_shift(shift):
 
             display_name = get_shift_file_display_name(file_rec)
             disk_name = get_shift_file_disk_name(file_rec)
-
-            if not existing_files_have_tsr([display_name, disk_name]):
-                continue
+            filename_detected = existing_files_have_tsr([display_name, disk_name])
 
             candidate_paths = get_tsr_archive_file_candidate_paths(disk_name, display_name)
             found_paths = _unique_existing_paths(candidate_paths)
 
             if not found_paths:
-                print(
-                    f"[EMAIL-CLIENT] TSR file record exists but physical file was not found; "
-                    f"selected_shift_id={getattr(shift, 'id', None)}; "
-                    f"source_shift_id={getattr(candidate_shift, 'id', None)}; "
-                    f"file_id={getattr(file_rec, 'id', None)}; "
-                    f"disk_name={disk_name}; display_name={display_name}; checked={candidate_paths[:8]}",
-                    flush=True
-                )
+                if filename_detected:
+                    print(
+                        f"[EMAIL-CLIENT] TSR file record exists but physical file was not found; "
+                        f"selected_shift_id={getattr(shift, 'id', None)}; "
+                        f"source_shift_id={getattr(candidate_shift, 'id', None)}; "
+                        f"file_id={getattr(file_rec, 'id', None)}; "
+                        f"disk_name={disk_name}; display_name={display_name}; checked={candidate_paths[:8]}",
+                        flush=True
+                    )
                 continue
 
-            seen_file_ids.add(file_rec.id)
             file_path = found_paths[0]
+            detection_method = 'filename'
+
+            if not filename_detected:
+                scan_name = display_name or disk_name or os.path.basename(file_path)
+                if not report_file_content_looks_like_tsr(file_path, scan_name):
+                    continue
+                detection_method = 'pdf_embedded_text'
+                print(
+                    f"[EMAIL-CLIENT] TSR detected by embedded PDF text; "
+                    f"selected_shift_id={getattr(shift, 'id', None)}; "
+                    f"source_shift_id={getattr(candidate_shift, 'id', None)}; "
+                    f"file_id={getattr(file_rec, 'id', None)}; filename={scan_name}",
+                    flush=True
+                )
+
+            seen_file_ids.add(file_rec.id)
             files.append({
                 'id': file_rec.id,
                 'shift_id': candidate_shift.id,
@@ -7268,6 +7338,7 @@ def get_tsr_files_for_shift(shift):
                 'filename': disk_name,
                 'display_name': display_name or disk_name,
                 'path': file_path,
+                'detection_method': detection_method,
                 'uploaded_at': file_rec.uploaded_at.isoformat() if file_rec.uploaded_at else ''
             })
 
