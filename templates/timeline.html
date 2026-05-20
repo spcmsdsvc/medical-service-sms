@@ -3364,10 +3364,10 @@ async function loadEngineerOptions(){
     let timelineLoadSeq = 0;
 
 function shouldUseTimelineLitePayload(){
-    // Optimization Phase 2A:
-    // Desktop grid can load lighter schedule payloads, then fetch full details only when Edit is opened.
-    // Keep role-aware mobile on full payload for now because mobile quick-status and TSR cards depend on file counts.
-    return !shouldUseRoleAwareMobileTimeline();
+    // TSR attachment correctness fix:
+    // Use the full payload so desktop cards receive file_details/file ids.
+    // This keeps the paperclip icon/count visible after uploads and lets the modal use protected preview links.
+    return false;
 }
 
 function buildFreshTimelineUrl(offset, branch, litePayload=false){
@@ -6330,10 +6330,18 @@ if(shift.engineers){
                 const item = document.createElement('div');
                 item.className = "list-group-item d-flex justify-content-between align-items-center py-1 px-2 small";
 
-                item.innerHTML = `
-                    <a href="/static/uploads/reports/${encodeURIComponent(filename)}" target="_blank" class="text-decoration-none text-primary">
+                const previewUrl = getTimelineFilePreviewUrl(fileInfo);
+                const fileLinkHtml = previewUrl
+                    ? `<a href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener" class="text-decoration-none text-primary">
                         <i class="fa-solid fa-file-lines me-1"></i> ${escapeHtml(displayName)}
-                    </a>
+                    </a>`
+                    : `<span class="text-muted">
+                        <i class="fa-solid fa-file-lines me-1"></i> ${escapeHtml(displayName)}
+                        <span class="xsmall ms-1">(preview unavailable)</span>
+                    </span>`;
+
+                item.innerHTML = `
+                    ${fileLinkHtml}
                     <button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="deleteExistingFile('${safeFilename}', this)" title="Delete this file">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
@@ -6407,15 +6415,30 @@ if(shift.engineers){
     function getShiftFileDetails(shift){
         if(Array.isArray(shift?.file_details) && shift.file_details.length){
             return shift.file_details.map(file => ({
-                filename: file.filename || file.name || '',
-                display_name: file.display_name || file.original_filename || cleanStoredFilenameForDisplay(file.filename || file.name || '')
-            })).filter(file => file.filename);
+                id: file.id || file.file_id || '',
+                filename: file.filename || file.name || file.disk_filename || '',
+                disk_filename: file.disk_filename || file.stored_filename || '',
+                display_name: file.display_name || file.original_filename || cleanStoredFilenameForDisplay(file.filename || file.name || file.disk_filename || ''),
+                preview_url: file.preview_url || (file.id ? `/preview_tsr_archive_file/${file.id}` : ''),
+                download_url: file.download_url || (file.id ? `/download_tsr_archive_file/${file.id}` : '')
+            })).filter(file => file.filename || file.id);
         }
 
         return (shift?.files || []).map(filename => ({
+            id: '',
             filename,
-            display_name: cleanStoredFilenameForDisplay(filename)
+            disk_filename: filename,
+            display_name: cleanStoredFilenameForDisplay(filename),
+            preview_url: '',
+            download_url: ''
         })).filter(file => file.filename);
+    }
+
+    function getTimelineFilePreviewUrl(fileInfo){
+        if(!fileInfo) return '';
+        if(fileInfo.preview_url) return fileInfo.preview_url;
+        if(fileInfo.id) return `/preview_tsr_archive_file/${encodeURIComponent(fileInfo.id)}`;
+        return '';
     }
 
 
