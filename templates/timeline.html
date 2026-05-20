@@ -4586,7 +4586,7 @@ function buildMobileScheduleCard(shift, day, rowEngineer){
         const isInternal = !isWork;
         const fileCount = getShiftFileDetails(shift).length;
         const canManage = canManageExistingScheduleForRow(rowEngineer, shift);
-        const canSendTSR = isWork && shift.status === "Completed" && fileCount > 0;
+        const canSendTSR = canSendTSRForSchedule(shift);
         const assignedNames = getMobileAssignedEngineerNames(shift);
         const timeRange = (shift.time_start && shift.time_end) ? `${t12(shift.time_start)}–${t12(shift.time_end)}` : 'Time not set';
         const clientAddress = getMobileClientAddress(shift);
@@ -4778,7 +4778,7 @@ function collectMobileEngineerSchedules(){
                 contact,
                 clientAddress,
                 canManage: canManageExistingScheduleForRow(stickyCandidate.engineer, shift),
-                canSendTSR: isWork && shift.status === "Completed" && fileCount > 0
+                canSendTSR: canSendTSRForSchedule(shift)
             });
         }
 
@@ -5838,13 +5838,13 @@ async function loadGrid() {
 
                             <div class="schedule-footer">
                                 <span class="schedule-time">${timeRange}</span>
-                                <span class="schedule-files">${paperIcon}${isWork && s.status === "Completed" && fileCount > 0 ? '<i class="fa-solid fa-paper-plane ms-1 text-success" title="TSR ready to send"></i>' : ''}</span>
+                                <span class="schedule-files">${paperIcon}${canSendTSRForSchedule(s) ? '<i class="fa-solid fa-paper-plane ms-1 text-success" title="TSR ready to send"></i>' : ''}</span>
                             </div>
 
                             ${canManageThisSchedule ? `
                             <div class="schedule-overlay">
                                 <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); openEditModal(${JSON.stringify(s).replace(/"/g, '&quot;')}, ${eng.id}, '${day.iso}')">Edit</button>
-                                ${isWork && s.status === "Completed" && fileCount > 0 ? `<button class="btn btn-success btn-sm tsr-send-btn" title="Send TSR to Client" onclick="event.stopPropagation(); openTSRClientEmailModal(${s.id})"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
+                                ${canSendTSRForSchedule(s) ? `<button class="btn btn-success btn-sm tsr-send-btn" title="Send TSR to Client" onclick="event.stopPropagation(); openTSRClientEmailModal(${s.id})"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
                                 <button class="btn btn-danger btn-sm delete-btn" data-eid="${eng.id}" data-ename='${JSON.stringify(eng.name)}' data-shiftid="${s.id}" data-shiftdate="${day.iso}">Delete</button>
                             </div>
                             ` : ''}
@@ -6439,6 +6439,18 @@ if(shift.engineers){
         if(fileInfo.preview_url) return fileInfo.preview_url;
         if(fileInfo.id) return `/preview_tsr_archive_file/${encodeURIComponent(fileInfo.id)}`;
         return '';
+    }
+
+    function isScheduleCompleted(shift){
+        return String(shift?.status || '').trim().toLowerCase() === 'completed';
+    }
+
+    function hasScheduleTSRAttachment(shift){
+        return getShiftFileDetails(shift).length > 0;
+    }
+
+    function canSendTSRForSchedule(shift){
+        return Boolean(shift?.client_id) && isScheduleCompleted(shift) && hasScheduleTSRAttachment(shift);
     }
 
 
