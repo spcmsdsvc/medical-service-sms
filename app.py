@@ -836,13 +836,18 @@ def generate_acronym(text):
     return "".join([w[0] for w in words])
 
 
-def check_for_duplicate_client(new_name, new_addr):
-    name_up = new_name.strip().upper()
+def check_for_duplicate_client(new_name, new_addr, exclude_id=None):
+    name_up = (new_name or '').strip().upper()
     acr_incoming = generate_acronym(new_name)
     addr_norm = normalize_address(new_addr)
 
+    excluded_client_id = clean_int(exclude_id)
+
     for c in Client.query.all():
-        existing_name = c.name.strip().upper()
+        if excluded_client_id and c.id == excluded_client_id:
+            continue
+
+        existing_name = (c.name or '').strip().upper()
         existing_acr = generate_acronym(c.name)
         existing_addr = normalize_address(c.address)
 
@@ -5805,11 +5810,12 @@ def export_timeline():
 def check_client_duplicate():
     name = request.args.get('name')
     addr = request.args.get('address')
+    exclude_id = clean_int(request.args.get('exclude_id'))
 
     if not name:
         return jsonify({'match': False})
 
-    c = check_for_duplicate_client(name, addr)
+    c = check_for_duplicate_client(name, addr, exclude_id=exclude_id)
     if c:
         return jsonify({
             'match': True,
@@ -5825,13 +5831,17 @@ def check_client_duplicate():
 def search_clients():
     q = request.args.get('q', '').strip()
     addr = request.args.get('address', '').strip()
+    exclude_id = clean_int(request.args.get('exclude_id'))
 
     if not q:
         return jsonify([])
 
     results = []
     for c in Client.query.all():
-        score = similarity(q.upper(), c.name.upper())
+        if exclude_id and c.id == exclude_id:
+            continue
+
+        score = similarity(q.upper(), (c.name or '').upper())
 
         # boost if acronym match
         if generate_acronym(q) == generate_acronym(c.name):
@@ -6059,7 +6069,19 @@ def update_client(id):
     if not is_admin_authorized():
         return jsonify({'message': 'Denied'}), 403
 
-    client_rec.name, client_rec.address = clean_str(payload.get('name')), clean_str(payload.get('address'))
+    new_name = clean_str(payload.get('name'))
+    new_address = clean_str(payload.get('address'))
+    collision = check_for_duplicate_client(new_name, new_address, exclude_id=id)
+    if collision:
+        return jsonify({
+            'status': 'conflict',
+            'message': f'Duplicate Found: "{collision.name}"',
+            'existing_id': collision.id,
+            'existing_name': collision.name,
+            'existing_address': collision.address
+        }), 409
+
+    client_rec.name, client_rec.address = new_name, new_address
     client_rec.contact_person_1, client_rec.contact_number_1, client_rec.email_address_1 = clean_str(payload.get('cp1')), clean_str(payload.get('cn1')), clean_str(payload.get('ce1'))
     client_rec.contact_person_2, client_rec.contact_number_2, client_rec.email_address_2 = clean_str(payload.get('cp2')), clean_str(payload.get('cn2')), clean_str(payload.get('ce2'))
     client_rec.contact_person_3, client_rec.contact_number_3, client_rec.email_address_3 = None, None, None

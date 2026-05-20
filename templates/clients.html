@@ -141,15 +141,48 @@ let clientModalInstance, viewModalInstance, clientsData = [], clientSummary = { 
 
 let autoTimer;
 
+function hideClientAutocomplete(){
+    const box = document.getElementById('auto-box');
+    if(box){
+        box.innerHTML = "";
+        box.style.display = 'none';
+    }
+}
+
+function hideDuplicateWarning(){
+    const warn = document.getElementById('dup-warning');
+    if(warn){
+        warn.innerHTML = "";
+        warn.style.display = 'none';
+    }
+}
+
+function getEditingClientId(){
+    const field = document.getElementById('edit-client-id');
+    return field ? String(field.value || '').trim() : '';
+}
+
 async function autoCompleteClient(){
     clearTimeout(autoTimer);
     autoTimer = setTimeout(async ()=>{
+        const editingClientId = getEditingClientId();
+
+        // Do not show duplicate suggestions while editing an existing client.
+        // This prevents the current client from being suggested against itself.
+        if(editingClientId){
+            hideClientAutocomplete();
+            return;
+        }
+
         const name = document.getElementById('c-name').value;
         const address = document.getElementById('c-address').value;
 
-        if(!name) return;
+        if(!name){
+            hideClientAutocomplete();
+            return;
+        }
 
-        const res = await fetch(`/search_clients?q=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}`);
+        const res = await fetch(`/search_clients?q=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}&exclude_id=${encodeURIComponent(editingClientId)}`);
         const data = await res.json();
 
         let box = document.getElementById('auto-box');
@@ -163,15 +196,17 @@ async function autoCompleteClient(){
 
         box.innerHTML = "";
 
-        if(data.length === 0){
+        const filteredData = (data || []).filter(item => String(item.id) !== String(editingClientId));
+
+        if(filteredData.length === 0){
             box.style.display = 'none';
             return;
         }
 
-        data.forEach(item=>{
+        filteredData.forEach(item=>{
             const el = document.createElement('a');
             el.className = 'list-group-item list-group-item-action';
-            el.innerHTML = `<b>${item.name}</b><br><small>${item.address || ''} • ${item.score*100}% match</small>`;
+            el.innerHTML = `<b>${item.name}</b><br><small>${item.address || ''} • ${Math.round((item.score || 0) * 100)}% match</small>`;
             el.onclick = ()=>{
                 document.getElementById('c-name').value = item.name;
                 document.getElementById('c-address').value = item.address;
@@ -209,12 +244,24 @@ let duplicateTimer;
 async function liveDuplicateCheck(){
     clearTimeout(duplicateTimer);
     duplicateTimer = setTimeout(async ()=>{
+        const editingClientId = getEditingClientId();
+
+        // Skip live duplicate warning while editing so the same client
+        // does not appear as its own duplicate. Backend save still protects updates.
+        if(editingClientId){
+            hideDuplicateWarning();
+            return;
+        }
+
         const name = document.getElementById('c-name').value;
         const address = document.getElementById('c-address').value;
 
-        if(!name) return;
+        if(!name){
+            hideDuplicateWarning();
+            return;
+        }
 
-        const res = await fetch(`/check_client_duplicate?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}`);
+        const res = await fetch(`/check_client_duplicate?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}&exclude_id=${encodeURIComponent(editingClientId)}`);
         const data = await res.json();
 
         let warn = document.getElementById('dup-warning');
@@ -226,7 +273,7 @@ async function liveDuplicateCheck(){
             document.getElementById('c-name').parentElement.appendChild(warn);
         }
 
-        if(data.match){
+        if(data.match && String(data.id) !== String(editingClientId)){
             warn.style.display = 'block';
             warn.innerHTML = `⚠ Possible duplicate:<br><b>${data.name}</b> (${data.address || 'No address'})`;
         } else {
@@ -445,6 +492,8 @@ function addContact(name="", phone="", email=""){
 
 function openAddModal(){
     if(!isAdminUser) return;
+    hideClientAutocomplete();
+    hideDuplicateWarning();
     setClientModalContactOnlyMode(false);
     document.getElementById('modal-title').innerText = "Add New Client";
     document.getElementById('edit-client-id').value = "";
@@ -458,6 +507,8 @@ function openAddModal(){
 
 function openEditModal(id){
     if(!canManageClientContacts) return;
+    hideClientAutocomplete();
+    hideDuplicateWarning();
     const c = clientsData.find(x => x.id === id);
     const contactOnly = isContactOnlyClientEdit();
     setClientModalContactOnlyMode(contactOnly);
@@ -490,11 +541,11 @@ async function saveClient(){
     const name = document.getElementById('c-name').value;
     const address = document.getElementById('c-address').value;
 
-    if(!id && isAdminUser){
-        const check = await fetch(`/check_client_duplicate?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}`);
+    if(isAdminUser){
+        const check = await fetch(`/check_client_duplicate?name=${encodeURIComponent(name)}&address=${encodeURIComponent(address)}&exclude_id=${encodeURIComponent(id || '')}`);
         const checkData = await check.json();
 
-        if(checkData.match){
+        if(checkData.match && String(checkData.id) !== String(id || '')){
 
             if(confirm(`Duplicate found:
 
