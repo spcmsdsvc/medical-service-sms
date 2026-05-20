@@ -6675,7 +6675,7 @@ def detach_engineer_from_parent_shift_for_override(parent_shift, engineer_id):
 
 
 
-CLIENT_EMAIL_REGEX = re.compile(r'(?<![A-Z0-9._+\-])([A-Z0-9](?:[A-Z0-9._+\-]{0,62}[A-Z0-9])?@[A-Z0-9](?:[A-Z0-9\-]{0,61}[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9\-]{0,61}[A-Z0-9])?)+)(?![A-Z0-9._+\-])', re.IGNORECASE)
+CLIENT_EMAIL_REGEX = re.compile(r'(?<![A-Z0-9._%+\-])([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})(?![A-Z0-9._%+\-])', re.IGNORECASE)
 
 
 NON_CLIENT_EMAIL_DOMAINS = {
@@ -6718,11 +6718,6 @@ def is_valid_manual_recipient_email(email_addr):
         return False
 
     local_part, domain = lowered.rsplit('@', 1)
-    domain_labels = domain.split('.')
-    if len(domain_labels) < 2 or domain_labels[-1].isdigit() or not (2 <= len(domain_labels[-1]) <= 24):
-        return False
-    if domain_labels[0].isdigit():
-        return False
 
     manual_blocked_domains = {
         domain_name
@@ -6796,11 +6791,6 @@ def is_valid_client_email(email_addr):
         return False
 
     local_part, domain = lowered.rsplit('@', 1)
-    domain_labels = domain.split('.')
-    if len(domain_labels) < 2 or domain_labels[-1].isdigit() or not (2 <= len(domain_labels[-1]) <= 24):
-        return False
-    if domain_labels[0].isdigit():
-        return False
 
     if domain in NON_CLIENT_EMAIL_DOMAINS:
         return False
@@ -6862,11 +6852,11 @@ def extract_emails_from_text(raw_text):
         score = score_email_candidate_from_context(raw_text, match.start(), match.end())
         candidates[cleaned] = max(score, candidates.get(cleaned, -9999))
 
-    # Only return emails with strong TSR/customer/contact context.
-    # Searchable PDFs can contain random/certificate/binary-looking strings that
-    # resemble emails, so do not fall back to every regex match. Client-database
-    # emails are returned separately as fallback choices.
-    selected = [(email, score) for email, score in candidates.items() if score > 0]
+    # Prefer positive/contextual candidates. If none have positive context,
+    # keep valid emails but still exclude certificate/system domains above.
+    positive = [(email, score) for email, score in candidates.items() if score > 0]
+    selected = positive if positive else list(candidates.items())
+
     selected.sort(key=lambda item: (-item[1], item[0]))
 
     return [email for email, score in selected]
@@ -7368,9 +7358,8 @@ def detect_client_emails_from_tsr_files(tsr_files):
 
     for tsr_file in tsr_files or []:
         extracted_text = extract_text_from_report_file(tsr_file.get('path'), tsr_file.get('filename'))
-        source_name = tsr_file.get('display_name') or tsr_file.get('filename')
         for email_addr in extract_emails_from_text(extracted_text):
-            email_sources.setdefault(email_addr, set()).add(source_name)
+            email_sources.setdefault(email_addr, set()).add(tsr_file.get('filename'))
 
     return [
         {
