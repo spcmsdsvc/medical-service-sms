@@ -44,10 +44,29 @@
         </div>
     </div>
 
+    <!-- DASHBOARD PERSONALIZATION CONTROLS -->
+    <div class="dashboard-personalize-toolbar mb-4">
+        <div>
+            <h6 class="mb-0 fw-bold text-dark">
+                <i class="fa-solid fa-sliders me-2 text-primary"></i>
+                Dashboard Layout
+            </h6>
+            <p class="text-muted small mb-0">Turn on customize mode to drag sections into your preferred order. Your layout is saved on this device.</p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="button" id="dashboard-customize-toggle" class="btn btn-sm btn-outline-primary fw-bold" onclick="toggleDashboardCustomizeMode()">
+                <i class="fa-solid fa-grip-vertical me-1"></i>Customize
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="resetDashboardLayout()">
+                <i class="fa-solid fa-arrow-rotate-left me-1"></i>Reset
+            </button>
+        </div>
+    </div>
+
     <!-- ANALYTICS MATRIX -->
     {% if dashboard_has_engineer_profile %}
     <!-- ENGINEER-FOCUSED STATUS CARDS -->
-    <div class="row mb-4 g-3">
+    <div class="row mb-4 g-3 dashboard-sortable-section" data-dashboard-section="engineer-summary" data-dashboard-title="Engineer Summary">
         <div class="col-md-3 col-sm-6">
             <div class="card p-4 text-center bg-white border-0 shadow-sm rounded-4 transition-hover dashboard-engineer-summary-card">
                 <h6 class="small fw-bold text-muted text-uppercase mb-2">My Active Tasks</h6>
@@ -83,7 +102,7 @@
     {% endif %}
 
     {% if dashboard_admin_view %}
-    <div class="row mb-4 g-3">
+    <div class="row mb-4 g-3 dashboard-sortable-section" data-dashboard-section="admin-counters" data-dashboard-title="Admin Counters">
         
         <!-- PERSONNEL COUNTER -->
         <div class="col-md-4">
@@ -117,7 +136,7 @@
 
     {% if dashboard_admin_view %}
     <!-- HYBRID PHASE 3: SMART NEEDS ATTENTION PANEL -->
-    <div class="dashboard-needs-attention mb-4">
+    <div class="dashboard-needs-attention mb-4 dashboard-sortable-section" data-dashboard-section="needs-attention" data-dashboard-title="Needs Attention">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
                 <h5 class="mb-0 fw-bold text-dark">
@@ -175,7 +194,7 @@
 
     {% if dashboard_admin_view %}
     <!-- HYBRID PHASE 2: TEAM INTELLIGENCE (COLLAPSIBLE) -->
-    <div class="dashboard-team-intelligence mb-4">
+    <div class="dashboard-team-intelligence mb-4 dashboard-sortable-section" data-dashboard-section="team-intelligence" data-dashboard-title="Team Intelligence">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
                 <h5 class="mb-0 fw-bold text-dark">
@@ -252,8 +271,65 @@
     </div>
     {% endif %}
 
+    {% if dashboard_admin_view %}
+    <!-- HYBRID PHASE 4: QUICK ADMIN ACTIONS (COLLAPSIBLE) -->
+    <div class="dashboard-quick-admin mb-4 dashboard-sortable-section" data-dashboard-section="quick-admin" data-dashboard-title="Quick Admin Actions">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <h5 class="mb-0 fw-bold text-dark">
+                    <i class="fa-solid fa-bolt me-2 text-warning"></i>
+                    Quick Admin Actions
+                </h5>
+                <p class="text-muted small mb-0">Fast management shortcuts kept collapsed to reduce dashboard clutter</p>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('quick-admin-actions-body', this)">
+                <i class="fa-solid fa-chevron-down me-1"></i>Show
+            </button>
+        </div>
+
+        <div id="quick-admin-actions-body" class="dashboard-collapsible-body d-none mt-3">
+            <div class="dashboard-admin-action-grid">
+                <a href="/timeline" class="dashboard-admin-action-card dashboard-admin-action-primary">
+                    <i class="fa-solid fa-calendar-plus"></i>
+                    <strong>Create / Manage Schedule</strong>
+                    <span>Open calendar grid</span>
+                </a>
+                <a href="/reports_page" class="dashboard-admin-action-card">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <strong>Reports</strong>
+                    <span>TSR archive and service records</span>
+                </a>
+                <a href="/analytics_page" class="dashboard-admin-action-card">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <strong>Analytics</strong>
+                    <span>Branch and workload insights</span>
+                </a>
+                <a href="/activity_page" class="dashboard-admin-action-card">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <strong>Activity Logs</strong>
+                    <span>Review recent system actions</span>
+                </a>
+                <a href="/clients_page" class="dashboard-admin-action-card">
+                    <i class="fa-solid fa-hospital"></i>
+                    <strong>Clients</strong>
+                    <span>Manage medical centers</span>
+                </a>
+                <a href="/products_page" class="dashboard-admin-action-card">
+                    <i class="fa-solid fa-boxes-stacked"></i>
+                    <strong>Products</strong>
+                    <span>Manage equipment inventory</span>
+                </a>
+                <a href="/engineers_page" class="dashboard-admin-action-card">
+                    <i class="fa-solid fa-user-gear"></i>
+                    <strong>Engineers</strong>
+                    <span>Manage personnel directory</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
     <!-- MOBILE DASHBOARD QUICK ACTIONS -->
-    <div class="dashboard-mobile-quick-actions mb-4">
+    <div class="dashboard-mobile-quick-actions mb-4 dashboard-sortable-section" data-dashboard-section="mobile-quick-actions" data-dashboard-title="Mobile Quick Actions">
         {% if dashboard_has_engineer_profile %}
         <a href="/timeline" class="dashboard-mobile-action-card dashboard-mobile-action-primary">
             <i class="fa-solid fa-calendar-days"></i>
@@ -300,7 +376,7 @@
 
     {% if dashboard_has_engineer_profile %}
     <!-- ENGINEER WORKFLOW SHORTCUTS -->
-    <div class="dashboard-engineer-workflow mb-4">
+    <div class="dashboard-engineer-workflow mb-4 dashboard-sortable-section" data-dashboard-section="engineer-workflow" data-dashboard-title="Engineer Workflow">
         <a href="/timeline" class="dashboard-workflow-card dashboard-workflow-primary">
             <div class="dashboard-workflow-icon"><i class="fa-solid fa-calendar-days"></i></div>
             <div>
@@ -342,7 +418,7 @@
     <!-- v5.2 ROLE-BASED WIDGET SECTION -->
     {% if dashboard_has_engineer_profile %}
     <!-- ENGINEER-ONLY: MY ACTIVE TASKS -->
-    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-primary">
+    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-primary dashboard-sortable-section" data-dashboard-section="my-active-tasks" data-dashboard-title="My Active Tasks">
         <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
             <div>
                 <h5 class="mb-0 fw-bold text-primary">
@@ -383,7 +459,7 @@
     {% endif %}
 
     <!-- OPEN TECHNICAL TASKS REGISTRY (COMPANY-WIDE) -->
-    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4">
+    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 dashboard-sortable-section" data-dashboard-section="open-technical-tasks" data-dashboard-title="Open Technical Tasks">
         
         <div class="card-header bg-white py-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-3">
             
@@ -459,7 +535,7 @@
 
     {% if dashboard_admin_view %}
     <!-- ADMIN-ONLY: RECENT SYSTEM ACTIVITY (Auto-refresh enabled) -->
-    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-info">
+    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-info dashboard-sortable-section" data-dashboard-section="recent-activity" data-dashboard-title="Recent Activity">
         <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
             <div>
                 <h5 class="mb-0 fw-bold text-info">
@@ -684,6 +760,8 @@
                 ? '<i class="fa-solid fa-chevron-up me-1"></i>Hide'
                 : '<i class="fa-solid fa-chevron-down me-1"></i>Show';
         }
+
+        saveDashboardCollapsedState(sectionId, !isHidden);
     }
 
     function smartRiskBadgeClass(level) {
@@ -763,6 +841,172 @@
             console.warn('Smart monitoring could not be loaded:', smartError);
             renderTeamEmpty('smart-attention-list', 'Smart monitoring could not be loaded.');
         }
+    }
+
+    // --- DASHBOARD PERSONALIZATION: DRAG / REORDER / SAVE ---
+    const dashboardLayoutStorageKey = `medical_dashboard_layout_${loggedInUser || 'user'}`;
+    const dashboardCollapsedStorageKey = `medical_dashboard_collapsed_${loggedInUser || 'user'}`;
+    let dashboardCustomizeMode = false;
+    let dashboardDraggedSection = null;
+
+    function getDashboardSections() {
+        return Array.from(document.querySelectorAll('.dashboard-sortable-section[data-dashboard-section]'));
+    }
+
+    function getSavedDashboardOrder() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(dashboardLayoutStorageKey) || '[]');
+            return Array.isArray(saved) ? saved : [];
+        } catch (err) {
+            return [];
+        }
+    }
+
+    function saveDashboardOrder() {
+        const order = getDashboardSections().map(section => section.dataset.dashboardSection).filter(Boolean);
+        localStorage.setItem(dashboardLayoutStorageKey, JSON.stringify(order));
+    }
+
+    function applySavedDashboardOrder() {
+        const order = getSavedDashboardOrder();
+        if (!order.length) return;
+
+        const sections = getDashboardSections();
+        const sectionMap = new Map(sections.map(section => [section.dataset.dashboardSection, section]));
+        const container = document.querySelector('.container.py-4') || document.querySelector('.container');
+        if (!container) return;
+
+        order.forEach(sectionKey => {
+            const section = sectionMap.get(sectionKey);
+            if (section) container.appendChild(section);
+        });
+    }
+
+    function getSavedCollapsedStates() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(dashboardCollapsedStorageKey) || '{}');
+            return saved && typeof saved === 'object' ? saved : {};
+        } catch (err) {
+            return {};
+        }
+    }
+
+    function saveDashboardCollapsedState(sectionId, isCollapsed) {
+        const states = getSavedCollapsedStates();
+        states[sectionId] = Boolean(isCollapsed);
+        localStorage.setItem(dashboardCollapsedStorageKey, JSON.stringify(states));
+    }
+
+    function applySavedCollapsedStates() {
+        const states = getSavedCollapsedStates();
+        Object.entries(states).forEach(([sectionId, isCollapsed]) => {
+            const section = document.getElementById(sectionId);
+            if (!section) return;
+            section.classList.toggle('d-none', Boolean(isCollapsed));
+
+            const button = document.querySelector(`[onclick*="${sectionId}"]`);
+            if (button) {
+                button.innerHTML = Boolean(isCollapsed)
+                    ? '<i class="fa-solid fa-chevron-down me-1"></i>Show'
+                    : '<i class="fa-solid fa-chevron-up me-1"></i>Hide';
+            }
+        });
+    }
+
+    function addDashboardDragHandles() {
+        getDashboardSections().forEach(section => {
+            if (section.querySelector(':scope > .dashboard-drag-handle')) return;
+            const title = section.dataset.dashboardTitle || 'Dashboard Section';
+            const handle = document.createElement('button');
+            handle.type = 'button';
+            handle.className = 'dashboard-drag-handle';
+            handle.setAttribute('aria-label', `Drag ${title}`);
+            handle.setAttribute('title', `Drag ${title}`);
+            handle.innerHTML = '<i class="fa-solid fa-grip-vertical"></i>';
+            section.prepend(handle);
+        });
+    }
+
+    function setDashboardCustomizeMode(enabled) {
+        dashboardCustomizeMode = Boolean(enabled);
+        document.body.classList.toggle('dashboard-customize-active', dashboardCustomizeMode);
+
+        const toggleButton = document.getElementById('dashboard-customize-toggle');
+        if (toggleButton) {
+            toggleButton.className = dashboardCustomizeMode
+                ? 'btn btn-sm btn-primary fw-bold'
+                : 'btn btn-sm btn-outline-primary fw-bold';
+            toggleButton.innerHTML = dashboardCustomizeMode
+                ? '<i class="fa-solid fa-check me-1"></i>Done'
+                : '<i class="fa-solid fa-grip-vertical me-1"></i>Customize';
+        }
+
+        getDashboardSections().forEach(section => {
+            section.setAttribute('draggable', dashboardCustomizeMode ? 'true' : 'false');
+        });
+    }
+
+    function toggleDashboardCustomizeMode() {
+        setDashboardCustomizeMode(!dashboardCustomizeMode);
+    }
+
+    function resetDashboardLayout() {
+        localStorage.removeItem(dashboardLayoutStorageKey);
+        localStorage.removeItem(dashboardCollapsedStorageKey);
+        location.reload();
+    }
+
+    function initDashboardDragAndDrop() {
+        addDashboardDragHandles();
+        applySavedDashboardOrder();
+        applySavedCollapsedStates();
+        setDashboardCustomizeMode(false);
+
+        getDashboardSections().forEach(section => {
+            section.addEventListener('dragstart', event => {
+                if (!dashboardCustomizeMode) {
+                    event.preventDefault();
+                    return;
+                }
+                dashboardDraggedSection = section;
+                section.classList.add('dashboard-section-dragging');
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', section.dataset.dashboardSection || '');
+            });
+
+            section.addEventListener('dragend', () => {
+                section.classList.remove('dashboard-section-dragging');
+                document.querySelectorAll('.dashboard-section-drag-over').forEach(el => el.classList.remove('dashboard-section-drag-over'));
+                dashboardDraggedSection = null;
+                saveDashboardOrder();
+            });
+
+            section.addEventListener('dragover', event => {
+                if (!dashboardCustomizeMode || !dashboardDraggedSection || dashboardDraggedSection === section) return;
+                event.preventDefault();
+                section.classList.add('dashboard-section-drag-over');
+            });
+
+            section.addEventListener('dragleave', () => {
+                section.classList.remove('dashboard-section-drag-over');
+            });
+
+            section.addEventListener('drop', event => {
+                if (!dashboardCustomizeMode || !dashboardDraggedSection || dashboardDraggedSection === section) return;
+                event.preventDefault();
+                section.classList.remove('dashboard-section-drag-over');
+
+                const container = document.querySelector('.container.py-4') || document.querySelector('.container');
+                const rect = section.getBoundingClientRect();
+                const placeAfter = event.clientY > rect.top + rect.height / 2;
+                if (placeAfter) {
+                    container.insertBefore(dashboardDraggedSection, section.nextSibling);
+                } else {
+                    container.insertBefore(dashboardDraggedSection, section);
+                }
+                saveDashboardOrder();
+            });
+        });
     }
 
     function getCurrentEngineerTasks() {
@@ -1324,6 +1568,7 @@
     }
     
     // Application Entry
+    initDashboardDragAndDrop();
     loadDashboard();
 </script>
 
@@ -1343,6 +1588,63 @@
     }
     .xsmall { font-size: 0.65rem; }
     .italic { font-style: italic; }
+
+    .dashboard-personalize-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        padding: 0.9rem 1rem;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+    }
+
+    .dashboard-sortable-section {
+        position: relative;
+    }
+
+    .dashboard-drag-handle {
+        position: absolute;
+        top: 0.7rem;
+        left: -0.35rem;
+        width: 30px;
+        height: 30px;
+        border-radius: 999px;
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        color: #64748b;
+        display: none;
+        place-items: center;
+        z-index: 8;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+        cursor: grab;
+    }
+
+    .dashboard-customize-active .dashboard-drag-handle {
+        display: grid;
+    }
+
+    .dashboard-customize-active .dashboard-sortable-section {
+        outline: 2px dashed rgba(13, 110, 253, 0.28);
+        outline-offset: 4px;
+        cursor: grab;
+    }
+
+    .dashboard-customize-active .dashboard-sortable-section:active {
+        cursor: grabbing;
+    }
+
+    .dashboard-section-dragging {
+        opacity: 0.55;
+        transform: scale(0.99);
+    }
+
+    .dashboard-section-drag-over {
+        outline-color: rgba(13, 110, 253, 0.75) !important;
+        background: rgba(13, 110, 253, 0.03);
+    }
 
 
     .dashboard-engineer-summary-card {
@@ -1420,6 +1722,69 @@
         font-weight: 700;
         line-height: 1.2;
         margin-top: 0.2rem;
+    }
+
+    .dashboard-quick-admin {
+        background: linear-gradient(135deg, #fffbeb, #ffffff);
+        border: 1px solid #fde68a;
+        border-radius: 1.25rem;
+        padding: 1rem;
+    }
+
+    .dashboard-admin-action-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.85rem;
+    }
+
+    .dashboard-admin-action-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        min-height: 116px;
+        padding: 1rem;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        color: #334155;
+        text-decoration: none;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+        transition: 0.22s ease;
+    }
+
+    .dashboard-admin-action-card:hover {
+        transform: translateY(-3px);
+        color: #0d6efd;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+    }
+
+    .dashboard-admin-action-card i {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: #fff7ed;
+        color: #f59e0b;
+        font-size: 1rem;
+    }
+
+    .dashboard-admin-action-card strong {
+        color: #0f172a;
+        font-size: 0.9rem;
+        line-height: 1.15;
+    }
+
+    .dashboard-admin-action-card span {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.25;
+    }
+
+    .dashboard-admin-action-primary {
+        border-color: rgba(245, 158, 11, 0.35);
+        background: linear-gradient(135deg, #ffffff, #fffbeb);
     }
 
     .dashboard-team-intelligence {
@@ -1781,8 +2146,39 @@
             font-size: 0.68rem;
         }
 
+        .dashboard-personalize-toolbar {
+            align-items: flex-start;
+            flex-direction: column;
+            padding: 0.85rem;
+        }
+
+        .dashboard-personalize-toolbar .d-flex {
+            width: 100%;
+        }
+
+        .dashboard-personalize-toolbar .btn {
+            flex: 1;
+            min-height: 2.5rem;
+        }
+
+        .dashboard-drag-handle {
+            left: 0.35rem;
+            top: 0.35rem;
+        }
+
         .dashboard-team-intelligence,
-        .dashboard-needs-attention { padding: 0.85rem; }
+        .dashboard-needs-attention,
+        .dashboard-quick-admin { padding: 0.85rem; }
+
+        .dashboard-admin-action-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.6rem;
+        }
+
+        .dashboard-admin-action-card {
+            min-height: 108px;
+            padding: 0.85rem;
+        }
         .dashboard-team-row {
             align-items: flex-start;
             flex-direction: column;
