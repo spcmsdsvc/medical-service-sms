@@ -1273,16 +1273,10 @@
     backdrop-filter: blur(8px);
 }
 
-.timeline-grid-table thead {
-    position: sticky;
-    top: var(--timeline-sticky-offset, 82px);
-    z-index: 65;
-}
-
 .timeline-grid-table thead th {
     position: sticky;
-    top: var(--timeline-sticky-offset, 82px);
-    z-index: 66;
+    top: 0;
+    z-index: 45;
     background: #212529 !important;
     color: #fff !important;
     box-shadow: 0 2px 0 rgba(0, 0, 0, 0.08);
@@ -1290,11 +1284,11 @@
 
 .timeline-grid-table thead th:first-child {
     left: 0;
-    z-index: 75;
+    z-index: 60;
 }
 
 .timeline-sticky-h-scroll {
-    top: var(--timeline-sticky-scrollbar-offset, 74px);
+    top: 4.8rem;
 }
 
 body.timeline-toolbar-compact .timeline-freeze-toolbar {
@@ -3133,7 +3127,6 @@ body.pwa-reconnected .mobile-offline-readiness {
         backdrop-filter: none;
     }
 
-    .timeline-grid-table thead,
     .timeline-grid-table thead th {
         top: 0;
     }
@@ -3613,7 +3606,6 @@ function shouldUseEngineerMobileView(){
             setTimeout(() => {
                 loadGrid();
                 syncTimelineHorizontalScroll();
-            setTimeout(initTimelineStickyHeaderPolish, 0);
             }, 0);
         }else{
             setTimeout(syncTimelineHorizontalScroll, 0);
@@ -9598,21 +9590,11 @@ function initTimelineStickyHeaderPolish(){
     window.__timelineStickyHeaderPolishBound = true;
 
     const updateStickyState = () => {
-        const toolbar = document.getElementById('timeline-freeze-toolbar');
-        const topScrollbar = document.getElementById('timeline-sticky-h-scroll');
-        const toolbarHeight = toolbar ? Math.ceil(toolbar.getBoundingClientRect().height) : 0;
-        const scrollbarHeight = topScrollbar ? Math.ceil(topScrollbar.getBoundingClientRect().height) : 0;
-
-        document.documentElement.style.setProperty('--timeline-sticky-scrollbar-offset', `${toolbarHeight}px`);
-        document.documentElement.style.setProperty('--timeline-sticky-offset', `${toolbarHeight + scrollbarHeight}px`);
         document.body.classList.toggle('timeline-toolbar-compact', window.scrollY > 8);
     };
 
     updateStickyState();
     window.addEventListener('scroll', updateStickyState, { passive: true });
-    window.addEventListener('resize', updateStickyState, { passive: true });
-    setTimeout(updateStickyState, 250);
-    setTimeout(updateStickyState, 900);
 }
 
 document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
