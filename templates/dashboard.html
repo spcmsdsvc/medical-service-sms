@@ -252,63 +252,6 @@
     </div>
     {% endif %}
 
-    {% if dashboard_admin_view %}
-    <!-- HYBRID PHASE 4: QUICK ADMIN ACTIONS (COLLAPSIBLE) -->
-    <div class="dashboard-quick-admin mb-4">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div>
-                <h5 class="mb-0 fw-bold text-dark">
-                    <i class="fa-solid fa-bolt me-2 text-warning"></i>
-                    Quick Admin Actions
-                </h5>
-                <p class="text-muted small mb-0">Fast management shortcuts kept collapsed to reduce dashboard clutter</p>
-            </div>
-            <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('quick-admin-actions-body', this)">
-                <i class="fa-solid fa-chevron-down me-1"></i>Show
-            </button>
-        </div>
-
-        <div id="quick-admin-actions-body" class="dashboard-collapsible-body d-none mt-3">
-            <div class="dashboard-admin-action-grid">
-                <a href="/timeline" class="dashboard-admin-action-card dashboard-admin-action-primary">
-                    <i class="fa-solid fa-calendar-plus"></i>
-                    <strong>Create / Manage Schedule</strong>
-                    <span>Open calendar grid</span>
-                </a>
-                <a href="/reports_page" class="dashboard-admin-action-card">
-                    <i class="fa-solid fa-folder-open"></i>
-                    <strong>Reports</strong>
-                    <span>TSR archive and service records</span>
-                </a>
-                <a href="/analytics_page" class="dashboard-admin-action-card">
-                    <i class="fa-solid fa-chart-pie"></i>
-                    <strong>Analytics</strong>
-                    <span>Branch and workload insights</span>
-                </a>
-                <a href="/activity_page" class="dashboard-admin-action-card">
-                    <i class="fa-solid fa-clock-rotate-left"></i>
-                    <strong>Activity Logs</strong>
-                    <span>Review recent system actions</span>
-                </a>
-                <a href="/clients_page" class="dashboard-admin-action-card">
-                    <i class="fa-solid fa-hospital"></i>
-                    <strong>Clients</strong>
-                    <span>Manage medical centers</span>
-                </a>
-                <a href="/products_page" class="dashboard-admin-action-card">
-                    <i class="fa-solid fa-boxes-stacked"></i>
-                    <strong>Products</strong>
-                    <span>Manage equipment inventory</span>
-                </a>
-                <a href="/engineers_page" class="dashboard-admin-action-card">
-                    <i class="fa-solid fa-user-gear"></i>
-                    <strong>Engineers</strong>
-                    <span>Manage personnel directory</span>
-                </a>
-            </div>
-        </div>
-    </div>
-
     <!-- MOBILE DASHBOARD QUICK ACTIONS -->
     <div class="dashboard-mobile-quick-actions mb-4">
         {% if dashboard_has_engineer_profile %}
@@ -1479,69 +1422,6 @@
         margin-top: 0.2rem;
     }
 
-    .dashboard-quick-admin {
-        background: linear-gradient(135deg, #fffbeb, #ffffff);
-        border: 1px solid #fde68a;
-        border-radius: 1.25rem;
-        padding: 1rem;
-    }
-
-    .dashboard-admin-action-grid {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 0.85rem;
-    }
-
-    .dashboard-admin-action-card {
-        display: flex;
-        flex-direction: column;
-        gap: 0.35rem;
-        min-height: 116px;
-        padding: 1rem;
-        background: #fff;
-        border: 1px solid #e2e8f0;
-        border-radius: 1rem;
-        color: #334155;
-        text-decoration: none;
-        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
-        transition: 0.22s ease;
-    }
-
-    .dashboard-admin-action-card:hover {
-        transform: translateY(-3px);
-        color: #0d6efd;
-        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
-    }
-
-    .dashboard-admin-action-card i {
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
-        display: grid;
-        place-items: center;
-        background: #fff7ed;
-        color: #f59e0b;
-        font-size: 1rem;
-    }
-
-    .dashboard-admin-action-card strong {
-        color: #0f172a;
-        font-size: 0.9rem;
-        line-height: 1.15;
-    }
-
-    .dashboard-admin-action-card span {
-        color: #64748b;
-        font-size: 0.72rem;
-        font-weight: 700;
-        line-height: 1.25;
-    }
-
-    .dashboard-admin-action-primary {
-        border-color: rgba(245, 158, 11, 0.35);
-        background: linear-gradient(135deg, #ffffff, #fffbeb);
-    }
-
     .dashboard-team-intelligence {
         background: linear-gradient(135deg, #f8fafc, #ffffff);
         border: 1px solid #e2e8f0;
@@ -1902,18 +1782,7 @@
         }
 
         .dashboard-team-intelligence,
-        .dashboard-needs-attention,
-        .dashboard-quick-admin { padding: 0.85rem; }
-
-        .dashboard-admin-action-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.6rem;
-        }
-
-        .dashboard-admin-action-card {
-            min-height: 108px;
-            padding: 0.85rem;
-        }
+        .dashboard-needs-attention { padding: 0.85rem; }
         .dashboard-team-row {
             align-items: flex-start;
             flex-direction: column;
