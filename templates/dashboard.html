@@ -96,7 +96,7 @@
     </div>
 
     {% if dashboard_scheduler_only %}
-    <!-- SCHEDULER PHASE 1: CORE OPERATIONS VIEW -->
+    <!-- SCHEDULER PHASE 4: ACTION-FIRST COLLAPSIBLE VIEW -->
     <div class="scheduler-core-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-core" data-dashboard-title="Scheduler Core">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
@@ -106,63 +106,70 @@
                 </h5>
                 <p class="text-muted small mb-0">Dispatch-first overview for today's schedules, blockers, and TSR follow-ups</p>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="loadSchedulerDashboardSummary()">
-                <i class="fa-solid fa-rotate me-1"></i>Refresh
-            </button>
-        </div>
-
-        <div class="row g-3 mb-3">
-            <div class="col-md-3 col-sm-6">
-                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-kpi-card">
-                    <div class="dashboard-team-label">Today's Schedules</div>
-                    <div class="dashboard-team-value text-primary" id="scheduler-today-count">0</div>
-                    <div class="dashboard-team-hint">Site visits today</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-sm-6">
-                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-kpi-card">
-                    <div class="dashboard-team-label">Unassigned</div>
-                    <div class="dashboard-team-value text-danger" id="scheduler-unassigned-count">0</div>
-                    <div class="dashboard-team-hint">Need engineer assignment</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-sm-6">
-                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-kpi-card">
-                    <div class="dashboard-team-label">Waiting Items</div>
-                    <div class="dashboard-team-value text-warning" id="scheduler-waiting-count">0</div>
-                    <div class="dashboard-team-hint">P.O / parts blockers</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-sm-6">
-                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-kpi-card">
-                    <div class="dashboard-team-label">Pending TSR</div>
-                    <div class="dashboard-team-value text-dark" id="scheduler-pending-tsr-count">0</div>
-                    <div class="dashboard-team-hint">Completed, no TSR</div>
-                </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('scheduler-core-body', this)">
+                    <i class="fa-solid fa-chevron-up me-1"></i>Hide
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="loadSchedulerDashboardSummary()">
+                    <i class="fa-solid fa-rotate me-1"></i>Refresh
+                </button>
             </div>
         </div>
 
-        <div class="scheduler-action-grid">
-            <a href="/timeline" class="scheduler-action-card scheduler-action-primary">
-                <i class="fa-solid fa-calendar-plus"></i>
-                <strong>Create / Manage Schedule</strong>
-                <span>Open calendar grid</span>
-            </a>
-            <a href="/engineers_page" class="scheduler-action-card">
-                <i class="fa-solid fa-user-gear"></i>
-                <strong>Engineer Directory</strong>
-                <span>Check personnel details</span>
-            </a>
-            <a href="/clients_page" class="scheduler-action-card">
-                <i class="fa-solid fa-hospital"></i>
-                <strong>Clients</strong>
-                <span>Check facility contacts</span>
-            </a>
-            <a href="/reports_page" class="scheduler-action-card">
-                <i class="fa-solid fa-folder-open"></i>
-                <strong>TSR Follow-up</strong>
-                <span>Open reports archive</span>
-            </a>
+        <div id="scheduler-core-body" class="dashboard-collapsible-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-3 col-sm-6">
+                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-kpi-card">
+                        <div class="dashboard-team-label">Today's Schedules</div>
+                        <div class="dashboard-team-value text-primary" id="scheduler-today-count">0</div>
+                        <div class="dashboard-team-hint">Site visits today</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-kpi-card">
+                        <div class="dashboard-team-label">Unassigned</div>
+                        <div class="dashboard-team-value text-danger" id="scheduler-unassigned-count">0</div>
+                        <div class="dashboard-team-hint">Need engineer assignment</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-kpi-card">
+                        <div class="dashboard-team-label">Waiting Items</div>
+                        <div class="dashboard-team-value text-warning" id="scheduler-waiting-count">0</div>
+                        <div class="dashboard-team-hint">P.O / parts blockers</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-kpi-card">
+                        <div class="dashboard-team-label">Pending TSR</div>
+                        <div class="dashboard-team-value text-dark" id="scheduler-pending-tsr-count">0</div>
+                        <div class="dashboard-team-hint">Completed, no TSR</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="scheduler-action-grid">
+                <a href="/timeline" class="scheduler-action-card scheduler-action-primary">
+                    <i class="fa-solid fa-calendar-plus"></i>
+                    <strong>Create / Manage Schedule</strong>
+                    <span>Open calendar grid</span>
+                </a>
+                <a href="/engineers_page" class="scheduler-action-card">
+                    <i class="fa-solid fa-user-gear"></i>
+                    <strong>Engineer Directory</strong>
+                    <span>Check personnel details</span>
+                </a>
+                <a href="/clients_page" class="scheduler-action-card">
+                    <i class="fa-solid fa-hospital"></i>
+                    <strong>Clients</strong>
+                    <span>Check facility contacts</span>
+                </a>
+                <a href="/reports_page" class="scheduler-action-card">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <strong>TSR Follow-up</strong>
+                    <span>Open reports archive</span>
+                </a>
+            </div>
         </div>
     </div>
 
@@ -176,93 +183,22 @@
                     </h5>
                     <div class="xsmall text-muted mt-1">Today's schedules and items that need scheduler coordination</div>
                 </div>
-                <a href="/timeline" class="btn btn-sm btn-primary fw-bold">
-                    <i class="fa-solid fa-calendar-days me-1"></i>Open Calendar
-                </a>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('scheduler-dispatch-body', this)">
+                        <i class="fa-solid fa-chevron-up me-1"></i>Hide
+                    </button>
+                    <a href="/timeline" class="btn btn-sm btn-primary fw-bold">
+                        <i class="fa-solid fa-calendar-days me-1"></i>Open Calendar
+                    </a>
+                </div>
             </div>
-            <div class="card-body p-0">
+            <div id="scheduler-dispatch-body" class="card-body p-0 dashboard-collapsible-body">
                 <div id="scheduler-dispatch-list" class="dashboard-team-list scheduler-dispatch-list"></div>
             </div>
         </div>
     </div>
-    <!-- SCHEDULER PHASE 2: DISPATCH INTELLIGENCE -->
-    <div class="scheduler-intelligence-panel mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-intelligence" data-dashboard-title="Scheduler Dispatch Intelligence">
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <div>
-                <h5 class="mb-0 fw-bold text-dark">
-                    <i class="fa-solid fa-brain me-2 text-danger"></i>
-                    Dispatch Intelligence
-                </h5>
-                <p class="text-muted small mb-0">Overdue, unassigned, workload, TSR follow-up, and P.O / parts blockers</p>
-            </div>
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-                <span id="scheduler-dispatch-risk-badge" class="badge bg-success rounded-pill px-3 py-2">Stable</span>
-                <button type="button" class="btn btn-sm btn-outline-danger fw-bold" onclick="loadSchedulerDispatchIntelligence()">
-                    <i class="fa-solid fa-rotate me-1"></i>Refresh
-                </button>
-            </div>
-        </div>
 
-        <div class="row g-3 mb-3">
-            <div class="col-md-3 col-sm-6">
-                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-intelligence-card">
-                    <div class="dashboard-team-label">Overdue</div>
-                    <div class="dashboard-team-value text-danger" id="scheduler-overdue-count">0</div>
-                    <div class="dashboard-team-hint">Past schedules still open</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-sm-6">
-                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-intelligence-card">
-                    <div class="dashboard-team-label">Next 7 Days</div>
-                    <div class="dashboard-team-value text-primary" id="scheduler-upcoming-count">0</div>
-                    <div class="dashboard-team-hint">Upcoming site visits</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-sm-6">
-                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-intelligence-card">
-                    <div class="dashboard-team-label">High Load</div>
-                    <div class="dashboard-team-value text-warning" id="scheduler-high-load-count">0</div>
-                    <div class="dashboard-team-hint">Engineers needing monitoring</div>
-                </div>
-            </div>
-            <div class="col-md-3 col-sm-6">
-                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-intelligence-card">
-                    <div class="dashboard-team-label">Blockers</div>
-                    <div class="dashboard-team-value text-dark" id="scheduler-blocker-count">0</div>
-                    <div class="dashboard-team-hint">TSR + P.O / parts follow-ups</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row g-3">
-            <div class="col-lg-7">
-                <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <div>
-                            <h6 class="mb-0 fw-bold text-danger">
-                                <i class="fa-solid fa-list-check me-2"></i>Priority Coordination Queue
-                            </h6>
-                            <div class="xsmall text-muted mt-1">Most important scheduler follow-ups first</div>
-                        </div>
-                        <a href="/timeline" class="btn btn-sm btn-outline-primary fw-bold">Open Timeline</a>
-                    </div>
-                    <div id="scheduler-priority-queue" class="dashboard-team-list scheduler-priority-list"></div>
-                </div>
-            </div>
-            <div class="col-lg-5">
-                <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                    <div class="card-header bg-white border-bottom py-3">
-                        <h6 class="mb-0 fw-bold text-primary">
-                            <i class="fa-solid fa-user-clock me-2"></i>Engineer Load Snapshot
-                        </h6>
-                    </div>
-                    <div id="scheduler-engineer-workload" class="dashboard-team-list scheduler-workload-list"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- SCHEDULER PHASE 3: COORDINATION TOOLS -->
+    <!-- SCHEDULER PHASE 4: COORDINATION TOOLS ONLY, COLLAPSIBLE -->
     <div class="scheduler-coordination-panel mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-coordination" data-dashboard-title="Scheduler Coordination Tools">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
@@ -272,86 +208,93 @@
                 </h5>
                 <p class="text-muted small mb-0">Engineer availability, branch quick filters, quick assign, and quick reschedule tools</p>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="loadSchedulerCoordinationTools()">
-                <i class="fa-solid fa-rotate me-1"></i>Refresh Tools
-            </button>
-        </div>
-
-        <div class="scheduler-branch-filter-strip mb-3" id="scheduler-branch-filters">
-            <button type="button" class="btn btn-sm btn-success fw-bold" data-branch="ALL" onclick="setSchedulerBranchFilter('ALL')">
-                All Branches
-            </button>
-        </div>
-
-        <div class="card border-0 shadow-sm rounded-4 mb-3 overflow-hidden">
-            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div>
-                    <h6 class="mb-0 fw-bold text-success">
-                        <i class="fa-solid fa-user-check me-2"></i>Engineer Availability Strip
-                    </h6>
-                    <div class="xsmall text-muted mt-1">Quick workload signal for today and the next 7 days</div>
-                </div>
-                <span class="badge bg-light text-dark border" id="scheduler-availability-count">0 engineers</span>
+            <div class="d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('scheduler-coordination-body', this)">
+                    <i class="fa-solid fa-chevron-up me-1"></i>Hide
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="loadSchedulerCoordinationTools()">
+                    <i class="fa-solid fa-rotate me-1"></i>Refresh Tools
+                </button>
             </div>
-            <div id="scheduler-availability-strip" class="scheduler-availability-strip"></div>
         </div>
 
-        <div class="row g-3">
-            <div class="col-lg-7">
-                <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <div>
-                            <h6 class="mb-0 fw-bold text-danger">
-                                <i class="fa-solid fa-bolt me-2"></i>Action Queue
-                            </h6>
-                            <div class="xsmall text-muted mt-1">Select a schedule to quick assign or reschedule</div>
-                        </div>
-                        <a href="/timeline" class="btn btn-sm btn-outline-primary fw-bold">
-                            <i class="fa-solid fa-calendar-days me-1"></i>Full Timeline
-                        </a>
-                    </div>
-                    <div id="scheduler-action-queue" class="dashboard-team-list scheduler-action-queue"></div>
-                </div>
+        <div id="scheduler-coordination-body" class="dashboard-collapsible-body">
+            <div class="scheduler-branch-filter-strip mb-3" id="scheduler-branch-filters">
+                <button type="button" class="btn btn-sm btn-success fw-bold" data-branch="ALL" onclick="setSchedulerBranchFilter('ALL')">
+                    All Branches
+                </button>
             </div>
-            <div class="col-lg-5">
-                <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                    <div class="card-header bg-white border-bottom py-3">
-                        <h6 class="mb-0 fw-bold text-primary">
-                            <i class="fa-solid fa-pen-to-square me-2"></i>Quick Action Panel
+
+            <div class="card border-0 shadow-sm rounded-4 mb-3 overflow-hidden">
+                <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h6 class="mb-0 fw-bold text-success">
+                            <i class="fa-solid fa-user-check me-2"></i>Engineer Availability Strip
                         </h6>
-                        <div class="xsmall text-muted mt-1" id="scheduler-selected-action-label">Select a schedule from the action queue.</div>
+                        <div class="xsmall text-muted mt-1">Quick workload signal for today and the next 7 days</div>
                     </div>
-                    <div class="card-body">
-                        <input type="hidden" id="scheduler-selected-shift-id">
+                    <span class="badge bg-light text-dark border" id="scheduler-availability-count">0 engineers</span>
+                </div>
+                <div id="scheduler-availability-strip" class="scheduler-availability-strip"></div>
+            </div>
 
-                        <div class="mb-3">
-                            <label class="form-label small fw-bold text-muted">Assign / Reassign Engineer</label>
-                            <select id="scheduler-assign-engineers" class="form-select form-select-sm" multiple size="6"></select>
-                            <div class="xsmall text-muted mt-1">Hold Ctrl / Cmd to select multiple engineers.</div>
-                            <button type="button" class="btn btn-sm btn-success fw-bold mt-2 w-100" onclick="submitSchedulerQuickAssign()">
-                                <i class="fa-solid fa-user-plus me-1"></i>Save Assignment
-                            </button>
-                        </div>
-
-                        <div class="scheduler-reschedule-box">
-                            <label class="form-label small fw-bold text-muted">Quick Reschedule</label>
-                            <div class="row g-2">
-                                <div class="col-12">
-                                    <input type="date" id="scheduler-reschedule-date" class="form-control form-control-sm">
-                                </div>
-                                <div class="col-6">
-                                    <input type="time" id="scheduler-reschedule-start" class="form-control form-control-sm">
-                                </div>
-                                <div class="col-6">
-                                    <input type="time" id="scheduler-reschedule-end" class="form-control form-control-sm">
-                                </div>
+            <div class="row g-3">
+                <div class="col-lg-7">
+                    <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                        <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <div>
+                                <h6 class="mb-0 fw-bold text-danger">
+                                    <i class="fa-solid fa-bolt me-2"></i>Action Queue
+                                </h6>
+                                <div class="xsmall text-muted mt-1">Select a schedule to quick assign or reschedule</div>
                             </div>
-                            <button type="button" class="btn btn-sm btn-outline-primary fw-bold mt-2 w-100" onclick="submitSchedulerQuickReschedule()">
-                                <i class="fa-solid fa-calendar-arrow-up me-1"></i>Save New Schedule Time
-                            </button>
+                            <a href="/timeline" class="btn btn-sm btn-outline-primary fw-bold">
+                                <i class="fa-solid fa-calendar-days me-1"></i>Full Timeline
+                            </a>
                         </div>
+                        <div id="scheduler-action-queue" class="dashboard-team-list scheduler-action-queue"></div>
+                    </div>
+                </div>
+                <div class="col-lg-5">
+                    <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                        <div class="card-header bg-white border-bottom py-3">
+                            <h6 class="mb-0 fw-bold text-primary">
+                                <i class="fa-solid fa-pen-to-square me-2"></i>Quick Action Panel
+                            </h6>
+                            <div class="xsmall text-muted mt-1" id="scheduler-selected-action-label">Select a schedule from the action queue.</div>
+                        </div>
+                        <div class="card-body">
+                            <input type="hidden" id="scheduler-selected-shift-id">
 
-                        <div id="scheduler-action-status" class="scheduler-action-status small mt-3 d-none"></div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-bold text-muted">Assign / Reassign Engineer</label>
+                                <select id="scheduler-assign-engineers" class="form-select form-select-sm" multiple size="6"></select>
+                                <div class="xsmall text-muted mt-1">Hold Ctrl / Cmd to select multiple engineers.</div>
+                                <button type="button" class="btn btn-sm btn-success fw-bold mt-2 w-100" onclick="submitSchedulerQuickAssign()">
+                                    <i class="fa-solid fa-user-plus me-1"></i>Save Assignment
+                                </button>
+                            </div>
+
+                            <div class="scheduler-reschedule-box">
+                                <label class="form-label small fw-bold text-muted">Quick Reschedule</label>
+                                <div class="row g-2">
+                                    <div class="col-12">
+                                        <input type="date" id="scheduler-reschedule-date" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-6">
+                                        <input type="time" id="scheduler-reschedule-start" class="form-control form-control-sm">
+                                    </div>
+                                    <div class="col-6">
+                                        <input type="time" id="scheduler-reschedule-end" class="form-control form-control-sm">
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-primary fw-bold mt-2 w-100" onclick="submitSchedulerQuickReschedule()">
+                                    <i class="fa-solid fa-calendar-arrow-up me-1"></i>Save New Schedule Time
+                                </button>
+                            </div>
+
+                            <div id="scheduler-action-status" class="scheduler-action-status small mt-3 d-none"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1834,7 +1777,6 @@
             schedulerSelectedShift = null;
             await Promise.all([
                 loadSchedulerDashboardSummary(),
-                loadSchedulerDispatchIntelligence(),
                 loadSchedulerCoordinationTools()
             ]);
         } catch (error) {
@@ -1917,7 +1859,6 @@
 
             if (dashboardSchedulerOnly) {
                 loadSchedulerDashboardSummary();
-                loadSchedulerDispatchIntelligence();
                 loadSchedulerCoordinationTools();
             }
 
@@ -2684,6 +2625,17 @@
         display: none !important;
     }
 
+    .scheduler-core-dashboard > .d-flex,
+    .scheduler-coordination-panel > .d-flex {
+        align-items: flex-start;
+    }
+
+    .scheduler-dispatch-panel .card-header .btn,
+    .scheduler-core-dashboard .btn,
+    .scheduler-coordination-panel .btn {
+        min-height: 2.25rem;
+    }
+
     .dashboard-team-card {
         min-height: 128px;
     }
@@ -3268,7 +3220,6 @@
         .dashboard-needs-attention,
         .dashboard-quick-admin,
         .scheduler-core-dashboard,
-        .scheduler-intelligence-panel,
         .scheduler-coordination-panel { padding: 0.85rem; }
 
         .scheduler-availability-strip {
