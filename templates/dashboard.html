@@ -262,6 +262,102 @@
         </div>
     </div>
 
+    <!-- SCHEDULER PHASE 3: COORDINATION TOOLS -->
+    <div class="scheduler-coordination-panel mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-coordination" data-dashboard-title="Scheduler Coordination Tools">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+                <h5 class="mb-0 fw-bold text-dark">
+                    <i class="fa-solid fa-screwdriver-wrench me-2 text-success"></i>
+                    Coordination Tools
+                </h5>
+                <p class="text-muted small mb-0">Engineer availability, branch quick filters, quick assign, and quick reschedule tools</p>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="loadSchedulerCoordinationTools()">
+                <i class="fa-solid fa-rotate me-1"></i>Refresh Tools
+            </button>
+        </div>
+
+        <div class="scheduler-branch-filter-strip mb-3" id="scheduler-branch-filters">
+            <button type="button" class="btn btn-sm btn-success fw-bold" data-branch="ALL" onclick="setSchedulerBranchFilter('ALL')">
+                All Branches
+            </button>
+        </div>
+
+        <div class="card border-0 shadow-sm rounded-4 mb-3 overflow-hidden">
+            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h6 class="mb-0 fw-bold text-success">
+                        <i class="fa-solid fa-user-check me-2"></i>Engineer Availability Strip
+                    </h6>
+                    <div class="xsmall text-muted mt-1">Quick workload signal for today and the next 7 days</div>
+                </div>
+                <span class="badge bg-light text-dark border" id="scheduler-availability-count">0 engineers</span>
+            </div>
+            <div id="scheduler-availability-strip" class="scheduler-availability-strip"></div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-lg-7">
+                <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <h6 class="mb-0 fw-bold text-danger">
+                                <i class="fa-solid fa-bolt me-2"></i>Action Queue
+                            </h6>
+                            <div class="xsmall text-muted mt-1">Select a schedule to quick assign or reschedule</div>
+                        </div>
+                        <a href="/timeline" class="btn btn-sm btn-outline-primary fw-bold">
+                            <i class="fa-solid fa-calendar-days me-1"></i>Full Timeline
+                        </a>
+                    </div>
+                    <div id="scheduler-action-queue" class="dashboard-team-list scheduler-action-queue"></div>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <h6 class="mb-0 fw-bold text-primary">
+                            <i class="fa-solid fa-pen-to-square me-2"></i>Quick Action Panel
+                        </h6>
+                        <div class="xsmall text-muted mt-1" id="scheduler-selected-action-label">Select a schedule from the action queue.</div>
+                    </div>
+                    <div class="card-body">
+                        <input type="hidden" id="scheduler-selected-shift-id">
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">Assign / Reassign Engineer</label>
+                            <select id="scheduler-assign-engineers" class="form-select form-select-sm" multiple size="6"></select>
+                            <div class="xsmall text-muted mt-1">Hold Ctrl / Cmd to select multiple engineers.</div>
+                            <button type="button" class="btn btn-sm btn-success fw-bold mt-2 w-100" onclick="submitSchedulerQuickAssign()">
+                                <i class="fa-solid fa-user-plus me-1"></i>Save Assignment
+                            </button>
+                        </div>
+
+                        <div class="scheduler-reschedule-box">
+                            <label class="form-label small fw-bold text-muted">Quick Reschedule</label>
+                            <div class="row g-2">
+                                <div class="col-12">
+                                    <input type="date" id="scheduler-reschedule-date" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-6">
+                                    <input type="time" id="scheduler-reschedule-start" class="form-control form-control-sm">
+                                </div>
+                                <div class="col-6">
+                                    <input type="time" id="scheduler-reschedule-end" class="form-control form-control-sm">
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-primary fw-bold mt-2 w-100" onclick="submitSchedulerQuickReschedule()">
+                                <i class="fa-solid fa-calendar-arrow-up me-1"></i>Save New Schedule Time
+                            </button>
+                        </div>
+
+                        <div id="scheduler-action-status" class="scheduler-action-status small mt-3 d-none"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {% endif %}
 
     <!-- ANALYTICS MATRIX -->
@@ -823,6 +919,9 @@
     // Global Dataset Context
     let allOpenTasksRaw = []; 
     let currentSortMode = 'scheduled_latest'; 
+    let schedulerCoordinationData = null;
+    let schedulerBranchFilter = 'ALL';
+    let schedulerSelectedShift = null;
 
     /**
      * MASTER DATA LOADER:
@@ -1424,6 +1523,326 @@
         }
     }
 
+    function schedulerAvailabilityClass(level) {
+        const value = String(level || '').toLowerCase();
+        if (value === 'busy') return 'scheduler-availability-busy';
+        if (value === 'watch') return 'scheduler-availability-watch';
+        return 'scheduler-availability-available';
+    }
+
+    function schedulerAvailabilityBadgeClass(level) {
+        const value = String(level || '').toLowerCase();
+        if (value === 'busy') return 'bg-danger';
+        if (value === 'watch') return 'bg-warning text-dark';
+        return 'bg-success';
+    }
+
+    function getSchedulerFilteredAvailability() {
+        const rows = schedulerCoordinationData && Array.isArray(schedulerCoordinationData.availability)
+            ? schedulerCoordinationData.availability
+            : [];
+        if (schedulerBranchFilter === 'ALL') return rows;
+        return rows.filter(row => String(row.branch || 'Unassigned') === schedulerBranchFilter);
+    }
+
+    function getSchedulerFilteredActionRows() {
+        const rows = schedulerCoordinationData && Array.isArray(schedulerCoordinationData.action_rows)
+            ? schedulerCoordinationData.action_rows
+            : [];
+        if (schedulerBranchFilter === 'ALL') return rows;
+        return rows.filter(row => String(row.branches || '').split(',').map(v => v.trim()).includes(schedulerBranchFilter));
+    }
+
+    function renderSchedulerBranchFilters(data) {
+        const container = document.getElementById('scheduler-branch-filters');
+        if (!container) return;
+
+        const branches = Array.isArray(data.branches) ? data.branches : [];
+        const branchCounts = data.branch_counts || {};
+        const buttons = [
+            `<button type="button" class="btn btn-sm ${schedulerBranchFilter === 'ALL' ? 'btn-success' : 'btn-outline-success'} fw-bold" data-branch="ALL" onclick="setSchedulerBranchFilter('ALL')">All Branches</button>`,
+            ...branches.map(branch => `
+                <button type="button" class="btn btn-sm ${schedulerBranchFilter === branch ? 'btn-success' : 'btn-outline-success'} fw-bold" data-branch="${escapeHtml(branch)}" onclick="setSchedulerBranchFilter('${escapeHtml(branch)}')">
+                    ${escapeHtml(branch)} <span class="badge bg-light text-dark ms-1">${escapeHtml(branchCounts[branch] || 0)}</span>
+                </button>
+            `)
+        ];
+
+        container.innerHTML = buttons.join('');
+    }
+
+    function renderSchedulerAvailabilityStrip() {
+        const container = document.getElementById('scheduler-availability-strip');
+        if (!container) return;
+
+        const rows = getSchedulerFilteredAvailability();
+        setTextIfPresent('scheduler-availability-count', `${rows.length} engineer${rows.length === 1 ? '' : 's'}`);
+
+        if (!rows.length) {
+            container.innerHTML = `<div class="dashboard-team-empty">No engineer availability found for this branch.</div>`;
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 24).map(row => `
+            <button type="button" class="scheduler-availability-chip ${schedulerAvailabilityClass(row.availability)}" onclick="selectSchedulerEngineerForAssign(${Number(row.engineer_id) || 0})">
+                <span class="scheduler-availability-avatar">${escapeHtml(row.initials || '?')}</span>
+                <span class="scheduler-availability-main">
+                    <strong>${escapeHtml(row.name || 'Engineer')}</strong>
+                    <small>${escapeHtml(row.branch || 'No branch')} • ${escapeHtml(row.today_tasks || 0)} today • ${escapeHtml(row.next_7_days || 0)} week</small>
+                </span>
+                <span class="badge ${schedulerAvailabilityBadgeClass(row.availability)}">${escapeHtml(row.availability_label || row.availability || 'Available')}</span>
+            </button>
+        `).join('');
+    }
+
+    function schedulerActionBadgeClass(row) {
+        if (!row || !Array.isArray(row.engineer_ids) || !row.engineer_ids.length) return 'bg-danger';
+        return schedulerStatusBadgeClass(row.status);
+    }
+
+    function renderSchedulerActionQueue() {
+        const container = document.getElementById('scheduler-action-queue');
+        if (!container) return;
+
+        const rows = getSchedulerFilteredActionRows();
+        if (!rows.length) {
+            renderTeamEmpty('scheduler-action-queue', 'No actionable scheduler rows for this branch.');
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 20).map(row => `
+            <button type="button" class="dashboard-team-row scheduler-action-row ${schedulerSelectedShift && schedulerSelectedShift.id === row.id ? 'scheduler-action-row-active' : ''}" onclick="selectSchedulerActionShift(${Number(row.id) || 0})">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.time_start || '')} - ${escapeHtml(row.time_end || '')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.task || '')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 'Unassigned')} • ${escapeHtml(row.branches || '')}</div>
+                </div>
+                <span class="badge ${schedulerActionBadgeClass(row)}">${escapeHtml(row.action_hint || row.status || 'Action')}</span>
+            </button>
+        `).join('');
+    }
+
+    function renderSchedulerAssignableEngineers() {
+        const select = document.getElementById('scheduler-assign-engineers');
+        if (!select) return;
+
+        const rows = schedulerCoordinationData && Array.isArray(schedulerCoordinationData.assignable_engineers)
+            ? schedulerCoordinationData.assignable_engineers
+            : [];
+
+        const filteredRows = schedulerBranchFilter === 'ALL'
+            ? rows
+            : rows.filter(row => String(row.branch || 'Unassigned') === schedulerBranchFilter);
+
+        select.innerHTML = filteredRows.map(row => `
+            <option value="${Number(row.id) || 0}">
+                ${escapeHtml(row.name || 'Engineer')} — ${escapeHtml(row.branch || 'No branch')} — ${escapeHtml(row.availability_label || 'Available')}
+            </option>
+        `).join('');
+
+        if (schedulerSelectedShift && Array.isArray(schedulerSelectedShift.engineer_ids)) {
+            const selectedIds = new Set(schedulerSelectedShift.engineer_ids.map(Number));
+            Array.from(select.options).forEach(option => {
+                option.selected = selectedIds.has(Number(option.value));
+            });
+        }
+    }
+
+    function renderSchedulerCoordinationTools(data) {
+        schedulerCoordinationData = data || {};
+        renderSchedulerBranchFilters(schedulerCoordinationData);
+        renderSchedulerAvailabilityStrip();
+        renderSchedulerAssignableEngineers();
+        renderSchedulerActionQueue();
+    }
+
+    async function loadSchedulerCoordinationTools() {
+        if (!dashboardSchedulerOnly) return;
+
+        try {
+            const data = await fetchJsonOrThrow('/get_scheduler_coordination_tools');
+            renderSchedulerCoordinationTools(data || {});
+        } catch (coordinationError) {
+            console.warn('Scheduler coordination tools could not be loaded:', coordinationError);
+            renderTeamEmpty('scheduler-availability-strip', 'Scheduler coordination tools could not be loaded.');
+            renderTeamEmpty('scheduler-action-queue', 'Scheduler action queue could not be loaded.');
+        }
+    }
+
+    function setSchedulerBranchFilter(branchName) {
+        schedulerBranchFilter = branchName || 'ALL';
+        schedulerSelectedShift = null;
+        setSchedulerActionStatus('', 'info', true);
+        renderSchedulerBranchFilters(schedulerCoordinationData || {});
+        renderSchedulerAvailabilityStrip();
+        renderSchedulerAssignableEngineers();
+        renderSchedulerActionQueue();
+        setTextIfPresent('scheduler-selected-action-label', 'Select a schedule from the action queue.');
+    }
+
+    function findSchedulerActionShift(shiftId) {
+        const rows = schedulerCoordinationData && Array.isArray(schedulerCoordinationData.action_rows)
+            ? schedulerCoordinationData.action_rows
+            : [];
+        return rows.find(row => Number(row.id) === Number(shiftId)) || null;
+    }
+
+    function selectSchedulerActionShift(shiftId) {
+        const row = findSchedulerActionShift(shiftId);
+        schedulerSelectedShift = row;
+        const hidden = document.getElementById('scheduler-selected-shift-id');
+        if (hidden) hidden.value = row ? row.id : '';
+
+        if (row) {
+            setTextIfPresent('scheduler-selected-action-label', `${row.client || 'No client'} • ${row.date || ''} • ${row.task || ''}`);
+            if (row.date) {
+                const dateInput = document.getElementById('scheduler-reschedule-date');
+                if (dateInput) dateInput.value = row.date;
+            }
+            if (row.time_start) {
+                const startInput = document.getElementById('scheduler-reschedule-start');
+                if (startInput) startInput.value = convertTimeLabelToInputValue(row.time_start);
+            }
+            if (row.time_end) {
+                const endInput = document.getElementById('scheduler-reschedule-end');
+                if (endInput) endInput.value = convertTimeLabelToInputValue(row.time_end);
+            }
+        }
+
+        renderSchedulerAssignableEngineers();
+        renderSchedulerActionQueue();
+        setSchedulerActionStatus('', 'info', true);
+    }
+
+    function convertTimeLabelToInputValue(value) {
+        const raw = String(value || '').trim();
+        if (/^\d{2}:\d{2}$/.test(raw)) return raw;
+
+        const match = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (!match) return '';
+        let hour = Number(match[1]);
+        const minute = match[2];
+        const meridiem = match[3].toUpperCase();
+        if (meridiem === 'PM' && hour < 12) hour += 12;
+        if (meridiem === 'AM' && hour === 12) hour = 0;
+        return `${String(hour).padStart(2, '0')}:${minute}`;
+    }
+
+    function selectSchedulerEngineerForAssign(engineerId) {
+        const select = document.getElementById('scheduler-assign-engineers');
+        if (!select || !engineerId) return;
+        Array.from(select.options).forEach(option => {
+            if (Number(option.value) === Number(engineerId)) {
+                option.selected = true;
+            }
+        });
+    }
+
+    function getSelectedSchedulerShiftId() {
+        const hidden = document.getElementById('scheduler-selected-shift-id');
+        return hidden ? Number(hidden.value || 0) : 0;
+    }
+
+    function setSchedulerActionStatus(message, state = 'info', hide = false) {
+        const box = document.getElementById('scheduler-action-status');
+        if (!box) return;
+        if (hide || !message) {
+            box.className = 'scheduler-action-status small mt-3 d-none';
+            box.innerHTML = '';
+            return;
+        }
+
+        const classMap = {
+            success: 'text-success',
+            error: 'text-danger',
+            info: 'text-muted'
+        };
+        box.className = `scheduler-action-status small mt-3 fw-bold ${classMap[state] || classMap.info}`;
+        box.innerHTML = message;
+    }
+
+    function getSelectedSchedulerEngineerIds() {
+        const select = document.getElementById('scheduler-assign-engineers');
+        if (!select) return [];
+        return Array.from(select.selectedOptions).map(option => Number(option.value)).filter(Boolean);
+    }
+
+    async function submitSchedulerQuickAssign() {
+        const shiftId = getSelectedSchedulerShiftId();
+        const engineerIds = getSelectedSchedulerEngineerIds();
+
+        if (!shiftId) {
+            setSchedulerActionStatus('<i class="fa-solid fa-triangle-exclamation me-1"></i>Select a schedule first.', 'error');
+            return;
+        }
+        if (!engineerIds.length) {
+            setSchedulerActionStatus('<i class="fa-solid fa-triangle-exclamation me-1"></i>Select at least one engineer.', 'error');
+            return;
+        }
+
+        await submitSchedulerAction('/scheduler_quick_assign_shift', {
+            shift_id: shiftId,
+            engineer_ids: engineerIds
+        }, 'Assignment updated.');
+    }
+
+    async function submitSchedulerQuickReschedule() {
+        const shiftId = getSelectedSchedulerShiftId();
+        const dateInput = document.getElementById('scheduler-reschedule-date');
+        const startInput = document.getElementById('scheduler-reschedule-start');
+        const endInput = document.getElementById('scheduler-reschedule-end');
+
+        if (!shiftId) {
+            setSchedulerActionStatus('<i class="fa-solid fa-triangle-exclamation me-1"></i>Select a schedule first.', 'error');
+            return;
+        }
+
+        if (!dateInput || !dateInput.value || !startInput || !startInput.value) {
+            setSchedulerActionStatus('<i class="fa-solid fa-triangle-exclamation me-1"></i>Select date and start time.', 'error');
+            return;
+        }
+
+        await submitSchedulerAction('/scheduler_quick_reschedule_shift', {
+            shift_id: shiftId,
+            date: dateInput.value,
+            start_time: startInput.value,
+            end_time: endInput && endInput.value ? endInput.value : ''
+        }, 'Schedule rescheduled.');
+    }
+
+    async function submitSchedulerAction(url, payload, successMessage) {
+        setSchedulerActionStatus('<i class="fa-solid fa-circle-notch fa-spin me-1"></i>Saving scheduler action...', 'info');
+
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': typeof getCSRFToken === 'function' ? getCSRFToken() : ''
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok || data.status !== 'success') {
+                throw new Error(data.message || data.error || `Request failed (${response.status}).`);
+            }
+
+            setSchedulerActionStatus(`<i class="fa-solid fa-circle-check me-1"></i>${escapeHtml(data.message || successMessage)}`, 'success');
+            schedulerSelectedShift = null;
+            await Promise.all([
+                loadSchedulerDashboardSummary(),
+                loadSchedulerDispatchIntelligence(),
+                loadSchedulerCoordinationTools()
+            ]);
+        } catch (error) {
+            console.warn('Scheduler quick action failed:', error);
+            setSchedulerActionStatus(`<i class="fa-solid fa-triangle-exclamation me-1"></i>${escapeHtml(error.message || 'Scheduler action failed.')}`, 'error');
+        }
+    }
+
     function getCurrentEngineerTasks() {
         if (!dashboardHasEngineerProfile) return [];
         return allOpenTasksRaw.filter(isTaskAssignedToCurrentEngineer);
@@ -1499,6 +1918,7 @@
             if (dashboardSchedulerOnly) {
                 loadSchedulerDashboardSummary();
                 loadSchedulerDispatchIntelligence();
+                loadSchedulerCoordinationTools();
             }
 
             if (dashboardAdminView && !dashboardSchedulerOnly) {
@@ -2435,6 +2855,124 @@
         background: #ffffff;
     }
 
+    .scheduler-coordination-panel {
+        background: linear-gradient(135deg, #ecfdf5, #ffffff);
+        border: 1px solid #bbf7d0;
+        border-radius: 1.25rem;
+        padding: 1rem;
+    }
+
+    .scheduler-branch-filter-strip {
+        display: flex;
+        gap: 0.5rem;
+        overflow-x: auto;
+        padding-bottom: 0.15rem;
+    }
+
+    .scheduler-branch-filter-strip .btn {
+        white-space: nowrap;
+    }
+
+    .scheduler-availability-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+        padding: 1rem;
+        max-height: 360px;
+        overflow-y: auto;
+        background: #ffffff;
+    }
+
+    .scheduler-availability-chip {
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        background: #ffffff;
+        padding: 0.75rem;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 0.65rem;
+        text-align: left;
+        transition: 0.2s ease;
+        width: 100%;
+    }
+
+    .scheduler-availability-chip:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+    }
+
+    .scheduler-availability-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        font-size: 0.78rem;
+        font-weight: 900;
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .scheduler-availability-main strong {
+        display: block;
+        color: #0f172a;
+        font-size: 0.84rem;
+        line-height: 1.1;
+    }
+
+    .scheduler-availability-main small {
+        display: block;
+        color: #64748b;
+        font-size: 0.68rem;
+        font-weight: 800;
+        line-height: 1.25;
+        margin-top: 0.2rem;
+    }
+
+    .scheduler-availability-busy {
+        border-left: 4px solid #dc3545;
+    }
+
+    .scheduler-availability-watch {
+        border-left: 4px solid #f59e0b;
+    }
+
+    .scheduler-availability-available {
+        border-left: 4px solid #22c55e;
+    }
+
+    .scheduler-action-queue {
+        max-height: 530px;
+        overflow-y: auto;
+    }
+
+    .scheduler-action-row {
+        width: 100%;
+        text-align: left;
+        border: 0;
+        border-bottom: 1px solid #f1f5f9;
+        background: #ffffff;
+        cursor: pointer;
+    }
+
+    .scheduler-action-row:hover,
+    .scheduler-action-row-active {
+        background: #f0fdf4;
+    }
+
+    .scheduler-reschedule-box {
+        border-top: 1px solid #e2e8f0;
+        padding-top: 1rem;
+        margin-top: 1rem;
+    }
+
+    .scheduler-action-status {
+        border-radius: 0.85rem;
+        background: #f8fafc;
+        padding: 0.75rem;
+    }
+
 
     /* RECENT ACTIVITY UX UPGRADE */
     .live-dot {
@@ -2730,7 +3268,22 @@
         .dashboard-needs-attention,
         .dashboard-quick-admin,
         .scheduler-core-dashboard,
-        .scheduler-intelligence-panel { padding: 0.85rem; }
+        .scheduler-intelligence-panel,
+        .scheduler-coordination-panel { padding: 0.85rem; }
+
+        .scheduler-availability-strip {
+            grid-template-columns: 1fr;
+            padding: 0.75rem;
+        }
+
+        .scheduler-availability-chip {
+            grid-template-columns: auto 1fr;
+        }
+
+        .scheduler-availability-chip .badge {
+            grid-column: 1 / -1;
+            justify-self: start;
+        }
 
         .scheduler-action-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));
