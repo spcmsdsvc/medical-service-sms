@@ -491,9 +491,17 @@
                     <!-- Medical Center Lookup -->
                     <div class="mb-3 position-relative">
                         <label class="small fw-bold text-muted text-uppercase mb-1 d-block">🏥 Medical Center / Client</label>
-                        <input type="text" id="f-cli-search" class="form-control" placeholder="Search Hospital Name..." autocomplete="off">
+                        <div class="timeline-client-quick-add-row">
+                            <input type="text" id="f-cli-search" class="form-control" placeholder="Search Hospital Name..." autocomplete="off">
+                            <button type="button" id="timeline-client-quick-add-btn" class="btn btn-outline-primary fw-bold timeline-client-quick-add-btn d-none" onclick="quickAddTimelineClient()" title="Add typed client name">
+                                <i class="fa-solid fa-plus me-1"></i>Add
+                            </button>
+                        </div>
                         <input type="hidden" id="f-cli-id">
                         <div id="cli-results" class="search-results shadow border-0 rounded-3"></div>
+                        <div id="timeline-client-quick-add-help" class="xsmall text-muted mt-1 d-none">
+                            Type the new medical center name, then click +Add. Address will be blank and can be completed later on the Clients page.
+                        </div>
                     </div>
 
                     <!-- Equipment S/N Lookup -->
@@ -3194,6 +3202,38 @@ body.pwa-reconnected .mobile-offline-readiness {
     }
 }
 
+.timeline-client-quick-add-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+
+.timeline-client-quick-add-row #f-cli-search {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.timeline-client-quick-add-btn {
+    flex: 0 0 auto;
+    border-radius: 0.65rem;
+    white-space: nowrap;
+    min-width: 5.2rem;
+}
+
+@media (max-width: 768px) {
+    .timeline-client-quick-add-row {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.45rem;
+    }
+
+    .timeline-client-quick-add-btn {
+        width: 100%;
+        min-height: 2.75rem;
+        border-radius: 0.85rem;
+    }
+}
+
 #desktop-create-tsr-inline-btn{
     border-radius: 0.85rem;
     white-space: nowrap;
@@ -3270,6 +3310,13 @@ async function loadEngineerList(){
 }
 
 document.addEventListener('input', function(e){
+    if(e.target.id === 'f-cli-search'){
+        const hiddenClient = document.getElementById('f-cli-id');
+        if(hiddenClient) hiddenClient.value = "";
+        setTimelineClientQuickAddState();
+        updateProductInputState();
+    }
+
     if(e.target.id === 'engineer-search'){
         const val = e.target.value.toLowerCase();
         const box = document.getElementById('engineer-results');
@@ -3481,6 +3528,224 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
     let masterClients = [];
     let masterProducts = [];
     let nameCounts = {}; // Key index to detect shared customer naming frequencies
+    let timelineClientQuickAddBusy = false;
+
+    function normalizeTimelineClientName(value){
+        return String(value || '').trim().replace(/\s+/g, ' ');
+    }
+
+    function getTimelineClientDuplicateByName(clientName){
+        const normalized = normalizeTimelineClientName(clientName).toLowerCase();
+        if(!normalized) return null;
+        return (masterClients || []).find(client => normalizeTimelineClientName(client.name).toLowerCase() === normalized) || null;
+    }
+
+    function setTimelineClientQuickAddState(){
+        const button = document.getElementById('timeline-client-quick-add-btn');
+        const help = document.getElementById('timeline-client-quick-add-help');
+        const category = document.getElementById('f-category')?.value || 'Work';
+
+        const shouldShow = Boolean(canQuickAddTimelineClient && category === 'Work');
+
+        if(button){
+            button.classList.toggle('d-none', !shouldShow);
+            button.disabled = timelineClientQuickAddBusy;
+            button.innerHTML = timelineClientQuickAddBusy
+                ? '<i class="fa-solid fa-spinner fa-spin me-1"></i>Adding'
+                : '<i class="fa-solid fa-plus me-1"></i>Add';
+        }
+
+        if(help){
+            help.classList.toggle('d-none', !shouldShow);
+        }
+    }
+
+    function selectTimelineClient(client){
+        if(!client) return;
+
+        const clientId = client.id || client.client_id || client.clientId || client.selected_client_id || '';
+        const clientName = normalizeTimelineClientName(
+            client.selected_client_name ||
+            client.name ||
+            client.client_name ||
+            client.client ||
+            client.label ||
+            client.text ||
+            ''
+        );
+
+        const searchField = document.getElementById('f-cli-search');
+        const hiddenField = document.getElementById('f-cli-id');
+        const resultsBox = document.getElementById('cli-results');
+
+        let resolvedClientName = clientName;
+        if(!resolvedClientName && clientId){
+            const matchedClient = (masterClients || []).find(item => String(item.id || item.client_id || item.clientId || '') === String(clientId));
+            resolvedClientName = normalizeTimelineClientName(matchedClient && (matchedClient.name || matchedClient.client_name || matchedClient.client));
+        }
+
+        if(searchField){
+            // Timeline quick-add/select should display only the real database client name.
+            // Address stays stored in the database/client record but must not appear in this field.
+            searchField.value = resolvedClientName || '';
+        }
+
+        if(hiddenField){
+            hiddenField.value = clientId;
+        }
+
+        if(resultsBox){
+            resultsBox.innerHTML = "";
+        }
+
+        if(typeof resetProductSelection === 'function'){
+            resetProductSelection("Search linked machine serial / product name...");
+        }
+
+        if(typeof updateProductInputState === 'function'){
+            updateProductInputState();
+        }
+    }
+
+    function getTimelineCanonicalClientFromPayload(payload){
+        if(!payload) return null;
+
+        const selectedClient = payload.selected_client || payload.existing_client || payload.client || payload.data || null;
+        if(selectedClient && (selectedClient.id || selectedClient.client_id || selectedClient.clientId || payload.selected_client_id)){
+            return Object.assign({}, selectedClient, {
+                id: selectedClient.id || selectedClient.client_id || selectedClient.clientId || payload.selected_client_id,
+                client_id: selectedClient.client_id || selectedClient.id || selectedClient.clientId || payload.selected_client_id,
+                selected_client_name: payload.selected_client_name || selectedClient.selected_client_name || selectedClient.name || selectedClient.client_name || ''
+            });
+        }
+
+        if(payload.selected_client_id || payload.selected_client_name){
+            return {
+                id: payload.selected_client_id || payload.id || payload.client_id || '',
+                client_id: payload.selected_client_id || payload.id || payload.client_id || '',
+                name: payload.selected_client_name || payload.name || payload.client_name || '',
+                client_name: payload.selected_client_name || payload.name || payload.client_name || '',
+                selected_client_name: payload.selected_client_name || payload.name || payload.client_name || '',
+                address: payload.address || ''
+            };
+        }
+
+        return payload;
+    }
+
+    function upsertTimelineClientIntoMaster(client){
+        if(!client) return;
+        const clientId = String(client.id || client.client_id || client.clientId || client.selected_client_id || '');
+        const clientName = client.selected_client_name || client.name || client.client_name || '';
+        if(!clientId && !clientName) return;
+
+        const existingIndex = (masterClients || []).findIndex(item => {
+            return (clientId && String(item.id || item.client_id || '') === clientId) ||
+                normalizeTimelineClientName(item.name).toLowerCase() === normalizeTimelineClientName(clientName).toLowerCase();
+        });
+
+        if(existingIndex >= 0){
+            masterClients[existingIndex] = Object.assign({}, masterClients[existingIndex], client);
+        }else{
+            masterClients.push(client);
+        }
+
+        if(typeof rebuildClientNameCounts === 'function'){
+            rebuildClientNameCounts();
+        }
+    }
+
+    async function quickAddTimelineClient(){
+        if(!canQuickAddTimelineClient){
+            alert("Only admin, superadmin, scheduler, regional admin, or manager accounts can add clients from Timeline.");
+            return;
+        }
+
+        const category = document.getElementById('f-category')?.value || 'Work';
+        if(category !== 'Work'){
+            alert("+Add is only available for Medical Center Visit schedules.");
+            return;
+        }
+
+        const searchField = document.getElementById('f-cli-search');
+        const hiddenField = document.getElementById('f-cli-id');
+        const typedName = normalizeTimelineClientName(searchField?.value || '');
+
+        if(!typedName){
+            alert("Please type the medical center name first.");
+            if(searchField) searchField.focus();
+            return;
+        }
+
+        if(hiddenField?.value){
+            alert("A client is already selected. Clear the field first if you want to add a new client.");
+            return;
+        }
+
+        const localDuplicate = getTimelineClientDuplicateByName(typedName);
+        if(localDuplicate){
+            selectTimelineClient(localDuplicate);
+            alert("Client already exists. Existing client has been selected.");
+            return;
+        }
+
+        if(timelineClientQuickAddBusy) return;
+        timelineClientQuickAddBusy = true;
+        setTimelineClientQuickAddState();
+
+        try{
+            const formData = new FormData();
+            formData.append('name', typedName);
+            formData.append('address', '');
+
+            const response = await fetch('/quick_add_timeline_client', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCSRFToken() },
+                body: formData
+            });
+
+            const payload = await response.json().catch(() => ({}));
+
+            if(!response.ok || payload.status === 'error'){
+                const message = payload.message || payload.error || "Unable to add client.";
+                alert(message);
+                return;
+            }
+
+            const client = getTimelineCanonicalClientFromPayload(payload);
+            if(!client || !(client.id || client.client_id || client.clientId || client.selected_client_id)){
+                alert("Client was processed, but the response did not include a client ID. Please refresh the page.");
+                return;
+            }
+
+            upsertTimelineClientIntoMaster(client);
+            selectTimelineClient(client);
+
+            // Force-replace any typed duplicate text with the canonical database client name.
+            const searchField = document.getElementById('f-cli-search');
+            const canonicalName = normalizeTimelineClientName(
+                payload.selected_client_name ||
+                client.selected_client_name ||
+                client.name ||
+                client.client_name ||
+                ''
+            );
+            if(searchField && canonicalName){
+                searchField.value = canonicalName;
+            }
+
+            if(payload.duplicate || payload.existing){
+                alert("Client already exists. Existing client has been selected.");
+            }
+        }catch(err){
+            console.error(err);
+            alert("Unexpected error while adding client.");
+        }finally{
+            timelineClientQuickAddBusy = false;
+            setTimelineClientQuickAddState();
+        }
+    }
+
 
     // Personnel Categories for grid suppressed badges
     const HR_CATEGORIES = ["Sick Leave", "Vacation Leave", "Emergency Leave", "Paternity Leave", "Maternity Leave"];
@@ -3498,6 +3763,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
     const isSuperAdmin = authRole === "superadmin";
     const isRegionalAdmin = authRole === "regional_admin";
     const isEngineer = authRole === "engineer";
+    const canQuickAddTimelineClient = ["admin", "superadmin", "scheduler", "regional_admin", "manager"].includes(authRole);
     // Detection of user's home branch to set auto-filter
     const userBranch = "{{ current_user.engineer_profile.branch if current_user.engineer_profile else 'ALL' }}";
     // Named leadership/scheduler accounts default to ALL branches even if linked to an engineer profile.
@@ -5214,6 +5480,7 @@ function collectMobileEngineerSchedules(){
      */
     function toggleCategoryFields() { 
         const selectedVal = document.getElementById('f-category').value;
+        setTimelineClientQuickAddState();
         const recordID = document.getElementById('f-id').value;
         const titleField = document.getElementById('f-title');
         
@@ -9651,6 +9918,9 @@ function initTimelineStickyHeaderPolish(){
     setTimeout(updateStickyState, 900);
 }
 
+document.addEventListener('DOMContentLoaded', function(){
+    setTimelineClientQuickAddState();
+});
 document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 
 

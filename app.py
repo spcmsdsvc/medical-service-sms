@@ -316,6 +316,7 @@ PERFORMANCE_LOG_PATHS = {
     '/get_timeline_data',
     '/get_shift_details',
     '/get_clients',
+    '/quick_add_timeline_client',
     '/get_products',
     '/get_engineers',
     '/get_open_tasks',
@@ -327,6 +328,7 @@ PERFORMANCE_LOG_PATHS = {
     '/get_manager_dashboard_summary',
     '/get_manager_tsr_intelligence',
     '/get_manager_billing_visibility',
+    '/get_manager_executive_watchlist',
     '/scheduler_quick_assign_shift',
     '/scheduler_quick_reschedule_shift',
     '/set_developer_dashboard_view',
@@ -877,6 +879,258 @@ def check_for_duplicate_client(new_name, new_addr, exclude_id=None):
     return None
 
 
+def normalize_client_name_for_matching(value):
+    """Normalize hospital names for duplicate detection without being too strict."""
+    text_value = clean_str(value) or ''
+    text_value = text_value.lower()
+    text_value = text_value.replace('&', ' and ')
+    text_value = re.sub(r'[^a-z0-9\s]', ' ', text_value)
+
+    noise_words = {
+        'inc', 'incorporated', 'corp', 'corporation', 'company', 'co',
+        'the', 'of', 'and', 'at', 'in', 'for'
+    }
+
+    words = [word for word in re.split(r'\s+', text_value.strip()) if word and word not in noise_words]
+    return ' '.join(words)
+
+
+def client_name_tokens(value):
+    normalized = normalize_client_name_for_matching(value)
+    return [word for word in normalized.split() if len(word) >= 2]
+
+
+CLIENT_DUPLICATE_WEAK_TOKENS = {
+    'hospital', 'general', 'medical', 'center', 'centre', 'clinic',
+    'diagnostic', 'diagnostics', 'laboratory', 'lab', 'health',
+    'healthcare', 'institute', 'institution', 'university', 'memorial',
+    'doctors', 'doctor',
+    # Country/location/common ownership words should not cause duplicates alone.
+    # Example: Philippine General Hospital must not match Philippine Heart Center.
+    'philippine', 'philippines', 'national', 'regional', 'city', 'province',
+    'municipal', 'community'
+}
+
+
+def client_name_strong_tokens(value):
+    return [
+        token for token in client_name_tokens(value)
+        if token not in CLIENT_DUPLICATE_WEAK_TOKENS and len(token) >= 3
+    ]
+
+
+def client_name_critical_tokens(value):
+    """Return unique identity tokens for duplicate confidence.
+
+    These are stricter than strong tokens. They exclude country/location/common
+    words, so:
+    - Philippine General Hospital and Philippine Heart Center do not match.
+    - Accura and Accura-Tech Diagnostic Laboratory still match via accura.
+    """
+    return client_name_strong_tokens(value)
+
+
+def client_names_have_critical_overlap(name_a, name_b):
+    critical_a = set(client_name_critical_tokens(name_a))
+    critical_b = set(client_name_critical_tokens(name_b))
+    return bool(critical_a and critical_b and (critical_a & critical_b))
+
+
+def client_name_token_similarity(name_a, name_b):
+    tokens_a = set(client_name_tokens(name_a))
+    tokens_b = set(client_name_tokens(name_b))
+
+    if not tokens_a or not tokens_b:
+        return 0.0
+
+    intersection = len(tokens_a & tokens_b)
+    union = len(tokens_a | tokens_b)
+    return intersection / max(union, 1)
+
+
+def client_name_strong_token_similarity(name_a, name_b):
+    tokens_a = set(client_name_strong_tokens(name_a))
+    tokens_b = set(client_name_strong_tokens(name_b))
+
+    if not tokens_a or not tokens_b:
+        return 0.0
+
+    intersection = len(tokens_a & tokens_b)
+    union = len(tokens_a | tokens_b)
+    return intersection / max(union, 1)
+
+
+def client_names_have_required_strong_overlap(name_a, name_b):
+    """Prevent false duplicate matches based only on generic hospital words.
+
+    Blocked example:
+    - Philippine General Hospital vs Chinese General Hospital
+      Shared words are only weak/common tokens: general, hospital.
+
+    Allowed example:
+    - Accura vs Accura-Tech Diagnostic Laboratory
+      Shared token is a strong unique token: accura.
+    """
+    strong_a = set(client_name_strong_tokens(name_a))
+    strong_b = set(client_name_strong_tokens(name_b))
+
+    if not strong_a or not strong_b:
+        return False
+
+    return bool(strong_a & strong_b)
+
+
+def check_for_timeline_quick_add_duplicate_client(new_name):
+    """Timeline quick-add duplicate check with best-match ranking.
+
+    This version balances both problems:
+    - catches short safe prefixes like "accura" -> Accura-Tech Diagnostic Laboratory
+    - blocks generic false matches like Philippine General Hospital -> Chinese General Hospital
+    - blocks country-word false matches like Philippine General Hospital -> Philippine Heart Center
+    """
+    clean_name = clean_str(new_name) or ''
+    normalized_new = normalize_client_name_for_matching(clean_name)
+    acronym_new = generate_acronym(clean_name)
+    new_tokens = set(client_name_tokens(clean_name))
+    new_strong_tokens = set(client_name_strong_tokens(clean_name))
+
+    if not normalized_new:
+        return None
+
+    candidates = []
+
+    for client in Client.query.order_by(Client.id.asc()).all():
+        existing_name = clean_str(client.name) or ''
+        normalized_existing = normalize_client_name_for_matching(existing_name)
+        acronym_existing = generate_acronym(existing_name)
+        existing_tokens = set(client_name_tokens(existing_name))
+        existing_strong_tokens = set(client_name_strong_tokens(existing_name))
+        has_strong_overlap = bool(new_strong_tokens & existing_strong_tokens)
+        has_critical_overlap = client_names_have_critical_overlap(clean_name, existing_name)
+
+        if not normalized_existing:
+            continue
+
+        score = 0
+        reasons = []
+
+        # Exact normalized full-name match is always a duplicate.
+        if normalized_new == normalized_existing:
+            score += 140
+            reasons.append('exact-normalized')
+
+        # Acronym match is allowed, but only for meaningful acronyms.
+        # PGH and CGH will not match because acronyms differ.
+        if acronym_new and acronym_existing and len(acronym_new) >= 3 and acronym_new == acronym_existing:
+            score += 110
+            reasons.append('acronym')
+
+        # Long contains match requires at least one strong/non-generic shared token.
+        if has_critical_overlap and len(normalized_new) >= 8 and len(normalized_existing) >= 8:
+            if normalized_new in normalized_existing or normalized_existing in normalized_new:
+                score += 95
+                reasons.append('contains')
+
+        # Short safe prefix: catches accura -> Accura-Tech Diagnostic Laboratory.
+        # It only checks strong existing tokens, not generic words like hospital/general.
+        if len(normalized_new) >= 5 and existing_strong_tokens:
+            if any(token.startswith(normalized_new) or normalized_new.startswith(token) for token in existing_strong_tokens if len(token) >= 5):
+                score += 115
+                reasons.append('short-prefix')
+
+        ordered_new_tokens = client_name_tokens(clean_name)
+        ordered_existing_tokens = client_name_tokens(existing_name)
+        first_new_token = ordered_new_tokens[0] if ordered_new_tokens else ''
+        first_existing_token = ordered_existing_tokens[0] if ordered_existing_tokens else ''
+        if (
+            first_new_token and first_existing_token and
+            first_new_token not in CLIENT_DUPLICATE_WEAK_TOKENS and
+            first_existing_token not in CLIENT_DUPLICATE_WEAK_TOKENS and
+            len(first_new_token) >= 5 and
+            first_existing_token.startswith(first_new_token)
+        ):
+            score += 105
+            reasons.append('first-token-prefix')
+
+        fuzzy_score = similarity(normalized_new, normalized_existing)
+        if has_critical_overlap and fuzzy_score >= 0.88:
+            score += int(fuzzy_score * 85)
+            reasons.append(f'fuzzy-{fuzzy_score:.2f}')
+        elif has_critical_overlap and fuzzy_score >= 0.82 and len(normalized_new) >= 10 and len(normalized_existing) >= 10:
+            score += int(fuzzy_score * 55)
+            reasons.append(f'soft-fuzzy-{fuzzy_score:.2f}')
+
+        token_score = client_name_token_similarity(clean_name, existing_name)
+        strong_token_score = client_name_strong_token_similarity(clean_name, existing_name)
+
+        if has_critical_overlap and token_score >= 0.75 and len(new_tokens) >= 3 and len(existing_tokens) >= 3:
+            score += int(token_score * 80)
+            reasons.append(f'token-{token_score:.2f}')
+
+        if strong_token_score >= 0.50:
+            score += int(strong_token_score * 100)
+            reasons.append(f'strong-token-{strong_token_score:.2f}')
+
+        # Subset overlap requires at least one strong shared token.
+        if has_critical_overlap and len(new_tokens) >= 3 and len(existing_tokens) >= 3:
+            common_tokens = new_tokens & existing_tokens
+            common_strong_tokens = new_strong_tokens & existing_strong_tokens
+            if len(common_tokens) >= 3 and common_strong_tokens:
+                subset_score = len(common_tokens) / max(min(len(new_tokens), len(existing_tokens)), 1)
+                if subset_score >= 0.75:
+                    score += int(subset_score * 70)
+                    reasons.append(f'subset-{subset_score:.2f}')
+
+        if score <= 0:
+            continue
+
+        # Prefer complete/real client records over blank quick-add duplicates.
+        address_bonus = 25 if clean_str(client.address) else 0
+        product_bonus = 15 if Product.query.filter_by(client_id=client.id).first() else 0
+        contact_bonus = 8 if Contact.query.filter_by(client_id=client.id).first() else 0
+
+        final_score = score + address_bonus + product_bonus + contact_bonus
+
+        candidates.append({
+            'client': client,
+            'score': final_score,
+            'base_score': score,
+            'has_address': bool(clean_str(client.address)),
+            'has_product': bool(product_bonus),
+            'has_contact': bool(contact_bonus),
+            'reasons': reasons
+        })
+
+    if not candidates:
+        return None
+
+    candidates = [item for item in candidates if item['score'] >= 75]
+    if not candidates:
+        return None
+
+    candidates.sort(
+        key=lambda item: (
+            item['score'],
+            item['has_address'],
+            item['has_product'],
+            item['has_contact'],
+            -item['client'].id
+        ),
+        reverse=True
+    )
+
+    best = candidates[0]
+    print(
+        "[TIMELINE-CLIENT] Best duplicate match for "
+        f"'{clean_name}' -> #{best['client'].id}: {best['client'].name} "
+        f"score={best['score']} reasons={','.join(best['reasons'])}",
+        flush=True
+    )
+
+    return best['client']
+
+
+
 def log_activity(action):
     """ Helper v5.4.3: Records live system events with auto-commit fix """
     if current_user and current_user.is_authenticated:
@@ -1103,6 +1357,22 @@ def is_regional_admin_user(user=None):
 def is_admin_authorized(user=None):
     """System-management authorization. The old generic admin role is intentionally not accepted."""
     return is_superadmin_user(user) or is_regional_admin_user(user)
+
+
+def can_quick_add_timeline_client(user=None):
+    """Allow Timeline quick client creation for scheduling/management roles only.
+
+    Pure engineer accounts are intentionally excluded.
+    """
+    target = user or current_user
+    role = (getattr(target, 'role', '') or '').strip().lower()
+
+    return bool(
+        is_admin_authorized(target) or
+        is_scheduler_user(target) or
+        is_manager_dashboard_user(target) or
+        role in {'admin', 'scheduler', 'manager'}
+    )
 
 
 def has_engineer_profile(user=None):
@@ -4476,6 +4746,114 @@ def get_clients():
     return jsonify(results)
 
 
+
+
+@app.route('/quick_add_timeline_client', methods=['POST'])
+@login_required
+def quick_add_timeline_client():
+    """Timeline inline +Add client endpoint.
+
+    Intended workflow:
+    - scheduler/admin/manager types a missing client name in Timeline
+    - frontend calls this endpoint in the background
+    - backend checks duplicates using acronym/fuzzy matching
+    - if no duplicate: creates Client(name=<typed>, address='')
+    - returns the new/existing client for immediate auto-selection
+
+    No modal. No page refresh. Pure engineer accounts are blocked.
+    """
+    if not can_quick_add_timeline_client():
+        return denied('Only admin, scheduler, manager, or superadmin accounts can add clients from Timeline.')
+
+    payload = request.get_json(silent=True) or {}
+    client_name = (
+        clean_str(request.form.get('name')) or
+        clean_str(request.form.get('client_name')) or
+        clean_str(payload.get('name')) or
+        clean_str(payload.get('client_name')) or
+        ''
+    )
+    client_name = re.sub(r'\s+', ' ', client_name).strip()
+
+    if not client_name:
+        return jsonify({
+            'status': 'error',
+            'message': 'Please type the medical center name first.'
+        }), 400
+
+    if len(client_name) < 3:
+        return jsonify({
+            'status': 'error',
+            'message': 'Client name is too short.'
+        }), 400
+
+    if len(client_name) > 100:
+        return jsonify({
+            'status': 'error',
+            'message': 'Client name must be 100 characters or less.'
+        }), 400
+
+    duplicate_client = check_for_timeline_quick_add_duplicate_client(client_name)
+    if duplicate_client:
+        print(f"[TIMELINE-CLIENT] Duplicate detected for typed '{client_name}' -> existing #{duplicate_client.id}: {duplicate_client.name}", flush=True)
+        existing_client_payload = {
+            'id': duplicate_client.id,
+            'client_id': duplicate_client.id,
+            'name': duplicate_client.name or '',
+            'client_name': duplicate_client.name or '',
+            'selected_client_name': duplicate_client.name or '',
+            'address': duplicate_client.address or ''
+        }
+        return jsonify({
+            'status': 'success',
+            'duplicate': True,
+            'existing': True,
+            'created': False,
+            'message': 'Client already exists. Existing client selected.',
+            'client': existing_client_payload,
+            'existing_client': existing_client_payload,
+            'selected_client': existing_client_payload,
+            'selected_client_id': duplicate_client.id,
+            'selected_client_name': duplicate_client.name or '',
+            'typed_name': client_name
+        })
+
+    new_client = Client(
+        name=client_name,
+        address=''
+    )
+    db.session.add(new_client)
+    db.session.flush()
+
+    db.session.add(ActivityLog(
+        user=current_user.username.capitalize(),
+        action=f"Quick added client from Timeline: {new_client.name}"
+    ))
+    db.session.commit()
+
+    new_client_payload = {
+        'id': new_client.id,
+        'client_id': new_client.id,
+        'name': new_client.name or '',
+        'client_name': new_client.name or '',
+        'selected_client_name': new_client.name or '',
+        'address': new_client.address or ''
+    }
+
+    return jsonify({
+        'status': 'success',
+        'duplicate': False,
+        'existing': False,
+        'created': True,
+        'message': 'Client added and selected.',
+        'client': new_client_payload,
+        'selected_client': new_client_payload,
+        'selected_client_id': new_client.id,
+        'selected_client_name': new_client.name or '',
+        'typed_name': client_name
+    })
+
+
 @app.route('/get_products')
 @login_required
 def get_products():
@@ -6418,6 +6796,290 @@ def get_manager_billing_visibility():
             'service_mix': service_mix_rows,
             'status_mix': status_mix_rows
         }
+    })
+
+
+
+
+
+# --- MANAGER DASHBOARD PHASE M5: LIGHTWEIGHT EXECUTIVE WATCHLIST ---
+
+def manager_watchlist_chip(label, value, tone='stable'):
+    """Small executive insight chip for manager dashboard.
+
+    Tones: stable, watch, critical, info
+    """
+    return {
+        'label': label,
+        'value': value,
+        'tone': tone
+    }
+
+
+@app.route('/get_manager_executive_watchlist')
+@login_required
+def get_manager_executive_watchlist():
+    """Manager Dashboard Phase M5 backend: lightweight executive watchlist.
+
+    Final manager backend polish:
+    - no noisy alert center
+    - only top executive-level signals
+    - top 5 watchlist rows maximum
+    - insight chips instead of large tables
+    - reuses existing Shift/TSR data only
+    """
+    if not can_view_manager_dashboard():
+        return denied('Manager executive watchlist is only available to manager-authorized accounts.')
+
+    ensure_shift_file_original_filename_column()
+    ensure_tsr_knowledge_entry_table()
+
+    today = get_manila_today()
+    lookback_start = today - timedelta(days=180)
+    lookahead_end = today + timedelta(days=60)
+    start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
+
+    invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
+    waiting_statuses = {'Waiting for P.O', 'Waiting for Parts'}
+
+    service_query = (
+        Shift.query
+        .options(
+            joinedload(Shift.client),
+            joinedload(Shift.product),
+            selectinload(Shift.files)
+        )
+        .filter(Shift.client_id.isnot(None))
+        .filter(Shift.start_time >= start_dt)
+        .filter(Shift.start_time < end_dt)
+        .order_by(Shift.start_time.desc())
+    )
+    service_query = analytics_scope_query(service_query)
+    service_shifts = list({shift.id: shift for shift in service_query.limit(2000).all()}.values())
+
+    open_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') not in invalid_dashboard_categories
+    ]
+
+    overdue_shifts = [
+        shift for shift in open_shifts
+        if shift.start_time and shift.start_time.date() < today
+    ]
+
+    severe_overdue_shifts = [
+        shift for shift in overdue_shifts
+        if shift.start_time and (today - shift.start_time.date()).days >= 7
+    ]
+
+    pending_tsr_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') == 'Completed' and not shift_has_tsr_file(shift)
+    ]
+
+    severe_tsr_aging_shifts = [
+        shift for shift in pending_tsr_shifts
+        if shift.start_time and (today - shift.start_time.date()).days >= 7
+    ]
+
+    waiting_po_shifts = [
+        shift for shift in open_shifts
+        if (shift.status or '').strip().lower() in {'waiting for p.o', 'waiting for po'}
+    ]
+
+    waiting_blocker_shifts = [
+        shift for shift in open_shifts
+        if (shift.status or '') in waiting_statuses
+    ]
+
+    # Critical repeat equipment: same client + same product/serial with many visits.
+    repeat_map = {}
+    for shift in service_shifts:
+        if not shift.start_time or not shift.product_id:
+            continue
+
+        product_label = shift.product.name if shift.product else (shift.product_id or 'Unknown Equipment')
+        serial_label = shift.product.serial_number if shift.product else (shift.product_id or '')
+        client_label = shift.client.name if shift.client else 'N/A'
+        key = f"{shift.client_id or 'no-client'}::{serial_label or shift.product_id}"
+
+        if key not in repeat_map:
+            repeat_map[key] = {
+                'client': client_label,
+                'product': product_label,
+                'serial': serial_label,
+                'service_count': 0,
+                'last_service': '',
+                'latest_date': None,
+                'tasks': set()
+            }
+
+        row = repeat_map[key]
+        row['service_count'] += 1
+        row['tasks'].add(shift.title or '')
+        if not row['latest_date'] or shift.start_time > row['latest_date']:
+            row['latest_date'] = shift.start_time
+            row['last_service'] = shift.start_time.strftime('%Y-%m-%d')
+
+    critical_repeat_equipment = []
+    for row in repeat_map.values():
+        if row['service_count'] >= 4:
+            critical_repeat_equipment.append({
+                'type': 'repeat_equipment',
+                'title': row['product'] or 'Repeat equipment',
+                'subtitle': row['client'],
+                'detail': f"{row['service_count']} services in 180 days",
+                'meta': row['serial'] or row['last_service'],
+                'tone': 'critical' if row['service_count'] >= 6 else 'watch',
+                'count': row['service_count']
+            })
+
+    critical_repeat_equipment.sort(key=lambda row: (-row['count'], row['subtitle'], row['title']))
+
+    # High-risk clients: many overdue / pending TSR / waiting blockers.
+    client_risk = {}
+    for shift in service_shifts:
+        if not shift.client:
+            continue
+        client_name = shift.client.name
+        if client_name not in client_risk:
+            client_risk[client_name] = {
+                'client': client_name,
+                'overdue': 0,
+                'pending_tsr': 0,
+                'waiting': 0,
+                'open': 0,
+                'score': 0,
+                'latest_date': None
+            }
+
+        row = client_risk[client_name]
+        if shift.start_time and (not row['latest_date'] or shift.start_time > row['latest_date']):
+            row['latest_date'] = shift.start_time
+
+        if shift in open_shifts:
+            row['open'] += 1
+        if shift in severe_overdue_shifts:
+            row['overdue'] += 1
+        if shift in severe_tsr_aging_shifts:
+            row['pending_tsr'] += 1
+        if shift in waiting_blocker_shifts:
+            row['waiting'] += 1
+
+    high_risk_clients = []
+    for row in client_risk.values():
+        row['score'] = (row['overdue'] * 3) + (row['pending_tsr'] * 2) + (row['waiting'] * 2) + row['open']
+        if row['score'] < 5:
+            continue
+
+        high_risk_clients.append({
+            'type': 'high_risk_client',
+            'title': row['client'],
+            'subtitle': 'Client watch signal',
+            'detail': f"{row['open']} open • {row['overdue']} severe overdue • {row['pending_tsr']} aged TSR",
+            'meta': f"Score {row['score']}",
+            'tone': 'critical' if row['score'] >= 10 else 'watch',
+            'count': row['score']
+        })
+
+    high_risk_clients.sort(key=lambda row: (-row['count'], row['title']))
+
+    # Severe TSR pattern summary, compact only.
+    severe_tsr_rows = [
+        manager_tsr_signal_row(
+            shift,
+            f"TSR overdue {max((today - shift.start_time.date()).days, 0)} day(s)" if shift.start_time else 'TSR overdue',
+            'danger'
+        )
+        for shift in sorted(severe_tsr_aging_shifts, key=lambda s: s.start_time or datetime.min)[:5]
+    ]
+
+    # Build one compact watchlist: highest executive value first.
+    watchlist = []
+    watchlist.extend(critical_repeat_equipment[:3])
+    watchlist.extend(high_risk_clients[:3])
+
+    for shift in severe_overdue_shifts[:3]:
+        watchlist.append({
+            'type': 'severe_overdue',
+            'title': shift.client.name if shift.client else 'Overdue schedule',
+            'subtitle': shift.title or '',
+            'detail': f"Open for {max((today - shift.start_time.date()).days, 0)} day(s)" if shift.start_time else 'Severe overdue',
+            'meta': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
+            'tone': 'critical',
+            'count': max((today - shift.start_time.date()).days, 0) if shift.start_time else 0
+        })
+
+    watchlist.sort(key=lambda row: (
+        0 if row.get('tone') == 'critical' else 1,
+        -int(row.get('count') or 0),
+        row.get('title') or ''
+    ))
+    watchlist = watchlist[:5]
+
+    chips = [
+        manager_watchlist_chip(
+            'Repeat equipment',
+            len(critical_repeat_equipment),
+            'critical' if len(critical_repeat_equipment) >= 3 else ('watch' if critical_repeat_equipment else 'stable')
+        ),
+        manager_watchlist_chip(
+            'High-risk clients',
+            len(high_risk_clients),
+            'critical' if len(high_risk_clients) >= 3 else ('watch' if high_risk_clients else 'stable')
+        ),
+        manager_watchlist_chip(
+            'Aged TSR',
+            len(severe_tsr_aging_shifts),
+            'critical' if len(severe_tsr_aging_shifts) >= 5 else ('watch' if severe_tsr_aging_shifts else 'stable')
+        ),
+        manager_watchlist_chip(
+            'Waiting P.O',
+            len(waiting_po_shifts),
+            'watch' if waiting_po_shifts else 'stable'
+        )
+    ]
+
+    executive_score = (
+        len(critical_repeat_equipment) * 3 +
+        len(high_risk_clients) * 3 +
+        len(severe_tsr_aging_shifts) * 2 +
+        len(severe_overdue_shifts) * 2 +
+        len(waiting_po_shifts)
+    )
+
+    if executive_score >= 18:
+        risk_level = 'critical'
+        risk_label = 'Executive attention needed'
+    elif executive_score >= 7:
+        risk_level = 'watch'
+        risk_label = 'Executive watchlist'
+    else:
+        risk_level = 'stable'
+        risk_label = 'Executive view stable'
+
+    return jsonify({
+        'status': 'success',
+        'phase': 'manager-phase-m5-lightweight-executive-watchlist',
+        'generated_at': get_manila_time().isoformat(),
+        'risk': {
+            'score': executive_score,
+            'level': risk_level,
+            'label': risk_label
+        },
+        'chips': chips,
+        'counts': {
+            'watchlist_items': len(watchlist),
+            'critical_repeat_equipment': len(critical_repeat_equipment),
+            'high_risk_clients': len(high_risk_clients),
+            'severe_overdue': len(severe_overdue_shifts),
+            'aged_tsr': len(severe_tsr_aging_shifts),
+            'waiting_po': len(waiting_po_shifts)
+        },
+        'watchlist': watchlist,
+        'top_repeat_equipment': critical_repeat_equipment[:5],
+        'top_high_risk_clients': high_risk_clients[:5],
+        'severe_tsr_rows': severe_tsr_rows
     })
 
 

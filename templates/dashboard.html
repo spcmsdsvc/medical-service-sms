@@ -507,6 +507,56 @@
                 </div>
             </div>
 
+            <!-- MANAGER PHASE M5: LIGHTWEIGHT EXECUTIVE WATCHLIST -->
+            <div class="manager-executive-watchlist-panel mt-3 mb-3">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h6 class="mb-0 fw-bold text-dark">
+                            <i class="fa-solid fa-eye me-2 text-danger"></i>Executive Watchlist
+                        </h6>
+                        <div class="xsmall text-muted mt-1">Collapsed by default. Shows only top executive-level risks.</div>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <span id="manager-watchlist-risk-badge" class="badge bg-success rounded-pill px-3 py-2">Executive Stable</span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-executive-watchlist-body', this)">
+                            <i class="fa-solid fa-chevron-down me-1"></i>Show
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger fw-bold" onclick="loadManagerExecutiveWatchlist()">
+                            <i class="fa-solid fa-rotate me-1"></i>Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <div id="manager-executive-watchlist-body" class="dashboard-collapsible-body d-none mt-3">
+                    <div id="manager-watchlist-chip-strip" class="manager-watchlist-chip-strip mb-3"></div>
+
+                    <div class="row g-3">
+                        <div class="col-lg-7">
+                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                                <div class="card-header bg-white border-bottom py-3">
+                                    <h6 class="mb-0 fw-bold text-danger">
+                                        <i class="fa-solid fa-triangle-exclamation me-2"></i>Top Watchlist
+                                    </h6>
+                                    <div class="xsmall text-muted mt-1">Maximum 5 items only to avoid dashboard clutter</div>
+                                </div>
+                                <div id="manager-watchlist-main-list" class="dashboard-team-list manager-watchlist-list"></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-5">
+                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                                <div class="card-header bg-white border-bottom py-3">
+                                    <h6 class="mb-0 fw-bold text-warning">
+                                        <i class="fa-solid fa-file-circle-exclamation me-2"></i>Aged TSR Focus
+                                    </h6>
+                                    <div class="xsmall text-muted mt-1">Severe TSR items only</div>
+                                </div>
+                                <div id="manager-watchlist-tsr-list" class="dashboard-team-list manager-watchlist-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="manager-action-grid my-3">
                 <a href="/timeline" class="manager-action-card manager-action-primary">
                     <i class="fa-solid fa-calendar-days"></i>
@@ -1839,6 +1889,115 @@
         }
     }
 
+    function managerWatchlistRiskBadgeClass(level) {
+        const value = String(level || '').toLowerCase();
+        if (value === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
+        if (value === 'watch') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
+        return 'badge bg-success rounded-pill px-3 py-2';
+    }
+
+    function managerWatchlistChipClass(tone) {
+        const value = String(tone || '').toLowerCase();
+        if (value === 'critical') return 'manager-watchlist-chip manager-watchlist-chip-critical';
+        if (value === 'watch') return 'manager-watchlist-chip manager-watchlist-chip-watch';
+        if (value === 'info') return 'manager-watchlist-chip manager-watchlist-chip-info';
+        return 'manager-watchlist-chip manager-watchlist-chip-stable';
+    }
+
+    function managerWatchlistBadgeClass(tone) {
+        const value = String(tone || '').toLowerCase();
+        if (value === 'critical') return 'bg-danger';
+        if (value === 'watch') return 'bg-warning text-dark';
+        if (value === 'info') return 'bg-info text-dark';
+        return 'bg-success';
+    }
+
+    function renderManagerWatchlistChips(chips) {
+        const container = document.getElementById('manager-watchlist-chip-strip');
+        if (!container) return;
+
+        const rows = Array.isArray(chips) ? chips : [];
+        if (!rows.length) {
+            container.innerHTML = `
+                <div class="manager-watchlist-chip manager-watchlist-chip-stable">
+                    <span>No executive chips</span>
+                    <strong>0</strong>
+                </div>`;
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 4).map(chip => `
+            <div class="${managerWatchlistChipClass(chip.tone)}">
+                <span>${escapeHtml(chip.label || 'Signal')}</span>
+                <strong>${escapeHtml(chip.value ?? 0)}</strong>
+            </div>
+        `).join('');
+    }
+
+    function renderManagerExecutiveWatchlistRows(rows) {
+        const container = document.getElementById('manager-watchlist-main-list');
+        if (!container) return;
+
+        if (!Array.isArray(rows) || !rows.length) {
+            renderTeamEmpty('manager-watchlist-main-list', 'No executive watchlist items right now.');
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 5).map(row => `
+            <div class="dashboard-team-row manager-watchlist-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.title || 'Watchlist item')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.subtitle || '')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.detail || '')}</div>
+                </div>
+                <span class="badge ${managerWatchlistBadgeClass(row.tone)}">${escapeHtml(row.meta || row.type || 'Review')}</span>
+            </div>
+        `).join('');
+    }
+
+    function renderManagerExecutiveTsrRows(rows) {
+        const container = document.getElementById('manager-watchlist-tsr-list');
+        if (!container) return;
+
+        if (!Array.isArray(rows) || !rows.length) {
+            renderTeamEmpty('manager-watchlist-tsr-list', 'No severe aged TSR items.');
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 5).map(row => `
+            <div class="dashboard-team-row manager-watchlist-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 'No engineer assigned')}</div>
+                </div>
+                <span class="badge ${managerPriorityBadgeClass(row.severity)}">${escapeHtml(row.signal_label || row.reason || 'Aged TSR')}</span>
+            </div>
+        `).join('');
+    }
+
+    async function loadManagerExecutiveWatchlist() {
+        if (!dashboardManagerView || dashboardSchedulerOnly) return;
+
+        try {
+            const data = await fetchJsonOrThrow('/get_manager_executive_watchlist');
+            const riskBadge = document.getElementById('manager-watchlist-risk-badge');
+
+            if (riskBadge) {
+                riskBadge.className = managerWatchlistRiskBadgeClass(data.risk && data.risk.level);
+                riskBadge.innerText = (data.risk && data.risk.label) || 'Executive Stable';
+            }
+
+            renderManagerWatchlistChips(data.chips || []);
+            renderManagerExecutiveWatchlistRows(data.watchlist || []);
+            renderManagerExecutiveTsrRows(data.severe_tsr_rows || []);
+        } catch (watchlistError) {
+            console.warn('Manager executive watchlist could not be loaded:', watchlistError);
+            renderTeamEmpty('manager-watchlist-main-list', 'Executive watchlist could not be loaded.');
+            renderTeamEmpty('manager-watchlist-tsr-list', 'Aged TSR focus could not be loaded.');
+        }
+    }
+
     async function loadManagerDashboardSummary() {
         if (!dashboardManagerView || dashboardSchedulerOnly) return;
 
@@ -2323,6 +2482,7 @@
                 loadManagerDashboardSummary();
                 loadManagerTsrIntelligence();
                 loadManagerBillingVisibility();
+                loadManagerExecutiveWatchlist();
             }
 
             if (dashboardAdminView && !dashboardSchedulerOnly && !dashboardManagerView) {
@@ -2956,6 +3116,91 @@
     }
 
     .manager-billing-row {
+        background: #ffffff;
+    }
+
+
+    .manager-executive-watchlist-panel {
+        background: #ffffff;
+        border: 1px solid #fecaca;
+        border-radius: 1rem;
+        padding: 0.9rem;
+        border-left: 4px solid rgba(220, 53, 69, 0.35);
+    }
+
+    .manager-watchlist-chip-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.65rem;
+    }
+
+    .manager-watchlist-chip {
+        border-radius: 0.95rem;
+        padding: 0.75rem;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+    }
+
+    .manager-watchlist-chip span {
+        display: block;
+        color: #64748b;
+        font-size: 0.66rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .manager-watchlist-chip strong {
+        display: block;
+        color: #0f172a;
+        font-size: 1.25rem;
+        font-weight: 900;
+        line-height: 1.1;
+        margin-top: 0.25rem;
+    }
+
+    .manager-watchlist-chip-critical {
+        background: #fff1f2;
+        border-color: #fecdd3;
+    }
+
+    .manager-watchlist-chip-critical span {
+        color: #be123c;
+    }
+
+    .manager-watchlist-chip-watch {
+        background: #fffbeb;
+        border-color: #fde68a;
+    }
+
+    .manager-watchlist-chip-watch span {
+        color: #92400e;
+    }
+
+    .manager-watchlist-chip-info {
+        background: #eff6ff;
+        border-color: #bfdbfe;
+    }
+
+    .manager-watchlist-chip-info span {
+        color: #1d4ed8;
+    }
+
+    .manager-watchlist-chip-stable {
+        background: #f0fdf4;
+        border-color: #bbf7d0;
+    }
+
+    .manager-watchlist-chip-stable span {
+        color: #166534;
+    }
+
+    .manager-watchlist-list {
+        max-height: 320px;
+        overflow-y: auto;
+    }
+
+    .manager-watchlist-row {
         background: #ffffff;
     }
 
@@ -3883,7 +4128,8 @@
         .scheduler-coordination-panel { padding: 0.85rem; }
 
         .manager-tsr-signal-strip,
-        .manager-billing-signal-strip {
+        .manager-billing-signal-strip,
+        .manager-watchlist-chip-strip {
             grid-template-columns: 1fr;
             gap: 0.5rem;
         }
