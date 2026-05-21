@@ -4503,6 +4503,134 @@ def get_engineer_dashboard_summary():
     })
 
 
+def dashboard_team_shift_row(shift):
+    """Serialize one service schedule row for Hybrid Dashboard team intelligence."""
+    engineers = get_shift_engineer_records(shift)
+    start_date = shift.start_time.date() if getattr(shift, 'start_time', None) else None
+    today = get_manila_today()
+    age_days = (today - start_date).days if start_date else 0
+
+    return {
+        'id': shift.id,
+        'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
+        'age_days': max(age_days, 0),
+        'client': shift.client.name if shift.client else 'N/A',
+        'product': shift.product.name if shift.product else '',
+        'serial': shift.product.serial_number if shift.product else (shift.product_id or ''),
+        'task': shift.title or '',
+        'status': shift.status or '',
+        'engineers': ', '.join([engineer.name for engineer in engineers]) or 'N/A',
+        'branches': ', '.join(sorted({engineer.branch or 'Unassigned' for engineer in engineers})) or 'Unassigned',
+        'has_tsr': shift_has_tsr_file(shift)
+    }
+
+
+@app.route('/get_hybrid_dashboard_team_summary')
+@login_required
+def get_hybrid_dashboard_team_summary():
+    """Hybrid Dashboard Phase 2: team intelligence for admin-capable users.
+
+    Supports superadmin+engineer, regional_admin+engineer, manager-only,
+    and scheduler-only accounts without changing the pure engineer speed path.
+    """
+    if not is_admin_authorized():
+        return denied('Team dashboard intelligence is only available to authorized admin users.')
+
+    ensure_shift_file_original_filename_column()
+
+    today = get_manila_today()
+    invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
+    waiting_statuses = {'Waiting for P.O', 'Waiting for Parts'}
+
+    base_query = (
+        Shift.query
+        .options(
+            joinedload(Shift.client),
+            joinedload(Shift.product),
+            selectinload(Shift.files)
+        )
+        .filter(Shift.client_id.isnot(None))
+        .order_by(Shift.start_time.desc())
+    )
+
+    if is_admin_authorized():
+        base_query = analytics_scope_query(base_query)
+
+    service_shifts = list({shift.id: shift for shift in base_query.limit(1200).all()}.values())
+
+    open_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') not in invalid_dashboard_categories
+    ]
+
+    overdue_shifts = [
+        shift for shift in open_shifts
+        if shift.start_time and shift.start_time.date() < today
+    ]
+
+    waiting_shifts = [
+        shift for shift in open_shifts
+        if (shift.status or '') in waiting_statuses
+    ]
+
+    continuation_shifts = [
+        shift for shift in open_shifts
+        if (shift.status or '') == 'For Continuation'
+    ]
+
+    completed_missing_tsr = [
+        shift for shift in service_shifts
+        if (shift.status or '') == 'Completed' and not shift_has_tsr_file(shift)
+    ]
+
+    branch_counts = {}
+    engineer_load = {}
+    for shift in open_shifts:
+        engineers = get_shift_engineer_records(shift)
+        if not engineers:
+            branch_counts['Unassigned'] = branch_counts.get('Unassigned', 0) + 1
+            continue
+        for engineer in engineers:
+            branch = engineer.branch or 'Unassigned'
+            branch_counts[branch] = branch_counts.get(branch, 0) + 1
+            if engineer.name not in engineer_load:
+                engineer_load[engineer.name] = {
+                    'name': engineer.name,
+                    'branch': branch,
+                    'open_tasks': 0,
+                    'waiting_items': 0,
+                    'overdue': 0
+                }
+            engineer_load[engineer.name]['open_tasks'] += 1
+            if (shift.status or '') in waiting_statuses:
+                engineer_load[engineer.name]['waiting_items'] += 1
+            if shift.start_time and shift.start_time.date() < today:
+                engineer_load[engineer.name]['overdue'] += 1
+
+    workload_rows = sorted(
+        engineer_load.values(),
+        key=lambda row: (-row['open_tasks'], -row['overdue'], row['name'])
+    )[:12]
+
+    def newest_rows(rows, limit=10):
+        return [dashboard_team_shift_row(shift) for shift in rows[:limit]]
+
+    return jsonify({
+        'status': 'success',
+        'generated_at': get_manila_time().isoformat(),
+        'team_open_tasks': len(open_shifts),
+        'overdue_tasks': len(overdue_shifts),
+        'pending_tsr': len(completed_missing_tsr),
+        'waiting_items': len(waiting_shifts),
+        'for_continuation': len(continuation_shifts),
+        'branch_counts': dict(sorted(branch_counts.items())),
+        'workload_rows': workload_rows,
+        'overdue_rows': newest_rows(sorted(overdue_shifts, key=lambda s: s.start_time or datetime.min), 10),
+        'pending_tsr_rows': newest_rows(completed_missing_tsr, 10),
+        'waiting_rows': newest_rows(waiting_shifts, 10)
+    })
+
+
 @app.route('/get_timeline_data')
 @login_required
 def get_timeline_data():

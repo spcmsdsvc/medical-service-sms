@@ -115,6 +115,78 @@
     </div>
     {% endif %}
 
+    {% if dashboard_admin_view %}
+    <!-- HYBRID PHASE 2: TEAM INTELLIGENCE -->
+    <div class="dashboard-team-intelligence mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+                <h5 class="mb-0 fw-bold text-dark">
+                    <i class="fa-solid fa-chart-line me-2 text-primary"></i>
+                    Team Intelligence
+                </h5>
+                <p class="text-muted small mb-0">Management snapshot for open work, overdue items, and pending TSRs</p>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="loadTeamIntelligence()">
+                <i class="fa-solid fa-rotate me-1"></i>Refresh Team View
+            </button>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 dashboard-team-card">
+                    <div class="dashboard-team-label">Team Open Tasks</div>
+                    <div class="dashboard-team-value text-primary" id="team-open-count">0</div>
+                    <div class="dashboard-team-hint">Active service schedules</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 dashboard-team-card">
+                    <div class="dashboard-team-label">Overdue / Aging</div>
+                    <div class="dashboard-team-value text-danger" id="team-overdue-count">0</div>
+                    <div class="dashboard-team-hint">Past schedules still open</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 dashboard-team-card">
+                    <div class="dashboard-team-label">Missing TSR</div>
+                    <div class="dashboard-team-value text-warning" id="team-pending-tsr-count">0</div>
+                    <div class="dashboard-team-hint">Completed but no TSR file</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 dashboard-team-card">
+                    <div class="dashboard-team-label">Waiting Items</div>
+                    <div class="dashboard-team-value text-dark" id="team-waiting-count">0</div>
+                    <div class="dashboard-team-hint">P.O / parts blockers</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-lg-7">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <h6 class="mb-0 fw-bold"><i class="fa-solid fa-user-gear me-2 text-primary"></i>Engineer Workload</h6>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="team-workload-list" class="dashboard-team-list"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <h6 class="mb-0 fw-bold"><i class="fa-solid fa-triangle-exclamation me-2 text-danger"></i>Priority Watchlist</h6>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="team-watchlist" class="dashboard-team-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- MOBILE DASHBOARD QUICK ACTIONS -->
     <div class="dashboard-mobile-quick-actions mb-4">
         {% if dashboard_has_engineer_profile %}
@@ -453,6 +525,85 @@
         if (el) el.innerText = value;
     }
 
+    function renderTeamEmpty(containerId, message) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = `
+            <div class="dashboard-team-empty">
+                <i class="fa-solid fa-circle-check me-2"></i>${escapeHtml(message || 'No team items to show.')}
+            </div>`;
+    }
+
+    function renderTeamWorkload(rows) {
+        const container = document.getElementById('team-workload-list');
+        if (!container) return;
+
+        if (!rows || !rows.length) {
+            renderTeamEmpty('team-workload-list', 'No active engineer workload found.');
+            return;
+        }
+
+        container.innerHTML = rows.map(row => `
+            <div class="dashboard-team-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.name || 'Unassigned')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.branch || 'No branch')}</div>
+                </div>
+                <div class="dashboard-team-row-badges">
+                    <span class="badge bg-primary">${escapeHtml(row.open_tasks || 0)} open</span>
+                    <span class="badge bg-danger">${escapeHtml(row.overdue || 0)} overdue</span>
+                    <span class="badge bg-warning text-dark">${escapeHtml(row.waiting_items || 0)} waiting</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderTeamWatchlist(data) {
+        const container = document.getElementById('team-watchlist');
+        if (!container) return;
+
+        const overdueRows = Array.isArray(data.overdue_rows) ? data.overdue_rows : [];
+        const pendingRows = Array.isArray(data.pending_tsr_rows) ? data.pending_tsr_rows : [];
+        const rows = [
+            ...overdueRows.slice(0, 5).map(row => ({...row, watchType: 'Overdue', watchClass: 'bg-danger'})),
+            ...pendingRows.slice(0, 5).map(row => ({...row, watchType: 'Missing TSR', watchClass: 'bg-warning text-dark'}))
+        ].slice(0, 8);
+
+        if (!rows.length) {
+            renderTeamEmpty('team-watchlist', 'No overdue or missing TSR items.');
+            return;
+        }
+
+        container.innerHTML = rows.map(row => `
+            <div class="dashboard-team-row dashboard-team-watch-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || '')}</div>
+                </div>
+                <span class="badge ${row.watchClass}">${escapeHtml(row.watchType)}</span>
+            </div>
+        `).join('');
+    }
+
+    async function loadTeamIntelligence() {
+        if (!dashboardAdminView) return;
+
+        try {
+            const data = await fetchJsonOrThrow('/get_hybrid_dashboard_team_summary');
+            setTextIfPresent('team-open-count', data.team_open_tasks || 0);
+            setTextIfPresent('team-overdue-count', data.overdue_tasks || 0);
+            setTextIfPresent('team-pending-tsr-count', data.pending_tsr || 0);
+            setTextIfPresent('team-waiting-count', data.waiting_items || 0);
+            renderTeamWorkload(data.workload_rows || []);
+            renderTeamWatchlist(data || {});
+        } catch (teamError) {
+            console.warn('Team intelligence could not be loaded:', teamError);
+            renderTeamEmpty('team-workload-list', 'Team intelligence could not be loaded.');
+            renderTeamEmpty('team-watchlist', 'Priority watchlist could not be loaded.');
+        }
+    }
+
     function getCurrentEngineerTasks() {
         if (!dashboardHasEngineerProfile) return [];
         return allOpenTasksRaw.filter(isTaskAssignedToCurrentEngineer);
@@ -526,6 +677,7 @@
             }
 
             if (dashboardAdminView) {
+                loadTeamIntelligence();
                 fetchActivityLog();
                 // Set the auto-refresh interval for Admin Feed (5 seconds)
                 if (!window.__dashboardActivityTimerStarted) {
@@ -1108,6 +1260,84 @@
         margin-top: 0.2rem;
     }
 
+    .dashboard-team-intelligence {
+        background: linear-gradient(135deg, #f8fafc, #ffffff);
+        border: 1px solid #e2e8f0;
+        border-radius: 1.25rem;
+        padding: 1rem;
+    }
+
+    .dashboard-team-card {
+        min-height: 128px;
+    }
+
+    .dashboard-team-label {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .dashboard-team-value {
+        font-size: 2rem;
+        font-weight: 900;
+        line-height: 1.1;
+        margin-top: 0.35rem;
+    }
+
+    .dashboard-team-hint {
+        color: #64748b;
+        font-size: 0.76rem;
+        font-weight: 700;
+        margin-top: 0.25rem;
+    }
+
+    .dashboard-team-list {
+        max-height: 310px;
+        overflow-y: auto;
+    }
+
+    .dashboard-team-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.8rem;
+        padding: 0.85rem 1rem;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .dashboard-team-row:last-child { border-bottom: 0; }
+
+    .dashboard-team-row-title {
+        color: #0f172a;
+        font-size: 0.86rem;
+        font-weight: 900;
+        line-height: 1.2;
+    }
+
+    .dashboard-team-row-sub {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 700;
+        margin-top: 0.18rem;
+    }
+
+    .dashboard-team-row-badges {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.35rem;
+    }
+
+    .dashboard-team-empty {
+        color: #64748b;
+        font-size: 0.82rem;
+        font-weight: 800;
+        padding: 1rem;
+        text-align: center;
+    }
+
     /* RECENT ACTIVITY UX UPGRADE */
     .live-dot {
         width: 8px;
@@ -1362,6 +1592,15 @@
         .dashboard-mobile-action-card {
             padding: 0.75rem 0.35rem;
             font-size: 0.68rem;
+        }
+
+        .dashboard-team-intelligence { padding: 0.85rem; }
+        .dashboard-team-row {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+        .dashboard-team-row-badges {
+            justify-content: flex-start;
         }
 
         .card-header {
