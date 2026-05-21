@@ -45,7 +45,7 @@
     </div>
 
     <!-- ANALYTICS MATRIX -->
-    {% if current_user.role == 'engineer' %}
+    {% if dashboard_has_engineer_profile %}
     <!-- ENGINEER-FOCUSED STATUS CARDS -->
     <div class="row mb-4 g-3">
         <div class="col-md-3 col-sm-6">
@@ -80,7 +80,9 @@
             </div>
         </div>
     </div>
-    {% else %}
+    {% endif %}
+
+    {% if dashboard_admin_view %}
     <div class="row mb-4 g-3">
         
         <!-- PERSONNEL COUNTER -->
@@ -115,7 +117,7 @@
 
     <!-- MOBILE DASHBOARD QUICK ACTIONS -->
     <div class="dashboard-mobile-quick-actions mb-4">
-        {% if current_user.role == 'engineer' %}
+        {% if dashboard_has_engineer_profile %}
         <a href="/timeline" class="dashboard-mobile-action-card dashboard-mobile-action-primary">
             <i class="fa-solid fa-calendar-days"></i>
             <span>Timeline</span>
@@ -136,11 +138,14 @@
             <i class="fa-solid fa-boxes-stacked"></i>
             <span>Products</span>
         </a>
-        {% else %}
+        {% endif %}
+        {% if dashboard_admin_view %}
+        {% if not dashboard_has_engineer_profile %}
         <a href="/timeline" class="dashboard-mobile-action-card dashboard-mobile-action-primary">
             <i class="fa-solid fa-calendar-days"></i>
             <span>Timeline</span>
         </a>
+        {% endif %}
         <a href="/engineers_page" class="dashboard-mobile-action-card">
             <i class="fa-solid fa-user-gear"></i>
             <span>Engineers</span>
@@ -156,7 +161,7 @@
         {% endif %}
     </div>
 
-    {% if current_user.role == 'engineer' %}
+    {% if dashboard_has_engineer_profile %}
     <!-- ENGINEER WORKFLOW SHORTCUTS -->
     <div class="dashboard-engineer-workflow mb-4">
         <a href="/timeline" class="dashboard-workflow-card dashboard-workflow-primary">
@@ -198,14 +203,17 @@
     {% endif %}
 
     <!-- v5.2 ROLE-BASED WIDGET SECTION -->
-    {% if current_user.role == 'engineer' %}
+    {% if dashboard_has_engineer_profile %}
     <!-- ENGINEER-ONLY: MY ACTIVE TASKS -->
     <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-primary">
         <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-            <h5 class="mb-0 fw-bold text-primary">
-                <i class="fa-solid fa-user-check me-2"></i>
-                My Active Tasks
-            </h5>
+            <div>
+                <h5 class="mb-0 fw-bold text-primary">
+                    <i class="fa-solid fa-user-check me-2"></i>
+                    My Active Tasks
+                </h5>
+                <div class="xsmall text-muted mt-1">Assigned technical visits that still need action</div>
+            </div>
             <a href="/timeline" class="btn btn-sm btn-outline-primary fw-bold">
                 Open My Full Calendar
             </a>
@@ -217,6 +225,7 @@
                         <tr>
                             <th class="ps-4">Scheduled Date</th>
                             <th>Medical Facility</th>
+                            <th>Equipment</th>
                             <th>Task Details</th>
                             <th class="text-end pe-4">Current Status</th>
                         </tr>
@@ -226,8 +235,10 @@
                     </tbody>
                 </table>
             </div>
-            <div id="no-my-tasks" class="text-center p-4 d-none">
-                <p class="text-muted small italic mb-0">No active tasks assigned to you currently.</p>
+            <div id="no-my-tasks" class="text-center p-4 d-none dashboard-empty-state">
+                <i class="fa-solid fa-circle-check fa-3x text-success opacity-25 mb-3"></i>
+                <h6 class="fw-bold mb-1">No active tasks assigned</h6>
+                <p class="text-muted small mb-0">You are clear for now. Use Timeline to check future schedules or Create TSR for completed visits.</p>
             </div>
             <div id="my-tasks-mobile-list" class="dashboard-mobile-card-list p-3"></div>
         </div>
@@ -242,9 +253,9 @@
             <div class="header-label">
                 <h5 class="mb-0 fw-bold text-dark">
                     <i class="fa-solid fa-list-check me-2 text-danger"></i>
-                    All Open Technical Tasks
+                    {% if dashboard_has_engineer_profile %}Reference: All Open Technical Tasks{% else %}All Open Technical Tasks{% endif %}
                 </h5>
-                <p class="xsmall text-muted mb-0 italic">Excludes Personnel Leave and internal Training records</p>
+                <p class="xsmall text-muted mb-0 italic">{% if dashboard_has_engineer_profile %}Company-wide reference only. Your own assignments are shown above.{% else %}Excludes Personnel Leave and internal Training records{% endif %}</p>
             </div>
             
             <div class="d-flex gap-2 align-items-center">
@@ -309,7 +320,7 @@
 
     </div>
 
-    {% if current_user.role != 'engineer' %}
+    {% if dashboard_admin_view %}
     <!-- ADMIN-ONLY: RECENT SYSTEM ACTIVITY (Auto-refresh enabled) -->
     <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-info">
         <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
@@ -355,8 +366,12 @@
 <script>
     // --- APP INITIALIZATION ---
     const loggedInUser = "{{ current_user.username }}";
-    const userRole = "{{ current_user.role }}";
-    const loggedInEngineerId = Number("{{ current_user.engineer_profile.id if current_user.engineer_profile else '' }}") || null;
+    const userRole = "{{ logged_in_user_role or current_user.role }}";
+    const loggedInEngineerId = Number("{{ logged_in_engineer_id or '' }}") || null;
+    const dashboardHasEngineerProfile = "{{ 'true' if dashboard_has_engineer_profile|default(false) else 'false' }}" === "true";
+    const dashboardAdminView = "{{ 'true' if dashboard_admin_view|default(false) else 'false' }}" === "true";
+    const dashboardSchedulerOnly = "{{ 'true' if dashboard_scheduler_only|default(false) else 'false' }}" === "true";
+    const dashboardHybridView = "{{ 'true' if dashboard_hybrid_view|default(false) else 'false' }}" === "true";
 
     // v5.4.5: Real-time Manila Ticker and Date
     function updateClock() {
@@ -439,12 +454,12 @@
     }
 
     function getCurrentEngineerTasks() {
-        if (userRole !== 'engineer') return [];
+        if (!dashboardHasEngineerProfile) return [];
         return allOpenTasksRaw.filter(isTaskAssignedToCurrentEngineer);
     }
 
     function updateEngineerSummaryCards() {
-        if (userRole !== 'engineer') return;
+        if (!dashboardHasEngineerProfile) return;
 
         const myTasks = getCurrentEngineerTasks();
         const todayStart = new Date();
@@ -473,16 +488,24 @@
         setDashboardLoadState('loading');
         
         try {
-            const [engs, clis, prods, tasks] = await Promise.all([
-                fetchJsonOrThrow('/get_engineers'),
-                fetchJsonOrThrow('/get_clients'),
-                fetchJsonOrThrow('/get_products'),
-                fetchJsonOrThrow('/get_open_tasks')
-            ]);
+            let tasks = [];
 
-            setTextIfPresent('count-engineers', Array.isArray(engs) ? engs.length : 0);
-            setTextIfPresent('count-clients', Array.isArray(clis) ? clis.length : 0);
-            setTextIfPresent('count-products', Array.isArray(prods) ? prods.length : 0);
+            if (dashboardAdminView) {
+                const [engs, clis, prods, adminTasks] = await Promise.all([
+                    fetchJsonOrThrow('/get_engineers'),
+                    fetchJsonOrThrow('/get_clients'),
+                    fetchJsonOrThrow('/get_products'),
+                    fetchJsonOrThrow('/get_open_tasks')
+                ]);
+
+                tasks = adminTasks;
+                setTextIfPresent('count-engineers', Array.isArray(engs) ? engs.length : 0);
+                setTextIfPresent('count-clients', Array.isArray(clis) ? clis.length : 0);
+                setTextIfPresent('count-products', Array.isArray(prods) ? prods.length : 0);
+            } else {
+                // Pure engineer speed path: skip admin counters.
+                tasks = await fetchJsonOrThrow('/get_open_tasks');
+            }
 
             const hrCategories = [
                 "Sick Leave", 
@@ -496,16 +519,20 @@
             allOpenTasksRaw = (Array.isArray(tasks) ? tasks : []).filter(t => !hrCategories.includes(t.task));
             setDashboardLoadState('ready');
             
-            // Branch logic for personalization
-            if (userRole === 'engineer') {
+            // Capability-based dashboard rendering for pure engineer, admin, scheduler, and hybrid users.
+            if (dashboardHasEngineerProfile) {
                 updateEngineerSummaryCards();
                 renderMyTasks();
-            } else {
+            }
+
+            if (dashboardAdminView) {
                 fetchActivityLog();
                 // Set the auto-refresh interval for Admin Feed (5 seconds)
                 if (!window.__dashboardActivityTimerStarted) {
                     window.__dashboardActivityTimerStarted = true;
-                    setInterval(fetchActivityLog, 5000);
+                    setInterval(() => {
+                        if (!document.hidden) fetchActivityLog();
+                    }, 5000);
                 }
             }
 
@@ -540,13 +567,32 @@
         return 'dashboard-status-progress';
     }
 
+    function dashboardBootstrapStatusClass(status) {
+        const value = String(status || '').toLowerCase();
+        if (value.includes('waiting for p.o')) return 'bg-warning text-dark';
+        if (value.includes('waiting for parts')) return 'bg-info text-dark';
+        if (value.includes('continuation')) return 'bg-dark';
+        return 'bg-primary';
+    }
+
+    function dashboardEquipmentLabel(task) {
+        const productName = task.product_name || task.product || '';
+        const serial = task.serial || task.product_id || '';
+        if (productName && serial) return `${productName} (${serial})`;
+        return productName || serial || 'No equipment listed';
+    }
+
+    function dashboardTaskDateLabel(task) {
+        return task.display_range || task.task_date || 'No date';
+    }
+
     function buildDashboardTaskMobileCard(task, options = {}) {
         const compact = Boolean(options.compact);
         return `
             <div class="dashboard-mobile-task-card">
                 <div class="dashboard-mobile-card-top">
                     <div>
-                        <div class="dashboard-mobile-card-date">${escapeHtml(task.display_range || task.task_date || 'No date')}</div>
+                        <div class="dashboard-mobile-card-date">${escapeHtml(dashboardTaskDateLabel(task))}</div>
                         <div class="dashboard-mobile-card-title">${escapeHtml(task.client || 'No facility')}</div>
                     </div>
                     <span class="dashboard-mobile-status ${dashboardStatusClass(task.status)}">${escapeHtml(task.status || 'In Progress')}</span>
@@ -555,6 +601,10 @@
                     <div class="dashboard-mobile-card-row">
                         <i class="fa-solid fa-user-gear"></i>
                         <span>${escapeHtml(task.engineer || loggedInUser || 'Engineer')}</span>
+                    </div>
+                    <div class="dashboard-mobile-card-row">
+                        <i class="fa-solid fa-microscope"></i>
+                        <span>${escapeHtml(dashboardEquipmentLabel(task))}</span>
                     </div>
                     <div class="dashboard-mobile-card-row">
                         <i class="fa-solid fa-screwdriver-wrench"></i>
@@ -673,11 +723,26 @@
     }
 
     async function fetchActivityLog() {
-        const res = await fetch('/get_recent_activity');
-        const logs = await res.json();
         const target = document.getElementById('activity-log-body');
-
         if(!target) return;
+
+        let logs = [];
+        try {
+            const res = await fetch('/get_recent_activity', { credentials: 'same-origin', cache: 'no-store' });
+            if (!res.ok) throw new Error(`/get_recent_activity returned ${res.status}`);
+            logs = await res.json();
+        } catch (activityError) {
+            console.warn('Recent activity could not be loaded:', activityError);
+            target.innerHTML = `
+                <tr>
+                    <td colspan="3" class="text-center text-muted small py-4">
+                        <i class="fa-solid fa-triangle-exclamation me-1"></i>
+                        Activity feed could not be loaded.
+                    </td>
+                </tr>`;
+            renderMobileActivityList([]);
+            return;
+        }
 
         if (!logs.length) {
             target.innerHTML = `
@@ -697,13 +762,12 @@
 
         renderMobileActivityList(logs, shouldHighlight);
 
-        target.innerHTML = "";
-        logs.forEach((l, index) => {
+        target.innerHTML = logs.map((l, index) => {
             const meta = getActivityMeta(l.action);
             const readableAction = formatActivityText(l.action);
             const highlightClass = shouldHighlight && index === 0 ? 'activity-new-row' : '';
 
-            target.innerHTML += `
+            return `
                 <tr class="small activity-row ${highlightClass}">
                     <td class="ps-4 text-muted font-monospace activity-time">
                         ${escapeHtml(l.date)}
@@ -721,7 +785,7 @@
                         ${escapeHtml(readableAction)}
                     </td>
                 </tr>`;
-        });
+        }).join('');
     }
 
     function parseDashboardDate(value) {
@@ -776,11 +840,19 @@
             renderMobileTaskList('my-tasks-mobile-list', myTasks, { compact: true });
 
             targetBody.innerHTML = myTasks.map(task => `
-                <tr class="small">
-                    <td class="ps-4 fw-bold text-primary">${escapeHtml(task.task_date)}</td>
-                    <td><strong>${escapeHtml(task.client)}</strong></td>
-                    <td class="text-muted">${escapeHtml(task.task)}</td>
-                    <td class="text-end pe-4"><span class="badge bg-primary shadow-none py-2 px-3" style="font-size: 0.6rem;">${escapeHtml(task.status)}</span></td>
+                <tr class="small dashboard-my-task-row">
+                    <td class="ps-4">
+                        <div class="fw-bold text-primary">${escapeHtml(dashboardTaskDateLabel(task))}</div>
+                    </td>
+                    <td>
+                        <strong>${escapeHtml(task.client || 'No facility')}</strong>
+                    </td>
+                    <td>
+                        <div class="fw-bold text-dark">${escapeHtml(dashboardEquipmentLabel(task))}</div>
+                        <div class="xsmall text-muted">Product / Serial</div>
+                    </td>
+                    <td class="text-muted">${escapeHtml(task.task || 'No task details')}</td>
+                    <td class="text-end pe-4"><span class="badge ${dashboardBootstrapStatusClass(task.status)} shadow-none py-2 px-3 dashboard-task-badge">${escapeHtml(task.status || 'In Progress')}</span></td>
                 </tr>`).join('');
         }
     }
@@ -961,6 +1033,19 @@
 
     .dashboard-engineer-summary-card {
         min-height: 154px;
+    }
+
+    .dashboard-my-task-row td {
+        vertical-align: middle;
+    }
+
+    .dashboard-task-badge {
+        min-width: 96px;
+        letter-spacing: .02em;
+    }
+
+    .dashboard-empty-state {
+        background: linear-gradient(135deg, #ffffff, #f8fafc);
     }
 
     .dashboard-engineer-workflow {

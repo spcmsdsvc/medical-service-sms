@@ -1030,6 +1030,39 @@ def is_admin_authorized(user=None):
     return is_superadmin_user(user) or is_regional_admin_user(user)
 
 
+def has_engineer_profile(user=None):
+    """Capability check: True when the account is linked to an Engineer profile.
+
+    This intentionally does not depend on User.role so hybrid accounts such as
+    Jonamar, Robert, and Kevin can keep engineer dashboard/tools while also
+    retaining admin authority.
+    """
+    target = user or current_user
+    if not (
+        target and
+        getattr(target, 'is_authenticated', False)
+    ):
+        return False
+
+    return bool(getattr(target, 'engineer_profile', None))
+
+
+def get_dashboard_capabilities(user=None):
+    """Return capability flags used by dashboard templates and scripts."""
+    target = user or current_user
+    engineer_profile = getattr(target, 'engineer_profile', None) if target else None
+    admin_authorized = is_admin_authorized(target)
+    scheduler_only = is_scheduler_user(target) and not bool(engineer_profile)
+
+    return {
+        'has_engineer_profile': bool(engineer_profile),
+        'admin_view': admin_authorized,
+        'scheduler_only': scheduler_only,
+        'hybrid_view': bool(engineer_profile) and admin_authorized,
+        'display_role': get_display_role(target) if target else 'User'
+    }
+
+
 def can_reset_password_for_user(target_user, actor=None):
     """Password reset policy for the new hierarchy."""
     actor = actor or current_user
@@ -1137,11 +1170,14 @@ def can_modify_schedule_shift(shift):
 
 
 def get_current_user_engineer_id():
-    """Return the logged-in engineer profile ID when the user is an engineer."""
+    """Return the logged-in account's linked Engineer profile ID, regardless of role.
+
+    Hybrid accounts may be superadmin/regional_admin and still perform engineer
+    workflow actions against their own assigned service schedules.
+    """
     if not (
         current_user and
-        getattr(current_user, 'is_authenticated', False) and
-        getattr(current_user, 'role', None) == 'engineer'
+        getattr(current_user, 'is_authenticated', False)
     ):
         return None
 
@@ -3428,13 +3464,19 @@ self.addEventListener('message', event => {
 @app.route('/')
 @login_required
 def dashboard_page():
-    """ Overhauled Overview Hub - Personalization enabled for v5.1 """
+    """Overhauled Overview Hub with capability-based hybrid dashboard flags."""
     profile = getattr(current_user, 'engineer_profile', None)
+    dashboard_caps = get_dashboard_capabilities(current_user)
     return render_template(
         'dashboard.html',
         logged_in_engineer_id=getattr(profile, 'id', None),
         logged_in_engineer_name=getattr(profile, 'name', '') or getattr(current_user, 'username', ''),
-        logged_in_user_role=getattr(current_user, 'role', '')
+        logged_in_user_role=getattr(current_user, 'role', ''),
+        dashboard_has_engineer_profile=dashboard_caps['has_engineer_profile'],
+        dashboard_admin_view=dashboard_caps['admin_view'],
+        dashboard_scheduler_only=dashboard_caps['scheduler_only'],
+        dashboard_hybrid_view=dashboard_caps['hybrid_view'],
+        dashboard_display_role=dashboard_caps['display_role']
     )
 
 
@@ -4363,8 +4405,8 @@ def get_engineer_dashboard_summary():
     - calculates true pending TSR and completed-this-month counts
     - uses assigned engineer IDs instead of username text matching
     """
-    if getattr(current_user, 'role', None) != 'engineer':
-        return denied('Engineer dashboard summary is only available to engineer accounts.')
+    if not has_engineer_profile():
+        return denied('Engineer dashboard summary is only available to accounts with a linked engineer profile.')
 
     my_engineer_id = get_current_user_engineer_id()
     if not my_engineer_id:
