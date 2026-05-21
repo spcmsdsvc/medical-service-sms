@@ -320,6 +320,7 @@ PERFORMANCE_LOG_PATHS = {
     '/get_engineers',
     '/get_open_tasks',
     '/get_engineer_dashboard_summary',
+    '/get_hybrid_dashboard_smart_monitoring',
     '/get_recent_activity',
     '/get_activity_logs',
     '/get_activity_filter_options',
@@ -4628,6 +4629,223 @@ def get_hybrid_dashboard_team_summary():
         'overdue_rows': newest_rows(sorted(overdue_shifts, key=lambda s: s.start_time or datetime.min), 10),
         'pending_tsr_rows': newest_rows(completed_missing_tsr, 10),
         'waiting_rows': newest_rows(waiting_shifts, 10)
+    })
+
+
+
+
+@app.route('/get_hybrid_dashboard_smart_monitoring')
+@login_required
+def get_hybrid_dashboard_smart_monitoring():
+    """Hybrid Dashboard Phase 3: smart monitoring alerts for admin-capable users.
+
+    Adds lightweight operational warning signals without changing existing
+    schedules, reports, analytics, or Phase 2 team intelligence behavior.
+    """
+    if not is_admin_authorized():
+        return denied('Smart monitoring is only available to authorized admin users.')
+
+    ensure_shift_file_original_filename_column()
+
+    today = get_manila_today()
+    stale_threshold_days = 7
+    tsr_aging_threshold_days = 3
+    repeat_service_window_days = 180
+    repeat_service_threshold = 3
+
+    invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
+    waiting_statuses = {'Waiting for P.O', 'Waiting for Parts'}
+
+    window_start = today - timedelta(days=repeat_service_window_days)
+    window_start_dt = datetime.combine(window_start, datetime.min.time())
+
+    base_query = (
+        Shift.query
+        .options(
+            joinedload(Shift.client),
+            joinedload(Shift.product),
+            selectinload(Shift.files)
+        )
+        .filter(Shift.client_id.isnot(None))
+        .order_by(Shift.start_time.desc())
+    )
+    base_query = analytics_scope_query(base_query)
+
+    service_shifts = list({shift.id: shift for shift in base_query.limit(1500).all()}.values())
+
+    open_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') not in invalid_dashboard_categories
+    ]
+
+    stale_open_shifts = [
+        shift for shift in open_shifts
+        if (
+            shift.start_time and
+            shift.start_time.date() < today and
+            (today - shift.start_time.date()).days >= stale_threshold_days
+        )
+    ]
+
+    tsr_aging_shifts = [
+        shift for shift in service_shifts
+        if (
+            (shift.status or '') == 'Completed' and
+            shift.start_time and
+            (today - shift.start_time.date()).days >= tsr_aging_threshold_days and
+            not shift_has_tsr_file(shift)
+        )
+    ]
+
+    waiting_shifts = [
+        shift for shift in open_shifts
+        if (shift.status or '') in waiting_statuses
+    ]
+
+    engineer_load = {}
+    for shift in open_shifts:
+        engineers = get_shift_engineer_records(shift)
+        for engineer in engineers:
+            if engineer.name not in engineer_load:
+                engineer_load[engineer.name] = {
+                    'name': engineer.name,
+                    'branch': engineer.branch or 'Unassigned',
+                    'open_tasks': 0,
+                    'overdue': 0,
+                    'waiting_items': 0,
+                    'for_continuation': 0,
+                    'risk_level': 'normal'
+                }
+
+            row = engineer_load[engineer.name]
+            row['open_tasks'] += 1
+            if shift.start_time and shift.start_time.date() < today:
+                row['overdue'] += 1
+            if (shift.status or '') in waiting_statuses:
+                row['waiting_items'] += 1
+            if (shift.status or '') == 'For Continuation':
+                row['for_continuation'] += 1
+
+    workload_alerts = []
+    if engineer_load:
+        load_values = [row['open_tasks'] for row in engineer_load.values()]
+        average_load = sum(load_values) / max(len(load_values), 1)
+        for row in engineer_load.values():
+            if row['open_tasks'] >= max(5, average_load * 1.8) or row['overdue'] >= 2:
+                row['risk_level'] = 'high' if row['overdue'] >= 3 or row['open_tasks'] >= 8 else 'warning'
+                workload_alerts.append(row)
+
+    workload_alerts.sort(key=lambda row: (-row['overdue'], -row['open_tasks'], row['name']))
+
+    product_service_map = {}
+    recent_service_shifts = [
+        shift for shift in service_shifts
+        if shift.start_time and shift.start_time >= window_start_dt and shift.product_id
+    ]
+    for shift in recent_service_shifts:
+        key = shift.product_id or ''
+        if key not in product_service_map:
+            product_label = shift.product.name if shift.product else (shift.product_id or 'Unknown product')
+            serial_label = shift.product.serial_number if shift.product else (shift.product_id or '')
+            product_service_map[key] = {
+                'product': product_label,
+                'serial': serial_label,
+                'client': shift.client.name if shift.client else 'N/A',
+                'service_count': 0,
+                'last_service': '',
+                'latest_date': None,
+                'tasks': set(),
+                'engineers': set()
+            }
+
+        product_row = product_service_map[key]
+        product_row['service_count'] += 1
+        product_row['tasks'].add(shift.title or '')
+        for engineer in get_shift_engineer_records(shift):
+            product_row['engineers'].add(engineer.name)
+        if not product_row['latest_date'] or shift.start_time > product_row['latest_date']:
+            product_row['latest_date'] = shift.start_time
+            product_row['last_service'] = shift.start_time.strftime('%Y-%m-%d')
+
+    repeat_service_alerts = []
+    for row in product_service_map.values():
+        if row['service_count'] >= repeat_service_threshold:
+            repeat_service_alerts.append({
+                'product': row['product'],
+                'serial': row['serial'],
+                'client': row['client'],
+                'service_count': row['service_count'],
+                'last_service': row['last_service'],
+                'tasks': ', '.join(sorted([task for task in row['tasks'] if task])[:4]),
+                'engineers': ', '.join(sorted(row['engineers'])[:4])
+            })
+
+    repeat_service_alerts.sort(key=lambda row: (-row['service_count'], row['client'], row['product']))
+
+    def alert_shift_row(shift, alert_type='monitoring'):
+        row = dashboard_team_shift_row(shift)
+        if shift.start_time:
+            row['days_old'] = max((today - shift.start_time.date()).days, 0)
+        else:
+            row['days_old'] = 0
+        row['alert_type'] = alert_type
+        if alert_type == 'stale_task':
+            row['alert_label'] = f"Open for {row['days_old']} day(s)"
+        elif alert_type == 'tsr_aging':
+            row['alert_label'] = f"Completed {row['days_old']} day(s), no TSR"
+        elif alert_type == 'waiting_item':
+            row['alert_label'] = row.get('status') or 'Waiting item'
+        else:
+            row['alert_label'] = 'Needs attention'
+        return row
+
+    needs_attention_rows = []
+    needs_attention_rows.extend([alert_shift_row(shift, 'stale_task') for shift in sorted(stale_open_shifts, key=lambda s: s.start_time or datetime.min)[:8]])
+    needs_attention_rows.extend([alert_shift_row(shift, 'tsr_aging') for shift in sorted(tsr_aging_shifts, key=lambda s: s.start_time or datetime.min)[:8]])
+    needs_attention_rows.extend([alert_shift_row(shift, 'waiting_item') for shift in sorted(waiting_shifts, key=lambda s: s.start_time or datetime.min)[:6]])
+
+    risk_score = (
+        (len(stale_open_shifts) * 3) +
+        (len(tsr_aging_shifts) * 3) +
+        (len(workload_alerts) * 2) +
+        (len(repeat_service_alerts) * 2) +
+        len(waiting_shifts)
+    )
+
+    if risk_score >= 18:
+        risk_level = 'critical'
+        risk_label = 'Critical Attention Needed'
+    elif risk_score >= 8:
+        risk_level = 'warning'
+        risk_label = 'Needs Monitoring'
+    else:
+        risk_level = 'healthy'
+        risk_label = 'Stable'
+
+    return jsonify({
+        'status': 'success',
+        'generated_at': get_manila_time().isoformat(),
+        'risk_score': risk_score,
+        'risk_level': risk_level,
+        'risk_label': risk_label,
+        'thresholds': {
+            'stale_task_days': stale_threshold_days,
+            'tsr_aging_days': tsr_aging_threshold_days,
+            'repeat_service_window_days': repeat_service_window_days,
+            'repeat_service_threshold': repeat_service_threshold
+        },
+        'counts': {
+            'stale_tasks': len(stale_open_shifts),
+            'tsr_aging': len(tsr_aging_shifts),
+            'workload_alerts': len(workload_alerts),
+            'repeat_service_alerts': len(repeat_service_alerts),
+            'waiting_items': len(waiting_shifts)
+        },
+        'needs_attention_rows': needs_attention_rows[:18],
+        'stale_task_rows': [alert_shift_row(shift, 'stale_task') for shift in sorted(stale_open_shifts, key=lambda s: s.start_time or datetime.min)[:10]],
+        'tsr_aging_rows': [alert_shift_row(shift, 'tsr_aging') for shift in sorted(tsr_aging_shifts, key=lambda s: s.start_time or datetime.min)[:10]],
+        'workload_alerts': workload_alerts[:10],
+        'repeat_service_alerts': repeat_service_alerts[:10]
     })
 
 

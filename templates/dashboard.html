@@ -116,7 +116,65 @@
     {% endif %}
 
     {% if dashboard_admin_view %}
-    <!-- HYBRID PHASE 2: TEAM INTELLIGENCE -->
+    <!-- HYBRID PHASE 3: SMART NEEDS ATTENTION PANEL -->
+    <div class="dashboard-needs-attention mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+                <h5 class="mb-0 fw-bold text-dark">
+                    <i class="fa-solid fa-triangle-exclamation me-2 text-danger"></i>
+                    Needs Attention
+                </h5>
+                <p class="text-muted small mb-0">Smart monitoring highlights only the items that may need action today</p>
+            </div>
+            <span id="smart-risk-badge" class="badge bg-success rounded-pill px-3 py-2">Stable</span>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 dashboard-attention-card">
+                    <div class="dashboard-team-label">Stale Open Jobs</div>
+                    <div class="dashboard-team-value text-danger" id="smart-stale-count">0</div>
+                    <div class="dashboard-team-hint">Open past threshold</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 dashboard-attention-card">
+                    <div class="dashboard-team-label">TSR Aging</div>
+                    <div class="dashboard-team-value text-warning" id="smart-tsr-aging-count">0</div>
+                    <div class="dashboard-team-hint">Completed, no TSR</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 dashboard-attention-card">
+                    <div class="dashboard-team-label">Overload Alerts</div>
+                    <div class="dashboard-team-value text-primary" id="smart-workload-count">0</div>
+                    <div class="dashboard-team-hint">Engineer load risks</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 dashboard-attention-card">
+                    <div class="dashboard-team-label">Repeat Service</div>
+                    <div class="dashboard-team-value text-dark" id="smart-repeat-count">0</div>
+                    <div class="dashboard-team-hint">Same equipment frequency</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold"><i class="fa-solid fa-list-ul me-2 text-danger"></i>Priority Items</h6>
+                <button type="button" class="btn btn-sm btn-outline-danger fw-bold" onclick="loadSmartMonitoring()">
+                    <i class="fa-solid fa-rotate me-1"></i>Refresh
+                </button>
+            </div>
+            <div id="smart-attention-list" class="dashboard-team-list dashboard-attention-list"></div>
+        </div>
+    </div>
+
+    {% endif %}
+
+    {% if dashboard_admin_view %}
+    <!-- HYBRID PHASE 2: TEAM INTELLIGENCE (COLLAPSIBLE) -->
     <div class="dashboard-team-intelligence mb-4">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
@@ -124,13 +182,19 @@
                     <i class="fa-solid fa-chart-line me-2 text-primary"></i>
                     Team Intelligence
                 </h5>
-                <p class="text-muted small mb-0">Management snapshot for open work, overdue items, and pending TSRs</p>
+                <p class="text-muted small mb-0">Collapsed by default to keep hybrid dashboards clean</p>
             </div>
-            <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="loadTeamIntelligence()">
-                <i class="fa-solid fa-rotate me-1"></i>Refresh Team View
-            </button>
+            <div class="d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('team-intelligence-body', this)">
+                    <i class="fa-solid fa-chevron-down me-1"></i>Show
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="loadTeamIntelligence()">
+                    <i class="fa-solid fa-rotate me-1"></i>Refresh
+                </button>
+            </div>
         </div>
 
+        <div id="team-intelligence-body" class="dashboard-collapsible-body d-none">
         <div class="row g-3 mb-3">
             <div class="col-md-3 col-sm-6">
                 <div class="card p-3 bg-white border-0 shadow-sm rounded-4 dashboard-team-card">
@@ -183,6 +247,7 @@
                     </div>
                 </div>
             </div>
+        </div>
         </div>
     </div>
     {% endif %}
@@ -403,7 +468,10 @@
                 </h5>
                 <div class="xsmall text-muted mt-1">Showing latest 15 system activities</div>
             </div>
-            <div class="d-flex align-items-center gap-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('activity-feed-body', this)">
+                    <i class="fa-solid fa-chevron-down me-1"></i>Show
+                </button>
                 <a href="/activity_page" class="btn btn-sm btn-outline-info fw-bold">
                     <i class="fa-solid fa-clock-rotate-left me-1"></i>View All Logs
                 </a>
@@ -413,7 +481,7 @@
                 </span>
             </div>
         </div>
-        <div class="card-body p-0">
+        <div id="activity-feed-body" class="card-body p-0 dashboard-collapsible-body d-none">
             <div class="table-responsive" style="max-height: 220px; overflow-y: auto;">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light text-uppercase small fw-bold text-muted sticky-top">
@@ -604,6 +672,99 @@
         }
     }
 
+    function toggleDashboardSection(sectionId, button) {
+        const section = document.getElementById(sectionId);
+        if (!section) return;
+
+        const isHidden = section.classList.contains('d-none');
+        section.classList.toggle('d-none', !isHidden);
+
+        if (button) {
+            button.innerHTML = isHidden
+                ? '<i class="fa-solid fa-chevron-up me-1"></i>Hide'
+                : '<i class="fa-solid fa-chevron-down me-1"></i>Show';
+        }
+    }
+
+    function smartRiskBadgeClass(level) {
+        if (level === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
+        if (level === 'warning') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
+        return 'badge bg-success rounded-pill px-3 py-2';
+    }
+
+    function renderSmartAttentionList(data) {
+        const container = document.getElementById('smart-attention-list');
+        if (!container) return;
+
+        const rows = Array.isArray(data.needs_attention_rows) ? data.needs_attention_rows : [];
+        const workloadAlerts = Array.isArray(data.workload_alerts) ? data.workload_alerts : [];
+        const repeatAlerts = Array.isArray(data.repeat_service_alerts) ? data.repeat_service_alerts : [];
+
+        const combined = [
+            ...rows.slice(0, 8).map(row => ({
+                title: row.client || 'No client',
+                subtitle: `${row.date || ''} • ${row.task || ''}`,
+                detail: row.engineers || '',
+                label: row.alert_label || 'Needs attention',
+                badge: row.alert_type === 'tsr_aging' ? 'bg-warning text-dark' : (row.alert_type === 'waiting_item' ? 'bg-dark' : 'bg-danger')
+            })),
+            ...workloadAlerts.slice(0, 3).map(row => ({
+                title: row.name || 'Engineer',
+                subtitle: `${row.open_tasks || 0} open • ${row.overdue || 0} overdue`,
+                detail: row.branch || '',
+                label: row.risk_level === 'high' ? 'High load' : 'Watch load',
+                badge: row.risk_level === 'high' ? 'bg-danger' : 'bg-warning text-dark'
+            })),
+            ...repeatAlerts.slice(0, 3).map(row => ({
+                title: row.client || 'Client',
+                subtitle: `${row.product || 'Product'} ${row.serial ? '(' + row.serial + ')' : ''}`,
+                detail: `${row.service_count || 0} services in recent window`,
+                label: 'Repeat service',
+                badge: 'bg-primary'
+            }))
+        ].slice(0, 12);
+
+        if (!combined.length) {
+            renderTeamEmpty('smart-attention-list', 'No critical items detected right now.');
+            return;
+        }
+
+        container.innerHTML = combined.map(row => `
+            <div class="dashboard-team-row dashboard-attention-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.title)}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.subtitle)}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.detail)}</div>
+                </div>
+                <span class="badge ${row.badge}">${escapeHtml(row.label)}</span>
+            </div>
+        `).join('');
+    }
+
+    async function loadSmartMonitoring() {
+        if (!dashboardAdminView) return;
+
+        try {
+            const data = await fetchJsonOrThrow('/get_hybrid_dashboard_smart_monitoring');
+            const counts = data.counts || {};
+            setTextIfPresent('smart-stale-count', counts.stale_tasks || 0);
+            setTextIfPresent('smart-tsr-aging-count', counts.tsr_aging || 0);
+            setTextIfPresent('smart-workload-count', counts.workload_alerts || 0);
+            setTextIfPresent('smart-repeat-count', counts.repeat_service_alerts || 0);
+
+            const riskBadge = document.getElementById('smart-risk-badge');
+            if (riskBadge) {
+                riskBadge.className = smartRiskBadgeClass(data.risk_level);
+                riskBadge.innerText = data.risk_label || 'Stable';
+            }
+
+            renderSmartAttentionList(data || {});
+        } catch (smartError) {
+            console.warn('Smart monitoring could not be loaded:', smartError);
+            renderTeamEmpty('smart-attention-list', 'Smart monitoring could not be loaded.');
+        }
+    }
+
     function getCurrentEngineerTasks() {
         if (!dashboardHasEngineerProfile) return [];
         return allOpenTasksRaw.filter(isTaskAssignedToCurrentEngineer);
@@ -677,6 +838,7 @@
             }
 
             if (dashboardAdminView) {
+                loadSmartMonitoring();
                 loadTeamIntelligence();
                 fetchActivityLog();
                 // Set the auto-refresh interval for Admin Feed (5 seconds)
@@ -1267,6 +1429,31 @@
         padding: 1rem;
     }
 
+    .dashboard-needs-attention {
+        background: linear-gradient(135deg, #fff7ed, #ffffff);
+        border: 1px solid #fed7aa;
+        border-radius: 1.25rem;
+        padding: 1rem;
+    }
+
+    .dashboard-attention-card {
+        min-height: 128px;
+        border-left: 4px solid rgba(220, 53, 69, 0.35) !important;
+    }
+
+    .dashboard-attention-list {
+        max-height: 360px;
+        overflow-y: auto;
+    }
+
+    .dashboard-attention-row {
+        background: #fff;
+    }
+
+    .dashboard-collapsible-body.d-none {
+        display: none !important;
+    }
+
     .dashboard-team-card {
         min-height: 128px;
     }
@@ -1594,7 +1781,8 @@
             font-size: 0.68rem;
         }
 
-        .dashboard-team-intelligence { padding: 0.85rem; }
+        .dashboard-team-intelligence,
+        .dashboard-needs-attention { padding: 0.85rem; }
         .dashboard-team-row {
             align-items: flex-start;
             flex-direction: column;
