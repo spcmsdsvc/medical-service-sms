@@ -45,6 +45,42 @@
     </div>
 
     <!-- ANALYTICS MATRIX -->
+    {% if current_user.role == 'engineer' %}
+    <!-- ENGINEER-FOCUSED STATUS CARDS -->
+    <div class="row mb-4 g-3">
+        <div class="col-md-3 col-sm-6">
+            <div class="card p-4 text-center bg-white border-0 shadow-sm rounded-4 transition-hover dashboard-engineer-summary-card">
+                <h6 class="small fw-bold text-muted text-uppercase mb-2">My Active Tasks</h6>
+                <h2 class="display-6 fw-bold mb-1 text-primary" id="count-my-active">0</h2>
+                <a href="/timeline" class="small text-primary text-decoration-none fw-bold">Open Timeline →</a>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-sm-6">
+            <div class="card p-4 text-center bg-white border-0 shadow-sm rounded-4 transition-hover dashboard-engineer-summary-card">
+                <h6 class="small fw-bold text-muted text-uppercase mb-2">Upcoming Visits</h6>
+                <h2 class="display-6 fw-bold mb-1 text-success" id="count-my-upcoming">0</h2>
+                <a href="/timeline" class="small text-success text-decoration-none fw-bold">View Schedule →</a>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-sm-6">
+            <div class="card p-4 text-center bg-white border-0 shadow-sm rounded-4 transition-hover dashboard-engineer-summary-card">
+                <h6 class="small fw-bold text-muted text-uppercase mb-2">For Continuation</h6>
+                <h2 class="display-6 fw-bold mb-1 text-dark" id="count-my-continuation">0</h2>
+                <a href="/timeline" class="small text-dark text-decoration-none fw-bold">Check Tasks →</a>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-sm-6">
+            <div class="card p-4 text-center bg-white border-0 shadow-sm rounded-4 transition-hover dashboard-engineer-summary-card">
+                <h6 class="small fw-bold text-muted text-uppercase mb-2">Waiting Items</h6>
+                <h2 class="display-6 fw-bold mb-1 text-warning" id="count-my-waiting">0</h2>
+                <a href="/timeline" class="small text-warning text-decoration-none fw-bold">Review Status →</a>
+            </div>
+        </div>
+    </div>
+    {% else %}
     <div class="row mb-4 g-3">
         
         <!-- PERSONNEL COUNTER -->
@@ -75,9 +111,28 @@
         </div>
 
     </div>
+    {% endif %}
 
     <!-- MOBILE DASHBOARD QUICK ACTIONS -->
     <div class="dashboard-mobile-quick-actions mb-4">
+        {% if current_user.role == 'engineer' %}
+        <a href="/timeline" class="dashboard-mobile-action-card dashboard-mobile-action-primary">
+            <i class="fa-solid fa-calendar-days"></i>
+            <span>Timeline</span>
+        </a>
+        <a href="/offline-tsr" class="dashboard-mobile-action-card">
+            <i class="fa-solid fa-file-circle-plus"></i>
+            <span>Create TSR</span>
+        </a>
+        <a href="/reports_page" class="dashboard-mobile-action-card">
+            <i class="fa-solid fa-folder-open"></i>
+            <span>TSR Archive</span>
+        </a>
+        <a href="/clients_page" class="dashboard-mobile-action-card">
+            <i class="fa-solid fa-hospital"></i>
+            <span>Clients</span>
+        </a>
+        {% else %}
         <a href="/timeline" class="dashboard-mobile-action-card dashboard-mobile-action-primary">
             <i class="fa-solid fa-calendar-days"></i>
             <span>Timeline</span>
@@ -94,6 +149,7 @@
             <i class="fa-solid fa-clock-rotate-left"></i>
             <span>Logs</span>
         </a>
+        {% endif %}
     </div>
 
     <!-- v5.2 ROLE-BASED WIDGET SECTION -->
@@ -294,7 +350,7 @@
      */
     function setDashboardLoadState(state, message = '') {
         let alertBox = document.getElementById('dashboard-load-alert');
-        const container = document.querySelector('.container-fluid');
+        const container = document.querySelector('.container.py-4') || document.querySelector('.container-fluid') || document.querySelector('.container');
         if (!container) return;
 
         if (!alertBox) {
@@ -332,6 +388,37 @@
         return response.json();
     }
 
+    function setTextIfPresent(elementId, value) {
+        const el = document.getElementById(elementId);
+        if (el) el.innerText = value;
+    }
+
+    function getCurrentEngineerTasks() {
+        if (userRole !== 'engineer') return [];
+        return allOpenTasksRaw.filter(isTaskAssignedToCurrentEngineer);
+    }
+
+    function updateEngineerSummaryCards() {
+        if (userRole !== 'engineer') return;
+
+        const myTasks = getCurrentEngineerTasks();
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        const upcomingVisits = myTasks.filter(task => {
+            const taskDate = parseDashboardDate(task.task_date);
+            return taskDate && taskDate >= todayStart;
+        }).length;
+
+        const continuationCount = myTasks.filter(task => task.status === 'For Continuation').length;
+        const waitingCount = myTasks.filter(task => ['Waiting for P.O', 'Waiting for Parts'].includes(task.status)).length;
+
+        setTextIfPresent('count-my-active', myTasks.length);
+        setTextIfPresent('count-my-upcoming', upcomingVisits);
+        setTextIfPresent('count-my-continuation', continuationCount);
+        setTextIfPresent('count-my-waiting', waitingCount);
+    }
+
     /**
      * MASTER DATA LOADER:
      * Dispatches concurrent fetch requests to sync dashboard metrics from server.
@@ -348,9 +435,9 @@
                 fetchJsonOrThrow('/get_open_tasks')
             ]);
 
-            document.getElementById('count-engineers').innerText = Array.isArray(engs) ? engs.length : 0;
-            document.getElementById('count-clients').innerText = Array.isArray(clis) ? clis.length : 0;
-            document.getElementById('count-products').innerText = Array.isArray(prods) ? prods.length : 0;
+            setTextIfPresent('count-engineers', Array.isArray(engs) ? engs.length : 0);
+            setTextIfPresent('count-clients', Array.isArray(clis) ? clis.length : 0);
+            setTextIfPresent('count-products', Array.isArray(prods) ? prods.length : 0);
 
             const hrCategories = [
                 "Sick Leave", 
@@ -366,6 +453,7 @@
             
             // Branch logic for personalization
             if (userRole === 'engineer') {
+                updateEngineerSummaryCards();
                 renderMyTasks();
             } else {
                 fetchActivityLog();
@@ -631,7 +719,7 @@
 
         if(!targetBody) return;
 
-        const myTasks = allOpenTasksRaw.filter(isTaskAssignedToCurrentEngineer);
+        const myTasks = getCurrentEngineerTasks();
 
         targetBody.innerHTML = "";
 
@@ -824,6 +912,11 @@
     }
     .xsmall { font-size: 0.65rem; }
     .italic { font-style: italic; }
+
+
+    .dashboard-engineer-summary-card {
+        min-height: 154px;
+    }
 
     /* RECENT ACTIVITY UX UPGRADE */
     .live-dot {

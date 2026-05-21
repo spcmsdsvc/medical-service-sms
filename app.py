@@ -319,6 +319,7 @@ PERFORMANCE_LOG_PATHS = {
     '/get_products',
     '/get_engineers',
     '/get_open_tasks',
+    '/get_engineer_dashboard_summary',
     '/get_recent_activity',
     '/get_activity_logs',
     '/get_activity_filter_options',
@@ -4348,7 +4349,116 @@ def get_open_tasks():
             'status': s.status
         })
 
+
     return jsonify(results)
+
+
+@app.route('/get_engineer_dashboard_summary')
+@login_required
+def get_engineer_dashboard_summary():
+    """Engineer-focused dashboard summary cards.
+
+    Phase 2 backend support:
+    - avoids requiring engineer dashboards to load company-wide counters
+    - calculates true pending TSR and completed-this-month counts
+    - uses assigned engineer IDs instead of username text matching
+    """
+    if getattr(current_user, 'role', None) != 'engineer':
+        return denied('Engineer dashboard summary is only available to engineer accounts.')
+
+    my_engineer_id = get_current_user_engineer_id()
+    if not my_engineer_id:
+        return jsonify({
+            'status': 'success',
+            'message': 'No linked engineer profile found for this account.',
+            'engineer_id': None,
+            'my_active_tasks': 0,
+            'upcoming_visits': 0,
+            'for_continuation': 0,
+            'waiting_items': 0,
+            'pending_tsr': 0,
+            'completed_this_month': 0,
+            'pending_tsr_rows': []
+        })
+
+    today = get_manila_today()
+    month_start = today.replace(day=1)
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+
+    invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
+
+    base_query = (
+        Shift.query
+        .options(
+            joinedload(Shift.client),
+            joinedload(Shift.product),
+            selectinload(Shift.files)
+        )
+        .filter(Shift.client_id.isnot(None))
+        .order_by(Shift.start_time.desc())
+    )
+
+    assigned_service_shifts = [
+        shift for shift in base_query.limit(1000).all()
+        if is_current_engineer_assigned_to_shift(shift)
+    ]
+
+    active_tasks = [
+        shift for shift in assigned_service_shifts
+        if (shift.status or '') not in invalid_dashboard_categories
+    ]
+
+    completed_this_month_shifts = [
+        shift for shift in assigned_service_shifts
+        if (
+            (shift.status or '') == 'Completed' and
+            shift.start_time and
+            month_start <= shift.start_time.date() < next_month
+        )
+    ]
+
+    pending_tsr_shifts = [
+        shift for shift in assigned_service_shifts
+        if (
+            (shift.status or '') == 'Completed' and
+            not shift_has_tsr_file(shift)
+        )
+    ]
+
+    def pending_tsr_row(shift):
+        engineers = get_shift_engineer_records(shift)
+        return {
+            'id': shift.id,
+            'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
+            'client': shift.client.name if shift.client else 'N/A',
+            'product': shift.product.name if shift.product else '',
+            'serial': shift.product.serial_number if shift.product else (shift.product_id or ''),
+            'task': shift.title or '',
+            'status': shift.status or '',
+            'engineers': ', '.join([engineer.name for engineer in engineers]) or ''
+        }
+
+    return jsonify({
+        'status': 'success',
+        'engineer_id': my_engineer_id,
+        'generated_at': get_manila_time().isoformat(),
+        'my_active_tasks': len(active_tasks),
+        'upcoming_visits': len([
+            shift for shift in active_tasks
+            if shift.start_time and shift.start_time.date() >= today
+        ]),
+        'for_continuation': len([
+            shift for shift in active_tasks
+            if (shift.status or '') == 'For Continuation'
+        ]),
+        'waiting_items': len([
+            shift for shift in active_tasks
+            if (shift.status or '') in {'Waiting for P.O', 'Waiting for Parts'}
+        ]),
+        'pending_tsr': len(pending_tsr_shifts),
+        'completed_this_month': len(completed_this_month_shifts),
+        'pending_tsr_rows': [pending_tsr_row(shift) for shift in pending_tsr_shifts[:10]]
+    })
 
 
 @app.route('/get_timeline_data')
