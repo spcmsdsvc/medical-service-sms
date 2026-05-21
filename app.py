@@ -324,6 +324,7 @@ PERFORMANCE_LOG_PATHS = {
     '/get_scheduler_dashboard_summary',
     '/get_scheduler_dispatch_intelligence',
     '/get_scheduler_coordination_tools',
+    '/get_manager_dashboard_summary',
     '/scheduler_quick_assign_shift',
     '/scheduler_quick_reschedule_shift',
     '/set_developer_dashboard_view',
@@ -1006,6 +1007,33 @@ def developer_dashboard_view_is(view_name, user=None):
     return get_developer_dashboard_view(user) == (view_name or '').strip().lower()
 
 
+def is_manager_dashboard_user(user=None):
+    """Return True for manager-facing dashboard users.
+
+    Manager view is intentionally separated from scheduler-only and engineer-only
+    views. Jonamar can preview it through the developer dashboard switcher.
+    """
+    target = user or current_user
+    username = _username_of(target)
+    return bool(
+        (
+            target and
+            getattr(target, 'is_authenticated', False) and
+            (
+                username in MANAGER_USERNAMES or
+                (is_admin_authorized(target) and not is_scheduler_user(target))
+            )
+        ) or
+        developer_dashboard_view_is('manager', target)
+    )
+
+
+def can_view_manager_dashboard(user=None):
+    """Manager M1 access gate for executive dashboard summary API."""
+    target = user or current_user
+    return bool(is_manager_dashboard_user(target) or developer_dashboard_view_is('manager', target))
+
+
 def get_display_role(user):
     """Business-facing role label for Settings/UI without weakening backend authority."""
     username = _username_of(user)
@@ -1111,6 +1139,7 @@ def get_dashboard_capabilities(user=None):
             'scheduler_view': False,
             'scheduler_only': False,
             'hybrid_view': False,
+            'manager_view': False,
             'display_role': 'Engineer',
             'developer_view': developer_view,
             'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
@@ -1123,6 +1152,7 @@ def get_dashboard_capabilities(user=None):
             'scheduler_view': True,
             'scheduler_only': True,
             'hybrid_view': False,
+            'manager_view': False,
             'display_role': 'Scheduler',
             'developer_view': developer_view,
             'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
@@ -1135,6 +1165,7 @@ def get_dashboard_capabilities(user=None):
             'scheduler_view': False,
             'scheduler_only': False,
             'hybrid_view': False,
+            'manager_view': True,
             'display_role': 'Manager',
             'developer_view': developer_view,
             'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
@@ -1147,6 +1178,7 @@ def get_dashboard_capabilities(user=None):
         'scheduler_view': scheduler_user,
         'scheduler_only': scheduler_only,
         'hybrid_view': bool(engineer_profile) and admin_authorized,
+        'manager_view': is_manager_dashboard_user(target) and not scheduler_only,
         'display_role': get_display_role(target) if target else 'User',
         'developer_view': developer_view,
         'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
@@ -3602,6 +3634,7 @@ def dashboard_page():
         dashboard_scheduler_view=dashboard_caps.get('scheduler_view', False),
         dashboard_scheduler_only=dashboard_caps['scheduler_only'],
         dashboard_hybrid_view=dashboard_caps['hybrid_view'],
+        dashboard_manager_view=dashboard_caps.get('manager_view', False),
         dashboard_display_role=dashboard_caps['display_role'],
         dashboard_developer_mode=is_developer_user(),
         dashboard_developer_view=dashboard_caps.get('developer_view', 'default'),
@@ -5690,6 +5723,279 @@ def scheduler_quick_reschedule_shift():
         'start_time': new_start_time,
         'end_time': new_end_dt.strftime('%H:%M')
     })
+
+
+
+# --- MANAGER DASHBOARD PHASE M1: EXECUTIVE FOUNDATION ---
+
+def manager_shift_priority_row(shift, reason='', severity='info'):
+    """Serialize a schedule row for manager executive dashboard alerts."""
+    row = dashboard_team_shift_row(shift)
+    row['reason'] = reason
+    row['severity'] = severity
+    if shift and getattr(shift, 'start_time', None):
+        row['days_old'] = max((get_manila_today() - shift.start_time.date()).days, 0)
+    else:
+        row['days_old'] = 0
+    return row
+
+
+@app.route('/get_manager_dashboard_summary')
+@login_required
+def get_manager_dashboard_summary():
+    """Manager Dashboard Phase M1 backend summary.
+
+    Executive foundation endpoint:
+    - company-wide operational KPIs
+    - branch workload summary
+    - engineer utilization snapshot
+    - priority alerts for overdue, missing TSR, waiting P.O/parts, and unassigned work
+
+    This is read-only and uses existing Shift/Engineer/Client/Product data only.
+    No database schema changes.
+    """
+    if not can_view_manager_dashboard():
+        return denied('Manager dashboard summary is only available to manager-authorized accounts.')
+
+    ensure_shift_file_original_filename_column()
+
+    today = get_manila_today()
+    month_start = today.replace(day=1)
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    lookback_start = today - timedelta(days=90)
+    lookahead_end = today + timedelta(days=60)
+    start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
+
+    invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
+    waiting_statuses = {'Waiting for P.O', 'Waiting for Parts'}
+
+    base_query = (
+        Shift.query
+        .options(
+            joinedload(Shift.client),
+            joinedload(Shift.product),
+            selectinload(Shift.files)
+        )
+        .filter(Shift.client_id.isnot(None))
+        .filter(Shift.start_time >= start_dt)
+        .filter(Shift.start_time < end_dt)
+        .order_by(Shift.start_time.desc())
+    )
+
+    base_query = analytics_scope_query(base_query)
+
+    service_shifts = list({shift.id: shift for shift in base_query.limit(2000).all()}.values())
+
+    open_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') not in invalid_dashboard_categories
+    ]
+
+    overdue_shifts = [
+        shift for shift in open_shifts
+        if shift.start_time and shift.start_time.date() < today
+    ]
+
+    waiting_shifts = [
+        shift for shift in open_shifts
+        if (shift.status or '') in waiting_statuses
+    ]
+
+    completed_this_month = [
+        shift for shift in service_shifts
+        if (
+            (shift.status or '') == 'Completed' and
+            shift.start_time and
+            month_start <= shift.start_time.date() < next_month
+        )
+    ]
+
+    pending_tsr_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') == 'Completed' and not shift_has_tsr_file(shift)
+    ]
+
+    unassigned_shifts = [
+        shift for shift in open_shifts
+        if not get_shift_engineer_records(shift)
+    ]
+
+    branch_summary = {}
+    engineer_load = {}
+
+    def ensure_branch(branch_name):
+        branch_name = branch_name or 'Unassigned'
+        branch_summary.setdefault(branch_name, {
+            'branch': branch_name,
+            'open_tasks': 0,
+            'overdue': 0,
+            'waiting_items': 0,
+            'pending_tsr': 0,
+            'engineers': 0
+        })
+        return branch_summary[branch_name]
+
+    for shift in open_shifts:
+        engineers = get_shift_engineer_records(shift)
+        if not engineers:
+            branch_row = ensure_branch('Unassigned')
+            branch_row['open_tasks'] += 1
+            if shift.start_time and shift.start_time.date() < today:
+                branch_row['overdue'] += 1
+            if (shift.status or '') in waiting_statuses:
+                branch_row['waiting_items'] += 1
+            continue
+
+        for engineer in engineers:
+            branch = engineer.branch or 'Unassigned'
+            branch_row = ensure_branch(branch)
+            branch_row['open_tasks'] += 1
+            if shift.start_time and shift.start_time.date() < today:
+                branch_row['overdue'] += 1
+            if (shift.status or '') in waiting_statuses:
+                branch_row['waiting_items'] += 1
+
+            if engineer.id not in engineer_load:
+                engineer_load[engineer.id] = {
+                    'engineer_id': engineer.id,
+                    'name': engineer.name,
+                    'branch': branch,
+                    'open_tasks': 0,
+                    'overdue': 0,
+                    'waiting_items': 0,
+                    'completed_this_month': 0,
+                    'utilization_level': 'normal'
+                }
+
+            row = engineer_load[engineer.id]
+            row['open_tasks'] += 1
+            if shift.start_time and shift.start_time.date() < today:
+                row['overdue'] += 1
+            if (shift.status or '') in waiting_statuses:
+                row['waiting_items'] += 1
+
+    for shift in completed_this_month:
+        for engineer in get_shift_engineer_records(shift):
+            if engineer.id not in engineer_load:
+                engineer_load[engineer.id] = {
+                    'engineer_id': engineer.id,
+                    'name': engineer.name,
+                    'branch': engineer.branch or 'Unassigned',
+                    'open_tasks': 0,
+                    'overdue': 0,
+                    'waiting_items': 0,
+                    'completed_this_month': 0,
+                    'utilization_level': 'normal'
+                }
+            engineer_load[engineer.id]['completed_this_month'] += 1
+
+    for shift in pending_tsr_shifts:
+        engineers = get_shift_engineer_records(shift)
+        if not engineers:
+            ensure_branch('Unassigned')['pending_tsr'] += 1
+            continue
+        for engineer in engineers:
+            ensure_branch(engineer.branch or 'Unassigned')['pending_tsr'] += 1
+
+    for engineer in Engineer.query.all():
+        ensure_branch(engineer.branch or 'Unassigned')['engineers'] += 1
+
+    engineer_rows = list(engineer_load.values())
+    if engineer_rows:
+        avg_open = sum(row['open_tasks'] for row in engineer_rows) / max(len(engineer_rows), 1)
+        for row in engineer_rows:
+            if row['overdue'] >= 3 or row['open_tasks'] >= max(8, avg_open * 1.8):
+                row['utilization_level'] = 'high'
+            elif row['overdue'] >= 1 or row['waiting_items'] >= 2 or row['open_tasks'] >= max(4, avg_open * 1.3):
+                row['utilization_level'] = 'watch'
+
+    engineer_rows.sort(key=lambda row: (-row['overdue'], -row['open_tasks'], -row['completed_this_month'], row['name']))
+
+    priority_alerts = []
+    priority_alerts.extend([
+        manager_shift_priority_row(
+            shift,
+            f"Overdue by {max((today - shift.start_time.date()).days, 0)} day(s)" if shift.start_time else 'Overdue schedule',
+            'danger'
+        )
+        for shift in sorted(overdue_shifts, key=lambda s: s.start_time or datetime.min)[:8]
+    ])
+    priority_alerts.extend([
+        manager_shift_priority_row(shift, 'Completed schedule missing TSR', 'warning')
+        for shift in sorted(pending_tsr_shifts, key=lambda s: s.start_time or datetime.min)[:8]
+    ])
+    priority_alerts.extend([
+        manager_shift_priority_row(shift, shift.status or 'Waiting item', 'info')
+        for shift in sorted(waiting_shifts, key=lambda s: s.start_time or datetime.min)[:6]
+    ])
+    priority_alerts.extend([
+        manager_shift_priority_row(shift, 'No engineer assigned', 'danger')
+        for shift in sorted(unassigned_shifts, key=lambda s: s.start_time or datetime.max)[:6]
+    ])
+
+    operational_risk_score = (
+        (len(overdue_shifts) * 3) +
+        (len(pending_tsr_shifts) * 2) +
+        (len(waiting_shifts) * 2) +
+        (len(unassigned_shifts) * 3) +
+        len([row for row in engineer_rows if row.get('utilization_level') == 'high'])
+    )
+
+    if operational_risk_score >= 24:
+        risk_level = 'critical'
+        risk_label = 'Critical operational attention'
+    elif operational_risk_score >= 10:
+        risk_level = 'watch'
+        risk_label = 'Management watch needed'
+    else:
+        risk_level = 'stable'
+        risk_label = 'Operations stable'
+
+    return jsonify({
+        'status': 'success',
+        'phase': 'manager-phase-m1-executive-foundation',
+        'generated_at': get_manila_time().isoformat(),
+        'manager': {
+            'username': getattr(current_user, 'username', ''),
+            'display_role': get_display_role(current_user)
+        },
+        'risk': {
+            'score': operational_risk_score,
+            'level': risk_level,
+            'label': risk_label
+        },
+        'counts': {
+            'open_schedules': len(open_shifts),
+            'overdue_schedules': len(overdue_shifts),
+            'pending_tsr': len(pending_tsr_shifts),
+            'waiting_items': len(waiting_shifts),
+            'completed_this_month': len(completed_this_month),
+            'unassigned_schedules': len(unassigned_shifts),
+            'active_engineers': len(engineer_rows),
+            'clients': Client.query.count(),
+            'products': Product.query.count()
+        },
+        'branch_summary': sorted(
+            branch_summary.values(),
+            key=lambda row: (-row.get('open_tasks', 0), row.get('branch') or '')
+        ),
+        'engineer_utilization': engineer_rows[:20],
+        'priority_alerts': priority_alerts[:20],
+        'overdue_rows': [
+            manager_shift_priority_row(shift, 'Overdue schedule', 'danger')
+            for shift in sorted(overdue_shifts, key=lambda s: s.start_time or datetime.min)[:12]
+        ],
+        'pending_tsr_rows': [
+            manager_shift_priority_row(shift, 'Completed schedule missing TSR', 'warning')
+            for shift in sorted(pending_tsr_shifts, key=lambda s: s.start_time or datetime.min)[:12]
+        ],
+        'waiting_rows': [
+            manager_shift_priority_row(shift, shift.status or 'Waiting item', 'info')
+            for shift in sorted(waiting_shifts, key=lambda s: s.start_time or datetime.min)[:12]
+        ]
+    })
+
+
 
 
 @app.route('/get_timeline_data')

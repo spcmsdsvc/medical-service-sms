@@ -318,6 +318,126 @@
 
     {% endif %}
 
+    {% if dashboard_manager_view and not dashboard_scheduler_only %}
+    <!-- MANAGER PHASE M1: EXECUTIVE DASHBOARD FOUNDATION -->
+    <div class="manager-executive-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="manager-executive" data-dashboard-title="Manager Executive Dashboard">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+                <h5 class="mb-0 fw-bold text-dark">
+                    <i class="fa-solid fa-briefcase me-2 text-dark"></i>
+                    Manager Executive Dashboard
+                </h5>
+                <p class="text-muted small mb-0">Company-wide operations snapshot, branch workload, engineer utilization, and priority alerts</p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                <span id="manager-risk-badge" class="badge bg-success rounded-pill px-3 py-2">Stable</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-executive-body', this)">
+                    <i class="fa-solid fa-chevron-up me-1"></i>Hide
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-dark fw-bold" onclick="loadManagerDashboardSummary()">
+                    <i class="fa-solid fa-rotate me-1"></i>Refresh
+                </button>
+            </div>
+        </div>
+
+        <div id="manager-executive-body" class="dashboard-collapsible-body">
+            <div class="row g-3 mb-3">
+                <div class="col-md-3 col-sm-6">
+                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card">
+                        <div class="dashboard-team-label">Open Schedules</div>
+                        <div class="dashboard-team-value text-primary" id="manager-open-count">0</div>
+                        <div class="dashboard-team-hint">Active service work</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card">
+                        <div class="dashboard-team-label">Overdue</div>
+                        <div class="dashboard-team-value text-danger" id="manager-overdue-count">0</div>
+                        <div class="dashboard-team-hint">Past due open schedules</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card">
+                        <div class="dashboard-team-label">Pending TSR</div>
+                        <div class="dashboard-team-value text-warning" id="manager-pending-tsr-count">0</div>
+                        <div class="dashboard-team-hint">Completed, no TSR</div>
+                    </div>
+                </div>
+                <div class="col-md-3 col-sm-6">
+                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card">
+                        <div class="dashboard-team-label">Completed This Month</div>
+                        <div class="dashboard-team-value text-success" id="manager-completed-month-count">0</div>
+                        <div class="dashboard-team-hint">Monthly completed service</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="manager-action-grid mb-3">
+                <a href="/timeline" class="manager-action-card manager-action-primary">
+                    <i class="fa-solid fa-calendar-days"></i>
+                    <strong>Timeline</strong>
+                    <span>Review operations calendar</span>
+                </a>
+                <a href="/reports_page" class="manager-action-card">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <strong>Reports</strong>
+                    <span>TSR archive and service records</span>
+                </a>
+                <a href="/analytics_page" class="manager-action-card">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <strong>Analytics</strong>
+                    <span>Service and branch insights</span>
+                </a>
+                <a href="/activity_page" class="manager-action-card">
+                    <i class="fa-solid fa-clock-rotate-left"></i>
+                    <strong>Activity Logs</strong>
+                    <span>Audit recent system actions</span>
+                </a>
+            </div>
+
+            <div class="row g-3">
+                <div class="col-lg-5">
+                    <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                        <div class="card-header bg-white border-bottom py-3">
+                            <h6 class="mb-0 fw-bold text-dark">
+                                <i class="fa-solid fa-map-location-dot me-2 text-primary"></i>Branch Overview
+                            </h6>
+                            <div class="xsmall text-muted mt-1">Open work, overdue items, waiting blockers, and pending TSR per branch</div>
+                        </div>
+                        <div id="manager-branch-list" class="dashboard-team-list manager-branch-list"></div>
+                    </div>
+                </div>
+                <div class="col-lg-7">
+                    <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                        <div class="card-header bg-white border-bottom py-3">
+                            <h6 class="mb-0 fw-bold text-dark">
+                                <i class="fa-solid fa-user-gear me-2 text-success"></i>Engineer Utilization Snapshot
+                            </h6>
+                            <div class="xsmall text-muted mt-1">Workload and completion signal for management review</div>
+                        </div>
+                        <div id="manager-engineer-utilization-list" class="dashboard-team-list manager-utilization-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-0 shadow-sm rounded-4 mt-3 overflow-hidden">
+                <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h6 class="mb-0 fw-bold text-danger">
+                            <i class="fa-solid fa-triangle-exclamation me-2"></i>Executive Priority Alerts
+                        </h6>
+                        <div class="xsmall text-muted mt-1">Highest-priority overdue, missing TSR, waiting, and unassigned items</div>
+                    </div>
+                    <a href="/timeline" class="btn btn-sm btn-outline-danger fw-bold">
+                        <i class="fa-solid fa-calendar-days me-1"></i>Open Timeline
+                    </a>
+                </div>
+                <div id="manager-priority-alert-list" class="dashboard-team-list manager-priority-list"></div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- ANALYTICS MATRIX -->
     {% if dashboard_has_engineer_profile %}
     <!-- ENGINEER-FOCUSED STATUS CARDS -->
@@ -623,10 +743,10 @@
             <i class="fa-solid fa-hospital"></i>
             <span>Clients</span>
         </a>
-        {% if dashboard_scheduler_only %}
+        {% if dashboard_scheduler_only or dashboard_manager_view %}
         <a href="/reports_page" class="dashboard-mobile-action-card">
             <i class="fa-solid fa-folder-open"></i>
-            <span>TSR</span>
+            <span>{% if dashboard_manager_view and not dashboard_scheduler_only %}Reports{% else %}TSR{% endif %}</span>
         </a>
         {% else %}
         <a href="/activity_page" class="dashboard-mobile-action-card">
@@ -853,6 +973,7 @@
     const dashboardAdminView = "{{ 'true' if dashboard_admin_view|default(false) else 'false' }}" === "true";
     const dashboardSchedulerOnly = "{{ 'true' if dashboard_scheduler_only|default(false) else 'false' }}" === "true";
     const dashboardHybridView = "{{ 'true' if dashboard_hybrid_view|default(false) else 'false' }}" === "true";
+    const dashboardManagerView = "{{ 'true' if dashboard_manager_view|default(false) else 'false' }}" === "true";
     const dashboardDeveloperMode = "{{ 'true' if dashboard_developer_mode|default(false) else 'false' }}" === "true";
     const dashboardDeveloperView = "{{ dashboard_developer_view|default('default') }}";
 
@@ -1334,6 +1455,127 @@
         });
     }
 
+    function managerRiskBadgeClass(level) {
+        const value = String(level || '').toLowerCase();
+        if (value === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
+        if (value === 'watch') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
+        return 'badge bg-success rounded-pill px-3 py-2';
+    }
+
+    function managerUtilizationBadgeClass(level) {
+        const value = String(level || '').toLowerCase();
+        if (value === 'high') return 'bg-danger';
+        if (value === 'watch') return 'bg-warning text-dark';
+        return 'bg-success';
+    }
+
+    function managerPriorityBadgeClass(severity) {
+        const value = String(severity || '').toLowerCase();
+        if (value === 'danger') return 'bg-danger';
+        if (value === 'warning') return 'bg-warning text-dark';
+        if (value === 'info') return 'bg-info text-dark';
+        return 'bg-secondary';
+    }
+
+    function renderManagerBranchOverview(rows) {
+        const container = document.getElementById('manager-branch-list');
+        if (!container) return;
+
+        if (!Array.isArray(rows) || !rows.length) {
+            renderTeamEmpty('manager-branch-list', 'No branch workload found.');
+            return;
+        }
+
+        container.innerHTML = rows.map(row => `
+            <div class="dashboard-team-row manager-branch-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.branch || 'Unassigned')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 0)} engineer(s)</div>
+                </div>
+                <div class="dashboard-team-row-badges">
+                    <span class="badge bg-primary">${escapeHtml(row.open_tasks || 0)} open</span>
+                    <span class="badge bg-danger">${escapeHtml(row.overdue || 0)} overdue</span>
+                    <span class="badge bg-warning text-dark">${escapeHtml(row.pending_tsr || 0)} TSR</span>
+                    <span class="badge bg-info text-dark">${escapeHtml(row.waiting_items || 0)} waiting</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderManagerEngineerUtilization(rows) {
+        const container = document.getElementById('manager-engineer-utilization-list');
+        if (!container) return;
+
+        if (!Array.isArray(rows) || !rows.length) {
+            renderTeamEmpty('manager-engineer-utilization-list', 'No engineer utilization data found.');
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 16).map(row => `
+            <div class="dashboard-team-row manager-utilization-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.name || 'Engineer')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.branch || 'No branch')} • ${escapeHtml(row.completed_this_month || 0)} completed this month</div>
+                </div>
+                <div class="dashboard-team-row-badges">
+                    <span class="badge ${managerUtilizationBadgeClass(row.utilization_level)}">${escapeHtml(row.utilization_level || 'normal')}</span>
+                    <span class="badge bg-primary">${escapeHtml(row.open_tasks || 0)} open</span>
+                    <span class="badge bg-danger">${escapeHtml(row.overdue || 0)} overdue</span>
+                    <span class="badge bg-warning text-dark">${escapeHtml(row.waiting_items || 0)} waiting</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderManagerPriorityAlerts(rows) {
+        const container = document.getElementById('manager-priority-alert-list');
+        if (!container) return;
+
+        if (!Array.isArray(rows) || !rows.length) {
+            renderTeamEmpty('manager-priority-alert-list', 'No executive priority alerts right now.');
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 18).map(row => `
+            <div class="dashboard-team-row manager-priority-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 'No engineer assigned')} • ${escapeHtml(row.branches || '')}</div>
+                </div>
+                <span class="badge ${managerPriorityBadgeClass(row.severity)}">${escapeHtml(row.reason || 'Needs review')}</span>
+            </div>
+        `).join('');
+    }
+
+    async function loadManagerDashboardSummary() {
+        if (!dashboardManagerView || dashboardSchedulerOnly) return;
+
+        try {
+            const data = await fetchJsonOrThrow('/get_manager_dashboard_summary');
+            const counts = data.counts || {};
+            setTextIfPresent('manager-open-count', counts.open_schedules || 0);
+            setTextIfPresent('manager-overdue-count', counts.overdue_schedules || 0);
+            setTextIfPresent('manager-pending-tsr-count', counts.pending_tsr || 0);
+            setTextIfPresent('manager-completed-month-count', counts.completed_this_month || 0);
+
+            const riskBadge = document.getElementById('manager-risk-badge');
+            if (riskBadge) {
+                riskBadge.className = managerRiskBadgeClass(data.risk && data.risk.level);
+                riskBadge.innerText = (data.risk && data.risk.label) || 'Stable';
+            }
+
+            renderManagerBranchOverview(data.branch_summary || []);
+            renderManagerEngineerUtilization(data.engineer_utilization || []);
+            renderManagerPriorityAlerts(data.priority_alerts || []);
+        } catch (managerError) {
+            console.warn('Manager dashboard summary could not be loaded:', managerError);
+            renderTeamEmpty('manager-branch-list', 'Manager branch overview could not be loaded.');
+            renderTeamEmpty('manager-engineer-utilization-list', 'Manager utilization snapshot could not be loaded.');
+            renderTeamEmpty('manager-priority-alert-list', 'Manager priority alerts could not be loaded.');
+        }
+    }
+
     function schedulerStatusBadgeClass(status) {
         const value = String(status || '').toLowerCase();
         if (value.includes('waiting for p.o')) return 'bg-warning text-dark';
@@ -1787,6 +2029,10 @@
             if (dashboardSchedulerOnly) {
                 loadSchedulerDashboardSummary();
                 loadSchedulerCoordinationTools();
+            }
+
+            if (dashboardManagerView && !dashboardSchedulerOnly) {
+                loadManagerDashboardSummary();
             }
 
             if (dashboardAdminView && !dashboardSchedulerOnly) {
@@ -2298,6 +2544,88 @@
     }
     .xsmall { font-size: 0.65rem; }
     .italic { font-style: italic; }
+
+    .manager-executive-dashboard {
+        background: linear-gradient(135deg, #f8fafc, #ffffff);
+        border: 1px solid #cbd5e1;
+        border-radius: 1.25rem;
+        padding: 1rem;
+    }
+
+    .manager-kpi-card {
+        min-height: 128px;
+        border-left: 4px solid rgba(15, 23, 42, 0.25) !important;
+    }
+
+    .manager-action-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.85rem;
+    }
+
+    .manager-action-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        min-height: 112px;
+        padding: 1rem;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        color: #334155;
+        text-decoration: none;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+        transition: 0.22s ease;
+    }
+
+    .manager-action-card:hover {
+        transform: translateY(-3px);
+        color: #0f172a;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+    }
+
+    .manager-action-card i {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: #f1f5f9;
+        color: #0f172a;
+        font-size: 1rem;
+    }
+
+    .manager-action-card strong {
+        color: #0f172a;
+        font-size: 0.9rem;
+        line-height: 1.15;
+    }
+
+    .manager-action-card span {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.25;
+    }
+
+    .manager-action-primary {
+        border-color: rgba(15, 23, 42, 0.25);
+        background: linear-gradient(135deg, #ffffff, #f8fafc);
+    }
+
+    .manager-branch-list,
+    .manager-utilization-list,
+    .manager-priority-list {
+        max-height: 410px;
+        overflow-y: auto;
+    }
+
+    .manager-branch-row,
+    .manager-utilization-row,
+    .manager-priority-row {
+        background: #ffffff;
+    }
+
 
     .scheduler-final-note {
         background: linear-gradient(135deg, #f0fdf4, #ffffff);
@@ -3149,8 +3477,19 @@
         .dashboard-team-intelligence,
         .dashboard-needs-attention,
         .dashboard-quick-admin,
+        .manager-executive-dashboard,
         .scheduler-core-dashboard,
         .scheduler-coordination-panel { padding: 0.85rem; }
+
+        .manager-action-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.6rem;
+        }
+
+        .manager-action-card {
+            min-height: 108px;
+            padding: 0.85rem;
+        }
 
         .scheduler-availability-strip {
             grid-template-columns: 1fr;
