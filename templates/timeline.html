@@ -145,6 +145,29 @@
         </div>
     </div>
 
+    <!-- DESKTOP ENGINEER FOCUS: Find logged-in engineer row quickly -->
+    <div class="timeline-engineer-focus-strip no-print d-none" id="timeline-engineer-focus-strip">
+        <div class="timeline-engineer-focus-main">
+            <div class="timeline-engineer-focus-icon">
+                <i class="fa-solid fa-user-gear"></i>
+            </div>
+            <div>
+                <div class="timeline-engineer-focus-title">My Timeline Row</div>
+                <div class="timeline-engineer-focus-sub" id="timeline-engineer-focus-sub">
+                    Jump directly to your engineer row on desktop.
+                </div>
+            </div>
+        </div>
+        <div class="timeline-engineer-focus-actions">
+            <button type="button" class="btn btn-sm btn-primary fw-bold" onclick="focusLoggedInEngineerRow(true)">
+                <i class="fa-solid fa-location-crosshairs me-1"></i>Find My Row
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="openLoggedInEngineerQuickAdd()">
+                <i class="fa-solid fa-calendar-plus me-1"></i>Add Schedule
+            </button>
+        </div>
+    </div>
+
     <!-- 
         PRINT MODE STATIC HEADER 
         This section is only visible when generating a print-out.
@@ -3202,6 +3225,80 @@ body.pwa-reconnected .mobile-offline-readiness {
     }
 }
 
+.timeline-engineer-focus-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin: -0.35rem 0 0.75rem;
+    padding: 0.8rem 0.9rem;
+    border: 1px solid #bfdbfe;
+    background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+    border-radius: 1rem;
+    box-shadow: 0 8px 22px rgba(13, 110, 253, 0.08);
+}
+
+.timeline-engineer-focus-main {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.timeline-engineer-focus-icon {
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #0d6efd;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.timeline-engineer-focus-title {
+    color: #0f172a;
+    font-size: 0.86rem;
+    font-weight: 950;
+    line-height: 1.15;
+}
+
+.timeline-engineer-focus-sub {
+    color: #475569;
+    font-size: 0.72rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.timeline-engineer-focus-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+}
+
+.timeline-my-engineer-row > td:first-child {
+    border-left: 4px solid #0d6efd !important;
+    box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.035);
+}
+
+.timeline-my-row-pulse > td {
+    animation: timelineMyRowPulse 1.8s ease-out;
+}
+
+@keyframes timelineMyRowPulse {
+    0% { box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.18); }
+    55% { box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.10); }
+    100% { box-shadow: inset 0 0 0 9999px rgba(13, 110, 253, 0.02); }
+}
+
+@media (max-width: 768px) {
+    .timeline-engineer-focus-strip {
+        display: none !important;
+    }
+}
+
 .timeline-client-quick-add-row {
     display: flex;
     gap: 0.5rem;
@@ -3772,6 +3869,88 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
     const shouldDefaultAllBranches = !isRegionalAdmin && (isSuperAdmin || defaultAllBranchUsers.includes(loggedInUserLower));
     // Regional Admin/Kevin can view Cebu and Davao together, but not Manila schedule actions.
     const regionalAllowedBranches = ["Cebu", "Davao"];
+
+    let timelineEngineerAutoFocused = false;
+    let timelineEngineerFocusDays = [];
+
+    function isDesktopEngineerTimelineFocusAvailable(){
+        return Boolean(
+            loggedInEngineerId &&
+            window.matchMedia('(min-width: 769px)').matches
+        );
+    }
+
+    function updateTimelineEngineerFocusStrip(){
+        const strip = document.getElementById('timeline-engineer-focus-strip');
+        const sub = document.getElementById('timeline-engineer-focus-sub');
+        if(!strip) return;
+
+        const shouldShow = isDesktopEngineerTimelineFocusAvailable();
+        strip.classList.toggle('d-none', !shouldShow);
+
+        if(sub && shouldShow){
+            sub.innerText = `${loggedInEngineerName || 'Engineer'} • use this to jump to your row without scrolling.`;
+        }
+    }
+
+    function getTimelineScrollTopForRow(row, wrapper){
+        if(!row || !wrapper) return 0;
+        const rowTop = row.offsetTop || 0;
+        const headerOffset = 56;
+        return Math.max(rowTop - headerOffset, 0);
+    }
+
+    function focusLoggedInEngineerRow(manual=false){
+        if(!isDesktopEngineerTimelineFocusAvailable()) return false;
+
+        const wrapper = document.getElementById('timeline-scroll-wrapper');
+        const row = document.getElementById(`timeline-row-engineer-${loggedInEngineerId}`);
+        if(!wrapper || !row){
+            if(manual){
+                alert("Your engineer row is not visible in the current branch/week view. Try changing the branch filter or refresh the timeline.");
+            }
+            return false;
+        }
+
+        wrapper.scrollTo({
+            top: getTimelineScrollTopForRow(row, wrapper),
+            left: wrapper.scrollLeft || 0,
+            behavior: manual ? 'smooth' : 'auto'
+        });
+
+        row.classList.add('timeline-my-row-pulse');
+        clearTimeout(focusLoggedInEngineerRow._pulseTimer);
+        focusLoggedInEngineerRow._pulseTimer = setTimeout(() => {
+            row.classList.remove('timeline-my-row-pulse');
+        }, 1800);
+
+        return true;
+    }
+
+    function autoFocusLoggedInEngineerRowAfterGrid(){
+        updateTimelineEngineerFocusStrip();
+
+        if(timelineEngineerAutoFocused || !isDesktopEngineerTimelineFocusAvailable()) return;
+
+        timelineEngineerAutoFocused = true;
+        setTimeout(() => focusLoggedInEngineerRow(false), 180);
+        setTimeout(() => focusLoggedInEngineerRow(false), 650);
+    }
+
+    async function openLoggedInEngineerQuickAdd(){
+        if(!loggedInEngineerId){
+            alert("No engineer profile is linked to this account.");
+            return;
+        }
+
+        const todayIso = formatLocalISODate(new Date());
+        const visibleDays = timelineEngineerFocusDays || [];
+        const targetDay = visibleDays.find(day => day.iso === todayIso) || visibleDays[0] || null;
+        const targetDate = targetDay?.iso || todayIso;
+
+        await openAddModal(loggedInEngineerId, targetDate, loggedInEngineerName || "Engineer");
+        setTimelineClientQuickAddState();
+    }
 
     const MOBILE_ENGINEER_BREAKPOINT_PX = 768;
     let mobileEngineerDesktopForced = false;
@@ -5994,6 +6173,8 @@ async function loadGrid() {
         
         syncMobileTimelineData(data);
         updateTimelineRangeLabels(data);
+        timelineEngineerFocusDays = Array.isArray(data.days) ? data.days : [];
+        updateTimelineEngineerFocusStrip();
 
         if(shouldSkipDesktopGridRenderForMobile()){
             setMobileDesktopGridSkippedState(true);
@@ -6080,7 +6261,7 @@ async function loadGrid() {
                 let wipeAction = ``;
                 
                 let rowHtml = `
-                    <tr class="${isCurrentUser ? 'row-me' : ''}">
+                    <tr id="${isCurrentUser ? `timeline-row-engineer-${eng.id}` : ''}" class="${isCurrentUser ? 'row-me timeline-my-engineer-row' : ''}" data-engineer-id="${eng.id}" data-engineer-name="${escapeHtml(eng.name || '')}">
                         <td class="${rowClass} p-2 small" style="position: sticky; left: 0; z-index: 10; border-right: 2px solid #ddd;">
                             <div class="d-flex justify-content-between align-items-start gap-2">
                                 <div>
@@ -6251,6 +6432,7 @@ async function loadGrid() {
         // bind clicks after render
         bindCellClicks();
         renderMobileStickyActionBar();
+        autoFocusLoggedInEngineerRowAfterGrid();
         setTimeout(syncTimelineHorizontalScroll, 0);
     }
 
@@ -9920,6 +10102,7 @@ function initTimelineStickyHeaderPolish(){
 
 document.addEventListener('DOMContentLoaded', function(){
     setTimelineClientQuickAddState();
+    updateTimelineEngineerFocusStrip();
 });
 document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 
