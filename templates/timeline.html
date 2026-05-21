@@ -171,7 +171,7 @@
         <div class="timeline-sticky-h-scroll-inner" id="timeline-sticky-h-scroll-inner"></div>
     </div>
 
-<div class="timeline-scroll-wrapper rounded-3 border shadow-sm" id="timeline-scroll-wrapper">
+    <div class="timeline-scroll-wrapper rounded-3 border shadow-sm" id="timeline-scroll-wrapper">
         <table class="table table-bordered align-top mb-0 timeline-grid-table" id="main-grid-table">
             
             <thead class="table-dark">
@@ -1274,21 +1274,43 @@
 }
 
 .timeline-grid-table thead th {
-    position: sticky;
-    top: 0;
-    z-index: 45;
     background: #212529 !important;
     color: #fff !important;
-    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.08);
 }
 
-.timeline-grid-table thead th:first-child {
+/* TIMELINE POLISH — integrated sticky real date row
+   Best UI approach: the real table header stays inside the table and sticks
+   within the timeline scroll container. No cloned/floating header. */
+.timeline-scroll-wrapper {
+    max-height: calc(100vh - var(--timeline-grid-maxheight-offset, 190px));
+    overflow: auto;
+    overscroll-behavior: contain;
+    background: #ffffff;
+}
+
+.timeline-scroll-wrapper .timeline-grid-table > thead {
+    display: table-header-group !important;
+}
+
+.timeline-scroll-wrapper .timeline-grid-table > thead th {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: #212529 !important;
+    color: #fff !important;
+    border-color: #444 !important;
+    vertical-align: middle !important;
+    box-shadow: inset 0 -1px 0 rgba(255,255,255,0.18), 0 2px 0 rgba(0,0,0,0.08);
+}
+
+.timeline-scroll-wrapper .timeline-grid-table > thead th:first-child {
     left: 0;
-    z-index: 60;
+    z-index: 70;
 }
 
 .timeline-sticky-h-scroll {
-    top: 4.8rem;
+
+    top: var(--timeline-sticky-scrollbar-offset, 74px);
 }
 
 body.timeline-toolbar-compact .timeline-freeze-toolbar {
@@ -2337,6 +2359,17 @@ body.mobile-engineer-mode.mobile-desktop-grid-skipped .timeline-desktop-shell {
 }
 
 @media (max-width: 768px) {
+    .timeline-scroll-wrapper {
+        max-height: none;
+        overflow-x: auto;
+        overflow-y: visible;
+    }
+
+    .timeline-scroll-wrapper .timeline-grid-table > thead th {
+        position: static;
+    }
+
+
     .mobile-modal-subtitle {
         display: block;
         font-size: 0.72rem;
@@ -3127,8 +3160,13 @@ body.pwa-reconnected .mobile-offline-readiness {
         backdrop-filter: none;
     }
 
-    .timeline-grid-table thead th {
-        top: 0;
+    .timeline-scroll-wrapper .timeline-grid-table > thead {
+        display: table-header-group !important;
+    }
+
+    .timeline-scroll-wrapper {
+        border-top-left-radius: 0.75rem !important;
+        border-top-right-radius: 0.75rem !important;
     }
 
     .timeline-sticky-h-scroll {
@@ -3139,6 +3177,10 @@ body.pwa-reconnected .mobile-offline-readiness {
 @media print {
     .timeline-freeze-toolbar,
     .timeline-sticky-h-scroll { position: static !important; display: none !important; }
+
+    .timeline-scroll-wrapper .timeline-grid-table > thead {
+        display: table-header-group !important;
+    }
 
     .timeline-scroll-wrapper {
         overflow: visible !important;
@@ -3606,6 +3648,7 @@ function shouldUseEngineerMobileView(){
             setTimeout(() => {
                 loadGrid();
                 syncTimelineHorizontalScroll();
+            setTimeout(initTimelineStickyHeaderPolish, 0);
             }, 0);
         }else{
             setTimeout(syncTimelineHorizontalScroll, 0);
@@ -9590,14 +9633,27 @@ function initTimelineStickyHeaderPolish(){
     window.__timelineStickyHeaderPolishBound = true;
 
     const updateStickyState = () => {
+        const toolbar = document.getElementById('timeline-freeze-toolbar');
+        const topScrollbar = document.getElementById('timeline-sticky-h-scroll');
+        const toolbarHeight = toolbar ? Math.ceil(toolbar.getBoundingClientRect().height) : 0;
+        const scrollbarHeight = topScrollbar ? Math.ceil(topScrollbar.getBoundingClientRect().height) : 0;
+
+        document.documentElement.style.setProperty('--timeline-sticky-scrollbar-offset', `${toolbarHeight}px`);
+        document.documentElement.style.setProperty('--timeline-sticky-offset', `${toolbarHeight + scrollbarHeight}px`);
+        document.documentElement.style.setProperty('--timeline-grid-maxheight-offset', `${toolbarHeight + scrollbarHeight + 96}px`);
         document.body.classList.toggle('timeline-toolbar-compact', window.scrollY > 8);
     };
 
     updateStickyState();
     window.addEventListener('scroll', updateStickyState, { passive: true });
+    window.addEventListener('resize', updateStickyState, { passive: true });
+    setTimeout(updateStickyState, 250);
+    setTimeout(updateStickyState, 900);
 }
 
 document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
+
+
 
 </script>
 
