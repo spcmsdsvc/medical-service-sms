@@ -96,6 +96,21 @@
     </div>
 
     {% if dashboard_scheduler_only %}
+    <!-- SCHEDULER PHASE 5: FINAL STABILIZATION NOTE -->
+    <div class="scheduler-final-note mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-final-note" data-dashboard-title="Scheduler Status Note">
+        <div class="d-flex align-items-start gap-3">
+            <div class="scheduler-final-note-icon">
+                <i class="fa-solid fa-circle-check"></i>
+            </div>
+            <div>
+                <h6 class="mb-1 fw-bold text-dark">Scheduler Dashboard Ready</h6>
+                <p class="small text-muted mb-0">
+                    Action-first view is active. Use Operations for quick totals, Dispatch Queue for immediate follow-ups, and Coordination Tools for assignments or rescheduling.
+                </p>
+            </div>
+        </div>
+    </div>
+
     <!-- SCHEDULER PHASE 4: ACTION-FIRST COLLAPSIBLE VIEW -->
     <div class="scheduler-core-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-core" data-dashboard-title="Scheduler Core">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -261,7 +276,7 @@
                             <h6 class="mb-0 fw-bold text-primary">
                                 <i class="fa-solid fa-pen-to-square me-2"></i>Quick Action Panel
                             </h6>
-                            <div class="xsmall text-muted mt-1" id="scheduler-selected-action-label">Select a schedule from the action queue.</div>
+                            <div class="xsmall text-muted mt-1" id="scheduler-selected-action-label">Select a schedule from the action queue to assign or reschedule.</div>
                         </div>
                         <div class="card-body">
                             <input type="hidden" id="scheduler-selected-shift-id">
@@ -608,10 +623,17 @@
             <i class="fa-solid fa-hospital"></i>
             <span>Clients</span>
         </a>
+        {% if dashboard_scheduler_only %}
+        <a href="/reports_page" class="dashboard-mobile-action-card">
+            <i class="fa-solid fa-folder-open"></i>
+            <span>TSR</span>
+        </a>
+        {% else %}
         <a href="/activity_page" class="dashboard-mobile-action-card">
             <i class="fa-solid fa-clock-rotate-left"></i>
             <span>Logs</span>
         </a>
+        {% endif %}
         {% endif %}
     </div>
 
@@ -699,6 +721,7 @@
     </div>
     {% endif %}
 
+    {% if not dashboard_scheduler_only %}
     <!-- OPEN TECHNICAL TASKS REGISTRY (COMPANY-WIDE) -->
     <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 dashboard-sortable-section" data-dashboard-section="open-technical-tasks" data-dashboard-title="Open Technical Tasks">
         
@@ -773,6 +796,7 @@
         </div>
 
     </div>
+    {% endif %}
 
     {% if dashboard_admin_view and not dashboard_scheduler_only %}
     <!-- ADMIN-ONLY: RECENT SYSTEM ACTIVITY (Auto-refresh enabled) -->
@@ -1336,7 +1360,7 @@
         ].slice(0, 14);
 
         if (!rows.length) {
-            renderTeamEmpty('scheduler-dispatch-list', 'No scheduler coordination items right now.');
+            renderTeamEmpty('scheduler-dispatch-list', 'No scheduler coordination items right now. Dispatch queue is clear.');
             return;
         }
 
@@ -1366,103 +1390,6 @@
         } catch (schedulerError) {
             console.warn('Scheduler dashboard summary could not be loaded:', schedulerError);
             renderTeamEmpty('scheduler-dispatch-list', 'Scheduler dashboard summary could not be loaded.');
-        }
-    }
-
-    function schedulerDispatchRiskBadgeClass(level) {
-        if (level === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
-        if (level === 'watch') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
-        return 'badge bg-success rounded-pill px-3 py-2';
-    }
-
-    function schedulerPriorityBadgeClass(row) {
-        const reason = String(row.priority_reason || row.status || '').toLowerCase();
-        if (reason.includes('overdue')) return 'bg-danger';
-        if (reason.includes('no engineer')) return 'bg-dark';
-        if (reason.includes('waiting for p.o')) return 'bg-warning text-dark';
-        if (reason.includes('waiting for parts')) return 'bg-info text-dark';
-        if (reason.includes('missing tsr')) return 'bg-warning text-dark';
-        return schedulerStatusBadgeClass(row.status);
-    }
-
-    function renderSchedulerPriorityQueue(data) {
-        const container = document.getElementById('scheduler-priority-queue');
-        if (!container) return;
-
-        const rows = Array.isArray(data.priority_queue) ? data.priority_queue : [];
-        if (!rows.length) {
-            renderTeamEmpty('scheduler-priority-queue', 'No urgent dispatch intelligence items right now.');
-            return;
-        }
-
-        container.innerHTML = rows.map(row => `
-            <div class="dashboard-team-row scheduler-priority-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.product || '')}${row.serial ? ' • ' + escapeHtml(row.serial) : ''}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 'Unassigned')}</div>
-                </div>
-                <span class="badge ${schedulerPriorityBadgeClass(row)}">${escapeHtml(row.priority_reason || row.status || 'Priority')}</span>
-            </div>
-        `).join('');
-    }
-
-    function schedulerWorkloadBadgeClass(level) {
-        if (level === 'high') return 'bg-danger';
-        if (level === 'watch') return 'bg-warning text-dark';
-        return 'bg-success';
-    }
-
-    function renderSchedulerEngineerWorkload(rows) {
-        const container = document.getElementById('scheduler-engineer-workload');
-        if (!container) return;
-
-        if (!Array.isArray(rows) || !rows.length) {
-            renderTeamEmpty('scheduler-engineer-workload', 'No active engineer workload found.');
-            return;
-        }
-
-        container.innerHTML = rows.slice(0, 12).map(row => `
-            <div class="dashboard-team-row scheduler-workload-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.name || 'Engineer')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.branch || 'No branch')} • ${escapeHtml(row.next_7_days || 0)} in next 7 days</div>
-                </div>
-                <div class="dashboard-team-row-badges">
-                    <span class="badge bg-primary">${escapeHtml(row.open_tasks || 0)} open</span>
-                    <span class="badge bg-danger">${escapeHtml(row.overdue || 0)} overdue</span>
-                    <span class="badge bg-warning text-dark">${escapeHtml(row.waiting_items || 0)} waiting</span>
-                    <span class="badge ${schedulerWorkloadBadgeClass(row.load_level)}">${escapeHtml(row.load_level || 'normal')}</span>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    async function loadSchedulerDispatchIntelligence() {
-        if (!dashboardSchedulerOnly) return;
-
-        try {
-            const data = await fetchJsonOrThrow('/get_scheduler_dispatch_intelligence');
-            const counts = data.counts || {};
-            setTextIfPresent('scheduler-overdue-count', counts.overdue_schedules || 0);
-            setTextIfPresent('scheduler-upcoming-count', counts.upcoming_7_days || 0);
-            setTextIfPresent('scheduler-high-load-count', (counts.high_load_engineers || 0) + (counts.watch_load_engineers || 0));
-            setTextIfPresent('scheduler-blocker-count', (counts.pending_tsr_followups || 0) + (counts.waiting_po_parts || 0));
-
-            const riskBadge = document.getElementById('scheduler-dispatch-risk-badge');
-            if (riskBadge) {
-                const risk = data.risk || {};
-                riskBadge.className = schedulerDispatchRiskBadgeClass(risk.level);
-                riskBadge.innerText = risk.label || 'Stable';
-            }
-
-            renderSchedulerPriorityQueue(data || {});
-            renderSchedulerEngineerWorkload(data.engineer_workload || []);
-        } catch (dispatchError) {
-            console.warn('Scheduler dispatch intelligence could not be loaded:', dispatchError);
-            renderTeamEmpty('scheduler-priority-queue', 'Scheduler dispatch intelligence could not be loaded.');
-            renderTeamEmpty('scheduler-engineer-workload', 'Engineer workload intelligence could not be loaded.');
         }
     }
 
@@ -1522,7 +1449,7 @@
         setTextIfPresent('scheduler-availability-count', `${rows.length} engineer${rows.length === 1 ? '' : 's'}`);
 
         if (!rows.length) {
-            container.innerHTML = `<div class="dashboard-team-empty">No engineer availability found for this branch.</div>`;
+            container.innerHTML = `<div class="dashboard-team-empty">No engineer availability found for this branch. Try All Branches or refresh tools.</div>`;
             return;
         }
 
@@ -1549,7 +1476,7 @@
 
         const rows = getSchedulerFilteredActionRows();
         if (!rows.length) {
-            renderTeamEmpty('scheduler-action-queue', 'No actionable scheduler rows for this branch.');
+            renderTeamEmpty('scheduler-action-queue', 'No schedules need quick action for this branch.');
             return;
         }
 
@@ -1621,7 +1548,7 @@
         renderSchedulerAvailabilityStrip();
         renderSchedulerAssignableEngineers();
         renderSchedulerActionQueue();
-        setTextIfPresent('scheduler-selected-action-label', 'Select a schedule from the action queue.');
+        setTextIfPresent('scheduler-selected-action-label', 'Select a schedule from the action queue to assign or reschedule.');
     }
 
     function findSchedulerActionShift(shiftId) {
@@ -1727,7 +1654,7 @@
         await submitSchedulerAction('/scheduler_quick_assign_shift', {
             shift_id: shiftId,
             engineer_ids: engineerIds
-        }, 'Assignment updated.');
+        }, 'Assignment updated. Dashboard refreshed.');
     }
 
     async function submitSchedulerQuickReschedule() {
@@ -1751,7 +1678,7 @@
             date: dateInput.value,
             start_time: startInput.value,
             end_time: endInput && endInput.value ? endInput.value : ''
-        }, 'Schedule rescheduled.');
+        }, 'Schedule rescheduled. Dashboard refreshed.');
     }
 
     async function submitSchedulerAction(url, payload, successMessage) {
@@ -2297,9 +2224,11 @@
     }
 
     function filterAndRender() {
-        const activeFilter = document.getElementById('filter-status').value;
+        const statusFilter = document.getElementById('filter-status');
         const targetBody = document.getElementById('open-tasks-body');
+        if (!statusFilter || !targetBody) return;
 
+        const activeFilter = statusFilter.value;
         let processedList = groupTasksByRange(allOpenTasksRaw);
         let filteredTasks = processedList.filter(t => !activeFilter || t.status === activeFilter);
 
@@ -2369,6 +2298,30 @@
     }
     .xsmall { font-size: 0.65rem; }
     .italic { font-style: italic; }
+
+    .scheduler-final-note {
+        background: linear-gradient(135deg, #f0fdf4, #ffffff);
+        border: 1px solid #bbf7d0;
+        border-radius: 1rem;
+        padding: 0.9rem 1rem;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+    }
+
+    .scheduler-final-note-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        color: #198754;
+        background: #dcfce7;
+        flex: 0 0 auto;
+    }
+
+    .scheduler-final-note h6 {
+        line-height: 1.15;
+    }
+
 
     .developer-dashboard-switcher {
         background: linear-gradient(135deg, #fff1f2, #ffffff);
@@ -2783,31 +2736,7 @@
     .scheduler-dispatch-row {
         background: #ffffff;
     }
-
-    .scheduler-intelligence-panel {
-        background: linear-gradient(135deg, #fff7ed, #ffffff);
-        border: 1px solid #fed7aa;
-        border-radius: 1.25rem;
-        padding: 1rem;
-    }
-
-    .scheduler-intelligence-card {
-        min-height: 128px;
-        border-left: 4px solid rgba(220, 53, 69, 0.32) !important;
-    }
-
-    .scheduler-priority-list,
-    .scheduler-workload-list {
-        max-height: 430px;
-        overflow-y: auto;
-    }
-
-    .scheduler-priority-row,
-    .scheduler-workload-row {
-        background: #ffffff;
-    }
-
-    .scheduler-coordination-panel {
+.scheduler-coordination-panel {
         background: linear-gradient(135deg, #ecfdf5, #ffffff);
         border: 1px solid #bbf7d0;
         border-radius: 1.25rem;
@@ -3188,7 +3117,8 @@
             padding: 0.85rem;
         }
 
-        .developer-dashboard-switcher {
+        .developer-dashboard-switcher,
+        .scheduler-final-note {
             padding: 0.85rem;
         }
 
