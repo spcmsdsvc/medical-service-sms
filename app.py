@@ -321,6 +321,7 @@ PERFORMANCE_LOG_PATHS = {
     '/get_open_tasks',
     '/get_engineer_dashboard_summary',
     '/get_hybrid_dashboard_smart_monitoring',
+    '/get_scheduler_dashboard_summary',
     '/get_recent_activity',
     '/get_activity_logs',
     '/get_activity_filter_options',
@@ -1053,11 +1054,13 @@ def get_dashboard_capabilities(user=None):
     target = user or current_user
     engineer_profile = getattr(target, 'engineer_profile', None) if target else None
     admin_authorized = is_admin_authorized(target)
-    scheduler_only = is_scheduler_user(target) and not bool(engineer_profile)
+    scheduler_user = is_scheduler_user(target)
+    scheduler_only = scheduler_user and not bool(engineer_profile)
 
     return {
         'has_engineer_profile': bool(engineer_profile),
         'admin_view': admin_authorized,
+        'scheduler_view': scheduler_user,
         'scheduler_only': scheduler_only,
         'hybrid_view': bool(engineer_profile) and admin_authorized,
         'display_role': get_display_role(target) if target else 'User'
@@ -3475,6 +3478,7 @@ def dashboard_page():
         logged_in_user_role=getattr(current_user, 'role', ''),
         dashboard_has_engineer_profile=dashboard_caps['has_engineer_profile'],
         dashboard_admin_view=dashboard_caps['admin_view'],
+        dashboard_scheduler_view=dashboard_caps.get('scheduler_view', False),
         dashboard_scheduler_only=dashboard_caps['scheduler_only'],
         dashboard_hybrid_view=dashboard_caps['hybrid_view'],
         dashboard_display_role=dashboard_caps['display_role']
@@ -4846,6 +4850,148 @@ def get_hybrid_dashboard_smart_monitoring():
         'tsr_aging_rows': [alert_shift_row(shift, 'tsr_aging') for shift in sorted(tsr_aging_shifts, key=lambda s: s.start_time or datetime.min)[:10]],
         'workload_alerts': workload_alerts[:10],
         'repeat_service_alerts': repeat_service_alerts[:10]
+    })
+
+
+def scheduler_dashboard_shift_row(shift):
+    """Serialize one schedule row for Scheduler Dashboard Phase 1."""
+    engineers = get_shift_engineer_records(shift)
+    return {
+        'id': shift.id,
+        'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
+        'time_start': shift.start_time.strftime('%I:%M %p') if shift.start_time else '',
+        'time_end': shift.end_time.strftime('%I:%M %p') if shift.end_time else '',
+        'client': shift.client.name if shift.client else 'N/A',
+        'product': shift.product.name if shift.product else '',
+        'serial': shift.product.serial_number if shift.product else (shift.product_id or ''),
+        'task': shift.title or '',
+        'status': shift.status or '',
+        'engineers': ', '.join([engineer.name for engineer in engineers]) or 'Unassigned',
+        'branches': ', '.join(sorted({engineer.branch or 'Unassigned' for engineer in engineers})) or 'Unassigned',
+        'has_tsr': shift_has_tsr_file(shift)
+    }
+
+
+@app.route('/get_scheduler_dashboard_summary')
+@login_required
+def get_scheduler_dashboard_summary():
+    """Scheduler Dashboard Phase 1 backend summary.
+
+    This endpoint is intentionally scheduler-focused:
+    - Hanna/Diary get schedule coordination counters and compact queues.
+    - Engineer workflow and hybrid admin-engineer logic stay untouched.
+    - Uses existing Shift/ActivityLog data only; no database schema change.
+    """
+    if not is_scheduler_user():
+        return denied('Scheduler dashboard summary is only available to scheduler accounts.')
+
+    ensure_shift_file_original_filename_column()
+
+    today = get_manila_today()
+    tomorrow = today + timedelta(days=1)
+    week_end = today + timedelta(days=7)
+    lookback_start = today - timedelta(days=30)
+    lookahead_end = today + timedelta(days=60)
+    start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
+
+    invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
+    waiting_statuses = {'Waiting for P.O', 'Waiting for Parts'}
+
+    service_shifts = (
+        Shift.query
+        .options(
+            joinedload(Shift.client),
+            joinedload(Shift.product),
+            selectinload(Shift.files)
+        )
+        .filter(Shift.client_id.isnot(None))
+        .filter(Shift.start_time >= start_dt)
+        .filter(Shift.start_time < end_dt)
+        .order_by(Shift.start_time.asc())
+        .all()
+    )
+
+    open_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') not in invalid_dashboard_categories
+    ]
+
+    today_shifts = [
+        shift for shift in service_shifts
+        if shift.start_time and shift.start_time.date() == today
+    ]
+
+    tomorrow_shifts = [
+        shift for shift in service_shifts
+        if shift.start_time and shift.start_time.date() == tomorrow
+    ]
+
+    upcoming_week_shifts = [
+        shift for shift in service_shifts
+        if shift.start_time and today <= shift.start_time.date() <= week_end
+    ]
+
+    overdue_open_shifts = [
+        shift for shift in open_shifts
+        if shift.start_time and shift.start_time.date() < today
+    ]
+
+    waiting_shifts = [
+        shift for shift in open_shifts
+        if (shift.status or '') in waiting_statuses
+    ]
+
+    pending_tsr_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') == 'Completed' and not shift_has_tsr_file(shift)
+    ]
+
+    unassigned_shifts = [
+        shift for shift in open_shifts
+        if not get_shift_engineer_records(shift)
+    ]
+
+    recent_schedule_logs = (
+        activity_scope_query(ActivityLog.query)
+        .filter(or_(
+            ActivityLog.action.ilike('%schedule%'),
+            ActivityLog.action.ilike('%calendar%'),
+            ActivityLog.action.ilike('%technical record%'),
+            ActivityLog.action.ilike('%wiped technical%'),
+            ActivityLog.action.ilike('%bulk-purged%')
+        ))
+        .order_by(ActivityLog.timestamp.desc())
+        .limit(8)
+        .all()
+    )
+
+    def limited_rows(rows, limit=8):
+        return [scheduler_dashboard_shift_row(shift) for shift in rows[:limit]]
+
+    return jsonify({
+        'status': 'success',
+        'generated_at': get_manila_time().isoformat(),
+        'scheduler': {
+            'username': getattr(current_user, 'username', ''),
+            'display_role': get_display_role(current_user)
+        },
+        'counts': {
+            'today_schedules': len(today_shifts),
+            'tomorrow_schedules': len(tomorrow_shifts),
+            'upcoming_week': len(upcoming_week_shifts),
+            'open_tasks': len(open_shifts),
+            'overdue_open': len(overdue_open_shifts),
+            'waiting_items': len(waiting_shifts),
+            'pending_tsr': len(pending_tsr_shifts),
+            'unassigned': len(unassigned_shifts)
+        },
+        'today_rows': limited_rows(today_shifts, 10),
+        'tomorrow_rows': limited_rows(tomorrow_shifts, 8),
+        'overdue_rows': limited_rows(sorted(overdue_open_shifts, key=lambda s: s.start_time or datetime.min), 10),
+        'waiting_rows': limited_rows(waiting_shifts, 8),
+        'pending_tsr_rows': limited_rows(pending_tsr_shifts, 8),
+        'unassigned_rows': limited_rows(unassigned_shifts, 8),
+        'recent_schedule_changes': [activity_log_to_dict(log) for log in recent_schedule_logs]
     })
 
 
