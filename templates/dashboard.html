@@ -327,7 +327,7 @@
                     <i class="fa-solid fa-briefcase me-2 text-dark"></i>
                     Manager Executive Dashboard
                 </h5>
-                <p class="text-muted small mb-0">Clean executive view: status, urgent work, and management drill-downs only</p>
+                <p class="text-muted small mb-0">Clean executive view: status, TSR intelligence, and management drill-downs only</p>
             </div>
             <div class="d-flex gap-2 flex-wrap">
                 <span id="manager-risk-badge" class="badge bg-success rounded-pill px-3 py-2">Stable</span>
@@ -365,21 +365,6 @@
                 </div>
             </div>
 
-            <div class="card border-0 shadow-sm rounded-4 overflow-hidden manager-priority-card">
-                <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div>
-                        <h6 class="mb-0 fw-bold text-danger">
-                            <i class="fa-solid fa-triangle-exclamation me-2"></i>Executive Priority Alerts
-                        </h6>
-                        <div class="xsmall text-muted mt-1">Only the items most likely to need management decision or follow-up</div>
-                    </div>
-                    <a href="/timeline" class="btn btn-sm btn-outline-danger fw-bold">
-                        <i class="fa-solid fa-calendar-days me-1"></i>Open Timeline
-                    </a>
-                </div>
-                <div id="manager-priority-alert-list" class="dashboard-team-list manager-priority-list"></div>
-            </div>
-
             <!-- MANAGER PHASE M2: CLEAN TSR INTELLIGENCE -->
             <div class="manager-tsr-intelligence-panel mt-3 mb-3">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -387,7 +372,7 @@
                         <h6 class="mb-0 fw-bold text-dark">
                             <i class="fa-solid fa-file-circle-check me-2 text-warning"></i>TSR Intelligence
                         </h6>
-                        <div class="xsmall text-muted mt-1">Collapsed by default. Shows only key TSR risks and repeat-service signals.</div>
+                        <div class="xsmall text-muted mt-1">Collapsed by default. Shows only top TSR risks and repeat-service signals.</div>
                     </div>
                     <div class="d-flex gap-2 flex-wrap">
                         <span id="manager-tsr-risk-badge" class="badge bg-success rounded-pill px-3 py-2">TSR Stable</span>
@@ -1607,27 +1592,6 @@
         `).join('');
     }
 
-    function renderManagerPriorityAlerts(rows) {
-        const container = document.getElementById('manager-priority-alert-list');
-        if (!container) return;
-
-        if (!Array.isArray(rows) || !rows.length) {
-            renderTeamEmpty('manager-priority-alert-list', 'No executive priority alerts right now.');
-            return;
-        }
-
-        container.innerHTML = rows.slice(0, 18).map(row => `
-            <div class="dashboard-team-row manager-priority-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 'No engineer assigned')} • ${escapeHtml(row.branches || '')}</div>
-                </div>
-                <span class="badge ${managerPriorityBadgeClass(row.severity)}">${escapeHtml(row.reason || 'Needs review')}</span>
-            </div>
-        `).join('');
-    }
-
     function managerTsrRiskBadgeClass(level) {
         const value = String(level || '').toLowerCase();
         if (value === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
@@ -1745,12 +1709,10 @@
 
             renderManagerBranchOverview(data.branch_summary || []);
             renderManagerEngineerUtilization(data.engineer_utilization || []);
-            renderManagerPriorityAlerts(data.priority_alerts || []);
         } catch (managerError) {
             console.warn('Manager dashboard summary could not be loaded:', managerError);
             renderTeamEmpty('manager-branch-list', 'Manager branch overview could not be loaded.');
             renderTeamEmpty('manager-engineer-utilization-list', 'Manager utilization snapshot could not be loaded.');
-            renderTeamEmpty('manager-priority-alert-list', 'Manager priority alerts could not be loaded.');
         }
     }
 
@@ -2744,10 +2706,6 @@
         background: linear-gradient(135deg, #ffffff, #fff5f5) !important;
     }
 
-    .manager-priority-card {
-        border-left: 4px solid rgba(220, 53, 69, 0.28) !important;
-    }
-
     .manager-drilldown-panel {
         background: #ffffff;
         border: 1px solid #e2e8f0;
@@ -2861,15 +2819,13 @@
     }
 
     .manager-branch-list,
-    .manager-utilization-list,
-    .manager-priority-list {
+    .manager-utilization-list {
         max-height: 410px;
         overflow-y: auto;
     }
 
     .manager-branch-row,
-    .manager-utilization-row,
-    .manager-priority-row {
+    .manager-utilization-row {
         background: #ffffff;
     }
 
