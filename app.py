@@ -323,6 +323,7 @@ PERFORMANCE_LOG_PATHS = {
     '/get_hybrid_dashboard_smart_monitoring',
     '/get_scheduler_dashboard_summary',
     '/get_scheduler_dispatch_intelligence',
+    '/set_developer_dashboard_view',
     '/get_recent_activity',
     '/get_activity_logs',
     '/get_activity_filter_options',
@@ -964,6 +965,44 @@ def _username_of(user=None):
     return (getattr(target, 'username', '') or '').strip().lower()
 
 
+# --- DEVELOPER DASHBOARD VIEW OVERRIDE ---
+# Jonamar-only developer tool for safely previewing different dashboard layouts.
+# This is session-based and does not change the user's real account role.
+DEVELOPER_DASHBOARD_VIEW_SESSION_KEY = 'developer_dashboard_view'
+DEVELOPER_DASHBOARD_VIEW_OPTIONS = {'default', 'engineer', 'scheduler', 'manager'}
+
+
+def is_developer_user(user=None):
+    target = user or current_user
+    return bool(
+        target and
+        getattr(target, 'is_authenticated', False) and
+        _username_of(target) == DEVELOPER_SUPERADMIN_USERNAME
+    )
+
+
+def get_developer_dashboard_view(user=None):
+    """Return Jonamar's current temporary dashboard preview mode.
+
+    Valid values:
+    - default: real hybrid developer dashboard
+    - engineer: engineer-only dashboard preview
+    - scheduler: scheduler-only dashboard preview
+    - manager: manager/admin-only dashboard preview
+    """
+    if not is_developer_user(user):
+        return 'default'
+
+    selected_view = (session.get(DEVELOPER_DASHBOARD_VIEW_SESSION_KEY) or 'default').strip().lower()
+    if selected_view not in DEVELOPER_DASHBOARD_VIEW_OPTIONS:
+        selected_view = 'default'
+    return selected_view
+
+
+def developer_dashboard_view_is(view_name, user=None):
+    return get_developer_dashboard_view(user) == (view_name or '').strip().lower()
+
+
 def get_display_role(user):
     """Business-facing role label for Settings/UI without weakening backend authority."""
     username = _username_of(user)
@@ -1051,20 +1090,63 @@ def has_engineer_profile(user=None):
 
 
 def get_dashboard_capabilities(user=None):
-    """Return capability flags used by dashboard templates and scripts."""
+    """Return capability flags used by dashboard templates and scripts.
+
+    Jonamar can temporarily preview engineer, scheduler, or manager dashboard
+    layouts without changing his real backend role or account permissions.
+    """
     target = user or current_user
     engineer_profile = getattr(target, 'engineer_profile', None) if target else None
     admin_authorized = is_admin_authorized(target)
     scheduler_user = is_scheduler_user(target)
-    scheduler_only = scheduler_user and not bool(engineer_profile)
+    developer_view = get_developer_dashboard_view(target)
 
+    if developer_view == 'engineer':
+        return {
+            'has_engineer_profile': bool(engineer_profile),
+            'admin_view': False,
+            'scheduler_view': False,
+            'scheduler_only': False,
+            'hybrid_view': False,
+            'display_role': 'Engineer',
+            'developer_view': developer_view,
+            'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
+        }
+
+    if developer_view == 'scheduler':
+        return {
+            'has_engineer_profile': False,
+            'admin_view': True,
+            'scheduler_view': True,
+            'scheduler_only': True,
+            'hybrid_view': False,
+            'display_role': 'Scheduler',
+            'developer_view': developer_view,
+            'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
+        }
+
+    if developer_view == 'manager':
+        return {
+            'has_engineer_profile': False,
+            'admin_view': True,
+            'scheduler_view': False,
+            'scheduler_only': False,
+            'hybrid_view': False,
+            'display_role': 'Manager',
+            'developer_view': developer_view,
+            'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
+        }
+
+    scheduler_only = scheduler_user and not bool(engineer_profile)
     return {
         'has_engineer_profile': bool(engineer_profile),
         'admin_view': admin_authorized,
         'scheduler_view': scheduler_user,
         'scheduler_only': scheduler_only,
         'hybrid_view': bool(engineer_profile) and admin_authorized,
-        'display_role': get_display_role(target) if target else 'User'
+        'display_role': get_display_role(target) if target else 'User',
+        'developer_view': developer_view,
+        'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
     }
 
 
@@ -3466,6 +3548,41 @@ self.addEventListener('message', event => {
 
 # --- PAGE NAVIGATION ROUTES ---
 
+@app.route('/set_developer_dashboard_view', methods=['POST'])
+@login_required
+def set_developer_dashboard_view():
+    """Jonamar-only dashboard preview switcher.
+
+    This only changes the current browser session's dashboard rendering flags.
+    It does not change User.role, permissions, or any database record.
+    """
+    if not is_developer_user():
+        return denied('Only the developer account can change dashboard preview mode.')
+
+    payload = request.get_json(silent=True) or {}
+    requested_view = (
+        clean_str(payload.get('view')) or
+        clean_str(request.form.get('view')) or
+        'default'
+    ).strip().lower()
+
+    if requested_view not in DEVELOPER_DASHBOARD_VIEW_OPTIONS:
+        return jsonify({
+            'status': 'error',
+            'message': 'Invalid dashboard view selected.',
+            'allowed_views': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
+        }), 400
+
+    session[DEVELOPER_DASHBOARD_VIEW_SESSION_KEY] = requested_view
+    session.modified = True
+
+    return jsonify({
+        'status': 'success',
+        'view': requested_view,
+        'message': f'Dashboard preview switched to {requested_view}.'
+    })
+
+
 @app.route('/')
 @login_required
 def dashboard_page():
@@ -3482,7 +3599,10 @@ def dashboard_page():
         dashboard_scheduler_view=dashboard_caps.get('scheduler_view', False),
         dashboard_scheduler_only=dashboard_caps['scheduler_only'],
         dashboard_hybrid_view=dashboard_caps['hybrid_view'],
-        dashboard_display_role=dashboard_caps['display_role']
+        dashboard_display_role=dashboard_caps['display_role'],
+        dashboard_developer_mode=is_developer_user(),
+        dashboard_developer_view=dashboard_caps.get('developer_view', 'default'),
+        dashboard_developer_view_options=dashboard_caps.get('developer_view_options', [])
     )
 
 
@@ -4883,7 +5003,7 @@ def get_scheduler_dashboard_summary():
     - Engineer workflow and hybrid admin-engineer logic stay untouched.
     - Uses existing Shift/ActivityLog data only; no database schema change.
     """
-    if not is_scheduler_user():
+    if not (is_scheduler_user() or developer_dashboard_view_is('scheduler')):
         return denied('Scheduler dashboard summary is only available to scheduler accounts.')
 
     ensure_shift_file_original_filename_column()
@@ -5011,7 +5131,7 @@ def get_scheduler_dispatch_intelligence():
 
     This reuses existing schedule/TSR tables only. No schema change.
     """
-    if not is_scheduler_user():
+    if not (is_scheduler_user() or developer_dashboard_view_is('scheduler')):
         return denied('Scheduler dispatch intelligence is only available to scheduler accounts.')
 
     ensure_shift_file_original_filename_column()

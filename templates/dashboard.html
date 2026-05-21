@@ -44,6 +44,38 @@
         </div>
     </div>
 
+    {% if dashboard_developer_mode %}
+    <!-- DEVELOPER-ONLY DASHBOARD VIEW SWITCHER -->
+    <div class="developer-dashboard-switcher mb-4 dashboard-sortable-section" data-dashboard-section="developer-view-switcher" data-dashboard-title="Developer View Switcher">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <h6 class="mb-1 fw-bold text-dark">
+                    <i class="fa-solid fa-code-branch me-2 text-danger"></i>
+                    Developer Dashboard Preview
+                </h6>
+                <p class="text-muted small mb-0">
+                    Jonamar-only session preview. This changes your dashboard layout only, not your real account role or permissions.
+                </p>
+            </div>
+            <div class="developer-view-buttons" role="group" aria-label="Developer dashboard view selector">
+                <button type="button" class="btn btn-sm developer-view-btn {% if dashboard_developer_view == 'default' %}btn-danger{% else %}btn-outline-danger{% endif %}" data-dev-view="default" onclick="setDeveloperDashboardView('default')">
+                    <i class="fa-solid fa-layer-group me-1"></i>My Default
+                </button>
+                <button type="button" class="btn btn-sm developer-view-btn {% if dashboard_developer_view == 'engineer' %}btn-primary{% else %}btn-outline-primary{% endif %}" data-dev-view="engineer" onclick="setDeveloperDashboardView('engineer')">
+                    <i class="fa-solid fa-user-gear me-1"></i>Engineer
+                </button>
+                <button type="button" class="btn btn-sm developer-view-btn {% if dashboard_developer_view == 'scheduler' %}btn-success{% else %}btn-outline-success{% endif %}" data-dev-view="scheduler" onclick="setDeveloperDashboardView('scheduler')">
+                    <i class="fa-solid fa-calendar-check me-1"></i>Scheduler
+                </button>
+                <button type="button" class="btn btn-sm developer-view-btn {% if dashboard_developer_view == 'manager' %}btn-dark{% else %}btn-outline-dark{% endif %}" data-dev-view="manager" onclick="setDeveloperDashboardView('manager')">
+                    <i class="fa-solid fa-briefcase me-1"></i>Manager
+                </button>
+            </div>
+        </div>
+        <div id="developer-view-status" class="developer-view-status small mt-2 d-none"></div>
+    </div>
+    {% endif %}
+
     <!-- DASHBOARD PERSONALIZATION CONTROLS -->
     <div class="dashboard-personalize-toolbar mb-4">
         <div>
@@ -758,6 +790,8 @@
     const dashboardAdminView = "{{ 'true' if dashboard_admin_view|default(false) else 'false' }}" === "true";
     const dashboardSchedulerOnly = "{{ 'true' if dashboard_scheduler_only|default(false) else 'false' }}" === "true";
     const dashboardHybridView = "{{ 'true' if dashboard_hybrid_view|default(false) else 'false' }}" === "true";
+    const dashboardDeveloperMode = "{{ 'true' if dashboard_developer_mode|default(false) else 'false' }}" === "true";
+    const dashboardDeveloperView = "{{ dashboard_developer_view|default('default') }}";
 
     // v5.4.5: Real-time Manila Ticker and Date
     function updateClock() {
@@ -794,6 +828,61 @@
      * MASTER DATA LOADER:
      * Dispatches concurrent fetch requests to sync dashboard metrics from server.
      */
+    function setDeveloperViewStatus(message, state = 'info') {
+        const status = document.getElementById('developer-view-status');
+        if (!status) return;
+
+        const classMap = {
+            success: 'text-success',
+            error: 'text-danger',
+            info: 'text-muted'
+        };
+
+        status.className = `developer-view-status small mt-2 ${classMap[state] || classMap.info}`;
+        status.innerHTML = message;
+        status.classList.remove('d-none');
+    }
+
+    async function setDeveloperDashboardView(viewName) {
+        if (!dashboardDeveloperMode) return;
+
+        const allowedViews = ['default', 'engineer', 'scheduler', 'manager'];
+        const requestedView = String(viewName || 'default').toLowerCase();
+
+        if (!allowedViews.includes(requestedView)) {
+            setDeveloperViewStatus('<i class="fa-solid fa-triangle-exclamation me-1"></i>Invalid dashboard view.', 'error');
+            return;
+        }
+
+        const buttons = document.querySelectorAll('.developer-view-btn');
+        buttons.forEach(button => button.disabled = true);
+        setDeveloperViewStatus('<i class="fa-solid fa-circle-notch fa-spin me-1"></i>Switching dashboard preview...', 'info');
+
+        try {
+            const response = await fetch('/set_developer_dashboard_view', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': typeof getCSRFToken === 'function' ? getCSRFToken() : ''
+                },
+                body: JSON.stringify({ view: requestedView })
+            });
+
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.status !== 'success') {
+                throw new Error(data.message || `Dashboard view switch failed (${response.status}).`);
+            }
+
+            setDeveloperViewStatus('<i class="fa-solid fa-circle-check me-1"></i>Dashboard preview updated. Reloading...', 'success');
+            setTimeout(() => location.reload(), 350);
+        } catch (error) {
+            console.warn('Developer dashboard view switch failed:', error);
+            buttons.forEach(button => button.disabled = false);
+            setDeveloperViewStatus(`<i class="fa-solid fa-triangle-exclamation me-1"></i>${escapeHtml(error.message || 'Unable to switch dashboard view.')}`, 'error');
+        }
+    }
+
     function setDashboardLoadState(state, message = '') {
         let alertBox = document.getElementById('dashboard-load-alert');
         const container = document.querySelector('.container.py-4') || document.querySelector('.container-fluid') || document.querySelector('.container');
@@ -1920,6 +2009,31 @@
     .xsmall { font-size: 0.65rem; }
     .italic { font-style: italic; }
 
+    .developer-dashboard-switcher {
+        background: linear-gradient(135deg, #fff1f2, #ffffff);
+        border: 1px solid #fecdd3;
+        border-radius: 1rem;
+        padding: 0.95rem 1rem;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+    }
+
+    .developer-view-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: flex-end;
+    }
+
+    .developer-view-btn {
+        font-weight: 900;
+        min-height: 2.25rem;
+    }
+
+    .developer-view-status {
+        font-weight: 800;
+    }
+
+
     .dashboard-personalize-toolbar {
         display: flex;
         align-items: center;
@@ -2582,6 +2696,20 @@
             align-items: flex-start;
             flex-direction: column;
             padding: 0.85rem;
+        }
+
+        .developer-dashboard-switcher {
+            padding: 0.85rem;
+        }
+
+        .developer-view-buttons {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .developer-view-btn {
+            width: 100%;
         }
 
         .dashboard-personalize-toolbar .d-flex {
