@@ -132,6 +132,10 @@
             <i class="fa-solid fa-hospital"></i>
             <span>Clients</span>
         </a>
+        <a href="/products_page" class="dashboard-mobile-action-card">
+            <i class="fa-solid fa-boxes-stacked"></i>
+            <span>Products</span>
+        </a>
         {% else %}
         <a href="/timeline" class="dashboard-mobile-action-card dashboard-mobile-action-primary">
             <i class="fa-solid fa-calendar-days"></i>
@@ -151,6 +155,47 @@
         </a>
         {% endif %}
     </div>
+
+    {% if current_user.role == 'engineer' %}
+    <!-- ENGINEER WORKFLOW SHORTCUTS -->
+    <div class="dashboard-engineer-workflow mb-4">
+        <a href="/timeline" class="dashboard-workflow-card dashboard-workflow-primary">
+            <div class="dashboard-workflow-icon"><i class="fa-solid fa-calendar-days"></i></div>
+            <div>
+                <strong>Timeline</strong>
+                <span>Open assigned schedule</span>
+            </div>
+        </a>
+        <a href="/offline-tsr" class="dashboard-workflow-card">
+            <div class="dashboard-workflow-icon"><i class="fa-solid fa-file-circle-plus"></i></div>
+            <div>
+                <strong>Create TSR</strong>
+                <span>Prepare service report</span>
+            </div>
+        </a>
+        <a href="/reports_page" class="dashboard-workflow-card">
+            <div class="dashboard-workflow-icon"><i class="fa-solid fa-folder-open"></i></div>
+            <div>
+                <strong>TSR Archive</strong>
+                <span>Find submitted TSRs</span>
+            </div>
+        </a>
+        <a href="/clients_page" class="dashboard-workflow-card">
+            <div class="dashboard-workflow-icon"><i class="fa-solid fa-hospital"></i></div>
+            <div>
+                <strong>Clients</strong>
+                <span>Check facility details</span>
+            </div>
+        </a>
+        <a href="/products_page" class="dashboard-workflow-card">
+            <div class="dashboard-workflow-icon"><i class="fa-solid fa-boxes-stacked"></i></div>
+            <div>
+                <strong>Products</strong>
+                <span>Check equipment record</span>
+            </div>
+        </a>
+    </div>
+    {% endif %}
 
     <!-- v5.2 ROLE-BASED WIDGET SECTION -->
     {% if current_user.role == 'engineer' %}
@@ -918,6 +963,66 @@
         min-height: 154px;
     }
 
+    .dashboard-engineer-workflow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0.85rem;
+    }
+
+    .dashboard-workflow-card {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        min-height: 82px;
+        padding: 1rem;
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        color: #334155;
+        text-decoration: none;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+        transition: 0.22s ease;
+    }
+
+    .dashboard-workflow-card:hover {
+        transform: translateY(-3px);
+        color: #0d6efd;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+    }
+
+    .dashboard-workflow-primary {
+        border-color: rgba(13, 110, 253, 0.35);
+        background: linear-gradient(135deg, #ffffff, #eef5ff);
+    }
+
+    .dashboard-workflow-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        display: grid;
+        place-items: center;
+        background: #e7f1ff;
+        color: #0d6efd;
+        flex: 0 0 auto;
+        font-size: 1rem;
+    }
+
+    .dashboard-workflow-card strong {
+        display: block;
+        color: #0f172a;
+        font-size: 0.9rem;
+        line-height: 1.15;
+    }
+
+    .dashboard-workflow-card span {
+        display: block;
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 700;
+        line-height: 1.2;
+        margin-top: 0.2rem;
+    }
+
     /* RECENT ACTIVITY UX UPGRADE */
     .live-dot {
         width: 8px;
@@ -1117,6 +1222,12 @@
         font-weight: 800;
     }
 
+    @media (max-width: 1100px) and (min-width: 769px) {
+        .dashboard-engineer-workflow {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
     @media (max-width: 768px) {
         .container.py-4 { padding: 0.9rem !important; }
 
@@ -1153,10 +1264,19 @@
 
         .row.mb-4.g-3 .card h2 { font-size: 1.75rem; }
 
+        .dashboard-engineer-workflow {
+            display: none;
+        }
+
         .dashboard-mobile-quick-actions {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 0.55rem;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 0.45rem;
+        }
+
+        .dashboard-mobile-action-card {
+            padding: 0.75rem 0.35rem;
+            font-size: 0.68rem;
         }
 
         .card-header {
