@@ -436,6 +436,77 @@
                 </div>
             </div>
 
+            <!-- MANAGER PHASE M4: CLEAN BILLING & SERVICE VISIBILITY -->
+            <div class="manager-billing-visibility-panel mt-3 mb-3">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h6 class="mb-0 fw-bold text-dark">
+                            <i class="fa-solid fa-receipt me-2 text-success"></i>Billing & Service Visibility
+                        </h6>
+                        <div class="xsmall text-muted mt-1">Collapsed by default. Tracks billed signals, non-billed exposure, and P.O follow-ups.</div>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <span id="manager-billing-risk-badge" class="badge bg-success rounded-pill px-3 py-2">Billing Stable</span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-billing-visibility-body', this)">
+                            <i class="fa-solid fa-chevron-down me-1"></i>Show
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="loadManagerBillingVisibility()">
+                            <i class="fa-solid fa-rotate me-1"></i>Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <div id="manager-billing-visibility-body" class="dashboard-collapsible-body d-none mt-3">
+                    <div class="manager-billing-signal-strip mb-3">
+                        <div class="manager-billing-signal-card">
+                            <span>Billed Signal Rate</span>
+                            <strong id="manager-billing-rate">0%</strong>
+                        </div>
+                        <div class="manager-billing-signal-card">
+                            <span>Non-billed Exposure</span>
+                            <strong id="manager-non-billed-count">0</strong>
+                        </div>
+                        <div class="manager-billing-signal-card">
+                            <span>Waiting P.O</span>
+                            <strong id="manager-waiting-po-count">0</strong>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-lg-4">
+                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                                <div class="card-header bg-white border-bottom py-3">
+                                    <h6 class="mb-0 fw-bold text-danger">
+                                        <i class="fa-solid fa-file-invoice me-2"></i>P.O Follow-ups
+                                    </h6>
+                                </div>
+                                <div id="manager-billing-po-list" class="dashboard-team-list manager-billing-list"></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                                <div class="card-header bg-white border-bottom py-3">
+                                    <h6 class="mb-0 fw-bold text-warning">
+                                        <i class="fa-solid fa-shield-heart me-2"></i>Warranty / FOC
+                                    </h6>
+                                </div>
+                                <div id="manager-billing-non-billed-list" class="dashboard-team-list manager-billing-list"></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                                <div class="card-header bg-white border-bottom py-3">
+                                    <h6 class="mb-0 fw-bold text-success">
+                                        <i class="fa-solid fa-chart-simple me-2"></i>Service Mix
+                                    </h6>
+                                </div>
+                                <div id="manager-billing-service-mix-list" class="dashboard-team-list manager-billing-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="manager-action-grid my-3">
                 <a href="/timeline" class="manager-action-card manager-action-primary">
                     <i class="fa-solid fa-calendar-days"></i>
@@ -1691,6 +1762,83 @@
         }
     }
 
+    function managerBillingRiskBadgeClass(level) {
+        const value = String(level || '').toLowerCase();
+        if (value === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
+        if (value === 'watch') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
+        return 'badge bg-success rounded-pill px-3 py-2';
+    }
+
+    function renderManagerBillingShiftRows(containerId, rows, emptyMessage) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        if (!Array.isArray(rows) || !rows.length) {
+            renderTeamEmpty(containerId, emptyMessage || 'No billing signals.');
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 5).map(row => `
+            <div class="dashboard-team-row manager-billing-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.product || '')} ${row.serial ? '(' + escapeHtml(row.serial) + ')' : ''}</div>
+                </div>
+                <span class="badge ${managerPriorityBadgeClass(row.severity)}">${escapeHtml(row.signal_label || 'Review')}</span>
+            </div>
+        `).join('');
+    }
+
+    function renderManagerBillingServiceMix(rows) {
+        const container = document.getElementById('manager-billing-service-mix-list');
+        if (!container) return;
+
+        if (!Array.isArray(rows) || !rows.length) {
+            renderTeamEmpty('manager-billing-service-mix-list', 'No service mix data.');
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 5).map(row => `
+            <div class="dashboard-team-row manager-billing-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.label || 'Service')}</div>
+                    <div class="dashboard-team-row-sub">Service category / task mix</div>
+                </div>
+                <span class="badge bg-success">${escapeHtml(row.count || 0)}</span>
+            </div>
+        `).join('');
+    }
+
+    async function loadManagerBillingVisibility() {
+        if (!dashboardManagerView || dashboardSchedulerOnly) return;
+
+        try {
+            const data = await fetchJsonOrThrow('/get_manager_billing_visibility');
+            const counts = data.counts || {};
+            const signals = data.signals || {};
+
+            setTextIfPresent('manager-billing-rate', `${counts.billed_signal_rate ?? 0}%`);
+            setTextIfPresent('manager-non-billed-count', counts.non_billed_exposure || 0);
+            setTextIfPresent('manager-waiting-po-count', counts.waiting_po || 0);
+
+            const riskBadge = document.getElementById('manager-billing-risk-badge');
+            if (riskBadge) {
+                riskBadge.className = managerBillingRiskBadgeClass(data.risk && data.risk.level);
+                riskBadge.innerText = (data.risk && data.risk.label) || 'Billing Stable';
+            }
+
+            renderManagerBillingShiftRows('manager-billing-po-list', signals.waiting_po || [], 'No P.O follow-up signals.');
+            renderManagerBillingShiftRows('manager-billing-non-billed-list', signals.non_billed || [], 'No warranty / FOC exposure signals.');
+            renderManagerBillingServiceMix(signals.service_mix || []);
+        } catch (billingError) {
+            console.warn('Manager billing visibility could not be loaded:', billingError);
+            renderTeamEmpty('manager-billing-po-list', 'Billing P.O follow-ups could not be loaded.');
+            renderTeamEmpty('manager-billing-non-billed-list', 'Non-billed exposure could not be loaded.');
+            renderTeamEmpty('manager-billing-service-mix-list', 'Service mix could not be loaded.');
+        }
+    }
+
     async function loadManagerDashboardSummary() {
         if (!dashboardManagerView || dashboardSchedulerOnly) return;
 
@@ -2174,6 +2322,7 @@
             if (dashboardManagerView && !dashboardSchedulerOnly) {
                 loadManagerDashboardSummary();
                 loadManagerTsrIntelligence();
+                loadManagerBillingVisibility();
             }
 
             if (dashboardAdminView && !dashboardSchedulerOnly && !dashboardManagerView) {
@@ -2758,6 +2907,55 @@
     }
 
     .manager-tsr-row {
+        background: #ffffff;
+    }
+
+
+    .manager-billing-visibility-panel {
+        background: #ffffff;
+        border: 1px solid #bbf7d0;
+        border-radius: 1rem;
+        padding: 0.9rem;
+        border-left: 4px solid rgba(34, 197, 94, 0.35);
+    }
+
+    .manager-billing-signal-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    .manager-billing-signal-card {
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 0.95rem;
+        padding: 0.8rem;
+    }
+
+    .manager-billing-signal-card span {
+        display: block;
+        color: #166534;
+        font-size: 0.68rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .manager-billing-signal-card strong {
+        display: block;
+        color: #0f172a;
+        font-size: 1.3rem;
+        font-weight: 900;
+        line-height: 1.1;
+        margin-top: 0.25rem;
+    }
+
+    .manager-billing-list {
+        max-height: 320px;
+        overflow-y: auto;
+    }
+
+    .manager-billing-row {
         background: #ffffff;
     }
 
@@ -3684,7 +3882,8 @@
         .scheduler-core-dashboard,
         .scheduler-coordination-panel { padding: 0.85rem; }
 
-        .manager-tsr-signal-strip {
+        .manager-tsr-signal-strip,
+        .manager-billing-signal-strip {
             grid-template-columns: 1fr;
             gap: 0.5rem;
         }

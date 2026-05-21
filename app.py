@@ -326,6 +326,7 @@ PERFORMANCE_LOG_PATHS = {
     '/get_scheduler_coordination_tools',
     '/get_manager_dashboard_summary',
     '/get_manager_tsr_intelligence',
+    '/get_manager_billing_visibility',
     '/scheduler_quick_assign_shift',
     '/scheduler_quick_reschedule_shift',
     '/set_developer_dashboard_view',
@@ -6217,6 +6218,205 @@ def get_manager_tsr_intelligence():
             'aged_pending_tsr': aged_pending_tsr_rows,
             'repeat_equipment': repeat_equipment_rows[:5],
             'frequent_issues': frequent_issue_rows[:5]
+        }
+    })
+
+
+
+
+
+# --- MANAGER DASHBOARD PHASE M4: CLEAN BILLING & SERVICE VISIBILITY ---
+
+def manager_billing_shift_row(shift, signal_label='', severity='info'):
+    """Compact billing/service visibility row for manager dashboard."""
+    row = manager_shift_priority_row(shift, signal_label, severity)
+    row['signal_label'] = signal_label
+    row['severity'] = severity
+    row['billing_type'] = manager_infer_shift_billing_type(shift)
+    return row
+
+
+def manager_infer_shift_billing_type(shift):
+    """Infer billing visibility from existing schedule status/title/attached TSR filename.
+
+    This intentionally avoids schema changes. It uses current operational fields:
+    - Waiting for P.O => PO / billable follow-up signal
+    - Warranty / FOC text => non-billed exposure
+    - TSR_B / billed filename convention => billed
+    """
+    status_text = (getattr(shift, 'status', '') or '').strip().lower()
+    title_text = (getattr(shift, 'title', '') or '').strip().lower()
+    combined = f"{status_text} {title_text}"
+
+    file_names = []
+    for file_rec in getattr(shift, 'files', []) or []:
+        file_names.append((get_shift_file_display_name(file_rec) or '').lower())
+        file_names.append((getattr(file_rec, 'filename', '') or '').lower())
+    file_text = " ".join(file_names)
+    combined_all = f"{combined} {file_text}"
+
+    if 'waiting for p.o' in status_text or 'waiting for po' in status_text or ' purchase order' in combined_all or ' po ' in f" {combined_all} ":
+        return 'po_followup'
+    if 'warranty' in combined_all:
+        return 'warranty'
+    if 'foc' in combined_all or 'free of charge' in combined_all:
+        return 'foc'
+    if 'ncs_tsr_b' in combined_all or '_b_shimadzu' in combined_all or 'billable' in combined_all or 'billed' in combined_all:
+        return 'billed'
+    return 'standard'
+
+
+@app.route('/get_manager_billing_visibility')
+@login_required
+def get_manager_billing_visibility():
+    """Manager Dashboard Phase M4 backend: clean billing and service visibility.
+
+    Intentionally compact:
+    - billed vs non-billed signals
+    - warranty / FOC exposure
+    - waiting P.O jobs
+    - service category mix via schedule title/status
+    - top 5 rows only per signal
+
+    No database schema changes.
+    """
+    if not can_view_manager_dashboard():
+        return denied('Manager billing visibility is only available to manager-authorized accounts.')
+
+    ensure_shift_file_original_filename_column()
+
+    today = get_manila_today()
+    lookback_start = today - timedelta(days=180)
+    lookahead_end = today + timedelta(days=60)
+    start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
+
+    service_query = (
+        Shift.query
+        .options(
+            joinedload(Shift.client),
+            joinedload(Shift.product),
+            selectinload(Shift.files)
+        )
+        .filter(Shift.client_id.isnot(None))
+        .filter(Shift.start_time >= start_dt)
+        .filter(Shift.start_time < end_dt)
+        .order_by(Shift.start_time.desc())
+    )
+    service_query = analytics_scope_query(service_query)
+    service_shifts = list({shift.id: shift for shift in service_query.limit(2000).all()}.values())
+
+    open_status_exclusions = ['Completed', 'Training'] + LEAVE_CATEGORIES
+    open_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') not in open_status_exclusions
+    ]
+
+    completed_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') == 'Completed'
+    ]
+
+    billing_rows = []
+    warranty_rows = []
+    foc_rows = []
+    po_waiting_rows = []
+    standard_rows = []
+
+    billing_counts = {
+        'billed_signals': 0,
+        'standard_services': 0,
+        'warranty': 0,
+        'foc': 0,
+        'waiting_po': 0
+    }
+
+    service_mix = {}
+    status_mix = {}
+
+    for shift in service_shifts:
+        billing_type = manager_infer_shift_billing_type(shift)
+
+        if billing_type == 'billed':
+            billing_counts['billed_signals'] += 1
+            billing_rows.append(manager_billing_shift_row(shift, 'Billed TSR / billable signal', 'success'))
+        elif billing_type == 'warranty':
+            billing_counts['warranty'] += 1
+            warranty_rows.append(manager_billing_shift_row(shift, 'Warranty service exposure', 'warning'))
+        elif billing_type == 'foc':
+            billing_counts['foc'] += 1
+            foc_rows.append(manager_billing_shift_row(shift, 'FOC / non-billed exposure', 'warning'))
+        elif billing_type == 'po_followup':
+            billing_counts['waiting_po'] += 1
+            po_waiting_rows.append(manager_billing_shift_row(shift, 'Waiting for P.O follow-up', 'danger'))
+        else:
+            billing_counts['standard_services'] += 1
+            standard_rows.append(manager_billing_shift_row(shift, 'Standard service', 'info'))
+
+        task_label = clean_str(getattr(shift, 'title', None)) or 'Unspecified Service'
+        service_mix[task_label] = service_mix.get(task_label, 0) + 1
+
+        status_label = clean_str(getattr(shift, 'status', None)) or 'No Status'
+        status_mix[status_label] = status_mix.get(status_label, 0) + 1
+
+    non_billed_exposure = billing_counts['warranty'] + billing_counts['foc']
+    total_visibility_rows = len(service_shifts)
+    billed_signal_rate = round((billing_counts['billed_signals'] / total_visibility_rows) * 100, 1) if total_visibility_rows else 0.0
+    non_billed_rate = round((non_billed_exposure / total_visibility_rows) * 100, 1) if total_visibility_rows else 0.0
+
+    # Keep service category mix compact and useful.
+    service_mix_rows = [
+        {'label': label, 'count': count}
+        for label, count in sorted(service_mix.items(), key=lambda item: (-item[1], item[0]))[:5]
+    ]
+    status_mix_rows = [
+        {'label': label, 'count': count}
+        for label, count in sorted(status_mix.items(), key=lambda item: (-item[1], item[0]))[:5]
+    ]
+
+    risk_score = (
+        billing_counts['waiting_po'] * 3 +
+        non_billed_exposure * 2 +
+        len([shift for shift in open_shifts if manager_infer_shift_billing_type(shift) == 'po_followup'])
+    )
+
+    if risk_score >= 15:
+        risk_level = 'critical'
+        risk_label = 'Billing attention needed'
+    elif risk_score >= 6:
+        risk_level = 'watch'
+        risk_label = 'Billing watchlist'
+    else:
+        risk_level = 'stable'
+        risk_label = 'Billing stable'
+
+    return jsonify({
+        'status': 'success',
+        'phase': 'manager-phase-m4-clean-billing-service-visibility',
+        'generated_at': get_manila_time().isoformat(),
+        'risk': {
+            'score': risk_score,
+            'level': risk_level,
+            'label': risk_label
+        },
+        'counts': {
+            'service_rows_reviewed': total_visibility_rows,
+            'open_services': len(open_shifts),
+            'completed_services': len(completed_shifts),
+            'billed_signals': billing_counts['billed_signals'],
+            'standard_services': billing_counts['standard_services'],
+            'non_billed_exposure': non_billed_exposure,
+            'warranty': billing_counts['warranty'],
+            'foc': billing_counts['foc'],
+            'waiting_po': billing_counts['waiting_po'],
+            'billed_signal_rate': billed_signal_rate,
+            'non_billed_rate': non_billed_rate
+        },
+        'signals': {
+            'waiting_po': sorted(po_waiting_rows, key=lambda row: row.get('date') or '')[:5],
+            'non_billed': (warranty_rows + foc_rows)[:5],
+            'billed': billing_rows[:5],
+            'service_mix': service_mix_rows,
+            'status_mix': status_mix_rows
         }
     })
 
