@@ -319,7 +319,7 @@
     {% endif %}
 
     {% if dashboard_manager_view and not dashboard_scheduler_only %}
-    <!-- MANAGER PHASE M1: EXECUTIVE DASHBOARD FOUNDATION -->
+    <!-- MANAGER PHASE M1.5: EXECUTIVE CLEANUP -->
     <div class="manager-executive-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="manager-executive" data-dashboard-title="Manager Executive Dashboard">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
@@ -327,7 +327,7 @@
                     <i class="fa-solid fa-briefcase me-2 text-dark"></i>
                     Manager Executive Dashboard
                 </h5>
-                <p class="text-muted small mb-0">Company-wide operations snapshot, branch workload, engineer utilization, and priority alerts</p>
+                <p class="text-muted small mb-0">Clean executive view: status, urgent work, and management drill-downs only</p>
             </div>
             <div class="d-flex gap-2 flex-wrap">
                 <span id="manager-risk-badge" class="badge bg-success rounded-pill px-3 py-2">Stable</span>
@@ -341,38 +341,46 @@
         </div>
 
         <div id="manager-executive-body" class="dashboard-collapsible-body">
-            <div class="row g-3 mb-3">
-                <div class="col-md-3 col-sm-6">
+            <div class="row g-3 mb-3 manager-kpi-row">
+                <div class="col-md-4 col-sm-6">
                     <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card">
                         <div class="dashboard-team-label">Open Schedules</div>
                         <div class="dashboard-team-value text-primary" id="manager-open-count">0</div>
                         <div class="dashboard-team-hint">Active service work</div>
                     </div>
                 </div>
-                <div class="col-md-3 col-sm-6">
-                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card">
+                <div class="col-md-4 col-sm-6">
+                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card manager-kpi-urgent">
                         <div class="dashboard-team-label">Overdue</div>
                         <div class="dashboard-team-value text-danger" id="manager-overdue-count">0</div>
-                        <div class="dashboard-team-hint">Past due open schedules</div>
+                        <div class="dashboard-team-hint">Needs management attention</div>
                     </div>
                 </div>
-                <div class="col-md-3 col-sm-6">
+                <div class="col-md-4 col-sm-6">
                     <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card">
                         <div class="dashboard-team-label">Pending TSR</div>
                         <div class="dashboard-team-value text-warning" id="manager-pending-tsr-count">0</div>
                         <div class="dashboard-team-hint">Completed, no TSR</div>
                     </div>
                 </div>
-                <div class="col-md-3 col-sm-6">
-                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card">
-                        <div class="dashboard-team-label">Completed This Month</div>
-                        <div class="dashboard-team-value text-success" id="manager-completed-month-count">0</div>
-                        <div class="dashboard-team-hint">Monthly completed service</div>
-                    </div>
-                </div>
             </div>
 
-            <div class="manager-action-grid mb-3">
+            <div class="card border-0 shadow-sm rounded-4 overflow-hidden manager-priority-card">
+                <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h6 class="mb-0 fw-bold text-danger">
+                            <i class="fa-solid fa-triangle-exclamation me-2"></i>Executive Priority Alerts
+                        </h6>
+                        <div class="xsmall text-muted mt-1">Only the items most likely to need management decision or follow-up</div>
+                    </div>
+                    <a href="/timeline" class="btn btn-sm btn-outline-danger fw-bold">
+                        <i class="fa-solid fa-calendar-days me-1"></i>Open Timeline
+                    </a>
+                </div>
+                <div id="manager-priority-alert-list" class="dashboard-team-list manager-priority-list"></div>
+            </div>
+
+            <div class="manager-action-grid my-3">
                 <a href="/timeline" class="manager-action-card manager-action-primary">
                     <i class="fa-solid fa-calendar-days"></i>
                     <strong>Timeline</strong>
@@ -395,47 +403,49 @@
                 </a>
             </div>
 
-            <div class="row g-3">
-                <div class="col-lg-5">
-                    <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                        <div class="card-header bg-white border-bottom py-3">
-                            <h6 class="mb-0 fw-bold text-dark">
-                                <i class="fa-solid fa-map-location-dot me-2 text-primary"></i>Branch Overview
-                            </h6>
-                            <div class="xsmall text-muted mt-1">Open work, overdue items, waiting blockers, and pending TSR per branch</div>
-                        </div>
-                        <div id="manager-branch-list" class="dashboard-team-list manager-branch-list"></div>
-                    </div>
-                </div>
-                <div class="col-lg-7">
-                    <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                        <div class="card-header bg-white border-bottom py-3">
-                            <h6 class="mb-0 fw-bold text-dark">
-                                <i class="fa-solid fa-user-gear me-2 text-success"></i>Engineer Utilization Snapshot
-                            </h6>
-                            <div class="xsmall text-muted mt-1">Workload and completion signal for management review</div>
-                        </div>
-                        <div id="manager-engineer-utilization-list" class="dashboard-team-list manager-utilization-list"></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card border-0 shadow-sm rounded-4 mt-3 overflow-hidden">
-                <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="manager-drilldown-panel">
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
                     <div>
-                        <h6 class="mb-0 fw-bold text-danger">
-                            <i class="fa-solid fa-triangle-exclamation me-2"></i>Executive Priority Alerts
+                        <h6 class="mb-0 fw-bold text-dark">
+                            <i class="fa-solid fa-layer-group me-2 text-secondary"></i>Management Drill-downs
                         </h6>
-                        <div class="xsmall text-muted mt-1">Highest-priority overdue, missing TSR, waiting, and unassigned items</div>
+                        <div class="xsmall text-muted mt-1">Collapsed by default to keep the manager view clean</div>
                     </div>
-                    <a href="/timeline" class="btn btn-sm btn-outline-danger fw-bold">
-                        <i class="fa-solid fa-calendar-days me-1"></i>Open Timeline
-                    </a>
+                    <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-drilldown-body', this)">
+                        <i class="fa-solid fa-chevron-down me-1"></i>Show
+                    </button>
                 </div>
-                <div id="manager-priority-alert-list" class="dashboard-team-list manager-priority-list"></div>
+
+                <div id="manager-drilldown-body" class="dashboard-collapsible-body d-none">
+                    <div class="row g-3">
+                        <div class="col-lg-5">
+                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                                <div class="card-header bg-white border-bottom py-3">
+                                    <h6 class="mb-0 fw-bold text-dark">
+                                        <i class="fa-solid fa-map-location-dot me-2 text-primary"></i>Branch Overview
+                                    </h6>
+                                    <div class="xsmall text-muted mt-1">Branch workload only when deeper review is needed</div>
+                                </div>
+                                <div id="manager-branch-list" class="dashboard-team-list manager-branch-list"></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-7">
+                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                                <div class="card-header bg-white border-bottom py-3">
+                                    <h6 class="mb-0 fw-bold text-dark">
+                                        <i class="fa-solid fa-user-gear me-2 text-success"></i>Engineer Utilization
+                                    </h6>
+                                    <div class="xsmall text-muted mt-1">Workload signal for management review</div>
+                                </div>
+                                <div id="manager-engineer-utilization-list" class="dashboard-team-list manager-utilization-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
+
     {% endif %}
 
     <!-- ANALYTICS MATRIX -->
@@ -476,7 +486,7 @@
     </div>
     {% endif %}
 
-    {% if dashboard_admin_view %}
+    {% if dashboard_admin_view and not dashboard_manager_view %}
     <div class="row mb-4 g-3 dashboard-sortable-section" data-dashboard-section="admin-counters" data-dashboard-title="Admin Counters">
         
         <!-- PERSONNEL COUNTER -->
@@ -509,7 +519,7 @@
     </div>
     {% endif %}
 
-    {% if dashboard_admin_view and not dashboard_scheduler_only %}
+    {% if dashboard_admin_view and not dashboard_scheduler_only and not dashboard_manager_view %}
     <!-- HYBRID PHASE 3: SMART NEEDS ATTENTION PANEL -->
     <div class="dashboard-needs-attention mb-4 dashboard-sortable-section" data-dashboard-section="needs-attention" data-dashboard-title="Needs Attention">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -567,7 +577,7 @@
 
     {% endif %}
 
-    {% if dashboard_admin_view and not dashboard_scheduler_only %}
+    {% if dashboard_admin_view and not dashboard_scheduler_only and not dashboard_manager_view %}
     <!-- HYBRID PHASE 2: TEAM INTELLIGENCE (COLLAPSIBLE) -->
     <div class="dashboard-team-intelligence mb-4 dashboard-sortable-section" data-dashboard-section="team-intelligence" data-dashboard-title="Team Intelligence">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -646,7 +656,7 @@
     </div>
     {% endif %}
 
-    {% if dashboard_admin_view and not dashboard_scheduler_only %}
+    {% if dashboard_admin_view and not dashboard_scheduler_only and not dashboard_manager_view %}
     <!-- HYBRID PHASE 4: QUICK ADMIN ACTIONS (COLLAPSIBLE) -->
     <div class="dashboard-quick-admin mb-4 dashboard-sortable-section" data-dashboard-section="quick-admin" data-dashboard-title="Quick Admin Actions">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -841,7 +851,7 @@
     </div>
     {% endif %}
 
-    {% if not dashboard_scheduler_only %}
+    {% if not dashboard_scheduler_only and not dashboard_manager_view %}
     <!-- OPEN TECHNICAL TASKS REGISTRY (COMPANY-WIDE) -->
     <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 dashboard-sortable-section" data-dashboard-section="open-technical-tasks" data-dashboard-title="Open Technical Tasks">
         
@@ -918,7 +928,7 @@
     </div>
     {% endif %}
 
-    {% if dashboard_admin_view and not dashboard_scheduler_only %}
+    {% if dashboard_admin_view and not dashboard_scheduler_only and not dashboard_manager_view %}
     <!-- ADMIN-ONLY: RECENT SYSTEM ACTIVITY (Auto-refresh enabled) -->
     <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-info dashboard-sortable-section" data-dashboard-section="recent-activity" data-dashboard-title="Recent Activity">
         <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
@@ -1142,7 +1152,7 @@
                 <div class="dashboard-team-row-badges">
                     <span class="badge bg-primary">${escapeHtml(row.open_tasks || 0)} open</span>
                     <span class="badge bg-danger">${escapeHtml(row.overdue || 0)} overdue</span>
-                    <span class="badge bg-warning text-dark">${escapeHtml(row.waiting_items || 0)} waiting</span>
+                    ${Number(row.waiting_items || 0) ? `<span class="badge bg-warning text-dark">${escapeHtml(row.waiting_items)} waiting</span>` : ''}
                 </div>
             </div>
         `).join('');
@@ -1494,9 +1504,8 @@
                 </div>
                 <div class="dashboard-team-row-badges">
                     <span class="badge bg-primary">${escapeHtml(row.open_tasks || 0)} open</span>
-                    <span class="badge bg-danger">${escapeHtml(row.overdue || 0)} overdue</span>
-                    <span class="badge bg-warning text-dark">${escapeHtml(row.pending_tsr || 0)} TSR</span>
-                    <span class="badge bg-info text-dark">${escapeHtml(row.waiting_items || 0)} waiting</span>
+                    ${Number(row.overdue || 0) ? `<span class="badge bg-danger">${escapeHtml(row.overdue)} overdue</span>` : ''}
+                    ${Number(row.pending_tsr || 0) ? `<span class="badge bg-warning text-dark">${escapeHtml(row.pending_tsr)} TSR</span>` : ''}
                 </div>
             </div>
         `).join('');
@@ -1515,7 +1524,7 @@
             <div class="dashboard-team-row manager-utilization-row">
                 <div>
                     <div class="dashboard-team-row-title">${escapeHtml(row.name || 'Engineer')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.branch || 'No branch')} • ${escapeHtml(row.completed_this_month || 0)} completed this month</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.branch || 'No branch')}</div>
                 </div>
                 <div class="dashboard-team-row-badges">
                     <span class="badge ${managerUtilizationBadgeClass(row.utilization_level)}">${escapeHtml(row.utilization_level || 'normal')}</span>
@@ -1557,7 +1566,6 @@
             setTextIfPresent('manager-open-count', counts.open_schedules || 0);
             setTextIfPresent('manager-overdue-count', counts.overdue_schedules || 0);
             setTextIfPresent('manager-pending-tsr-count', counts.pending_tsr || 0);
-            setTextIfPresent('manager-completed-month-count', counts.completed_this_month || 0);
 
             const riskBadge = document.getElementById('manager-risk-badge');
             if (riskBadge) {
@@ -2035,7 +2043,7 @@
                 loadManagerDashboardSummary();
             }
 
-            if (dashboardAdminView && !dashboardSchedulerOnly) {
+            if (dashboardAdminView && !dashboardSchedulerOnly && !dashboardManagerView) {
                 loadSmartMonitoring();
                 loadTeamIntelligence();
                 fetchActivityLog();
@@ -2043,7 +2051,7 @@
                 if (!window.__dashboardActivityTimerStarted) {
                     window.__dashboardActivityTimerStarted = true;
                     setInterval(() => {
-                        if (!document.hidden && !dashboardSchedulerOnly) fetchActivityLog();
+                        if (!document.hidden && !dashboardSchedulerOnly && !dashboardManagerView) fetchActivityLog();
                     }, 5000);
                 }
             }
@@ -2555,6 +2563,25 @@
     .manager-kpi-card {
         min-height: 128px;
         border-left: 4px solid rgba(15, 23, 42, 0.25) !important;
+    }
+
+    .manager-kpi-row {
+        max-width: 980px;
+    }
+
+    .manager-kpi-urgent {
+        background: linear-gradient(135deg, #ffffff, #fff5f5) !important;
+    }
+
+    .manager-priority-card {
+        border-left: 4px solid rgba(220, 53, 69, 0.28) !important;
+    }
+
+    .manager-drilldown-panel {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        padding: 0.9rem;
     }
 
     .manager-action-grid {
