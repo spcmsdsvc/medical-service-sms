@@ -323,6 +323,9 @@ PERFORMANCE_LOG_PATHS = {
     '/get_hybrid_dashboard_smart_monitoring',
     '/get_scheduler_dashboard_summary',
     '/get_scheduler_dispatch_intelligence',
+    '/get_scheduler_coordination_tools',
+    '/scheduler_quick_assign_shift',
+    '/scheduler_quick_reschedule_shift',
     '/set_developer_dashboard_view',
     '/get_recent_activity',
     '/get_activity_logs',
@@ -5320,6 +5323,373 @@ def get_scheduler_dispatch_intelligence():
         'priority_queue': (overdue_rows[:6] + unassigned_rows[:6] + waiting_rows[:5] + pending_tsr_rows[:5])[:18]
     })
 
+
+
+
+# --- SCHEDULER DASHBOARD PHASE 3: COORDINATION TOOLS ---
+
+def can_use_scheduler_coordination_tools():
+    """Return True for scheduler users and Jonamar's scheduler preview mode."""
+    return bool(is_scheduler_user() or developer_dashboard_view_is('scheduler'))
+
+
+def scheduler_parse_engineer_id_list(raw_value):
+    """Parse quick-action engineer IDs from JSON/form payloads."""
+    parsed = parse_engineer_ids(raw_value)
+    return [engineer_id for engineer_id in parsed if db.session.get(Engineer, engineer_id)]
+
+
+def scheduler_shift_conflict(engineer_id, start_dt, end_dt, ignore_shift_ids=None):
+    """Return overlapping schedule for a quick scheduler action, ignoring selected linked rows."""
+    if not engineer_id or not start_dt or not end_dt:
+        return None
+
+    ignore_shift_ids = [sid for sid in (ignore_shift_ids or []) if sid]
+    query = (
+        db.session.query(Shift)
+        .join(ShiftEngineer, Shift.id == ShiftEngineer.shift_id)
+        .filter(
+            ShiftEngineer.engineer_id == engineer_id,
+            func.date(Shift.start_time) == start_dt.date(),
+            Shift.start_time < end_dt,
+            Shift.end_time > start_dt
+        )
+    )
+    if ignore_shift_ids:
+        query = query.filter(~Shift.id.in_(ignore_shift_ids))
+
+    return query.order_by(Shift.start_time.asc(), Shift.id.asc()).first()
+
+
+def scheduler_engineer_availability_row(engineer, today, week_end, open_shifts):
+    """Build a scheduler-friendly availability row for one engineer."""
+    engineer_shifts = []
+    for shift in open_shifts:
+        assigned_ids = get_shift_assigned_engineer_ids(shift)
+        if engineer.id in assigned_ids:
+            engineer_shifts.append(shift)
+
+    today_tasks = [shift for shift in engineer_shifts if shift.start_time and shift.start_time.date() == today]
+    next_7_days = [shift for shift in engineer_shifts if shift.start_time and today <= shift.start_time.date() <= week_end]
+    overdue = [shift for shift in engineer_shifts if shift.start_time and shift.start_time.date() < today]
+    waiting = [shift for shift in engineer_shifts if (shift.status or '') in {'Waiting for P.O', 'Waiting for Parts'}]
+
+    if len(today_tasks) >= 3 or len(overdue) >= 2:
+        availability = 'busy'
+        availability_label = 'Busy'
+    elif len(today_tasks) >= 1 or len(next_7_days) >= 4 or waiting:
+        availability = 'watch'
+        availability_label = 'Watch'
+    else:
+        availability = 'available'
+        availability_label = 'Available'
+
+    return {
+        'engineer_id': engineer.id,
+        'name': engineer.name,
+        'initials': engineer.initials or '',
+        'branch': engineer.branch or 'Unassigned',
+        'email': engineer.email or '',
+        'today_tasks': len(today_tasks),
+        'next_7_days': len(next_7_days),
+        'open_tasks': len(engineer_shifts),
+        'overdue': len(overdue),
+        'waiting_items': len(waiting),
+        'availability': availability,
+        'availability_label': availability_label
+    }
+
+
+def scheduler_coordination_shift_row(shift):
+    """Serialize one schedule row for Scheduler Phase 3 without loading attachment files.
+
+    The coordination tools only need schedule/engineer/date metadata. Keeping this
+    serializer file-free avoids attachment-table migration issues from blocking
+    the scheduler quick tools panel.
+    """
+    engineers = get_shift_engineer_records(shift)
+    assigned_ids = [engineer.id for engineer in engineers if engineer]
+
+    return {
+        'id': shift.id,
+        'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
+        'time_start': shift.start_time.strftime('%I:%M %p') if shift.start_time else '',
+        'time_end': shift.end_time.strftime('%I:%M %p') if shift.end_time else '',
+        'client': shift.client.name if shift.client else 'N/A',
+        'product': shift.product.name if shift.product else '',
+        'serial': shift.product.serial_number if shift.product else (shift.product_id or ''),
+        'task': shift.title or '',
+        'status': shift.status or '',
+        'engineers': ', '.join([engineer.name for engineer in engineers]) or 'Unassigned',
+        'branches': ', '.join(sorted({engineer.branch or 'Unassigned' for engineer in engineers})) or 'Unassigned',
+        'engineer_ids': assigned_ids,
+        'has_tsr': False
+    }
+
+
+
+@app.route('/get_scheduler_coordination_tools')
+@login_required
+def get_scheduler_coordination_tools():
+    """Scheduler Dashboard Phase 3 backend: actionable coordination metadata.
+
+    Safe patch:
+    - Keeps this endpoint independent from attachment/file tables.
+    - Returns a clear server-log message if unexpected production data causes an issue.
+    """
+    if not can_use_scheduler_coordination_tools():
+        return denied('Scheduler coordination tools are only available to scheduler accounts.')
+
+    try:
+        today = get_manila_today()
+        week_end = today + timedelta(days=7)
+        lookback_start = today - timedelta(days=30)
+        lookahead_end = today + timedelta(days=30)
+        start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
+
+        invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
+
+        # Do not selectinload Shift.files here. Coordination tools do not need TSR
+        # attachment metadata, and file-table migration should never block the
+        # scheduler quick tools panel.
+        service_shifts = (
+            Shift.query
+            .options(
+                joinedload(Shift.client),
+                joinedload(Shift.product)
+            )
+            .filter(Shift.client_id.isnot(None))
+            .filter(Shift.start_time >= start_dt)
+            .filter(Shift.start_time < end_dt)
+            .order_by(Shift.start_time.asc())
+            .all()
+        )
+
+        open_shifts = [
+            shift for shift in service_shifts
+            if (shift.status or '') not in invalid_dashboard_categories
+        ]
+
+        engineers = Engineer.query.order_by(Engineer.branch.asc(), Engineer.name.asc()).all()
+        availability_rows = [
+            scheduler_engineer_availability_row(engineer, today, week_end, open_shifts)
+            for engineer in engineers
+        ]
+
+        availability_rank = {'available': 0, 'watch': 1, 'busy': 2}
+        availability_rows.sort(
+            key=lambda row: (
+                availability_rank.get(row.get('availability'), 9),
+                row.get('branch') or 'Unassigned',
+                row.get('name') or ''
+            )
+        )
+
+        branch_counts = {}
+        for row in availability_rows:
+            branch = row.get('branch') or 'Unassigned'
+            branch_counts[branch] = branch_counts.get(branch, 0) + 1
+
+        unassigned_rows = []
+        action_rows = []
+
+        for shift in open_shifts[:120]:
+            row = scheduler_coordination_shift_row(shift)
+            assigned_ids = row.get('engineer_ids') or []
+            row['can_quick_assign'] = True
+            row['can_quick_reschedule'] = True
+            row['action_hint'] = 'Assign engineer' if not assigned_ids else 'Reschedule / reassign'
+
+            if not assigned_ids and len(unassigned_rows) < 12:
+                unassigned_rows.append(row)
+
+            if len(action_rows) < 30:
+                action_rows.append(row)
+
+        return jsonify({
+            'status': 'success',
+            'phase': 'scheduler-phase-3-coordination-tools-safe',
+            'generated_at': get_manila_time().isoformat(),
+            'branches': sorted(branch_counts.keys()),
+            'branch_counts': dict(sorted(branch_counts.items())),
+            'availability': availability_rows,
+            'assignable_engineers': [
+                {
+                    'id': row['engineer_id'],
+                    'name': row['name'],
+                    'initials': row['initials'],
+                    'branch': row['branch'],
+                    'availability': row['availability'],
+                    'availability_label': row['availability_label'],
+                    'today_tasks': row['today_tasks'],
+                    'next_7_days': row['next_7_days']
+                }
+                for row in availability_rows
+            ],
+            'unassigned_rows': unassigned_rows,
+            'action_rows': action_rows
+        })
+
+    except Exception as coordination_error:
+        print(f"[SCHEDULER-PHASE3] Coordination tools failed: {coordination_error}", flush=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'Scheduler coordination tools could not be loaded. Please check server logs.',
+            'phase': 'scheduler-phase-3-coordination-tools-safe'
+        }), 500
+
+
+@app.route('/scheduler_quick_assign_shift' , methods=['POST'])
+@login_required
+def scheduler_quick_assign_shift():
+    """Scheduler Phase 3 quick assign/reassign action for one schedule row."""
+    if not can_use_scheduler_coordination_tools():
+        return denied('Only scheduler accounts can quick assign schedules.')
+
+    payload = request.get_json(silent=True) or request.form
+    shift_id = clean_int(payload.get('shift_id'))
+    engineer_ids = scheduler_parse_engineer_id_list(payload.get('engineer_ids') or payload.get('engineers') or payload.get('engineer_id'))
+
+    if not shift_id:
+        return jsonify({'status': 'error', 'message': 'Missing schedule ID.'}), 400
+    if not engineer_ids:
+        return jsonify({'status': 'error', 'message': 'Select at least one engineer.'}), 400
+
+    shift = db.session.get(Shift, shift_id)
+    if not shift:
+        return jsonify({'status': 'error', 'message': 'Schedule was not found.'}), 404
+    if not shift.client_id:
+        return jsonify({'status': 'error', 'message': 'Only service schedules can be quick-assigned.'}), 400
+
+    start_dt = shift.start_time
+    end_dt = shift.end_time
+    if not start_dt or not end_dt:
+        return jsonify({'status': 'error', 'message': 'Schedule date/time is incomplete.'}), 400
+
+    ignore_ids = [shift.id]
+    if shift.group_id:
+        ignore_ids.extend([row.id for row in Shift.query.filter_by(group_id=shift.group_id).all()])
+
+    for engineer_id in engineer_ids:
+        collision = scheduler_shift_conflict(engineer_id, start_dt, end_dt, ignore_shift_ids=ignore_ids)
+        if collision:
+            engineer = db.session.get(Engineer, engineer_id)
+            return build_conflict_response(collision, engineer)
+
+    old_engineer_ids = get_shift_assigned_engineer_ids(shift)
+    delete_shift_engineer_links(shift.id)
+    for engineer_id in engineer_ids:
+        db.session.add(ShiftEngineer(shift_id=shift.id, engineer_id=engineer_id))
+    shift.engineer_id = engineer_ids[0]
+
+    engineer_names = [db.session.get(Engineer, engineer_id).name for engineer_id in engineer_ids if db.session.get(Engineer, engineer_id)]
+    db.session.add(ActivityLog(
+        user=current_user.username.capitalize(),
+        action=f"Quick assigned schedule: {shift.title} on {shift.start_time.strftime('%Y-%m-%d')} to {', '.join(engineer_names) or 'engineer(s)'}"
+    ))
+    db.session.commit()
+
+    send_schedule_event_notification_async(
+        app,
+        shift.id,
+        engineer_ids,
+        'Updated',
+        current_user.username if current_user and current_user.is_authenticated else 'Scheduler',
+        'Scheduler quick-assigned this schedule.'
+    )
+
+    return jsonify({
+        'status': 'success',
+        'message': 'Schedule assignment updated.',
+        'shift_id': shift.id,
+        'old_engineer_ids': old_engineer_ids,
+        'engineer_ids': engineer_ids,
+        'engineers': engineer_names
+    })
+
+
+@app.route('/scheduler_quick_reschedule_shift', methods=['POST'])
+@login_required
+def scheduler_quick_reschedule_shift():
+    """Scheduler Phase 3 quick reschedule action for one schedule row."""
+    if not can_use_scheduler_coordination_tools():
+        return denied('Only scheduler accounts can quick reschedule schedules.')
+
+    payload = request.get_json(silent=True) or request.form
+    shift_id = clean_int(payload.get('shift_id'))
+    new_date = parse_date(payload.get('date') or payload.get('start_date'))
+    new_start_time = clean_str(payload.get('start_time'))
+    new_end_time = clean_str(payload.get('end_time'))
+
+    if not shift_id:
+        return jsonify({'status': 'error', 'message': 'Missing schedule ID.'}), 400
+    if not new_date or not new_start_time:
+        return jsonify({'status': 'error', 'message': 'Select a new date and start time.'}), 400
+
+    shift = db.session.get(Shift, shift_id)
+    if not shift:
+        return jsonify({'status': 'error', 'message': 'Schedule was not found.'}), 404
+    if not shift.client_id:
+        return jsonify({'status': 'error', 'message': 'Only service schedules can be quick-rescheduled.'}), 400
+
+    try:
+        start_time_obj = datetime.strptime(new_start_time, '%H:%M').time()
+        if new_end_time:
+            end_time_obj = datetime.strptime(new_end_time, '%H:%M').time()
+        else:
+            original_duration = (shift.end_time - shift.start_time) if shift.start_time and shift.end_time else timedelta(hours=1)
+            calculated_end = datetime.combine(new_date, start_time_obj) + original_duration
+            end_time_obj = calculated_end.time()
+    except Exception:
+        return jsonify({'status': 'error', 'message': 'Invalid time format.'}), 400
+
+    new_start_dt = datetime.combine(new_date, start_time_obj)
+    new_end_dt = datetime.combine(new_date, end_time_obj)
+    if new_end_dt <= new_start_dt:
+        return jsonify({'status': 'error', 'message': 'End time must be later than start time.'}), 400
+
+    assigned_engineer_ids = get_shift_assigned_engineer_ids(shift)
+    if not assigned_engineer_ids:
+        return jsonify({'status': 'error', 'message': 'Assign an engineer before rescheduling.'}), 400
+
+    ignore_ids = [shift.id]
+    if shift.group_id:
+        ignore_ids.extend([row.id for row in Shift.query.filter_by(group_id=shift.group_id).all()])
+
+    for engineer_id in assigned_engineer_ids:
+        collision = scheduler_shift_conflict(engineer_id, new_start_dt, new_end_dt, ignore_shift_ids=ignore_ids)
+        if collision:
+            engineer = db.session.get(Engineer, engineer_id)
+            return build_conflict_response(collision, engineer)
+
+    old_date_label = shift.start_time.strftime('%Y-%m-%d %H:%M') if shift.start_time else 'old date'
+    shift.start_time = new_start_dt
+    shift.end_time = new_end_dt
+
+    engineer_names = [db.session.get(Engineer, engineer_id).name for engineer_id in assigned_engineer_ids if db.session.get(Engineer, engineer_id)]
+    db.session.add(ActivityLog(
+        user=current_user.username.capitalize(),
+        action=f"Quick rescheduled schedule: {shift.title} from {old_date_label} to {new_start_dt.strftime('%Y-%m-%d %H:%M')} for {', '.join(engineer_names) or 'engineer(s)'}"
+    ))
+    db.session.commit()
+
+    send_schedule_event_notification_async(
+        app,
+        shift.id,
+        assigned_engineer_ids,
+        'Updated',
+        current_user.username if current_user and current_user.is_authenticated else 'Scheduler',
+        'Scheduler quick-rescheduled this schedule.'
+    )
+
+    return jsonify({
+        'status': 'success',
+        'message': 'Schedule rescheduled.',
+        'shift_id': shift.id,
+        'date': new_date.isoformat(),
+        'start_time': new_start_time,
+        'end_time': new_end_dt.strftime('%H:%M')
+    })
 
 
 @app.route('/get_timeline_data')
