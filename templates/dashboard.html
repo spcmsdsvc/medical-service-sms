@@ -380,6 +380,77 @@
                 <div id="manager-priority-alert-list" class="dashboard-team-list manager-priority-list"></div>
             </div>
 
+            <!-- MANAGER PHASE M2: CLEAN TSR INTELLIGENCE -->
+            <div class="manager-tsr-intelligence-panel mt-3 mb-3">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <div>
+                        <h6 class="mb-0 fw-bold text-dark">
+                            <i class="fa-solid fa-file-circle-check me-2 text-warning"></i>TSR Intelligence
+                        </h6>
+                        <div class="xsmall text-muted mt-1">Collapsed by default. Shows only key TSR risks and repeat-service signals.</div>
+                    </div>
+                    <div class="d-flex gap-2 flex-wrap">
+                        <span id="manager-tsr-risk-badge" class="badge bg-success rounded-pill px-3 py-2">TSR Stable</span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-tsr-intelligence-body', this)">
+                            <i class="fa-solid fa-chevron-down me-1"></i>Show
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning fw-bold" onclick="loadManagerTsrIntelligence()">
+                            <i class="fa-solid fa-rotate me-1"></i>Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <div id="manager-tsr-intelligence-body" class="dashboard-collapsible-body d-none mt-3">
+                    <div class="manager-tsr-signal-strip mb-3">
+                        <div class="manager-tsr-signal-card">
+                            <span>TSR Completion</span>
+                            <strong id="manager-tsr-completion-rate">0%</strong>
+                        </div>
+                        <div class="manager-tsr-signal-card">
+                            <span>Pending TSR</span>
+                            <strong id="manager-tsr-pending-count">0</strong>
+                        </div>
+                        <div class="manager-tsr-signal-card">
+                            <span>Repeat Equipment</span>
+                            <strong id="manager-tsr-repeat-count">0</strong>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-lg-4">
+                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                                <div class="card-header bg-white border-bottom py-3">
+                                    <h6 class="mb-0 fw-bold text-warning">
+                                        <i class="fa-solid fa-hourglass-half me-2"></i>Pending TSR Aging
+                                    </h6>
+                                </div>
+                                <div id="manager-tsr-aging-list" class="dashboard-team-list manager-tsr-list"></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                                <div class="card-header bg-white border-bottom py-3">
+                                    <h6 class="mb-0 fw-bold text-primary">
+                                        <i class="fa-solid fa-repeat me-2"></i>Repeat Service
+                                    </h6>
+                                </div>
+                                <div id="manager-tsr-repeat-list" class="dashboard-team-list manager-tsr-list"></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                                <div class="card-header bg-white border-bottom py-3">
+                                    <h6 class="mb-0 fw-bold text-dark">
+                                        <i class="fa-solid fa-comments me-2"></i>Frequent Issues
+                                    </h6>
+                                </div>
+                                <div id="manager-tsr-issues-list" class="dashboard-team-list manager-tsr-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="manager-action-grid my-3">
                 <a href="/timeline" class="manager-action-card manager-action-primary">
                     <i class="fa-solid fa-calendar-days"></i>
@@ -1557,6 +1628,105 @@
         `).join('');
     }
 
+    function managerTsrRiskBadgeClass(level) {
+        const value = String(level || '').toLowerCase();
+        if (value === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
+        if (value === 'watch') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
+        return 'badge bg-success rounded-pill px-3 py-2';
+    }
+
+    function renderManagerTsrAgingRows(rows) {
+        const container = document.getElementById('manager-tsr-aging-list');
+        if (!container) return;
+
+        if (!Array.isArray(rows) || !rows.length) {
+            renderTeamEmpty('manager-tsr-aging-list', 'No aged pending TSR items.');
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 5).map(row => `
+            <div class="dashboard-team-row manager-tsr-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 'No engineer assigned')}</div>
+                </div>
+                <span class="badge ${managerPriorityBadgeClass(row.severity)}">${escapeHtml(row.signal_label || row.reason || 'Missing TSR')}</span>
+            </div>
+        `).join('');
+    }
+
+    function renderManagerTsrRepeatRows(rows) {
+        const container = document.getElementById('manager-tsr-repeat-list');
+        if (!container) return;
+
+        if (!Array.isArray(rows) || !rows.length) {
+            renderTeamEmpty('manager-tsr-repeat-list', 'No repeat-service signals.');
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 5).map(row => `
+            <div class="dashboard-team-row manager-tsr-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.product || 'Equipment')} ${row.serial ? '(' + escapeHtml(row.serial) + ')' : ''}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.tasks || '')}</div>
+                </div>
+                <span class="badge bg-primary">${escapeHtml(row.signal_label || 'Repeat')}</span>
+            </div>
+        `).join('');
+    }
+
+    function renderManagerTsrIssueRows(rows) {
+        const container = document.getElementById('manager-tsr-issues-list');
+        if (!container) return;
+
+        if (!Array.isArray(rows) || !rows.length) {
+            renderTeamEmpty('manager-tsr-issues-list', 'No frequent issue signals.');
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 5).map(row => `
+            <div class="dashboard-team-row manager-tsr-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.issue || 'Service issue')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.clients || 'Multiple / unspecified clients')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.products || '')}</div>
+                </div>
+                <span class="badge bg-dark">${escapeHtml(row.signal_label || 'Frequent')}</span>
+            </div>
+        `).join('');
+    }
+
+    async function loadManagerTsrIntelligence() {
+        if (!dashboardManagerView || dashboardSchedulerOnly) return;
+
+        try {
+            const data = await fetchJsonOrThrow('/get_manager_tsr_intelligence');
+            const counts = data.counts || {};
+            const signals = data.signals || {};
+
+            setTextIfPresent('manager-tsr-completion-rate', `${counts.tsr_completion_rate ?? 0}%`);
+            setTextIfPresent('manager-tsr-pending-count', counts.pending_tsr || 0);
+            setTextIfPresent('manager-tsr-repeat-count', counts.repeat_equipment_signals || 0);
+
+            const riskBadge = document.getElementById('manager-tsr-risk-badge');
+            if (riskBadge) {
+                riskBadge.className = managerTsrRiskBadgeClass(data.risk && data.risk.level);
+                riskBadge.innerText = (data.risk && data.risk.label) || 'TSR Stable';
+            }
+
+            renderManagerTsrAgingRows(signals.aged_pending_tsr || []);
+            renderManagerTsrRepeatRows(signals.repeat_equipment || []);
+            renderManagerTsrIssueRows(signals.frequent_issues || []);
+        } catch (tsrError) {
+            console.warn('Manager TSR intelligence could not be loaded:', tsrError);
+            renderTeamEmpty('manager-tsr-aging-list', 'TSR aging could not be loaded.');
+            renderTeamEmpty('manager-tsr-repeat-list', 'Repeat service signals could not be loaded.');
+            renderTeamEmpty('manager-tsr-issues-list', 'Frequent issue signals could not be loaded.');
+        }
+    }
+
     async function loadManagerDashboardSummary() {
         if (!dashboardManagerView || dashboardSchedulerOnly) return;
 
@@ -2041,6 +2211,7 @@
 
             if (dashboardManagerView && !dashboardSchedulerOnly) {
                 loadManagerDashboardSummary();
+                loadManagerTsrIntelligence();
             }
 
             if (dashboardAdminView && !dashboardSchedulerOnly && !dashboardManagerView) {
@@ -2583,6 +2754,55 @@
         border-radius: 1rem;
         padding: 0.9rem;
     }
+
+    .manager-tsr-intelligence-panel {
+        background: #ffffff;
+        border: 1px solid #fde68a;
+        border-radius: 1rem;
+        padding: 0.9rem;
+        border-left: 4px solid rgba(245, 158, 11, 0.35);
+    }
+
+    .manager-tsr-signal-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    .manager-tsr-signal-card {
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 0.95rem;
+        padding: 0.8rem;
+    }
+
+    .manager-tsr-signal-card span {
+        display: block;
+        color: #92400e;
+        font-size: 0.68rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .manager-tsr-signal-card strong {
+        display: block;
+        color: #0f172a;
+        font-size: 1.3rem;
+        font-weight: 900;
+        line-height: 1.1;
+        margin-top: 0.25rem;
+    }
+
+    .manager-tsr-list {
+        max-height: 320px;
+        overflow-y: auto;
+    }
+
+    .manager-tsr-row {
+        background: #ffffff;
+    }
+
 
     .manager-action-grid {
         display: grid;
@@ -3507,6 +3727,11 @@
         .manager-executive-dashboard,
         .scheduler-core-dashboard,
         .scheduler-coordination-panel { padding: 0.85rem; }
+
+        .manager-tsr-signal-strip {
+            grid-template-columns: 1fr;
+            gap: 0.5rem;
+        }
 
         .manager-action-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));

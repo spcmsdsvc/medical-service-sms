@@ -325,6 +325,7 @@ PERFORMANCE_LOG_PATHS = {
     '/get_scheduler_dispatch_intelligence',
     '/get_scheduler_coordination_tools',
     '/get_manager_dashboard_summary',
+    '/get_manager_tsr_intelligence',
     '/scheduler_quick_assign_shift',
     '/scheduler_quick_reschedule_shift',
     '/set_developer_dashboard_view',
@@ -5993,6 +5994,230 @@ def get_manager_dashboard_summary():
             manager_shift_priority_row(shift, shift.status or 'Waiting item', 'info')
             for shift in sorted(waiting_shifts, key=lambda s: s.start_time or datetime.min)[:12]
         ]
+    })
+
+
+
+
+
+# --- MANAGER DASHBOARD PHASE M2: CLEAN TSR INTELLIGENCE ---
+
+def manager_tsr_signal_row(shift, signal_label='', severity='warning'):
+    """Compact TSR intelligence row for manager dashboard."""
+    row = manager_shift_priority_row(shift, signal_label, severity)
+    # Keep manager TSR rows compact and frontend-safe.
+    row['signal_label'] = signal_label
+    row['severity'] = severity
+    return row
+
+
+@app.route('/get_manager_tsr_intelligence')
+@login_required
+def get_manager_tsr_intelligence():
+    """Manager Dashboard Phase M2 backend: clean TSR intelligence.
+
+    Intentionally compact:
+    - Pending TSR aging
+    - Repeat equipment/client service signals
+    - Frequent complaint/service issue signals from TSR knowledge base
+    - top 5 rows only per signal
+
+    No schema changes. No large tables.
+    """
+    if not can_view_manager_dashboard():
+        return denied('Manager TSR intelligence is only available to manager-authorized accounts.')
+
+    ensure_shift_file_original_filename_column()
+    ensure_tsr_knowledge_entry_table()
+
+    today = get_manila_today()
+    lookback_start = today - timedelta(days=180)
+    lookahead_end = today + timedelta(days=30)
+    start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
+
+    service_query = (
+        Shift.query
+        .options(
+            joinedload(Shift.client),
+            joinedload(Shift.product),
+            selectinload(Shift.files)
+        )
+        .filter(Shift.client_id.isnot(None))
+        .filter(Shift.start_time >= start_dt)
+        .filter(Shift.start_time < end_dt)
+        .order_by(Shift.start_time.desc())
+    )
+    service_query = analytics_scope_query(service_query)
+    service_shifts = list({shift.id: shift for shift in service_query.limit(2000).all()}.values())
+
+    completed_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') == 'Completed'
+    ]
+
+    pending_tsr_shifts = [
+        shift for shift in completed_shifts
+        if not shift_has_tsr_file(shift)
+    ]
+
+    pending_tsr_shifts.sort(
+        key=lambda shift: shift.start_time or datetime.min
+    )
+
+    aged_pending_tsr_rows = [
+        manager_tsr_signal_row(
+            shift,
+            f"No TSR for {max((today - shift.start_time.date()).days, 0)} day(s)" if shift.start_time else 'Missing TSR',
+            'danger' if shift.start_time and (today - shift.start_time.date()).days >= 7 else 'warning'
+        )
+        for shift in pending_tsr_shifts[:5]
+    ]
+
+    completed_with_tsr = [
+        shift for shift in completed_shifts
+        if shift_has_tsr_file(shift)
+    ]
+    completion_total = len(completed_shifts)
+    completion_rate = round((len(completed_with_tsr) / completion_total) * 100, 1) if completion_total else 100.0
+
+    # Repeat equipment/client service signal.
+    repeat_map = {}
+    for shift in service_shifts:
+        if not shift.start_time or not shift.product_id:
+            continue
+
+        serial = shift.product.serial_number if shift.product else (shift.product_id or '')
+        product_name = shift.product.name if shift.product else (shift.product_id or 'Unknown Equipment')
+        client_name = shift.client.name if shift.client else 'N/A'
+        key = f"{shift.client_id or 'no-client'}::{serial or shift.product_id}"
+
+        if key not in repeat_map:
+            repeat_map[key] = {
+                'client': client_name,
+                'product': product_name,
+                'serial': serial,
+                'service_count': 0,
+                'last_service': '',
+                'latest_date': None,
+                'tasks': set()
+            }
+
+        row = repeat_map[key]
+        row['service_count'] += 1
+        row['tasks'].add(shift.title or '')
+        if not row['latest_date'] or shift.start_time > row['latest_date']:
+            row['latest_date'] = shift.start_time
+            row['last_service'] = shift.start_time.strftime('%Y-%m-%d')
+
+    repeat_equipment_rows = []
+    for row in repeat_map.values():
+        if row['service_count'] < 3:
+            continue
+        repeat_equipment_rows.append({
+            'client': row['client'],
+            'product': row['product'],
+            'serial': row['serial'],
+            'service_count': row['service_count'],
+            'last_service': row['last_service'],
+            'signal_label': f"{row['service_count']} services in 180 days",
+            'tasks': ', '.join(sorted([task for task in row['tasks'] if task])[:3])
+        })
+
+    repeat_equipment_rows.sort(key=lambda row: (-row['service_count'], row['client'], row['product']))
+
+    # Frequent issue signal from TSR Knowledge Base.
+    knowledge_start_dt = datetime.combine(lookback_start, datetime.min.time())
+    knowledge_entries = (
+        TsrKnowledgeEntry.query
+        .filter(TsrKnowledgeEntry.created_at >= knowledge_start_dt)
+        .order_by(TsrKnowledgeEntry.created_at.desc())
+        .limit(500)
+        .all()
+    )
+
+    issue_map = {}
+    for entry in knowledge_entries:
+        complaint = clean_str(getattr(entry, 'complaint', None)) or ''
+        if not complaint:
+            continue
+
+        # Compact grouping: normalize first 90 chars to avoid huge text blocks.
+        issue_key = re.sub(r'\s+', ' ', complaint.strip().lower())[:90]
+        if not issue_key:
+            continue
+
+        if issue_key not in issue_map:
+            issue_map[issue_key] = {
+                'issue': complaint[:180],
+                'count': 0,
+                'latest': getattr(entry, 'created_at', None),
+                'clients': set(),
+                'products': set()
+            }
+
+        row = issue_map[issue_key]
+        row['count'] += 1
+        if getattr(entry, 'client_name', None):
+            row['clients'].add(entry.client_name)
+        if getattr(entry, 'product_name', None):
+            row['products'].add(entry.product_name)
+        if getattr(entry, 'created_at', None) and (not row['latest'] or entry.created_at > row['latest']):
+            row['latest'] = entry.created_at
+
+    frequent_issue_rows = []
+    for row in issue_map.values():
+        if row['count'] < 2:
+            continue
+        frequent_issue_rows.append({
+            'issue': row['issue'],
+            'count': row['count'],
+            'latest': row['latest'].strftime('%Y-%m-%d') if row['latest'] else '',
+            'clients': ', '.join(sorted(row['clients'])[:3]),
+            'products': ', '.join(sorted(row['products'])[:3]),
+            'signal_label': f"{row['count']} similar TSR complaint(s)"
+        })
+
+    frequent_issue_rows.sort(key=lambda row: (-row['count'], row['issue']))
+
+    risk_score = (
+        len([shift for shift in pending_tsr_shifts if shift.start_time and (today - shift.start_time.date()).days >= 7]) * 3 +
+        len([shift for shift in pending_tsr_shifts if shift.start_time and (today - shift.start_time.date()).days >= 3]) +
+        len(repeat_equipment_rows) * 2 +
+        len(frequent_issue_rows)
+    )
+
+    if risk_score >= 12:
+        risk_level = 'critical'
+        risk_label = 'TSR attention needed'
+    elif risk_score >= 5:
+        risk_level = 'watch'
+        risk_label = 'TSR watchlist'
+    else:
+        risk_level = 'stable'
+        risk_label = 'TSR stable'
+
+    return jsonify({
+        'status': 'success',
+        'phase': 'manager-phase-m2-clean-tsr-intelligence',
+        'generated_at': get_manila_time().isoformat(),
+        'risk': {
+            'score': risk_score,
+            'level': risk_level,
+            'label': risk_label
+        },
+        'counts': {
+            'completed_services': completion_total,
+            'completed_with_tsr': len(completed_with_tsr),
+            'pending_tsr': len(pending_tsr_shifts),
+            'tsr_completion_rate': completion_rate,
+            'repeat_equipment_signals': len(repeat_equipment_rows),
+            'frequent_issue_signals': len(frequent_issue_rows)
+        },
+        'signals': {
+            'aged_pending_tsr': aged_pending_tsr_rows,
+            'repeat_equipment': repeat_equipment_rows[:5],
+            'frequent_issues': frequent_issue_rows[:5]
+        }
     })
 
 
