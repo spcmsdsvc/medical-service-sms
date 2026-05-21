@@ -153,6 +153,83 @@
             </div>
         </div>
     </div>
+    <!-- SCHEDULER PHASE 2: DISPATCH INTELLIGENCE -->
+    <div class="scheduler-intelligence-panel mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-intelligence" data-dashboard-title="Scheduler Dispatch Intelligence">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+                <h5 class="mb-0 fw-bold text-dark">
+                    <i class="fa-solid fa-brain me-2 text-danger"></i>
+                    Dispatch Intelligence
+                </h5>
+                <p class="text-muted small mb-0">Overdue, unassigned, workload, TSR follow-up, and P.O / parts blockers</p>
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span id="scheduler-dispatch-risk-badge" class="badge bg-success rounded-pill px-3 py-2">Stable</span>
+                <button type="button" class="btn btn-sm btn-outline-danger fw-bold" onclick="loadSchedulerDispatchIntelligence()">
+                    <i class="fa-solid fa-rotate me-1"></i>Refresh
+                </button>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-intelligence-card">
+                    <div class="dashboard-team-label">Overdue</div>
+                    <div class="dashboard-team-value text-danger" id="scheduler-overdue-count">0</div>
+                    <div class="dashboard-team-hint">Past schedules still open</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-intelligence-card">
+                    <div class="dashboard-team-label">Next 7 Days</div>
+                    <div class="dashboard-team-value text-primary" id="scheduler-upcoming-count">0</div>
+                    <div class="dashboard-team-hint">Upcoming site visits</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-intelligence-card">
+                    <div class="dashboard-team-label">High Load</div>
+                    <div class="dashboard-team-value text-warning" id="scheduler-high-load-count">0</div>
+                    <div class="dashboard-team-hint">Engineers needing monitoring</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card p-3 bg-white border-0 shadow-sm rounded-4 scheduler-intelligence-card">
+                    <div class="dashboard-team-label">Blockers</div>
+                    <div class="dashboard-team-value text-dark" id="scheduler-blocker-count">0</div>
+                    <div class="dashboard-team-hint">TSR + P.O / parts follow-ups</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3">
+            <div class="col-lg-7">
+                <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                    <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <h6 class="mb-0 fw-bold text-danger">
+                                <i class="fa-solid fa-list-check me-2"></i>Priority Coordination Queue
+                            </h6>
+                            <div class="xsmall text-muted mt-1">Most important scheduler follow-ups first</div>
+                        </div>
+                        <a href="/timeline" class="btn btn-sm btn-outline-primary fw-bold">Open Timeline</a>
+                    </div>
+                    <div id="scheduler-priority-queue" class="dashboard-team-list scheduler-priority-list"></div>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+                    <div class="card-header bg-white border-bottom py-3">
+                        <h6 class="mb-0 fw-bold text-primary">
+                            <i class="fa-solid fa-user-clock me-2"></i>Engineer Load Snapshot
+                        </h6>
+                    </div>
+                    <div id="scheduler-engineer-workload" class="dashboard-team-list scheduler-workload-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {% endif %}
 
     <!-- ANALYTICS MATRIX -->
@@ -1151,13 +1228,110 @@
             const data = await fetchJsonOrThrow('/get_scheduler_dashboard_summary');
             const counts = data.counts || data || {};
             setTextIfPresent('scheduler-today-count', counts.today_schedules || 0);
-            setTextIfPresent('scheduler-unassigned-count', counts.unassigned_schedules || 0);
+            setTextIfPresent('scheduler-unassigned-count', counts.unassigned_schedules || counts.unassigned || 0);
             setTextIfPresent('scheduler-waiting-count', counts.waiting_items || 0);
             setTextIfPresent('scheduler-pending-tsr-count', counts.pending_tsr || 0);
             renderSchedulerDispatchRows(data || {});
         } catch (schedulerError) {
             console.warn('Scheduler dashboard summary could not be loaded:', schedulerError);
             renderTeamEmpty('scheduler-dispatch-list', 'Scheduler dashboard summary could not be loaded.');
+        }
+    }
+
+    function schedulerDispatchRiskBadgeClass(level) {
+        if (level === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
+        if (level === 'watch') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
+        return 'badge bg-success rounded-pill px-3 py-2';
+    }
+
+    function schedulerPriorityBadgeClass(row) {
+        const reason = String(row.priority_reason || row.status || '').toLowerCase();
+        if (reason.includes('overdue')) return 'bg-danger';
+        if (reason.includes('no engineer')) return 'bg-dark';
+        if (reason.includes('waiting for p.o')) return 'bg-warning text-dark';
+        if (reason.includes('waiting for parts')) return 'bg-info text-dark';
+        if (reason.includes('missing tsr')) return 'bg-warning text-dark';
+        return schedulerStatusBadgeClass(row.status);
+    }
+
+    function renderSchedulerPriorityQueue(data) {
+        const container = document.getElementById('scheduler-priority-queue');
+        if (!container) return;
+
+        const rows = Array.isArray(data.priority_queue) ? data.priority_queue : [];
+        if (!rows.length) {
+            renderTeamEmpty('scheduler-priority-queue', 'No urgent dispatch intelligence items right now.');
+            return;
+        }
+
+        container.innerHTML = rows.map(row => `
+            <div class="dashboard-team-row scheduler-priority-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.product || '')}${row.serial ? ' • ' + escapeHtml(row.serial) : ''}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 'Unassigned')}</div>
+                </div>
+                <span class="badge ${schedulerPriorityBadgeClass(row)}">${escapeHtml(row.priority_reason || row.status || 'Priority')}</span>
+            </div>
+        `).join('');
+    }
+
+    function schedulerWorkloadBadgeClass(level) {
+        if (level === 'high') return 'bg-danger';
+        if (level === 'watch') return 'bg-warning text-dark';
+        return 'bg-success';
+    }
+
+    function renderSchedulerEngineerWorkload(rows) {
+        const container = document.getElementById('scheduler-engineer-workload');
+        if (!container) return;
+
+        if (!Array.isArray(rows) || !rows.length) {
+            renderTeamEmpty('scheduler-engineer-workload', 'No active engineer workload found.');
+            return;
+        }
+
+        container.innerHTML = rows.slice(0, 12).map(row => `
+            <div class="dashboard-team-row scheduler-workload-row">
+                <div>
+                    <div class="dashboard-team-row-title">${escapeHtml(row.name || 'Engineer')}</div>
+                    <div class="dashboard-team-row-sub">${escapeHtml(row.branch || 'No branch')} • ${escapeHtml(row.next_7_days || 0)} in next 7 days</div>
+                </div>
+                <div class="dashboard-team-row-badges">
+                    <span class="badge bg-primary">${escapeHtml(row.open_tasks || 0)} open</span>
+                    <span class="badge bg-danger">${escapeHtml(row.overdue || 0)} overdue</span>
+                    <span class="badge bg-warning text-dark">${escapeHtml(row.waiting_items || 0)} waiting</span>
+                    <span class="badge ${schedulerWorkloadBadgeClass(row.load_level)}">${escapeHtml(row.load_level || 'normal')}</span>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function loadSchedulerDispatchIntelligence() {
+        if (!dashboardSchedulerOnly) return;
+
+        try {
+            const data = await fetchJsonOrThrow('/get_scheduler_dispatch_intelligence');
+            const counts = data.counts || {};
+            setTextIfPresent('scheduler-overdue-count', counts.overdue_schedules || 0);
+            setTextIfPresent('scheduler-upcoming-count', counts.upcoming_7_days || 0);
+            setTextIfPresent('scheduler-high-load-count', (counts.high_load_engineers || 0) + (counts.watch_load_engineers || 0));
+            setTextIfPresent('scheduler-blocker-count', (counts.pending_tsr_followups || 0) + (counts.waiting_po_parts || 0));
+
+            const riskBadge = document.getElementById('scheduler-dispatch-risk-badge');
+            if (riskBadge) {
+                const risk = data.risk || {};
+                riskBadge.className = schedulerDispatchRiskBadgeClass(risk.level);
+                riskBadge.innerText = risk.label || 'Stable';
+            }
+
+            renderSchedulerPriorityQueue(data || {});
+            renderSchedulerEngineerWorkload(data.engineer_workload || []);
+        } catch (dispatchError) {
+            console.warn('Scheduler dispatch intelligence could not be loaded:', dispatchError);
+            renderTeamEmpty('scheduler-priority-queue', 'Scheduler dispatch intelligence could not be loaded.');
+            renderTeamEmpty('scheduler-engineer-workload', 'Engineer workload intelligence could not be loaded.');
         }
     }
 
@@ -1235,6 +1409,7 @@
 
             if (dashboardSchedulerOnly) {
                 loadSchedulerDashboardSummary();
+                loadSchedulerDispatchIntelligence();
             }
 
             if (dashboardAdminView && !dashboardSchedulerOnly) {
@@ -2123,6 +2298,29 @@
         background: #ffffff;
     }
 
+    .scheduler-intelligence-panel {
+        background: linear-gradient(135deg, #fff7ed, #ffffff);
+        border: 1px solid #fed7aa;
+        border-radius: 1.25rem;
+        padding: 1rem;
+    }
+
+    .scheduler-intelligence-card {
+        min-height: 128px;
+        border-left: 4px solid rgba(220, 53, 69, 0.32) !important;
+    }
+
+    .scheduler-priority-list,
+    .scheduler-workload-list {
+        max-height: 430px;
+        overflow-y: auto;
+    }
+
+    .scheduler-priority-row,
+    .scheduler-workload-row {
+        background: #ffffff;
+    }
+
 
     /* RECENT ACTIVITY UX UPGRADE */
     .live-dot {
@@ -2403,7 +2601,8 @@
         .dashboard-team-intelligence,
         .dashboard-needs-attention,
         .dashboard-quick-admin,
-        .scheduler-core-dashboard { padding: 0.85rem; }
+        .scheduler-core-dashboard,
+        .scheduler-intelligence-panel { padding: 0.85rem; }
 
         .scheduler-action-grid {
             grid-template-columns: repeat(2, minmax(0, 1fr));

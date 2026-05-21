@@ -322,6 +322,7 @@ PERFORMANCE_LOG_PATHS = {
     '/get_engineer_dashboard_summary',
     '/get_hybrid_dashboard_smart_monitoring',
     '/get_scheduler_dashboard_summary',
+    '/get_scheduler_dispatch_intelligence',
     '/get_recent_activity',
     '/get_activity_logs',
     '/get_activity_filter_options',
@@ -4993,6 +4994,212 @@ def get_scheduler_dashboard_summary():
         'unassigned_rows': limited_rows(unassigned_shifts, 8),
         'recent_schedule_changes': [activity_log_to_dict(log) for log in recent_schedule_logs]
     })
+
+
+@app.route('/get_scheduler_dispatch_intelligence')
+@login_required
+def get_scheduler_dispatch_intelligence():
+    """Scheduler Dashboard Phase 2: dispatch intelligence.
+
+    Scheduler-only operational intelligence for Hanna/Diary:
+    - overdue schedules
+    - next 7 days queue
+    - unassigned priority list
+    - engineer workload snapshot
+    - pending TSR follow-ups
+    - waiting P.O / parts blockers
+
+    This reuses existing schedule/TSR tables only. No schema change.
+    """
+    if not is_scheduler_user():
+        return denied('Scheduler dispatch intelligence is only available to scheduler accounts.')
+
+    ensure_shift_file_original_filename_column()
+
+    today = get_manila_today()
+    week_end = today + timedelta(days=7)
+    lookback_start = today - timedelta(days=45)
+    lookahead_end = today + timedelta(days=30)
+    start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
+
+    invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
+    waiting_statuses = {'Waiting for P.O', 'Waiting for Parts'}
+
+    service_shifts = (
+        Shift.query
+        .options(
+            joinedload(Shift.client),
+            joinedload(Shift.product),
+            selectinload(Shift.files)
+        )
+        .filter(Shift.client_id.isnot(None))
+        .filter(Shift.start_time >= start_dt)
+        .filter(Shift.start_time < end_dt)
+        .order_by(Shift.start_time.asc())
+        .all()
+    )
+
+    open_shifts = [
+        shift for shift in service_shifts
+        if (shift.status or '') not in invalid_dashboard_categories
+    ]
+
+    overdue_schedules = [
+        shift for shift in open_shifts
+        if shift.start_time and shift.start_time.date() < today
+    ]
+
+    upcoming_7_days = [
+        shift for shift in service_shifts
+        if shift.start_time and today <= shift.start_time.date() <= week_end
+    ]
+
+    unassigned_schedules = [
+        shift for shift in open_shifts
+        if not get_shift_engineer_records(shift)
+    ]
+
+    waiting_po_parts = [
+        shift for shift in open_shifts
+        if (shift.status or '') in waiting_statuses
+    ]
+
+    pending_tsr_followups = [
+        shift for shift in service_shifts
+        if (shift.status or '') == 'Completed' and not shift_has_tsr_file(shift)
+    ]
+
+    engineer_workload_map = {}
+    for shift in open_shifts:
+        assigned_engineers = get_shift_engineer_records(shift)
+        if not assigned_engineers:
+            continue
+
+        for engineer in assigned_engineers:
+            if engineer.id not in engineer_workload_map:
+                engineer_workload_map[engineer.id] = {
+                    'engineer_id': engineer.id,
+                    'name': engineer.name,
+                    'branch': engineer.branch or 'Unassigned',
+                    'open_tasks': 0,
+                    'today_tasks': 0,
+                    'next_7_days': 0,
+                    'overdue': 0,
+                    'waiting_items': 0,
+                    'continuation': 0,
+                    'load_level': 'normal'
+                }
+
+            row = engineer_workload_map[engineer.id]
+            row['open_tasks'] += 1
+
+            if shift.start_time:
+                shift_date = shift.start_time.date()
+                if shift_date == today:
+                    row['today_tasks'] += 1
+                if today <= shift_date <= week_end:
+                    row['next_7_days'] += 1
+                if shift_date < today:
+                    row['overdue'] += 1
+
+            if (shift.status or '') in waiting_statuses:
+                row['waiting_items'] += 1
+            if (shift.status or '') == 'For Continuation':
+                row['continuation'] += 1
+
+    engineer_workload = list(engineer_workload_map.values())
+    if engineer_workload:
+        average_open = sum(row['open_tasks'] for row in engineer_workload) / max(len(engineer_workload), 1)
+        for row in engineer_workload:
+            if row['overdue'] >= 3 or row['open_tasks'] >= max(7, average_open * 1.8):
+                row['load_level'] = 'high'
+            elif row['overdue'] >= 1 or row['waiting_items'] >= 2 or row['open_tasks'] >= max(4, average_open * 1.35):
+                row['load_level'] = 'watch'
+
+    engineer_workload.sort(key=lambda row: (-row['overdue'], -row['open_tasks'], row['name']))
+
+    def priority_row(shift, reason=''):
+        row = scheduler_dashboard_shift_row(shift)
+        if shift.start_time:
+            row['days_from_today'] = (shift.start_time.date() - today).days
+            row['age_days'] = max((today - shift.start_time.date()).days, 0)
+        else:
+            row['days_from_today'] = 0
+            row['age_days'] = 0
+        row['priority_reason'] = reason
+        return row
+
+    overdue_rows = [
+        priority_row(shift, f"Overdue by {max((today - shift.start_time.date()).days, 0)} day(s)")
+        for shift in sorted(overdue_schedules, key=lambda s: s.start_time or datetime.min)[:15]
+    ]
+
+    upcoming_rows = [
+        priority_row(shift, 'Scheduled within 7 days')
+        for shift in sorted(upcoming_7_days, key=lambda s: s.start_time or datetime.max)[:20]
+    ]
+
+    unassigned_rows = [
+        priority_row(shift, 'No engineer assigned')
+        for shift in sorted(unassigned_schedules, key=lambda s: s.start_time or datetime.max)[:15]
+    ]
+
+    waiting_rows = [
+        priority_row(shift, shift.status or 'Waiting item')
+        for shift in sorted(waiting_po_parts, key=lambda s: s.start_time or datetime.min)[:15]
+    ]
+
+    pending_tsr_rows = [
+        priority_row(shift, 'Completed schedule missing TSR')
+        for shift in sorted(pending_tsr_followups, key=lambda s: s.start_time or datetime.min)[:15]
+    ]
+
+    dispatch_risk_score = (
+        (len(overdue_schedules) * 3) +
+        (len(unassigned_schedules) * 3) +
+        (len(pending_tsr_followups) * 2) +
+        (len(waiting_po_parts) * 2) +
+        len([row for row in engineer_workload if row.get('load_level') == 'high'])
+    )
+
+    if dispatch_risk_score >= 18:
+        dispatch_risk_level = 'critical'
+        dispatch_risk_label = 'Dispatch attention needed'
+    elif dispatch_risk_score >= 8:
+        dispatch_risk_level = 'watch'
+        dispatch_risk_label = 'Monitor workload and blockers'
+    else:
+        dispatch_risk_level = 'stable'
+        dispatch_risk_label = 'Dispatch queue stable'
+
+    return jsonify({
+        'status': 'success',
+        'phase': 'scheduler-phase-2-dispatch-intelligence',
+        'generated_at': get_manila_time().isoformat(),
+        'risk': {
+            'score': dispatch_risk_score,
+            'level': dispatch_risk_level,
+            'label': dispatch_risk_label
+        },
+        'counts': {
+            'overdue_schedules': len(overdue_schedules),
+            'upcoming_7_days': len(upcoming_7_days),
+            'unassigned_schedules': len(unassigned_schedules),
+            'engineers_loaded': len(engineer_workload),
+            'pending_tsr_followups': len(pending_tsr_followups),
+            'waiting_po_parts': len(waiting_po_parts),
+            'high_load_engineers': len([row for row in engineer_workload if row.get('load_level') == 'high']),
+            'watch_load_engineers': len([row for row in engineer_workload if row.get('load_level') == 'watch'])
+        },
+        'overdue_rows': overdue_rows,
+        'upcoming_rows': upcoming_rows,
+        'unassigned_rows': unassigned_rows,
+        'engineer_workload': engineer_workload[:20],
+        'pending_tsr_rows': pending_tsr_rows,
+        'waiting_rows': waiting_rows,
+        'priority_queue': (overdue_rows[:6] + unassigned_rows[:6] + waiting_rows[:5] + pending_tsr_rows[:5])[:18]
+    })
+
 
 
 @app.route('/get_timeline_data')
