@@ -255,6 +255,7 @@
     // --- APP INITIALIZATION ---
     const loggedInUser = "{{ current_user.username }}";
     const userRole = "{{ current_user.role }}";
+    const loggedInEngineerId = Number("{{ current_user.engineer_profile.id if current_user.engineer_profile else '' }}") || null;
 
     // v5.4.5: Real-time Manila Ticker and Date
     function updateClock() {
@@ -291,20 +292,65 @@
      * MASTER DATA LOADER:
      * Dispatches concurrent fetch requests to sync dashboard metrics from server.
      */
+    function setDashboardLoadState(state, message = '') {
+        let alertBox = document.getElementById('dashboard-load-alert');
+        const container = document.querySelector('.container-fluid');
+        if (!container) return;
+
+        if (!alertBox) {
+            alertBox = document.createElement('div');
+            alertBox.id = 'dashboard-load-alert';
+            alertBox.className = 'alert d-none rounded-4 shadow-sm mb-3';
+            alertBox.setAttribute('role', 'alert');
+            container.prepend(alertBox);
+        }
+
+        if (state === 'loading') {
+            alertBox.className = 'alert alert-info rounded-4 shadow-sm mb-3';
+            alertBox.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin me-2"></i> Loading dashboard data...';
+            return;
+        }
+
+        if (state === 'error') {
+            alertBox.className = 'alert alert-warning rounded-4 shadow-sm mb-3 d-flex justify-content-between align-items-center gap-3 flex-wrap';
+            alertBox.innerHTML = `
+                <div><i class="fa-solid fa-triangle-exclamation me-2"></i>${escapeHtml(message || 'Dashboard failed to load. Please try again.')}</div>
+                <button type="button" class="btn btn-sm btn-outline-dark fw-bold" onclick="loadDashboard()">Retry</button>
+            `;
+            return;
+        }
+
+        alertBox.className = 'alert d-none rounded-4 shadow-sm mb-3';
+        alertBox.innerHTML = '';
+    }
+
+    async function fetchJsonOrThrow(url) {
+        const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+        if (!response.ok) {
+            throw new Error(`${url} returned ${response.status}`);
+        }
+        return response.json();
+    }
+
+    /**
+     * MASTER DATA LOADER:
+     * Dispatches concurrent fetch requests to sync dashboard metrics from server.
+     */
     async function loadDashboard() {
         console.log("Synchronizing Service Dashboard Metrics...");
+        setDashboardLoadState('loading');
         
         try {
             const [engs, clis, prods, tasks] = await Promise.all([
-                fetch('/get_engineers').then(r => r.json()),
-                fetch('/get_clients').then(r => r.json()),
-                fetch('/get_products').then(r => r.json()),
-                fetch('/get_open_tasks').then(r => r.json())
+                fetchJsonOrThrow('/get_engineers'),
+                fetchJsonOrThrow('/get_clients'),
+                fetchJsonOrThrow('/get_products'),
+                fetchJsonOrThrow('/get_open_tasks')
             ]);
 
-            document.getElementById('count-engineers').innerText = engs.length;
-            document.getElementById('count-clients').innerText = clis.length;
-            document.getElementById('count-products').innerText = prods.length;
+            document.getElementById('count-engineers').innerText = Array.isArray(engs) ? engs.length : 0;
+            document.getElementById('count-clients').innerText = Array.isArray(clis) ? clis.length : 0;
+            document.getElementById('count-products').innerText = Array.isArray(prods) ? prods.length : 0;
 
             const hrCategories = [
                 "Sick Leave", 
@@ -315,7 +361,8 @@
                 "Training"
             ];
             
-            allOpenTasksRaw = tasks.filter(t => !hrCategories.includes(t.task));
+            allOpenTasksRaw = (Array.isArray(tasks) ? tasks : []).filter(t => !hrCategories.includes(t.task));
+            setDashboardLoadState('ready');
             
             // Branch logic for personalization
             if (userRole === 'engineer') {
@@ -323,13 +370,17 @@
             } else {
                 fetchActivityLog();
                 // Set the auto-refresh interval for Admin Feed (5 seconds)
-                setInterval(fetchActivityLog, 5000);
+                if (!window.__dashboardActivityTimerStarted) {
+                    window.__dashboardActivityTimerStarted = true;
+                    setInterval(fetchActivityLog, 5000);
+                }
             }
 
             filterAndRender();
 
         } catch (dashboardError) {
             console.error("CRITICAL: Dashboard Data Stream Failed:", dashboardError);
+            setDashboardLoadState('error', 'Dashboard data could not be loaded. Please check your connection or retry.');
         }
     }
 
@@ -540,6 +591,36 @@
         });
     }
 
+    function parseDashboardDate(value) {
+        if (!value) return null;
+        const parts = String(value).split('-').map(Number);
+        if (parts.length === 3 && parts.every(Number.isFinite)) {
+            return new Date(parts[0], parts[1] - 1, parts[2]);
+        }
+        const fallback = new Date(value);
+        return isNaN(fallback.getTime()) ? null : fallback;
+    }
+
+    function dashboardDateValue(value) {
+        const parsed = parseDashboardDate(value);
+        return parsed ? parsed.getTime() : 0;
+    }
+
+    function isTaskAssignedToCurrentEngineer(task) {
+        const ids = Array.isArray(task.engineer_ids) ? task.engineer_ids.map(Number).filter(Number.isFinite) : [];
+        if (loggedInEngineerId && ids.includes(loggedInEngineerId)) {
+            return true;
+        }
+
+        const names = Array.isArray(task.engineer_names) && task.engineer_names.length
+            ? task.engineer_names
+            : String(task.engineer || '').split(',');
+        const userToken = String(loggedInUser || '').trim().toLowerCase();
+        if (!userToken) return false;
+
+        return names.some(name => String(name || '').trim().toLowerCase().includes(userToken));
+    }
+
     /**
      * Personalization Logic.
      * Filters the dataset to show only tasks assigned to the current user.
@@ -550,7 +631,7 @@
 
         if(!targetBody) return;
 
-        const myTasks = allOpenTasksRaw.filter(t => String(t.engineer || '').toLowerCase().includes(loggedInUser.toLowerCase()));
+        const myTasks = allOpenTasksRaw.filter(isTaskAssignedToCurrentEngineer);
 
         targetBody.innerHTML = "";
 
@@ -561,15 +642,13 @@
             emptyMsg.classList.add('d-none');
             renderMobileTaskList('my-tasks-mobile-list', myTasks, { compact: true });
 
-            myTasks.forEach(task => {
-                targetBody.innerHTML += `
-                    <tr class="small">
-                        <td class="ps-4 fw-bold text-primary">${escapeHtml(task.task_date)}</td>
-                        <td><strong>${escapeHtml(task.client)}</strong></td>
-                        <td class="text-muted">${escapeHtml(task.task)}</td>
-                        <td class="text-end pe-4"><span class="badge bg-primary shadow-none py-2 px-3" style="font-size: 0.6rem;">${escapeHtml(task.status)}</span></td>
-                    </tr>`;
-            });
+            targetBody.innerHTML = myTasks.map(task => `
+                <tr class="small">
+                    <td class="ps-4 fw-bold text-primary">${escapeHtml(task.task_date)}</td>
+                    <td><strong>${escapeHtml(task.client)}</strong></td>
+                    <td class="text-muted">${escapeHtml(task.task)}</td>
+                    <td class="text-end pe-4"><span class="badge bg-primary shadow-none py-2 px-3" style="font-size: 0.6rem;">${escapeHtml(task.status)}</span></td>
+                </tr>`).join('');
         }
     }
 
@@ -582,7 +661,8 @@
         
         const taskGroups = {};
         tasksList.forEach(item => {
-            const compositeKey = `${item.engineer}|${item.client}|${item.task}|${item.status}`;
+            const productKey = item.product_id || item.serial || item.product_name || item.product || '';
+            const compositeKey = `${item.engineer}|${item.client_id || item.client}|${productKey}|${item.task}|${item.status}`;
             if (!taskGroups[compositeKey]) {
                 taskGroups[compositeKey] = [];
             }
@@ -593,7 +673,7 @@
         
         for (let key in taskGroups) {
             let instances = taskGroups[key];
-            instances.sort((a, b) => new Date(a.task_date) - new Date(b.task_date));
+            instances.sort((a, b) => dashboardDateValue(a.task_date) - dashboardDateValue(b.task_date));
 
             let sequenceBuffer = [instances[0]];
             
@@ -602,9 +682,9 @@
                 let currentRec = instances[i];
                 let isSequential = false;
                 if (currentRec) {
-                    let dP = new Date(previousRec.task_date);
-                    let dC = new Date(currentRec.task_date);
-                    if (Math.ceil(Math.abs(dC - dP) / (1000 * 60 * 60 * 24)) === 1) isSequential = true;
+                    let dP = parseDashboardDate(previousRec.task_date);
+                    let dC = parseDashboardDate(currentRec.task_date);
+                    if (dP && dC && Math.round((dC - dP) / (1000 * 60 * 60 * 24)) === 1) isSequential = true;
                 }
 
                 if (isSequential) {
@@ -612,13 +692,13 @@
                 } else {
                     let rStart = sequenceBuffer[0];
                     let rEnd = sequenceBuffer[sequenceBuffer.length - 1];
-                    let s = new Date(rStart.task_date);
-                    let e = new Date(rEnd.task_date);
-                    let mon = s.toLocaleString('default', { month: 'short' });
-                    let year = s.getFullYear();
-                    let rangeLabel = s.getTime() === e.getTime()
-                        ? s.toISOString().split('T')[0]
-                        : `${s.toISOString().split('T')[0]} → ${e.toISOString().split('T')[0]}`;
+                    let sDate = parseDashboardDate(rStart.task_date);
+                    let eDate = parseDashboardDate(rEnd.task_date);
+                    let startLabel = rStart.task_date || '';
+                    let endLabel = rEnd.task_date || startLabel;
+                    if (sDate) startLabel = `${sDate.getFullYear()}-${String(sDate.getMonth() + 1).padStart(2, '0')}-${String(sDate.getDate()).padStart(2, '0')}`;
+                    if (eDate) endLabel = `${eDate.getFullYear()}-${String(eDate.getMonth() + 1).padStart(2, '0')}-${String(eDate.getDate()).padStart(2, '0')}`;
+                    let rangeLabel = startLabel === endLabel ? startLabel : `${startLabel} → ${endLabel}`;
                     
                     mergedResults.push({
                         ...rStart,
@@ -680,10 +760,10 @@
         let filteredTasks = processedList.filter(t => !activeFilter || t.status === activeFilter);
 
         filteredTasks.sort((a, b) => {
-            const scheduledA = new Date(a.raw_sort_date || a.task_date);
-            const scheduledB = new Date(b.raw_sort_date || b.task_date);
-            const createdA = new Date(a.created_at);
-            const createdB = new Date(b.created_at);
+            const scheduledA = parseDashboardDate(a.raw_sort_date || a.task_date) || new Date(0);
+            const scheduledB = parseDashboardDate(b.raw_sort_date || b.task_date) || new Date(0);
+            const createdA = new Date(a.created_at || 0);
+            const createdB = new Date(b.created_at || 0);
 
             if (currentSortMode === 'scheduled_oldest') {
                 return scheduledA - scheduledB;
@@ -705,13 +785,13 @@
             document.getElementById('no-tasks-msg').classList.add('d-none');
             renderMobileTaskList('open-tasks-mobile-list', filteredTasks);
 
-            filteredTasks.forEach(task => {
+            targetBody.innerHTML = filteredTasks.map(task => {
                 let statusCSS = "bg-primary";
                 if (task.status === "Waiting for P.O") statusCSS = "bg-warning text-dark";
                 else if (task.status === "Waiting for Parts") statusCSS = "bg-info";
                 else if (task.status === "For Continuation") statusCSS = "bg-dark";
 
-                targetBody.innerHTML += `
+                return `
                     <tr class="small">
                         <td class="ps-4"><span class="fw-bold text-primary">${escapeHtml(task.display_range)}</span></td>
                         <td><strong>${escapeHtml(task.engineer)}</strong></td>
@@ -720,7 +800,7 @@
                         <td><span class="badge ${statusCSS} shadow-none py-2 px-3" style="font-size: 0.65rem;">${escapeHtml(task.status)}</span></td>
                         <td class="text-end pe-4 text-muted font-monospace">${escapeHtml(formatCreatedOn(task.created_at))}</td>
                     </tr>`;
-            });
+            }).join('');
         }
     }
     

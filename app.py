@@ -3428,7 +3428,13 @@ self.addEventListener('message', event => {
 @login_required
 def dashboard_page():
     """ Overhauled Overview Hub - Personalization enabled for v5.1 """
-    return render_template('dashboard.html')
+    profile = getattr(current_user, 'engineer_profile', None)
+    return render_template(
+        'dashboard.html',
+        logged_in_engineer_id=getattr(profile, 'id', None),
+        logged_in_engineer_name=getattr(profile, 'name', '') or getattr(current_user, 'username', ''),
+        logged_in_user_role=getattr(current_user, 'role', '')
+    )
 
 
 @app.route('/activity_page')
@@ -4289,35 +4295,59 @@ def get_open_tasks():
     """ 
     DASHBOARD CORE LOGIC API:
     Retrieves all technical visits where status is NOT 'Completed'.
+
+    Engineer dashboard reliability:
+    - Returns assigned engineer IDs for accurate frontend matching.
+    - Falls back to Shift.engineer_id when ShiftEngineer rows are absent.
+    - Includes product/serial so similar jobs do not merge incorrectly.
     """
     invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
-    
-    active_shifts = Shift.query.filter(
-        and_(
-            Shift.status.notin_(invalid_dashboard_categories),
-            Shift.client_id.isnot(None)
+
+    active_shifts = (
+        Shift.query
+        .options(
+            joinedload(Shift.client),
+            joinedload(Shift.product)
         )
-    ).all()
-    
+        .filter(
+            and_(
+                Shift.status.notin_(invalid_dashboard_categories),
+                Shift.client_id.isnot(None)
+            )
+        )
+        .order_by(Shift.start_time.asc())
+        .all()
+    )
+
     results = []
     for s in active_shifts:
-
-        eng_names = [
-            db.session.get(Engineer, se.engineer_id).name
-            for se in ShiftEngineer.query.filter_by(shift_id=s.id).all()
-            if db.session.get(Engineer, se.engineer_id)
+        assigned_engineer_ids = get_shift_assigned_engineer_ids(s)
+        assigned_engineers = [
+            db.session.get(Engineer, engineer_id)
+            for engineer_id in assigned_engineer_ids
+            if engineer_id
         ]
+        assigned_engineers = [engineer for engineer in assigned_engineers if engineer]
+
+        eng_names = [engineer.name for engineer in assigned_engineers]
 
         results.append({
             'id': s.id,
-            'task_date': s.start_time.strftime("%Y-%m-%d"),
-            'created_at': s.created_at.strftime("%Y-%m-%d %H:%M"),
+            'task_date': s.start_time.strftime("%Y-%m-%d") if s.start_time else '',
+            'created_at': s.created_at.strftime("%Y-%m-%d %H:%M") if s.created_at else '',
             'engineer': ", ".join(eng_names) if eng_names else "None",
+            'engineer_ids': assigned_engineer_ids,
+            'engineer_names': eng_names,
             'client': s.client.name if s.client else "N/A",
+            'client_id': s.client_id,
+            'product': s.product.name if s.product else "",
+            'product_name': s.product.name if s.product else "",
+            'product_id': s.product_id or '',
+            'serial': s.product.serial_number if s.product else (s.product_id or ''),
             'task': s.title,
             'status': s.status
         })
-        
+
     return jsonify(results)
 
 
