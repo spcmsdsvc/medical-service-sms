@@ -56,10 +56,44 @@
 <!-- MAIN CONTAINER FOR THE GRID -->
 <div class="card shadow-sm border-0 p-3 bg-white timeline-desktop-shell" id="timeline-desktop-shell">
 
+    <!-- SCHEDULER S1.6: hover rail for auto-hide controls -->
+    <div class="timeline-scheduler-hover-rail no-print d-none" id="timeline-scheduler-hover-rail">
+        <div class="timeline-scheduler-hover-rail-inner" onmouseenter="expandSchedulerAutoHideToolbar()" onclick="expandSchedulerAutoHideToolbar()">
+            <i class="fa-solid fa-grip-lines"></i>
+            <span>Controls</span>
+            <small id="timeline-scheduler-hover-week-label"></small>
+        </div>
+        <button type="button" class="timeline-scheduler-hover-pin" id="timeline-scheduler-hover-pin" onclick="toggleSchedulerToolbarPinned()" title="Pin / unpin controls">
+            <i class="fa-solid fa-thumbtack"></i>
+        </button>
+    </div>
+
     <!-- 
         TIMELINE NAVIGATION BAR 
         Manages the current view window and data export actions.
-    -->
+    -->    <!-- SCHEDULER S2.1: manual collapse controls, no hover behavior -->
+    <div class="timeline-scheduler-manual-strip no-print d-none" id="timeline-scheduler-manual-strip">
+        <button type="button" class="timeline-scheduler-manual-toggle" id="timeline-scheduler-manual-toggle" onclick="toggleSchedulerManualControls()">
+            <i class="fa-solid fa-up-right-and-down-left-from-center me-1"></i>
+            <span id="timeline-scheduler-manual-toggle-text">Hide Controls</span>
+        </button>
+
+        <div class="timeline-scheduler-manual-week" id="timeline-scheduler-manual-week"></div>
+
+        <div class="timeline-scheduler-manual-week-nav d-none" id="timeline-scheduler-manual-week-nav" aria-label="Collapsed scheduler week controls">
+            <button type="button" class="timeline-scheduler-manual-week-btn" onclick="changeWeek(-1)" title="Previous Week">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+            <button type="button" class="timeline-scheduler-manual-week-today" onclick="changeWeek(0)" title="Today">
+                Today
+            </button>
+            <button type="button" class="timeline-scheduler-manual-week-btn" onclick="changeWeek(1)" title="Next Week">
+                <i class="fa-solid fa-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+
+
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 no-print timeline-freeze-toolbar" id="timeline-freeze-toolbar">
         
         <div class="header-branding-container">
@@ -160,6 +194,18 @@
         </div>
     </div>
 
+    <!-- SCHEDULER S1.5: auto-hide top controls handle -->
+    <div class="timeline-scheduler-toolbar-handle no-print d-none" id="timeline-scheduler-toolbar-handle">
+        <div class="timeline-scheduler-toolbar-handle-main" onmouseenter="expandSchedulerAutoHideToolbar()" onclick="expandSchedulerAutoHideToolbar()">
+            <i class="fa-solid fa-grip-lines"></i>
+            <span id="timeline-scheduler-toolbar-handle-label">Calendar controls</span>
+            <small id="timeline-scheduler-toolbar-week-label"></small>
+        </div>
+        <button type="button" class="timeline-scheduler-toolbar-pin-btn" id="timeline-scheduler-toolbar-pin-btn" onclick="toggleSchedulerToolbarPinned()" title="Pin / unpin calendar controls">
+            <i class="fa-solid fa-thumbtack"></i>
+        </button>
+    </div>
+
     <!-- DESKTOP ENGINEER FOCUS: Find logged-in engineer row quickly -->
     <div class="timeline-engineer-focus-strip no-print d-none" id="timeline-engineer-focus-strip">
         <div class="timeline-engineer-focus-main">
@@ -221,6 +267,29 @@
             </button>
             <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="openLoggedInEngineerQuickAdd()">
                 <i class="fa-solid fa-calendar-plus me-1"></i>Add to My Row
+            </button>
+        </div>
+    </div>
+
+    <!-- SCHEDULER DESKTOP S1: cleaner operations focus -->
+    <div class="timeline-scheduler-desktop-hero no-print d-none" id="timeline-scheduler-desktop-hero">
+        <div class="timeline-scheduler-hero-main">
+            <div class="timeline-scheduler-hero-icon">
+                <i class="fa-solid fa-calendar-check"></i>
+            </div>
+            <div>
+                <div class="timeline-scheduler-hero-title">Scheduler Timeline</div>
+                <div class="timeline-scheduler-hero-sub">
+                    Focused view for building, editing, and checking team schedules.
+                </div>
+            </div>
+        </div>
+        <div class="timeline-scheduler-hero-actions">
+            <button type="button" class="btn btn-sm btn-primary fw-bold" onclick="openSchedulerQuickAddFromToolbar()">
+                <i class="fa-solid fa-calendar-plus me-1"></i>Add Schedule
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="changeWeek(0)">
+                <i class="fa-solid fa-calendar-day me-1"></i>Today
             </button>
         </div>
     </div>
@@ -3378,6 +3447,470 @@ body.pwa-reconnected .mobile-offline-readiness {
     }
 }
 
+/* SCHEDULER TIMELINE S1.5 — auto-hide desktop toolbar */
+.timeline-scheduler-toolbar-handle {
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin: -0.15rem 0 0.35rem;
+    padding: 0.28rem 0.48rem;
+    border: 1px solid #fed7aa;
+    background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);
+    color: #9a3412;
+    border-radius: 999px;
+    box-shadow: 0 6px 16px rgba(249, 115, 22, 0.08);
+}
+
+body.timeline-scheduler-desktop .timeline-scheduler-toolbar-handle {
+    display: flex !important;
+}
+
+.timeline-scheduler-toolbar-handle-main {
+    min-width: 0;
+    flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    cursor: pointer;
+    font-size: 0.7rem;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.timeline-scheduler-toolbar-handle-main small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #64748b;
+    font-size: 0.64rem;
+    font-weight: 850;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.timeline-scheduler-toolbar-pin-btn {
+    width: 1.8rem;
+    height: 1.8rem;
+    border: 1px solid #fed7aa;
+    background: #ffffff;
+    color: #ea580c;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    font-size: 0.75rem;
+}
+
+body.timeline-scheduler-toolbar-pinned .timeline-scheduler-toolbar-pin-btn {
+    background: #ea580c;
+    color: #ffffff;
+    border-color: #ea580c;
+}
+
+@media (min-width: 769px) {
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-freeze-toolbar {
+        max-height: 0;
+        min-height: 0;
+        height: 0;
+        opacity: 0;
+        transform: translateY(-0.5rem);
+        overflow: hidden;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        margin-top: -0.15rem !important;
+        margin-bottom: 0 !important;
+        border-bottom-width: 0;
+        pointer-events: none;
+        box-shadow: none;
+    }
+
+    body.timeline-scheduler-desktop .timeline-freeze-toolbar {
+        transition: max-height 0.18s ease, opacity 0.16s ease, transform 0.16s ease, padding 0.16s ease, margin 0.16s ease;
+        max-height: 9rem;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-scheduler-desktop-hero {
+        display: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-scroll-hint {
+        display: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-desktop-shell {
+        padding-top: 0.35rem !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-scroll-wrapper {
+        max-height: calc(100vh - var(--timeline-grid-maxheight-offset, 74px));
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-expanded .timeline-scheduler-toolbar-handle,
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-pinned .timeline-scheduler-toolbar-handle {
+        border-radius: 0.9rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .timeline-scheduler-toolbar-handle {
+        display: none !important;
+    }
+}
+
+/* SCHEDULER S1.9 STABILITY ROLLBACK — restore calendar data display */
+@media (min-width: 769px) {
+    body.timeline-scheduler-desktop .timeline-freeze-toolbar {
+        display: flex !important;
+        position: sticky !important;
+        top: 0 !important;
+        height: auto !important;
+        min-height: initial !important;
+        max-height: none !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        transform: none !important;
+        overflow: visible !important;
+        pointer-events: auto !important;
+        padding: 0.5rem 0.65rem !important;
+        margin-bottom: 0.45rem !important;
+    }
+
+    body.timeline-scheduler-desktop .timeline-freeze-toolbar * {
+        pointer-events: auto !important;
+    }
+
+    body.timeline-scheduler-desktop .timeline-scheduler-desktop-hero {
+        display: flex !important;
+    }
+
+    body.timeline-scheduler-desktop .timeline-scroll-hint {
+        display: block !important;
+    }
+
+    body.timeline-scheduler-desktop .timeline-scheduler-hover-rail,
+    body.timeline-scheduler-desktop .timeline-scheduler-toolbar-handle {
+        display: none !important;
+    }
+
+    body.timeline-scheduler-desktop .timeline-scroll-wrapper {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        max-height: calc(100vh - var(--timeline-grid-maxheight-offset, 120px)) !important;
+        overflow: auto !important;
+    }
+
+    body.timeline-scheduler-desktop #main-grid-table,
+    body.timeline-scheduler-desktop #grid-body {
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+
+    body.timeline-scheduler-desktop .timeline-sticky-h-scroll {
+        position: sticky !important;
+        top: var(--timeline-sticky-scrollbar-offset, 74px) !important;
+    }
+}
+
+/* SCHEDULER TIMELINE S1.8 — deterministic close after mouse leave */
+@media (min-width: 769px) {
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide.timeline-scheduler-toolbar-closed:not(.timeline-scheduler-toolbar-pinned) .timeline-freeze-toolbar {
+        max-height: 0 !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        transform: translateY(-0.35rem) scaleY(0.96) !important;
+        overflow: hidden !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        border-bottom-width: 0 !important;
+        pointer-events: none !important;
+        box-shadow: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide.timeline-scheduler-toolbar-closed:not(.timeline-scheduler-toolbar-pinned) .timeline-scheduler-desktop-hero,
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide.timeline-scheduler-toolbar-closed:not(.timeline-scheduler-toolbar-pinned) .timeline-scroll-hint {
+        display: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide.timeline-scheduler-toolbar-open .timeline-freeze-toolbar,
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-pinned .timeline-freeze-toolbar {
+        max-height: 10rem !important;
+        height: auto !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        transform: none !important;
+        pointer-events: auto !important;
+    }
+}
+
+/* SCHEDULER TIMELINE S1.7 — reliable hover collapse */
+@media (min-width: 769px) {
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide .timeline-scheduler-hover-rail {
+        position: relative;
+        z-index: 66;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-freeze-toolbar * {
+        pointer-events: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-freeze-toolbar {
+        visibility: hidden;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-expanded .timeline-freeze-toolbar,
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-pinned .timeline-freeze-toolbar {
+        visibility: visible;
+    }
+}
+
+/* SCHEDULER TIMELINE S1.6 — corrected hover auto-hide controls */
+.timeline-scheduler-hover-rail {
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 2.1rem;
+    margin: -0.2rem 0 0.4rem;
+    padding: 0.22rem 0.38rem 0.22rem 0.7rem;
+    border: 1px solid #fed7aa;
+    background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);
+    color: #9a3412;
+    border-radius: 999px;
+    box-shadow: 0 6px 14px rgba(249, 115, 22, 0.08);
+}
+
+body.timeline-scheduler-desktop .timeline-scheduler-hover-rail {
+    display: flex !important;
+}
+
+.timeline-scheduler-hover-rail-inner {
+    min-width: 0;
+    flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.42rem;
+    cursor: pointer;
+    font-size: 0.68rem;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.timeline-scheduler-hover-rail-inner small {
+    min-width: 0;
+    max-width: 38vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #64748b;
+    font-size: 0.62rem;
+    font-weight: 850;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.timeline-scheduler-hover-pin {
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 1px solid #fed7aa;
+    background: #fff;
+    color: #ea580c;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    font-size: 0.72rem;
+}
+
+body.timeline-scheduler-toolbar-pinned .timeline-scheduler-hover-pin {
+    background: #ea580c;
+    color: #fff;
+    border-color: #ea580c;
+}
+
+/* Override failed S1.5 behavior: do not keep the full toolbar sticky/frozen for scheduler. */
+@media (min-width: 769px) {
+    body.timeline-scheduler-desktop .timeline-scheduler-toolbar-handle {
+        display: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide .timeline-freeze-toolbar {
+        position: relative !important;
+        top: auto !important;
+        z-index: 64;
+        max-height: 10rem;
+        transform-origin: top center;
+        transition: max-height 0.2s ease, opacity 0.16s ease, transform 0.16s ease, padding 0.16s ease, margin 0.16s ease;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-freeze-toolbar {
+        max-height: 0 !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        opacity: 0 !important;
+        transform: translateY(-0.35rem) scaleY(0.96) !important;
+        overflow: hidden !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        border-bottom-width: 0 !important;
+        pointer-events: none !important;
+        box-shadow: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-scheduler-desktop-hero {
+        display: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-scroll-hint {
+        display: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-expanded .timeline-freeze-toolbar,
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-pinned .timeline-freeze-toolbar {
+        opacity: 1 !important;
+        height: auto !important;
+        pointer-events: auto !important;
+    }
+
+    body.timeline-scheduler-desktop .timeline-sticky-h-scroll {
+        position: relative !important;
+        top: auto !important;
+    }
+
+    body.timeline-scheduler-desktop .timeline-scroll-wrapper .timeline-grid-table > thead th {
+        top: 0 !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-scroll-wrapper {
+        max-height: calc(100vh - 68px) !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .timeline-scheduler-hover-rail {
+        display: none !important;
+    }
+}
+
+/* SCHEDULER TIMELINE S1 — desktop cleanup */
+.timeline-scheduler-desktop-hero {
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin: -0.2rem 0 0.65rem;
+    padding: 0.78rem 0.9rem;
+    border: 1px solid #fed7aa;
+    background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);
+    border-radius: 1rem;
+    box-shadow: 0 8px 20px rgba(249, 115, 22, 0.08);
+}
+
+body.timeline-scheduler-desktop .timeline-scheduler-desktop-hero {
+    display: flex !important;
+}
+
+.timeline-scheduler-hero-main {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.timeline-scheduler-hero-icon {
+    width: 2.3rem;
+    height: 2.3rem;
+    border-radius: 999px;
+    background: #ffedd5;
+    color: #ea580c;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.timeline-scheduler-hero-title {
+    color: #0f172a;
+    font-size: 0.9rem;
+    font-weight: 950;
+    line-height: 1.15;
+}
+
+.timeline-scheduler-hero-sub {
+    color: #64748b;
+    font-size: 0.73rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.timeline-scheduler-hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+}
+
+body.timeline-scheduler-desktop .timeline-engineer-focus-strip,
+body.timeline-scheduler-desktop .timeline-engineer-desktop-hero,
+body.timeline-scheduler-desktop .timeline-hybrid-desktop-hero {
+    display: none !important;
+}
+
+body.timeline-scheduler-desktop .timeline-intelligence-legend {
+    display: none !important;
+}
+
+body.timeline-scheduler-desktop .timeline-freeze-toolbar {
+    gap: 0.6rem;
+}
+
+body.timeline-scheduler-desktop .header-branding-container h2 {
+    font-size: 1.02rem;
+}
+
+body.timeline-scheduler-desktop #week-display {
+    color: #ea580c !important;
+}
+
+body.timeline-scheduler-desktop .timeline-scroll-hint {
+    opacity: 0.68;
+    margin-bottom: 0.25rem;
+}
+
+body.timeline-scheduler-desktop .calendar-legend {
+    margin-top: 0.45rem !important;
+}
+
+body.timeline-scheduler-desktop .calendar-legend .legend-pill {
+    font-size: 0.68rem;
+}
+
+body.timeline-scheduler-desktop .timeline-dev-view-picker {
+    opacity: 0.96;
+}
+
+body.timeline-scheduler-desktop .timeline-export-print-control .btn {
+    padding-left: 0.7rem !important;
+    padding-right: 0.7rem !important;
+}
+
+@media (max-width: 768px) {
+    .timeline-scheduler-desktop-hero {
+        display: none !important;
+    }
+}
+
 /* HYBRID TIMELINE H3 — final workflow cleanup */
 @media (max-width: 768px) {
     .mobile-hybrid-quick-actions {
@@ -4291,6 +4824,432 @@ body.timeline-pure-engineer-desktop .timeline-my-engineer-row [class*="schedule-
     }
 }
 
+
+/* SCHEDULER S3.1 — week navigation stays available when controls are hidden */
+.timeline-scheduler-manual-week-nav {
+    align-items: center;
+    gap: 0.28rem;
+    flex-shrink: 0;
+}
+
+body.timeline-scheduler-desktop.timeline-scheduler-controls-collapsed .timeline-scheduler-manual-week-nav {
+    display: inline-flex !important;
+}
+
+body.timeline-scheduler-desktop.timeline-scheduler-controls-collapsed .timeline-scheduler-manual-week {
+    text-align: center;
+    font-weight: 950;
+    color: #431407;
+}
+
+.timeline-scheduler-manual-week-btn,
+.timeline-scheduler-manual-week-today {
+    border: 1px solid #fed7aa;
+    background: #ffffff;
+    color: #9a3412;
+    min-height: 1.95rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 950;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.timeline-scheduler-manual-week-btn {
+    width: 2rem;
+    padding: 0;
+}
+
+.timeline-scheduler-manual-week-today {
+    padding: 0 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.timeline-scheduler-manual-week-btn:hover,
+.timeline-scheduler-manual-week-today:hover {
+    background: #ffedd5;
+    border-color: #fb923c;
+}
+
+@media (max-width: 920px) and (min-width: 769px) {
+    body.timeline-scheduler-desktop.timeline-scheduler-controls-collapsed .timeline-scheduler-manual-strip {
+        display: grid !important;
+        grid-template-columns: auto 1fr auto;
+    }
+
+    .timeline-scheduler-manual-week {
+        font-size: 0.66rem;
+    }
+
+    .timeline-scheduler-manual-week-today {
+        padding: 0 0.45rem;
+    }
+}
+
+
+/* SCHEDULER S2.1 — manual collapse controls only */
+.timeline-scheduler-manual-strip {
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.65rem;
+    margin: -0.15rem 0 0.45rem;
+    padding: 0.38rem 0.5rem;
+    border: 1px solid #fed7aa;
+    background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);
+    border-radius: 0.85rem;
+    box-shadow: 0 5px 14px rgba(249, 115, 22, 0.07);
+}
+
+body.timeline-scheduler-desktop .timeline-scheduler-manual-strip {
+    display: flex !important;
+}
+
+.timeline-scheduler-manual-toggle {
+    border: 1px solid #fed7aa;
+    background: #ffffff;
+    color: #9a3412;
+    border-radius: 999px;
+    padding: 0.38rem 0.72rem;
+    font-size: 0.72rem;
+    font-weight: 950;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    white-space: nowrap;
+}
+
+.timeline-scheduler-manual-toggle:hover {
+    background: #ffedd5;
+    border-color: #fb923c;
+}
+
+.timeline-scheduler-manual-week {
+    min-width: 0;
+    color: #64748b;
+    font-size: 0.7rem;
+    font-weight: 850;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (min-width: 769px) {
+    body.timeline-scheduler-desktop.timeline-scheduler-controls-collapsed .timeline-freeze-toolbar {
+        display: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-controls-collapsed .timeline-scheduler-desktop-hero {
+        display: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-controls-collapsed .timeline-scroll-hint {
+        display: none !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-controls-collapsed .timeline-desktop-shell {
+        padding-top: 0.45rem !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-controls-collapsed .timeline-scroll-wrapper {
+        max-height: calc(100vh - 74px) !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-controls-collapsed .timeline-sticky-h-scroll {
+        position: relative !important;
+        top: auto !important;
+    }
+
+    body.timeline-scheduler-desktop.timeline-scheduler-controls-collapsed .timeline-scroll-wrapper .timeline-grid-table > thead th {
+        top: 0 !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .timeline-scheduler-manual-strip {
+        display: none !important;
+    }
+}
+
+
+/* SCHEDULER SAFE STABLE MODE — hover/hide disabled to protect table/header */
+@media (min-width: 769px) {
+    body.timeline-scheduler-desktop .timeline-freeze-toolbar {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        transform: none !important;
+        overflow: visible !important;
+        pointer-events: auto !important;
+    }
+
+    body.timeline-scheduler-desktop .timeline-scheduler-hover-rail,
+    body.timeline-scheduler-desktop .timeline-scheduler-toolbar-handle,
+    body.timeline-scheduler-desktop .timeline-scheduler-safe-handle {
+        display: none !important;
+    }
+
+    body.timeline-scheduler-desktop .timeline-scroll-wrapper {
+        display: block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        overflow: auto !important;
+    }
+
+    body.timeline-scheduler-desktop .timeline-scroll-wrapper .timeline-grid-table > thead th {
+        position: sticky !important;
+        top: 0 !important;
+    }
+}
+
+
+/* SCHEDULER S2 ONLY — mobile cleanup, no desktop/table/sticky changes */
+@media (max-width: 768px) {
+    body.mobile-scheduler-mode .mobile-engineer-header {
+        background: linear-gradient(135deg, #ea580c 0%, #9a3412 100%);
+        box-shadow: 0 10px 26px rgba(234, 88, 12, 0.16);
+        margin-bottom: 0.65rem;
+        padding: 0.9rem;
+        border-radius: 1.1rem;
+    }
+
+    body.mobile-scheduler-mode .mobile-title {
+        font-size: 1.16rem;
+    }
+
+    body.mobile-scheduler-mode .mobile-subtitle {
+        font-size: 0.74rem;
+        opacity: 0.9;
+    }
+
+    body.mobile-scheduler-mode .mobile-role-badge {
+        display: flex !important;
+        border-color: #fed7aa;
+        background: #fff7ed;
+        color: #c2410c;
+        margin-bottom: 0.55rem;
+    }
+
+    body.mobile-scheduler-mode .mobile-add-schedule-card {
+        display: block !important;
+        padding: 0.7rem;
+        margin-bottom: 0.65rem;
+        border-color: #fed7aa;
+        background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);
+        box-shadow: 0 6px 16px rgba(234, 88, 12, 0.08);
+        border-radius: 0.95rem;
+    }
+
+    body.mobile-scheduler-mode .mobile-add-schedule-main {
+        min-height: 2.8rem;
+        border-radius: 0.82rem;
+        background: #ea580c;
+        box-shadow: 0 8px 18px rgba(234, 88, 12, 0.18);
+        font-size: 0.88rem;
+    }
+
+    body.mobile-scheduler-mode .mobile-add-schedule-help {
+        display: block !important;
+        color: #9a3412;
+        text-align: center;
+        font-size: 0.7rem;
+        margin-top: 0.45rem;
+    }
+
+    body.mobile-scheduler-mode .mobile-engineer-notice,
+    body.mobile-scheduler-mode .mobile-engineer-workflow-strip,
+    body.mobile-scheduler-mode .mobile-swipe-hint,
+    body.mobile-scheduler-mode .mobile-performance-hint,
+    body.mobile-scheduler-mode .mobile-cache-status,
+    body.mobile-scheduler-mode .mobile-sync-status {
+        display: none !important;
+    }
+
+    body.mobile-scheduler-mode .mobile-pill {
+        color: #c2410c;
+        border-color: #fed7aa;
+        padding: 0.5rem 0.76rem;
+        font-size: 0.76rem;
+    }
+
+    body.mobile-scheduler-mode .mobile-pill.active {
+        background: #ea580c;
+        border-color: #ea580c;
+        color: #ffffff;
+        box-shadow: 0 6px 16px rgba(234, 88, 12, 0.16);
+    }
+
+    body.mobile-scheduler-mode .mobile-day-step-btn {
+        color: #ea580c;
+        border-color: #fed7aa;
+    }
+
+    body.mobile-scheduler-mode .mobile-selected-day-label {
+        border-color: #fed7aa;
+        color: #431407;
+    }
+
+    body.mobile-scheduler-mode .mobile-schedule-card {
+        padding: 0.78rem;
+        border-radius: 1rem;
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.055);
+    }
+
+    body.mobile-scheduler-mode .mobile-schedule-client {
+        font-size: 0.94rem;
+    }
+
+    body.mobile-scheduler-mode .mobile-schedule-task,
+    body.mobile-scheduler-mode .mobile-meta-row {
+        font-size: 0.74rem;
+    }
+
+    body.mobile-scheduler-mode .mobile-action-warning,
+    body.mobile-scheduler-mode .mobile-action-dark,
+    body.mobile-scheduler-mode .mobile-sticky-duplicate {
+        display: none !important;
+    }
+
+    body.mobile-scheduler-mode .mobile-action-btn {
+        min-height: 2.45rem;
+        padding: 0.55rem 0.42rem;
+        border-radius: 0.72rem;
+        font-size: 0.72rem;
+    }
+}
+
+
+/* SCHEDULER S3 ONLY — mobile workflow polish, no desktop/table/sticky changes */
+@media (max-width: 768px) {
+    body.mobile-scheduler-mode .mobile-add-schedule-card::before {
+        content: "Scheduler shortcut";
+        display: block;
+        width: fit-content;
+        margin: 0 auto 0.45rem;
+        padding: 0.18rem 0.55rem;
+        border-radius: 999px;
+        background: #ffedd5;
+        color: #9a3412;
+        font-size: 0.62rem;
+        font-weight: 950;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    body.mobile-scheduler-mode .mobile-date-heading {
+        color: #7c2d12;
+        padding-top: 0.15rem;
+    }
+
+    body.mobile-scheduler-mode .mobile-date-count {
+        background: #fff7ed;
+        border-color: #fed7aa;
+        color: #c2410c;
+    }
+
+    body.mobile-scheduler-mode .mobile-empty-state {
+        border-color: #fed7aa;
+        background: linear-gradient(135deg, #fff7ed 0%, #ffffff 100%);
+        color: #7c2d12;
+    }
+
+    body.mobile-scheduler-mode .mobile-empty-state i {
+        color: #ea580c;
+    }
+
+    body.mobile-scheduler-mode .mobile-card-expanded-details {
+        padding: 0.65rem;
+        margin-top: 0.58rem;
+        border-radius: 0.82rem;
+        background: #fffaf5;
+        border-color: #fed7aa;
+    }
+
+    body.mobile-scheduler-mode .mobile-card-detail-label {
+        color: #9a3412;
+    }
+
+    body.mobile-scheduler-mode .mobile-card-hint {
+        display: none;
+    }
+
+    body.mobile-scheduler-mode .mobile-quick-status-panel {
+        margin: 0.55rem 0;
+        padding: 0.58rem;
+        border-radius: 0.9rem;
+        border-color: #fed7aa;
+        background: #fff7ed;
+    }
+
+    body.mobile-scheduler-mode .mobile-quick-status-title {
+        margin-bottom: 0.42rem;
+        font-size: 0.67rem;
+        color: #9a3412;
+    }
+
+    body.mobile-scheduler-mode .mobile-status-option-btn {
+        min-height: 2.15rem;
+        padding: 0.45rem 0.35rem;
+        font-size: 0.66rem;
+        border-radius: 0.68rem;
+        border-color: #fed7aa;
+        color: #c2410c;
+    }
+
+    body.mobile-scheduler-mode .mobile-status-option-btn.active {
+        background: #ea580c;
+        border-color: #ea580c;
+        color: #ffffff;
+    }
+
+    body.mobile-scheduler-mode .mobile-admin-quick-add-header {
+        background: linear-gradient(135deg, #fff7ed, #ffffff);
+    }
+
+    body.mobile-scheduler-mode .mobile-admin-quick-add-title {
+        color: #431407;
+    }
+
+    body.mobile-scheduler-mode .mobile-admin-quick-add-subtitle,
+    body.mobile-scheduler-mode .mobile-admin-quick-add-note {
+        color: #7c2d12;
+    }
+
+    body.mobile-scheduler-mode .mobile-admin-quick-add-label {
+        color: #9a3412;
+    }
+
+    body.mobile-scheduler-mode .mobile-admin-quick-add-primary {
+        border-color: #ea580c;
+        background: #ea580c;
+    }
+
+    body.mobile-scheduler-mode .mobile-admin-quick-add-control:focus {
+        border-color: #ea580c;
+        box-shadow: 0 0 0 0.18rem rgba(234, 88, 12, 0.12);
+    }
+
+    body.mobile-scheduler-mode .mobile-sticky-action-bar {
+        left: 0.55rem;
+        right: 0.55rem;
+        bottom: 0.55rem;
+        padding: 0.62rem;
+        border-radius: 0.95rem;
+    }
+
+    body.mobile-scheduler-mode .mobile-sticky-eyebrow {
+        color: #fed7aa;
+    }
+
+    body.mobile-scheduler-mode .mobile-sticky-btn {
+        width: 2.35rem;
+        height: 2.35rem;
+        border-radius: 0.72rem;
+        font-size: 0.92rem;
+    }
+}
+
 </style>
 
 <script>
@@ -4842,6 +5801,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
         syncTimelineDeveloperViewModeUI();
         syncPureEngineerTimelineDesktopMode();
         syncHybridEngineerAdminDesktopMode();
+        syncSchedulerTimelineDesktopMode();
         syncHybridEngineerAdminMobileMode();
         syncPureEngineerMobileMode();
         updateEngineerMobileViewMode();
@@ -4864,6 +5824,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
 
         syncPureEngineerTimelineDesktopMode();
         syncHybridEngineerAdminDesktopMode();
+        syncSchedulerTimelineDesktopMode();
         const branchFilter = document.getElementById('branch-filter');
         if(branchFilter && mode === 'engineer' && userBranch && userBranch !== 'ALL'){
             // Simulate a normal engineer landing on own branch.
@@ -4877,6 +5838,226 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
 
     let timelineEngineerAutoFocused = false;
     let timelineEngineerFocusDays = [];
+
+    function isSchedulerTimelineDesktopMode(){
+        const effectiveRole = (typeof getTimelineCurrentUserRole === 'function')
+            ? getTimelineCurrentUserRole()
+            : String(authRole || '').toLowerCase();
+
+        const devMode = (typeof getTimelineDeveloperViewMode === 'function')
+            ? getTimelineDeveloperViewMode()
+            : 'default';
+
+        return Boolean(
+            effectiveRole === 'scheduler' &&
+            window.matchMedia('(min-width: 769px)').matches &&
+            (!isTimelineDeveloperJonamar || devMode === 'default' || devMode === 'scheduler')
+        );
+    }
+
+    function syncSchedulerTimelineDesktopMode(){
+        document.body.classList.toggle('timeline-scheduler-desktop', isSchedulerTimelineDesktopMode());
+        if(typeof syncSchedulerManualControlsState === 'function'){
+            syncSchedulerManualControlsState();
+        }
+        if(typeof bindSchedulerAutoHideToolbarEvents === 'function'){
+            bindSchedulerAutoHideToolbarEvents();
+        }
+        if(typeof syncSchedulerAutoHideToolbarState === 'function'){
+            syncSchedulerAutoHideToolbarState(false);
+        }
+    }
+
+    const SCHEDULER_MANUAL_CONTROLS_KEY = 'timelineSchedulerControlsCollapsed';
+
+    function areSchedulerManualControlsCollapsed(){
+        try{
+            return localStorage.getItem(SCHEDULER_MANUAL_CONTROLS_KEY) === '1';
+        }catch(err){
+            return false;
+        }
+    }
+
+    function setSchedulerManualControlsCollapsed(collapsed){
+        try{
+            localStorage.setItem(SCHEDULER_MANUAL_CONTROLS_KEY, collapsed ? '1' : '0');
+        }catch(err){
+            console.warn('Unable to save scheduler controls state:', err);
+        }
+
+        syncSchedulerManualControlsState();
+    }
+
+    function toggleSchedulerManualControls(){
+        if(!isSchedulerTimelineDesktopMode()) return;
+        setSchedulerManualControlsCollapsed(!areSchedulerManualControlsCollapsed());
+    }
+
+    function syncSchedulerManualControlsState(){
+        const enabled = isSchedulerTimelineDesktopMode();
+        const collapsed = enabled && areSchedulerManualControlsCollapsed();
+
+        document.body.classList.toggle('timeline-scheduler-controls-collapsed', collapsed);
+
+        const textEl = document.getElementById('timeline-scheduler-manual-toggle-text');
+        const iconEl = document.querySelector('#timeline-scheduler-manual-toggle i');
+        const weekEl = document.getElementById('timeline-scheduler-manual-week');
+        const weekDisplay = document.getElementById('week-display');
+
+        if(textEl){
+            textEl.innerText = collapsed ? 'Show Controls' : 'Hide Controls';
+        }
+
+        if(iconEl){
+            iconEl.className = collapsed
+                ? 'fa-solid fa-down-left-and-up-right-to-center me-1'
+                : 'fa-solid fa-up-right-and-down-left-from-center me-1';
+        }
+
+        if(weekEl && weekDisplay){
+            weekEl.innerText = weekDisplay.innerText || '';
+        }
+
+        const weekNavEl = document.getElementById('timeline-scheduler-manual-week-nav');
+        if(weekNavEl){
+            weekNavEl.classList.toggle('d-none', !collapsed);
+        }
+
+        if(!enabled){
+            document.body.classList.remove('timeline-scheduler-controls-collapsed');
+            if(weekNavEl) weekNavEl.classList.add('d-none');
+        }
+
+        if(window.__timelineStickyHeaderPolishBound){
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 40);
+        }
+    }
+
+    const SCHEDULER_TOOLBAR_PIN_KEY = 'timelineSchedulerToolbarPinned';
+    let schedulerToolbarCollapseTimer = null;
+
+    function isSchedulerToolbarPinned(){
+        try{
+            return localStorage.getItem(SCHEDULER_TOOLBAR_PIN_KEY) === '1';
+        }catch(err){
+            return false;
+        }
+    }
+
+    function setSchedulerToolbarPinned(pinned){
+        try{
+            localStorage.setItem(SCHEDULER_TOOLBAR_PIN_KEY, pinned ? '1' : '0');
+        }catch(err){
+            console.warn('Unable to save scheduler toolbar pin state:', err);
+        }
+        syncSchedulerAutoHideToolbarState(true);
+    }
+
+    function toggleSchedulerToolbarPinned(){
+        // Stable mode: pin is disabled because toolbar auto-hide is disabled.
+        syncSchedulerAutoHideToolbarState(false);
+    }
+
+    function expandSchedulerAutoHideToolbar(){
+        if(!isSchedulerTimelineDesktopMode()) return;
+        document.body.classList.add('timeline-scheduler-toolbar-expanded');
+        clearTimeout(schedulerToolbarCollapseTimer);
+
+        if(!isSchedulerToolbarPinned()){
+            schedulerToolbarCollapseTimer = setTimeout(() => {
+                collapseSchedulerAutoHideToolbarNow();
+            }, 1800);
+        }
+
+        if(window.__timelineStickyHeaderPolishBound){
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 30);
+        }
+    }
+
+    function markSchedulerToolbarOpen(){
+        document.body.classList.add('timeline-scheduler-toolbar-expanded');
+        document.body.classList.add('timeline-scheduler-toolbar-open');
+        document.body.classList.remove('timeline-scheduler-toolbar-closed');
+        if(window.__timelineStickyHeaderPolishBound){
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 30);
+        }
+    }
+
+    function markSchedulerToolbarClosed(){
+        if(!isSchedulerTimelineDesktopMode() || isSchedulerToolbarPinned()) return;
+        document.body.classList.remove('timeline-scheduler-toolbar-expanded');
+        document.body.classList.remove('timeline-scheduler-toolbar-open');
+        document.body.classList.add('timeline-scheduler-toolbar-closed');
+        if(window.__timelineStickyHeaderPolishBound){
+            window.dispatchEvent(new Event('resize'));
+        }
+    }
+
+    function expandSchedulerAutoHideToolbar(){
+        if(!isSchedulerTimelineDesktopMode()) return;
+        clearTimeout(schedulerToolbarCollapseTimer);
+        markSchedulerToolbarOpen();
+    }
+
+    function scheduleSchedulerAutoHideToolbarCollapse(delay=350){
+        if(!isSchedulerTimelineDesktopMode() || isSchedulerToolbarPinned()) return;
+        clearTimeout(schedulerToolbarCollapseTimer);
+        schedulerToolbarCollapseTimer = setTimeout(() => {
+            markSchedulerToolbarClosed();
+        }, delay);
+    }
+
+    function collapseSchedulerAutoHideToolbarNow(){
+        markSchedulerToolbarClosed();
+    }
+
+
+    function syncSchedulerAutoHideToolbarState(forceExpand=false){
+        // Stable mode: scheduler hover/hide disabled to protect table/header rendering.
+        document.body.classList.remove('timeline-scheduler-toolbar-autohide');
+        document.body.classList.remove('timeline-scheduler-safe-autohide');
+        document.body.classList.remove('timeline-scheduler-toolbar-expanded');
+        document.body.classList.remove('timeline-scheduler-toolbar-collapsed');
+        document.body.classList.remove('timeline-scheduler-toolbar-open');
+        document.body.classList.remove('timeline-scheduler-toolbar-closed');
+        document.body.classList.remove('timeline-scheduler-toolbar-pinned');
+        if(window.__timelineStickyHeaderPolishBound){
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 40);
+        }
+    }
+
+    function bindSchedulerAutoHideToolbarEvents(){
+        // Stable mode: intentionally no hover/hide event binding.
+        return;
+    }
+
+    async function openSchedulerQuickAddFromToolbar(){
+        const targetDate = (() => {
+            try{
+                const days = timelineEngineerFocusDays || [];
+                const todayIso = formatLocalISODate(new Date());
+                return (days.find(day => day.iso === todayIso) || days[0] || {}).iso || todayIso;
+            }catch(err){
+                return formatLocalISODate(new Date());
+            }
+        })();
+
+        if(isTimelineMobileDevice()){
+            await openMobileAdminSchedulerQuickAdd(false);
+            return;
+        }
+
+        await loadEngineerList();
+        const engineers = getMobileAdminSchedulerEngineerOptions();
+        const firstEngineer = engineers[0];
+
+        if(!firstEngineer){
+            alert("No engineers available for scheduling. Please refresh and try again.");
+            return;
+        }
+
+        await openAddModal(firstEngineer.id, targetDate, firstEngineer.name || "Engineer");
+    }
 
     function isHybridEngineerAdminMobileMode(){
         const effectiveRole = (typeof getTimelineCurrentUserRole === 'function')
@@ -4994,6 +6175,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
 
         syncPureEngineerTimelineDesktopMode();
         syncHybridEngineerAdminDesktopMode();
+        syncSchedulerTimelineDesktopMode();
     }
 
     if(!window.CSS || typeof window.CSS.escape !== 'function'){
@@ -5220,12 +6402,18 @@ function shouldUseEngineerMobileView(){
                 if(noticeTitle) noticeTitle.innerText = 'Hybrid mobile mode enabled';
                 if(noticeBody) noticeBody.innerText = 'Your schedules appear first, followed by visible team schedules.';
                 if(addHelp) addHelp.innerText = 'Choose Add to My Row for field work, or Team Add when scheduling another engineer.';
+            }else if(currentRole === 'scheduler'){
+                if(eyebrow) eyebrow.innerText = 'Scheduler Mobile View';
+                if(title) title.innerText = 'Team Schedule';
+                if(noticeTitle) noticeTitle.innerText = 'Scheduler mobile mode enabled';
+                if(noticeBody) noticeBody.innerText = 'Review visible team schedules by date, then add or edit schedule cards quickly.';
+                if(addHelp) addHelp.innerText = 'Quick Add: choose the date and engineer before opening the schedule form.';
             }else{
                 if(eyebrow) eyebrow.innerText = 'Admin Mobile View';
                 if(title) title.innerText = 'Team Service Schedule';
-                if(noticeTitle) noticeTitle.innerText = 'Mobile mode enabled for admins/schedulers';
+                if(noticeTitle) noticeTitle.innerText = 'Mobile mode enabled for admins';
                 if(noticeBody) noticeBody.innerText = 'All visible branch schedules are shown below as touch-friendly cards.';
-                if(addHelp) addHelp.innerText = 'Quick add lets admins/schedulers choose an engineer and date before opening the schedule form.';
+                if(addHelp) addHelp.innerText = 'Quick add lets admins choose an engineer and date before opening the schedule form.';
             }
         }else{
             if(eyebrow) eyebrow.innerText = 'Engineer Mobile View';
@@ -5242,6 +6430,10 @@ function shouldUseEngineerMobileView(){
                     subtitle.innerText = userBranch && userBranch !== 'ALL'
                         ? `${userBranch} branch • your work first, team below`
                         : 'Your work first, team schedule below';
+                }else if(currentRole === 'scheduler'){
+                    subtitle.innerText = userBranch && userBranch !== 'ALL'
+                        ? `${userBranch} branch • date → engineer → schedule`
+                        : 'Date → engineer → schedule workflow';
                 }else{
                     subtitle.innerText = userBranch && userBranch !== 'ALL'
                         ? `${userBranch} branch • phone-optimized team view`
@@ -5329,8 +6521,8 @@ function shouldUseEngineerMobileView(){
             <div class="mobile-admin-quick-add-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-admin-quick-add-title">
                 <div class="mobile-admin-quick-add-header">
                     <div>
-                        <div class="mobile-admin-quick-add-title" id="mobile-admin-quick-add-title">Quick Add Schedule</div>
-                        <div class="mobile-admin-quick-add-subtitle">Choose engineer and date, then continue to the normal schedule form.</div>
+                        <div class="mobile-admin-quick-add-title" id="mobile-admin-quick-add-title">Scheduler Quick Add</div>
+                        <div class="mobile-admin-quick-add-subtitle">Date first, engineer second, then continue.</div>
                     </div>
                     <button type="button" class="mobile-admin-quick-add-close" onclick="closeMobileAdminQuickAddModal()" aria-label="Close quick add">
                         <i class="fa-solid fa-xmark"></i>
@@ -5346,12 +6538,12 @@ function shouldUseEngineerMobileView(){
                         <input type="date" id="mobile-admin-quick-add-date" class="mobile-admin-quick-add-control">
                     </div>
                     <div class="mobile-admin-quick-add-note" id="mobile-admin-quick-add-note">
-                        This opens the existing Add Schedule form, so all current validations, fields, permissions, and collision checks stay unchanged.
+                        Scheduler workflow: confirm date, choose engineer, then continue to the normal schedule form.
                     </div>
                     <div class="mobile-admin-quick-add-actions">
                         <button type="button" class="mobile-admin-quick-add-secondary" onclick="closeMobileAdminQuickAddModal()">Cancel</button>
                         <button type="button" class="mobile-admin-quick-add-primary" onclick="submitMobileAdminQuickAddSchedule()">
-                            <i class="fa-solid fa-arrow-right me-1"></i> Continue
+                            <i class="fa-solid fa-arrow-right me-1"></i> Continue to Form
                         </button>
                     </div>
                 </div>
@@ -5400,11 +6592,14 @@ function shouldUseEngineerMobileView(){
 
         const quickAddNote = document.getElementById('mobile-admin-quick-add-note');
         if(quickAddNote){
+            const role = getTimelineCurrentUserRole();
             quickAddNote.innerText = isHybridEngineerAdminMobileMode()
                 ? (preferOwnEngineer
                     ? 'Hybrid mode defaults to your own engineer row. Change engineer only when scheduling the team.'
                     : 'Team Add mode: choose the engineer and date before continuing to the normal schedule form.')
-                : 'This opens the existing Add Schedule form, so all current validations, fields, permissions, and collision checks stay unchanged.';
+                : (role === 'scheduler'
+                    ? 'Scheduler workflow: confirm date, choose engineer, then continue to the normal schedule form.'
+                    : 'This opens the existing Add Schedule form, so all current validations, fields, permissions, and collision checks stay unchanged.');
         }
 
         dateInput.value = getMobileAddScheduleDate();
@@ -6641,8 +7836,8 @@ function collectMobileEngineerSchedules(){
             listEl.innerHTML = `
                 <div class="mobile-empty-state">
                     <i class="fa-regular fa-calendar-check"></i>
-                    <div class="fw-bold">${adminMobile ? 'No team schedules' : 'No assigned schedules'} ${label}</div>
-                    <div class="small">${adminMobile ? 'Use refresh, change branch filter, or view the full calendar to add schedules.' : 'Use refresh or view the full calendar if you need to check other rows.'}</div>
+                    <div class="fw-bold">${adminMobile ? (getTimelineCurrentUserRole() === 'scheduler' ? 'No scheduled team visits' : 'No team schedules') : 'No assigned schedules'} ${label}</div>
+                    <div class="small">${adminMobile ? (getTimelineCurrentUserRole() === 'scheduler' ? 'Use Quick Add to create a schedule, or move to another day/week.' : 'Use refresh, change branch filter, or view the full calendar to add schedules.') : 'Use refresh or view the full calendar if you need to check other rows.'}</div>
                 </div>
             `;
             return;
@@ -11481,11 +12676,15 @@ function initTimelineStickyHeaderPolish(){
 
         // Keep sticky top row, but give every desktop role more visible table height.
         // Mobile keeps the larger safety buffer because it uses the card-based view.
-        const buffer = isDesktop ? 34 : 96;
-        const maxHeightOffset = toolbarHeight + scrollbarHeight + buffer;
+        const schedulerAutoHidden = false;
 
-        document.documentElement.style.setProperty('--timeline-sticky-scrollbar-offset', `${toolbarHeight}px`);
-        document.documentElement.style.setProperty('--timeline-sticky-offset', `${toolbarHeight + scrollbarHeight}px`);
+        const effectiveToolbarHeight = toolbarHeight;
+        const effectiveScrollbarHeight = scrollbarHeight;
+        const buffer = isDesktop ? 34 : 96;
+        const maxHeightOffset = effectiveToolbarHeight + effectiveScrollbarHeight + buffer;
+
+        document.documentElement.style.setProperty('--timeline-sticky-scrollbar-offset', `${effectiveToolbarHeight}px`);
+        document.documentElement.style.setProperty('--timeline-sticky-offset', `${effectiveToolbarHeight + effectiveScrollbarHeight}px`);
         document.documentElement.style.setProperty('--timeline-grid-maxheight-offset', `${maxHeightOffset}px`);
         document.body.classList.toggle('timeline-toolbar-compact', window.scrollY > 8);
         document.body.classList.toggle('timeline-expanded-desktop-grid', isDesktop);
@@ -11496,6 +12695,7 @@ function initTimelineStickyHeaderPolish(){
     window.addEventListener('resize', updateStickyState, { passive: true });
     window.addEventListener('resize', syncPureEngineerTimelineDesktopMode, { passive: true });
     window.addEventListener('resize', syncHybridEngineerAdminDesktopMode, { passive: true });
+    window.addEventListener('resize', syncSchedulerTimelineDesktopMode, { passive: true });
     window.addEventListener('resize', syncHybridEngineerAdminMobileMode, { passive: true });
     window.addEventListener('resize', syncPureEngineerMobileMode, { passive: true });
     setTimeout(updateStickyState, 250);
@@ -11510,6 +12710,8 @@ document.addEventListener('DOMContentLoaded', function(){
     syncTimelineDeveloperViewModeUI();
     syncPureEngineerTimelineDesktopMode();
     syncHybridEngineerAdminDesktopMode();
+    syncSchedulerTimelineDesktopMode();
+    if(typeof syncSchedulerManualControlsState === 'function') syncSchedulerManualControlsState();
     syncHybridEngineerAdminMobileMode();
     syncPureEngineerMobileMode();
 });
