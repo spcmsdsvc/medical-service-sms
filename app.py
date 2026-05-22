@@ -10974,10 +10974,11 @@ def update_shift(id):
         })
 
     if edit_scope == 'assigned_engineers_day_only':
-        # New middle option:
-        # Update the selected assigned engineers for THIS ONE DAY only.
-        # This does not rebuild the whole linked multi-day group.
-        # Existing custom-time children for this day stay linked and receive shared details.
+        # DATE MOVE FIX:
+        # Update/move the selected assigned schedule using the submitted date picker value.
+        # Older frontend builds used this scope only for the clicked day, but schedulers/admins
+        # also use the same modal to reschedule one existing schedule. Do not force the old
+        # clicked context date here.
         if start_d != end_d:
             end_d = start_d
         requested_schedule_dates = [start_d]
@@ -10991,7 +10992,12 @@ def update_shift(id):
         if is_shift_time_override(master_shift) and master_shift.parent_shift_id:
             day_shift = db.session.get(Shift, master_shift.parent_shift_id) or master_shift
 
-        # If editing from another row in a linked group, locate the base parent for the requested day.
+        original_day_date = day_shift.start_time.date() if getattr(day_shift, 'start_time', None) else None
+        date_picker_moved_day = bool(original_day_date and start_d != original_day_date)
+
+        # If editing from another row in a linked group and the selected date already exists
+        # in that group, edit that existing date row. If the selected date is new, keep
+        # day_shift as the clicked row and move it to the new date.
         if day_shift.group_id:
             matching_day_shift = (
                 Shift.query
@@ -11005,6 +11011,8 @@ def update_shift(id):
             )
             if matching_day_shift:
                 day_shift = matching_day_shift
+                original_day_date = day_shift.start_time.date() if getattr(day_shift, 'start_time', None) else original_day_date
+                date_picker_moved_day = bool(original_day_date and start_d != original_day_date)
 
         existing_day_engineer_ids = get_shift_assigned_engineer_ids(day_shift)
         linked_day_overrides = get_linked_time_overrides_for_shift_ids([day_shift.id])
@@ -11092,7 +11100,10 @@ def update_shift(id):
             for e_id in engineers
             if db.session.get(Engineer, e_id)
         ]
-        log_action = f"Updated assigned engineers for one day: {shift_title} on {start_d.isoformat()}"
+        if date_picker_moved_day and original_day_date:
+            log_action = f"Moved assigned schedule date: {shift_title} from {original_day_date.isoformat()} to {start_d.isoformat()}"
+        else:
+            log_action = f"Updated assigned engineers for one day: {shift_title} on {start_d.isoformat()}"
         if engineer_names:
             log_action += f" for {', '.join(engineer_names)}"
         if saved_files:
@@ -11113,6 +11124,8 @@ def update_shift(id):
         return jsonify({
             'status': 'success',
             'day_only': True,
+            'date_moved': date_picker_moved_day,
+            'old_date': original_day_date.isoformat() if original_day_date else '',
             'shift_id': day_shift.id,
             'date': start_d.isoformat()
         })
