@@ -4811,18 +4811,53 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
         syncHybridEngineerAdminDesktopMode();
     }
 
+    if(!window.CSS || typeof window.CSS.escape !== 'function'){
+        window.CSS = window.CSS || {};
+        window.CSS.escape = function(value){
+            return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+        };
+    }
+
+    function getTimelineMyEngineerRow(){
+        if(!loggedInEngineerId) return null;
+
+        const idValue = String(loggedInEngineerId);
+
+        // Primary target: explicit row id generated for the logged-in engineer.
+        let row = document.getElementById(`timeline-row-engineer-${idValue}`);
+        if(row) return row;
+
+        // Fallback target: data attribute is present on every engineer row.
+        row = document.querySelector(`tr[data-engineer-id="${CSS.escape(idValue)}"]`);
+        if(row) return row;
+
+        // Final fallback: current-user visual class.
+        row = document.querySelector('tr.timeline-my-engineer-row, tr.row-me');
+        if(row) return row;
+
+        return null;
+    }
+
     function getTimelineScrollTopForRow(row, wrapper){
         if(!row || !wrapper) return 0;
-        const rowTop = row.offsetTop || 0;
-        const headerOffset = 56;
-        return Math.max(rowTop - headerOffset, 0);
+
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const header = wrapper.querySelector('thead');
+        const headerOffset = header ? Math.max(header.getBoundingClientRect().height || 0, 48) : 56;
+
+        return Math.max(
+            wrapper.scrollTop + (rowRect.top - wrapperRect.top) - headerOffset - 8,
+            0
+        );
     }
 
     function focusLoggedInEngineerRow(manual=false){
         if(!isDesktopEngineerTimelineFocusAvailable()) return false;
 
         const wrapper = document.getElementById('timeline-scroll-wrapper');
-        const row = document.getElementById(`timeline-row-engineer-${loggedInEngineerId}`);
+        const row = getTimelineMyEngineerRow();
+
         if(!wrapper || !row){
             if(manual){
                 alert("Your engineer row is not visible in the current branch/week view. Try changing the branch filter or refresh the timeline.");
@@ -4830,11 +4865,26 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
             return false;
         }
 
+        const targetTop = getTimelineScrollTopForRow(row, wrapper);
+
         wrapper.scrollTo({
-            top: getTimelineScrollTopForRow(row, wrapper),
-            left: wrapper.scrollLeft || 0,
+            top: targetTop,
+            left: 0,
             behavior: manual ? 'smooth' : 'auto'
         });
+
+        // Also nudge the page to the timeline container if the sticky toolbar/page scroll is above it.
+        if(manual){
+            setTimeout(() => {
+                const shell = document.getElementById('timeline-desktop-shell');
+                if(shell && shell.getBoundingClientRect().top < 0){
+                    shell.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    setTimeout(() => {
+                        wrapper.scrollTo({ top: targetTop, left: 0, behavior: 'smooth' });
+                    }, 180);
+                }
+            }, 60);
+        }
 
         row.classList.add('timeline-my-row-pulse');
         clearTimeout(focusLoggedInEngineerRow._pulseTimer);
