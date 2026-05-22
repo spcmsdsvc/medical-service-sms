@@ -345,6 +345,16 @@
         <div class="mobile-add-schedule-help">
             Creates a schedule on your own engineer row. You can add teammates after the modal opens.
         </div>
+        <div class="mobile-hybrid-quick-actions" id="mobile-hybrid-quick-actions">
+            <button type="button" class="mobile-hybrid-own-add-btn" onclick="openMobileHybridOwnQuickAdd()">
+                <i class="fa-solid fa-user-plus"></i>
+                <span>Add to My Row</span>
+            </button>
+            <button type="button" class="mobile-hybrid-team-add-btn" onclick="openMobileHybridTeamQuickAdd()">
+                <i class="fa-solid fa-users-gear"></i>
+                <span>Team Add</span>
+            </button>
+        </div>
     </div>
 
     <div class="mobile-engineer-actions">
@@ -3080,13 +3090,14 @@ body.mobile-scheduler-mode .mobile-add-btn {
     display: none !important;
 }
 
+/* H4 cleanup: keep system status strips hidden on mobile unless an offline warning state is active. */
 body.mobile-admin-mode .mobile-sync-status,
 body.mobile-scheduler-mode .mobile-sync-status,
 body.mobile-admin-mode .mobile-performance-hint,
 body.mobile-scheduler-mode .mobile-performance-hint,
 body.mobile-admin-mode .mobile-cache-status,
 body.mobile-scheduler-mode .mobile-cache-status {
-    display: flex;
+    display: none;
 }
 
 /* MOBILE UPGRADE PHASE 2D — ADMIN/SCHEDULER QUICK ADD */
@@ -3296,7 +3307,7 @@ body.mobile-engineer-desktop-forced .mobile-engineer-shell {
 body.mobile-engineer-mode .mobile-offline-readiness,
 body.mobile-admin-mode .mobile-offline-readiness,
 body.mobile-scheduler-mode .mobile-offline-readiness {
-    display: block;
+    display: none;
 }
 
 body.pwa-offline-ready .mobile-offline-readiness {
@@ -3364,6 +3375,134 @@ body.pwa-reconnected .mobile-offline-readiness {
     .timeline-grid-table {
         min-width: auto !important;
         width: 100% !important;
+    }
+}
+
+/* HYBRID TIMELINE H3 — final workflow cleanup */
+@media (max-width: 768px) {
+    .mobile-hybrid-quick-actions {
+        display: none;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.45rem;
+        margin-top: 0.55rem;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-hybrid-quick-actions {
+        display: grid;
+    }
+
+    .mobile-hybrid-quick-actions button {
+        min-height: 2.65rem;
+        border-radius: 0.82rem;
+        font-size: 0.74rem;
+        font-weight: 950;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.38rem;
+    }
+
+    .mobile-hybrid-own-add-btn {
+        border: 1px solid #0d6efd;
+        background: #0d6efd;
+        color: #ffffff;
+    }
+
+    .mobile-hybrid-team-add-btn {
+        border: 1px solid #cbd5e1;
+        background: #ffffff;
+        color: #334155;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-add-schedule-main {
+        display: none;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-add-schedule-help {
+        display: block !important;
+        margin-top: 0;
+        color: #475569;
+        text-align: center;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-role-badge {
+        margin-bottom: 0.5rem;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-hybrid-section-label {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+        box-shadow: 0 6px 14px rgba(15, 23, 42, 0.045);
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-hybrid-team-divider {
+        margin-top: 0.65rem;
+    }
+}
+
+@media (min-width: 769px) {
+    body.timeline-hybrid-engineer-admin-desktop .timeline-hybrid-desktop-hero {
+        margin-bottom: 0.55rem;
+    }
+
+    body.timeline-hybrid-engineer-admin-desktop .timeline-hybrid-hero-actions .btn {
+        border-radius: 999px;
+    }
+}
+
+/* H4 safety class applied by updateEngineerMobileViewMode */
+@media (max-width: 768px) {
+    body.timeline-mobile-clean-ui .mobile-sync-status,
+    body.timeline-mobile-clean-ui .mobile-cache-status,
+    body.timeline-mobile-clean-ui .mobile-performance-hint,
+    body.timeline-mobile-clean-ui .mobile-engineer-notice,
+    body.timeline-mobile-clean-ui .mobile-swipe-hint {
+        display: none !important;
+    }
+}
+
+/* HYBRID TIMELINE H4 — mobile cleanup / remove noisy system status strips */
+@media (max-width: 768px) {
+    body.mobile-engineer-mode .mobile-performance-hint,
+    body.mobile-admin-mode .mobile-performance-hint,
+    body.mobile-scheduler-mode .mobile-performance-hint,
+    body.mobile-engineer-mode .mobile-cache-status,
+    body.mobile-admin-mode .mobile-cache-status,
+    body.mobile-scheduler-mode .mobile-cache-status,
+    body.mobile-engineer-mode .mobile-sync-status,
+    body.mobile-admin-mode .mobile-sync-status,
+    body.mobile-scheduler-mode .mobile-sync-status {
+        display: none !important;
+    }
+
+    body.mobile-engineer-mode .mobile-offline-readiness,
+    body.mobile-admin-mode .mobile-offline-readiness,
+    body.mobile-scheduler-mode .mobile-offline-readiness {
+        display: none !important;
+    }
+
+    body.mobile-engineer-mode.pwa-offline-active .mobile-offline-readiness,
+    body.mobile-admin-mode.pwa-offline-active .mobile-offline-readiness,
+    body.mobile-scheduler-mode.pwa-offline-active .mobile-offline-readiness,
+    body.mobile-engineer-mode.pwa-offline-preparing .mobile-offline-readiness,
+    body.mobile-admin-mode.pwa-offline-preparing .mobile-offline-readiness,
+    body.mobile-scheduler-mode.pwa-offline-preparing .mobile-offline-readiness,
+    body.mobile-engineer-mode.pwa-reconnected .mobile-offline-readiness,
+    body.mobile-admin-mode.pwa-reconnected .mobile-offline-readiness,
+    body.mobile-scheduler-mode.pwa-reconnected .mobile-offline-readiness {
+        display: block !important;
+        margin-bottom: 0.55rem;
+        padding: 0.58rem 0.7rem;
+        box-shadow: none;
+    }
+
+    .mobile-engineer-header {
+        margin-bottom: 0.65rem;
+    }
+
+    .mobile-add-schedule-card {
+        margin-bottom: 0.65rem;
     }
 }
 
@@ -4959,8 +5098,9 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
 
         const todayIso = formatLocalISODate(new Date());
         const visibleDays = timelineEngineerFocusDays || [];
-        const targetDay = visibleDays.find(day => day.iso === todayIso) || visibleDays[0] || null;
-        const targetDate = targetDay?.iso || todayIso;
+        const mobileTargetDate = (typeof getMobileAddScheduleDate === 'function') ? getMobileAddScheduleDate() : '';
+        const targetDay = visibleDays.find(day => day.iso === todayIso) || visibleDays.find(day => day.iso === mobileTargetDate) || visibleDays[0] || null;
+        const targetDate = targetDay?.iso || mobileTargetDate || todayIso;
 
         await openAddModal(loggedInEngineerId, targetDate, loggedInEngineerName || "Engineer");
 
@@ -5079,7 +5219,7 @@ function shouldUseEngineerMobileView(){
                 if(title) title.innerText = 'My Work + Team Schedule';
                 if(noticeTitle) noticeTitle.innerText = 'Hybrid mobile mode enabled';
                 if(noticeBody) noticeBody.innerText = 'Your schedules appear first, followed by visible team schedules.';
-                if(addHelp) addHelp.innerText = 'Quick add can start on your own row or choose another engineer for team scheduling.';
+                if(addHelp) addHelp.innerText = 'Choose Add to My Row for field work, or Team Add when scheduling another engineer.';
             }else{
                 if(eyebrow) eyebrow.innerText = 'Admin Mobile View';
                 if(title) title.innerText = 'Team Service Schedule';
@@ -5136,6 +5276,7 @@ function shouldUseEngineerMobileView(){
                 toggleLabel.innerText = 'View full calendar';
             }
         }
+        document.body.classList.toggle('timeline-mobile-clean-ui', isTimelineMobileDevice());
         setMobileDesktopGridSkippedState(shouldSkipDesktopGridRenderForMobile());
         renderMobileEngineerScheduleCards();
         renderMobileStickyActionBar();
@@ -5232,7 +5373,7 @@ function shouldUseEngineerMobileView(){
         if(backdrop) backdrop.classList.remove('show');
     }
 
-    async function openMobileAdminSchedulerQuickAdd(){
+    async function openMobileAdminSchedulerQuickAdd(preferOwnEngineer = true){
         await loadEngineerList();
 
         const engineers = getMobileAdminSchedulerEngineerOptions();
@@ -5250,7 +5391,7 @@ function shouldUseEngineerMobileView(){
             return `<option value="${escapeHtml(engineer.id)}">${escapeHtml(engineer.name)}${escapeHtml(branchLabel)}</option>`;
         }).join('');
 
-        if(isHybridEngineerAdminMobileMode() && loggedInEngineerId){
+        if(preferOwnEngineer && isHybridEngineerAdminMobileMode() && loggedInEngineerId){
             const ownOption = [...engineerSelect.options].find(option => String(option.value) === String(loggedInEngineerId));
             if(ownOption){
                 engineerSelect.value = String(loggedInEngineerId);
@@ -5260,7 +5401,9 @@ function shouldUseEngineerMobileView(){
         const quickAddNote = document.getElementById('mobile-admin-quick-add-note');
         if(quickAddNote){
             quickAddNote.innerText = isHybridEngineerAdminMobileMode()
-                ? 'Hybrid mode defaults to your own engineer row. Change engineer only when scheduling the team.'
+                ? (preferOwnEngineer
+                    ? 'Hybrid mode defaults to your own engineer row. Change engineer only when scheduling the team.'
+                    : 'Team Add mode: choose the engineer and date before continuing to the normal schedule form.')
                 : 'This opens the existing Add Schedule form, so all current validations, fields, permissions, and collision checks stay unchanged.';
         }
 
