@@ -121,6 +121,24 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
 if not app.config['SECRET_KEY']:
     raise RuntimeError("SECRET_KEY is not set. Add it to your local .env file.")
 
+# --- PWA / MOBILE SESSION PERSISTENCE ---
+# Keep installed PWA users logged in after closing/reopening the app.
+# Session cookie: normal Flask session.
+# Remember cookie: Flask-Login long-lived restore token.
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=int(os.environ.get('SESSION_DAYS', '30')))
+app.config['REMEMBER_COOKIE_DURATION'] = timedelta(days=int(os.environ.get('REMEMBER_DAYS', '30')))
+app.config['REMEMBER_COOKIE_REFRESH_EACH_REQUEST'] = True
+app.config['SESSION_REFRESH_EACH_REQUEST'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['REMEMBER_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['REMEMBER_COOKIE_SAMESITE'] = os.environ.get('REMEMBER_COOKIE_SAMESITE', 'Lax')
+
+# Secure cookies are required on Railway/HTTPS, but kept configurable for localhost/LAN testing.
+cookie_secure_default = 'true' if os.environ.get('RAILWAY_ENVIRONMENT') else 'false'
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', cookie_secure_default).strip().lower() in {'1', 'true', 'yes', 'on'}
+app.config['REMEMBER_COOKIE_SECURE'] = os.environ.get('REMEMBER_COOKIE_SECURE', cookie_secure_default).strip().lower() in {'1', 'true', 'yes', 'on'}
+
 # --- EMAIL NOTIFICATION CONFIGURATION ---
 # Email notification settings. Brevo API is default; SMTP remains as fallback.
 app.config['SMTP_HOST'] = os.environ.get('SMTP_HOST', 'smtp.office365.com')
@@ -2507,7 +2525,9 @@ def login():
         password = request.form.get('password')
         user_rec = User.query.filter_by(username=username).first()
         if user_rec and check_password_hash(user_rec.password, password):
-            login_user(user_rec)
+            # PWA/mobile convenience: automatically keep users remembered after app close/reopen.
+            session.permanent = True
+            login_user(user_rec, remember=True, duration=app.config.get('REMEMBER_COOKIE_DURATION'))
 
             if user_rec.must_change_password:
                 session['force_pw_change'] = True
@@ -2519,14 +2539,21 @@ def login():
 
             return redirect(url_for('dashboard_page'))
         flash('Invalid Credentials - Access Denied')
-    return render_template('login.html')
+    response = Response(render_template('login.html'), mimetype='text/html')
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 @app.route('/logout')
 def logout():
     # log_activity removed v5.4.5 per request
     logout_user()
-    return redirect(url_for('login'))
+    session.clear()
+    response = redirect(url_for('login'))
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    return response
 
 
 
@@ -3750,13 +3777,12 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-step6b-real-pdf-export';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-remember-login-v1';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
 const APP_SHELL = [
   '/',
-  '/login',
   '/timeline',
   '/offline-tsr',
   '/offline',
@@ -3770,8 +3796,7 @@ const APP_SHELL = [
 const FIELD_SAFE_ROUTES = [
   '/timeline',
   '/offline-tsr',
-  '/offline',
-  '/login'
+  '/offline'
 ];
 
 self.addEventListener('install', event => {
