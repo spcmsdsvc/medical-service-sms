@@ -88,6 +88,7 @@ from datetime import (
 # --- NEW SECURITY IMPORTS ---
 from flask_wtf.csrf import CSRFProtect
 from dotenv import load_dotenv
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import os
 import re
 import io
@@ -142,6 +143,12 @@ app.config['REMEMBER_COOKIE_NAME'] = os.environ.get('REMEMBER_COOKIE_NAME', 'med
 cookie_secure_default = 'true' if os.environ.get('RAILWAY_ENVIRONMENT') else 'false'
 app.config['SESSION_COOKIE_SECURE'] = os.environ.get('SESSION_COOKIE_SECURE', cookie_secure_default).strip().lower() in {'1', 'true', 'yes', 'on'}
 app.config['REMEMBER_COOKIE_SECURE'] = os.environ.get('REMEMBER_COOKIE_SECURE', cookie_secure_default).strip().lower() in {'1', 'true', 'yes', 'on'}
+
+# Extra signed PWA restore cookie.
+# Some installed mobile PWA webviews aggressively drop session cookies after app close.
+# This signed cookie lets the backend restore the Flask-Login session safely for 30 days.
+app.config['PWA_LOGIN_COOKIE_NAME'] = os.environ.get('PWA_LOGIN_COOKIE_NAME', 'medical_service_pwa_login')
+app.config['PWA_LOGIN_COOKIE_DAYS'] = int(os.environ.get('PWA_LOGIN_COOKIE_DAYS', '30'))
 
 # --- EMAIL NOTIFICATION CONFIGURATION ---
 # Email notification settings. Brevo API is default; SMTP remains as fallback.
@@ -382,6 +389,11 @@ def should_log_performance_path(path):
         '/export_'
     )
     return path.startswith(monitored_prefixes)
+
+
+@app.before_request
+def restore_pwa_session_before_route():
+    restore_user_from_pwa_login_cookie()
 
 
 @app.before_request
@@ -855,6 +867,98 @@ def similarity(a,b):
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
+
+
+def get_pwa_login_serializer():
+    """Return signer for the extra installed-PWA login restore cookie."""
+    return URLSafeTimedSerializer(app.config['SECRET_KEY'], salt='medical-service-pwa-login')
+
+
+def build_pwa_login_cookie_value(user):
+    """Build signed persistent login payload for installed PWA restore."""
+    if not user or not getattr(user, 'id', None):
+        return ''
+    # Include password hash fragment so password changes invalidate old PWA cookies.
+    password_marker = (getattr(user, 'password', '') or '')[-16:]
+    return get_pwa_login_serializer().dumps({
+        'user_id': user.id,
+        'password_marker': password_marker
+    })
+
+
+def set_pwa_login_cookie(response, user):
+    """Attach the signed PWA restore cookie to a response."""
+    try:
+        value = build_pwa_login_cookie_value(user)
+        if not value:
+            return response
+
+        max_age = int(app.config.get('PWA_LOGIN_COOKIE_DAYS', 30)) * 24 * 60 * 60
+        response.set_cookie(
+            app.config.get('PWA_LOGIN_COOKIE_NAME', 'medical_service_pwa_login'),
+            value,
+            max_age=max_age,
+            path='/',
+            secure=bool(app.config.get('REMEMBER_COOKIE_SECURE')),
+            httponly=True,
+            samesite=app.config.get('REMEMBER_COOKIE_SAMESITE', 'Lax')
+        )
+    except Exception as cookie_error:
+        print(f"[AUTH] Unable to set PWA restore cookie: {cookie_error}", flush=True)
+    return response
+
+
+def clear_pwa_login_cookie(response):
+    """Delete the signed PWA restore cookie."""
+    try:
+        response.delete_cookie(
+            app.config.get('PWA_LOGIN_COOKIE_NAME', 'medical_service_pwa_login'),
+            path='/',
+            secure=bool(app.config.get('REMEMBER_COOKIE_SECURE')),
+            httponly=True,
+            samesite=app.config.get('REMEMBER_COOKIE_SAMESITE', 'Lax')
+        )
+    except TypeError:
+        response.delete_cookie(app.config.get('PWA_LOGIN_COOKIE_NAME', 'medical_service_pwa_login'), path='/')
+    except Exception:
+        pass
+    return response
+
+
+def restore_user_from_pwa_login_cookie():
+    """Restore login from signed PWA cookie when mobile/PWA dropped the session cookie."""
+    if request.path == '/logout':
+        return
+
+    try:
+        if current_user and getattr(current_user, 'is_authenticated', False):
+            return
+
+        cookie_name = app.config.get('PWA_LOGIN_COOKIE_NAME', 'medical_service_pwa_login')
+        raw_cookie = request.cookies.get(cookie_name)
+        if not raw_cookie:
+            return
+
+        max_age = int(app.config.get('PWA_LOGIN_COOKIE_DAYS', 30)) * 24 * 60 * 60
+        payload = get_pwa_login_serializer().loads(raw_cookie, max_age=max_age)
+        user_id = clean_int(payload.get('user_id'))
+        user_rec = db.session.get(User, user_id) if user_id else None
+        if not user_rec:
+            return
+
+        expected_marker = (getattr(user_rec, 'password', '') or '')[-16:]
+        if payload.get('password_marker') != expected_marker:
+            return
+
+        session.permanent = True
+        session.modified = True
+        login_user(user_rec, remember=True, duration=app.config.get('REMEMBER_COOKIE_DURATION'), fresh=False)
+        g._pwa_cookie_restored_login = True
+        print(f"[AUTH] Restored PWA session for {user_rec.username}.", flush=True)
+    except (BadSignature, SignatureExpired):
+        return
+    except Exception as restore_error:
+        print(f"[AUTH] PWA restore cookie failed: {restore_error}", flush=True)
 
 
 def clean_int(val):
@@ -2571,9 +2675,12 @@ def login():
                 session.pop('force_pw_change', None)
 
             if getattr(user_rec, 'role', None) == 'engineer' and is_mobile_request():
-                return redirect(url_for('timeline_page'))
+                response = redirect(url_for('timeline_page'))
+            else:
+                response = redirect(url_for('dashboard_page'))
 
-            return redirect(url_for('dashboard_page'))
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            return set_pwa_login_cookie(response, user_rec)
         flash('Invalid Credentials - Access Denied')
     response = Response(render_template('login.html'), mimetype='text/html')
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -2592,7 +2699,9 @@ def auth_status():
         'role': getattr(current_user, 'role', ''),
         'session_permanent': bool(session.permanent),
         'remember_cookie_name': app.config.get('REMEMBER_COOKIE_NAME'),
-        'session_cookie_name': app.config.get('SESSION_COOKIE_NAME')
+        'session_cookie_name': app.config.get('SESSION_COOKIE_NAME'),
+        'pwa_login_cookie_name': app.config.get('PWA_LOGIN_COOKIE_NAME'),
+        'restored_from_pwa_cookie': bool(getattr(g, '_pwa_cookie_restored_login', False))
     })
 
 
@@ -2603,7 +2712,7 @@ def logout():
     session.clear()
     response = redirect(url_for('login'))
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    return response
+    return clear_pwa_login_cookie(response)
 
 
 
@@ -3827,7 +3936,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-session-hardening-v3';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-persistent-auth-v4';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -4006,16 +4115,9 @@ self.addEventListener('message', event => {
   }
 
   if (event.data.type === 'CACHE_FIELD_ROUTES') {
-    event.waitUntil(
-      caches.open(APP_SHELL_CACHE).then(cache => {
-        return Promise.allSettled(FIELD_SAFE_ROUTES.map(async route => {
-          const response = await fetch(route, { cache: 'reload' });
-          if (response && response.ok && !isLoginLikeResponse(new Request(route, { method: 'GET' }), response)) {
-            await cache.put(route, response.clone());
-          }
-        }));
-      })
-    );
+    // V4: protected routes are no longer precached. Keeping the message as a no-op
+    // allows older layout scripts to be harmless until the updated layout is deployed.
+    return;
   }
 });
 """

@@ -665,60 +665,42 @@
 
 
 <script>
-/* PWA STEP 5H — SERVICE WORKER REGISTRATION + THROTTLED OFFLINE PRECACHE */
+/* PWA V4 — SERVICE WORKER REGISTRATION WITHOUT PROTECTED ROUTE PRECACHE */
 (function(){
     if(!('serviceWorker' in navigator)) return;
 
-    const PWA_PRECACHE_KEY = 'medicalServicePwaFieldRoutesCachedAt';
-    const PWA_PRECACHE_TTL_MS = 24 * 60 * 60 * 1000; // once per browser/day
-
-    function shouldPrecacheFieldRoutes(){
+    async function activateUpdatedWorker(registration){
         try{
-            const lastRun = parseInt(sessionStorage.getItem(PWA_PRECACHE_KEY) || localStorage.getItem(PWA_PRECACHE_KEY) || '0', 10);
-            return !lastRun || (Date.now() - lastRun) > PWA_PRECACHE_TTL_MS;
+            if(registration && registration.waiting){
+                registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+            }
+
+            if(registration){
+                await registration.update();
+            }
         }catch(err){
-            return true;
+            console.warn('[PWA] Service worker update check failed', err);
         }
-    }
-
-    function markFieldRoutesPrecached(){
-        try{
-            const now = String(Date.now());
-            sessionStorage.setItem(PWA_PRECACHE_KEY, now);
-            localStorage.setItem(PWA_PRECACHE_KEY, now);
-        }catch(err){
-            // Storage may be blocked; safe to ignore.
-        }
-    }
-
-    function requestFieldRoutePrecache(registration){
-        if(!shouldPrecacheFieldRoutes()) return;
-
-        const targetWorker = navigator.serviceWorker.controller || (registration && registration.active);
-        if(!targetWorker) return;
-
-        targetWorker.postMessage({ type: 'CACHE_FIELD_ROUTES' });
-        markFieldRoutesPrecached();
-        console.info('[PWA] Field route precache requested once for this session/day.');
     }
 
     window.addEventListener('load', async function(){
         try{
             const registration = await navigator.serviceWorker.register('/service-worker.js', {
-                scope: '/'
+                scope: '/',
+                updateViaCache: 'none'
             });
+
+            await activateUpdatedWorker(registration);
 
             console.info('[PWA] Service worker registered', registration.scope);
             window.__PWA_READY__ = true;
-
-            // Optimization Phase 4A:
-            // Do not ask the service worker to recache Timeline/Offline TSR/Login on every page load.
-            // Repeated recaching can make unrelated pages feel slow even when backend routes are fast.
-            requestFieldRoutePrecache(registration);
-
         }catch(err){
             console.warn('[PWA] Service worker registration failed', err);
         }
+    });
+
+    navigator.serviceWorker.addEventListener('controllerchange', function(){
+        console.info('[PWA] Service worker controller updated.');
     });
 
     window.addEventListener('online', function(){
