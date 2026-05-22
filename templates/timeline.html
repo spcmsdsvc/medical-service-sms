@@ -202,6 +202,29 @@
         </div>
     </div>
 
+    <!-- HYBRID ENGINEER/ADMIN DESKTOP H1: admin tools + own-row focus -->
+    <div class="timeline-hybrid-desktop-hero no-print d-none" id="timeline-hybrid-desktop-hero">
+        <div class="timeline-hybrid-hero-main">
+            <div class="timeline-hybrid-hero-icon">
+                <i class="fa-solid fa-user-shield"></i>
+            </div>
+            <div>
+                <div class="timeline-hybrid-hero-title">Hybrid Timeline</div>
+                <div class="timeline-hybrid-hero-sub" id="timeline-hybrid-hero-sub">
+                    Admin controls stay available while your engineer row stays easy to find.
+                </div>
+            </div>
+        </div>
+        <div class="timeline-hybrid-hero-actions">
+            <button type="button" class="btn btn-sm btn-primary fw-bold" onclick="focusLoggedInEngineerRow(true)">
+                <i class="fa-solid fa-location-crosshairs me-1"></i>My Row
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="openLoggedInEngineerQuickAdd()">
+                <i class="fa-solid fa-calendar-plus me-1"></i>Add to My Row
+            </button>
+        </div>
+    </div>
+
     <!-- 
         PRINT MODE STATIC HEADER 
         This section is only visible when generating a print-out.
@@ -3298,6 +3321,230 @@ body.pwa-reconnected .mobile-offline-readiness {
     }
 }
 
+/* HYBRID ENGINEER/ADMIN TIMELINE H2 — mobile focus */
+@media (max-width: 768px) {
+    body.timeline-hybrid-engineer-admin-mobile .mobile-engineer-header {
+        background: linear-gradient(135deg, #0d6efd 0%, #1e40af 100%);
+        box-shadow: 0 10px 28px rgba(13, 110, 253, 0.18);
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-role-badge {
+        display: flex !important;
+        border-color: #bfdbfe;
+        background: #eff6ff;
+        color: #1d4ed8;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-engineer-workflow-strip {
+        display: grid !important;
+        grid-template-columns: 1fr;
+        gap: 0.3rem;
+        margin: -0.1rem 0 0.55rem;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid #dbeafe;
+        background: #ffffff;
+        color: #475569;
+        border-radius: 0.85rem;
+        font-size: 0.66rem;
+        font-weight: 850;
+        line-height: 1.25;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-engineer-workflow-strip span {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-engineer-workflow-strip i {
+        color: #0d6efd;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-add-schedule-help {
+        display: block !important;
+        color: #1d4ed8;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-add-schedule-card {
+        border-color: #bfdbfe;
+        background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+        box-shadow: 0 6px 18px rgba(13, 110, 253, 0.07);
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-schedule-card.mobile-hybrid-own-card {
+        border-color: #93c5fd;
+        background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+        box-shadow: 0 10px 26px rgba(13, 110, 253, 0.12);
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-hybrid-section-label {
+        display: flex;
+    }
+
+    .mobile-hybrid-section-label {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.65rem;
+        margin: 0.2rem 0 0.45rem;
+        padding: 0.5rem 0.65rem;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        border-radius: 0.85rem;
+        color: #334155;
+        font-size: 0.7rem;
+        font-weight: 950;
+        text-transform: uppercase;
+        letter-spacing: 0.035em;
+    }
+
+    .mobile-hybrid-section-label span {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+    }
+
+    .mobile-hybrid-section-count {
+        color: #64748b;
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        border-radius: 999px;
+        padding: 0.12rem 0.45rem;
+        font-size: 0.64rem;
+        font-weight: 950;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-hybrid-team-divider {
+        display: flex;
+    }
+
+    .mobile-hybrid-team-divider {
+        display: none;
+        align-items: center;
+        gap: 0.55rem;
+        margin: 0.45rem 0 0.15rem;
+        color: #64748b;
+        font-size: 0.68rem;
+        font-weight: 950;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+
+    .mobile-hybrid-team-divider::before,
+    .mobile-hybrid-team-divider::after {
+        content: "";
+        height: 1px;
+        background: #e2e8f0;
+        flex: 1;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-admin-quick-add-sheet {
+        border-color: #bfdbfe;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-admin-quick-add-header {
+        background: linear-gradient(135deg, #eff6ff, #ffffff);
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-admin-quick-add-actions {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+/* HYBRID ENGINEER/ADMIN TIMELINE H1 — desktop focus */
+.timeline-hybrid-desktop-hero {
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin: -0.25rem 0 0.75rem;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid #bfdbfe;
+    background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+    border-radius: 1rem;
+    box-shadow: 0 8px 22px rgba(13, 110, 253, 0.08);
+}
+
+body.timeline-hybrid-engineer-admin-desktop .timeline-hybrid-desktop-hero {
+    display: flex !important;
+}
+
+.timeline-hybrid-hero-main {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.timeline-hybrid-hero-icon {
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #0d6efd;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.timeline-hybrid-hero-title {
+    color: #0f172a;
+    font-size: 0.92rem;
+    font-weight: 950;
+    line-height: 1.15;
+}
+
+.timeline-hybrid-hero-sub {
+    color: #475569;
+    font-size: 0.74rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.timeline-hybrid-hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-shrink: 0;
+}
+
+body.timeline-hybrid-engineer-admin-desktop .timeline-engineer-focus-strip {
+    display: none !important;
+}
+
+body.timeline-hybrid-engineer-admin-desktop .timeline-my-engineer-row > td:first-child {
+    background: #eff6ff !important;
+    color: #0f172a !important;
+    border-left: 5px solid #0d6efd !important;
+}
+
+body.timeline-hybrid-engineer-admin-desktop .timeline-my-engineer-row {
+    position: relative;
+}
+
+body.timeline-hybrid-engineer-admin-desktop .timeline-my-engineer-row .schedule-card,
+body.timeline-hybrid-engineer-admin-desktop .timeline-my-engineer-row [class*="schedule-"] {
+    box-shadow: 0 8px 20px rgba(13, 110, 253, 0.08);
+}
+
+body.timeline-hybrid-engineer-admin-desktop .timeline-admin-control {
+    opacity: 0.96;
+}
+
+body.timeline-hybrid-engineer-admin-desktop .timeline-scroll-hint {
+    opacity: 0.72;
+}
+
+body.timeline-hybrid-engineer-admin-desktop .calendar-legend {
+    opacity: 0.92;
+}
+
+@media (max-width: 768px) {
+    .timeline-hybrid-desktop-hero {
+        display: none !important;
+    }
+}
+
 /* PURE ENGINEER TIMELINE E3 — workflow polish */
 .timeline-engineer-empty-action-card,
 .mobile-engineer-empty-action-card {
@@ -4396,6 +4643,8 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
 
         syncTimelineDeveloperViewModeUI();
         syncPureEngineerTimelineDesktopMode();
+        syncHybridEngineerAdminDesktopMode();
+        syncHybridEngineerAdminMobileMode();
         syncPureEngineerMobileMode();
         updateEngineerMobileViewMode();
 
@@ -4416,6 +4665,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
         document.body.classList.toggle('timeline-dev-preview-manager', mode === 'manager');
 
         syncPureEngineerTimelineDesktopMode();
+        syncHybridEngineerAdminDesktopMode();
         const branchFilter = document.getElementById('branch-filter');
         if(branchFilter && mode === 'engineer' && userBranch && userBranch !== 'ALL'){
             // Simulate a normal engineer landing on own branch.
@@ -4429,6 +4679,57 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
 
     let timelineEngineerAutoFocused = false;
     let timelineEngineerFocusDays = [];
+
+    function isHybridEngineerAdminMobileMode(){
+        const effectiveRole = (typeof getTimelineCurrentUserRole === 'function')
+            ? getTimelineCurrentUserRole()
+            : String(authRole || '').toLowerCase();
+
+        const adminLikeRoles = ['admin', 'superadmin', 'regional_admin', 'manager'];
+        const devMode = (typeof getTimelineDeveloperViewMode === 'function')
+            ? getTimelineDeveloperViewMode()
+            : 'default';
+
+        return Boolean(
+            loggedInEngineerId &&
+            adminLikeRoles.includes(effectiveRole) &&
+            window.matchMedia('(max-width: 768px)').matches &&
+            !mobileEngineerDesktopForced &&
+            (!isTimelineDeveloperJonamar || devMode === 'default' || devMode === 'manager')
+        );
+    }
+
+    function syncHybridEngineerAdminMobileMode(){
+        document.body.classList.toggle('timeline-hybrid-engineer-admin-mobile', isHybridEngineerAdminMobileMode());
+    }
+
+    function isHybridEngineerAdminDesktopMode(){
+        const effectiveRole = (typeof getTimelineCurrentUserRole === 'function')
+            ? getTimelineCurrentUserRole()
+            : String(authRole || '').toLowerCase();
+
+        const adminLikeRoles = ['admin', 'superadmin', 'regional_admin', 'manager'];
+        const devMode = (typeof getTimelineDeveloperViewMode === 'function')
+            ? getTimelineDeveloperViewMode()
+            : 'default';
+
+        return Boolean(
+            loggedInEngineerId &&
+            adminLikeRoles.includes(effectiveRole) &&
+            window.matchMedia('(min-width: 769px)').matches &&
+            (!isTimelineDeveloperJonamar || devMode === 'default' || devMode === 'manager')
+        );
+    }
+
+    function syncHybridEngineerAdminDesktopMode(){
+        const enabled = isHybridEngineerAdminDesktopMode();
+        document.body.classList.toggle('timeline-hybrid-engineer-admin-desktop', enabled);
+
+        const hybridSub = document.getElementById('timeline-hybrid-hero-sub');
+        if(hybridSub && enabled){
+            hybridSub.innerText = `${loggedInEngineerName || 'Engineer'} • admin tools stay available, with your row highlighted for field work.`;
+        }
+    }
 
     function isPureEngineerMobileMode(){
         const effectiveRole = (typeof getTimelineCurrentUserRole === 'function')
@@ -4494,6 +4795,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
         }
 
         syncPureEngineerTimelineDesktopMode();
+        syncHybridEngineerAdminDesktopMode();
     }
 
     function getTimelineScrollTopForRow(row, wrapper){
@@ -4623,7 +4925,9 @@ function syncMobileRoleBadges(){
     if(!badge || !badgeText) return;
 
     if(isMobileAdmin){
-        badgeText.innerText = role === 'regional_admin' ? 'Regional Admin Mobile Timeline' : 'Admin Mobile Timeline';
+        badgeText.innerText = isHybridEngineerAdminMobileMode()
+            ? 'Hybrid Engineer/Admin Mobile Timeline'
+            : (role === 'regional_admin' ? 'Regional Admin Mobile Timeline' : 'Admin Mobile Timeline');
     }else if(isMobileScheduler){
         badgeText.innerText = 'Scheduler Mobile Timeline';
     }else{
@@ -4652,6 +4956,7 @@ function shouldUseEngineerMobileView(){
         document.body.classList.toggle('mobile-scheduler-mode', useAdminSchedulerMobile && currentRole === 'scheduler');
         document.body.classList.toggle('mobile-engineer-desktop-forced', mobileEngineerDesktopForced && (isEngineer || currentRole === 'admin' || currentRole === 'superadmin' || currentRole === 'regional_admin' || currentRole === 'scheduler'));
 
+        syncHybridEngineerAdminMobileMode();
         syncPureEngineerMobileMode();
         const title = document.querySelector('#mobile-engineer-shell .mobile-title');
         const eyebrow = document.querySelector('#mobile-engineer-shell .mobile-eyebrow');
@@ -4660,11 +4965,19 @@ function shouldUseEngineerMobileView(){
         const addHelp = document.querySelector('.mobile-add-schedule-help');
 
         if(useAdminSchedulerMobile){
-            if(eyebrow) eyebrow.innerText = 'Admin Mobile View';
-            if(title) title.innerText = 'Team Service Schedule';
-            if(noticeTitle) noticeTitle.innerText = 'Mobile mode enabled for admins/schedulers';
-            if(noticeBody) noticeBody.innerText = 'All visible branch schedules are shown below as touch-friendly cards.';
-            if(addHelp) addHelp.innerText = 'Quick add lets admins/schedulers choose an engineer and date before opening the schedule form.';
+            if(isHybridEngineerAdminMobileMode()){
+                if(eyebrow) eyebrow.innerText = 'Hybrid Mobile View';
+                if(title) title.innerText = 'My Work + Team Schedule';
+                if(noticeTitle) noticeTitle.innerText = 'Hybrid mobile mode enabled';
+                if(noticeBody) noticeBody.innerText = 'Your schedules appear first, followed by visible team schedules.';
+                if(addHelp) addHelp.innerText = 'Quick add can start on your own row or choose another engineer for team scheduling.';
+            }else{
+                if(eyebrow) eyebrow.innerText = 'Admin Mobile View';
+                if(title) title.innerText = 'Team Service Schedule';
+                if(noticeTitle) noticeTitle.innerText = 'Mobile mode enabled for admins/schedulers';
+                if(noticeBody) noticeBody.innerText = 'All visible branch schedules are shown below as touch-friendly cards.';
+                if(addHelp) addHelp.innerText = 'Quick add lets admins/schedulers choose an engineer and date before opening the schedule form.';
+            }
         }else{
             if(eyebrow) eyebrow.innerText = 'Engineer Mobile View';
             if(title) title.innerText = 'My Service Schedule';
@@ -4676,9 +4989,15 @@ function shouldUseEngineerMobileView(){
         const subtitle = document.getElementById('mobile-engineer-subtitle');
         if(subtitle){
             if(useAdminSchedulerMobile){
-                subtitle.innerText = userBranch && userBranch !== 'ALL'
-                    ? `${userBranch} branch • phone-optimized team view`
-                    : 'Phone-optimized team schedule view';
+                if(isHybridEngineerAdminMobileMode()){
+                    subtitle.innerText = userBranch && userBranch !== 'ALL'
+                        ? `${userBranch} branch • your work first, team below`
+                        : 'Your work first, team schedule below';
+                }else{
+                    subtitle.innerText = userBranch && userBranch !== 'ALL'
+                        ? `${userBranch} branch • phone-optimized team view`
+                        : 'Phone-optimized team schedule view';
+                }
             }else{
                 subtitle.innerText = userBranch && userBranch !== 'ALL'
                     ? `${userBranch} branch • phone-optimized engineer view`
@@ -4775,7 +5094,7 @@ function shouldUseEngineerMobileView(){
                         <label class="mobile-admin-quick-add-label" for="mobile-admin-quick-add-date">Schedule Date</label>
                         <input type="date" id="mobile-admin-quick-add-date" class="mobile-admin-quick-add-control">
                     </div>
-                    <div class="mobile-admin-quick-add-note">
+                    <div class="mobile-admin-quick-add-note" id="mobile-admin-quick-add-note">
                         This opens the existing Add Schedule form, so all current validations, fields, permissions, and collision checks stay unchanged.
                     </div>
                     <div class="mobile-admin-quick-add-actions">
@@ -4816,10 +5135,24 @@ function shouldUseEngineerMobileView(){
         const engineerSelect = document.getElementById('mobile-admin-quick-add-engineer');
         const dateInput = document.getElementById('mobile-admin-quick-add-date');
 
-        engineerSelect.innerHTML = engineers.map(engineer => {
+        engineerSelect.innerHTML = engineers.map((engineer, engineerIndex) => {
             const branchLabel = engineer.branch ? ` — ${engineer.branch}` : '';
             return `<option value="${escapeHtml(engineer.id)}">${escapeHtml(engineer.name)}${escapeHtml(branchLabel)}</option>`;
         }).join('');
+
+        if(isHybridEngineerAdminMobileMode() && loggedInEngineerId){
+            const ownOption = [...engineerSelect.options].find(option => String(option.value) === String(loggedInEngineerId));
+            if(ownOption){
+                engineerSelect.value = String(loggedInEngineerId);
+            }
+        }
+
+        const quickAddNote = document.getElementById('mobile-admin-quick-add-note');
+        if(quickAddNote){
+            quickAddNote.innerText = isHybridEngineerAdminMobileMode()
+                ? 'Hybrid mode defaults to your own engineer row. Change engineer only when scheduling the team.'
+                : 'This opens the existing Add Schedule form, so all current validations, fields, permissions, and collision checks stay unchanged.';
+        }
 
         dateInput.value = getMobileAddScheduleDate();
 
@@ -5922,6 +6255,47 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
 
 function collectMobileEngineerSchedules(){
         return collectMobileRoleAwareSchedules();
+    }
+
+    function getMobileHybridOwnEngineerId(){
+        return loggedInEngineerId ? String(loggedInEngineerId) : '';
+    }
+
+    function sortMobileEngineersForHybrid(engineers){
+        const ownId = getMobileHybridOwnEngineerId();
+        const list = Array.isArray(engineers) ? engineers.slice() : [];
+
+        if(!isHybridEngineerAdminMobileMode() || !ownId){
+            return list;
+        }
+
+        return list.sort((a, b) => {
+            const aOwn = String(a?.id || '') === ownId ? 0 : 1;
+            const bOwn = String(b?.id || '') === ownId ? 0 : 1;
+            if(aOwn !== bOwn) return aOwn - bOwn;
+            return String(a?.name || '').localeCompare(String(b?.name || ''));
+        });
+    }
+
+    function buildMobileHybridSectionLabel(engineer, count){
+        if(!isHybridEngineerAdminMobileMode()) return '';
+        const isOwn = String(engineer?.id || '') === getMobileHybridOwnEngineerId();
+
+        if(isOwn){
+            return `<div class="mobile-hybrid-section-label"><span><i class="fa-solid fa-user-check"></i>My schedules</span><span class="mobile-hybrid-section-count">${count}</span></div>`;
+        }
+
+        return '';
+    }
+
+    function buildMobileHybridTeamDivider(index, engineer){
+        if(!isHybridEngineerAdminMobileMode()) return '';
+        const ownId = getMobileHybridOwnEngineerId();
+        if(!ownId) return '';
+        if(String(engineer?.id || '') === ownId) return '';
+        return index === 0 || String((sortMobileEngineersForHybrid(latestTimelineDataForMobile?.engineers || [])[index - 1] || {}).id || '') === ownId
+            ? '<div class="mobile-hybrid-team-divider">Team schedules</div>'
+            : '';
     }
 
     function renderMobileEngineerScheduleCards(){
@@ -10758,6 +11132,8 @@ function initTimelineStickyHeaderPolish(){
     window.addEventListener('scroll', updateStickyState, { passive: true });
     window.addEventListener('resize', updateStickyState, { passive: true });
     window.addEventListener('resize', syncPureEngineerTimelineDesktopMode, { passive: true });
+    window.addEventListener('resize', syncHybridEngineerAdminDesktopMode, { passive: true });
+    window.addEventListener('resize', syncHybridEngineerAdminMobileMode, { passive: true });
     window.addEventListener('resize', syncPureEngineerMobileMode, { passive: true });
     setTimeout(updateStickyState, 250);
     setTimeout(updateStickyState, 900);
@@ -10770,6 +11146,8 @@ document.addEventListener('DOMContentLoaded', function(){
 document.addEventListener('DOMContentLoaded', function(){
     syncTimelineDeveloperViewModeUI();
     syncPureEngineerTimelineDesktopMode();
+    syncHybridEngineerAdminDesktopMode();
+    syncHybridEngineerAdminMobileMode();
     syncPureEngineerMobileMode();
 });
 document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
