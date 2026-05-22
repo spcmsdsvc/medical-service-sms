@@ -20,6 +20,13 @@
 -->
 
 <div class="container py-4">
+{% set dashboard_username_lower = current_user.username|lower %}
+{% set dashboard_scheduler_account = dashboard_username_lower in ['diary', 'hanna'] %}
+{% set dashboard_effective_scheduler_only = dashboard_scheduler_only or dashboard_scheduler_account %}
+{% set dashboard_effective_admin_view = dashboard_admin_view and not dashboard_scheduler_account %}
+{% set dashboard_effective_hybrid_view = dashboard_hybrid_view and not dashboard_scheduler_account %}
+{% set dashboard_effective_manager_view = dashboard_manager_view and not dashboard_scheduler_account %}
+
     
     <!-- DASHBOARD BRANDING HEADER (PERSONALIZED) -->
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -95,7 +102,7 @@
         </div>
     </div>
 
-    {% if dashboard_scheduler_only %}
+    {% if dashboard_effective_scheduler_only %}
     <!-- SCHEDULER PHASE 5: FINAL STABILIZATION NOTE -->
     <div class="scheduler-final-note mb-4 dashboard-sortable-section" data-dashboard-section="scheduler-final-note" data-dashboard-title="Scheduler Status Note">
         <div class="d-flex align-items-start gap-3">
@@ -318,7 +325,7 @@
 
     {% endif %}
 
-    {% if dashboard_manager_view and not dashboard_scheduler_only %}
+    {% if dashboard_effective_manager_view and not dashboard_effective_scheduler_only %}
     <!-- MANAGER PHASE M1.5: EXECUTIVE CLEANUP -->
     <div class="manager-executive-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="manager-executive" data-dashboard-title="Manager Executive Dashboard">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -663,7 +670,7 @@
     </div>
     {% endif %}
 
-    {% if dashboard_admin_view and not dashboard_manager_view %}
+    {% if dashboard_effective_admin_view and not dashboard_effective_manager_view %}
     <div class="row mb-4 g-3 dashboard-sortable-section" data-dashboard-section="admin-counters" data-dashboard-title="Admin Counters">
         
         <!-- PERSONNEL COUNTER -->
@@ -696,7 +703,7 @@
     </div>
     {% endif %}
 
-    {% if dashboard_admin_view and not dashboard_scheduler_only and not dashboard_manager_view %}
+    {% if dashboard_effective_admin_view and not dashboard_effective_scheduler_only and not dashboard_effective_manager_view %}
     <!-- HYBRID PHASE 3: SMART NEEDS ATTENTION PANEL -->
     <div class="dashboard-needs-attention mb-4 dashboard-sortable-section" data-dashboard-section="needs-attention" data-dashboard-title="Needs Attention">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -754,7 +761,7 @@
 
     {% endif %}
 
-    {% if dashboard_admin_view and not dashboard_scheduler_only and not dashboard_manager_view %}
+    {% if dashboard_effective_admin_view and not dashboard_effective_scheduler_only and not dashboard_effective_manager_view %}
     <!-- HYBRID PHASE 2: TEAM INTELLIGENCE (COLLAPSIBLE) -->
     <div class="dashboard-team-intelligence mb-4 dashboard-sortable-section" data-dashboard-section="team-intelligence" data-dashboard-title="Team Intelligence">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -833,7 +840,7 @@
     </div>
     {% endif %}
 
-    {% if dashboard_admin_view and not dashboard_scheduler_only and not dashboard_manager_view %}
+    {% if dashboard_effective_admin_view and not dashboard_effective_scheduler_only and not dashboard_effective_manager_view %}
     <!-- HYBRID PHASE 4: QUICK ADMIN ACTIONS (COLLAPSIBLE) -->
     <div class="dashboard-quick-admin mb-4 dashboard-sortable-section" data-dashboard-section="quick-admin" data-dashboard-title="Quick Admin Actions">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -915,7 +922,7 @@
             <span>Products</span>
         </a>
         {% endif %}
-        {% if dashboard_admin_view %}
+        {% if dashboard_effective_admin_view %}
         {% if not dashboard_has_engineer_profile %}
         <a href="/timeline" class="dashboard-mobile-action-card dashboard-mobile-action-primary">
             <i class="fa-solid fa-calendar-days"></i>
@@ -930,10 +937,10 @@
             <i class="fa-solid fa-hospital"></i>
             <span>Clients</span>
         </a>
-        {% if dashboard_scheduler_only or dashboard_manager_view %}
+        {% if dashboard_effective_scheduler_only or dashboard_effective_manager_view %}
         <a href="/reports_page" class="dashboard-mobile-action-card">
             <i class="fa-solid fa-folder-open"></i>
-            <span>{% if dashboard_manager_view and not dashboard_scheduler_only %}Reports{% else %}TSR{% endif %}</span>
+            <span>{% if dashboard_effective_manager_view and not dashboard_effective_scheduler_only %}Reports{% else %}TSR{% endif %}</span>
         </a>
         {% else %}
         <a href="/activity_page" class="dashboard-mobile-action-card">
@@ -1028,7 +1035,7 @@
     </div>
     {% endif %}
 
-    {% if not dashboard_scheduler_only and not dashboard_manager_view %}
+    {% if not dashboard_effective_scheduler_only and not dashboard_effective_manager_view %}
     <!-- OPEN TECHNICAL TASKS REGISTRY (COMPANY-WIDE) -->
     <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 dashboard-sortable-section" data-dashboard-section="open-technical-tasks" data-dashboard-title="Open Technical Tasks">
         
@@ -1105,7 +1112,7 @@
     </div>
     {% endif %}
 
-    {% if dashboard_admin_view and not dashboard_scheduler_only and not dashboard_manager_view %}
+    {% if dashboard_effective_admin_view and not dashboard_effective_scheduler_only and not dashboard_effective_manager_view %}
     <!-- ADMIN-ONLY: RECENT SYSTEM ACTIVITY (Auto-refresh enabled) -->
     <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-info dashboard-sortable-section" data-dashboard-section="recent-activity" data-dashboard-title="Recent Activity">
         <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
@@ -1157,12 +1164,13 @@
     const userRole = "{{ logged_in_user_role or current_user.role }}";
     const loggedInEngineerId = Number("{{ logged_in_engineer_id or '' }}") || null;
     const dashboardHasEngineerProfile = "{{ 'true' if dashboard_has_engineer_profile|default(false) else 'false' }}" === "true";
-    const dashboardAdminView = "{{ 'true' if dashboard_admin_view|default(false) else 'false' }}" === "true";
-    const dashboardSchedulerOnly = "{{ 'true' if dashboard_scheduler_only|default(false) else 'false' }}" === "true";
-    const dashboardHybridView = "{{ 'true' if dashboard_hybrid_view|default(false) else 'false' }}" === "true";
-    const dashboardManagerView = "{{ 'true' if dashboard_manager_view|default(false) else 'false' }}" === "true";
+    const dashboardAdminView = "{{ 'true' if dashboard_effective_admin_view|default(false) else 'false' }}" === "true";
+    const dashboardSchedulerOnly = "{{ 'true' if dashboard_effective_scheduler_only|default(false) else 'false' }}" === "true";
+    const dashboardHybridView = "{{ 'true' if dashboard_effective_hybrid_view|default(false) else 'false' }}" === "true";
+    const dashboardManagerView = "{{ 'true' if dashboard_effective_manager_view|default(false) else 'false' }}" === "true";
     const dashboardDeveloperMode = "{{ 'true' if dashboard_developer_mode|default(false) else 'false' }}" === "true";
     const dashboardDeveloperView = "{{ dashboard_developer_view|default('default') }}";
+    const dashboardSchedulerAccount = "{{ 'true' if dashboard_scheduler_account|default(false) else 'false' }}" === "true";
 
     // v5.4.5: Real-time Manila Ticker and Date
     function updateClock() {

@@ -131,7 +131,7 @@
                 <span class="input-group-text bg-light border-0"><i class="fa-solid fa-location-dot text-primary"></i></span>
                 <select id="branch-filter" class="form-select border-0 bg-light fw-bold text-primary" onchange="loadGrid()" style="cursor: pointer;">
                     <option value="ALL">ALL BRANCH OFFICES</option>
-                    {% if current_user.role == 'regional_admin' %}
+                    {% if current_user.role == 'regional_admin' or current_user.username|lower == 'jonamar' %}
                     <option value="REGIONAL">CEBU + DAVAO BRANCHES</option>
                     {% endif %}
                     <option value="Manila">MANILA BRANCH</option>
@@ -5867,6 +5867,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
         if(!isTimelineDeveloperJonamar || devMode === 'default') return authRole;
         if(devMode === 'manager') return 'superadmin';
         if(devMode === 'scheduler') return 'scheduler';
+        if(devMode === 'regional_admin') return 'regional_admin';
         if(devMode === 'engineer') return 'engineer';
         return authRole;
     }
@@ -5914,6 +5915,11 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
         if(branchFilter && mode === 'engineer' && userBranch && userBranch !== 'ALL'){
             // Simulate a normal engineer landing on own branch.
             branchFilter.value = userBranch;
+        }
+        if(branchFilter && mode === 'regional_admin'){
+            // Simulate regional admin default scope without changing real account defaults.
+            const regionalOption = [...branchFilter.options].find(opt => opt.value === 'REGIONAL');
+            branchFilter.value = regionalOption ? 'REGIONAL' : 'ALL';
         }
         if(branchFilter && (mode === 'scheduler' || mode === 'manager')){
             // Simulate admin/scheduler broader operations view.
