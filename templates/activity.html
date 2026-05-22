@@ -222,6 +222,67 @@ function escapeHtml(value) {
         .replaceAll("'", '&#039;');
 }
 
+function getActivityClientName(log) {
+    if(!log) return '';
+
+    const directKeys = [
+        'client_name',
+        'client',
+        'customer_name',
+        'customer',
+        'hospital_name',
+        'medical_center',
+        'medical_center_name',
+        'scheduled_client',
+        'scheduled_to'
+    ];
+
+    for(const key of directKeys){
+        if(log[key]){
+            return String(log[key]).trim();
+        }
+    }
+
+    const details = log.details || log.metadata || log.extra || log.payload || null;
+
+    if(details && typeof details === 'object'){
+        for(const key of directKeys){
+            if(details[key]){
+                return String(details[key]).trim();
+            }
+        }
+    }
+
+    if(typeof details === 'string'){
+        try{
+            const parsed = JSON.parse(details);
+            for(const key of directKeys){
+                if(parsed && parsed[key]){
+                    return String(parsed[key]).trim();
+                }
+            }
+        }catch(err){}
+    }
+
+    return '';
+}
+
+function getActivityDisplayAction(log) {
+    const actionText = String((log && log.action) || '');
+    const clientName = getActivityClientName(log);
+
+    if(!clientName) return actionText;
+
+    const isScheduleCreate = String(log.type || '').toLowerCase() === 'schedule' &&
+        String(log.action_type || '').toLowerCase() === 'create';
+
+    if(!isScheduleCreate) return actionText;
+
+    if(actionText.toLowerCase().includes(clientName.toLowerCase())) return actionText;
+
+    return `${actionText} — Client: ${clientName}`;
+}
+
 function getCategoryMeta(type) {
     const meta = {
         Schedule: ['fa-calendar-check', 'activity-schedule'],
@@ -293,7 +354,7 @@ function renderActivityMobileCards(logs){
                 </div>
 
                 <div class="activity-mobile-details">
-                    ${escapeHtml(log.action)}
+                    ${escapeHtml(getActivityDisplayAction(log))}
                 </div>
 
                 ${log.branch ? `
@@ -429,8 +490,8 @@ async function loadLogs(page = 1) {
                         <i class="fa-solid ${actionIcon} me-1"></i>${escapeHtml(log.action_type || 'Other')}
                     </span>
                 </td>
-                <td class="text-muted activity-action-cell" title="${escapeHtml(log.action)}">
-                    ${escapeHtml(log.action)}
+                <td class="text-muted activity-action-cell" title="${escapeHtml(getActivityDisplayAction(log))}">
+                    ${escapeHtml(getActivityDisplayAction(log))}
                     ${log.branch ? `<span class="branch-chip ms-2"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(log.branch)}</span>` : ''}
                 </td>
             </tr>`;

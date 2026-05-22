@@ -76,8 +76,23 @@
 
         <div class="d-flex align-items-center gap-2">
             
+            <!-- DEVELOPER ONLY: Timeline role view picker for Jonamar -->
+            {% if current_user.username|lower == 'jonamar' %}
+            <div class="timeline-dev-view-picker input-group input-group-sm shadow-sm border rounded">
+                <span class="input-group-text bg-light border-0">
+                    <i class="fa-solid fa-user-gear text-danger"></i>
+                </span>
+                <select id="timeline-dev-view-mode" class="form-select border-0 bg-light fw-bold text-danger" onchange="applyTimelineDeveloperViewMode(this.value)" title="Developer-only timeline view preview">
+                    <option value="default">MY DEFAULT</option>
+                    <option value="engineer">ENGINEER VIEW</option>
+                    <option value="scheduler">SCHEDULER VIEW</option>
+                    <option value="manager">MANAGER / ADMIN VIEW</option>
+                </select>
+            </div>
+            {% endif %}
+
             <!-- BRANCH SELECTOR TOGGLE (v5.1 Filter Support) -->
-            <div class="input-group input-group-sm shadow-sm border rounded">
+            <div class="input-group input-group-sm shadow-sm border rounded timeline-admin-control timeline-branch-control">
                 <span class="input-group-text bg-light border-0"><i class="fa-solid fa-location-dot text-primary"></i></span>
                 <select id="branch-filter" class="form-select border-0 bg-light fw-bold text-primary" onchange="loadGrid()" style="cursor: pointer;">
                     <option value="ALL">ALL BRANCH OFFICES</option>
@@ -91,7 +106,7 @@
             </div>
 
             <!-- SYSTEM DATA ACTIONS -->
-            <div class="btn-group shadow-sm">
+            <div class="btn-group shadow-sm timeline-admin-control timeline-export-print-control">
                 
                 <button 
                     class="btn btn-outline-success btn-sm fw-bold px-3" 
@@ -165,6 +180,25 @@
             <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="openLoggedInEngineerQuickAdd()">
                 <i class="fa-solid fa-calendar-plus me-1"></i>Add Schedule
             </button>
+        </div>
+    </div>
+
+    <!-- PURE ENGINEER DESKTOP E1: cleaner engineer guidance -->
+    <div class="timeline-engineer-desktop-hero no-print d-none" id="timeline-engineer-desktop-hero">
+        <div class="timeline-engineer-hero-main">
+            <div class="timeline-engineer-hero-icon">
+                <i class="fa-solid fa-user-check"></i>
+            </div>
+            <div>
+                <div class="timeline-engineer-hero-title">Engineer Timeline</div>
+                <div class="timeline-engineer-hero-sub" id="timeline-engineer-hero-sub">
+                    Your row is prioritized. Use Add Schedule or Create TSR from your schedule cards.
+                </div>
+            </div>
+        </div>
+        <div class="timeline-engineer-hero-badges">
+            <span class="timeline-engineer-mini-badge"><i class="fa-solid fa-location-crosshairs me-1"></i>Own row focus</span>
+            <span class="timeline-engineer-mini-badge"><i class="fa-solid fa-file-pen me-1"></i>TSR ready</span>
         </div>
     </div>
 
@@ -268,7 +302,7 @@
         </div>
     </div>
 
-    <div class="mobile-engineer-notice">
+    <div class="mobile-engineer-notice mobile-engineer-secondary-strip">
         <div class="mobile-notice-icon">
             <i class="fa-solid fa-mobile-screen-button"></i>
         </div>
@@ -305,11 +339,16 @@
         </button>
     </div>
 
-    <div class="mobile-swipe-hint" id="mobile-swipe-hint">
+    <div class="mobile-engineer-workflow-strip" id="mobile-engineer-workflow-strip">
+        <span><i class="fa-solid fa-circle-check me-1"></i>Tap a card to open quick actions.</span>
+        <span><i class="fa-solid fa-file-pen me-1"></i>Create TSR before completion.</span>
+    </div>
+
+    <div class="mobile-swipe-hint mobile-engineer-secondary-strip" id="mobile-swipe-hint">
         <i class="fa-solid fa-arrows-left-right"></i>
         Swipe left/right to move day by day.
     </div>
-    <div class="mobile-performance-hint" id="mobile-performance-hint">
+    <div class="mobile-performance-hint mobile-engineer-secondary-strip" id="mobile-performance-hint">
         <i class="fa-solid fa-bolt"></i>
         Mobile fast mode: full calendar loads only when you tap View full calendar.
     </div>
@@ -319,13 +358,13 @@
         <span id="mobile-sync-status-text">Schedule synced</span>
     </div>
 
-    <div class="mobile-cache-status" id="mobile-cache-status">
+    <div class="mobile-cache-status mobile-engineer-secondary-strip" id="mobile-cache-status">
         <i class="fa-solid fa-gauge-high"></i>
         <span id="mobile-cache-status-text">Smart cache ready</span>
     </div>
 
     
-    <div class="mobile-offline-readiness" id="mobile-offline-readiness">
+    <div class="mobile-offline-readiness mobile-engineer-secondary-strip" id="mobile-offline-readiness">
         <div class="mobile-offline-readiness-main">
             <i class="fa-solid fa-cloud-arrow-down"></i>
             <span id="mobile-offline-ready-label">Preparing offline mode</span>
@@ -1276,6 +1315,40 @@
     font-size: 0.56rem;
     letter-spacing: 0.15px;
     padding: 0.22rem 0.35rem;
+}
+
+.timeline-dev-view-picker {
+    min-width: 12.5rem;
+}
+
+.timeline-dev-view-picker .form-select {
+    max-width: 11rem;
+}
+
+body.timeline-dev-preview-engineer .timeline-dev-view-picker,
+body.timeline-dev-preview-scheduler .timeline-dev-view-picker,
+body.timeline-dev-preview-manager .timeline-dev-view-picker {
+    border-color: rgba(220, 53, 69, 0.35) !important;
+    box-shadow: 0 0 0 0.16rem rgba(220, 53, 69, 0.08) !important;
+}
+
+body.timeline-dev-preview-engineer .timeline-engineer-focus-strip {
+    display: flex !important;
+}
+
+body.timeline-dev-preview-scheduler .timeline-engineer-focus-strip,
+body.timeline-dev-preview-manager .timeline-engineer-focus-strip {
+    display: none !important;
+}
+
+@media (max-width: 768px) {
+    .timeline-dev-view-picker {
+        width: 100%;
+    }
+
+    .timeline-dev-view-picker .form-select {
+        max-width: none;
+    }
 }
 
 .timeline-scroll-wrapper {
@@ -3225,6 +3298,423 @@ body.pwa-reconnected .mobile-offline-readiness {
     }
 }
 
+/* PURE ENGINEER TIMELINE E3 — workflow polish */
+.timeline-engineer-empty-action-card,
+.mobile-engineer-empty-action-card {
+    border: 1px dashed #bfdbfe;
+    background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+    border-radius: 1rem;
+    padding: 0.85rem;
+    text-align: center;
+    color: #334155;
+}
+
+.timeline-engineer-empty-action-card .btn,
+.mobile-engineer-empty-action-card .btn {
+    border-radius: 999px;
+    font-weight: 900;
+}
+
+@media (max-width: 768px) {
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-engineer-workflow-strip {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.3rem;
+        margin: -0.1rem 0 0.55rem;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid #dbeafe;
+        background: #ffffff;
+        color: #475569;
+        border-radius: 0.85rem;
+        font-size: 0.66rem;
+        font-weight: 850;
+        line-height: 1.25;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-engineer-workflow-strip span {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-engineer-workflow-strip i {
+        color: #0d6efd;
+    }
+
+    body:not(.mobile-engineer-mode) .mobile-engineer-workflow-strip,
+    body.mobile-admin-mode .mobile-engineer-workflow-strip,
+    body.mobile-scheduler-mode .mobile-engineer-workflow-strip {
+        display: none !important;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-schedule-card.mobile-needs-tsr {
+        border-color: #fde68a;
+        background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%);
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-schedule-card.mobile-tsr-ready {
+        border-color: #bbf7d0;
+    }
+
+    .mobile-workflow-primary-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.38rem;
+        margin-top: 0.45rem;
+    }
+
+    .mobile-workflow-primary-row .mobile-action-btn {
+        min-height: 2.55rem !important;
+    }
+
+    .mobile-engineer-empty-action-card {
+        margin-top: 0.35rem;
+    }
+
+    .mobile-engineer-empty-action-card i {
+        color: #0d6efd;
+        font-size: 1.45rem;
+        margin-bottom: 0.35rem;
+    }
+
+    .mobile-engineer-empty-action-card-title {
+        font-weight: 950;
+        color: #0f172a;
+        margin-bottom: 0.18rem;
+    }
+
+    .mobile-engineer-empty-action-card-sub {
+        color: #64748b;
+        font-size: 0.73rem;
+        font-weight: 750;
+        line-height: 1.3;
+        margin-bottom: 0.65rem;
+    }
+}
+
+/* PURE ENGINEER TIMELINE E2 — mobile cleanup */
+@media (max-width: 768px) {
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-engineer-header {
+        margin-bottom: 0.65rem;
+        padding: 0.9rem;
+        border-radius: 1.1rem;
+        box-shadow: 0 8px 22px rgba(13, 110, 253, 0.14);
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-title {
+        font-size: 1.16rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-subtitle {
+        font-size: 0.74rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-engineer-notice,
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-performance-hint,
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-cache-status,
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-offline-readiness {
+        display: none !important;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-sync-status {
+        margin: -0.15rem 0 0.55rem;
+        min-height: 2rem;
+        padding: 0.38rem 0.65rem;
+        font-size: 0.66rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode).pwa-offline-active .mobile-offline-readiness,
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode).pwa-offline-preparing .mobile-offline-readiness {
+        display: block !important;
+        padding: 0.58rem 0.7rem;
+        margin-bottom: 0.55rem;
+        box-shadow: none;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-add-schedule-card {
+        padding: 0.65rem;
+        margin-bottom: 0.65rem;
+        border-radius: 0.95rem;
+        box-shadow: none;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-add-schedule-help {
+        display: none;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-add-schedule-main {
+        min-height: 2.75rem;
+        border-radius: 0.82rem;
+        font-size: 0.88rem;
+        box-shadow: 0 7px 16px rgba(13, 110, 253, 0.16);
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-engineer-actions {
+        padding-bottom: 0.55rem;
+        margin-bottom: 0.1rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-pill {
+        padding: 0.5rem 0.76rem;
+        font-size: 0.76rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-selected-day-strip {
+        margin-bottom: 0.45rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-swipe-hint {
+        display: none !important;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-schedule-card {
+        padding: 0.78rem;
+        border-radius: 1rem;
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.055);
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-schedule-topline {
+        margin-bottom: 0.52rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-schedule-client {
+        font-size: 0.94rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-schedule-task {
+        font-size: 0.78rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-schedule-meta {
+        gap: 0.34rem;
+        margin-bottom: 0.55rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-meta-row {
+        font-size: 0.74rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-engineer-chips {
+        display: none;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-quick-status-panel {
+        margin: 0.55rem 0;
+        padding: 0.58rem;
+        border-radius: 0.9rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-quick-status-title {
+        margin-bottom: 0.42rem;
+        font-size: 0.67rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-quick-status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.35rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-status-option-btn {
+        min-height: 2.15rem;
+        padding: 0.45rem 0.35rem;
+        font-size: 0.66rem;
+        border-radius: 0.68rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-tsr-requirement-panel,
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-tsr-ready-panel {
+        margin: 0.52rem 0;
+        padding: 0.58rem 0.65rem;
+        border-radius: 0.82rem;
+        font-size: 0.68rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-schedule-actions {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.38rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-action-btn {
+        min-height: 2.45rem;
+        padding: 0.55rem 0.42rem;
+        border-radius: 0.72rem;
+        font-size: 0.72rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-action-warning,
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-action-dark {
+        display: none !important;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-card-expanded-details {
+        padding: 0.65rem;
+        margin-top: 0.58rem;
+        border-radius: 0.82rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-card-hint {
+        display: none;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-view-toggle-group {
+        margin-top: 0.2rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-desktop-toggle {
+        margin-top: 0.65rem;
+        padding: 0.62rem;
+        border-radius: 0.8rem;
+        font-size: 0.76rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-sticky-action-bar {
+        left: 0.55rem;
+        right: 0.55rem;
+        bottom: 0.55rem;
+        padding: 0.62rem;
+        border-radius: 0.95rem;
+        grid-template-columns: 1fr auto;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-sticky-title {
+        font-size: 0.73rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-sticky-btn {
+        width: 2.35rem;
+        height: 2.35rem;
+        border-radius: 0.72rem;
+        font-size: 0.92rem;
+    }
+
+    body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-sticky-duplicate {
+        display: none !important;
+    }
+}
+
+/* PURE ENGINEER TIMELINE E1 — desktop cleanup */
+body.timeline-pure-engineer-desktop .timeline-admin-control {
+    display: none !important;
+}
+
+body.timeline-pure-engineer-desktop .timeline-freeze-toolbar {
+    gap: 0.75rem;
+}
+
+body.timeline-pure-engineer-desktop .header-branding-container h2 {
+    font-size: 1.1rem;
+}
+
+body.timeline-pure-engineer-desktop .timeline-scroll-hint {
+    display: none !important;
+}
+
+body.timeline-pure-engineer-desktop .calendar-legend {
+    opacity: 0.88;
+}
+
+body.timeline-pure-engineer-desktop .calendar-legend .legend-pill:nth-child(n+6) {
+    display: none;
+}
+
+.timeline-engineer-desktop-hero {
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin: -0.25rem 0 0.75rem;
+    padding: 0.85rem 0.95rem;
+    border: 1px solid #bbf7d0;
+    background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
+    border-radius: 1rem;
+    box-shadow: 0 8px 22px rgba(22, 163, 74, 0.08);
+}
+
+body.timeline-pure-engineer-desktop .timeline-engineer-desktop-hero {
+    display: flex !important;
+}
+
+.timeline-engineer-hero-main {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.timeline-engineer-hero-icon {
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 999px;
+    background: #dcfce7;
+    color: #16a34a;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.timeline-engineer-hero-title {
+    color: #0f172a;
+    font-size: 0.92rem;
+    font-weight: 950;
+    line-height: 1.15;
+}
+
+.timeline-engineer-hero-sub {
+    color: #475569;
+    font-size: 0.74rem;
+    font-weight: 800;
+    line-height: 1.25;
+}
+
+.timeline-engineer-hero-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    justify-content: flex-end;
+}
+
+.timeline-engineer-mini-badge {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #bbf7d0;
+    background: #ffffff;
+    color: #166534;
+    border-radius: 999px;
+    padding: 0.32rem 0.58rem;
+    font-size: 0.68rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+body.timeline-pure-engineer-desktop .timeline-my-engineer-row > td:first-child {
+    background: #eff6ff !important;
+    color: #0f172a !important;
+    border-left: 5px solid #0d6efd !important;
+}
+
+body.timeline-pure-engineer-desktop .timeline-grid-table tbody tr:not(.timeline-my-engineer-row) {
+    opacity: 0.58;
+}
+
+body.timeline-pure-engineer-desktop .timeline-grid-table tbody tr:not(.timeline-my-engineer-row):hover {
+    opacity: 0.9;
+}
+
+body.timeline-pure-engineer-desktop .timeline-my-engineer-row {
+    opacity: 1 !important;
+}
+
+body.timeline-pure-engineer-desktop .timeline-my-engineer-row .schedule-card,
+body.timeline-pure-engineer-desktop .timeline-my-engineer-row [class*="schedule-"] {
+    box-shadow: 0 8px 20px rgba(13, 110, 253, 0.08);
+}
+
+@media (max-width: 768px) {
+    .timeline-engineer-desktop-hero {
+        display: none !important;
+    }
+}
+
 .timeline-engineer-focus-strip {
     display: flex;
     justify-content: space-between;
@@ -3870,8 +4360,119 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
     // Regional Admin/Kevin can view Cebu and Davao together, but not Manila schedule actions.
     const regionalAllowedBranches = ["Cebu", "Davao"];
 
+    // Developer-only timeline preview mode for Jonamar.
+    // This changes frontend view behavior only. Backend permissions remain unchanged.
+    const isTimelineDeveloperJonamar = loggedInUserLower === "jonamar";
+    const TIMELINE_DEV_VIEW_MODE_KEY = 'timelineDeveloperViewMode';
+
+    function getTimelineDeveloperViewMode(){
+        if(!isTimelineDeveloperJonamar) return 'default';
+        try{
+            return localStorage.getItem(TIMELINE_DEV_VIEW_MODE_KEY) || 'default';
+        }catch(err){
+            return 'default';
+        }
+    }
+
+    function getTimelineEffectiveRole(){
+        const devMode = getTimelineDeveloperViewMode();
+        if(!isTimelineDeveloperJonamar || devMode === 'default') return authRole;
+        if(devMode === 'manager') return 'superadmin';
+        if(devMode === 'scheduler') return 'scheduler';
+        if(devMode === 'engineer') return 'engineer';
+        return authRole;
+    }
+
+    function applyTimelineDeveloperViewMode(mode){
+        if(!isTimelineDeveloperJonamar) return;
+
+        const normalizedMode = ['default', 'engineer', 'scheduler', 'manager'].includes(mode) ? mode : 'default';
+
+        try{
+            localStorage.setItem(TIMELINE_DEV_VIEW_MODE_KEY, normalizedMode);
+        }catch(err){
+            console.warn('Unable to save timeline developer view mode:', err);
+        }
+
+        syncTimelineDeveloperViewModeUI();
+        syncPureEngineerTimelineDesktopMode();
+        syncPureEngineerMobileMode();
+        updateEngineerMobileViewMode();
+
+        // Reload grid so branch/default visibility and mobile cards refresh around the selected preview.
+        timelineCache = {};
+        loadGrid();
+    }
+
+    function syncTimelineDeveloperViewModeUI(){
+        if(!isTimelineDeveloperJonamar) return;
+
+        const mode = getTimelineDeveloperViewMode();
+        const picker = document.getElementById('timeline-dev-view-mode');
+        if(picker) picker.value = mode;
+
+        document.body.classList.toggle('timeline-dev-preview-engineer', mode === 'engineer');
+        document.body.classList.toggle('timeline-dev-preview-scheduler', mode === 'scheduler');
+        document.body.classList.toggle('timeline-dev-preview-manager', mode === 'manager');
+
+        syncPureEngineerTimelineDesktopMode();
+        const branchFilter = document.getElementById('branch-filter');
+        if(branchFilter && mode === 'engineer' && userBranch && userBranch !== 'ALL'){
+            // Simulate a normal engineer landing on own branch.
+            branchFilter.value = userBranch;
+        }
+        if(branchFilter && (mode === 'scheduler' || mode === 'manager')){
+            // Simulate admin/scheduler broader operations view.
+            branchFilter.value = 'ALL';
+        }
+    }
+
     let timelineEngineerAutoFocused = false;
     let timelineEngineerFocusDays = [];
+
+    function isPureEngineerMobileMode(){
+        const effectiveRole = (typeof getTimelineCurrentUserRole === 'function')
+            ? getTimelineCurrentUserRole()
+            : String(authRole || '').toLowerCase();
+
+        return Boolean(
+            effectiveRole === 'engineer' &&
+            loggedInEngineerId &&
+            window.matchMedia('(max-width: 768px)').matches &&
+            !mobileEngineerDesktopForced
+        );
+    }
+
+    function syncPureEngineerMobileMode(){
+        document.body.classList.toggle('timeline-pure-engineer-mobile', isPureEngineerMobileMode());
+    }
+
+    function isPureEngineerTimelineDesktopMode(){
+        const effectiveRole = (typeof getTimelineCurrentUserRole === 'function')
+            ? getTimelineCurrentUserRole()
+            : String(authRole || '').toLowerCase();
+
+        const devMode = (typeof getTimelineDeveloperViewMode === 'function')
+            ? getTimelineDeveloperViewMode()
+            : 'default';
+
+        return Boolean(
+            effectiveRole === 'engineer' &&
+            loggedInEngineerId &&
+            window.matchMedia('(min-width: 769px)').matches &&
+            (!isTimelineDeveloperJonamar || devMode === 'default' || devMode === 'engineer')
+        );
+    }
+
+    function syncPureEngineerTimelineDesktopMode(){
+        const enabled = isPureEngineerTimelineDesktopMode();
+        document.body.classList.toggle('timeline-pure-engineer-desktop', enabled);
+
+        const heroSub = document.getElementById('timeline-engineer-hero-sub');
+        if(heroSub && enabled){
+            heroSub.innerText = `${loggedInEngineerName || 'Engineer'} • your row is prioritized for faster daily work.`;
+        }
+    }
 
     function isDesktopEngineerTimelineFocusAvailable(){
         return Boolean(
@@ -3891,6 +4492,8 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
         if(sub && shouldShow){
             sub.innerText = `${loggedInEngineerName || 'Engineer'} • use this to jump to your row without scrolling.`;
         }
+
+        syncPureEngineerTimelineDesktopMode();
     }
 
     function getTimelineScrollTopForRow(row, wrapper){
@@ -3949,6 +4552,20 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
         const targetDate = targetDay?.iso || todayIso;
 
         await openAddModal(loggedInEngineerId, targetDate, loggedInEngineerName || "Engineer");
+
+        setTimeout(() => {
+            const categoryEl = document.getElementById('f-category');
+            const startDateEl = document.getElementById('f-start-date');
+            const endDateEl = document.getElementById('f-end-date');
+
+            if(categoryEl && !categoryEl.value) categoryEl.value = 'Work';
+            if(startDateEl && targetDate) startDateEl.value = targetDate;
+            if(endDateEl && targetDate) endDateEl.value = targetDate;
+
+            if(typeof toggleCategoryFields === 'function') toggleCategoryFields();
+            if(typeof updateDurationLabel === 'function') updateDurationLabel();
+        }, 160);
+
         setTimelineClientQuickAddState();
     }
 
@@ -3958,6 +4575,10 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
     
 function getTimelineCurrentUserRole(){
     try{
+        if(typeof getTimelineEffectiveRole === 'function'){
+            return String(getTimelineEffectiveRole() || '').trim().toLowerCase();
+        }
+
         const rawRole = (
             window.currentUserRole ||
             window.userRole ||
@@ -4012,8 +4633,9 @@ function syncMobileRoleBadges(){
 
 
 function shouldUseEngineerMobileView(){
+        const effectiveRole = getTimelineCurrentUserRole();
         return Boolean(
-            isEngineer &&
+            effectiveRole === 'engineer' &&
             !mobileEngineerDesktopForced &&
             window.matchMedia(`(max-width: ${MOBILE_ENGINEER_BREAKPOINT_PX}px)`).matches
         );
@@ -4030,6 +4652,7 @@ function shouldUseEngineerMobileView(){
         document.body.classList.toggle('mobile-scheduler-mode', useAdminSchedulerMobile && currentRole === 'scheduler');
         document.body.classList.toggle('mobile-engineer-desktop-forced', mobileEngineerDesktopForced && (isEngineer || currentRole === 'admin' || currentRole === 'superadmin' || currentRole === 'regional_admin' || currentRole === 'scheduler'));
 
+        syncPureEngineerMobileMode();
         const title = document.querySelector('#mobile-engineer-shell .mobile-title');
         const eyebrow = document.querySelector('#mobile-engineer-shell .mobile-eyebrow');
         const noticeTitle = document.querySelector('.mobile-engineer-notice .fw-bold');
@@ -4245,7 +4868,7 @@ async function openMobileAddSchedule(){
             return;
         }
 
-        if(!isEngineer || !loggedInEngineerId){
+        if(getTimelineCurrentUserRole() !== 'engineer' || !loggedInEngineerId){
             forceDesktopTimelineForThisSession();
             alert("For admin/scheduler mobile add, please use the full calendar view and tap the engineer/date cell.");
             return;
@@ -5124,7 +5747,43 @@ async function openMobileAddSchedule(){
         }, 180);
     }
 
-function buildMobileScheduleCard(shift, day, rowEngineer){
+function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
+        if(!isWork) return '';
+        if(fileCount > 0) return 'mobile-tsr-ready';
+        const status = String(shift?.status || '').toLowerCase();
+        if(status.includes('completed') || status.includes('progress') || status.includes('continuation')) return 'mobile-needs-tsr';
+        return '';
+    }
+
+    function buildPureEngineerMobileEmptyAction(){
+        if(!isPureEngineerMobileMode()) return '';
+        return `<div class="mobile-engineer-empty-action-card">
+            <i class="fa-solid fa-calendar-plus"></i>
+            <div class="mobile-engineer-empty-action-card-title">No schedule here yet</div>
+            <div class="mobile-engineer-empty-action-card-sub">You can add a schedule for this selected day or swipe to check another day.</div>
+            <button type="button" class="btn btn-primary btn-sm px-3" onclick="openMobileAddSchedule()">
+                <i class="fa-solid fa-plus me-1"></i>Add Schedule
+            </button>
+        </div>`;
+    }
+
+    function buildPureEngineerMobileWorkflowActions(shift, engineerId, dayIso, canManage, canSendTSR){
+        if(!isPureEngineerMobileMode() || !shift?.id) return '';
+
+        const payload = JSON.stringify(shift || {}).replace(/"/g, '&quot;');
+        const resolvedEngineerId = engineerId || loggedInEngineerId || '';
+        const resolvedDayIso = dayIso || getMobileAddScheduleDate();
+
+        const editAction = canManage
+            ? `<button type="button" class="mobile-action-btn mobile-action-primary" onclick="openEditModal(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-arrow-up"></i>Upload/Edit</button>`
+            : `<button type="button" class="mobile-action-btn mobile-action-muted" disabled><i class="fa-solid fa-lock"></i>View Only</button>`;
+
+        const tsrAction = `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCreateTSRPageFromSchedule(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-pen"></i>Create TSR</button>`;
+
+        return `<div class="mobile-workflow-primary-row">${editAction}${tsrAction}</div>`;
+    }
+
+    function buildMobileScheduleCard(shift, day, rowEngineer){
         const isLeave = HR_CATEGORIES.includes(shift.task);
         const isWork = Boolean(shift.client_id);
         const isInternal = !isWork;
@@ -5173,7 +5832,7 @@ function buildMobileScheduleCard(shift, day, rowEngineer){
                     <div class="mobile-card-detail-row"><span class="mobile-card-detail-label">Status</span><span class="mobile-card-detail-value">${escapeHtml(getMobileStatusLabel(shift, isInternal))}</span></div>
                     <div class="mobile-card-detail-row"><span class="mobile-card-detail-label">Files</span><span class="mobile-card-detail-value">${fileCount ? getShiftFileDetails(shift).map(file => escapeHtml(file.display_name || cleanStoredFilenameForDisplay(file.filename))).join(', ') : 'No files attached'}</span></div>
                 </div>
-                <div class="mobile-card-hint"><i class="fa-solid fa-hand-pointer"></i><span>Use the bottom quick action tray for one-thumb actions.</span></div>
+                <div class="mobile-card-hint"><i class="fa-solid fa-hand-pointer"></i><span>Tap card for quick actions.</span></div>
             </div>
         `;
 
@@ -5185,7 +5844,7 @@ function buildMobileScheduleCard(shift, day, rowEngineer){
             : '';
 
         return `
-            <div class="mobile-schedule-card ${isSelected ? 'mobile-card-selected' : ''}" data-mobile-shift-id="${shift.id}" onclick="if(!event.target.closest('button,a,input,select,textarea')) setMobileStickyActionContext({ shift, day, engineer: rowEngineer, contact, clientAddress, canManage, canSendTSR });">
+            <div class="mobile-schedule-card ${getPureEngineerMobileWorkflowClass(shift, isWork, fileCount)} ${isSelected ? 'mobile-card-selected' : ''}" data-mobile-shift-id="${shift.id}" onclick="if(!event.target.closest('button,a,input,select,textarea')) setMobileStickyActionContext({ shift, day, engineer: rowEngineer, contact, clientAddress, canManage, canSendTSR });">
                 <div class="mobile-schedule-topline">
                     <div>
                         <div class="mobile-schedule-client">${escapeHtml(clientLabel || 'Schedule')}</div>
@@ -6095,6 +6754,8 @@ if (selectedVal === "Leave") {
 
 
 async function loadGrid() {
+        syncTimelineDeveloperViewModeUI();
+
         console.log("Synchronizing Grid Data for offset: " + weekOffset);
 
         const requestSeq = ++timelineLoadSeq;
@@ -10096,6 +10757,8 @@ function initTimelineStickyHeaderPolish(){
     updateStickyState();
     window.addEventListener('scroll', updateStickyState, { passive: true });
     window.addEventListener('resize', updateStickyState, { passive: true });
+    window.addEventListener('resize', syncPureEngineerTimelineDesktopMode, { passive: true });
+    window.addEventListener('resize', syncPureEngineerMobileMode, { passive: true });
     setTimeout(updateStickyState, 250);
     setTimeout(updateStickyState, 900);
 }
@@ -10103,6 +10766,11 @@ function initTimelineStickyHeaderPolish(){
 document.addEventListener('DOMContentLoaded', function(){
     setTimelineClientQuickAddState();
     updateTimelineEngineerFocusStrip();
+});
+document.addEventListener('DOMContentLoaded', function(){
+    syncTimelineDeveloperViewModeUI();
+    syncPureEngineerTimelineDesktopMode();
+    syncPureEngineerMobileMode();
 });
 document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 

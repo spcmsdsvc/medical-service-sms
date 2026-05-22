@@ -10497,11 +10497,26 @@ def add_shift():
     if not include_weekends and has_weekend_between(start_d, end_d):
         date_label += " (weekends skipped)"
     engineer_names = [db.session.get(Engineer, e_id).name for e_id in engineers if db.session.get(Engineer, e_id)]
+
+    # Activity Log clarity: include the scheduled client/product when a calendar schedule is added.
+    # This keeps the audit trail useful without changing permissions, schema, or frontend behavior.
+    client_label = ''
+    product_label = ''
+    if first_shift:
+        client_label = first_shift.client.name if first_shift.client else ''
+        product_label = first_shift.product.name if first_shift.product else ''
+        if first_shift.product and first_shift.product.serial_number:
+            product_label = f"{product_label} ({first_shift.product.serial_number})" if product_label else first_shift.product.serial_number
+
     log_action = f"Added calendar schedule: {shift_title} on {date_label}"
+    if client_label:
+        log_action += f" | Client: {client_label}"
+    if product_label:
+        log_action += f" | Product: {product_label}"
     if engineer_names:
-        log_action += f" for {', '.join(engineer_names)}"
+        log_action += f" | Engineer(s): {', '.join(engineer_names)}"
     if saved_files:
-        log_action += f" with {len(saved_files)} report file(s)"
+        log_action += f" | Attached: {len(saved_files)} report file(s)"
 
     db.session.add(ActivityLog(user=current_user.username.capitalize(), action=log_action))
     db.session.commit()
