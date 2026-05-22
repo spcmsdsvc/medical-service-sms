@@ -133,6 +133,10 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['REMEMBER_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = os.environ.get('SESSION_COOKIE_SAMESITE', 'Lax')
 app.config['REMEMBER_COOKIE_SAMESITE'] = os.environ.get('REMEMBER_COOKIE_SAMESITE', 'Lax')
+app.config['SESSION_COOKIE_PATH'] = '/'
+app.config['REMEMBER_COOKIE_PATH'] = '/'
+app.config['SESSION_COOKIE_NAME'] = os.environ.get('SESSION_COOKIE_NAME', 'medical_service_session')
+app.config['REMEMBER_COOKIE_NAME'] = os.environ.get('REMEMBER_COOKIE_NAME', 'medical_service_remember_token')
 
 # Secure cookies are required on Railway/HTTPS, but kept configurable for localhost/LAN testing.
 cookie_secure_default = 'true' if os.environ.get('RAILWAY_ENVIRONMENT') else 'false'
@@ -381,6 +385,21 @@ def should_log_performance_path(path):
 
 
 @app.before_request
+def keep_authenticated_pwa_session_permanent():
+    """Refresh persistent sessions for installed PWA/mobile users.
+
+    Flask-Login remember cookies restore the user, while Flask's permanent
+    session keeps the active app session from becoming browser-session-only.
+    """
+    try:
+        if current_user and getattr(current_user, 'is_authenticated', False):
+            session.permanent = True
+            session.modified = True
+    except Exception:
+        pass
+
+
+@app.before_request
 def start_performance_timer():
     if should_log_performance_path(request.path):
         g._perf_start = time.perf_counter()
@@ -478,6 +497,9 @@ def get_unique_upload_filename(preferred_filename):
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+# Mobile/PWA webviews may change user-agent/network details between app launches.
+# Avoid invalidating a valid remember cookie because of those changes.
+login_manager.session_protection = None
 
 # --- GLOBAL SYSTEM CONSTANTS ---
 
@@ -2540,7 +2562,8 @@ def login():
         if user_rec and check_password_hash(user_rec.password, password):
             # PWA/mobile convenience: automatically keep users remembered after app close/reopen.
             session.permanent = True
-            login_user(user_rec, remember=True, duration=app.config.get('REMEMBER_COOKIE_DURATION'))
+            session.modified = True
+            login_user(user_rec, remember=True, duration=app.config.get('REMEMBER_COOKIE_DURATION'), fresh=True)
 
             if user_rec.must_change_password:
                 session['force_pw_change'] = True
@@ -2557,6 +2580,20 @@ def login():
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
     return response
+
+
+@app.route('/auth_status')
+@login_required
+def auth_status():
+    """Small authenticated session diagnostic for PWA/mobile troubleshooting."""
+    return jsonify({
+        'status': 'authenticated',
+        'user': getattr(current_user, 'username', ''),
+        'role': getattr(current_user, 'role', ''),
+        'session_permanent': bool(session.permanent),
+        'remember_cookie_name': app.config.get('REMEMBER_COOKIE_NAME'),
+        'session_cookie_name': app.config.get('SESSION_COOKIE_NAME')
+    })
 
 
 @app.route('/logout')
@@ -3790,7 +3827,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-remember-login-v2-no-login-cache';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-session-hardening-v3';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -3873,6 +3910,14 @@ async function networkFirst(request) {
   }
 }
 
+async function networkOnlyNavigation(request) {
+  try {
+    return await fetch(request, { cache: 'no-store', credentials: 'same-origin' });
+  } catch (err) {
+    return caches.match('/offline');
+  }
+}
+
 async function cacheFirst(request) {
   const cached = await caches.match(request);
   if (cached) return cached;
@@ -3911,7 +3956,9 @@ self.addEventListener('fetch', event => {
   const isSameOrigin = url.origin === self.location.origin;
 
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirst(request));
+    // Protected pages must not be cached as navigations.
+    // This prevents PWA app reopen from showing a stale /login redirect/page.
+    event.respondWith(networkOnlyNavigation(request));
     return;
   }
 
