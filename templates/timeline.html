@@ -120,6 +120,7 @@
                     <option value="default">MY DEFAULT</option>
                     <option value="engineer">ENGINEER VIEW</option>
                     <option value="scheduler">SCHEDULER VIEW</option>
+                    <option value="regional_admin">REGIONAL ADMIN VIEW</option>
                     <option value="manager">MANAGER / ADMIN VIEW</option>
                 </select>
             </div>
@@ -1429,6 +1430,7 @@
 
 body.timeline-dev-preview-engineer .timeline-dev-view-picker,
 body.timeline-dev-preview-scheduler .timeline-dev-view-picker,
+body.timeline-dev-preview-regional_admin .timeline-dev-view-picker,
 body.timeline-dev-preview-manager .timeline-dev-view-picker {
     border-color: rgba(220, 53, 69, 0.35) !important;
     box-shadow: 0 0 0 0.16rem rgba(220, 53, 69, 0.08) !important;
@@ -3804,6 +3806,88 @@ body.timeline-scheduler-toolbar-pinned .timeline-scheduler-hover-pin {
     }
 }
 
+/* REGIONAL ADMIN R1 — desktop scheduler workspace + Find My Row retained */
+@media (min-width: 769px) {
+    body.timeline-regional-admin-desktop .timeline-scheduler-manual-strip {
+        display: flex !important;
+        border-color: #bfdbfe;
+        background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+    }
+
+    body.timeline-regional-admin-desktop .timeline-scheduler-manual-toggle,
+    body.timeline-regional-admin-desktop .timeline-scheduler-manual-week-btn,
+    body.timeline-regional-admin-desktop .timeline-scheduler-manual-week-today {
+        border-color: #bfdbfe;
+        color: #1d4ed8;
+    }
+
+    body.timeline-regional-admin-desktop .timeline-scheduler-desktop-hero {
+        display: flex !important;
+        border-color: #bfdbfe;
+        background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+        box-shadow: 0 8px 20px rgba(13, 110, 253, 0.08);
+    }
+
+    body.timeline-regional-admin-desktop .timeline-scheduler-hero-icon {
+        background: #dbeafe;
+        color: #0d6efd;
+    }
+
+    body.timeline-regional-admin-desktop .timeline-engineer-focus-strip {
+        display: flex !important;
+        margin-bottom: 0.6rem;
+    }
+
+    body.timeline-regional-admin-desktop .timeline-engineer-desktop-hero,
+    body.timeline-regional-admin-desktop .timeline-hybrid-desktop-hero {
+        display: none !important;
+    }
+
+    body.timeline-regional-admin-desktop .timeline-intelligence-legend {
+        display: none !important;
+    }
+
+    body.timeline-regional-admin-desktop #week-display {
+        color: #0d6efd !important;
+    }
+
+    body.timeline-regional-admin-desktop .timeline-freeze-toolbar {
+        gap: 0.6rem;
+    }
+
+    body.timeline-regional-admin-desktop .timeline-scroll-hint {
+        opacity: 0.68;
+        margin-bottom: 0.25rem;
+    }
+
+    body.timeline-regional-admin-desktop.timeline-scheduler-controls-collapsed .timeline-freeze-toolbar {
+        display: none !important;
+    }
+
+    body.timeline-regional-admin-desktop.timeline-scheduler-controls-collapsed .timeline-scheduler-desktop-hero,
+    body.timeline-regional-admin-desktop.timeline-scheduler-controls-collapsed .timeline-scroll-hint {
+        display: none !important;
+    }
+
+    body.timeline-regional-admin-desktop.timeline-scheduler-controls-collapsed .timeline-engineer-focus-strip {
+        display: flex !important;
+    }
+
+    body.timeline-regional-admin-desktop.timeline-scheduler-controls-collapsed .timeline-scroll-wrapper {
+        max-height: calc(100vh - 118px) !important;
+    }
+
+    body.timeline-regional-admin-desktop.timeline-scheduler-controls-collapsed .timeline-sticky-h-scroll {
+        position: relative !important;
+        top: auto !important;
+    }
+
+    body.timeline-regional-admin-desktop.timeline-scheduler-controls-collapsed .timeline-scroll-wrapper .timeline-grid-table > thead th {
+        top: 0 !important;
+    }
+}
+
+
 /* SCHEDULER TIMELINE S1 — desktop cleanup */
 .timeline-scheduler-desktop-hero {
     justify-content: space-between;
@@ -5790,7 +5874,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
     function applyTimelineDeveloperViewMode(mode){
         if(!isTimelineDeveloperJonamar) return;
 
-        const normalizedMode = ['default', 'engineer', 'scheduler', 'manager'].includes(mode) ? mode : 'default';
+        const normalizedMode = ['default', 'engineer', 'scheduler', 'regional_admin', 'manager'].includes(mode) ? mode : 'default';
 
         try{
             localStorage.setItem(TIMELINE_DEV_VIEW_MODE_KEY, normalizedMode);
@@ -5820,6 +5904,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
 
         document.body.classList.toggle('timeline-dev-preview-engineer', mode === 'engineer');
         document.body.classList.toggle('timeline-dev-preview-scheduler', mode === 'scheduler');
+        document.body.classList.toggle('timeline-dev-preview-regional_admin', mode === 'regional_admin');
         document.body.classList.toggle('timeline-dev-preview-manager', mode === 'manager');
 
         syncPureEngineerTimelineDesktopMode();
@@ -5839,6 +5924,22 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
     let timelineEngineerAutoFocused = false;
     let timelineEngineerFocusDays = [];
 
+    function isRegionalAdminTimelineDesktopMode(){
+        const effectiveRole = (typeof getTimelineCurrentUserRole === 'function')
+            ? getTimelineCurrentUserRole()
+            : String(authRole || '').toLowerCase();
+
+        const devMode = (typeof getTimelineDeveloperViewMode === 'function')
+            ? getTimelineDeveloperViewMode()
+            : 'default';
+
+        return Boolean(
+            effectiveRole === 'regional_admin' &&
+            window.matchMedia('(min-width: 769px)').matches &&
+            (!isTimelineDeveloperJonamar || devMode === 'default' || devMode === 'regional_admin')
+        );
+    }
+
     function isSchedulerTimelineDesktopMode(){
         const effectiveRole = (typeof getTimelineCurrentUserRole === 'function')
             ? getTimelineCurrentUserRole()
@@ -5849,14 +5950,40 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
             : 'default';
 
         return Boolean(
-            effectiveRole === 'scheduler' &&
+            isTimelineSchedulerAccount() &&
             window.matchMedia('(min-width: 769px)').matches &&
             (!isTimelineDeveloperJonamar || devMode === 'default' || devMode === 'scheduler')
         );
     }
 
+    function isSchedulerWorkspaceDesktopMode(){
+        return isSchedulerTimelineDesktopMode() || isRegionalAdminTimelineDesktopMode();
+    }
+
     function syncSchedulerTimelineDesktopMode(){
-        document.body.classList.toggle('timeline-scheduler-desktop', isSchedulerTimelineDesktopMode());
+        const schedulerOnly = isSchedulerTimelineDesktopMode();
+        const regionalDesktop = isRegionalAdminTimelineDesktopMode();
+
+        document.body.classList.toggle('timeline-scheduler-desktop', schedulerOnly);
+        document.body.classList.toggle('timeline-regional-admin-desktop', regionalDesktop);
+
+        const schedulerHeroTitle = document.querySelector('#timeline-scheduler-desktop-hero .timeline-scheduler-hero-title');
+        const schedulerHeroSub = document.querySelector('#timeline-scheduler-desktop-hero .timeline-scheduler-hero-sub');
+        const engineerFocusTitle = document.querySelector('#timeline-engineer-focus-strip .timeline-engineer-focus-title');
+        const engineerFocusSub = document.getElementById('timeline-engineer-focus-sub');
+
+        if(regionalDesktop){
+            if(schedulerHeroTitle) schedulerHeroTitle.innerText = 'Regional Admin Timeline';
+            if(schedulerHeroSub) schedulerHeroSub.innerText = 'Scheduler-style desktop view for Cebu + Davao branch operations.';
+            if(engineerFocusTitle) engineerFocusTitle.innerText = 'My Regional Engineer Row';
+            if(engineerFocusSub) engineerFocusSub.innerText = 'Find your engineer row while keeping regional scheduling controls available.';
+        }else if(schedulerOnly){
+            if(schedulerHeroTitle) schedulerHeroTitle.innerText = 'Scheduler Timeline';
+            if(schedulerHeroSub) schedulerHeroSub.innerText = 'Focused view for building, editing, and checking team schedules.';
+            if(engineerFocusTitle) engineerFocusTitle.innerText = 'My Timeline Row';
+            if(engineerFocusSub) engineerFocusSub.innerText = 'Jump directly to your engineer row on desktop.';
+        }
+
         if(typeof syncSchedulerManualControlsState === 'function'){
             syncSchedulerManualControlsState();
         }
@@ -5889,12 +6016,12 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
     }
 
     function toggleSchedulerManualControls(){
-        if(!isSchedulerTimelineDesktopMode()) return;
+        if(!isSchedulerWorkspaceDesktopMode()) return;
         setSchedulerManualControlsCollapsed(!areSchedulerManualControlsCollapsed());
     }
 
     function syncSchedulerManualControlsState(){
-        const enabled = isSchedulerTimelineDesktopMode();
+        const enabled = isSchedulerWorkspaceDesktopMode();
         const collapsed = enabled && areSchedulerManualControlsCollapsed();
 
         document.body.classList.toggle('timeline-scheduler-controls-collapsed', collapsed);
@@ -5959,7 +6086,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
     }
 
     function expandSchedulerAutoHideToolbar(){
-        if(!isSchedulerTimelineDesktopMode()) return;
+        if(!isSchedulerWorkspaceDesktopMode()) return;
         document.body.classList.add('timeline-scheduler-toolbar-expanded');
         clearTimeout(schedulerToolbarCollapseTimer);
 
@@ -6070,6 +6197,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
             : 'default';
 
         return Boolean(
+            !isTimelineSchedulerAccount() &&
             loggedInEngineerId &&
             adminLikeRoles.includes(effectiveRole) &&
             window.matchMedia('(max-width: 768px)').matches &&
@@ -6093,8 +6221,10 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
             : 'default';
 
         return Boolean(
+            !isTimelineSchedulerAccount() &&
             loggedInEngineerId &&
             adminLikeRoles.includes(effectiveRole) &&
+            effectiveRole !== 'regional_admin' &&
             window.matchMedia('(min-width: 769px)').matches &&
             (!isTimelineDeveloperJonamar || devMode === 'default' || devMode === 'manager')
         );
@@ -6325,6 +6455,28 @@ function getTimelineCurrentUserRole(){
     }
 }
 
+function getTimelineCurrentUsername(){
+    try{
+        const rawUsername = (
+            window.currentUsername ||
+            window.username ||
+            window.currentUserName ||
+            document.body?.dataset?.username ||
+            document.body?.getAttribute('data-username') ||
+            '{{ current_user.username }}'
+        );
+        return String(rawUsername || '').trim().toLowerCase();
+    }catch(err){
+        return '';
+    }
+}
+
+function isTimelineSchedulerAccount(){
+    const role = getTimelineCurrentUserRole();
+    const username = getTimelineCurrentUsername();
+    return role === 'scheduler' || username === 'diary' || username === 'hanna';
+}
+
 function isTimelineMobileDevice(){
     return window.innerWidth <= 768;
 }
@@ -6334,7 +6486,7 @@ function isAdminOrSchedulerMobileTimeline(){
     return isTimelineMobileDevice() && (
         role === 'admin' ||
         role === 'superadmin' ||
-        role === 'scheduler' ||
+        isTimelineSchedulerAccount() ||
         role === 'regional_admin'
     );
 }
@@ -6346,7 +6498,7 @@ function shouldUseRoleAwareMobileTimeline(){
 function syncMobileRoleBadges(){
     const role = getTimelineCurrentUserRole();
     const isMobileAdmin = isTimelineMobileDevice() && (role === 'admin' || role === 'superadmin' || role === 'regional_admin');
-    const isMobileScheduler = isTimelineMobileDevice() && role === 'scheduler';
+    const isMobileScheduler = isTimelineMobileDevice() && isTimelineSchedulerAccount();
 
     document.body.classList.toggle('mobile-admin-mode', isMobileAdmin);
     document.body.classList.toggle('mobile-scheduler-mode', isMobileScheduler);
