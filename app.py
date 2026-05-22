@@ -405,6 +405,19 @@ def log_performance_timer(response):
     return response
 
 
+@app.after_request
+def prevent_login_redirect_cache(response):
+    """Avoid PWA/browser caching login redirects as protected pages."""
+    try:
+        if request.path == '/login' or response.status_code in {301, 302, 303, 307, 308}:
+            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+    except Exception:
+        pass
+    return response
+
+
 _shift_file_original_filename_ready = False
 
 
@@ -3777,12 +3790,11 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-remember-login-v1';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-remember-login-v2-no-login-cache';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
 const APP_SHELL = [
-  '/',
   '/timeline',
   '/offline-tsr',
   '/offline',
@@ -3819,11 +3831,27 @@ self.addEventListener('activate', event => {
   );
 });
 
+function isLoginLikeResponse(request, response) {
+  try {
+    const requestUrl = new URL(request.url);
+    const responseUrl = response && response.url ? new URL(response.url) : null;
+
+    // Never cache a redirected login page under /timeline, /, or any protected route.
+    if (response && response.redirected) return true;
+    if (responseUrl && responseUrl.pathname === '/login') return true;
+    if (requestUrl.pathname === '/login') return true;
+
+    return false;
+  } catch (err) {
+    return false;
+  }
+}
+
 async function networkFirst(request) {
   try {
     const response = await fetch(request);
 
-    if (response && response.ok) {
+    if (response && response.ok && !isLoginLikeResponse(request, response)) {
       const cache = await caches.open(RUNTIME_CACHE);
       cache.put(request, response.clone());
     }
@@ -3935,7 +3963,7 @@ self.addEventListener('message', event => {
       caches.open(APP_SHELL_CACHE).then(cache => {
         return Promise.allSettled(FIELD_SAFE_ROUTES.map(async route => {
           const response = await fetch(route, { cache: 'reload' });
-          if (response && response.ok) {
+          if (response && response.ok && !isLoginLikeResponse(new Request(route, { method: 'GET' }), response)) {
             await cache.put(route, response.clone());
           }
         }));
