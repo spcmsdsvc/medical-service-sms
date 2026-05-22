@@ -3321,6 +3321,19 @@ body.pwa-reconnected .mobile-offline-readiness {
     }
 }
 
+/* HYBRID ENGINEER/ADMIN TIMELINE H2.1 — mobile own-schedule priority fix */
+@media (max-width: 768px) {
+    body.timeline-hybrid-engineer-admin-mobile .mobile-hybrid-empty-own {
+        opacity: 0.78;
+        border-style: dashed;
+        background: #f8fafc;
+    }
+
+    body.timeline-hybrid-engineer-admin-mobile .mobile-date-section {
+        gap: 0.5rem;
+    }
+}
+
 /* HYBRID ENGINEER/ADMIN TIMELINE H2 — mobile focus */
 @media (max-width: 768px) {
     body.timeline-hybrid-engineer-admin-mobile .mobile-engineer-header {
@@ -6242,15 +6255,7 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
             });
         }
 
-        return collected.sort((a, b) => {
-            const dateCompare = String(a.day.iso).localeCompare(String(b.day.iso));
-            if(dateCompare !== 0) return dateCompare;
-
-            const timeCompare = String(a.shift.time_start || '').localeCompare(String(b.shift.time_start || ''));
-            if(timeCompare !== 0) return timeCompare;
-
-            return String(a.engineer?.name || '').localeCompare(String(b.engineer?.name || ''));
-        });
+        return sortMobileHybridScheduleItems(collected);
     }
 
 function collectMobileEngineerSchedules(){
@@ -6259,6 +6264,68 @@ function collectMobileEngineerSchedules(){
 
     function getMobileHybridOwnEngineerId(){
         return loggedInEngineerId ? String(loggedInEngineerId) : '';
+    }
+
+    function isMobileHybridOwnScheduleItem(item){
+        const ownId = getMobileHybridOwnEngineerId();
+        return Boolean(
+            isHybridEngineerAdminMobileMode() &&
+            ownId &&
+            item &&
+            item.engineer &&
+            String(item.engineer.id) === ownId
+        );
+    }
+
+    function sortMobileHybridScheduleItems(items){
+        const list = Array.isArray(items) ? items.slice() : [];
+
+        return list.sort((a, b) => {
+            const dateCompare = String(a?.day?.iso || '').localeCompare(String(b?.day?.iso || ''));
+            if(dateCompare !== 0) return dateCompare;
+
+            if(isHybridEngineerAdminMobileMode()){
+                const aOwn = isMobileHybridOwnScheduleItem(a) ? 0 : 1;
+                const bOwn = isMobileHybridOwnScheduleItem(b) ? 0 : 1;
+                if(aOwn !== bOwn) return aOwn - bOwn;
+            }
+
+            const timeCompare = String(a?.shift?.time_start || '').localeCompare(String(b?.shift?.time_start || ''));
+            if(timeCompare !== 0) return timeCompare;
+
+            return String(a?.engineer?.name || '').localeCompare(String(b?.engineer?.name || ''));
+        });
+    }
+
+    function getMobileHybridOwnItemCount(items){
+        return (items || []).filter(item => isMobileHybridOwnScheduleItem(item)).length;
+    }
+
+    function getMobileHybridTeamItemCount(items){
+        return (items || []).filter(item => !isMobileHybridOwnScheduleItem(item)).length;
+    }
+
+    function buildMobileHybridDayItemsHtml(items){
+        const sortedItems = sortMobileHybridScheduleItems(items || []);
+
+        if(!isHybridEngineerAdminMobileMode()){
+            return sortedItems.map(item => buildMobileScheduleCard(item.shift, item.day, item.engineer)).join('');
+        }
+
+        const ownItems = sortedItems.filter(item => isMobileHybridOwnScheduleItem(item));
+        const teamItems = sortedItems.filter(item => !isMobileHybridOwnScheduleItem(item));
+
+        const ownHtml = ownItems.length
+            ? `<div class="mobile-hybrid-section-label"><span><i class="fa-solid fa-user-check"></i>My schedules</span><span class="mobile-hybrid-section-count">${ownItems.length}</span></div>` +
+              ownItems.map(item => buildMobileScheduleCard(item.shift, item.day, item.engineer)).join('')
+            : `<div class="mobile-hybrid-section-label mobile-hybrid-empty-own"><span><i class="fa-regular fa-calendar-check"></i>My schedules</span><span class="mobile-hybrid-section-count">0</span></div>`;
+
+        const teamHtml = teamItems.length
+            ? `<div class="mobile-hybrid-team-divider">Team schedules</div>` +
+              teamItems.map(item => buildMobileScheduleCard(item.shift, item.day, item.engineer)).join('')
+            : '';
+
+        return ownHtml + teamHtml;
     }
 
     function sortMobileEngineersForHybrid(engineers){
@@ -6341,7 +6408,11 @@ function collectMobileEngineerSchedules(){
             return;
         }
 
-        const stickyCandidate = schedules.find(item => canManageExistingScheduleForRow(item.engineer, item.shift)) || schedules[0];
+        const stickyCandidate = (
+            isHybridEngineerAdminMobileMode()
+                ? schedules.find(item => isMobileHybridOwnScheduleItem(item) && canManageExistingScheduleForRow(item.engineer, item.shift))
+                : null
+        ) || schedules.find(item => canManageExistingScheduleForRow(item.engineer, item.shift)) || schedules[0];
         if(stickyCandidate){
             const shift = stickyCandidate.shift;
             const contact = getMobileClientContact(shift);
@@ -6371,7 +6442,7 @@ function collectMobileEngineerSchedules(){
                     <span>${escapeHtml(group.day.display_day || '')} • ${escapeHtml(group.day.display_date || group.day.iso)}</span>
                     <span class="mobile-date-count">${group.items.length} schedule${group.items.length === 1 ? '' : 's'}${adminMobile ? ' • team' : ''}</span>
                 </div>
-                ${group.items.map(item => buildMobileScheduleCard(item.shift, item.day, item.engineer)).join('')}
+                ${buildMobileHybridDayItemsHtml(group.items)}
             </div>
         `).join('');
     }
@@ -6570,8 +6641,37 @@ function collectMobileEngineerSchedules(){
         if(contextDate) contextDate.value = date || '';
 
         if(scopeContainer) scopeContainer.classList.remove('d-none');
+
         if(scopeSelect){
-            scopeSelect.value = shift && shift.is_time_override ? 'engineer_day_time_override' : 'entire_schedule';
+            const entireOption = scopeSelect.querySelector('option[value="entire_schedule"]');
+            const assignedDayOption = scopeSelect.querySelector('option[value="assigned_engineers_day_only"]');
+
+            if(isEngineer){
+                // Engineer safety fix:
+                // Backend allows assigned-schedule/day edits, but blocks full schedule rebuilds.
+                // Default engineer edit to the allowed scoped update so multi-engineer schedules can be saved.
+                scopeSelect.value = shift && shift.is_time_override ? 'engineer_day_time_override' : 'assigned_engineers_day_only';
+
+                if(entireOption){
+                    entireOption.disabled = true;
+                    entireOption.hidden = true;
+                }
+
+                if(assignedDayOption){
+                    assignedDayOption.textContent = 'My assigned schedule / this day only';
+                }
+            }else{
+                if(entireOption){
+                    entireOption.disabled = false;
+                    entireOption.hidden = false;
+                }
+
+                if(assignedDayOption){
+                    assignedDayOption.textContent = 'Assigned engineers + this day only';
+                }
+
+                scopeSelect.value = shift && shift.is_time_override ? 'engineer_day_time_override' : 'entire_schedule';
+            }
         }
 
         handleEditScopeChange();
@@ -6601,7 +6701,9 @@ function collectMobileEngineerSchedules(){
             if(isOverride){
                 scopeHelp.innerHTML = '<i class="fa-solid fa-link me-1"></i>Only this engineer/day gets a custom time. Client, product, task, status, and files remain linked to the original schedule.';
             }else if(isAssignedDayOnly){
-                scopeHelp.innerHTML = '<i class="fa-solid fa-calendar-day me-1"></i>Updates the selected assigned engineers for this day only. Other days in the linked schedule are not changed.';
+                scopeHelp.innerHTML = isEngineer
+                    ? '<i class="fa-solid fa-user-check me-1"></i>Engineer-safe edit: updates only your assigned schedule for this day. Other engineers/days are protected.'
+                    : '<i class="fa-solid fa-calendar-day me-1"></i>Updates the selected assigned engineers for this day only. Other days in the linked schedule are not changed.';
             }else{
                 scopeHelp.innerHTML = '<i class="fa-solid fa-users me-1"></i>Updates the linked schedule for the team/date range. Existing custom-time overrides keep their custom time.';
             }
@@ -8594,6 +8696,9 @@ async function openTSRClientEmailModal(shiftId){
         dataSet.append('status', activeID ? activeStatus : 'In Progress');
 
         let editScopeForWeekendCheck = activeID ? (document.getElementById('f-edit-scope')?.value || 'entire_schedule') : '';
+        if(isEngineer && editScopeForWeekendCheck === 'entire_schedule'){
+            editScopeForWeekendCheck = 'assigned_engineers_day_only';
+        }
         let includeWeekends = true;
 
         if(isWeekendPromptNeeded(activeID, editScopeForWeekendCheck, selectedStartDate, selectedEndDate)){
@@ -8609,7 +8714,15 @@ async function openTSRClientEmailModal(shiftId){
         dataSet.append('include_weekends', includeWeekends ? 'true' : 'false');
 
         if(activeID){
-            const editScope = document.getElementById('f-edit-scope')?.value || 'entire_schedule';
+            let editScope = document.getElementById('f-edit-scope')?.value || 'entire_schedule';
+
+            // Engineer safety fix:
+            // Never let a plain engineer submit the backend-restricted full schedule rebuild path.
+            // Multi-engineer assigned schedules should update only the selected assigned engineers/day.
+            if(isEngineer && editScope === 'entire_schedule'){
+                editScope = 'assigned_engineers_day_only';
+            }
+
             const overrideEngineerId = document.getElementById('f-edit-context-engineer-id')?.value || document.getElementById('f-eng-id').value;
             const contextDate = document.getElementById('f-edit-context-date')?.value || document.getElementById('f-start-date').value;
             dataSet.append('edit_scope', editScope);
