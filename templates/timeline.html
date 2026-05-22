@@ -1444,6 +1444,52 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
 }
 
+/* TIMELINE VIEW HEIGHT FIX — expand desktop calendar area for all roles without breaking sticky header */
+@media (min-width: 769px) {
+    body.timeline-expanded-desktop-grid .timeline-desktop-shell {
+        padding-top: 0.65rem !important;
+        padding-bottom: 0.65rem !important;
+    }
+
+    body.timeline-expanded-desktop-grid .timeline-freeze-toolbar {
+        padding: 0.5rem 0.65rem;
+        margin-bottom: 0.45rem !important;
+    }
+
+    body.timeline-expanded-desktop-grid .timeline-freeze-toolbar h2 {
+        font-size: 1rem !important;
+        line-height: 1.1;
+    }
+
+    body.timeline-expanded-desktop-grid #week-display {
+        font-size: 0.72rem;
+        margin-top: 0.15rem !important;
+    }
+
+    body.timeline-expanded-desktop-grid .timeline-scroll-hint {
+        margin-bottom: 0.25rem;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.66rem;
+    }
+
+    body.timeline-expanded-desktop-grid .timeline-sticky-h-scroll {
+        height: 16px;
+    }
+
+    body.timeline-expanded-desktop-grid .timeline-bottom-scroll {
+        height: 15px;
+    }
+
+    body.timeline-expanded-desktop-grid .calendar-legend {
+        margin-top: 0.35rem;
+    }
+
+    body.timeline-expanded-desktop-grid .legend-pill {
+        padding-top: 0.18rem;
+        padding-bottom: 0.18rem;
+    }
+}
+
 
 .timeline-scroll-wrapper::-webkit-scrollbar-track {
     background: #f1f3f5;
@@ -5099,6 +5145,7 @@ function shouldUseEngineerMobileView(){
                 loadGrid();
                 syncTimelineHorizontalScroll();
             setTimeout(initTimelineStickyHeaderPolish, 0);
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 80);
             }, 0);
         }else{
             setTimeout(syncTimelineHorizontalScroll, 0);
@@ -11282,13 +11329,23 @@ function initTimelineStickyHeaderPolish(){
     const updateStickyState = () => {
         const toolbar = document.getElementById('timeline-freeze-toolbar');
         const topScrollbar = document.getElementById('timeline-sticky-h-scroll');
+        const legend = document.querySelector('.calendar-legend');
         const toolbarHeight = toolbar ? Math.ceil(toolbar.getBoundingClientRect().height) : 0;
         const scrollbarHeight = topScrollbar ? Math.ceil(topScrollbar.getBoundingClientRect().height) : 0;
+        const legendHeight = legend ? Math.min(Math.ceil(legend.getBoundingClientRect().height), 34) : 0;
+
+        const isDesktop = window.matchMedia('(min-width: 769px)').matches;
+
+        // Keep sticky top row, but give every desktop role more visible table height.
+        // Mobile keeps the larger safety buffer because it uses the card-based view.
+        const buffer = isDesktop ? 34 : 96;
+        const maxHeightOffset = toolbarHeight + scrollbarHeight + buffer;
 
         document.documentElement.style.setProperty('--timeline-sticky-scrollbar-offset', `${toolbarHeight}px`);
         document.documentElement.style.setProperty('--timeline-sticky-offset', `${toolbarHeight + scrollbarHeight}px`);
-        document.documentElement.style.setProperty('--timeline-grid-maxheight-offset', `${toolbarHeight + scrollbarHeight + 96}px`);
+        document.documentElement.style.setProperty('--timeline-grid-maxheight-offset', `${maxHeightOffset}px`);
         document.body.classList.toggle('timeline-toolbar-compact', window.scrollY > 8);
+        document.body.classList.toggle('timeline-expanded-desktop-grid', isDesktop);
     };
 
     updateStickyState();
