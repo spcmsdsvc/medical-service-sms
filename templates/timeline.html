@@ -4802,6 +4802,21 @@ body.timeline-pure-engineer-desktop .timeline-my-engineer-row [class*="schedule-
     }
 }
 
+
+/* SAFE TOP CONTROLS BAR HIDE — keep DOM structure intact, hide only the obsolete bars */
+#timeline-scheduler-hover-rail,
+#timeline-scheduler-toolbar-handle {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+}
+
 </style>
 
 <script>
@@ -5401,7 +5416,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
             : 'default';
 
         return Boolean(
-            effectiveRole === 'scheduler' &&
+            isTimelineSchedulerAccount() &&
             window.matchMedia('(min-width: 769px)').matches &&
             (!isTimelineDeveloperJonamar || devMode === 'default' || devMode === 'scheduler')
         );
@@ -5560,6 +5575,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
             : 'default';
 
         return Boolean(
+            !isTimelineSchedulerAccount() &&
             loggedInEngineerId &&
             adminLikeRoles.includes(effectiveRole) &&
             window.matchMedia('(max-width: 768px)').matches &&
@@ -5583,6 +5599,7 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
             : 'default';
 
         return Boolean(
+            !isTimelineSchedulerAccount() &&
             loggedInEngineerId &&
             adminLikeRoles.includes(effectiveRole) &&
             window.matchMedia('(min-width: 769px)').matches &&
@@ -5815,6 +5832,28 @@ function getTimelineCurrentUserRole(){
     }
 }
 
+function getTimelineCurrentUsername(){
+    try{
+        const rawUsername = (
+            window.currentUsername ||
+            window.username ||
+            window.currentUserName ||
+            document.body?.dataset?.username ||
+            document.body?.getAttribute('data-username') ||
+            '{{ current_user.username }}'
+        );
+        return String(rawUsername || '').trim().toLowerCase();
+    }catch(err){
+        return '';
+    }
+}
+
+function isTimelineSchedulerAccount(){
+    const role = getTimelineCurrentUserRole();
+    const username = getTimelineCurrentUsername();
+    return role === 'scheduler' || username === 'diary' || username === 'hanna';
+}
+
 function isTimelineMobileDevice(){
     return window.innerWidth <= 768;
 }
@@ -5824,7 +5863,7 @@ function isAdminOrSchedulerMobileTimeline(){
     return isTimelineMobileDevice() && (
         role === 'admin' ||
         role === 'superadmin' ||
-        role === 'scheduler' ||
+        isTimelineSchedulerAccount() ||
         role === 'regional_admin'
     );
 }
@@ -5836,7 +5875,7 @@ function shouldUseRoleAwareMobileTimeline(){
 function syncMobileRoleBadges(){
     const role = getTimelineCurrentUserRole();
     const isMobileAdmin = isTimelineMobileDevice() && (role === 'admin' || role === 'superadmin' || role === 'regional_admin');
-    const isMobileScheduler = isTimelineMobileDevice() && role === 'scheduler';
+    const isMobileScheduler = isTimelineMobileDevice() && isTimelineSchedulerAccount();
 
     document.body.classList.toggle('mobile-admin-mode', isMobileAdmin);
     document.body.classList.toggle('mobile-scheduler-mode', isMobileScheduler);
@@ -5874,7 +5913,7 @@ function shouldUseEngineerMobileView(){
 
         document.body.classList.toggle('mobile-engineer-mode', useEngineerMobile);
         document.body.classList.toggle('mobile-admin-mode', useAdminSchedulerMobile && (currentRole === 'admin' || currentRole === 'superadmin' || currentRole === 'regional_admin'));
-        document.body.classList.toggle('mobile-scheduler-mode', useAdminSchedulerMobile && currentRole === 'scheduler');
+        document.body.classList.toggle('mobile-scheduler-mode', useAdminSchedulerMobile && isTimelineSchedulerAccount());
         document.body.classList.toggle('mobile-engineer-desktop-forced', mobileEngineerDesktopForced && (isEngineer || currentRole === 'admin' || currentRole === 'superadmin' || currentRole === 'regional_admin' || currentRole === 'scheduler'));
 
         syncHybridEngineerAdminMobileMode();
