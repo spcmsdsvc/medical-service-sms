@@ -185,7 +185,8 @@ STATIC_TSR_CLIENT_CC_EMAILS = [
     'rnrio@shimadzu.com.ph',
     'kevin@shimadzu.com.ph',
     'diary@shimadzu.com.ph',
-    'hanna@shimadzu.com.ph'
+    'hanna@shimadzu.com.ph',
+    'venus@shimadzu.com.ph'
 ]
 
 
