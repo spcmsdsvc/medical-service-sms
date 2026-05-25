@@ -3645,13 +3645,12 @@ def attach_uploaded_online_tsr_pdf_to_shift(shift, uploaded_pdf, display_filenam
 
 
 def attach_uploaded_online_tsr_extra_files_to_shift(shift, excluded_file_ids=None):
-    """Attach extra offline TSR images/signatures/documents uploaded with a queued TSR.
+    """Attach extra offline TSR supporting documents uploaded with a queued TSR.
 
-    Phase 4 Step 7 backend support:
-    - accepts multipart files aside from the generated TSR PDF
-    - preserves the original filenames
-    - uses the same ShiftFile archive table
-    - skips unsupported extensions and empty files safely
+    IMPORTANT:
+    - Engineer/client signatures are embedded inside the generated TSR PDF only.
+    - Signature upload fields must NOT be saved as separate schedule attachments.
+    - Real supporting attachments/images remain allowed.
     """
     ensure_shift_file_original_filename_column()
 
@@ -3662,29 +3661,44 @@ def attach_uploaded_online_tsr_extra_files_to_shift(shift, excluded_file_ids=Non
     attachment_field_names = {
         'tsr_attachment',
         'tsr_attachments',
-        'tsr_signature',
-        'tsr_signatures',
         'tsr_image',
         'tsr_images',
         'attachment',
         'attachments',
         'image',
-        'images',
+        'images'
+    }
+
+    # These fields are intentionally ignored because signatures belong inside
+    # the generated TSR PDF, not as separate schedule attachments.
+    signature_field_names = {
+        'tsr_signature',
+        'tsr_signatures',
         'signature',
-        'signatures'
+        'signatures',
+        'engineer_signature',
+        'client_signature',
+        'engineer-signature',
+        'client-signature',
+        'tsr_engineer_signature',
+        'tsr_client_signature'
     }
 
     for field_name in request.files:
-        if field_name in {'tsr_pdf', 'pdf', 'file'}:
+        normalized_field_name = (field_name or '').strip().lower()
+
+        if normalized_field_name in {'tsr_pdf', 'pdf', 'file'}:
+            continue
+        if normalized_field_name in signature_field_names or 'signature' in normalized_field_name:
+            print(f"[ONLINE-TSR] Skipped signature field as separate attachment: {field_name}", flush=True)
             continue
         if field_name == 'report_file' and request.files.get(field_name) and id(request.files.get(field_name)) in excluded_file_ids:
             continue
 
         if not (
-            field_name in attachment_field_names or
-            field_name.startswith('tsr_attachment') or
-            field_name.startswith('tsr_image') or
-            field_name.startswith('tsr_signature')
+            normalized_field_name in attachment_field_names or
+            normalized_field_name.startswith('tsr_attachment') or
+            normalized_field_name.startswith('tsr_image')
         ):
             continue
 

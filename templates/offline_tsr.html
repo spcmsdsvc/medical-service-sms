@@ -550,6 +550,146 @@ function getStandaloneScheduleRuntimeId(schedule, index=0){
   const time = [schedule.time_start || '', schedule.time_end || ''].join('-');
   return `${base}::${date}::${time}::${index}`;
 }
+
+function getStandaloneScheduleRealId(schedule){
+  return String(schedule?.id || schedule?.schedule_id || schedule?.shift_id || '').trim();
+}
+
+function normalizeStandaloneCreateTSRContext(rawContext){
+  const ctx = rawContext && typeof rawContext === 'object' ? rawContext : {};
+  const shiftId = ctx.shift_id || ctx.schedule_id || ctx.id || '';
+  const dateIso = ctx.date || ctx.day_iso || ctx.dayIso || ctx.start_date || ctx.date_iso || '';
+
+  if(!shiftId && !ctx.client_name && !ctx.product_name && !ctx.task) return null;
+
+  return {
+    id: shiftId,
+    schedule_id: shiftId,
+    shift_id: shiftId,
+    date_iso: String(dateIso || '').slice(0, 10),
+    date_label: String(dateIso || '').slice(0, 10),
+    start_date: String(ctx.start_date || dateIso || '').slice(0, 10),
+    end_date: String(ctx.end_date || ctx.start_date || dateIso || '').slice(0, 10),
+    time_start: ctx.time_start || ctx.start_time || '',
+    time_end: ctx.time_end || ctx.end_time || '',
+    task: ctx.task || ctx.title || '',
+    title: ctx.title || ctx.task || '',
+    status: ctx.status || '',
+    client_name: ctx.client_name || '',
+    client_address: ctx.client_address || ctx.address || '',
+    client_id: ctx.client_id || '',
+    product_name: ctx.product_name || '',
+    product_id: ctx.product_id || '',
+    engineer_id: ctx.engineer_id || ctx.engineerId || '',
+    serviced_by: ctx.engineer_name || ctx.serviced_by || LOGGED_IN_ENGINEER_NAME || '',
+    serviced_by_initials: ctx.engineer_initials || LOGGED_IN_ENGINEER_INITIALS || '',
+    source: ctx.source || 'timeline-create-tsr-context'
+  };
+}
+
+function getStandaloneCreateTSRHandoffContext(){
+  const params = new URLSearchParams(window.location.search || '');
+  const urlContext = normalizeStandaloneCreateTSRContext({
+    schedule_id: params.get('schedule_id') || '',
+    shift_id: params.get('schedule_id') || '',
+    id: params.get('schedule_id') || '',
+    engineer_id: params.get('engineer_id') || '',
+    date: params.get('date') || ''
+  });
+
+  let storedContext = null;
+  try{
+    const stored = JSON.parse(sessionStorage.getItem('create_tsr_schedule_context') || 'null');
+    if(stored && stored.context){
+      storedContext = normalizeStandaloneCreateTSRContext(stored.context);
+    }
+  }catch(err){
+    console.warn('[Offline TSR] Unable to read Create TSR session handoff context', err);
+  }
+
+  if(urlContext && storedContext){
+    return Object.assign({}, storedContext, {
+      id: urlContext.id || storedContext.id,
+      schedule_id: urlContext.schedule_id || storedContext.schedule_id,
+      shift_id: urlContext.shift_id || storedContext.shift_id,
+      engineer_id: urlContext.engineer_id || storedContext.engineer_id,
+      date_iso: urlContext.date_iso || storedContext.date_iso,
+      date_label: urlContext.date_label || storedContext.date_label,
+      start_date: urlContext.start_date || storedContext.start_date
+    });
+  }
+
+  return storedContext || urlContext;
+}
+
+function findStandaloneScheduleFromCreateTSRContext(context){
+  if(!context) return null;
+
+  const targetId = String(context.schedule_id || context.shift_id || context.id || '').trim();
+  const targetDate = String(context.date_iso || context.date || context.start_date || '').slice(0, 10);
+
+  if(targetId){
+    const exact = standaloneScheduleOptions.find(item => {
+      const itemId = getStandaloneScheduleRealId(item);
+      const itemDate = String(item.date_iso || item.start_date || item.date_label || '').slice(0, 10);
+      return itemId === targetId && (!targetDate || itemDate === targetDate);
+    });
+    if(exact) return exact;
+
+    const byId = standaloneScheduleOptions.find(item => getStandaloneScheduleRealId(item) === targetId);
+    if(byId) return byId;
+  }
+
+  if(targetDate && (context.client_name || context.product_id || context.product_name)){
+    return standaloneScheduleOptions.find(item => {
+      const itemDate = String(item.date_iso || item.start_date || item.date_label || '').slice(0, 10);
+      const sameClient = !context.client_name || String(item.client_name || '').trim().toLowerCase() === String(context.client_name || '').trim().toLowerCase();
+      const sameProductId = !context.product_id || String(item.product_id || '').trim().toLowerCase() === String(context.product_id || '').trim().toLowerCase();
+      const sameProductName = !context.product_name || String(item.product_name || '').trim().toLowerCase() === String(context.product_name || '').trim().toLowerCase();
+      return itemDate === targetDate && sameClient && (sameProductId || sameProductName);
+    }) || null;
+  }
+
+  return null;
+}
+
+function ensureStandaloneScheduleOptionFromContext(context){
+  const normalized = normalizeStandaloneCreateTSRContext(context);
+  if(!normalized) return null;
+
+  const existing = findStandaloneScheduleFromCreateTSRContext(normalized);
+  if(existing) return existing;
+
+  const runtimeId = getStandaloneScheduleRuntimeId(normalized, standaloneScheduleOptions.length);
+  const injected = Object.assign({}, normalized, { _offline_uid: runtimeId });
+  standaloneScheduleOptions.unshift(injected);
+  renderStandaloneScheduleOptions(standaloneScheduleOptions, 'Timeline selected schedule');
+  return injected;
+}
+
+function applyCreateTSRHandoffToStandaloneTSR(){
+  const context = getStandaloneCreateTSRHandoffContext();
+  if(!context) return false;
+
+  const schedule = findStandaloneScheduleFromCreateTSRContext(context) || ensureStandaloneScheduleOptionFromContext(context);
+  if(!schedule) return false;
+
+  const runtimeId = getStandaloneScheduleRuntimeId(schedule);
+  selectedStandaloneScheduleId = runtimeId;
+
+  const select = document.getElementById('tsr-schedule-select');
+  if(select) select.value = runtimeId;
+
+  applyScheduleToStandaloneTSR(schedule, true);
+  showTSRStatus('Selected schedule loaded from Timeline. TSR details were auto-filled from the schedule.', 'success');
+
+  try{
+    sessionStorage.removeItem('create_tsr_schedule_context');
+  }catch(err){}
+
+  return true;
+}
+
 function normalizeStandaloneScheduleOptions(schedules){
   return (Array.isArray(schedules) ? schedules : []).map((schedule, index) => ({
     ...(schedule || {}),
@@ -3608,10 +3748,17 @@ document.addEventListener('DOMContentLoaded',()=>{
     scheduleOfflineTSRAutoSync();
     return refreshStandaloneScheduleOptions(false);
   }).then(()=>{
+    if(applyCreateTSRHandoffToStandaloneTSR()){
+      return;
+    }
+
     if(selectedStandaloneScheduleId){
       const select=document.getElementById('tsr-schedule-select');
       if(select) select.value=selectedStandaloneScheduleId;
-      const schedule=standaloneScheduleOptions.find(item=>String(item.id)===String(selectedStandaloneScheduleId));
+      const schedule=standaloneScheduleOptions.find(item =>
+        String(getStandaloneScheduleRuntimeId(item)) === String(selectedStandaloneScheduleId) ||
+        String(item.id) === String(selectedStandaloneScheduleId)
+      );
       if(schedule) applyScheduleToStandaloneTSR(schedule, false);
     }
   });
