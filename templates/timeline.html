@@ -5077,6 +5077,21 @@ function buildFreshTimelineUrl(offset, branch, litePayload=false){
     const liteParam = litePayload ? '&lite=true' : '';
     return `/get_timeline_data?offset=${offset}&branch=${encodeURIComponent(branch)}${liteParam}&_fresh=${Date.now()}`;
 }
+
+async function fetchTimelineDataWithOfflineTimeout(url){
+    const controller = new AbortController();
+    const timeoutMs = navigator.onLine ? 12000 : 1200;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try{
+        return await fetch(url, {
+            cache: 'no-store',
+            signal: controller.signal
+        });
+    }finally{
+        clearTimeout(timeoutId);
+    }
+}
     let timelineCache = {};
     const TIMELINE_CACHE_TTL_MS = 30000;
     const TIMELINE_OFFLINE_SNAPSHOT_KEY = 'timelineOfflineSnapshot';
@@ -8105,6 +8120,18 @@ if (selectedVal === "Leave") {
         }
     }
 
+    function getImmediateTimelineOfflineSnapshot(cacheKey){
+        try{
+            const snapshot = loadTimelineOfflineSnapshot(cacheKey);
+            if(snapshot?.data && Array.isArray(snapshot.data.days) && Array.isArray(snapshot.data.engineers)){
+                return snapshot;
+            }
+        }catch(err){
+            console.warn('[PWA] Immediate offline timeline snapshot read failed', err);
+        }
+        return null;
+    }
+
     function applyTimelineSnapshotViewState(snapshot){
         try{
             if(!snapshot) return false;
@@ -8193,7 +8220,30 @@ async function loadGrid() {
         mobileLastCacheKey = cacheKey;
         let data;
 
-        if(cached && (Date.now() - cached.savedAt) < TIMELINE_CACHE_TTL_MS){
+        const immediateOfflineSnapshot = !navigator.onLine ? getImmediateTimelineOfflineSnapshot(cacheKey) : null;
+
+        if(immediateOfflineSnapshot?.data){
+            const exactSnapshot = immediateOfflineSnapshot.cacheKey === cacheKey;
+            if(!exactSnapshot){
+                applyTimelineSnapshotViewState(immediateOfflineSnapshot);
+            }
+
+            const effectiveBranch = document.getElementById('branch-filter')?.value || branchFilter;
+            const effectiveCacheKey = `${weekOffset}|${effectiveBranch}`;
+
+            data = immediateOfflineSnapshot.data;
+            timelineCache[effectiveCacheKey] = { savedAt: Date.now(), data };
+            mobileLastCacheKey = effectiveCacheKey;
+
+            if(shouldUseRoleAwareMobileTimeline()){
+                setMobileCacheStatus(exactSnapshot ? 'Loaded saved schedule' : 'Loaded latest saved schedule', 'warm');
+                setPWAOfflineReadinessState(
+                    'pwa-offline-active',
+                    exactSnapshot ? 'Offline Schedule Loaded' : 'Latest Offline Schedule Loaded',
+                    getPWALastTimelineSyncLabel()
+                );
+            }
+        }else if(cached && (Date.now() - cached.savedAt) < TIMELINE_CACHE_TTL_MS){
             data = cached.data;
             if(shouldUseRoleAwareMobileTimeline()){
                 setPWAOfflineReadinessState(
@@ -8204,11 +8254,11 @@ async function loadGrid() {
             }
         }else{
             if(shouldUseRoleAwareMobileTimeline()){
-                setMobileCacheStatus('Fetching fresh schedule...', 'ready');
+                setMobileCacheStatus(navigator.onLine ? 'Fetching fresh schedule...' : 'Checking saved schedule...', 'ready');
             }
 
             try{
-                const res = await fetch(buildFreshTimelineUrl(weekOffset, branchFilter, shouldUseTimelineLitePayload()), { cache: 'no-store' });
+                const res = await fetchTimelineDataWithOfflineTimeout(buildFreshTimelineUrl(weekOffset, branchFilter, shouldUseTimelineLitePayload()));
                 if(!res.ok){
                     throw new Error(`Timeline data request failed: ${res.status}`);
                 }
@@ -8249,6 +8299,24 @@ async function loadGrid() {
                         );
                     }
                 }else{
+                    if(shouldUseRoleAwareMobileTimeline()){
+                        setMobileCacheStatus('No saved schedule found', 'ready');
+                        setPWAOfflineReadinessState(
+                            'pwa-offline-active',
+                            'No Saved Schedule',
+                            'Open Timeline once while online to save schedules for offline use.'
+                        );
+
+                        const list = document.getElementById('mobile-engineer-schedule-list');
+                        if(list){
+                            list.innerHTML = `
+                                <div class="mobile-empty-state">
+                                    <i class="fa-solid fa-cloud-slash"></i>
+                                    <div class="fw-bold mt-2">No offline schedule saved</div>
+                                    <div class="small text-muted">Open Timeline while online, wait for schedules to load, then try offline again.</div>
+                                </div>`;
+                        }
+                    }
                     throw fetchError;
                 }
             }
