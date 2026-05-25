@@ -8132,6 +8132,127 @@ if (selectedVal === "Leave") {
         return null;
     }
 
+    async function loadTimelineDataFromPWACache(cacheKey){
+        try{
+            if(!('caches' in window)) return null;
+
+            const desired = parseTimelineCacheKey(cacheKey);
+            const cacheNames = await caches.keys();
+            const candidates = [];
+
+            for(const cacheName of cacheNames){
+                const cache = await caches.open(cacheName);
+                const requests = await cache.keys();
+
+                for(const request of requests){
+                    let url;
+                    try{
+                        url = new URL(request.url);
+                    }catch(err){
+                        continue;
+                    }
+
+                    if(url.origin !== window.location.origin) continue;
+                    if(url.pathname !== '/get_timeline_data') continue;
+
+                    const offset = Number(url.searchParams.get('offset') || '0');
+                    const branch = url.searchParams.get('branch') || 'ALL';
+                    const fresh = Number(url.searchParams.get('_fresh') || '0');
+
+                    const exact = (
+                        Number.isFinite(offset) &&
+                        offset === desired.weekOffset &&
+                        branch === desired.branch
+                    );
+
+                    candidates.push({
+                        cache,
+                        request,
+                        offset,
+                        branch,
+                        fresh: Number.isFinite(fresh) ? fresh : 0,
+                        exact
+                    });
+                }
+            }
+
+            if(!candidates.length) return null;
+
+            candidates.sort((a, b) => {
+                if(a.exact !== b.exact) return a.exact ? -1 : 1;
+                return (b.fresh || 0) - (a.fresh || 0);
+            });
+
+            for(const candidate of candidates){
+                const response = await candidate.cache.match(candidate.request);
+                if(!response || !response.ok) continue;
+
+                const data = await response.clone().json().catch(() => null);
+                if(data && Array.isArray(data.days) && Array.isArray(data.engineers)){
+                    const effectiveKey = `${candidate.offset}|${candidate.branch}`;
+                    return {
+                        data,
+                        cacheKey: effectiveKey,
+                        weekOffset: candidate.offset,
+                        branch: candidate.branch,
+                        savedAt: new Date(candidate.fresh || Date.now()).toISOString(),
+                        source: 'cache-api'
+                    };
+                }
+            }
+
+            return null;
+        }catch(err){
+            console.warn('[PWA] Unable to read cached timeline API data', err);
+            return null;
+        }
+    }
+
+    function parseTimelineCacheKey(cacheKey){
+        const raw = String(cacheKey || '');
+        const parts = raw.split('|');
+        const parsedOffset = Number(parts[0]);
+        return {
+            weekOffset: Number.isFinite(parsedOffset) ? parsedOffset : weekOffset,
+            branch: parts[1] || document.getElementById('branch-filter')?.value || 'ALL'
+        };
+    }
+
+    function applyTimelineOfflineDataSnapshot(snapshot, originalBranchFilter){
+        if(!snapshot?.data) return null;
+
+        const exactSnapshot = snapshot.cacheKey === `${weekOffset}|${document.getElementById('branch-filter')?.value || originalBranchFilter || 'ALL'}`;
+
+        if(!exactSnapshot){
+            applyTimelineSnapshotViewState(snapshot);
+        }
+
+        const effectiveBranch = document.getElementById('branch-filter')?.value || snapshot.branch || originalBranchFilter || 'ALL';
+        const effectiveCacheKey = `${weekOffset}|${effectiveBranch}`;
+
+        timelineCache[effectiveCacheKey] = { savedAt: Date.now(), data: snapshot.data };
+        mobileLastCacheKey = effectiveCacheKey;
+
+        try{
+            saveTimelineOfflineSnapshot(snapshot.data, effectiveCacheKey);
+        }catch(err){
+            console.warn('[PWA] Unable to persist recovered offline schedule snapshot', err);
+        }
+
+        if(shouldUseRoleAwareMobileTimeline()){
+            const sourceLabel = snapshot.source === 'cache-api' ? 'cached schedule data' : 'saved schedule';
+            setMobileCacheStatus(exactSnapshot ? 'Loaded saved schedule' : 'Loaded latest saved schedule', 'warm');
+            setPWAOfflineReadinessState(
+                'pwa-offline-active',
+                exactSnapshot ? 'Offline Schedule Loaded' : 'Latest Offline Schedule Loaded',
+                `Loaded from ${sourceLabel}. ${getPWALastTimelineSyncLabel()}`
+            );
+        }
+
+        return snapshot.data;
+    }
+
+
     function applyTimelineSnapshotViewState(snapshot){
         try{
             if(!snapshot) return false;
@@ -8221,28 +8342,12 @@ async function loadGrid() {
         let data;
 
         const immediateOfflineSnapshot = !navigator.onLine ? getImmediateTimelineOfflineSnapshot(cacheKey) : null;
+        const immediatePWACacheSnapshot = (!navigator.onLine && !immediateOfflineSnapshot?.data)
+            ? await loadTimelineDataFromPWACache(cacheKey)
+            : null;
 
-        if(immediateOfflineSnapshot?.data){
-            const exactSnapshot = immediateOfflineSnapshot.cacheKey === cacheKey;
-            if(!exactSnapshot){
-                applyTimelineSnapshotViewState(immediateOfflineSnapshot);
-            }
-
-            const effectiveBranch = document.getElementById('branch-filter')?.value || branchFilter;
-            const effectiveCacheKey = `${weekOffset}|${effectiveBranch}`;
-
-            data = immediateOfflineSnapshot.data;
-            timelineCache[effectiveCacheKey] = { savedAt: Date.now(), data };
-            mobileLastCacheKey = effectiveCacheKey;
-
-            if(shouldUseRoleAwareMobileTimeline()){
-                setMobileCacheStatus(exactSnapshot ? 'Loaded saved schedule' : 'Loaded latest saved schedule', 'warm');
-                setPWAOfflineReadinessState(
-                    'pwa-offline-active',
-                    exactSnapshot ? 'Offline Schedule Loaded' : 'Latest Offline Schedule Loaded',
-                    getPWALastTimelineSyncLabel()
-                );
-            }
+        if(immediateOfflineSnapshot?.data || immediatePWACacheSnapshot?.data){
+            data = applyTimelineOfflineDataSnapshot(immediateOfflineSnapshot?.data ? immediateOfflineSnapshot : immediatePWACacheSnapshot, branchFilter);
         }else if(cached && (Date.now() - cached.savedAt) < TIMELINE_CACHE_TTL_MS){
             data = cached.data;
             if(shouldUseRoleAwareMobileTimeline()){
@@ -8276,28 +8381,12 @@ async function loadGrid() {
                 }
             }catch(fetchError){
                 const offlineSnapshot = loadTimelineOfflineSnapshot(cacheKey);
+                const pwaCacheSnapshot = !offlineSnapshot?.data
+                    ? await loadTimelineDataFromPWACache(cacheKey)
+                    : null;
 
-                if(offlineSnapshot?.data){
-                    const exactSnapshot = offlineSnapshot.cacheKey === cacheKey;
-                    if(!exactSnapshot){
-                        applyTimelineSnapshotViewState(offlineSnapshot);
-                    }
-
-                    const effectiveBranch = document.getElementById('branch-filter')?.value || branchFilter;
-                    const effectiveCacheKey = `${weekOffset}|${effectiveBranch}`;
-
-                    data = offlineSnapshot.data;
-                    timelineCache[effectiveCacheKey] = { savedAt: Date.now(), data };
-                    mobileLastCacheKey = effectiveCacheKey;
-
-                    if(shouldUseRoleAwareMobileTimeline()){
-                        setMobileCacheStatus(exactSnapshot ? 'Loaded saved schedule' : 'Loaded latest saved schedule', 'warm');
-                        setPWAOfflineReadinessState(
-                            'pwa-offline-active',
-                            exactSnapshot ? 'Offline Schedule Loaded' : 'Latest Offline Schedule Loaded',
-                            getPWALastTimelineSyncLabel()
-                        );
-                    }
+                if(offlineSnapshot?.data || pwaCacheSnapshot?.data){
+                    data = applyTimelineOfflineDataSnapshot(offlineSnapshot?.data ? offlineSnapshot : pwaCacheSnapshot, branchFilter);
                 }else{
                     if(shouldUseRoleAwareMobileTimeline()){
                         setMobileCacheStatus('No saved schedule found', 'ready');
