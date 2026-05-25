@@ -3937,7 +3937,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-persistent-auth-v4';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v5';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -4020,10 +4020,55 @@ async function networkFirst(request) {
   }
 }
 
-async function networkOnlyNavigation(request) {
+async function fieldNavigationFirst(request) {
+  const requestUrl = new URL(request.url);
+
+  // Login must remain network-only. Never show or cache a stale login page.
+  if (requestUrl.pathname === '/login') {
+    try {
+      return await fetch(request, { cache: 'no-store', credentials: 'same-origin' });
+    } catch (err) {
+      return caches.match('/offline');
+    }
+  }
+
   try {
-    return await fetch(request, { cache: 'no-store', credentials: 'same-origin' });
+    const response = await fetch(request, { credentials: 'same-origin' });
+
+    if (response && response.ok && !isLoginLikeResponse(request, response)) {
+      const runtimeCache = await caches.open(RUNTIME_CACHE);
+      await runtimeCache.put(request, response.clone());
+
+      // Also store clean route keys so /timeline?source=pwa can fall back to /timeline.
+      if (FIELD_SAFE_ROUTES.includes(requestUrl.pathname)) {
+        await runtimeCache.put(requestUrl.pathname, response.clone());
+      }
+    }
+
+    return response;
   } catch (err) {
+    const runtimeCache = await caches.open(RUNTIME_CACHE);
+
+    const exactCached = await runtimeCache.match(request);
+    if (exactCached) return exactCached;
+
+    if (FIELD_SAFE_ROUTES.includes(requestUrl.pathname)) {
+      const routeCached = await runtimeCache.match(requestUrl.pathname);
+      if (routeCached) return routeCached;
+    }
+
+    const shellCache = await caches.open(APP_SHELL_CACHE);
+    const shellExact = await shellCache.match(request);
+    if (shellExact) return shellExact;
+
+    if (FIELD_SAFE_ROUTES.includes(requestUrl.pathname)) {
+      const shellRoute = await shellCache.match(requestUrl.pathname);
+      if (shellRoute) return shellRoute;
+    }
+
+    const cached = await caches.match(request);
+    if (cached) return cached;
+
     return caches.match('/offline');
   }
 }
@@ -4066,9 +4111,10 @@ self.addEventListener('fetch', event => {
   const isSameOrigin = url.origin === self.location.origin;
 
   if (request.mode === 'navigate') {
-    // Protected pages must not be cached as navigations.
-    // This prevents PWA app reopen from showing a stale /login redirect/page.
-    event.respondWith(networkOnlyNavigation(request));
+    // Field navigation must work offline after the user opened the page online.
+    // Login remains network-only inside fieldNavigationFirst(); protected pages are cached
+    // only when the response is OK and not a login redirect/page.
+    event.respondWith(fieldNavigationFirst(request));
     return;
   }
 
@@ -4116,8 +4162,19 @@ self.addEventListener('message', event => {
   }
 
   if (event.data.type === 'CACHE_FIELD_ROUTES') {
-    // V4: protected routes are no longer precached. Keeping the message as a no-op
-    // allows older layout scripts to be harmless until the updated layout is deployed.
+    event.waitUntil(
+      caches.open(RUNTIME_CACHE).then(cache => {
+        return Promise.allSettled(
+          FIELD_SAFE_ROUTES.map(route => {
+            return fetch(route, { credentials: 'same-origin' }).then(response => {
+              if (response && response.ok && !isLoginLikeResponse(new Request(route), response)) {
+                return cache.put(route, response.clone());
+              }
+            }).catch(() => null);
+          })
+        );
+      })
+    );
     return;
   }
 });
