@@ -9797,11 +9797,18 @@ def save_uploaded_shift_files(shift):
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
         file_obj.save(file_path)
 
-        db.session.add(ShiftFile(
+        file_rec = ShiftFile(
             shift_id=shift.id,
             filename=unique_name,
             original_filename=original_name
-        ))
+        )
+        db.session.add(file_rec)
+        db.session.flush()
+
+        upload_recipient_emails = extract_tsr_recipient_emails_from_request_payload()
+        if upload_recipient_emails and is_tsr_filename(original_name):
+            save_tsr_email_metadata_for_file_infos([file_rec], upload_recipient_emails, source='manual_upload')
+
         saved_filenames.append(unique_name)
 
     return saved_filenames
@@ -10747,6 +10754,222 @@ def report_file_content_looks_like_tsr(file_path, filename):
         return False
 
 
+
+def get_tsr_email_metadata_path():
+    """Return sidecar JSON path for TSR attachment recipient metadata.
+
+    This avoids a database migration for ShiftFile while still keeping Railway-safe
+    persistent metadata beside uploaded reports in /data/uploads/reports.
+    """
+    try:
+        os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    except Exception:
+        pass
+    return os.path.join(app.config['UPLOAD_FOLDER'], '_tsr_email_metadata.json')
+
+
+def load_tsr_email_metadata_store():
+    """Load saved TSR attachment recipient metadata from the sidecar JSON file."""
+    path = get_tsr_email_metadata_path()
+    try:
+        if not os.path.exists(path):
+            return {}
+        with open(path, 'r', encoding='utf-8') as meta_file:
+            data = json.load(meta_file)
+        return data if isinstance(data, dict) else {}
+    except Exception as meta_error:
+        print(f"[EMAIL-CLIENT] Unable to read TSR email metadata: {meta_error}", flush=True)
+        return {}
+
+
+def save_tsr_email_metadata_store(data):
+    """Write TSR attachment recipient metadata safely to a sidecar JSON file."""
+    path = get_tsr_email_metadata_path()
+    try:
+        tmp_path = f"{path}.tmp"
+        with open(tmp_path, 'w', encoding='utf-8') as meta_file:
+            json.dump(data if isinstance(data, dict) else {}, meta_file, ensure_ascii=False, indent=2, sort_keys=True)
+        os.replace(tmp_path, path)
+        return True
+    except Exception as meta_error:
+        print(f"[EMAIL-CLIENT] Unable to write TSR email metadata: {meta_error}", flush=True)
+        return False
+
+
+def get_tsr_email_metadata_keys(file_info_or_rec):
+    """Return stable lookup keys for a ShiftFile/file-info object."""
+    keys = []
+    try:
+        file_id = clean_int(
+            file_info_or_rec.get('id') if isinstance(file_info_or_rec, dict) else getattr(file_info_or_rec, 'id', None)
+        )
+        if file_id:
+            keys.append(f"id:{file_id}")
+    except Exception:
+        pass
+
+    try:
+        filename = clean_str(
+            file_info_or_rec.get('filename') if isinstance(file_info_or_rec, dict) else getattr(file_info_or_rec, 'filename', None)
+        )
+        if filename:
+            keys.append(f"filename:{filename}")
+    except Exception:
+        pass
+
+    return keys
+
+
+def extract_tsr_recipient_emails_from_request_payload(payload=None):
+    """Collect manually selected/upload-provided TSR recipient emails from known field names."""
+    payload = payload if isinstance(payload, dict) else {}
+    raw_values = []
+
+    for field_name in (
+        'tsr_client_email', 'tsr_client_emails',
+        'tsr_recipient_email', 'tsr_recipient_emails',
+        'recipient_email', 'recipient_emails',
+        'client_email', 'client_emails',
+        'selected_email', 'selected_emails',
+        'selected_recipient_email', 'selected_recipient_emails',
+        'email', 'emails'
+    ):
+        try:
+            if field_name in payload:
+                raw_values.append(payload.get(field_name))
+        except Exception:
+            pass
+        try:
+            if field_name in request.form:
+                raw_values.append(request.form.get(field_name))
+        except Exception:
+            pass
+        try:
+            form_values = request.form.getlist(field_name)
+            if form_values:
+                raw_values.extend(form_values)
+        except Exception:
+            pass
+
+    emails = []
+    for raw_value in raw_values:
+        emails.extend(parse_manual_recipient_emails(raw_value))
+    return normalize_email_list(emails)
+
+
+def save_tsr_email_metadata_for_file_infos(file_infos, emails, source='manual_upload'):
+    """Save chosen TSR recipient emails for ShiftFile/file-info rows.
+
+    This is intentionally sidecar-based to avoid a live DB migration. It is safe
+    to call after uploads or after a successful Send Email to Client action.
+    """
+    clean_emails = normalize_email_list(emails or [])
+    if not file_infos or not clean_emails:
+        return False
+
+    store = load_tsr_email_metadata_store()
+    now_label = get_manila_time().isoformat()
+    changed = False
+
+    for file_info in file_infos:
+        keys = get_tsr_email_metadata_keys(file_info)
+        if not keys:
+            continue
+        primary_key = keys[0]
+        existing = store.get(primary_key) if isinstance(store.get(primary_key), dict) else {}
+        existing_emails = normalize_email_list(existing.get('emails') or [])
+        merged_emails = normalize_email_list(existing_emails + clean_emails)
+        if merged_emails != existing_emails or not existing:
+            existing.update({
+                'emails': merged_emails,
+                'source': clean_str(source) or 'manual_upload',
+                'updated_at': now_label
+            })
+            # Store helpful attachment labels when available.
+            try:
+                existing['filename'] = clean_str(file_info.get('filename')) if isinstance(file_info, dict) else clean_str(getattr(file_info, 'filename', None))
+            except Exception:
+                pass
+            try:
+                existing['display_name'] = clean_str(file_info.get('display_name')) if isinstance(file_info, dict) else clean_str(getattr(file_info, 'original_filename', None))
+            except Exception:
+                pass
+            store[primary_key] = existing
+            changed = True
+
+        # Keep alias keys pointing to the same metadata so lookup survives id/name paths.
+        for alias_key in keys[1:]:
+            if store.get(alias_key) != {'alias_for': primary_key}:
+                store[alias_key] = {'alias_for': primary_key}
+                changed = True
+
+    return save_tsr_email_metadata_store(store) if changed else False
+
+
+def get_saved_tsr_email_metadata_candidates(tsr_files):
+    """Return saved TSR recipient email candidates for Send Email preview."""
+    if not tsr_files:
+        return []
+    store = load_tsr_email_metadata_store()
+    candidates = []
+    seen = set()
+
+    for file_info in tsr_files:
+        metadata = None
+        for key in get_tsr_email_metadata_keys(file_info):
+            raw_meta = store.get(key)
+            if isinstance(raw_meta, dict) and raw_meta.get('alias_for'):
+                raw_meta = store.get(raw_meta.get('alias_for'))
+            if isinstance(raw_meta, dict) and raw_meta.get('emails'):
+                metadata = raw_meta
+                break
+        if not metadata:
+            continue
+        display_name = (
+            clean_str(file_info.get('display_name')) if isinstance(file_info, dict) else ''
+        ) or (
+            clean_str(file_info.get('filename')) if isinstance(file_info, dict) else ''
+        ) or 'TSR attachment'
+        source_label = 'Saved TSR recipient'
+        if metadata.get('source') == 'sent_tsr_email':
+            source_label = 'Previously sent TSR recipient'
+        elif metadata.get('source') == 'manual_upload':
+            source_label = 'Uploaded TSR recipient'
+        for email_addr in parse_manual_recipient_emails(metadata.get('emails')):
+            email_key = email_addr.lower()
+            if email_key in seen:
+                continue
+            seen.add(email_key)
+            candidates.append({
+                'email': email_addr,
+                'sources': [f"{source_label}: {display_name}"]
+            })
+    return candidates
+
+
+def merge_tsr_email_candidate_lists(*candidate_lists):
+    """Merge detected/saved email candidate rows without duplicating addresses."""
+    merged = {}
+    for candidate_list in candidate_lists:
+        for candidate in candidate_list or []:
+            email_addr = clean_str(candidate.get('email') if isinstance(candidate, dict) else '')
+            if not email_addr:
+                continue
+            parsed = parse_manual_recipient_emails(email_addr)
+            if not parsed:
+                continue
+            normalized_email = parsed[0]
+            email_key = normalized_email.lower()
+            sources = candidate.get('sources') if isinstance(candidate, dict) else []
+            if isinstance(sources, str):
+                sources = [sources]
+            merged.setdefault(email_key, {'email': normalized_email, 'sources': []})
+            for source in sources or []:
+                source = clean_str(source)
+                if source and source not in merged[email_key]['sources']:
+                    merged[email_key]['sources'].append(source)
+    return [merged[key] for key in sorted(merged.keys())]
+
 def get_tsr_files_for_shift(shift):
     """Return stored TSR files attached to a shift for client email sending.
 
@@ -11086,7 +11309,11 @@ def preview_tsr_client_email(shift_id):
         return denied('You are not authorized to send TSR for this schedule.')
 
     tsr_files = get_tsr_files_for_shift(shift)
-    detected_emails = detect_client_emails_from_tsr_files(tsr_files)
+    saved_email_candidates = get_saved_tsr_email_metadata_candidates(tsr_files)
+    detected_emails = merge_tsr_email_candidate_lists(
+        saved_email_candidates,
+        detect_client_emails_from_tsr_files(tsr_files)
+    )
     fallback_emails = get_shift_client_email_fallbacks(shift)
 
     return jsonify({
@@ -11107,6 +11334,7 @@ def preview_tsr_client_email(shift_id):
             for file_info in tsr_files
         ],
         'detected_emails': detected_emails,
+        'saved_recipient_emails': saved_email_candidates,
         'fallback_emails': fallback_emails,
         'font_options': [
             {'key': key, 'label': key.title() if key != 'tenorite' else 'Tenorite'}
@@ -11158,6 +11386,8 @@ def send_tsr_client_email(shift_id):
 
     if not email_sent:
         return jsonify({'message': email_message or 'Unable to send TSR email.'}), 500
+
+    save_tsr_email_metadata_for_file_infos(tsr_files, recipient_emails, source='sent_tsr_email')
 
     recipients_label = ', '.join(recipient_emails)
     cc_log = f" | CC: {', '.join(static_cc_emails)}" if static_cc_emails else ""

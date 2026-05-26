@@ -705,6 +705,18 @@
                         
                         <!-- Added 'multiple' to support multiple file selections -->
                         <input type="file" id="f-report" class="form-control mb-2 shadow-none" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,image/*,application/pdf">
+
+                        <div class="tsr-upload-recipient-card d-none" id="tsr-upload-recipient-card">
+                            <div class="d-flex align-items-start gap-2">
+                                <i class="fa-solid fa-address-book mt-1 text-success"></i>
+                                <div class="flex-grow-1">
+                                    <div class="small fw-bold text-success text-uppercase">TSR recipient metadata</div>
+                                    <div class="xsmall text-muted mb-1">Client contact emails will be saved with uploaded TSR files for future Send Email detection.</div>
+                                    <div class="tsr-upload-recipient-chips" id="tsr-upload-recipient-chips"></div>
+                                </div>
+                            </div>
+                            <input type="hidden" id="f-tsr-recipient-emails" value="">
+                        </div>
                         
                         <!-- List container for viewing and deleting existing files -->
                         <div id="existing-files-list" class="list-group list-group-flush border rounded bg-white overflow-auto" style="max-height: 150px;">
@@ -2916,6 +2928,34 @@ body.mobile-engineer-mode.mobile-desktop-grid-skipped .timeline-desktop-shell {
     }
 }
 
+
+
+.tsr-upload-recipient-card {
+    border: 1px solid #bbf7d0;
+    background: #f0fdf4;
+    border-radius: 0.9rem;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.tsr-upload-recipient-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.tsr-upload-recipient-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border: 1px solid #86efac;
+    background: #ffffff;
+    color: #166534;
+    border-radius: 999px;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
 
 .mobile-schedule-actions {
     display: grid;
@@ -9092,6 +9132,7 @@ if(shift.engineers){
         updateDurationLabel();
         document.getElementById('f-status').value = shift.status || "In Progress";
         if (document.getElementById('f-report')) document.getElementById('f-report').value = "";
+        refreshTSRUploadRecipientMetadata(shift.client_id || document.getElementById('f-cli-id')?.value || '');
 
         // SET SELECTED ENGINEERS
         const sel = document.getElementById('f-engineers');
@@ -9704,6 +9745,80 @@ async function openTSRClientEmailModal(shiftId){
         });
     }
 
+
+    function splitTimelineEmailValues(rawValue){
+        const emails = [];
+        const seen = new Set();
+        const pushEmail = (value) => {
+            const cleaned = String(value || '').trim().replace(/^mailto:/i, '').replace(/[<>()\[\]"']/g, '');
+            if(!cleaned) return;
+            const parts = cleaned.split(/[\s,;]+/).map(v => v.trim()).filter(Boolean);
+            parts.forEach(part => {
+                const email = part.toLowerCase();
+                if(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !seen.has(email)){
+                    seen.add(email);
+                    emails.push(email);
+                }
+            });
+        };
+
+        if(Array.isArray(rawValue)){
+            rawValue.forEach(pushEmail);
+        }else{
+            pushEmail(rawValue);
+        }
+        return emails;
+    }
+
+    function collectClientEmailsForTSRUpload(clientId){
+        const client = (masterClients || []).find(c => String(c.id) === String(clientId));
+        if(!client) return [];
+
+        const rawValues = [];
+        [
+            'email', 'email_address', 'email_address_1', 'email_address_2', 'email_address_3',
+            'ce1', 'ce2', 'ce3', 'ce4', 'ce5', 'ce6',
+            'client_email', 'client_emails'
+        ].forEach(key => {
+            if(client[key]) rawValues.push(client[key]);
+        });
+
+        ['contacts', 'client_contacts', 'contact_list'].forEach(key => {
+            if(Array.isArray(client[key])){
+                client[key].forEach(contact => {
+                    if(contact && typeof contact === 'object'){
+                        rawValues.push(contact.email || contact.email_address || contact.ce || contact.contact_email || '');
+                    }else{
+                        rawValues.push(contact);
+                    }
+                });
+            }
+        });
+
+        return splitTimelineEmailValues(rawValues);
+    }
+
+    function refreshTSRUploadRecipientMetadata(clientId=null){
+        const hidden = document.getElementById('f-tsr-recipient-emails');
+        const card = document.getElementById('tsr-upload-recipient-card');
+        const chips = document.getElementById('tsr-upload-recipient-chips');
+        if(!hidden || !card || !chips) return [];
+
+        const resolvedClientId = clientId || document.getElementById('f-cli-id')?.value || '';
+        const emails = collectClientEmailsForTSRUpload(resolvedClientId);
+        hidden.value = emails.join(', ');
+
+        if(emails.length){
+            chips.innerHTML = emails.map(email => `<span class="tsr-upload-recipient-chip"><i class="fa-solid fa-envelope"></i>${escapeHtml(email)}</span>`).join('');
+            card.classList.remove('d-none');
+        }else{
+            chips.innerHTML = '';
+            card.classList.add('d-none');
+        }
+
+        return emails;
+    }
+
     // --- DATABASE ACTIONS ---
 
     /**
@@ -9786,6 +9901,14 @@ async function openTSRClientEmailModal(shiftId){
 
         dataSet.append('client_id', clientValue);
         dataSet.append('product_id', productValue);
+
+        // Step 2: Save known client/contact emails as metadata for manually uploaded TSR files.
+        // This avoids OCR for scanned PDFs and lets Send TSR detect recipients later.
+        const tsrUploadRecipients = refreshTSRUploadRecipientMetadata(clientValue);
+        if(tsrUploadRecipients.length){
+            dataSet.append('tsr_recipient_emails', tsrUploadRecipients.join(', '));
+            tsrUploadRecipients.forEach(email => dataSet.append('tsr_recipient_email', email));
+        }
         const startTimeValue = document.getElementById('f-start-time').value;
         const endTimeValue = document.getElementById('f-end-time').value;
 
