@@ -3738,6 +3738,290 @@ def attach_uploaded_online_tsr_extra_files_to_shift(shift, excluded_file_ids=Non
     return saved_files
 
 
+
+
+def auto_capture_tsr_client_contact_from_payload(shift, payload):
+    """Safely add TSR recipient contact details to the linked client record.
+
+    Generated TSRs already carry the recipient fields in payload_json. Capture
+    those details so future Send Email to Client suggestions do not need OCR,
+    especially for image/scanned TSR PDFs.
+
+    Priority for contact name:
+    1. tsr-acknowledged-by (end user / TSR receiver)
+    2. tsr-requested-by
+
+    This helper only inserts missing emails for the resolved schedule client. It
+    never overwrites existing client/contact data. It also mirrors captured
+    contact details into the legacy Client contact slots used by the Clients
+    page when a safe matching/empty slot is available.
+    """
+    if not shift or not isinstance(payload, dict):
+        return []
+
+    def resolve_client_for_tsr_contact():
+        """Resolve the client even when older/override shifts lack client_id."""
+        selected_schedule = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
+        candidate_ids = [
+            getattr(shift, 'client_id', None),
+            payload.get('client_id'),
+            payload.get('clientId'),
+            payload.get('selected_client_id'),
+            selected_schedule.get('client_id'),
+            selected_schedule.get('clientId'),
+            selected_schedule.get('client_id_value'),
+        ]
+        for candidate_id in candidate_ids:
+            clean_id = clean_int(candidate_id)
+            if clean_id:
+                client_rec = db.session.get(Client, clean_id)
+                if client_rec:
+                    return client_rec
+
+        # Fallback for older payloads: match by the customer/client name already
+        # printed on the TSR. Exact normalized match only to avoid wrong clients.
+        name_candidates = [
+            payload.get('tsr-customer-name'),
+            payload.get('tsr_customer_name'),
+            selected_schedule.get('client_name'),
+            selected_schedule.get('client'),
+            selected_schedule.get('customer_name'),
+        ]
+        normalized_names = [normalize_text_for_compare(name) for name in name_candidates if clean_str(name)]
+        normalized_names = [name for name in normalized_names if name]
+        if not normalized_names:
+            return None
+
+        for client_rec in Client.query.all():
+            client_name_key = normalize_text_for_compare(getattr(client_rec, 'name', '') or '')
+            if client_name_key and client_name_key in normalized_names:
+                return client_rec
+        return None
+
+    def format_tsr_contact_name(value):
+        """Normalize auto-captured TSR contact names for client records.
+
+        Engineers may type names in lowercase/uppercase on the TSR form. Keep
+        the cleanup scoped to auto-captured contacts only so client/company names
+        and manually maintained records are not unexpectedly changed.
+        """
+        raw_name = clean_str(value)
+        if not raw_name:
+            return ''
+
+        import re
+
+        particles = {'de', 'del', 'dela', 'da', 'das', 'do', 'dos', 'van', 'von'}
+        roman_suffixes = {'ii', 'iii', 'iv', 'vi', 'vii', 'viii', 'ix', 'x'}
+        suffixes = {'jr', 'sr'}
+
+        def fix_word(word):
+            if not word:
+                return word
+            bare = word.strip()
+            trailing_dot = bare.endswith('.')
+            core = bare[:-1] if trailing_dot else bare
+            lower = core.lower()
+
+            if lower in roman_suffixes:
+                fixed = lower.upper()
+            elif lower in suffixes:
+                fixed = lower.capitalize()
+            elif lower == 'ma':
+                fixed = 'Ma'
+            elif lower in particles:
+                fixed = lower
+            else:
+                # Handles apostrophes/hyphens like O'Neil or Anne-Marie.
+                fixed = re.sub(
+                    r"[A-Za-zÀ-ÖØ-öø-ÿ]+",
+                    lambda m: m.group(0)[:1].upper() + m.group(0)[1:].lower(),
+                    core
+                )
+            return fixed + ('.' if trailing_dot else '')
+
+        return ' '.join(fix_word(part) for part in raw_name.split())[:100]
+
+    # Email and contact values come from offline_tsr.html .tsr-field IDs.
+    raw_email = (
+        payload.get('tsr-email-add') or
+        payload.get('tsr_email_add') or
+        payload.get('email') or
+        payload.get('client_email') or
+        ''
+    )
+    raw_contact_name = (
+        clean_str(payload.get('tsr-acknowledged-by')) or
+        clean_str(payload.get('tsr_acknowledged_by')) or
+        clean_str(payload.get('tsr-requested-by')) or
+        clean_str(payload.get('tsr_requested_by')) or
+        ''
+    )
+    contact_name = format_tsr_contact_name(raw_contact_name)
+    contact_phone = (
+        clean_str(payload.get('tsr-contact-no')) or
+        clean_str(payload.get('tsr_contact_no')) or
+        clean_str(payload.get('contact_no')) or
+        ''
+    )[:50]
+
+    email_candidates = parse_manual_recipient_emails(raw_email)
+    if not email_candidates:
+        return []
+
+    client = resolve_client_for_tsr_contact()
+    if not client or not getattr(client, 'id', None):
+        return []
+
+    client_id = clean_int(client.id)
+    legacy_emails = set()
+    contact_table_emails = set()
+
+    for field_name in ('email_address_1', 'email_address_2', 'email_address_3'):
+        for existing_email in parse_manual_recipient_emails(getattr(client, field_name, None)):
+            legacy_emails.add(existing_email.lower())
+
+    try:
+        existing_contacts = Contact.query.filter_by(client_id=client_id).order_by(Contact.id.asc()).all()
+    except Exception:
+        existing_contacts = []
+
+    for contact in existing_contacts:
+        for existing_email in parse_manual_recipient_emails(getattr(contact, 'email', None)):
+            contact_table_emails.add(existing_email.lower())
+
+    def fill_first_safe_client_contact_slot(email_key):
+        """Mirror TSR contact into legacy Client contact slots.
+
+        Preference order:
+        1. Existing slot with the same email: fill missing name/phone only.
+        2. Existing slot with the same contact name and blank email: fill email.
+        3. Completely empty slot.
+
+        This avoids overwriting manually maintained client contacts while still
+        making auto-captured TSR contacts visible on older Clients page layouts.
+        """
+        if not client:
+            return False
+
+        normalized_contact_name = normalize_text_for_compare(contact_name)
+
+        # 1) Same email already in a legacy slot: enrich only blank fields.
+        for slot_no in (1, 2, 3):
+            email_field = f'email_address_{slot_no}'
+            name_field = f'contact_person_{slot_no}'
+            phone_field = f'contact_number_{slot_no}'
+            slot_emails = [e.lower() for e in parse_manual_recipient_emails(getattr(client, email_field, None))]
+            if email_key not in slot_emails:
+                continue
+            changed = False
+            if contact_name and not clean_str(getattr(client, name_field, None)):
+                setattr(client, name_field, contact_name)
+                changed = True
+            if contact_phone and not clean_str(getattr(client, phone_field, None)):
+                setattr(client, phone_field, contact_phone)
+                changed = True
+            return changed
+
+        # 2) Same contact name with blank email: fill the email/phone safely.
+        if normalized_contact_name:
+            for slot_no in (1, 2, 3):
+                email_field = f'email_address_{slot_no}'
+                name_field = f'contact_person_{slot_no}'
+                phone_field = f'contact_number_{slot_no}'
+                current_email = clean_str(getattr(client, email_field, None))
+                current_name = clean_str(getattr(client, name_field, None))
+                current_phone = clean_str(getattr(client, phone_field, None))
+                if current_email:
+                    continue
+                if normalize_text_for_compare(current_name) != normalized_contact_name:
+                    continue
+                setattr(client, email_field, email_key)
+                if contact_phone and not current_phone:
+                    setattr(client, phone_field, contact_phone)
+                legacy_emails.add(email_key)
+                return True
+
+        # 3) Completely empty slot.
+        if email_key not in legacy_emails:
+            for slot_no in (1, 2, 3):
+                email_field = f'email_address_{slot_no}'
+                name_field = f'contact_person_{slot_no}'
+                phone_field = f'contact_number_{slot_no}'
+
+                current_email = clean_str(getattr(client, email_field, None))
+                current_name = clean_str(getattr(client, name_field, None))
+                current_phone = clean_str(getattr(client, phone_field, None))
+
+                if current_email or current_name or current_phone:
+                    continue
+
+                setattr(client, email_field, email_key)
+                if contact_name:
+                    setattr(client, name_field, contact_name)
+                if contact_phone:
+                    setattr(client, phone_field, contact_phone)
+                legacy_emails.add(email_key)
+                return True
+
+        return False
+
+    created_emails = []
+    mirrored_emails = []
+    enriched_emails = []
+
+    for email_addr in email_candidates:
+        email_key = clean_str(email_addr).lower()
+        if not email_key or not is_valid_manual_recipient_email(email_key):
+            continue
+
+        matching_contact = None
+        for contact in existing_contacts:
+            contact_emails = [e.lower() for e in parse_manual_recipient_emails(getattr(contact, 'email', None))]
+            if email_key in contact_emails:
+                matching_contact = contact
+                break
+
+        if matching_contact:
+            contact_changed = False
+            if contact_name and not clean_str(getattr(matching_contact, 'name', None)):
+                matching_contact.name = contact_name
+                contact_changed = True
+            if contact_phone and not clean_str(getattr(matching_contact, 'phone', None)):
+                matching_contact.phone = contact_phone
+                contact_changed = True
+            if contact_changed:
+                enriched_emails.append(email_key)
+        else:
+            db.session.add(Contact(
+                client_id=client_id,
+                name=contact_name,
+                phone=contact_phone,
+                email=email_key
+            ))
+            contact_table_emails.add(email_key)
+            created_emails.append(email_key)
+
+        if fill_first_safe_client_contact_slot(email_key):
+            mirrored_emails.append(email_key)
+
+    changed_emails = list(dict.fromkeys(created_emails + mirrored_emails + enriched_emails))
+
+    if changed_emails:
+        client_label = clean_str(getattr(client, 'name', None)) if client else f'Client #{client_id}'
+        shown_emails = ', '.join(changed_emails[:3])
+        more_note = f" (+{len(changed_emails) - 3} more)" if len(changed_emails) > 3 else ''
+        db.session.add(ActivityLog(
+            user=(getattr(current_user, 'username', '') or 'System').capitalize(),
+            action=(
+                f"Auto-captured TSR contact for {client_label}: "
+                f"{contact_name or 'Unnamed contact'} <{shown_emails}>{more_note}"
+            )[:255]
+        ))
+
+    return changed_emails
+
+
 @app.route('/save_offline_tsr_online', methods=['POST'])
 @csrf.exempt
 @login_required
@@ -3837,6 +4121,8 @@ def save_offline_tsr_online():
             excluded_file_ids=[uploaded_pdf, attached_file]
         )
         completed_shift_ids = complete_linked_schedules_for_online_tsr(shift)
+        auto_captured_contact_emails = []
+        payload['_auto_captured_contact_emails'] = auto_captured_contact_emails
         payload['_generated_pdf_filename'] = pdf_filename
         payload['_attached_file_id'] = attached_file.id
         payload['_attached_disk_filename'] = attached_file.filename
@@ -3853,6 +4139,22 @@ def save_offline_tsr_online():
             action=f"Generated online TSR PDF and completed linked schedule(s): {pdf_filename} for schedule #{shift.id} (+{len(extra_attached_files)} extra attachment(s))"
         ))
         db.session.commit()
+
+        # TSR contact auto-capture is intentionally isolated from the main TSR
+        # save/PDF transaction. If contact enrichment fails, the TSR should still
+        # sync successfully and remain attached to the schedule.
+        try:
+            auto_captured_contact_emails = auto_capture_tsr_client_contact_from_payload(shift, payload)
+            if auto_captured_contact_emails:
+                payload['_auto_captured_contact_emails'] = auto_captured_contact_emails
+                submission.payload_json = json.dumps(payload, ensure_ascii=False)
+                db.session.commit()
+        except Exception as contact_capture_error:
+            db.session.rollback()
+            print(
+                f"[ONLINE-TSR] Contact auto-capture skipped for submission #{submission.id}: {contact_capture_error}",
+                flush=True
+            )
     except Exception as pdf_error:
         submission.status = 'pdf_error'
         db.session.commit()
@@ -5103,14 +5405,70 @@ def get_engineers():
 def get_clients():
     clients = Client.query.order_by(Client.name).all()
     results = []
+
+    def add_client_contact_row(rows, seen, name='', phone='', email=''):
+        name = clean_str(name)
+        phone = clean_str(phone)
+        email = clean_str(email)
+        if not (name or phone or email):
+            return
+
+        email_key = (email or '').strip().lower()
+        if email_key:
+            key = ('email', email_key)
+        else:
+            key = ('row', (name or '').strip().lower(), (phone or '').strip().lower())
+
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append((name, phone, email))
+
     for c in clients:
-        contacts = Contact.query.filter_by(client_id=c.id).all()
+        merged_contacts = []
+        seen_contacts = set()
+
+        # Keep legacy visible client slots first because the Clients page table
+        # uses cp1/cn1/ce1 as the primary contact display. Empty legacy rows
+        # are skipped so auto-captured Contact rows can surface properly.
+        add_client_contact_row(
+            merged_contacts, seen_contacts,
+            getattr(c, 'contact_person_1', ''),
+            getattr(c, 'contact_number_1', ''),
+            getattr(c, 'email_address_1', '')
+        )
+        add_client_contact_row(
+            merged_contacts, seen_contacts,
+            getattr(c, 'contact_person_2', ''),
+            getattr(c, 'contact_number_2', ''),
+            getattr(c, 'email_address_2', '')
+        )
+        add_client_contact_row(
+            merged_contacts, seen_contacts,
+            getattr(c, 'contact_person_3', ''),
+            getattr(c, 'contact_number_3', ''),
+            getattr(c, 'email_address_3', '')
+        )
+
+        # Then append dynamic Contact table rows, including TSR auto-captured
+        # contacts. This keeps older client records visible while also showing
+        # new contacts captured from Create TSR.
+        contacts = Contact.query.filter_by(client_id=c.id).order_by(Contact.id.asc()).all()
+        for ct in contacts:
+            add_client_contact_row(
+                merged_contacts, seen_contacts,
+                getattr(ct, 'name', ''),
+                getattr(ct, 'phone', ''),
+                getattr(ct, 'email', '')
+            )
+
         entry = {'id': c.id, 'name': c.name, 'address': c.address}
-        for idx, ct in enumerate(contacts, start=1):
-            entry[f'cp{idx}'] = ct.name
-            entry[f'cn{idx}'] = ct.phone
-            entry[f'ce{idx}'] = ct.email
+        for idx, (name, phone, email) in enumerate(merged_contacts, start=1):
+            entry[f'cp{idx}'] = name
+            entry[f'cn{idx}'] = phone
+            entry[f'ce{idx}'] = email
         results.append(entry)
+
     return jsonify(results)
 
 
@@ -10536,38 +10894,94 @@ def detect_client_emails_from_tsr_files(tsr_files):
 
 
 def get_shift_client_email_fallbacks(shift):
-    """Return client database emails as fallback choices when TSR detection is empty/uncertain."""
-    if not shift or not shift.client_id:
+    """Return client database emails as fallback choices when TSR detection is empty/uncertain.
+
+    This intentionally avoids OCR/Railway-heavy scanning. It collects all known
+    emails from the selected schedule's client record and any linked parent/group
+    schedule client records, including multiple emails pasted into one field.
+    """
+    if not shift:
         return []
 
     fallback_emails = []
     seen = set()
+    client_ids = []
+    seen_client_ids = set()
 
-    contacts = Contact.query.filter_by(client_id=shift.client_id).all()
-    for contact in contacts:
-        email_addr = clean_str(contact.email)
-        if email_addr and is_valid_client_email(email_addr) and email_addr.lower() not in seen:
-            seen.add(email_addr.lower())
+    def add_client_id(client_id):
+        client_id = clean_int(client_id)
+        if not client_id or client_id in seen_client_ids:
+            return
+        seen_client_ids.add(client_id)
+        client_ids.append(client_id)
+
+    def add_shift_client(candidate_shift):
+        if not candidate_shift:
+            return
+        add_client_id(getattr(candidate_shift, 'client_id', None))
+
+    # Primary selected schedule.
+    add_shift_client(shift)
+
+    # Linked schedules can carry the shared client when the selected row is a
+    # linked override or when the modal is opened from another group/day row.
+    try:
+        if getattr(shift, 'parent_shift_id', None):
+            add_shift_client(db.session.get(Shift, shift.parent_shift_id))
+
+        if getattr(shift, 'group_id', None):
+            for group_shift in Shift.query.filter_by(group_id=shift.group_id).all():
+                add_shift_client(group_shift)
+
+        for linked_shift in get_tsr_completion_linked_shifts(shift):
+            add_shift_client(linked_shift)
+    except Exception as fallback_link_error:
+        print(
+            f"[EMAIL-CLIENT] Client email fallback linked scan failed for shift_id={getattr(shift, 'id', None)}: {fallback_link_error}",
+            flush=True
+        )
+
+    def add_email_candidates(raw_value, display_name='', source='client_record'):
+        for email_addr in parse_manual_recipient_emails(raw_value):
+            email_key = email_addr.lower()
+            if not email_key or email_key in seen:
+                continue
+            # Client DB values are trusted more than PDF extraction, but still
+            # keep basic anti-certificate/system filtering through the manual
+            # recipient validator used by the send modal.
+            if not is_valid_manual_recipient_email(email_key):
+                continue
+            seen.add(email_key)
             fallback_emails.append({
-                'email': email_addr.lower(),
-                'name': contact.name or '',
-                'source': 'client_contact'
+                'email': email_key,
+                'name': display_name or '',
+                'source': source
             })
 
-    client = db.session.get(Client, shift.client_id)
-    for email_addr in [
-        getattr(client, 'email_address_1', None),
-        getattr(client, 'email_address_2', None),
-        getattr(client, 'email_address_3', None)
-    ] if client else []:
-        email_addr = clean_str(email_addr)
-        if email_addr and is_valid_client_email(email_addr) and email_addr.lower() not in seen:
-            seen.add(email_addr.lower())
-            fallback_emails.append({
-                'email': email_addr.lower(),
-                'name': '',
-                'source': 'client_legacy_contact'
-            })
+    for client_id in client_ids:
+        client = db.session.get(Client, client_id)
+        if not client:
+            continue
+
+        contacts = Contact.query.filter_by(client_id=client_id).all()
+        for contact in contacts:
+            add_email_candidates(
+                getattr(contact, 'email', None),
+                display_name=getattr(contact, 'name', '') or '',
+                source='client_contact'
+            )
+
+        legacy_pairs = [
+            (getattr(client, 'email_address_1', None), getattr(client, 'contact_person_1', None)),
+            (getattr(client, 'email_address_2', None), getattr(client, 'contact_person_2', None)),
+            (getattr(client, 'email_address_3', None), getattr(client, 'contact_person_3', None)),
+        ]
+        for raw_email, contact_name in legacy_pairs:
+            add_email_candidates(
+                raw_email,
+                display_name=contact_name or '',
+                source='client_legacy_contact'
+            )
 
     return fallback_emails
 
