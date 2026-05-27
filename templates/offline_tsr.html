@@ -333,7 +333,7 @@
       <div class="modal-header bg-dark text-white no-print">
         <div>
           <h5 class="modal-title fw-bold mb-0"><i class="fa-solid fa-file-pdf me-2"></i>TSR Print / PDF Preview</h5>
-          <div class="small opacity-75">Uses the offline TSR draft data. Choose Print, then Save as PDF.</div>
+          <div class="small opacity-75">Preview uses the same generated PDF as Download.</div>
         </div>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
@@ -385,6 +385,11 @@
 @media print{body *{visibility:hidden!important}.modal,.modal-dialog,.modal-content,.modal-body,#tsr-print-preview-content,#tsr-print-preview-content *{visibility:visible!important}.modal{position:absolute!important;left:0!important;top:0!important;display:block!important;overflow:visible!important}.modal-dialog{max-width:none!important;width:100%!important;margin:0!important}.modal-content,.modal-body{box-shadow:none!important;border:0!important;padding:0!important;background:#fff!important;overflow:visible!important}.no-print,.modal-header,.modal-footer,.btn,.offline-tsr-page,.sidebar,.mobile-nav{display:none!important}.tsr-print-sheet{box-shadow:none!important;margin:0!important;width:210mm!important;min-height:297mm!important;padding:7mm 8mm!important;page-break-after:avoid}@page{size:A4 portrait;margin:0}}
 @media(max-width:900px){.tsr-print-sheet{width:100%;min-height:auto;padding:14px;font-size:12px}.tsr-print-doc-grid{grid-template-columns:repeat(2,1fr)}.tsr-print-row.two,.tsr-print-row.two-even,.tsr-print-service-billing,.tsr-print-signatures{grid-template-columns:1fr}.tsr-print-billing{border-left:0;border-top:1px solid #111}.tsr-print-header{grid-template-columns:1fr}.tsr-print-no{text-align:left}.tsr-print-machine-checks{justify-content:start}}
 
+
+.tsr-pdf-preview-frame{width:100%;height:min(78vh,980px);border:0;border-radius:14px;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.18)}
+.tsr-pdf-preview-loading{min-height:220px;display:flex;align-items:center;justify-content:center;text-align:center;background:#fff;border:1px dashed #cbd5e1;border-radius:14px;color:#475569;font-weight:900}
+@media(max-width:768px){.tsr-pdf-preview-frame{height:72vh;border-radius:10px}}
+
 /* Print readability/header update */
 .tsr-print-value, .tsr-print-text-area, .tsr-print-service-full-table td, .tsr-print-parts td, .tsr-print-sign-caption{font-style:italic!important;}
 .tsr-print-check-label{display:inline;min-width:0;max-width:100%;white-space:normal;word-break:break-word;overflow-wrap:anywhere;}
@@ -429,7 +434,7 @@ const TSR_PRINT_LOGO_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAB
 let standaloneDocuments = [];
 let standaloneScheduleOptions = [];
 let selectedStandaloneScheduleId = '';
-let standaloneScheduleQuickFilter = '';
+let standaloneScheduleQuickFilter = 'week';
 let signatureData = { serviced: '', acknowledged: '' };
 let offlineTSRAttachments = [];
 let signatureDrawing = false;
@@ -478,17 +483,30 @@ const TSR_SCHEDULE_LOCKED_FIELD_IDS = [
   'tsr-equipment-model',
   'tsr-serial-no',
   'tsr-service-date',
-  'tsr-time-started',
-  'tsr-time-finished',
   'tsr-serviced-by'
+];
+const TSR_SCHEDULE_TIME_FIELD_IDS = [
+  'tsr-time-started',
+  'tsr-time-finished'
 ];
 function setStandaloneScheduleLockedFields(locked){
   TSR_SCHEDULE_LOCKED_FIELD_IDS.forEach(id => {
     const el = document.getElementById(id);
     if(!el) return;
     el.readOnly = !!locked;
+    el.disabled = !!locked;
+    el.setAttribute('aria-readonly', locked ? 'true' : 'false');
     el.classList.toggle('tsr-schedule-locked', !!locked);
     el.title = locked ? 'Auto-filled from selected schedule' : '';
+  });
+  TSR_SCHEDULE_TIME_FIELD_IDS.forEach(id => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.readOnly = false;
+    el.disabled = false;
+    el.removeAttribute('aria-readonly');
+    el.classList.remove('tsr-schedule-locked');
+    el.title = 'Adjust actual service time if needed. Saving the TSR updates the schedule time.';
   });
 }
 function initializeBlankStandaloneTSR(){
@@ -856,7 +874,7 @@ function renderStandaloneScheduleOptions(schedules, sourceLabel='cached'){
   }
   if(help){
     if(standaloneScheduleOptions.length){
-      help.textContent = `${standaloneScheduleOptions.length} schedule(s) available from ${sourceLabel}. Tap Select Schedule to search and auto-fill the TSR.`;
+      help.textContent = `${standaloneScheduleOptions.length} assigned schedule(s) available from ${sourceLabel}. Initial view shows this week; use search to find previous schedules.`;
     }else{
       help.textContent = 'No cached schedules found yet. You can still create a manual blank TSR.';
     }
@@ -872,8 +890,12 @@ function renderStandaloneScheduleCards(){
   if(!list) return;
   const query = (document.getElementById('standalone-schedule-search')?.value || '').trim().toLowerCase();
   let schedules = standaloneScheduleOptions.slice();
-  if(standaloneScheduleQuickFilter === 'today') schedules = schedules.filter(isScheduleToday);
-  if(standaloneScheduleQuickFilter === 'week') schedules = schedules.filter(isScheduleThisWeek);
+  // Initial view is this week, but typing in search should search the full assigned schedule cache,
+  // including previous schedules that are needed for late TSR creation.
+  if(!query){
+    if(standaloneScheduleQuickFilter === 'today') schedules = schedules.filter(isScheduleToday);
+    if(standaloneScheduleQuickFilter === 'week') schedules = schedules.filter(isScheduleThisWeek);
+  }
   if(query) schedules = schedules.filter(schedule => getScheduleSearchText(schedule).includes(query));
   if(!schedules.length){
     list.innerHTML = `<div class="standalone-schedule-empty"><i class="fa-solid fa-calendar-xmark d-block h3 mb-2"></i>No schedules match your search.</div>`;
@@ -1016,12 +1038,12 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
     card.innerHTML = `<div class="schedule-picker-title"><i class="fa-solid fa-calendar-check text-primary me-1"></i>${escapeHTML(schedule.client_name || 'Selected Schedule')}</div>
       <div class="schedule-picker-meta">${escapeHTML(schedule.date_label || schedule.date_iso || '')} ${escapeHTML(schedule.time_start || '')}-${escapeHTML(schedule.time_end || '')} • ${escapeHTML(schedule.task || '')}</div>
       <div class="schedule-picker-meta">Equipment: ${escapeHTML(getScheduleProductLabel(schedule))}</div>
-      <div class="tsr-schedule-locked-note"><i class="fa-solid fa-lock me-1"></i>Schedule fields are locked. Fill only the remaining TSR details below.</div>`;
+      <div class="tsr-schedule-locked-note"><i class="fa-solid fa-lock me-1"></i>Client/equipment fields are locked. Start and finish time may be adjusted before saving.</div>`;
   }
   setStandaloneScheduleLockedFields(true);
   saveStandaloneTSRDraft(true);
   resetAllTSRKnowledgeQuickPicks();
-  showTSRStatus('TSR fields auto-filled and locked from selected schedule. Use Search or Quick Pick buttons when needed.');
+  showTSRStatus('TSR fields auto-filled from selected schedule. Client/equipment fields are locked; start and finish time can be adjusted before saving.');
 }
 function applySelectedStandaloneSchedule(){
   const select = document.getElementById('tsr-schedule-select');
@@ -1564,6 +1586,8 @@ function collectTSRData(){
     parts:getParts(),
     selectedScheduleId:selectedStandaloneScheduleId,
     selectedSchedule:selectedSchedule || null,
+    original_schedule_time_start:selectedSchedule?.time_start || '',
+    original_schedule_time_end:selectedSchedule?.time_end || '',
     savedAt:new Date().toISOString()
   };
   document.querySelectorAll('.tsr-field').forEach(el=>data[el.id]=el.value);
@@ -3725,6 +3749,15 @@ function makeSingleImagePDFBlob(jpegDataURL, imageWidth, imageHeight, title){
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info 6 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
   return new Blob([stringToUint8Array(pdf)], { type: 'application/pdf' });
 }
+
+let currentTSRPreviewPDFUrl = '';
+function clearCurrentTSRPreviewPDFUrl(){
+  if(currentTSRPreviewPDFUrl){
+    try{ URL.revokeObjectURL(currentTSRPreviewPDFUrl); }catch(_err){}
+    currentTSRPreviewPDFUrl = '';
+  }
+}
+
 async function downloadTSRPDF(){
   try{
     saveStandaloneTSRDraft(true);
@@ -3750,17 +3783,54 @@ async function downloadTSRPDF(){
   }
 }
 
-function openTSRPrintPreview(){
+async function openTSRPrintPreview(){
   saveStandaloneTSRDraft(true);
-  const data = collectTSRData();
   const target = document.getElementById('tsr-print-preview-content');
-  if(target) target.innerHTML = buildTSRPrintHTML(data);
-  const modal = new bootstrap.Modal(document.getElementById('tsrPrintPreviewModal'));
+  const modalEl = document.getElementById('tsrPrintPreviewModal');
+  const modal = new bootstrap.Modal(modalEl);
+  if(target){
+    target.innerHTML = '<div class="tsr-pdf-preview-loading"><div><i class="fa-solid fa-spinner fa-spin me-2"></i>Generating exact PDF preview...</div></div>';
+  }
   modal.show();
+  try{
+    const data = collectTSRData();
+    const filename = buildTSRPDFFilename(data);
+    const canvas = await renderTSRPrintSheetToCanvas();
+    const jpegDataURL = canvas.toDataURL('image/jpeg', 0.99);
+    const blob = makeSingleImagePDFBlob(jpegDataURL, canvas.width, canvas.height, filename.replace(/\.pdf$/i,''));
+    clearCurrentTSRPreviewPDFUrl();
+    currentTSRPreviewPDFUrl = URL.createObjectURL(blob);
+    if(target){
+      target.innerHTML = `<iframe class="tsr-pdf-preview-frame" title="TSR PDF Preview" src="${currentTSRPreviewPDFUrl}#toolbar=1&navpanes=0&view=FitH"></iframe>`;
+    }
+    if(modalEl && !modalEl.dataset.pdfPreviewCleanupBound){
+      modalEl.addEventListener('hidden.bs.modal', clearCurrentTSRPreviewPDFUrl);
+      modalEl.dataset.pdfPreviewCleanupBound = '1';
+    }
+  }catch(err){
+    console.error('[Offline TSR] PDF preview failed', err);
+    if(target){
+      target.innerHTML = '<div class="alert alert-danger fw-bold mb-0">PDF preview could not complete. Please use Download PDF as backup.</div>';
+    }
+    showTSRStatus('PDF preview could not complete. Use Download PDF as backup.');
+  }
 }
 function printTSRPreview(){
-  if(!document.getElementById('tsr-print-preview-content')?.innerHTML.trim()) openTSRPrintPreview();
-  setTimeout(()=>window.print(), 150);
+  const frame = document.querySelector('#tsr-print-preview-content iframe');
+  if(frame && frame.contentWindow){
+    try{
+      frame.contentWindow.focus();
+      frame.contentWindow.print();
+      return;
+    }catch(err){
+      console.warn('[Offline TSR] Embedded PDF print failed, opening PDF in new tab.', err);
+    }
+  }
+  if(currentTSRPreviewPDFUrl){
+    window.open(currentTSRPreviewPDFUrl, '_blank', 'noopener');
+    return;
+  }
+  openTSRPrintPreview();
 }
 
 document.addEventListener('DOMContentLoaded',()=>{

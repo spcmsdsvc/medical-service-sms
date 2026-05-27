@@ -2878,8 +2878,10 @@ def get_offline_tsr_schedule_options():
     ensure_shift_file_original_filename_column()
 
     today = get_manila_today()
-    start_window = today - timedelta(days=7)
-    end_window = today + timedelta(days=45)
+    # Keep the initial picker view focused in the frontend, but allow engineers
+    # to search older assigned schedules when they need to create a TSR later.
+    start_window = today - timedelta(days=365)
+    end_window = today + timedelta(days=90)
     start_dt, end_dt = build_shift_datetime_bounds(start_window, end_window)
 
     query = (
@@ -2897,6 +2899,8 @@ def get_offline_tsr_schedule_options():
 
     shifts = query.all()
     options = []
+    current_engineer_profile = getattr(current_user, 'engineer_profile', None)
+    current_engineer_id = getattr(current_engineer_profile, 'id', None)
 
     for shift in shifts:
         # Standalone TSR is for real customer/equipment service work only.
@@ -2905,7 +2909,12 @@ def get_offline_tsr_schedule_options():
 
         assigned_ids = get_shift_assigned_engineer_ids(shift)
 
-        if getattr(current_user, 'role', None) == 'engineer' and not is_current_engineer_assigned_to_shift(shift):
+        # Offline TSR schedule picker should be engineer-personal.
+        # Hybrid admin/engineer users still see only their own assigned field schedules here.
+        if current_engineer_id:
+            if int(current_engineer_id) not in {int(eid) for eid in assigned_ids if eid}:
+                continue
+        elif getattr(current_user, 'role', None) == 'engineer' and not is_current_engineer_assigned_to_shift(shift):
             continue
 
         if is_regional_admin_user():
@@ -2917,7 +2926,9 @@ def get_offline_tsr_schedule_options():
         assigned_engineers = [db.session.get(Engineer, eid) for eid in assigned_ids if eid]
         assigned_engineers = [eng for eng in assigned_engineers if eng]
 
-        if getattr(current_user, 'role', None) == 'engineer':
+        if current_engineer_profile:
+            serviced_engineer = current_engineer_profile
+        elif getattr(current_user, 'role', None) == 'engineer':
             serviced_engineer = getattr(current_user, 'engineer_profile', None) or shift.engineer
         else:
             serviced_engineer = shift.engineer or (assigned_engineers[0] if assigned_engineers else None)
@@ -4022,6 +4033,58 @@ def auto_capture_tsr_client_contact_from_payload(shift, payload):
     return changed_emails
 
 
+
+def parse_online_tsr_time_value(value):
+    """Parse TSR actual service time values from the offline TSR form."""
+    raw = clean_str(value)
+    if not raw:
+        return None
+    raw = raw.strip()
+    for fmt in ('%H:%M', '%I:%M %p', '%I:%M%p'):
+        try:
+            return datetime.strptime(raw.upper(), fmt).time()
+        except Exception:
+            continue
+    return None
+
+
+def update_shift_time_from_online_tsr_payload(shift, payload):
+    """Update selected schedule start/end time from editable TSR time fields only.
+
+    Client/equipment schedule fields remain locked in the TSR UI. Engineers may
+    correct the actual start/end time before saving the TSR, and the timeline
+    should reflect that correction after the TSR save completes.
+    """
+    if not shift or not isinstance(payload, dict):
+        return []
+
+    changes = []
+    next_start = parse_online_tsr_time_value(payload.get('tsr-time-started'))
+    next_end = parse_online_tsr_time_value(payload.get('tsr-time-finished'))
+
+    if next_start and getattr(shift, 'start_time', None) != next_start:
+        old_start = shift.start_time.strftime('%H:%M') if getattr(shift, 'start_time', None) else ''
+        shift.start_time = next_start
+        changes.append(('start_time', old_start, next_start.strftime('%H:%M')))
+
+    if next_end and getattr(shift, 'end_time', None) != next_end:
+        old_end = shift.end_time.strftime('%H:%M') if getattr(shift, 'end_time', None) else ''
+        shift.end_time = next_end
+        changes.append(('end_time', old_end, next_end.strftime('%H:%M')))
+
+    if changes:
+        db.session.add(shift)
+        try:
+            details = ', '.join([f"{field}: {old or 'blank'} → {new}" for field, old, new in changes])
+            db.session.add(ActivityLog(
+                user=(getattr(current_user, 'username', '') or 'System').capitalize(),
+                action=f"Updated schedule time from TSR save for schedule #{shift.id}: {details}"
+            ))
+        except Exception:
+            pass
+
+    return changes
+
 @app.route('/save_offline_tsr_online', methods=['POST'])
 @csrf.exempt
 @login_required
@@ -4120,9 +4183,11 @@ def save_offline_tsr_online():
             shift,
             excluded_file_ids=[uploaded_pdf, attached_file]
         )
+        schedule_time_updates = update_shift_time_from_online_tsr_payload(shift, payload)
         completed_shift_ids = complete_linked_schedules_for_online_tsr(shift)
         auto_captured_contact_emails = []
         payload['_auto_captured_contact_emails'] = auto_captured_contact_emails
+        payload['_schedule_time_updates'] = schedule_time_updates
         payload['_generated_pdf_filename'] = pdf_filename
         payload['_attached_file_id'] = attached_file.id
         payload['_attached_disk_filename'] = attached_file.filename
@@ -4172,6 +4237,7 @@ def save_offline_tsr_online():
         'submission_id': submission.id,
         'schedule_id': shift.id,
         'completed_shift_ids': completed_shift_ids,
+        'schedule_time_updates': schedule_time_updates,
         'tsr_number': tsr_number,
         'pdf_filename': pdf_filename,
         'attached_file_id': attached_file.id,
