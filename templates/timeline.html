@@ -5105,6 +5105,9 @@ async function loadEngineerOptions(){
 
     let weekOffset = 0;
     let timelineLoadSeq = 0;
+    let timelineRefreshInFlightPromise = null;
+    let timelineRefreshInFlightKey = '';
+    let timelineResizeDebounceTimer = null;
 
 function shouldUseTimelineLitePayload(){
     // TSR attachment correctness fix:
@@ -8371,8 +8374,6 @@ if (selectedVal === "Leave") {
 async function loadGrid() {
         syncTimelineDeveloperViewModeUI();
 
-        console.log("Synchronizing Grid Data for offset: " + weekOffset);
-
         const requestSeq = ++timelineLoadSeq;
         const branchFilter = document.getElementById('branch-filter').value;
         saveTimelineViewState();
@@ -8723,6 +8724,18 @@ async function loadGrid() {
 
 
     async function refreshTimelineGrid(){
+        const branchFilter = document.getElementById('branch-filter') ? document.getElementById('branch-filter').value : 'ALL';
+        const refreshKey = `${weekOffset}|${branchFilter}`;
+
+        if(timelineRefreshInFlightPromise && timelineRefreshInFlightKey === refreshKey){
+            if(shouldUseRoleAwareMobileTimeline()){
+                setMobileCacheStatus('Using active refresh', 'deduped');
+            }
+            return timelineRefreshInFlightPromise;
+        }
+
+        timelineRefreshInFlightKey = refreshKey;
+
         if(shouldUseRoleAwareMobileTimeline() && mobileInFlightRequest){
             setMobileCacheStatus('Using active refresh', 'deduped');
             return mobileInFlightRequest;
@@ -8747,8 +8760,15 @@ async function loadGrid() {
                 if(mobileInFlightRequest === requestPromise){
                     mobileInFlightRequest = null;
                 }
+
+                if(timelineRefreshInFlightPromise === requestPromise){
+                    timelineRefreshInFlightPromise = null;
+                    timelineRefreshInFlightKey = '';
+                }
             }
         })();
+
+        timelineRefreshInFlightPromise = requestPromise;
 
         if(mobileFastMode){
             mobileInFlightRequest = requestPromise;
@@ -10628,8 +10648,16 @@ document.addEventListener('click', function(e){
     showDeleteOptions(eid, ename, shiftId, shiftDate);
 });
 
-window.addEventListener('resize', function(){ syncTimelineHorizontalScroll(); updateEngineerMobileViewMode(); 
-            syncMobileRoleBadges();});
+function handleTimelineResizeDebounced(){
+    clearTimeout(timelineResizeDebounceTimer);
+    timelineResizeDebounceTimer = setTimeout(function(){
+        syncTimelineHorizontalScroll();
+        updateEngineerMobileViewMode();
+        syncMobileRoleBadges();
+    }, 160);
+}
+
+window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true });
 
 // --- NAVIGATION & INIT ---
 
@@ -12488,12 +12516,18 @@ function initTimelineStickyHeaderPolish(){
 
     updateStickyState();
     window.addEventListener('scroll', updateStickyState, { passive: true });
-    window.addEventListener('resize', updateStickyState, { passive: true });
-    window.addEventListener('resize', syncPureEngineerTimelineDesktopMode, { passive: true });
-    window.addEventListener('resize', syncHybridEngineerAdminDesktopMode, { passive: true });
-    window.addEventListener('resize', syncSchedulerTimelineDesktopMode, { passive: true });
-    window.addEventListener('resize', syncHybridEngineerAdminMobileMode, { passive: true });
-    window.addEventListener('resize', syncPureEngineerMobileMode, { passive: true });
+    let timelineStickyResizeTimer = null;
+    window.addEventListener('resize', function(){
+        clearTimeout(timelineStickyResizeTimer);
+        timelineStickyResizeTimer = setTimeout(function(){
+            updateStickyState();
+            syncPureEngineerTimelineDesktopMode();
+            syncHybridEngineerAdminDesktopMode();
+            syncSchedulerTimelineDesktopMode();
+            syncHybridEngineerAdminMobileMode();
+            syncPureEngineerMobileMode();
+        }, 160);
+    }, { passive: true });
     setTimeout(updateStickyState, 250);
     setTimeout(updateStickyState, 900);
 }
