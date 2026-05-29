@@ -4858,75 +4858,163 @@ body.timeline-pure-engineer-desktop .timeline-my-engineer-row [class*="schedule-
 }
 
 
-/* MOBILE LANDSCAPE FULL CALENDAR READABILITY - CSS-only, desktop-safe
-   Applies only when the mobile user explicitly taps View full calendar. */
+/* MOBILE LANDSCAPE FULL CALENDAR READABILITY v2 - CSS-only, desktop-safe
+   Applies only when the mobile user explicitly taps View full calendar.
+   Keeps the desktop grid from shrinking on phone landscape; users scroll horizontally instead. */
 @media (max-width: 932px) and (orientation: landscape) {
+    body.mobile-engineer-desktop-forced {
+        padding-bottom: 0 !important;
+        overflow: hidden !important;
+    }
+
     body.mobile-engineer-desktop-forced .timeline-desktop-shell,
     body.mobile-admin-mode.mobile-engineer-desktop-forced .timeline-desktop-shell,
     body.mobile-scheduler-mode.mobile-engineer-desktop-forced .timeline-desktop-shell {
         display: block !important;
-        padding: 0.55rem !important;
-        overflow: visible !important;
+        padding: 0.45rem !important;
+        margin: 0 !important;
+        height: 100dvh !important;
+        max-height: 100dvh !important;
+        overflow: hidden !important;
     }
 
-    body.mobile-engineer-desktop-forced .mobile-engineer-shell {
+    body.mobile-engineer-desktop-forced .mobile-engineer-shell,
+    body.mobile-engineer-desktop-forced .mobile-sticky-action-bar {
         display: none !important;
     }
 
     body.mobile-engineer-desktop-forced .timeline-freeze-toolbar {
         position: static !important;
-        margin: 0 0 0.45rem !important;
-        padding: 0.45rem !important;
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        gap: 0.45rem !important;
+        margin: 0 0 0.35rem !important;
+        padding: 0.35rem 0.4rem !important;
+        min-height: auto !important;
+        max-height: none !important;
         box-shadow: none !important;
         border-bottom: 1px solid #e9ecef !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch !important;
     }
 
     body.mobile-engineer-desktop-forced .timeline-freeze-toolbar h2 {
-        font-size: 0.9rem !important;
-        line-height: 1.1 !important;
+        font-size: 0.82rem !important;
+        line-height: 1.05 !important;
+        white-space: nowrap !important;
     }
 
     body.mobile-engineer-desktop-forced #week-display {
-        font-size: 0.68rem !important;
+        font-size: 0.62rem !important;
+        white-space: nowrap !important;
+    }
+
+    body.mobile-engineer-desktop-forced .timeline-scroll-hint,
+    body.mobile-engineer-desktop-forced .calendar-legend,
+    body.mobile-engineer-desktop-forced .timeline-engineer-focus-strip,
+    body.mobile-engineer-desktop-forced .timeline-engineer-desktop-hero,
+    body.mobile-engineer-desktop-forced .timeline-hybrid-desktop-hero,
+    body.mobile-engineer-desktop-forced .timeline-scheduler-desktop-hero {
+        display: none !important;
+    }
+
+    body.mobile-engineer-desktop-forced .timeline-sticky-h-scroll,
+    body.mobile-engineer-desktop-forced .timeline-bottom-scroll {
+        display: block !important;
+        height: 16px !important;
+        min-height: 16px !important;
+        position: relative !important;
+        top: auto !important;
+        bottom: auto !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch !important;
     }
 
     body.mobile-engineer-desktop-forced .timeline-scroll-wrapper {
+        display: block !important;
         width: 100% !important;
         max-width: 100% !important;
-        max-height: calc(100vh - 7.5rem) !important;
+        height: calc(100dvh - 5.8rem) !important;
+        max-height: calc(100dvh - 5.8rem) !important;
         overflow: auto !important;
         -webkit-overflow-scrolling: touch !important;
         overscroll-behavior: contain !important;
+        touch-action: pan-x pan-y !important;
     }
 
     body.mobile-engineer-desktop-forced .timeline-grid-table,
     body.mobile-engineer-desktop-forced .timeline-sticky-h-scroll-inner,
     body.mobile-engineer-desktop-forced .timeline-bottom-scroll-inner {
-        min-width: 1320px !important;
-        width: max-content !important;
+        min-width: 1680px !important;
+        width: 1680px !important;
+        max-width: none !important;
+    }
+
+    body.mobile-engineer-desktop-forced .timeline-grid-table {
+        table-layout: fixed !important;
+        border-collapse: separate !important;
+        border-spacing: 0 !important;
     }
 
     body.mobile-engineer-desktop-forced .timeline-grid-table th:first-child,
     body.mobile-engineer-desktop-forced .timeline-grid-table td:first-child {
-        min-width: 190px !important;
-        width: 190px !important;
-        max-width: 190px !important;
+        min-width: 180px !important;
+        width: 180px !important;
+        max-width: 180px !important;
+        position: sticky !important;
+        left: 0 !important;
+        z-index: 35 !important;
+    }
+
+    body.mobile-engineer-desktop-forced .timeline-grid-table thead th {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 34 !important;
+    }
+
+    body.mobile-engineer-desktop-forced .timeline-grid-table thead th:first-child {
+        z-index: 45 !important;
     }
 
     body.mobile-engineer-desktop-forced .timeline-grid-table th:not(:first-child),
     body.mobile-engineer-desktop-forced .timeline-grid-table td:not(:first-child) {
-        min-width: 150px !important;
-        width: 150px !important;
-        max-width: 150px !important;
+        min-width: 214px !important;
+        width: 214px !important;
+        max-width: 214px !important;
+    }
+
+    body.mobile-engineer-desktop-forced .timeline-grid-table td {
+        padding: 0.35rem !important;
+        vertical-align: top !important;
     }
 
     body.mobile-engineer-desktop-forced .schedule-card,
     body.mobile-engineer-desktop-forced [class*="schedule-card"] {
-        min-width: 128px !important;
-        max-width: 136px !important;
+        min-width: 188px !important;
+        max-width: 198px !important;
+        width: auto !important;
+        margin-bottom: 0.35rem !important;
+        padding: 0.45rem !important;
         white-space: normal !important;
         overflow-wrap: anywhere !important;
         word-break: normal !important;
+        line-height: 1.18 !important;
+        font-size: 0.72rem !important;
+    }
+
+    body.mobile-engineer-desktop-forced .schedule-card .small,
+    body.mobile-engineer-desktop-forced [class*="schedule-card"] .small {
+        font-size: 0.66rem !important;
+        line-height: 1.15 !important;
+    }
+
+    body.mobile-engineer-desktop-forced .schedule-card .btn,
+    body.mobile-engineer-desktop-forced [class*="schedule-card"] .btn {
+        min-height: 1.85rem !important;
+        padding: 0.18rem 0.35rem !important;
+        font-size: 0.64rem !important;
     }
 }
 
