@@ -9376,10 +9376,21 @@ def export_products():
 @app.route('/export_timeline')
 @login_required
 def export_timeline():
-    """Weekly Grid schedule snapshot CSV dump aligned with multi-engineer assignments."""
-    if not is_admin_authorized(): return denied()
+    """Weekly Grid schedule snapshot CSV dump aligned with multi-engineer assignments.
+
+    Engineer export policy:
+    - Admin/superadmin/regional admin users keep the existing branch/team export.
+    - Engineer-capable users without admin authority export only their own linked
+      Engineer row, regardless of any branch/query parameter sent by the browser.
+    """
     offset = clean_int(request.args.get('offset', 0)) or 0
     branch_filter = clean_str(request.args.get('branch')) or 'ALL'
+
+    is_admin_export = is_admin_authorized()
+    own_engineer_id = get_current_user_engineer_id()
+
+    if not is_admin_export and not own_engineer_id:
+        return denied('Only authorized users or linked engineer accounts can export calendar data.')
 
     target_dt = (get_manila_time()).date() + timedelta(weeks=offset)
     target_dt -= timedelta(days=target_dt.weekday())
@@ -9389,18 +9400,28 @@ def export_timeline():
     writer = csv.writer(output)
     writer.writerow(['Technical Staff', 'Branch'] + [d.strftime('%b %d (%a)') for d in days])
 
-    personnel_query = Engineer.query.order_by(Engineer.branch, Engineer.name)
-    if branch_filter == 'REGIONAL':
-        personnel_query = personnel_query.filter(Engineer.branch.in_(REGIONAL_ADMIN_BRANCHES))
-    elif branch_filter != 'ALL':
-        personnel_query = personnel_query.filter(Engineer.branch == branch_filter)
-
-    personnel = personnel_query.all()
+    if is_admin_export:
+        personnel_query = Engineer.query.order_by(Engineer.branch, Engineer.name)
+        if branch_filter == 'REGIONAL':
+            personnel_query = personnel_query.filter(Engineer.branch.in_(REGIONAL_ADMIN_BRANCHES))
+        elif branch_filter != 'ALL':
+            personnel_query = personnel_query.filter(Engineer.branch == branch_filter)
+        personnel = personnel_query.all()
+        export_scope_label = 'team'
+    else:
+        # Hard backend enforcement: pure/hybrid engineer self-export must never
+        # rely on frontend hiding, branch parameters, or user-supplied engineer IDs.
+        own_engineer = db.session.get(Engineer, own_engineer_id)
+        personnel = [own_engineer] if own_engineer else []
+        export_scope_label = 'own'
 
     for eng in personnel:
+        if not eng:
+            continue
+
         row_data = [eng.name, eng.branch or '']
         for day in days:
-            shifts = (
+            linked_shifts = (
                 db.session.query(Shift)
                 .join(ShiftEngineer, Shift.id == ShiftEngineer.shift_id)
                 .filter(
@@ -9410,6 +9431,24 @@ def export_timeline():
                 .order_by(Shift.start_time)
                 .all()
             )
+
+            # Backward compatibility fallback for older single-engineer rows that
+            # may not have ShiftEngineer link rows.
+            direct_shifts = (
+                Shift.query
+                .filter(
+                    Shift.engineer_id == eng.id,
+                    func.date(Shift.start_time) == day
+                )
+                .order_by(Shift.start_time)
+                .all()
+            )
+
+            shifts_by_id = {}
+            for shift in linked_shifts + direct_shifts:
+                if shift and shift.id not in shifts_by_id:
+                    shifts_by_id[shift.id] = shift
+            shifts = sorted(shifts_by_id.values(), key=lambda item: item.start_time or datetime.min)
 
             if shifts:
                 cell_items = []
@@ -9432,8 +9471,15 @@ def export_timeline():
         writer.writerow(row_data)
 
     output.seek(0)
-    log_activity("Exported Weekly Schedule Snapshot")
-    filename = f"weekly_schedule_{days[0].strftime('%Y%m%d')}_{days[-1].strftime('%Y%m%d')}.csv"
+
+    if export_scope_label == 'own':
+        log_activity("Exported own weekly schedule snapshot")
+        engineer_part = secure_filename((personnel[0].name if personnel else current_user.username) or 'engineer') or 'engineer'
+        filename = f"my_schedule_{engineer_part}_{days[0].strftime('%Y%m%d')}_{days[-1].strftime('%Y%m%d')}.csv"
+    else:
+        log_activity("Exported Weekly Schedule Snapshot")
+        filename = f"weekly_schedule_{days[0].strftime('%Y%m%d')}_{days[-1].strftime('%Y%m%d')}.csv"
+
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-disposition": f"attachment; filename={filename}"})
 
 @app.route('/check_client_duplicate')

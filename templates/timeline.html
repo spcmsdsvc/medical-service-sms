@@ -139,6 +139,17 @@
                 </button>
                 
             </div>
+            <!-- ENGINEER SELF EXPORT: visible only for pure engineer desktop/full-calendar view -->
+            <div class="btn-group shadow-sm timeline-engineer-export-control d-none" id="timeline-engineer-export-control">
+                <button 
+                    class="btn btn-outline-success btn-sm fw-bold px-3" 
+                    onclick="exportToExcel()"
+                    title="Download my weekly schedule as CSV"
+                >
+                    <i class="fa-solid fa-file-excel me-1"></i>
+                    Export My Schedule
+                </button>
+            </div>
 
             <!-- CHRONOLOGICAL NAVIGATION CONTROLS -->
             <div class="btn-group shadow-sm ms-1 border rounded bg-white">
@@ -366,6 +377,9 @@
         </div>
         <div class="mobile-header-actions">
             
+            <button type="button" class="mobile-refresh-btn mobile-engineer-export-btn" onclick="exportToExcel()" aria-label="Export my schedule" title="Export my schedule">
+                <i class="fa-solid fa-file-excel"></i>
+            </button>
             <button type="button" class="mobile-refresh-btn" onclick="refreshTimelineGrid()" aria-label="Refresh schedule">
                 <i class="fa-solid fa-rotate-right"></i>
             </button>
@@ -2057,6 +2071,15 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     justify-content: center;
     flex-shrink: 0;
 }
+
+.mobile-engineer-export-btn {
+    display: none;
+}
+
+body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-engineer-export-btn {
+    display: inline-flex;
+}
+
 
 .mobile-engineer-notice {
     display: flex;
@@ -4592,6 +4615,15 @@ body.timeline-hybrid-engineer-admin-desktop .calendar-legend {
 body.timeline-pure-engineer-desktop .timeline-admin-control {
     display: none !important;
 }
+
+body.timeline-pure-engineer-desktop .timeline-engineer-export-control {
+    display: inline-flex !important;
+}
+
+body:not(.timeline-pure-engineer-desktop) .timeline-engineer-export-control {
+    display: none !important;
+}
+
 
 body.timeline-pure-engineer-desktop .timeline-freeze-toolbar {
     gap: 0.75rem;
@@ -10830,7 +10862,17 @@ window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true
     }
     
     function exportToExcel() { 
-        const branchFilter = document.getElementById('branch-filter') ? document.getElementById('branch-filter').value : 'ALL';
+        const isPureEngineerExport = document.body.classList.contains('timeline-pure-engineer-desktop') || (
+            document.body.classList.contains('mobile-engineer-desktop-forced') &&
+            !document.body.classList.contains('mobile-admin-mode') &&
+            !document.body.classList.contains('mobile-scheduler-mode') &&
+            !document.body.classList.contains('timeline-hybrid-engineer-admin-mobile')
+        );
+
+        const branchFilter = isPureEngineerExport
+            ? 'MY'
+            : (document.getElementById('branch-filter') ? document.getElementById('branch-filter').value : 'ALL');
+
         window.location.href = `/export_timeline?offset=${weekOffset}&branch=${encodeURIComponent(branchFilter)}`; 
     }
     
