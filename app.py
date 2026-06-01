@@ -4049,28 +4049,42 @@ def parse_online_tsr_time_value(value):
 
 
 def update_shift_time_from_online_tsr_payload(shift, payload):
-    """Update selected schedule start/end time from editable TSR time fields only.
+    """Update selected schedule start/end datetime from editable TSR time fields only.
 
-    Client/equipment schedule fields remain locked in the TSR UI. Engineers may
-    correct the actual start/end time before saving the TSR, and the timeline
-    should reflect that correction after the TSR save completes.
+    Shift.start_time and Shift.end_time are DateTime columns. The Offline TSR
+    form submits time-only values such as 08:00 and 17:00, so this helper keeps
+    each schedule's existing service date and combines it with the submitted
+    time before saving. This prevents SQLite DateTime errors during online TSR
+    save/sync.
     """
     if not shift or not isinstance(payload, dict):
         return []
 
     changes = []
-    next_start = parse_online_tsr_time_value(payload.get('tsr-time-started'))
-    next_end = parse_online_tsr_time_value(payload.get('tsr-time-finished'))
+    next_start_time = parse_online_tsr_time_value(payload.get('tsr-time-started'))
+    next_end_time = parse_online_tsr_time_value(payload.get('tsr-time-finished'))
 
-    if next_start and getattr(shift, 'start_time', None) != next_start:
-        old_start = shift.start_time.strftime('%H:%M') if getattr(shift, 'start_time', None) else ''
-        shift.start_time = next_start
-        changes.append(('start_time', old_start, next_start.strftime('%H:%M')))
+    current_start = getattr(shift, 'start_time', None)
+    current_end = getattr(shift, 'end_time', None)
 
-    if next_end and getattr(shift, 'end_time', None) != next_end:
-        old_end = shift.end_time.strftime('%H:%M') if getattr(shift, 'end_time', None) else ''
-        shift.end_time = next_end
-        changes.append(('end_time', old_end, next_end.strftime('%H:%M')))
+    # Prefer the existing schedule dates. If end date is missing, fall back to
+    # the start date so the stored value is still a valid datetime.
+    start_date = current_start.date() if isinstance(current_start, datetime) else get_manila_today()
+    end_date = current_end.date() if isinstance(current_end, datetime) else start_date
+
+    if next_start_time:
+        next_start = datetime.combine(start_date, next_start_time)
+        old_start = current_start.strftime('%H:%M') if isinstance(current_start, datetime) else ''
+        if not isinstance(current_start, datetime) or current_start != next_start:
+            shift.start_time = next_start
+            changes.append(('start_time', old_start, next_start.strftime('%H:%M')))
+
+    if next_end_time:
+        next_end = datetime.combine(end_date, next_end_time)
+        old_end = current_end.strftime('%H:%M') if isinstance(current_end, datetime) else ''
+        if not isinstance(current_end, datetime) or current_end != next_end:
+            shift.end_time = next_end
+            changes.append(('end_time', old_end, next_end.strftime('%H:%M')))
 
     if changes:
         db.session.add(shift)
@@ -4812,17 +4826,60 @@ def add_path_to_backup_zip(zip_handle, source_path, archive_prefix):
             if not os.path.isfile(full_path):
                 continue
 
-            # Never include old backup ZIPs inside a new backup.
-            if filename.lower().endswith('.zip') and 'backup' in filename.lower():
+            # Never include old backup ZIPs, local secret files, Python caches,
+            # or VCS/build artifacts inside a new backup.
+            lower_filename = filename.lower()
+            relative_path = os.path.relpath(full_path, source_path).replace('\\', '/')
+            relative_parts = {part.lower() for part in relative_path.split('/')}
+
+            if lower_filename.endswith('.zip') and 'backup' in lower_filename:
+                continue
+            if lower_filename == '.env' or lower_filename.endswith('.pyc'):
+                continue
+            if relative_parts & {'.git', '__pycache__', '.venv', 'venv', 'node_modules'}:
                 continue
 
-            relative_path = os.path.relpath(full_path, source_path)
             archive_name = os.path.join(archive_prefix, relative_path)
             zip_handle.write(full_path, archive_name)
             file_count += 1
 
     return file_count
 
+
+
+def get_backup_source_paths():
+    """Return application source files/folders to include in manual backups.
+
+    This includes the deployed Flask source and templates needed to recreate the
+    current live system, while excluding secrets such as .env. Missing paths are
+    skipped safely so the same function works on Railway and local installs.
+    """
+    candidates = [
+        ('app.py', os.path.join(basedir, 'app.py')),
+        ('templates', os.path.join(basedir, 'templates')),
+        ('static', os.path.join(basedir, 'static')),
+        ('forms', os.path.join(basedir, 'forms')),
+        ('requirements.txt', os.path.join(basedir, 'requirements.txt')),
+        ('Procfile', os.path.join(basedir, 'Procfile')),
+        ('runtime.txt', os.path.join(basedir, 'runtime.txt')),
+        ('railway.json', os.path.join(basedir, 'railway.json')),
+    ]
+
+    source_paths = []
+    seen = set()
+    for archive_name, path_value in candidates:
+        if not path_value or not os.path.exists(path_value):
+            continue
+        normalized = os.path.abspath(path_value).replace('\\', '/').rstrip('/').lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        source_paths.append({
+            'archive_name': archive_name,
+            'path': os.path.abspath(path_value)
+        })
+
+    return source_paths
 
 
 def bytes_to_human_size(byte_count):
@@ -5050,10 +5107,26 @@ def download_system_backup():
 
     db_path = get_active_sqlite_database_path()
     upload_roots = get_backup_upload_roots()
+    source_paths = get_backup_source_paths()
 
     try:
         with zipfile.ZipFile(temp_file_path, 'w', zipfile.ZIP_DEFLATED) as backup_zip:
             db_count = add_path_to_backup_zip(backup_zip, db_path, 'database')
+            source_count = 0
+            source_manifest = []
+            for source_item in source_paths:
+                added_count = add_path_to_backup_zip(
+                    backup_zip,
+                    source_item['path'],
+                    f"source/{source_item['archive_name']}"
+                )
+                source_count += added_count
+                source_manifest.append({
+                    'path': source_item['path'],
+                    'archive_prefix': f"source/{source_item['archive_name']}",
+                    'file_count': added_count
+                })
+
             upload_count = 0
             uploaded_roots_manifest = []
 
@@ -5077,6 +5150,8 @@ def download_system_backup():
                 'generated_by': getattr(current_user, 'username', 'unknown'),
                 'database_path': db_path,
                 'database_included': bool(db_count),
+                'source_paths': source_manifest,
+                'source_file_count': source_count,
                 'upload_roots': uploaded_roots_manifest,
                 'upload_file_count': upload_count,
                 'app': 'MEDICAL SERVICE Scheduler'
