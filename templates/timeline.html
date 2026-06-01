@@ -139,15 +139,15 @@
                 </button>
                 
             </div>
-            <!-- ENGINEER SELF EXPORT: visible only for pure engineer desktop/full-calendar view -->
+            <!-- ENGINEER SELF PRINT: visible only for pure engineer desktop/full-calendar view -->
             <div class="btn-group shadow-sm timeline-engineer-export-control d-none" id="timeline-engineer-export-control">
                 <button 
-                    class="btn btn-outline-success btn-sm fw-bold px-3" 
-                    onclick="exportToExcel()"
-                    title="Download my weekly schedule as CSV"
+                    class="btn btn-outline-dark btn-sm fw-bold px-3" 
+                    onclick="openEngineerOwnPrintModal()"
+                    title="Generate a printable copy of my weekly schedule"
                 >
-                    <i class="fa-solid fa-file-excel me-1"></i>
-                    Export My Schedule
+                    <i class="fa-solid fa-print me-1"></i>
+                    Print My Schedule
                 </button>
             </div>
 
@@ -377,8 +377,8 @@
         </div>
         <div class="mobile-header-actions">
             
-            <button type="button" class="mobile-refresh-btn mobile-engineer-export-btn" onclick="exportToExcel()" aria-label="Export my schedule" title="Export my schedule">
-                <i class="fa-solid fa-file-excel"></i>
+            <button type="button" class="mobile-refresh-btn mobile-engineer-export-btn" onclick="openEngineerOwnPrintModal()" aria-label="Print my schedule" title="Print my schedule">
+                <i class="fa-solid fa-print"></i>
             </button>
             <button type="button" class="mobile-refresh-btn" onclick="refreshTimelineGrid()" aria-label="Refresh schedule">
                 <i class="fa-solid fa-rotate-right"></i>
@@ -2078,6 +2078,24 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 
 body.mobile-engineer-mode:not(.mobile-admin-mode):not(.mobile-scheduler-mode) .mobile-engineer-export-btn {
     display: inline-flex;
+}
+
+body.timeline-engineer-print-mode #print-branch-filter {
+    pointer-events: none;
+    background: #f8fafc;
+    color: #64748b;
+}
+
+body.timeline-engineer-print-mode .print-admin-only-action {
+    display: none !important;
+}
+
+body.timeline-engineer-print-mode .print-engineer-row {
+    pointer-events: none;
+}
+
+body.timeline-engineer-print-mode .print-engineer-row input {
+    pointer-events: none;
 }
 
 
@@ -11092,7 +11110,53 @@ function getPrintDateTimeLabel(){
 }
 
 
+function isEngineerOwnPrintMode(){
+    return document.body.classList.contains('timeline-pure-engineer-desktop') || (
+        document.body.classList.contains('mobile-engineer-mode') &&
+        !document.body.classList.contains('mobile-admin-mode') &&
+        !document.body.classList.contains('mobile-scheduler-mode') &&
+        !document.body.classList.contains('timeline-hybrid-engineer-admin-mobile')
+    );
+}
+
+function clearEngineerPrintMode(){
+    document.body.classList.remove('timeline-engineer-print-mode');
+    const printModalEl = document.getElementById('printModal');
+    if(printModalEl) printModalEl.removeAttribute('data-engineer-own-print');
+}
+
+function openEngineerOwnPrintModal(){
+    cleanupModalState();
+
+    const printModalEl = document.getElementById('printModal');
+    if(!printModalEl) return;
+
+    const existingPrintModal = bootstrap.Modal.getInstance(printModalEl);
+    if(existingPrintModal){
+        existingPrintModal.dispose();
+    }
+
+    document.body.classList.add('timeline-engineer-print-mode');
+    printModalEl.setAttribute('data-engineer-own-print', '1');
+
+    printModal = new bootstrap.Modal(printModalEl, {
+        backdrop: true,
+        keyboard: true
+    });
+
+    const branchFilter = document.getElementById('print-branch-filter');
+    if(branchFilter){
+        branchFilter.value = 'ALL';
+        branchFilter.disabled = true;
+    }
+
+    setPrintCurrentWeek();
+    buildEngineerList();
+    printModal.show();
+}
+
 function openPrintModal(){
+    clearEngineerPrintMode();
     cleanupModalState();
 
     const printModalEl = document.getElementById('printModal');
@@ -11107,12 +11171,23 @@ function openPrintModal(){
     });
 
     const currentBranch = document.getElementById('branch-filter')?.value || 'ALL';
-    document.getElementById('print-branch-filter').value = isRegionalAdmin ? 'REGIONAL' : currentBranch;
+    const printBranchFilter = document.getElementById('print-branch-filter');
+    if(printBranchFilter){
+        printBranchFilter.disabled = false;
+        printBranchFilter.value = isRegionalAdmin ? 'REGIONAL' : currentBranch;
+    }
 
     setPrintCurrentWeek();
     buildEngineerList();
     printModal.show();
 }
+
+document.addEventListener('DOMContentLoaded', function(){
+    const printModal = document.getElementById('printModal');
+    if(printModal){
+        printModal.addEventListener('hidden.bs.modal', clearEngineerPrintMode);
+    }
+});
 
 function setPrintCurrentWeek(){
     const first = getWeekStartFromOffset(weekOffset);
@@ -11138,9 +11213,29 @@ function buildEngineerList(){
     container.innerHTML = `<div class="text-muted small p-2">Loading engineers...</div>`;
 
     const selectedBranch = document.getElementById('print-branch-filter')?.value || 'ALL';
+    const engineerOwnPrint = document.getElementById('printModal')?.getAttribute('data-engineer-own-print') === '1';
 
     fetch('/get_engineers').then(r=>r.json()).then(data=>{
         container.innerHTML = "";
+
+        if(engineerOwnPrint){
+            const ownEngineer = (data || []).find(e => String(e.id) === String(loggedInEngineerId));
+            if(!ownEngineer){
+                container.innerHTML = `<div class="text-danger small p-3 text-center">Unable to find your linked engineer profile.</div>`;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="print-branch-heading d-flex align-items-center justify-content-between mt-2 mb-1">
+                    <span><i class="fa-solid fa-user me-1 text-primary"></i>My Schedule</span>
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle">${escapeHtml(ownEngineer.branch || 'Engineer')}</span>
+                </div>
+                <label class="print-engineer-row">
+                    <input type="checkbox" value="${ownEngineer.id}" data-branch="${escapeHtml(ownEngineer.branch || '')}" class="print-eng" checked>
+                    <span>${escapeHtml(ownEngineer.name || 'My Engineer Profile')}</span>
+                </label>`;
+            return;
+        }
 
         const branches = ["Manila","Cebu","Davao"];
         let visibleCount = 0;
@@ -11238,7 +11333,9 @@ async function generatePrint(){
     const checked = [...document.querySelectorAll('.print-eng:checked')].map(e=>String(e.value));
     const start = document.getElementById('print-start-date').value;
     const end = document.getElementById('print-end-date').value;
+    const engineerOwnPrint = document.getElementById('printModal')?.getAttribute('data-engineer-own-print') === '1';
     const selectedBranch = document.getElementById('print-branch-filter')?.value || 'ALL';
+    const fetchBranch = engineerOwnPrint ? 'ALL' : selectedBranch;
 
     if(checked.length===0) return alert("Select engineers");
     if(!start || !end) return alert("Select date range");
@@ -11267,7 +11364,7 @@ async function generatePrint(){
     let engineersMap = {};
 
     for (let i = 0; i < weeksNeeded; i++) {
-        const res = await fetch(buildFreshTimelineUrl(offsetStart + i, selectedBranch, false), { cache: 'no-store' });
+        const res = await fetch(buildFreshTimelineUrl(offsetStart + i, fetchBranch, false), { cache: 'no-store' });
         const data = await res.json();
 
         data.engineers.forEach(e=>{
@@ -11291,7 +11388,7 @@ async function generatePrint(){
     const selectedEngineers = checked
         .map(id => engineersMap[id])
         .filter(Boolean)
-        .filter(e => selectedBranch === 'ALL' || (selectedBranch === 'REGIONAL' && regionalAllowedBranches.includes(e.branch)) || e.branch === selectedBranch)
+        .filter(e => engineerOwnPrint || selectedBranch === 'ALL' || (selectedBranch === 'REGIONAL' && regionalAllowedBranches.includes(e.branch)) || e.branch === selectedBranch)
         .sort((a,b)=>{
             const branchSort = String(a.branch || '').localeCompare(String(b.branch || ''));
             if(branchSort !== 0) return branchSort;
@@ -11302,7 +11399,7 @@ async function generatePrint(){
         return alert("No selected engineers found for this print filter.");
     }
 
-    const branchLabel = getBranchPrintLabel(selectedBranch);
+    const branchLabel = engineerOwnPrint ? 'My Schedule Only' : getBranchPrintLabel(selectedBranch);
     const generatedBy = getGeneratedByLabel();
     const generatedAt = getPrintDateTimeLabel();
 
@@ -11568,7 +11665,7 @@ async function generatePrint(){
             </div>
             <div class="print-title-wrap">
                 <div class="print-title">Medical Service Schedule</div>
-                <div class="print-subtitle">Engineer Calendar Report</div>
+                <div class="print-subtitle">${engineerOwnPrint ? 'My Schedule Report' : 'Engineer Calendar Report'}</div>
             </div>
             <div class="print-meta">
                 <strong>Generated:</strong> ${escapeHtml(generatedAt)}<br>
@@ -11587,8 +11684,8 @@ async function generatePrint(){
                 <span class="report-chip-value">${escapeHtml(branchLabel)}</span>
             </div>
             <div class="report-chip">
-                <span class="report-chip-label">Engineers</span>
-                <span class="report-chip-value">${selectedEngineers.length} selected</span>
+                <span class="report-chip-label">Scope</span>
+                <span class="report-chip-value">${engineerOwnPrint ? 'Own schedules only' : selectedEngineers.length + ' selected'}</span>
             </div>
             <div class="report-chip">
                 <span class="report-chip-label">Report Span</span>
@@ -11677,6 +11774,7 @@ async function generatePrint(){
     if(printModal){
         printModal.hide();
     }
+    setTimeout(clearEngineerPrintMode, 250);
 }
 
 </script>
@@ -14092,10 +14190,10 @@ body.dragging-schedule .schedule-overlay {
             <button class="btn btn-outline-primary btn-sm" type="button" onclick="setPrintCurrentWeek()">
                 Current Visible Week
             </button>
-            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="selectAllPrintEngineers()">
+            <button class="btn btn-outline-secondary btn-sm print-admin-only-action" type="button" onclick="selectAllPrintEngineers()">
                 Select All Shown
             </button>
-            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearPrintEngineers()">
+            <button class="btn btn-outline-secondary btn-sm print-admin-only-action" type="button" onclick="clearPrintEngineers()">
                 Clear
             </button>
         </div>
