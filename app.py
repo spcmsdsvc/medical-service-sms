@@ -5587,7 +5587,30 @@ def get_clients():
             key = ('row', (name or '').strip().lower(), (designation or '').strip().lower(), (phone or '').strip().lower())
 
         if key in seen:
+            # D1A fix: legacy Client slots are merged first and do not have
+            # designation. When the matching dynamic Contact row is seen later,
+            # enrich the already-added row instead of hiding the saved designation.
+            for row_idx, existing in enumerate(rows):
+                existing_name, existing_phone, existing_email, existing_designation = existing
+                existing_email_key = (existing_email or '').strip().lower()
+
+                same_email = bool(email_key and existing_email_key == email_key)
+                same_row = (
+                    not email_key and
+                    (existing_name or '').strip().lower() == (name or '').strip().lower() and
+                    (existing_phone or '').strip().lower() == (phone or '').strip().lower()
+                )
+
+                if same_email or same_row:
+                    rows[row_idx] = (
+                        existing_name or name,
+                        existing_phone or phone,
+                        existing_email or email,
+                        existing_designation or designation
+                    )
+                    break
             return
+
         seen.add(key)
         rows.append((name, phone, email, designation))
 
