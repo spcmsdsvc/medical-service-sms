@@ -5618,39 +5618,42 @@ def get_clients():
         merged_contacts = []
         seen_contacts = set()
 
-        # Keep legacy visible client slots first because the Clients page table
-        # uses cp1/cn1/ce1 as the primary contact display. Empty legacy rows
-        # are skipped so auto-captured Contact rows can surface properly.
-        add_client_contact_row(
-            merged_contacts, seen_contacts,
-            getattr(c, 'contact_person_1', ''),
-            getattr(c, 'contact_number_1', ''),
-            getattr(c, 'email_address_1', '')
-        )
-        add_client_contact_row(
-            merged_contacts, seen_contacts,
-            getattr(c, 'contact_person_2', ''),
-            getattr(c, 'contact_number_2', ''),
-            getattr(c, 'email_address_2', '')
-        )
-        add_client_contact_row(
-            merged_contacts, seen_contacts,
-            getattr(c, 'contact_person_3', ''),
-            getattr(c, 'contact_number_3', ''),
-            getattr(c, 'email_address_3', '')
-        )
-
-        # Then append dynamic Contact table rows, including TSR auto-captured
-        # contacts. This keeps older client records visible while also showing
-        # new contacts captured from Create TSR.
         contacts = Contact.query.filter_by(client_id=c.id).order_by(Contact.id.asc()).all()
-        for ct in contacts:
+
+        if contacts:
+            # D2B fix:
+            # Once a client has Contact table rows, that table is the source of
+            # truth for the editable contacts modal. Legacy Client contact slots
+            # are only mirrors for old layouts. Reading legacy first can resurrect
+            # deleted Contact #2/#3 rows after scheduler cleanup.
+            for ct in contacts:
+                add_client_contact_row(
+                    merged_contacts, seen_contacts,
+                    getattr(ct, 'name', ''),
+                    getattr(ct, 'phone', ''),
+                    getattr(ct, 'email', ''),
+                    getattr(ct, 'designation', '')
+                )
+        else:
+            # Backward compatibility for old client records that still only have
+            # legacy cp/cn/ce slots and no Contact table rows yet.
             add_client_contact_row(
                 merged_contacts, seen_contacts,
-                getattr(ct, 'name', ''),
-                getattr(ct, 'phone', ''),
-                getattr(ct, 'email', ''),
-                getattr(ct, 'designation', '')
+                getattr(c, 'contact_person_1', ''),
+                getattr(c, 'contact_number_1', ''),
+                getattr(c, 'email_address_1', '')
+            )
+            add_client_contact_row(
+                merged_contacts, seen_contacts,
+                getattr(c, 'contact_person_2', ''),
+                getattr(c, 'contact_number_2', ''),
+                getattr(c, 'email_address_2', '')
+            )
+            add_client_contact_row(
+                merged_contacts, seen_contacts,
+                getattr(c, 'contact_person_3', ''),
+                getattr(c, 'contact_number_3', ''),
+                getattr(c, 'email_address_3', '')
             )
 
         entry = {'id': c.id, 'name': c.name, 'address': c.address}
@@ -9776,6 +9779,13 @@ def apply_client_contacts_without_deleting_existing(client_id, payload, allow_de
 
     client_rec = db.session.get(Client, client_id)
     if client_rec:
+        # D2B hardening: clear all legacy contact mirrors first so deleted
+        # contact #2/#3 cannot survive in contact_person_2/contact_person_3.
+        for fields in legacy_fields:
+            setattr(client_rec, fields[0], None)
+            setattr(client_rec, fields[1], None)
+            setattr(client_rec, fields[2], None)
+
         for idx, fields in enumerate(legacy_fields):
             values = legacy_rows[idx] if idx < len(legacy_rows) else (None, None, None, None)
             setattr(client_rec, fields[0], values[0])
