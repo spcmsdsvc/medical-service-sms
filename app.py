@@ -691,6 +691,7 @@ class Contact(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False)
     name = db.Column(db.String(100))
+    designation = db.Column(db.String(150))
     phone = db.Column(db.String(50))
     email = db.Column(db.String(100))
 
@@ -839,6 +840,27 @@ def ensure_online_tsr_submission_table():
         _online_tsr_submission_table_ready = True
     except Exception as table_error:
         print(f"[ONLINE-TSR] Unable to ensure online_tsr_submission table: {table_error}", flush=True)
+        raise
+
+
+_contact_designation_column_ready = False
+
+
+def ensure_contact_designation_column():
+    """Add Contact.designation on existing live SQLite databases."""
+    global _contact_designation_column_ready
+    if _contact_designation_column_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            columns = [row[1] for row in connection.exec_driver_sql("PRAGMA table_info(contact)").fetchall()]
+            if 'designation' not in columns:
+                connection.exec_driver_sql("ALTER TABLE contact ADD COLUMN designation VARCHAR(150)")
+                print("[CLIENTS] Added contact.designation column.", flush=True)
+        _contact_designation_column_ready = True
+    except Exception as column_error:
+        print(f"[CLIENTS] Unable to ensure contact.designation column: {column_error}", flush=True)
         raise
 
 
@@ -4007,6 +4029,7 @@ def auto_capture_tsr_client_contact_from_payload(shift, payload):
             db.session.add(Contact(
                 client_id=client_id,
                 name=contact_name,
+                designation='',
                 phone=contact_phone,
                 email=email_key
             ))
@@ -5547,23 +5570,26 @@ def get_clients():
     clients = Client.query.order_by(Client.name).all()
     results = []
 
-    def add_client_contact_row(rows, seen, name='', phone='', email=''):
+    ensure_contact_designation_column()
+
+    def add_client_contact_row(rows, seen, name='', phone='', email='', designation=''):
         name = clean_str(name)
         phone = clean_str(phone)
         email = clean_str(email)
-        if not (name or phone or email):
+        designation = clean_str(designation)
+        if not (name or phone or email or designation):
             return
 
         email_key = (email or '').strip().lower()
         if email_key:
             key = ('email', email_key)
         else:
-            key = ('row', (name or '').strip().lower(), (phone or '').strip().lower())
+            key = ('row', (name or '').strip().lower(), (designation or '').strip().lower(), (phone or '').strip().lower())
 
         if key in seen:
             return
         seen.add(key)
-        rows.append((name, phone, email))
+        rows.append((name, phone, email, designation))
 
     for c in clients:
         merged_contacts = []
@@ -5600,14 +5626,17 @@ def get_clients():
                 merged_contacts, seen_contacts,
                 getattr(ct, 'name', ''),
                 getattr(ct, 'phone', ''),
-                getattr(ct, 'email', '')
+                getattr(ct, 'email', ''),
+                getattr(ct, 'designation', '')
             )
 
         entry = {'id': c.id, 'name': c.name, 'address': c.address}
-        for idx, (name, phone, email) in enumerate(merged_contacts, start=1):
+        for idx, contact_values in enumerate(merged_contacts, start=1):
+            name, phone, email, designation = contact_values
             entry[f'cp{idx}'] = name
             entry[f'cn{idx}'] = phone
             entry[f'ce{idx}'] = email
+            entry[f'cd{idx}'] = designation
         results.append(entry)
 
     return jsonify(results)
@@ -9313,6 +9342,7 @@ def export_analytics_summary():
 def export_clients():
     """Full customer database CSV dump using dynamic Contact rows."""
     if not is_admin_authorized(): return denied()
+    ensure_contact_designation_column()
     clients = Client.query.order_by(Client.name).all()
 
     max_contacts = 0
@@ -9327,15 +9357,15 @@ def export_clients():
 
     headers = ['Name', 'Address']
     for i in range(1, max_contacts + 1):
-        headers.extend([f'Contact {i} Name', f'Contact {i} Phone', f'Contact {i} Email'])
+        headers.extend([f'Contact {i} Name', f'Contact {i} Designation', f'Contact {i} Phone', f'Contact {i} Email'])
     writer.writerow(headers)
 
     for c in clients:
         row = [c.name, c.address]
         for contact in client_contacts.get(c.id, []):
-            row.extend([contact.name or '', contact.phone or '', contact.email or ''])
+            row.extend([contact.name or '', getattr(contact, 'designation', '') or '', contact.phone or '', contact.email or ''])
         for _ in range(max_contacts - len(client_contacts.get(c.id, []))):
-            row.extend(['', '', ''])
+            row.extend(['', '', '', ''])
         writer.writerow(row)
 
     output.seek(0)
@@ -9547,6 +9577,7 @@ from openpyxl import Workbook
 @login_required
 def export_client_excel(client_id):
     if not is_admin_authorized(): return denied()
+    ensure_contact_designation_column()
     client = db.session.get(Client, client_id)
     if not client:
         return "Not found", 404
@@ -9570,14 +9601,16 @@ def export_client_excel(client_id):
     ws.cell(row=row, column=1, value="Contacts")
     row += 1
     ws.cell(row=row, column=1, value="Name")
-    ws.cell(row=row, column=2, value="Phone")
-    ws.cell(row=row, column=3, value="Email")
+    ws.cell(row=row, column=2, value="Designation")
+    ws.cell(row=row, column=3, value="Phone")
+    ws.cell(row=row, column=4, value="Email")
     row += 1
 
     for c in contacts:
         ws.cell(row=row, column=1, value=c.name)
-        ws.cell(row=row, column=2, value=c.phone)
-        ws.cell(row=row, column=3, value=c.email)
+        ws.cell(row=row, column=2, value=getattr(c, 'designation', '') or '')
+        ws.cell(row=row, column=3, value=c.phone)
+        ws.cell(row=row, column=4, value=c.email)
         row += 1
 
     row += 1
@@ -9635,25 +9668,30 @@ def apply_client_contacts_without_deleting_existing(client_id, payload):
     submitted_rows = []
 
     i = 1
-    while f'cp{i}' in payload or f'cn{i}' in payload or f'ce{i}' in payload:
+    ensure_contact_designation_column()
+
+    while f'cp{i}' in payload or f'cn{i}' in payload or f'ce{i}' in payload or f'cd{i}' in payload:
         name = clean_str(payload.get(f'cp{i}'))
+        designation = clean_str(payload.get(f'cd{i}'))
         phone = clean_str(payload.get(f'cn{i}'))
         email = clean_str(payload.get(f'ce{i}'))
 
-        if name or phone or email:
-            submitted_rows.append((name, phone, email))
+        if name or designation or phone or email:
+            submitted_rows.append((name, phone, email, designation))
         i += 1
 
-    for idx, (name, phone, email) in enumerate(submitted_rows):
+    for idx, (name, phone, email, designation) in enumerate(submitted_rows):
         if idx < len(existing_contacts):
             contact = existing_contacts[idx]
             contact.name = name
+            contact.designation = designation
             contact.phone = phone
             contact.email = email
         else:
             db.session.add(Contact(
                 client_id=client_id,
                 name=name,
+                designation=designation,
                 phone=phone,
                 email=email
             ))
@@ -9662,7 +9700,7 @@ def apply_client_contacts_without_deleting_existing(client_id, payload):
     merged_rows = submitted_rows[:]
     if len(existing_contacts) > len(submitted_rows):
         for contact in existing_contacts[len(submitted_rows):]:
-            merged_rows.append((contact.name, contact.phone, contact.email))
+            merged_rows.append((contact.name, contact.phone, contact.email, getattr(contact, 'designation', None)))
 
     legacy_rows = merged_rows[:3]
     legacy_fields = [
@@ -9674,7 +9712,7 @@ def apply_client_contacts_without_deleting_existing(client_id, payload):
     client_rec = db.session.get(Client, client_id)
     if client_rec:
         for idx, fields in enumerate(legacy_fields):
-            values = legacy_rows[idx] if idx < len(legacy_rows) else (None, None, None)
+            values = legacy_rows[idx] if idx < len(legacy_rows) else (None, None, None, None)
             setattr(client_rec, fields[0], values[0])
             setattr(client_rec, fields[1], values[1])
             setattr(client_rec, fields[2], values[2])
@@ -9689,6 +9727,8 @@ def apply_client_contacts_without_deleting_existing(client_id, payload):
 def add_client():
     """ Hospital record entry with conflict detection. Access: Admin Levels. """
     if not is_admin_authorized(): return jsonify({'message': 'Denied'}), 403
+    ensure_contact_designation_column()
+
     payload = request.get_json()
     name = clean_str(payload.get('name')); addr = clean_str(payload.get('address'))
     
@@ -9706,10 +9746,11 @@ def add_client():
     db.session.add(new_hospital)
     db.session.flush()
     i = 1
-    while f'cp{i}' in payload:
+    while f'cp{i}' in payload or f'cn{i}' in payload or f'ce{i}' in payload or f'cd{i}' in payload:
         db.session.add(Contact(
             client_id=new_hospital.id,
             name=clean_str(payload.get(f'cp{i}')),
+            designation=clean_str(payload.get(f'cd{i}')),
             phone=clean_str(payload.get(f'cn{i}')),
             email=clean_str(payload.get(f'ce{i}'))
         ))
@@ -9728,6 +9769,8 @@ def update_client(id):
     Engineers can add/edit contact rows only; they cannot delete contacts or
     modify the client name/address.
     """
+    ensure_contact_designation_column()
+
     payload = request.get_json(silent=True) or {}
     client_rec = db.session.get(Client, id)
     if not client_rec:
@@ -9765,10 +9808,11 @@ def update_client(id):
 
     Contact.query.filter_by(client_id=id).delete()
     i = 1
-    while f'cp{i}' in payload:
+    while f'cp{i}' in payload or f'cn{i}' in payload or f'ce{i}' in payload or f'cd{i}' in payload:
         db.session.add(Contact(
             client_id=id,
             name=clean_str(payload.get(f'cp{i}')),
+            designation=clean_str(payload.get(f'cd{i}')),
             phone=clean_str(payload.get(f'cn{i}')),
             email=clean_str(payload.get(f'ce{i}'))
         ))
@@ -13474,6 +13518,8 @@ def import_clients():
     if not is_admin_authorized():
         return jsonify({'message': 'Denied'}), 403
 
+    ensure_contact_designation_column()
+
     file = request.files.get('file')
     if not file or not file.filename:
         return jsonify({'message': 'No CSV file selected.'}), 400
@@ -13519,24 +13565,27 @@ def import_clients():
             # CP1/CN1/CE1, Contact 1 Name/Phone/Email, Contact Person 1, etc.
             for idx in range(1, 31):
                 c_name = clean_str(csv_get(row, f'CP{idx}', f'Contact {idx} Name', f'Contact {idx}', f'Contact Person {idx}'))
+                c_designation = clean_str(csv_get(row, f'CD{idx}', f'Contact {idx} Designation', f'Designation {idx}', f'Position {idx}', f'Title {idx}'))
                 c_phone = clean_str(csv_get(row, f'CN{idx}', f'Contact {idx} Phone', f'Contact {idx} Number', f'Phone {idx}'))
                 c_email = clean_str(csv_get(row, f'CE{idx}', f'Contact {idx} Email', f'Email {idx}'))
 
-                if c_name or c_phone or c_email:
-                    contact_rows.append((c_name, c_phone, c_email))
+                if c_name or c_designation or c_phone or c_email:
+                    contact_rows.append((c_name, c_phone, c_email, c_designation))
 
             # Simple one-contact CSV fallback.
             if not contact_rows:
                 c_name = clean_str(csv_get(row, 'Contact Name', 'Contact Person', 'Main Contact'))
+                c_designation = clean_str(csv_get(row, 'Designation', 'Contact Designation', 'Position', 'Title'))
                 c_phone = clean_str(csv_get(row, 'Phone', 'Contact Phone', 'Contact Number', 'Mobile'))
                 c_email = clean_str(csv_get(row, 'Email', 'Contact Email'))
-                if c_name or c_phone or c_email:
-                    contact_rows.append((c_name, c_phone, c_email))
+                if c_name or c_designation or c_phone or c_email:
+                    contact_rows.append((c_name, c_phone, c_email, c_designation))
 
-            for c_name, c_phone, c_email in contact_rows:
+            for c_name, c_phone, c_email, c_designation in contact_rows:
                 db.session.add(Contact(
                     client_id=client_rec.id,
                     name=c_name,
+                    designation=c_designation,
                     phone=c_phone,
                     email=c_email
                 ))
@@ -13549,7 +13598,7 @@ def import_clients():
                 ('contact_person_3', 'contact_number_3', 'email_address_3')
             ]
             for field_idx, field_names in enumerate(fields):
-                values = legacy[field_idx] if field_idx < len(legacy) else (None, None, None)
+                values = legacy[field_idx] if field_idx < len(legacy) else (None, None, None, None)
                 setattr(client_rec, field_names[0], values[0])
                 setattr(client_rec, field_names[1], values[1])
                 setattr(client_rec, field_names[2], values[2])
@@ -13675,6 +13724,7 @@ def ensure_runtime_sqlite_migrations_before_request():
     ensure_emergency_superadmin_from_env()
 
     ensure_shift_file_original_filename_column()
+    ensure_contact_designation_column()
     ensure_schedule_delete_indexes()
 
 
@@ -13841,6 +13891,7 @@ def initialize_database():
         db.create_all()
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()
+        ensure_contact_designation_column()
         ensure_schedule_delete_indexes()
         migrate_hierarchy_accounts()
         bootstrap_credentials = bootstrap_static_accounts()

@@ -23,8 +23,9 @@
         </div>
 
         <div class="row g-2 mb-4 no-print bg-light p-3 rounded">
-            <div class="col-md-6"><label class="small fw-bold">SEARCH NAME</label><input type="text" id="s-name" class="form-control form-control-sm" oninput="applyFilters()"></div>
-            <div class="col-md-6"><label class="small fw-bold">SEARCH ADDRESS</label><input type="text" id="s-addr" class="form-control form-control-sm" oninput="applyFilters()"></div>
+            <div class="col-md-4"><label class="small fw-bold">SEARCH NAME</label><input type="text" id="s-name" class="form-control form-control-sm" oninput="applyFilters()"></div>
+            <div class="col-md-4"><label class="small fw-bold">SEARCH ADDRESS</label><input type="text" id="s-addr" class="form-control form-control-sm" oninput="applyFilters()"></div>
+            <div class="col-md-4"><label class="small fw-bold">SEARCH DESIGNATION</label><input type="text" id="s-designation" class="form-control form-control-sm" oninput="applyFilters()"></div>
         </div>
 
         <div class="table-responsive">
@@ -34,6 +35,7 @@
                         <th>Name</th>
                         <th>Address</th>
                         <th>Main Contact</th>
+                        <th>Designation</th>
                         <th>Phone</th>
                         <th class="no-print text-end">Actions</th>
                     </tr>
@@ -469,7 +471,7 @@ function setClientModalContactOnlyMode(contactOnly){
     if(note) note.classList.toggle('d-none', !contactOnly);
 }
 
-function addContact(name="", phone="", email=""){
+function addContact(name="", phone="", email="", designation=""){
     contactCount++;
     const div = document.createElement('div');
     div.className = "border rounded p-2 mb-2";
@@ -482,10 +484,11 @@ function addContact(name="", phone="", email=""){
             <strong>Contact ${contactCount}</strong>
             ${removeButton}
         </div>
-        <div class="row mt-2">
-            <div class="col-md-4"><input class="form-control form-control-sm cp" placeholder="Name" value="${name}"></div>
-            <div class="col-md-4"><input class="form-control form-control-sm cn" placeholder="Phone" value="${phone}"></div>
-            <div class="col-md-4"><input class="form-control form-control-sm ce" placeholder="Email" value="${email}"></div>
+        <div class="row mt-2 g-2">
+            <div class="col-md-3"><input class="form-control form-control-sm cp" placeholder="Name" value="${escapeHtml(name)}"></div>
+            <div class="col-md-3"><input class="form-control form-control-sm cd" placeholder="Designation" value="${escapeHtml(designation)}"></div>
+            <div class="col-md-3"><input class="form-control form-control-sm cn" placeholder="Phone" value="${escapeHtml(phone)}"></div>
+            <div class="col-md-3"><input class="form-control form-control-sm ce" placeholder="Email" value="${escapeHtml(email)}"></div>
         </div>`;
     document.getElementById('contacts-container').appendChild(div);
 }
@@ -522,8 +525,8 @@ function openEditModal(id){
     contactCount = 0;
 
     let i = 1;
-    while(c[`cp${i}`] || c[`cn${i}`] || c[`ce${i}`]){
-        addContact(c[`cp${i}`], c[`cn${i}`], c[`ce${i}`]);
+    while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+        addContact(c[`cp${i}`], c[`cn${i}`], c[`ce${i}`], c[`cd${i}`]);
         i++;
     }
 
@@ -565,6 +568,7 @@ Open existing client?`)){
     document.querySelectorAll('#contacts-container > div').forEach((c, i)=>{
         let idx = i + 1;
         data[`cp${idx}`] = c.querySelector('.cp').value;
+        data[`cd${idx}`] = c.querySelector('.cd').value;
         data[`cn${idx}`] = c.querySelector('.cn').value;
         data[`ce${idx}`] = c.querySelector('.ce').value;
     });
@@ -613,16 +617,17 @@ function escapeHtml(value){
 
 function getPrimaryClientContact(c){
     let i = 1;
-    while(c[`cp${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+    while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
         const name = c[`cp${i}`] || '';
+        const designation = c[`cd${i}`] || '';
         const phone = c[`cn${i}`] || '';
         const email = c[`ce${i}`] || '';
-        if(name || phone || email){
-            return { name, phone, email };
+        if(name || designation || phone || email){
+            return { name, designation, phone, email };
         }
         i++;
     }
-    return { name: '', phone: '', email: '' };
+    return { name: '', designation: '', phone: '', email: '' };
 }
 
 function getClientContactSummary(c){
@@ -699,6 +704,7 @@ function renderClientMobileCards(data){
                         <span>${escapeHtml(contact.name || 'No primary contact')}</span>
                     </div>
                     <div class="client-mobile-contact-lines">
+                        <span>${escapeHtml(contact.designation || 'No designation')}</span>
                         <span>${escapeHtml(contact.phone || 'No phone')}</span>
                         <span>${escapeHtml(contact.email || 'No email')}</span>
                     </div>
@@ -715,7 +721,7 @@ function renderClientMobileCards(data){
 function countContactsForClient(c){
     let count = 0;
     let i = 1;
-    while(c[`cp${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+    while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
         count++;
         i++;
     }
@@ -729,7 +735,8 @@ function updateClientCountFooter(filteredData){
 
     const nameFilter = document.getElementById('s-name')?.value.trim();
     const addrFilter = document.getElementById('s-addr')?.value.trim();
-    const hasFilter = Boolean(nameFilter || addrFilter);
+    const designationFilter = document.getElementById('s-designation')?.value.trim();
+    const hasFilter = Boolean(nameFilter || addrFilter || designationFilter);
 
     const label = document.getElementById('client-count-label');
     const contacts = document.getElementById('client-contact-count');
@@ -750,7 +757,7 @@ function renderTable(data) {
     data.forEach(c => {
         let hasMore = false;
         let i = 2;
-        while(c[`cp${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+        while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
             hasMore = true;
             i++;
         }
@@ -768,6 +775,7 @@ ${escapeHtml(c.name)}
 </td>
             <td><small>${escapeHtml(c.address || '-')}</small></td>
             <td>${contactDisplay}</td>
+            <td>${escapeHtml(c.cd1 || '-')}</td>
             <td>${escapeHtml(c.cn1 || '-')}</td>
             <td class="text-end no-print">
                 <div class="btn-group">
@@ -820,15 +828,16 @@ async function viewContacts(id){
         <div id="contacts-sec">
     `;
 
-    while(c[`cp${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+    while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
         hasContacts = true;
 
         html += `
         <div class="list-group-item p-2" style="cursor:pointer" >
             <div class="fw-semibold small mb-1">Contact ${i}</div>
-            <div class="small"><strong>Name:</strong> ${c[`cp${i}`] || '-'}</div>
-            <div class="small"><strong>Phone:</strong> ${c[`cn${i}`] || '-'}</div>
-            <div class="small"><strong>Email:</strong> ${c[`ce${i}`] || '-'}</div>
+            <div class="small"><strong>Name:</strong> ${escapeHtml(c[`cp${i}`] || '-')}</div>
+            <div class="small"><strong>Designation:</strong> ${escapeHtml(c[`cd${i}`] || '-')}</div>
+            <div class="small"><strong>Phone:</strong> ${escapeHtml(c[`cn${i}`] || '-')}</div>
+            <div class="small"><strong>Email:</strong> ${escapeHtml(c[`ce${i}`] || '-')}</div>
         </div>`;
         i++;
     }
@@ -927,14 +936,30 @@ function editProduct(id){
     window.location.href = '/products_page?edit=' + id;
 }
 
+function clientHasDesignationMatch(c, designationFilter){
+    if(!designationFilter) return true;
+
+    let i = 1;
+    while(c[`cp${i}`] || c[`cd${i}`] || c[`cn${i}`] || c[`ce${i}`]){
+        if((c[`cd${i}`] || "").toLowerCase().includes(designationFilter)){
+            return true;
+        }
+        i++;
+    }
+
+    return false;
+}
+
 function applyFilters(){
     const nameFilter = document.getElementById('s-name').value.toLowerCase();
     const addrFilter = document.getElementById('s-addr').value.toLowerCase();
+    const designationFilter = (document.getElementById('s-designation')?.value || '').toLowerCase();
 
     const filtered = clientsData.filter(c => {
         const nameMatch = (c.name || "").toLowerCase().includes(nameFilter);
         const addrMatch = (c.address || "").toLowerCase().includes(addrFilter);
-        return nameMatch && addrMatch;
+        const designationMatch = clientHasDesignationMatch(c, designationFilter);
+        return nameMatch && addrMatch && designationMatch;
     });
 
     renderTable(filtered);
@@ -1059,6 +1084,10 @@ function applyFilters(){
         margin-top: 0.45rem;
         color: #64748b;
         font-size: 0.74rem;
+        font-weight: 700;
+    }
+
+    #contacts-container input.cd {
         font-weight: 700;
     }
 
