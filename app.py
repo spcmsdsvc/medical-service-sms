@@ -9680,12 +9680,35 @@ def can_engineer_manage_client_contacts():
     )
 
 
-def apply_client_contacts_without_deleting_existing(client_id, payload):
-    """Add/edit client contacts while preserving existing rows.
+def can_delete_client_contacts():
+    """Return True for roles allowed to remove client contact rows.
+
+    Engineers are intentionally excluded because their field-contact edits are
+    preservation-safe. Schedulers/admins/managers can clean up duplicated or
+    outdated contact rows.
+    """
+    role = (getattr(current_user, 'role', '') or '').strip().lower()
+    return bool(
+        is_admin_authorized() or
+        is_scheduler_user() or
+        is_manager_dashboard_user() or
+        role in {'admin', 'scheduler', 'manager'}
+    )
+
+
+def apply_client_contacts_without_deleting_existing(client_id, payload, allow_delete=False):
+    """Add/edit client contacts from cp/cd/cn/ce rows.
 
     Existing contacts are matched by visible order because the legacy frontend
-    submits cp1/cn1/ce1 style fields without contact IDs. Empty submitted rows
-    are ignored instead of deleting existing records.
+    submits cp1/cd1/cn1/ce1 style fields without contact IDs.
+
+    allow_delete=False:
+        Preserve omitted old rows. Used for engineers so accidental mobile edits
+        do not erase client contacts.
+
+    allow_delete=True:
+        Remove omitted old rows. Used for scheduler/admin cleanup when they
+        intentionally delete a contact row in the modal.
     """
     existing_contacts = Contact.query.filter_by(client_id=client_id).order_by(Contact.id.asc()).all()
     submitted_rows = []
@@ -9719,9 +9742,15 @@ def apply_client_contacts_without_deleting_existing(client_id, payload):
                 email=email
             ))
 
+    # D2: Scheduler/admin cleanup may intentionally remove omitted rows.
+    # Engineers keep the original preservation behavior.
+    if allow_delete and len(existing_contacts) > len(submitted_rows):
+        for contact in existing_contacts[len(submitted_rows):]:
+            db.session.delete(contact)
+
     # Preserve legacy first 3 contact columns from merged active contacts.
     merged_rows = submitted_rows[:]
-    if len(existing_contacts) > len(submitted_rows):
+    if not allow_delete and len(existing_contacts) > len(submitted_rows):
         for contact in existing_contacts[len(submitted_rows):]:
             merged_rows.append((contact.name, contact.phone, contact.email, getattr(contact, 'designation', None)))
 
@@ -9770,13 +9799,19 @@ def add_client():
     db.session.flush()
     i = 1
     while f'cp{i}' in payload or f'cn{i}' in payload or f'ce{i}' in payload or f'cd{i}' in payload:
-        db.session.add(Contact(
-            client_id=new_hospital.id,
-            name=clean_str(payload.get(f'cp{i}')),
-            designation=clean_str(payload.get(f'cd{i}')),
-            phone=clean_str(payload.get(f'cn{i}')),
-            email=clean_str(payload.get(f'ce{i}'))
-        ))
+        contact_name = clean_str(payload.get(f'cp{i}'))
+        contact_designation = clean_str(payload.get(f'cd{i}'))
+        contact_phone = clean_str(payload.get(f'cn{i}'))
+        contact_email = clean_str(payload.get(f'ce{i}'))
+
+        if contact_name or contact_designation or contact_phone or contact_email:
+            db.session.add(Contact(
+                client_id=new_hospital.id,
+                name=contact_name,
+                designation=contact_designation,
+                phone=contact_phone,
+                email=contact_email
+            ))
         i += 1
     db.session.commit()
     log_activity(f"Added new client: {name}")
@@ -9799,14 +9834,25 @@ def update_client(id):
     if not client_rec:
         return jsonify({'message': 'Not Found'}), 404
 
-    if can_engineer_manage_client_contacts() and not is_admin_authorized():
-        submitted_count = apply_client_contacts_without_deleting_existing(id, payload)
+    contact_only_role = (
+        can_engineer_manage_client_contacts() or
+        is_scheduler_user() or
+        (getattr(current_user, 'role', None) in {'scheduler', 'manager'})
+    )
+
+    if contact_only_role and not is_admin_authorized():
+        submitted_count = apply_client_contacts_without_deleting_existing(
+            id,
+            payload,
+            allow_delete=can_delete_client_contacts()
+        )
         db.session.commit()
         log_activity(f"Updated client contacts: {client_rec.name}")
         return jsonify({
             'status': 'success',
             'contacts_updated': submitted_count,
-            'contact_only_update': True
+            'contact_only_update': True,
+            'contacts_delete_enabled': can_delete_client_contacts()
         })
 
     if not is_admin_authorized():
@@ -9825,25 +9871,19 @@ def update_client(id):
         }), 409
 
     client_rec.name, client_rec.address = new_name, new_address
-    client_rec.contact_person_1, client_rec.contact_number_1, client_rec.email_address_1 = clean_str(payload.get('cp1')), clean_str(payload.get('cn1')), clean_str(payload.get('ce1'))
-    client_rec.contact_person_2, client_rec.contact_number_2, client_rec.email_address_2 = clean_str(payload.get('cp2')), clean_str(payload.get('cn2')), clean_str(payload.get('ce2'))
-    client_rec.contact_person_3, client_rec.contact_number_3, client_rec.email_address_3 = None, None, None
-
-    Contact.query.filter_by(client_id=id).delete()
-    i = 1
-    while f'cp{i}' in payload or f'cn{i}' in payload or f'ce{i}' in payload or f'cd{i}' in payload:
-        db.session.add(Contact(
-            client_id=id,
-            name=clean_str(payload.get(f'cp{i}')),
-            designation=clean_str(payload.get(f'cd{i}')),
-            phone=clean_str(payload.get(f'cn{i}')),
-            email=clean_str(payload.get(f'ce{i}'))
-        ))
-        i += 1
+    submitted_count = apply_client_contacts_without_deleting_existing(
+        id,
+        payload,
+        allow_delete=True
+    )
 
     db.session.commit()
     log_activity(f"Modified details for client: {client_rec.name}")
-    return jsonify({'status': 'success'})
+    return jsonify({
+        'status': 'success',
+        'contacts_updated': submitted_count,
+        'contacts_delete_enabled': True
+    })
 
 
 @app.route('/delete_client/<int:id>', methods=['DELETE'])
