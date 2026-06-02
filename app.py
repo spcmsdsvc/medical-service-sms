@@ -9726,14 +9726,15 @@ def apply_client_contacts_without_deleting_existing(client_id, payload, allow_de
             submitted_rows.append((name, phone, email, designation))
         i += 1
 
-    for idx, (name, phone, email, designation) in enumerate(submitted_rows):
-        if idx < len(existing_contacts):
-            contact = existing_contacts[idx]
-            contact.name = name
-            contact.designation = designation
-            contact.phone = phone
-            contact.email = email
-        else:
+    if allow_delete:
+        # D2A fix:
+        # For scheduler/admin cleanup, treat the submitted modal rows as the
+        # complete source of truth. Updating by index can leave stale legacy or
+        # dynamic rows behind when a middle contact is removed, then contact #1
+        # is edited in a second save.
+        Contact.query.filter_by(client_id=client_id).delete(synchronize_session=False)
+
+        for name, phone, email, designation in submitted_rows:
             db.session.add(Contact(
                 client_id=client_id,
                 name=name,
@@ -9741,12 +9742,24 @@ def apply_client_contacts_without_deleting_existing(client_id, payload, allow_de
                 phone=phone,
                 email=email
             ))
-
-    # D2: Scheduler/admin cleanup may intentionally remove omitted rows.
-    # Engineers keep the original preservation behavior.
-    if allow_delete and len(existing_contacts) > len(submitted_rows):
-        for contact in existing_contacts[len(submitted_rows):]:
-            db.session.delete(contact)
+    else:
+        # Engineer-safe path: preserve omitted old rows so accidental mobile edits
+        # do not erase existing client contacts.
+        for idx, (name, phone, email, designation) in enumerate(submitted_rows):
+            if idx < len(existing_contacts):
+                contact = existing_contacts[idx]
+                contact.name = name
+                contact.designation = designation
+                contact.phone = phone
+                contact.email = email
+            else:
+                db.session.add(Contact(
+                    client_id=client_id,
+                    name=name,
+                    designation=designation,
+                    phone=phone,
+                    email=email
+                ))
 
     # Preserve legacy first 3 contact columns from merged active contacts.
     merged_rows = submitted_rows[:]
