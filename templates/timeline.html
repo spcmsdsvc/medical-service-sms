@@ -5348,6 +5348,19 @@ async function fetchTimelineDataWithOfflineTimeout(url){
 }
     let timelineCache = {};
     const TIMELINE_CACHE_TTL_MS = 30000;
+
+    // LIVE STABILITY: Stale scheduler page guard.
+    // Long-open Timeline tabs can hold old grid/modal state. Only refresh before
+    // schedule actions when the page has been idle/open for a while, so normal
+    // scheduling speed is not affected.
+    const TIMELINE_STALE_SAVE_REFRESH_MS = 15 * 60 * 1000;
+    const TIMELINE_STALE_PAGE_REFRESH_MS = 30 * 60 * 1000;
+    const TIMELINE_SLEEP_WAKE_REFRESH_MS = 5 * 60 * 1000;
+    const timelinePageLoadedAt = Date.now();
+    let timelineLastSuccessfulRefreshAt = 0;
+    let timelineHiddenAt = 0;
+    let timelineStaleGuardRefreshPromise = null;
+
     const TIMELINE_OFFLINE_SNAPSHOT_KEY = 'timelineOfflineSnapshot';
     const TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY = 'timelineOfflineSnapshots';
     const TIMELINE_OFFLINE_LAST_SYNC_KEY = 'timelineOfflineLastSync';
@@ -5356,6 +5369,68 @@ async function fetchTimelineDataWithOfflineTimeout(url){
     let masterProducts = [];
     let nameCounts = {}; // Key index to detect shared customer naming frequencies
     let timelineClientQuickAddBusy = false;
+
+    function markTimelineSuccessfulRefresh(){
+        timelineLastSuccessfulRefreshAt = Date.now();
+    }
+
+    function isTimelineStaleForScheduleAction(){
+        const now = Date.now();
+        const lastRefreshAge = timelineLastSuccessfulRefreshAt ? (now - timelineLastSuccessfulRefreshAt) : Infinity;
+        const pageAge = now - timelinePageLoadedAt;
+        const wokeFromSleep = Boolean(timelineHiddenAt && (now - timelineHiddenAt) > TIMELINE_SLEEP_WAKE_REFRESH_MS);
+        return Boolean(
+            navigator.onLine &&
+            (
+                pageAge > TIMELINE_STALE_PAGE_REFRESH_MS ||
+                lastRefreshAge > TIMELINE_STALE_SAVE_REFRESH_MS ||
+                wokeFromSleep
+            )
+        );
+    }
+
+    async function ensureFreshTimelineForScheduleAction(actionLabel='schedule action'){
+        if(!isTimelineStaleForScheduleAction()){
+            return false;
+        }
+
+        if(timelineStaleGuardRefreshPromise){
+            await timelineStaleGuardRefreshPromise;
+            return true;
+        }
+
+        const message = actionLabel === 'save'
+            ? 'Schedule page was idle. Refreshing latest calendar before saving...'
+            : 'Schedule page was idle. Refreshing latest calendar before adding...';
+
+        if(typeof setMobileCacheStatus === 'function' && shouldUseRoleAwareMobileTimeline()){
+            setMobileCacheStatus('Refreshing latest schedule...', 'ready');
+        }else{
+            console.info(`[Timeline] ${message}`);
+        }
+
+        timelineStaleGuardRefreshPromise = (async () => {
+            try{
+                await refreshTimelineGrid();
+                markTimelineSuccessfulRefresh();
+                timelineHiddenAt = 0;
+                return true;
+            }catch(err){
+                console.warn('[Timeline] Stale schedule refresh skipped:', err);
+                return false;
+            }finally{
+                timelineStaleGuardRefreshPromise = null;
+            }
+        })();
+
+        return await timelineStaleGuardRefreshPromise;
+    }
+
+    document.addEventListener('visibilitychange', function(){
+        if(document.hidden){
+            timelineHiddenAt = Date.now();
+        }
+    });
 
     function normalizeTimelineClientName(value){
         return String(value || '').trim().replace(/\s+/g, ' ');
@@ -8675,6 +8750,7 @@ async function loadGrid() {
 
         if(shouldSkipDesktopGridRenderForMobile()){
             setMobileDesktopGridSkippedState(true);
+            markTimelineSuccessfulRefresh();
             return;
         }
 
@@ -8931,6 +9007,7 @@ async function loadGrid() {
         renderMobileStickyActionBar();
         autoFocusLoggedInEngineerRowAfterGrid();
         setTimeout(syncTimelineHorizontalScroll, 0);
+        markTimelineSuccessfulRefresh();
     }
 
 
@@ -9212,6 +9289,7 @@ async function loadGrid() {
 
 
     async function openAddModal(engId, date, engName) { 
+        await ensureFreshTimelineForScheduleAction('add');
         await loadMasterData(); await loadEngineerOptions(); await loadEngineerList(); 
         const targetEngineer = engineerMaster.find(e => String(e.id) === String(engId)) || { id: engId, name: engName || 'Engineer', branch: "" };
         if(!canStartScheduleFromEngineerCell(targetEngineer)){
@@ -10059,6 +10137,7 @@ async function openTSRClientEmailModal(shiftId){
      */
     async function saveShift() {
         clearMobileSmartCache(); 
+        await ensureFreshTimelineForScheduleAction('save');
         const activeID = document.getElementById('f-id').value;
         const activeStatus = document.getElementById('f-status').value;
         const reportInput = document.getElementById('f-report');
