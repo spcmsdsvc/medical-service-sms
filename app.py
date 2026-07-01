@@ -612,6 +612,7 @@ def should_log_performance_path(path):
 
 @app.before_request
 def restore_pwa_session_before_route():
+    ensure_user_approval_columns()
     restore_user_from_pwa_login_cookie()
 
 
@@ -1637,6 +1638,7 @@ _travel_request_participant_table_ready = False
 _system_notification_table_ready = False
 _email_recipient_setting_table_ready = False
 _email_template_setting_table_ready = False
+_user_approval_columns_ready = False
 _reimbursement_accounting_columns_ready = False
 _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
@@ -2109,6 +2111,35 @@ def render_email_subject_template(template_key, context=None):
     return (rendered or 'Notification')[:180]
 
 
+def ensure_user_approval_columns():
+    """Add User approval columns before any login/session queries run."""
+    global _user_approval_columns_ready
+
+    if _user_approval_columns_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            user_columns = {
+                row[1] for row in connection.exec_driver_sql("PRAGMA table_info(user)").fetchall()
+            }
+            migrations = [
+                ('can_approve_requests', "ALTER TABLE user ADD COLUMN can_approve_requests BOOLEAN DEFAULT 0 NOT NULL"),
+                ('approval_scope', "ALTER TABLE user ADD COLUMN approval_scope VARCHAR(50) DEFAULT ''"),
+                ('approval_title', "ALTER TABLE user ADD COLUMN approval_title VARCHAR(100) DEFAULT ''"),
+                ('is_active', "ALTER TABLE user ADD COLUMN is_active BOOLEAN DEFAULT 1 NOT NULL"),
+            ]
+
+            for column_name, ddl in migrations:
+                if column_name not in user_columns:
+                    connection.exec_driver_sql(ddl)
+                    print(f"[DB MIGRATION] Added user.{column_name}", flush=True)
+
+        _user_approval_columns_ready = True
+    except Exception as user_approval_error:
+        print(f"[ApprovalRouting] User column migration skipped: {user_approval_error}", flush=True)
+
+
 def ensure_reimbursement_accounting_columns():
     """S12A3 safe live SQLite migration for Reimbursement accounting handoff fields."""
     global _reimbursement_accounting_columns_ready
@@ -2118,6 +2149,13 @@ def ensure_reimbursement_accounting_columns():
 
     try:
         with db.engine.begin() as connection:
+            table_exists = connection.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='reimbursement_header'"
+            ).fetchone()
+            if not table_exists:
+                _reimbursement_accounting_columns_ready = True
+                return
+
             reimbursement_columns = {
                 row[1] for row in connection.exec_driver_sql("PRAGMA table_info(reimbursement_header)").fetchall()
             }
@@ -2153,6 +2191,13 @@ def ensure_reimbursement_payment_columns():
 
     try:
         with db.engine.begin() as connection:
+            table_exists = connection.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='reimbursement_header'"
+            ).fetchone()
+            if not table_exists:
+                _reimbursement_payment_columns_ready = True
+                return
+
             reimbursement_columns = {
                 row[1] for row in connection.exec_driver_sql("PRAGMA table_info(reimbursement_header)").fetchall()
             }
@@ -2343,17 +2388,20 @@ def ensure_live_engineer_signature_schema_before_routes():
         return
 
     ensure_engineer_signature_column()
+    ensure_user_approval_columns()
     ensure_online_tsr_submission_table()
     ensure_contact_designation_column()
-    ensure_universal_approval_audit_table()
-    ensure_travel_request_tables()
     ensure_system_notification_table()
     ensure_email_recipient_setting_table()
     ensure_email_template_setting_table()
-    ensure_reimbursement_accounting_columns()
-    ensure_reimbursement_payment_columns()
     ensure_shift_travel_block_columns()
-    ensure_travel_liquidation_tables()
+
+    if new_workflows_enabled():
+        ensure_universal_approval_audit_table()
+        ensure_travel_request_tables()
+        ensure_reimbursement_accounting_columns()
+        ensure_reimbursement_payment_columns()
+        ensure_travel_liquidation_tables()
 
 
 def get_current_signature_engineer():
