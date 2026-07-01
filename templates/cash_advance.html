@@ -1,0 +1,1107 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    .cash-page {
+        max-width: none;
+        width: 100%;
+        margin: 0 auto;
+        padding: 6px 0 20px;
+        color: #0f172a;
+    }
+
+    .cash-hero {
+        background: linear-gradient(135deg, #14213d, #2563eb);
+        color: #ffffff;
+        border-radius: 22px;
+        padding: 24px 26px;
+        box-shadow: 0 16px 34px rgba(37, 99, 235, 0.18);
+        margin-bottom: 16px;
+    }
+
+    .cash-hero h1 {
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 950;
+        letter-spacing: 0.01em;
+    }
+
+    .cash-hero p {
+        margin: 8px 0 0;
+        font-size: 1.02rem;
+        font-weight: 750;
+        opacity: 0.94;
+    }
+
+    .cash-card {
+        background: #ffffff;
+        border: 1px solid #dbeafe;
+        border-radius: 22px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+        padding: 20px;
+        margin-bottom: 16px;
+    }
+
+    .cash-section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+    }
+
+    .cash-section-title {
+        margin: 0;
+        font-size: 1.35rem;
+        font-weight: 950;
+        color: #0f172a;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+    }
+
+    .cash-muted {
+        color: #64748b;
+        font-size: .92rem;
+        font-weight: 750;
+        line-height: 1.35;
+    }
+
+    .cash-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .cash-btn {
+        border: 0;
+        border-radius: 14px;
+        padding: 11px 16px;
+        font-weight: 950;
+        cursor: pointer;
+        min-height: 46px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+    }
+
+    .cash-btn:active { transform: translateY(1px); }
+
+    .cash-btn-primary {
+        background: #2563eb;
+        color: #ffffff;
+        box-shadow: 0 10px 22px rgba(37, 99, 235, .22);
+    }
+
+    .cash-btn-secondary {
+        background: #e9eef6;
+        color: #24364f;
+    }
+
+    .cash-btn-warning {
+        background: #facc15;
+        color: #172033;
+        box-shadow: 0 10px 22px rgba(250, 204, 21, .2);
+    }
+
+    .cash-btn-danger-outline {
+        background: #ffffff;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+    }
+
+    .cash-notification-list {
+        border: 1px solid #dbeafe;
+        background: #f8fafc;
+        border-radius: 16px;
+        padding: 14px 16px;
+        color: #475569;
+        font-weight: 900;
+        display: grid;
+        gap: 10px;
+    }
+
+    .cash-notification-item {
+        border: 1px solid #dbeafe;
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 12px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: flex-start;
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.045);
+    }
+
+    .cash-notification-item.unread {
+        border-color: #bfdbfe;
+        background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+    }
+
+    .cash-notification-title {
+        color: #0f172a;
+        font-weight: 950;
+        font-size: .94rem;
+        line-height: 1.25;
+    }
+
+    .cash-notification-message {
+        margin-top: 4px;
+        color: #475569;
+        font-size: .86rem;
+        font-weight: 750;
+        line-height: 1.38;
+    }
+
+    .cash-notification-time {
+        margin-top: 5px;
+        color: #64748b;
+        font-size: .74rem;
+        font-weight: 850;
+    }
+
+    .cash-notification-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 7px;
+        flex-wrap: wrap;
+    }
+
+    .cash-notification-action-btn {
+        border: 1px solid #dbeafe;
+        background: #ffffff;
+        color: #1e3a8a;
+        border-radius: 999px;
+        min-height: 34px;
+        padding: 6px 10px;
+        font-size: .76rem;
+        font-weight: 950;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+    }
+
+    .cash-notification-action-btn:hover {
+        background: #eff6ff;
+    }
+
+    .cash-notification-close-btn {
+        width: 34px;
+        min-width: 34px;
+        height: 34px;
+        border: 0;
+        border-radius: 999px;
+        background: #e2e8f0;
+        color: #475569;
+        font-size: 1.05rem;
+        font-weight: 950;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+    }
+
+    .cash-notification-close-btn:hover {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .cash-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .cash-kpi-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 18px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+        padding: 16px;
+        min-height: 112px;
+    }
+
+    .cash-kpi-label {
+        font-size: .78rem;
+        font-weight: 950;
+        letter-spacing: .06em;
+        color: #64748b;
+        text-transform: uppercase;
+    }
+
+    .cash-kpi-value {
+        font-size: 2rem;
+        font-weight: 950;
+        line-height: 1.05;
+        color: #0f172a;
+        margin-top: 8px;
+    }
+
+    .cash-kpi-note {
+        color: #64748b;
+        font-weight: 750;
+        font-size: .86rem;
+        margin-top: 6px;
+    }
+
+    .cash-form-grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 14px;
+    }
+
+    .cash-field {
+        grid-column: span 4;
+    }
+
+    .cash-field.wide {
+        grid-column: span 12;
+    }
+
+    .cash-field.half {
+        grid-column: span 6;
+    }
+
+    .cash-field label {
+        display: block;
+        color: #334155;
+        font-size: .88rem;
+        font-weight: 900;
+        margin-bottom: 7px;
+    }
+
+    .cash-field input,
+    .cash-field textarea,
+    .cash-field select {
+        width: 100%;
+        border: 1px solid #d7e2ee;
+        background: #ffffff;
+        color: #0f172a;
+        border-radius: 14px;
+        min-height: 48px;
+        padding: 11px 14px;
+        font-size: 1rem;
+        font-weight: 750;
+        outline: none;
+    }
+
+    .cash-field textarea {
+        min-height: 145px;
+        resize: vertical;
+    }
+
+    .cash-field input[readonly] {
+        background: #f8fafc;
+        color: #475569;
+    }
+
+    .cash-signature-box {
+        border: 1px dashed #94a3b8;
+        border-radius: 16px;
+        background: #f8fafc;
+        min-height: 98px;
+        display: flex;
+        align-items: center;
+        padding: 14px;
+        color: #64748b;
+        font-weight: 850;
+    }
+
+    .cash-form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding-top: 16px;
+        margin-top: 12px;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    .cash-request-list {
+        display: grid;
+        gap: 10px;
+    }
+
+    .cash-request-item {
+        border: 1px solid #dbe3ef;
+        background: #f8fafc;
+        border-radius: 16px;
+        padding: 14px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 14px;
+    }
+
+    .cash-request-title {
+        font-weight: 950;
+        font-size: 1.05rem;
+        color: #0f172a;
+    }
+
+    .cash-request-meta {
+        color: #52637a;
+        font-size: .9rem;
+        font-weight: 800;
+        line-height: 1.45;
+        margin-top: 4px;
+    }
+
+    .cash-status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: .78rem;
+        font-weight: 950;
+        background: #e2e8f0;
+        color: #334155;
+    }
+
+    .cash-status-pill.draft { background: #e0f2fe; color: #075985; }
+    .cash-status-pill.submitted { background: #fef3c7; color: #92400e; }
+    .cash-status-pill.approved { background: #dcfce7; color: #166534; }
+    .cash-status-pill.returned { background: #fee2e2; color: #991b1b; }
+
+    .cash-toast-stack {
+        position: fixed;
+        top: 18px;
+        right: 18px;
+        z-index: 10080;
+        display: grid;
+        gap: 10px;
+        width: min(360px, calc(100vw - 32px));
+        pointer-events: none;
+    }
+
+    .cash-toast {
+        pointer-events: auto;
+        border-radius: 16px;
+        padding: 12px 14px;
+        border: 1px solid #dbeafe;
+        background: #ffffff;
+        color: #0f172a;
+        box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 10px;
+        align-items: start;
+    }
+
+    .cash-toast.ok { border-color: #bbf7d0; background: #f0fdf4; color: #166534; }
+    .cash-toast.error { border-color: #fecaca; background: #fff1f2; color: #991b1b; }
+    .cash-toast.warn { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+
+    .cash-toast-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(37, 99, 235, .12);
+        color: #2563eb;
+    }
+
+    .cash-toast-title {
+        font-weight: 950;
+        margin-bottom: 2px;
+    }
+
+    .cash-toast-message {
+        font-weight: 800;
+        line-height: 1.35;
+        font-size: .86rem;
+        white-space: pre-wrap;
+    }
+
+    .cash-toast-close {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font-size: 1.05rem;
+        font-weight: 950;
+        cursor: pointer;
+        line-height: 1;
+    }
+
+    @media (max-width: 1100px) {
+        .cash-kpi-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .cash-field,
+        .cash-field.half {
+            grid-column: span 6;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .cash-page { padding: 0 0 16px; }
+        .cash-hero {
+            border-radius: 18px;
+            padding: 20px;
+        }
+        .cash-hero h1 { font-size: 1.55rem; }
+        .cash-card { border-radius: 18px; padding: 16px; }
+        .cash-kpi-grid { grid-template-columns: 1fr; }
+        .cash-field,
+        .cash-field.half,
+        .cash-field.wide {
+            grid-column: span 12;
+        }
+        .cash-form-actions {
+            justify-content: stretch;
+        }
+        .cash-form-actions .cash-btn {
+            width: 100%;
+        }
+        .cash-request-item,
+        .cash-notification-item {
+            grid-template-columns: 1fr;
+        }
+        .cash-request-item .cash-actions,
+        .cash-notification-actions {
+            justify-content: stretch;
+        }
+        .cash-request-item .cash-btn,
+        .cash-notification-action-btn {
+            width: 100%;
+        }
+        .cash-notification-close-btn {
+            width: 100%;
+        }
+    }
+</style>
+
+<div class="cash-page">
+    <section class="cash-hero">
+        <h1>Request for Cash Advance</h1>
+        <p>Create standalone cash advance requests subject to manager approval, accounting release, and liquidation.</p>
+    </section>
+
+    <div id="cash-toast-stack" class="cash-toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <section class="cash-card">
+        <div class="cash-section-head">
+            <div>
+                <h2 class="cash-section-title"><i class="fa-solid fa-bell text-warning"></i> Notifications</h2>
+                <div class="cash-muted">Cash advance approval updates and accounting notices assigned to you.</div>
+            </div>
+            <div class="cash-actions">
+                <button type="button" class="cash-btn cash-btn-secondary" onclick="loadCashAdvanceNotifications()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                <button type="button" class="cash-btn cash-btn-secondary" onclick="markAllCashAdvanceNotificationsRead()">Mark All Read</button>
+            </div>
+        </div>
+        <div id="cashNotificationList" class="cash-notification-list">No unread notifications.</div>
+    </section>
+
+    <section class="cash-card">
+        <div class="cash-section-head">
+            <div>
+                <h2 class="cash-section-title"><i class="fa-solid fa-clock-rotate-left text-primary"></i> My Cash Advances</h2>
+                <div class="cash-muted">Draft, submitted, approved, released, and liquidation-ready cash advance records.</div>
+            </div>
+            <div class="cash-actions">
+                <button type="button" class="cash-btn cash-btn-secondary" onclick="loadCashAdvances()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+            </div>
+        </div>
+
+        <div class="cash-request-list" id="cashAdvanceList">
+            <div class="cash-notification-list">Loading cash advances...</div>
+        </div>
+    </section>
+
+    <section class="cash-kpi-grid">
+        <div class="cash-kpi-card">
+            <div class="cash-kpi-label">Draft</div>
+            <div class="cash-kpi-value" id="cashDraftCount">0</div>
+            <div class="cash-kpi-note">Editable requests</div>
+        </div>
+        <div class="cash-kpi-card">
+            <div class="cash-kpi-label">Submitted</div>
+            <div class="cash-kpi-value" id="cashSubmittedCount">0</div>
+            <div class="cash-kpi-note">Waiting for approval</div>
+        </div>
+        <div class="cash-kpi-card">
+            <div class="cash-kpi-label">Approved</div>
+            <div class="cash-kpi-value" id="cashApprovedCount">0</div>
+            <div class="cash-kpi-note">For accounting release</div>
+        </div>
+        <div class="cash-kpi-card">
+            <div class="cash-kpi-label">Ready for Liquidation</div>
+            <div class="cash-kpi-value" id="cashReadyCount">0</div>
+            <div class="cash-kpi-note">Received cash advances</div>
+        </div>
+    </section>
+
+    <section class="cash-card" id="cashFormCard">
+        <div class="cash-section-head">
+            <div>
+                <h2 class="cash-section-title"><i class="fa-solid fa-money-bill-transfer text-primary"></i> Cash Advance Request</h2>
+                <div class="cash-muted" id="cashFormStatusText">Draft request. Fill out the details then save or submit.</div>
+            </div>
+            <div class="cash-actions">
+                <span class="cash-status-pill draft" id="cashStatusPill"><i class="fa-solid fa-circle"></i> Draft</span>
+            </div>
+        </div>
+
+        <form id="cashAdvanceForm" onsubmit="event.preventDefault(); submitCashAdvance();">
+            <input type="hidden" id="cashAdvanceId" value="">
+
+            <div class="cash-form-grid">
+                <div class="cash-field">
+                    <label for="cashAdvanceNo">Cash Advance No.</label>
+                    <input type="text" id="cashAdvanceNo" readonly placeholder="Auto-generated after save">
+                </div>
+
+                <div class="cash-field">
+                    <label for="cashAdvanceStatus">Status</label>
+                    <input type="text" id="cashAdvanceStatus" readonly value="Draft">
+                </div>
+
+                <div class="cash-field">
+                    <label for="cashNeededDate">Date Needed</label>
+                    <input type="date" id="cashNeededDate">
+                </div>
+
+                <div class="cash-field">
+                    <label for="cashAmountRequested">Amount Requested</label>
+                    <input type="number" id="cashAmountRequested" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+                </div>
+
+                <div class="cash-field">
+                    <label for="cashLiquidationDays">Liquidation Period (Days)</label>
+                    <input type="number" id="cashLiquidationDays" min="1" step="1" value="30">
+                </div>
+
+                <div class="cash-field">
+                    <label for="cashRequestDate">Request Date</label>
+                    <input type="date" id="cashRequestDate" readonly>
+                </div>
+
+                <div class="cash-field wide">
+                    <label for="cashPurpose">Purpose</label>
+                    <textarea id="cashPurpose" placeholder="Explain the purpose of the cash advance request."></textarea>
+                </div>
+
+                <div class="cash-field half">
+                    <label for="cashRequestedBy">Requested By</label>
+                    <input type="text" id="cashRequestedBy" readonly value="{{ current_user.full_name if current_user.full_name is defined and current_user.full_name else current_user.username }}">
+                </div>
+
+                <div class="cash-field half">
+                    <label for="cashDepartment">Department</label>
+                    <input type="text" id="cashDepartment" readonly value="{{ current_user.department if current_user.department is defined and current_user.department else 'Medical Service' }}">
+                </div>
+
+                <div class="cash-field wide">
+                    <label>Signature</label>
+                    <div class="cash-signature-box" id="cashSignatureBox">
+                        Profile signature will be verified before submission.
+                    </div>
+                </div>
+            </div>
+
+            <div class="cash-form-actions">
+                <button type="button" class="cash-btn cash-btn-danger-outline" onclick="clearCashAdvanceForm()"><i class="fa-solid fa-eraser"></i> Clear Form</button>
+                <button type="button" class="cash-btn cash-btn-secondary" onclick="saveCashAdvanceDraft()"><i class="fa-solid fa-floppy-disk"></i> Save Draft</button>
+                <button type="submit" class="cash-btn cash-btn-warning"><i class="fa-solid fa-paper-plane"></i> Submit Request</button>
+            </div>
+        </form>
+    </section>
+</div>
+
+<script>
+    function cashEscape(value) {
+        return String(value || '').replace(/[&<>"']/g, function(match) {
+            return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[match];
+        });
+    }
+
+    function cashToast(message, tone, title) {
+        const stack = document.getElementById('cash-toast-stack');
+        if (!stack || !message) return;
+        const normalizedTone = String(tone || '').toLowerCase();
+        const icon = normalizedTone === 'ok' || normalizedTone === 'success'
+            ? 'check'
+            : (normalizedTone === 'error' ? 'triangle-exclamation' : (normalizedTone === 'warn' ? 'circle-exclamation' : 'circle-info'));
+
+        const toast = document.createElement('div');
+        toast.className = 'cash-toast ' + normalizedTone;
+        toast.innerHTML = `
+            <div class="cash-toast-icon"><i class="fa-solid fa-${icon}"></i></div>
+            <div>
+                <div class="cash-toast-title">${cashEscape(title || (normalizedTone === 'error' ? 'Action Needed' : 'Notice'))}</div>
+                <div class="cash-toast-message">${cashEscape(message)}</div>
+            </div>
+            <button type="button" class="cash-toast-close" aria-label="Close notice">×</button>
+        `;
+        toast.querySelector('.cash-toast-close')?.addEventListener('click', function(){ toast.remove(); });
+        stack.appendChild(toast);
+        window.setTimeout(function(){ if (toast.parentNode) toast.remove(); }, normalizedTone === 'error' ? 6500 : 4200);
+    }
+
+    function getCashCsrfToken() {
+        return document.querySelector('meta[name="csrf-token"]')?.content || '';
+    }
+
+    function todayInputValue() {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function formatMoney(value) {
+        const n = Number(value || 0);
+        return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    let cashAdvanceNotificationItems = [];
+
+    function cashNotificationRecordId(item) {
+        const metadata = item?.metadata || {};
+        return Number(
+            item?.record_id ||
+            metadata.record_id ||
+            metadata.cash_advance_id ||
+            metadata.cashAdvanceId ||
+            metadata.request_id ||
+            0
+        );
+    }
+
+    function cashNotificationBelongsToCashAdvance(item) {
+        const metadata = item?.metadata || {};
+        const moduleKey = String(item?.module || metadata.module || metadata.module_key || '').toLowerCase();
+        if (moduleKey === 'cash_advance') return true;
+        if (metadata.cash_advance_id || metadata.cashAdvanceId) return true;
+        const titleMessage = `${item?.title || ''} ${item?.message || ''}`.toLowerCase();
+        return titleMessage.includes('cash advance');
+    }
+
+    function cashNotificationTimeLabel(item) {
+        return item?.created_at_label || item?.created_at || item?.timestamp || '';
+    }
+
+    function setCashStatus(status) {
+        const normalized = String(status || 'Draft').trim();
+        const key = normalized.toLowerCase();
+        const statusInput = document.getElementById('cashAdvanceStatus');
+        const pill = document.getElementById('cashStatusPill');
+        if (statusInput) statusInput.value = normalized;
+        if (pill) {
+            pill.className = 'cash-status-pill ' + (
+                key.includes('submitted') ? 'submitted' :
+                key.includes('approved') || key.includes('ready') || key.includes('released') || key.includes('received') ? 'approved' :
+                key.includes('return') || key.includes('reject') ? 'returned' :
+                'draft'
+            );
+            pill.innerHTML = `<i class="fa-solid fa-circle"></i> ${cashEscape(normalized)}`;
+        }
+    }
+
+    function collectCashAdvancePayload() {
+        return {
+            id: document.getElementById('cashAdvanceId')?.value || '',
+            needed_date: document.getElementById('cashNeededDate')?.value || '',
+            request_date: document.getElementById('cashRequestDate')?.value || todayInputValue(),
+            amount_requested: Number(document.getElementById('cashAmountRequested')?.value || 0),
+            liquidation_days: Number(document.getElementById('cashLiquidationDays')?.value || 30),
+            purpose: document.getElementById('cashPurpose')?.value.trim() || ''
+        };
+    }
+
+    function validateCashAdvancePayload(payload, forSubmit) {
+        if (!payload.needed_date) return 'Please select Date Needed.';
+        if (!payload.amount_requested || payload.amount_requested <= 0) return 'Please enter Amount Requested.';
+        if (!payload.purpose) return 'Please enter Purpose.';
+        if (forSubmit && payload.purpose.length < 5) return 'Please provide a clearer purpose before submitting.';
+        return '';
+    }
+
+    async function parseCashJson(response, fallback) {
+        const raw = await response.text();
+        let payload = {};
+        if (raw) {
+            try { payload = JSON.parse(raw); }
+            catch (err) { payload = { success: false, error: raw.slice(0, 500) }; }
+        }
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.error || payload.message || fallback || 'Request failed.');
+        }
+        return payload;
+    }
+
+    async function saveCashAdvanceDraft(silent) {
+        const payload = collectCashAdvancePayload();
+        const issue = validateCashAdvancePayload(payload, false);
+        if (issue) {
+            if (!silent) cashToast(issue, 'warn');
+            return null;
+        }
+
+        try {
+            const response = await fetch('/save_cash_advance', {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRFToken': getCashCsrfToken()
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await parseCashJson(response, 'Unable to save cash advance draft.');
+            applyCashAdvanceRecord(data.item || data.cash_advance || data);
+            if (!silent) cashToast(data.message || 'Cash advance draft saved.', 'ok', 'Saved');
+            await loadCashAdvances();
+            return data;
+        } catch (error) {
+            console.error('[CashAdvance] Save draft failed', error);
+            cashToast(error.message || 'Unable to save cash advance draft.', 'error');
+            return null;
+        }
+    }
+
+    async function submitCashAdvance() {
+        const payload = collectCashAdvancePayload();
+        const issue = validateCashAdvancePayload(payload, true);
+        if (issue) {
+            cashToast(issue, 'warn');
+            return;
+        }
+
+        const saved = await saveCashAdvanceDraft(true);
+        const record = saved && (saved.item || saved.cash_advance || saved);
+        const id = record && (record.id || record.cash_advance_id || payload.id);
+        if (!id) {
+            cashToast('Draft could not be prepared for submission.', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/submit_cash_advance/${encodeURIComponent(id)}`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-CSRFToken': getCashCsrfToken()
+                }
+            });
+            const data = await parseCashJson(response, 'Unable to submit cash advance.');
+            applyCashAdvanceRecord(data.item || data.cash_advance || data);
+            cashToast(data.message || 'Cash advance submitted for manager approval.', 'ok', 'Submitted');
+            await loadCashAdvances();
+            await loadCashAdvanceNotifications();
+        } catch (error) {
+            console.error('[CashAdvance] Submit failed', error);
+            cashToast(error.message || 'Unable to submit cash advance.', 'error');
+        }
+    }
+
+    function applyCashAdvanceRecord(item) {
+        item = item || {};
+        const id = item.id || item.cash_advance_id || '';
+        const no = item.cash_advance_no || item.request_no || '';
+        document.getElementById('cashAdvanceId').value = id;
+        document.getElementById('cashAdvanceNo').value = no || (id ? `CA-${id}` : '');
+        document.getElementById('cashNeededDate').value = item.needed_date || '';
+        document.getElementById('cashRequestDate').value = item.request_date || todayInputValue();
+        document.getElementById('cashAmountRequested').value = item.amount_requested || item.amount || '';
+        document.getElementById('cashLiquidationDays').value = item.liquidation_days || 30;
+        document.getElementById('cashPurpose').value = item.purpose || '';
+        setCashStatus(item.status || 'Draft');
+        const statusText = document.getElementById('cashFormStatusText');
+        if (statusText) statusText.textContent = item.lock_reason || (String(item.status || 'Draft').toLowerCase() === 'draft' ? 'Draft request. You may edit, save, and submit.' : 'Submitted record loaded for review.');
+    }
+
+    function clearCashAdvanceForm() {
+        document.getElementById('cashAdvanceId').value = '';
+        document.getElementById('cashAdvanceNo').value = '';
+        document.getElementById('cashNeededDate').value = '';
+        document.getElementById('cashAmountRequested').value = '';
+        document.getElementById('cashLiquidationDays').value = '30';
+        document.getElementById('cashPurpose').value = '';
+        document.getElementById('cashRequestDate').value = todayInputValue();
+        setCashStatus('Draft');
+        cashToast('Cash advance form cleared.', 'ok');
+    }
+
+    function renderCashAdvanceList(items) {
+        const target = document.getElementById('cashAdvanceList');
+        const list = Array.isArray(items) ? items : [];
+        if (!target) return;
+        if (!list.length) {
+            target.innerHTML = '<div class="cash-notification-list">No cash advance requests found.</div>';
+            updateCashCounts([]);
+            return;
+        }
+
+        target.innerHTML = list.map(function(item) {
+            const status = item.status || 'Draft';
+            const statusKey = String(status).toLowerCase();
+            const pillClass = statusKey.includes('submitted') ? 'submitted' :
+                (statusKey.includes('approved') || statusKey.includes('ready') || statusKey.includes('released') || statusKey.includes('received') ? 'approved' :
+                (statusKey.includes('return') || statusKey.includes('reject') ? 'returned' : 'draft'));
+            return `
+                <div class="cash-request-item">
+                    <div>
+                        <div class="cash-request-title">
+                            ${cashEscape(item.cash_advance_no || ('CA-' + (item.id || '')))}
+                            <span class="cash-status-pill ${pillClass}"><i class="fa-solid fa-circle"></i> ${cashEscape(status)}</span>
+                        </div>
+                        <div class="cash-request-meta">
+                            Needed: ${cashEscape(item.needed_date || '—')} • Amount: ₱${formatMoney(item.amount_requested || item.amount || 0)}
+                            <br>${cashEscape(item.purpose || '')}
+                        </div>
+                    </div>
+                    <div class="cash-actions">
+                        <button type="button" class="cash-btn cash-btn-secondary" onclick="openCashAdvance(${Number(item.id) || 0})">Open</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        updateCashCounts(list);
+    }
+
+    function updateCashCounts(items) {
+        const counts = { draft: 0, submitted: 0, approved: 0, ready: 0 };
+        (items || []).forEach(function(item) {
+            const key = String(item.status || '').toLowerCase();
+            if (key.includes('ready')) counts.ready += 1;
+            else if (key.includes('approved') || key.includes('released') || key.includes('received')) counts.approved += 1;
+            else if (key.includes('submitted')) counts.submitted += 1;
+            else counts.draft += 1;
+        });
+        document.getElementById('cashDraftCount').textContent = counts.draft;
+        document.getElementById('cashSubmittedCount').textContent = counts.submitted;
+        document.getElementById('cashApprovedCount').textContent = counts.approved;
+        document.getElementById('cashReadyCount').textContent = counts.ready;
+    }
+
+    async function loadCashAdvances() {
+        const target = document.getElementById('cashAdvanceList');
+        if (target) target.innerHTML = '<div class="cash-notification-list">Loading cash advances...</div>';
+        try {
+            const response = await fetch('/get_cash_advance_list', {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await parseCashJson(response, 'Unable to load cash advances.');
+            renderCashAdvanceList(data.items || data.cash_advances || []);
+        } catch (error) {
+            console.error('[CashAdvance] List load failed', error);
+            if (target) target.innerHTML = `<div class="cash-notification-list">${cashEscape(error.message || 'Unable to load cash advances.')}</div>`;
+        }
+    }
+
+    async function openCashAdvance(id) {
+        if (!id) return;
+        try {
+            const response = await fetch(`/get_cash_advance/${encodeURIComponent(id)}`, {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await parseCashJson(response, 'Unable to open cash advance.');
+            applyCashAdvanceRecord(data.item || data.cash_advance || data);
+            document.getElementById('cashFormCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } catch (error) {
+            console.error('[CashAdvance] Open failed', error);
+            cashToast(error.message || 'Unable to open cash advance.', 'error');
+        }
+    }
+
+    function renderCashAdvanceNotifications(items) {
+        const list = document.getElementById('cashNotificationList');
+        if (!list) return;
+
+        const unreadItems = (Array.isArray(items) ? items : []).filter(function(item) {
+            return cashNotificationBelongsToCashAdvance(item) && !item.is_read;
+        });
+        cashAdvanceNotificationItems = unreadItems;
+
+        if (!unreadItems.length) {
+            list.innerHTML = '<div>No unread notifications.</div>';
+            return;
+        }
+
+        list.innerHTML = unreadItems.slice(0, 12).map(function(item) {
+            const notificationId = Number(item.id || 0);
+            const recordId = cashNotificationRecordId(item);
+            const timeLabel = cashNotificationTimeLabel(item);
+            return `
+                <div class="cash-notification-item unread" data-notification-id="${notificationId}">
+                    <div>
+                        <div class="cash-notification-title">${cashEscape(item.title || 'Cash Advance Notification')}</div>
+                        ${item.message ? `<div class="cash-notification-message">${cashEscape(item.message)}</div>` : ''}
+                        ${timeLabel ? `<div class="cash-notification-time">${cashEscape(timeLabel)}</div>` : ''}
+                    </div>
+                    <div class="cash-notification-actions">
+                        ${recordId ? `<button type="button" class="cash-notification-action-btn" data-notification-id="${notificationId}" onclick="openCashAdvanceNotification(event, ${notificationId}, ${recordId})"><i class="fa-solid fa-arrow-up-right-from-square"></i>Open</button>` : ''}
+                        <button type="button" class="cash-notification-action-btn" data-notification-id="${notificationId}" onclick="markCashAdvanceNotificationRead(event, ${notificationId})"><i class="fa-solid fa-check"></i>Mark Read</button>
+                        <button type="button" class="cash-notification-close-btn" data-notification-id="${notificationId}" title="Close notification" aria-label="Close notification" onclick="closeCashAdvanceNotification(event, ${notificationId})">×</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function loadCashAdvanceNotifications() {
+        const list = document.getElementById('cashNotificationList');
+        if (!list) return;
+        list.textContent = 'Loading notifications...';
+        try {
+            const response = await fetch('/get_my_notifications?limit=50&unread_only=true', {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await parseCashJson(response, 'Unable to load notifications.');
+            renderCashAdvanceNotifications(data.items || []);
+        } catch (error) {
+            console.warn('[CashAdvance] Notifications unavailable', error);
+            list.textContent = 'No unread notifications.';
+        }
+    }
+
+    function stopCashNotificationEvent(event) {
+        if (event && event.preventDefault) event.preventDefault();
+        if (event && event.stopPropagation) event.stopPropagation();
+    }
+
+    function setCashNotificationBusy(notificationId, isBusy) {
+        const cleanId = Number(notificationId || 0);
+        if (!cleanId) return;
+        const itemEl = document.querySelector(`.cash-notification-item[data-notification-id="${cleanId}"]`);
+        if (!itemEl) return;
+        itemEl.style.opacity = isBusy ? '0.55' : '';
+        itemEl.style.pointerEvents = isBusy ? 'none' : '';
+        itemEl.querySelectorAll('button').forEach(function(btn) {
+            btn.disabled = Boolean(isBusy);
+        });
+    }
+
+    function removeCashNotificationFromUi(notificationId) {
+        const cleanId = Number(notificationId || 0);
+        if (!cleanId) return;
+        cashAdvanceNotificationItems = cashAdvanceNotificationItems.filter(function(item) {
+            return Number(item.id || 0) !== cleanId;
+        });
+        const itemEl = document.querySelector(`.cash-notification-item[data-notification-id="${cleanId}"]`);
+        if (itemEl) itemEl.remove();
+        const list = document.getElementById('cashNotificationList');
+        if (list && !list.querySelector('.cash-notification-item')) {
+            list.innerHTML = '<div>No unread notifications.</div>';
+        }
+    }
+
+    async function postCashNotificationRead(notificationId) {
+        const cleanId = Number(notificationId || 0);
+        if (!cleanId) throw new Error('Notification ID is missing.');
+        const headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        };
+        const csrfToken = getCashCsrfToken();
+        if (csrfToken) headers['X-CSRFToken'] = csrfToken;
+
+        const response = await fetch('/mark_notification_read', {
+            method: 'POST',
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers,
+            body: JSON.stringify({ notification_id: cleanId, id: cleanId })
+        });
+        return parseCashJson(response, 'Unable to mark notification as read.');
+    }
+
+    async function markCashAdvanceNotificationRead(event, notificationId, silent=false) {
+        stopCashNotificationEvent(event);
+        const cleanId = Number(notificationId || 0);
+        if (!cleanId) return false;
+
+        setCashNotificationBusy(cleanId, true);
+        try {
+            await postCashNotificationRead(cleanId);
+            removeCashNotificationFromUi(cleanId);
+            if (!silent) cashToast('Notification marked as read.', 'ok');
+            return true;
+        } catch (error) {
+            console.warn('[CashAdvance] Mark notification read failed', error);
+            setCashNotificationBusy(cleanId, false);
+            if (!silent) cashToast(error.message || 'Unable to mark notification as read.', 'error');
+            return false;
+        }
+    }
+
+    async function closeCashAdvanceNotification(event, notificationId) {
+        const success = await markCashAdvanceNotificationRead(event, notificationId, true);
+        if (success) cashToast('Notification closed.', 'ok');
+    }
+
+    async function openCashAdvanceNotification(event, notificationId, recordId) {
+        stopCashNotificationEvent(event);
+        await markCashAdvanceNotificationRead(null, notificationId, true);
+        if (recordId) {
+            await openCashAdvance(recordId);
+        }
+    }
+
+    async function markAllCashAdvanceNotificationsRead() {
+        try {
+            if (!cashAdvanceNotificationItems.length) {
+                await loadCashAdvanceNotifications();
+            }
+
+            const ids = cashAdvanceNotificationItems
+                .map(item => Number(item.id || 0))
+                .filter(Boolean);
+
+            if (!ids.length) {
+                cashToast('No unread Cash Advance notifications.', 'ok');
+                return;
+            }
+
+            for (const id of ids) {
+                setCashNotificationBusy(id, true);
+                try {
+                    await postCashNotificationRead(id);
+                    removeCashNotificationFromUi(id);
+                } catch (error) {
+                    console.warn('[CashAdvance] Mark all notification read skipped', id, error);
+                    setCashNotificationBusy(id, false);
+                }
+            }
+
+            await loadCashAdvanceNotifications();
+            cashToast('Cash Advance notifications marked as read.', 'ok');
+        } catch (error) {
+            cashToast(error.message || 'Unable to mark notifications as read.', 'error');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('cashRequestDate').value = todayInputValue();
+        setCashStatus('Draft');
+        loadCashAdvances();
+        loadCashAdvanceNotifications();
+    });
+</script>
+{% endblock %}

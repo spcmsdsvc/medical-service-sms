@@ -9,12 +9,75 @@
     File: settings.html
 -->
 
-<div class="container py-4">
-    
-    <div class="row g-4">
+<div class="container py-4 settings-page">
+
+    <div class="settings-page-header mb-4">
+        <div>
+            <div class="settings-eyebrow">System Settings</div>
+            <h2 class="settings-title mb-1">Security & Administration</h2>
+            <p class="settings-subtitle mb-0">Manage your account, backups, users, approval routing, and storage health from one clean workspace.</p>
+        </div>
+    </div>
+
+    <div id="settings-toast-stack" class="settings-toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <div id="settings-dialog-backdrop" class="settings-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-dialog-title">
+        <div id="settings-dialog-box" class="settings-dialog">
+            <div class="settings-dialog-header">
+                <div id="settings-dialog-icon" class="settings-dialog-icon"><i class="fa-solid fa-circle-question"></i></div>
+                <div>
+                    <h3 id="settings-dialog-title" class="settings-dialog-title">Confirm Action</h3>
+                    <div id="settings-dialog-message" class="settings-dialog-message"></div>
+                    <div id="settings-dialog-input-wrap" class="settings-dialog-input-wrap d-none">
+                        <label id="settings-dialog-input-label" class="settings-dialog-input-label" for="settings-dialog-input">Input</label>
+                        <input type="text" id="settings-dialog-input" class="form-control form-control-sm rounded-3">
+                        <div id="settings-dialog-input-help" class="settings-dialog-input-help"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="settings-dialog-actions">
+                <button type="button" id="settings-dialog-cancel" class="btn btn-outline-secondary btn-sm fw-bold px-4">Cancel</button>
+                <button type="button" id="settings-dialog-confirm" class="btn btn-primary btn-sm fw-bold px-4">Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-section-nav mb-4" role="tablist" aria-label="Settings sections">
+        <button type="button" class="settings-section-tab active" data-settings-section-target="account" onclick="switchSettingsSection('account')">
+            <i class="fa-solid fa-user-shield"></i><span>My Account</span>
+        </button>
+        {% if current_user.role in ['superadmin', 'regional_admin'] %}
+        <button type="button" class="settings-section-tab" data-settings-section-target="users" onclick="switchSettingsSection('users')">
+            <i class="fa-solid fa-users-gear"></i><span>Users</span>
+        </button>
+        {% endif %}
+        {% if current_user.role == 'superadmin' %}
+        {% if new_workflows_enabled %}
+        <button type="button" class="settings-section-tab" data-settings-section-target="approval" onclick="switchSettingsSection('approval')">
+            <i class="fa-solid fa-route"></i><span>Approval Routing</span>
+        </button>
+        {% endif %}
+        <button type="button" class="settings-section-tab" data-settings-section-target="email-recipients" onclick="switchSettingsSection('email-recipients')">
+            <i class="fa-solid fa-envelope-circle-check"></i><span>Email Recipients</span>
+        </button>
+        <button type="button" class="settings-section-tab" data-settings-section-target="email-templates" onclick="switchSettingsSection('email-templates')">
+            <i class="fa-solid fa-heading"></i><span>Email Subjects</span>
+        </button>
+        {% endif %}
+        {% if backup_superadmin %}
+        <button type="button" class="settings-section-tab" data-settings-section-target="backup" onclick="switchSettingsSection('backup')">
+            <i class="fa-solid fa-database"></i><span>Backup</span>
+        </button>
+        <button type="button" class="settings-section-tab" data-settings-section-target="storage" onclick="switchSettingsSection('storage')">
+            <i class="fa-solid fa-hard-drive"></i><span>Storage</span>
+        </button>
+        {% endif %}
+    </div>
+
+    <div class="row g-4 settings-section-panel active" data-settings-section="account">
         
         <!-- COLUMN 1: INDIVIDUAL ACCOUNT SECURITY -->
-        <div class="col-md-5">
+        <div class="col-12 col-xl-5">
             <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
                 
                 <div class="card-header bg-primary text-white py-3 border-0">
@@ -59,8 +122,101 @@
             </div>
         </div>
 
+        <div class="col-12 col-xl-7">
+            <div class="card shadow-sm border-0 rounded-4 overflow-hidden mt-4 mt-xl-0 settings-signature-card">
+                <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold text-dark">
+                        <i class="fa-solid fa-signature me-2 text-primary"></i>My Signature
+                    </h5>
+                    <span id="signature-status-badge" class="badge bg-secondary small fw-bold">Checking...</span>
+                </div>
+
+                <div class="card-body p-4 bg-white">
+                    <p class="text-muted small mb-3">
+                        Save your signature once. The reimbursement Request for Payment form will use this signature automatically.
+                    </p>
+
+                    <div id="signature-preview-wrap" class="signature-preview-wrap mb-3 d-none">
+                        <div class="signature-preview-label">Current saved signature</div>
+                        <img id="signature-preview-img" class="signature-preview-img" alt="Saved signature preview">
+                    </div>
+
+                    <div class="signature-action-panel mb-3" id="signature-action-panel">
+                        <button type="button" class="btn btn-primary fw-bold rounded-3 shadow-sm w-100 mb-2" onclick="openSignatureOptions(event)">
+                            <i class="fa-solid fa-plus me-2"></i>Add / Replace Signature
+                        </button>
+                        <div class="xsmall text-muted text-center">
+                            Upload is recommended on mobile. Drawing is hidden until you choose it.
+                        </div>
+                    </div>
+
+                    <div class="signature-options-panel mb-3 d-none" id="signature-options-panel">
+                        <div class="signature-option-grid">
+                            <button type="button" class="btn btn-outline-primary fw-bold rounded-3" onclick="showSignatureUpload(event)">
+                                <i class="fa-solid fa-upload me-2"></i>Upload Signature
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary fw-bold rounded-3" onclick="showSignatureDraw(event)">
+                                <i class="fa-solid fa-pen-nib me-2"></i>Draw Signature
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="signature-upload-wrap mb-3 d-none" id="signature-upload-wrap">
+                        <label class="small fw-bold text-muted text-uppercase mb-1 d-block">Upload Signature Image</label>
+                        <input type="file" id="signature-upload-input" class="form-control" accept="image/png,image/jpeg,image/jpg,image/webp" onchange="handleSignatureUploadSelected()">
+                        <div class="xsmall text-muted mt-1">PNG, JPG, or WEBP. Transparent PNG is recommended.</div>
+                    </div>
+
+                    <div class="signature-pad-wrap mb-3 d-none" id="signature-draw-wrap">
+                        <div class="signature-pad-toolbar">
+                            <span class="small fw-bold text-muted text-uppercase">Draw Signature</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-3 fw-bold" onclick="clearSignaturePad()">
+                                <i class="fa-solid fa-eraser me-1"></i>Clear
+                            </button>
+                        </div>
+                        <canvas id="engineer-signature-pad" class="signature-pad" width="620" height="210"></canvas>
+                        <div class="xsmall text-muted mt-2">Draw only inside this box. This section stays hidden on mobile until selected.</div>
+                    </div>
+
+                    <div class="d-flex flex-column flex-sm-row gap-2">
+                        <button type="button" class="btn btn-primary fw-bold rounded-3 shadow-sm flex-fill d-none" id="save-signature-btn" onclick="saveMySignature()">
+                            <i class="fa-solid fa-floppy-disk me-2"></i>Save Signature
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary fw-bold rounded-3 flex-fill d-none" id="cancel-signature-btn" onclick="cancelSignatureEdit(event)">
+                            <i class="fa-solid fa-xmark me-2"></i>Cancel
+                        </button>
+                        <button type="button" class="btn btn-outline-danger fw-bold rounded-3 flex-fill" id="open-signature-delete-confirm-btn">
+                            <i class="fa-solid fa-trash-can me-2"></i>Delete Signature
+                        </button>
+                    </div>
+
+                    <div id="signature-delete-confirm-panel" class="signature-delete-confirm-panel d-none mt-3">
+                        <div class="signature-delete-title">
+                            <i class="fa-solid fa-triangle-exclamation me-2"></i>Delete saved signature?
+                        </div>
+                        <div class="signature-delete-text">
+                            This will remove your saved signature from Settings. You can upload or draw a new one anytime.
+                        </div>
+                        <div class="d-flex flex-column flex-sm-row gap-2 mt-3">
+                            <button type="button" class="btn btn-danger fw-bold rounded-3 flex-fill" id="confirm-delete-signature-btn">
+                                <i class="fa-solid fa-trash-can me-2"></i>Yes, Delete Signature
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary fw-bold rounded-3 flex-fill" id="cancel-delete-signature-btn">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="signature-message" class="small fw-bold mt-3 d-none"></div>
+                </div>
+            </div>
+        </div>
+
+        </div>
+
         {% if backup_superadmin %}
-        <div class="col-md-7">
+    <div class="row g-4 settings-section-panel" data-settings-section="backup">
+        <div class="col-12 col-xl-8">
             <div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4 settings-backup-card">
                 <div class="card-header bg-success text-white py-3 border-0 d-flex justify-content-between align-items-center">
                     <h5 class="mb-0 fw-bold">
@@ -82,6 +238,11 @@
                 </div>
             </div>
 
+                    </div>
+    </div>
+
+    <div class="row g-4 settings-section-panel" data-settings-section="storage">
+        <div class="col-12 col-xl-9">
             <div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4 settings-storage-card">
                 <div class="card-header bg-info text-dark py-3 border-0 d-flex justify-content-between align-items-center">
                     <h5 class="mb-0 fw-bold">
@@ -145,6 +306,10 @@
                             Storage recommendation will appear here.
                         </div>
 
+                        <div class="storage-last-checked mt-2" id="storage-last-checked">
+                            Last checked: --
+                        </div>
+
                         <button type="button" class="btn btn-outline-info btn-sm fw-bold rounded-3 mt-3" onclick="loadStorageHealth(true)">
                             <i class="fa-solid fa-rotate me-1"></i>Refresh Storage Health
                         </button>
@@ -156,11 +321,13 @@
                 </div>
             </div>
         </div>
+            </div>
         {% endif %}
 
         <!-- COLUMN 2: ADMINISTRATIVE PERSONNEL MANAGEMENT -->
         {% if current_user.role in ['superadmin', 'regional_admin'] %}
-        <div class="col-md-7">
+    <div class="row g-4 settings-section-panel" data-settings-section="users">
+        <div class="col-12 col-xl-10">
             <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
                 
                 <div class="card-header bg-dark text-white py-3 border-0 d-flex justify-content-between align-items-center">
@@ -171,6 +338,13 @@
                 </div>
                 
                 <div class="card-body p-0 bg-white">
+                    <div class="settings-user-filter-wrap">
+                        <div class="settings-user-filter">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="search" id="settings-user-search" class="form-control form-control-sm" placeholder="Search users by name or role" oninput="filterSettingsUsers()">
+                        </div>
+                        <div id="settings-user-filter-count" class="settings-user-filter-count">Showing all users</div>
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">
                             <thead class="table-light text-muted small fw-bold text-uppercase">
@@ -182,7 +356,7 @@
                             </thead>
                             <tbody>
                                 {% for acc in users %}
-                                <tr>
+                                <tr class="settings-user-row" data-user-search="{{ acc.username }} {{ acc.display_role if acc.display_role is defined else acc.role }}">
                                     <td class="ps-4">
                                         <div class="fw-bold text-dark">{{ acc.username }}</div>
                                         <div class="xsmall text-muted">ID: #00{{ acc.id }}</div>
@@ -224,7 +398,7 @@
                     <div class="settings-mobile-user-list p-3">
                         {% for acc in users %}
                         {% set display_role = acc.display_role if acc.display_role is defined else acc.role|capitalize %}
-                        <div class="settings-mobile-user-card">
+                        <div class="settings-mobile-user-card" data-user-search="{{ acc.username }} {{ display_role }}">
                             <div class="settings-mobile-user-top">
                                 <div>
                                     <div class="settings-mobile-username">{{ acc.username }}</div>
@@ -274,10 +448,250 @@
                 </div>
 
             </div>
-        </div>
-        {% endif %}
 
+                    </div>
     </div>
+
+            {% if current_user.role == 'superadmin' %}
+            {% if new_workflows_enabled %}
+    <div class="row g-4 settings-section-panel" data-settings-section="approval">
+        <div class="col-12">
+            <div class="card shadow-sm border-0 rounded-4 overflow-hidden mt-0 settings-approval-card">
+                <div class="card-header bg-indigo text-white py-3 border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fa-solid fa-route me-2 text-warning"></i>Approval Routing
+                    </h5>
+                    <span class="badge bg-light text-indigo small fw-bold">Superadmin Only</span>
+                </div>
+
+                <div class="card-body p-4 bg-white">
+                    <div class="alert alert-light border small mb-4">
+                        <strong>Purpose:</strong> Assign who approves each employee's Field Operations requests.
+                        Use this for routes such as Rodito to Anthony when approval responsibilities change.
+                    </div>
+
+                    <div id="approval-routing-loading" class="text-muted small fw-bold mb-3">
+                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Loading approval routing...
+                    </div>
+
+                    <div id="approval-routing-error" class="alert alert-warning small d-none mb-3">
+                        Approval routing could not be loaded.
+                    </div>
+
+                    <div id="approval-routing-content" class="d-none approval-workspace">
+                        <div class="approval-work-panel approval-eligibility-panel">
+                            <div class="approval-section-title">
+                                <i class="fa-solid fa-user-check me-2 text-success"></i>Approver Eligibility
+                            </div>
+                            <div class="approval-panel-note">Choose who can approve requests and which accounts should use the simplified approver-only view.</div>
+                            <div id="approval-users-list" class="approval-users-list"></div>
+                        </div>
+
+                        <div class="approval-work-panel approval-single-route-panel">
+                            <div class="approval-section-title">
+                                <i class="fa-solid fa-route me-2 text-indigo"></i>Add Single Route
+                            </div>
+                            <div class="approval-panel-note">Use this for one requester and one approver.</div>
+                            <div class="row g-3 mb-3">
+                                <div class="col-lg-4">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Requester</label>
+                                    <select id="approval-route-requester" class="form-select form-select-sm rounded-3"></select>
+                                </div>
+                                <div class="col-lg-4">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Approver</label>
+                                    <select id="approval-route-approver" class="form-select form-select-sm rounded-3"></select>
+                                </div>
+                                <div class="col-lg-4">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Request Type</label>
+                                    <select id="approval-route-scope" class="form-select form-select-sm rounded-3"></select>
+                                </div>
+                            </div>
+
+                            <button type="button" class="btn btn-indigo fw-bold rounded-3 shadow-sm" onclick="saveApprovalRoute()">
+                                <i class="fa-solid fa-floppy-disk me-2"></i>Save Approval Route
+                            </button>
+                        </div>
+
+                        <div class="approval-bulk-panel approval-work-panel">
+                            <div class="approval-section-title mb-2">
+                                <i class="fa-solid fa-layer-group me-2 text-indigo"></i>Bulk Route Creation
+                            </div>
+                            <div class="approval-bulk-note mb-3">
+                                Add one approver to many requesters in one action. Existing approver routes stay active; exact duplicate routes are skipped only.
+                            </div>
+
+                            <div class="row g-3">
+                                <div class="col-lg-3">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Requester Group</label>
+                                    <select id="approval-bulk-group" class="form-select form-select-sm rounded-3" onchange="updateApprovalBulkPreview()">
+                                        <option value="engineers">All Engineers</option>
+                                        <option value="active">All Active Users</option>
+                                        <option value="non_approvers">All Non-Approvers</option>
+                                        <option value="manual">Manual Selection</option>
+                                    </select>
+                                </div>
+                                <div class="col-lg-3">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Approver</label>
+                                    <select id="approval-bulk-approver" class="form-select form-select-sm rounded-3" onchange="updateApprovalBulkPreview()"></select>
+                                </div>
+                                <div class="col-lg-3">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Request Type</label>
+                                    <select id="approval-bulk-scope" class="form-select form-select-sm rounded-3" onchange="updateApprovalBulkPreview()"></select>
+                                </div>
+                                <div class="col-lg-3">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Preview</label>
+                                    <div id="approval-bulk-preview" class="approval-bulk-preview">0 selected</div>
+                                </div>
+                            </div>
+
+                            <div id="approval-bulk-manual-wrap" class="approval-bulk-manual-wrap mt-3 d-none">
+                                <label class="small fw-bold text-muted text-uppercase mb-1">Manual Requesters</label>
+                                <div id="approval-bulk-manual-list" class="approval-bulk-manual-list"></div>
+                            </div>
+
+                            <div class="approval-multi-note mt-3">
+                                <i class="fa-solid fa-circle-info me-2 text-primary"></i>
+                                Multi-approver mode: adding Robert will not remove Rodito. A requester can have multiple active approvers for the same request type.
+                            </div>
+
+                            <button type="button" class="btn btn-outline-indigo fw-bold rounded-3 mt-3" onclick="saveApprovalRoutesBulk()">
+                                <i class="fa-solid fa-user-plus me-2"></i>Add Bulk Approver Routes
+                            </button>
+                        </div>
+
+                        <div class="approval-work-panel approval-current-routes-panel">
+                            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
+                                <div class="approval-section-title mb-0">
+                                    <i class="fa-solid fa-diagram-project me-2 text-primary"></i>Current Active Routes
+                                </div>
+                                <button type="button" class="btn btn-outline-danger btn-sm fw-bold rounded-3" onclick="deleteAllApprovalRoutes()">
+                                    <i class="fa-solid fa-trash-can me-1"></i>Deactivate All Routes
+                                </button>
+                            </div>
+                            <div id="approval-routes-summary" class="approval-route-summary small fw-bold text-muted mb-2"></div>
+                            <div id="approval-routes-list" class="approval-routes-list"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+            {% endif %}
+
+    <div class="row g-4 settings-section-panel" data-settings-section="email-recipients">
+        <div class="col-12">
+            <div class="card shadow-sm border-0 rounded-4 overflow-hidden mt-0 settings-email-recipients-card">
+                <div class="card-header bg-email-recipients text-white py-3 border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fa-solid fa-envelope-circle-check me-2 text-warning"></i>Email Recipients
+                    </h5>
+                    <span class="badge bg-light text-email-recipients small fw-bold">Superadmin Only</span>
+                </div>
+
+                <div class="card-body p-4 bg-white">
+                    <div class="alert alert-light border small mb-4">
+                        <strong>Purpose:</strong> Manage reusable email recipient groups from one place.
+                        TSR Client Email CC is used when sending TSR files to clients. Travel Request Accounting, Reimbursement Accounting, and Cash Advance Accounting are separate groups for their own accounting handoffs.
+                    </div>
+
+                    <div id="email-recipient-loading" class="text-muted small fw-bold mb-3">
+                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Loading email recipients...
+                    </div>
+
+                    <div id="email-recipient-error" class="alert alert-warning small d-none mb-3">
+                        Email recipients could not be loaded.
+                    </div>
+
+                    <div id="email-recipient-content" class="d-none">
+                        <div class="email-recipient-form-panel mb-4">
+                            <div class="email-recipient-section-title mb-3">
+                                <i class="fa-solid fa-plus-circle me-2 text-email-recipients"></i>Add / Edit Recipient
+                            </div>
+
+                            <input type="hidden" id="email-recipient-id">
+
+                            <div class="row g-3">
+                                <div class="col-lg-3">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Group</label>
+                                    <select id="email-recipient-group" class="form-select form-select-sm rounded-3"></select>
+                                </div>
+                                <div class="col-lg-3">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Display Name</label>
+                                    <input type="text" id="email-recipient-name" class="form-control form-control-sm rounded-3" placeholder="Optional e.g. Accounting Team">
+                                </div>
+                                <div class="col-lg-3">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Email Address</label>
+                                    <input type="email" id="email-recipient-email" class="form-control form-control-sm rounded-3" placeholder="name@company.com">
+                                </div>
+                                <div class="col-lg-2">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Display Order</label>
+                                    <input type="number" id="email-recipient-order" class="form-control form-control-sm rounded-3" value="100" min="1" step="1">
+                                </div>
+                                <div class="col-lg-1 d-flex align-items-end">
+                                    <div class="form-check form-switch mb-1">
+                                        <input class="form-check-input" type="checkbox" id="email-recipient-active" checked>
+                                        <label class="form-check-label small fw-bold" for="email-recipient-active">Active</label>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <label class="small fw-bold text-muted text-uppercase mb-1">Remarks</label>
+                                    <input type="text" id="email-recipient-remarks" class="form-control form-control-sm rounded-3" placeholder="Optional note">
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-wrap gap-2 mt-3">
+                                <button type="button" class="btn btn-email-recipients btn-sm fw-bold rounded-3" onclick="saveEmailRecipient()">
+                                    <i class="fa-solid fa-floppy-disk me-1"></i>Save Recipient
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm fw-bold rounded-3" onclick="resetEmailRecipientForm()">
+                                    <i class="fa-solid fa-rotate-left me-1"></i>Clear
+                                </button>
+                                <button type="button" class="btn btn-outline-email-recipients btn-sm fw-bold rounded-3" onclick="loadEmailRecipients(true)">
+                                    <i class="fa-solid fa-rotate me-1"></i>Refresh
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="email-recipient-groups" class="email-recipient-groups"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4 settings-section-panel" data-settings-section="email-templates">
+        <div class="col-12">
+            <div class="card shadow-sm border-0 rounded-4 overflow-hidden mt-0 settings-email-templates-card">
+                <div class="card-header bg-email-templates text-white py-3 border-0 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fa-solid fa-heading me-2 text-warning"></i>Email Subject Templates
+                    </h5>
+                    <span class="badge bg-light text-email-templates small fw-bold">Superadmin Only</span>
+                </div>
+
+                <div class="card-body p-4 bg-white">
+                    <div class="alert alert-light border small mb-4">
+                        <strong>Purpose:</strong> Edit email subject formats used by outgoing system emails.
+                        Use the placeholder chips shown under each template. Cash Advance Accounting has its own subject template separate from Travel Request and Reimbursement.
+                    </div>
+
+                    <div id="email-template-loading" class="text-muted small fw-bold mb-3">
+                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Loading email subject templates...
+                    </div>
+
+                    <div id="email-template-error" class="alert alert-warning small d-none mb-3">
+                        Email subject templates could not be loaded.
+                    </div>
+
+                    <div id="email-template-content" class="d-none">
+                        <div id="email-template-list" class="email-template-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+            {% endif %}
+        {% endif %}
 
     <!-- Page Footer -->
     <div class="text-center mt-5">
@@ -287,6 +701,275 @@
 </div>
 
 <script>
+    function settingsEscape(value) {
+        return String(value || '').replace(/[&<>"']/g, function(match) {
+            return ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[match];
+        });
+    }
+
+    function settingsToast(message, tone, title) {
+        const stack = document.getElementById('settings-toast-stack');
+        if (!stack || !message) return;
+
+        const normalizedTone = String(tone || '').toLowerCase();
+        const toast = document.createElement('div');
+        toast.className = 'settings-toast ' + (tone || '');
+
+        const icon = normalizedTone === 'ok' || normalizedTone === 'success'
+            ? 'check'
+            : (normalizedTone === 'error' || normalizedTone === 'err' || normalizedTone === 'danger'
+                ? 'triangle-exclamation'
+                : (normalizedTone === 'warn' || normalizedTone === 'warning' ? 'circle-exclamation' : 'circle-info'));
+
+        const fallbackTitle = normalizedTone === 'ok' || normalizedTone === 'success'
+            ? 'Success'
+            : (normalizedTone === 'error' || normalizedTone === 'err' || normalizedTone === 'danger'
+                ? 'Action Needed'
+                : (normalizedTone === 'warn' || normalizedTone === 'warning' ? 'Reminder' : 'Notice'));
+
+        toast.innerHTML = `
+            <div class="settings-toast-icon"><i class="fa-solid fa-${icon}"></i></div>
+            <div>
+                <div class="settings-toast-title">${settingsEscape(title || fallbackTitle)}</div>
+                <div class="settings-toast-message">${settingsEscape(message)}</div>
+            </div>
+            <button type="button" class="settings-toast-close" aria-label="Close notice">×</button>
+        `;
+
+        toast.querySelector('.settings-toast-close')?.addEventListener('click', function() {
+            toast.remove();
+        });
+        stack.appendChild(toast);
+
+        window.setTimeout(function() {
+            if (toast && toast.parentNode) toast.remove();
+        }, normalizedTone === 'error' || normalizedTone === 'err' || normalizedTone === 'danger' ? 6500 : 4200);
+    }
+
+    function settingsAlert(message, tone) {
+        settingsToast(message, tone || 'error');
+    }
+
+    function settingsConfirmDialog(options) {
+        options = options || {};
+        return new Promise(function(resolve) {
+            const backdrop = document.getElementById('settings-dialog-backdrop');
+            const dialog = document.getElementById('settings-dialog-box');
+            const icon = document.getElementById('settings-dialog-icon');
+            const title = document.getElementById('settings-dialog-title');
+            const message = document.getElementById('settings-dialog-message');
+            const cancelBtn = document.getElementById('settings-dialog-cancel');
+            const confirmBtn = document.getElementById('settings-dialog-confirm');
+            const inputWrap = document.getElementById('settings-dialog-input-wrap');
+            const input = document.getElementById('settings-dialog-input');
+            const inputHelp = document.getElementById('settings-dialog-input-help');
+            const inputLabel = document.getElementById('settings-dialog-input-label');
+
+            if (!backdrop || !dialog || !title || !message || !cancelBtn || !confirmBtn) {
+                resolve(false);
+                return;
+            }
+
+            const tone = options.tone || '';
+            dialog.className = 'settings-dialog ' + tone;
+            title.textContent = options.title || 'Confirm Action';
+            message.textContent = options.message || 'Continue?';
+            cancelBtn.textContent = options.cancelText || 'Cancel';
+            confirmBtn.textContent = options.confirmText || 'Continue';
+            confirmBtn.className = 'btn btn-sm fw-bold px-4 ' + (options.confirmClass || (
+                tone === 'danger' ? 'btn-danger' : (tone === 'success' ? 'btn-success' : 'btn-primary')
+            ));
+            if (inputWrap) inputWrap.classList.add('d-none');
+            if (input) {
+                input.value = '';
+                input.type = 'text';
+                input.placeholder = '';
+            }
+            if (inputHelp) inputHelp.textContent = '';
+            if (inputLabel) inputLabel.textContent = 'Input';
+
+            if (icon) {
+                const iconName = options.icon || (
+                    tone === 'danger' ? 'trash' : (tone === 'success' ? 'check' : (tone === 'warning' ? 'triangle-exclamation' : 'circle-question'))
+                );
+                icon.innerHTML = `<i class="fa-solid fa-${iconName}"></i>`;
+            }
+
+            let resolved = false;
+            const cleanup = function(value) {
+                if (resolved) return;
+                resolved = true;
+                backdrop.classList.remove('show');
+                confirmBtn.onclick = null;
+                cancelBtn.onclick = null;
+                backdrop.onclick = null;
+                document.removeEventListener('keydown', keyHandler);
+                resolve(value);
+            };
+
+            const keyHandler = function(event) {
+                if (event.key === 'Escape') cleanup(false);
+            };
+
+            confirmBtn.onclick = function() { cleanup(true); };
+            cancelBtn.onclick = function() { cleanup(false); };
+            backdrop.onclick = function(event) {
+                if (event.target === backdrop) cleanup(false);
+            };
+            document.addEventListener('keydown', keyHandler);
+
+            backdrop.classList.add('show');
+            window.setTimeout(function() { confirmBtn.focus(); }, 60);
+        });
+    }
+
+    function settingsPromptDialog(options) {
+        options = options || {};
+        return new Promise(function(resolve) {
+            const backdrop = document.getElementById('settings-dialog-backdrop');
+            const dialog = document.getElementById('settings-dialog-box');
+            const icon = document.getElementById('settings-dialog-icon');
+            const title = document.getElementById('settings-dialog-title');
+            const message = document.getElementById('settings-dialog-message');
+            const cancelBtn = document.getElementById('settings-dialog-cancel');
+            const confirmBtn = document.getElementById('settings-dialog-confirm');
+            const inputWrap = document.getElementById('settings-dialog-input-wrap');
+            const input = document.getElementById('settings-dialog-input');
+            const inputHelp = document.getElementById('settings-dialog-input-help');
+            const inputLabel = document.getElementById('settings-dialog-input-label');
+
+            if (!backdrop || !dialog || !title || !message || !cancelBtn || !confirmBtn || !inputWrap || !input) {
+                resolve(null);
+                return;
+            }
+
+            const tone = options.tone || '';
+            dialog.className = 'settings-dialog ' + tone;
+            title.textContent = options.title || 'Input Required';
+            message.textContent = options.message || '';
+            cancelBtn.textContent = options.cancelText || 'Cancel';
+            confirmBtn.textContent = options.confirmText || 'Continue';
+            confirmBtn.className = 'btn btn-sm fw-bold px-4 ' + (options.confirmClass || (
+                tone === 'danger' ? 'btn-danger' : (tone === 'success' ? 'btn-success' : 'btn-primary')
+            ));
+
+            inputWrap.classList.remove('d-none');
+            if (inputLabel) inputLabel.textContent = options.inputLabel || 'Input';
+            if (inputHelp) inputHelp.textContent = options.inputHelp || '';
+            input.type = options.inputType || 'text';
+            input.placeholder = options.placeholder || '';
+            input.value = options.defaultValue || '';
+            input.setAttribute('autocomplete', options.autocomplete || 'off');
+
+            if (icon) {
+                const iconName = options.icon || (
+                    tone === 'danger' ? 'trash' : (tone === 'success' ? 'check' : (tone === 'warning' ? 'triangle-exclamation' : 'keyboard'))
+                );
+                icon.innerHTML = `<i class="fa-solid fa-${iconName}"></i>`;
+            }
+
+            let resolved = false;
+            const cleanup = function(value) {
+                if (resolved) return;
+                resolved = true;
+                backdrop.classList.remove('show');
+                inputWrap.classList.add('d-none');
+                confirmBtn.onclick = null;
+                cancelBtn.onclick = null;
+                backdrop.onclick = null;
+                input.onkeydown = null;
+                document.removeEventListener('keydown', keyHandler);
+                resolve(value);
+            };
+
+            const submit = function() {
+                cleanup(input.value);
+            };
+
+            const keyHandler = function(event) {
+                if (event.key === 'Escape') cleanup(null);
+            };
+
+            input.onkeydown = function(event) {
+                if (event.key === 'Enter') submit();
+            };
+            confirmBtn.onclick = submit;
+            cancelBtn.onclick = function() { cleanup(null); };
+            backdrop.onclick = function(event) {
+                if (event.target === backdrop) cleanup(null);
+            };
+            document.addEventListener('keydown', keyHandler);
+
+            backdrop.classList.add('show');
+            window.setTimeout(function() {
+                input.focus();
+                try { input.select(); } catch (err) {}
+            }, 60);
+        });
+    }
+
+    /**
+     * SETTINGS SECTION NAVIGATION:
+     */
+    const settingsLoadedSections = new Set();
+
+    function ensureSettingsSectionLoaded(sectionName) {
+        if (!sectionName || settingsLoadedSections.has(sectionName)) return;
+        settingsLoadedSections.add(sectionName);
+
+        if (sectionName === 'account') {
+            loadMySignature();
+        } else if (sectionName === 'storage' && document.getElementById('storage-health-content')) {
+            loadStorageHealth();
+        } else if (sectionName === 'approval' && document.getElementById('approval-routing-content')) {
+            loadApprovalRouting();
+        } else if (sectionName === 'email-recipients' && document.getElementById('email-recipient-content')) {
+            loadEmailRecipients();
+        } else if (sectionName === 'email-templates' && document.getElementById('email-template-content')) {
+            loadEmailTemplates();
+        }
+    }
+
+    function switchSettingsSection(sectionName) {
+        const targetName = sectionName || 'account';
+
+        document.querySelectorAll('.settings-section-tab').forEach(function(tab) {
+            const isActive = tab.getAttribute('data-settings-section-target') === targetName;
+            tab.classList.toggle('active', isActive);
+            tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        });
+
+        document.querySelectorAll('.settings-section-panel').forEach(function(panel) {
+            const isActive = panel.getAttribute('data-settings-section') === targetName;
+            panel.classList.toggle('active', isActive);
+        });
+
+        try {
+            localStorage.setItem('medical_settings_active_section', targetName);
+        } catch (err) {}
+
+        ensureSettingsSectionLoaded(targetName);
+    }
+
+    function restoreSettingsSection() {
+        let savedSection = 'account';
+        try {
+            savedSection = localStorage.getItem('medical_settings_active_section') || 'account';
+        } catch (err) {}
+
+        if (!document.querySelector(`.settings-section-panel[data-settings-section="${savedSection}"]`)) {
+            savedSection = 'account';
+        }
+        switchSettingsSection(savedSection);
+    }
+
+
     /**
      * SELF-SERVICE LOGIC:
      */
@@ -294,18 +977,18 @@
         const passwordField = document.getElementById('new-pw').value;
         const confirmField = document.getElementById('confirm-pw').value;
 
-        if (!passwordField || passwordField.length < 4) { 
-            alert("Security Error: Password must be at least 4 characters."); 
-            return; 
-        }
-        
-        if (passwordField !== confirmField) { 
-            alert("Validation Error: Passwords do not match."); 
-            return; 
+        if (!passwordField || passwordField.length < 4) {
+            settingsAlert("Password must be at least 4 characters.");
+            return;
         }
 
-        const res = await fetch('/change_password', { 
-            method: 'POST', 
+        if (passwordField !== confirmField) {
+            settingsAlert("Passwords do not match.");
+            return;
+        }
+
+        const res = await fetch('/change_password', {
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': getCSRFToken()
@@ -313,12 +996,12 @@
             body: JSON.stringify({ new_password: passwordField }) 
         });
 
-        if (res.ok) { 
-            alert("Success: Credentials updated. Please sign in again."); 
-            location.href = "/logout"; 
+        if (res.ok) {
+            settingsAlert("Credentials updated. Please sign in again.", 'success');
+            location.href = "/logout";
         } else {
             const err = await res.json();
-            alert("Update Failed: " + err.message);
+            settingsAlert("Update failed: " + err.message);
         }
     }
 
@@ -329,27 +1012,420 @@
         const userId = buttonElement.getAttribute('data-id');
         const username = buttonElement.getAttribute('data-user');
         
-        const newPass = prompt(`Enter new password for account: ${username.toUpperCase()}`);
+        const newPass = await settingsPromptDialog({
+            title: 'Reset User Password',
+            message: `Enter a new password for ${username}.`,
+            inputLabel: 'New Password',
+            inputType: 'password',
+            inputHelp: 'Minimum 4 characters. The change takes effect immediately.',
+            confirmText: 'Reset Password',
+            cancelText: 'Cancel',
+            tone: 'warning',
+            icon: 'user-lock'
+        });
         if (!newPass) return;
-        if (newPass.length < 4) return alert("Error: Minimum 4 characters required.");
+        if (newPass.length < 4) return settingsAlert("Minimum 4 characters required.");
 
-        const res = await fetch('/change_password', { 
-            method: 'POST', 
+        const res = await fetch('/change_password', {
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': getCSRFToken()
             }, 
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 new_password: newPass,
                 target_user_id: userId 
             }) 
         });
 
         if (res.ok) {
-            alert(`Password for ${username} has been successfully updated.`);
+            settingsAlert(`Password for ${username} has been successfully updated.`, 'success');
         } else {
             const err = await res.json().catch(() => ({}));
-            alert("Error: " + (err.message || "Administrative override failed."));
+            settingsAlert(err.message || "Administrative override failed.");
+        }
+    }
+
+    function filterSettingsUsers() {
+        const input = document.getElementById('settings-user-search');
+        const count = document.getElementById('settings-user-filter-count');
+        const query = String(input?.value || '').trim().toLowerCase();
+        const rows = Array.from(document.querySelectorAll('.settings-user-row'));
+        const cards = Array.from(document.querySelectorAll('.settings-mobile-user-card'));
+        let visibleCount = 0;
+
+        rows.forEach(function(row) {
+            const haystack = String(row.getAttribute('data-user-search') || '').toLowerCase();
+            const visible = !query || haystack.includes(query);
+            row.classList.toggle('d-none', !visible);
+            if (visible) visibleCount += 1;
+        });
+
+        cards.forEach(function(card) {
+            const haystack = String(card.getAttribute('data-user-search') || '').toLowerCase();
+            card.classList.toggle('d-none', Boolean(query) && !haystack.includes(query));
+        });
+
+        if (count) {
+            count.textContent = query
+                ? `${visibleCount} user${visibleCount === 1 ? '' : 's'} found`
+                : 'Showing all users';
+        }
+    }
+
+
+    /**
+     * ENGINEER SIGNATURE LOGIC:
+     */
+    let signaturePadCanvas = null;
+    let signaturePadCtx = null;
+    let signatureDrawing = false;
+    let signatureHasInk = false;
+    let signaturePadBound = false;
+    let signatureEditorOpen = false;
+
+    function setSignatureMessage(message, type='muted') {
+        const el = document.getElementById('signature-message');
+        if (!el) return;
+        el.textContent = message || '';
+        el.className = 'small fw-bold mt-3';
+        if (!message) {
+            el.classList.add('d-none');
+            return;
+        }
+        el.classList.remove('d-none', 'text-success', 'text-danger', 'text-muted');
+        if (type === 'success') el.classList.add('text-success');
+        else if (type === 'danger') el.classList.add('text-danger');
+        else el.classList.add('text-muted');
+    }
+
+    function setSignatureBadge(hasSignature) {
+        const badge = document.getElementById('signature-status-badge');
+        if (!badge) return;
+        badge.className = 'badge small fw-bold';
+        if (hasSignature) {
+            badge.textContent = 'Saved';
+            badge.classList.add('bg-success', 'text-white');
+        } else {
+            badge.textContent = 'Not Set';
+            badge.classList.add('bg-secondary', 'text-white');
+        }
+    }
+
+    function setupSignaturePad() {
+        signaturePadCanvas = document.getElementById('engineer-signature-pad');
+        if (!signaturePadCanvas || signaturePadBound) return;
+
+        signaturePadCtx = signaturePadCanvas.getContext('2d');
+        signaturePadCtx.lineWidth = 3;
+        signaturePadCtx.lineCap = 'round';
+        signaturePadCtx.lineJoin = 'round';
+        signaturePadCtx.strokeStyle = '#111827';
+
+        function getPoint(event) {
+            const rect = signaturePadCanvas.getBoundingClientRect();
+            const source = event.touches && event.touches.length ? event.touches[0] : event;
+            return {
+                x: (source.clientX - rect.left) * (signaturePadCanvas.width / rect.width),
+                y: (source.clientY - rect.top) * (signaturePadCanvas.height / rect.height)
+            };
+        }
+
+        function startDraw(event) {
+            if (!signatureEditorOpen || document.getElementById('signature-draw-wrap')?.classList.contains('d-none')) return;
+            event.preventDefault();
+            signatureDrawing = true;
+            const point = getPoint(event);
+            signaturePadCtx.beginPath();
+            signaturePadCtx.moveTo(point.x, point.y);
+        }
+
+        function draw(event) {
+            if (!signatureDrawing) return;
+            event.preventDefault();
+            const point = getPoint(event);
+            signaturePadCtx.lineTo(point.x, point.y);
+            signaturePadCtx.stroke();
+            signatureHasInk = true;
+        }
+
+        function stopDraw(event) {
+            if (!signatureDrawing) return;
+            event.preventDefault();
+            signatureDrawing = false;
+        }
+
+        signaturePadCanvas.addEventListener('mousedown', startDraw);
+        signaturePadCanvas.addEventListener('mousemove', draw);
+        window.addEventListener('mouseup', stopDraw);
+        signaturePadCanvas.addEventListener('touchstart', startDraw, { passive: false });
+        signaturePadCanvas.addEventListener('touchmove', draw, { passive: false });
+        signaturePadCanvas.addEventListener('touchend', stopDraw, { passive: false });
+        signaturePadBound = true;
+    }
+
+    function setSignatureEditorVisible(isVisible) {
+        signatureEditorOpen = !!isVisible;
+        const options = document.getElementById('signature-options-panel');
+        const action = document.getElementById('signature-action-panel');
+        const upload = document.getElementById('signature-upload-wrap');
+        const draw = document.getElementById('signature-draw-wrap');
+        const saveBtn = document.getElementById('save-signature-btn');
+        const cancelBtn = document.getElementById('cancel-signature-btn');
+
+        if (action) action.classList.toggle('d-none', isVisible);
+        if (options) options.classList.toggle('d-none', !isVisible);
+        if (saveBtn) saveBtn.classList.toggle('d-none', !isVisible);
+        if (cancelBtn) cancelBtn.classList.toggle('d-none', !isVisible);
+
+        if (!isVisible) {
+            if (upload) upload.classList.add('d-none');
+            if (draw) draw.classList.add('d-none');
+            clearSignaturePad();
+            const uploadInput = document.getElementById('signature-upload-input');
+            if (uploadInput) uploadInput.value = '';
+        }
+    }
+
+    function openSignatureOptions(event) {
+        if (event && event.preventDefault) event.preventDefault();
+        setSignatureEditorVisible(true);
+        setSignatureMessage('Choose Upload Signature or Draw Signature.', 'muted');
+    }
+
+    function showSignatureUpload(event) {
+        if (event && event.preventDefault) event.preventDefault();
+        setSignatureEditorVisible(true);
+        const upload = document.getElementById('signature-upload-wrap');
+        const draw = document.getElementById('signature-draw-wrap');
+        if (upload) upload.classList.remove('d-none');
+        if (draw) draw.classList.add('d-none');
+        clearSignaturePad();
+        setSignatureMessage('Choose a signature image, then tap Save Signature.', 'muted');
+        const input = document.getElementById('signature-upload-input');
+        if (input) input.focus();
+    }
+
+    function showSignatureDraw(event) {
+        if (event && event.preventDefault) event.preventDefault();
+        setSignatureEditorVisible(true);
+        const upload = document.getElementById('signature-upload-wrap');
+        const draw = document.getElementById('signature-draw-wrap');
+        if (upload) upload.classList.add('d-none');
+        if (draw) draw.classList.remove('d-none');
+        const uploadInput = document.getElementById('signature-upload-input');
+        if (uploadInput) uploadInput.value = '';
+        setupSignaturePad();
+        setSignatureMessage('Draw your signature inside the box, then tap Save Signature.', 'muted');
+        setTimeout(() => {
+            try { draw?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (err) {}
+        }, 50);
+    }
+
+    function cancelSignatureEdit(event) {
+        if (event && event.preventDefault) event.preventDefault();
+        setSignatureEditorVisible(false);
+        setSignatureMessage('', 'muted');
+    }
+
+    function handleSignatureUploadSelected() {
+        clearSignaturePad();
+        const uploadInput = document.getElementById('signature-upload-input');
+        if (uploadInput && uploadInput.files && uploadInput.files.length > 0) {
+            setSignatureMessage('Signature image selected. Tap Save Signature.', 'muted');
+        }
+    }
+
+    function clearSignaturePad() {
+        if (!signaturePadCanvas || !signaturePadCtx) return;
+        signaturePadCtx.clearRect(0, 0, signaturePadCanvas.width, signaturePadCanvas.height);
+        signatureHasInk = false;
+    }
+
+    async function loadMySignature() {
+        const previewWrap = document.getElementById('signature-preview-wrap');
+        const previewImg = document.getElementById('signature-preview-img');
+        if (!previewWrap || !previewImg) return;
+
+        try {
+            const res = await fetch('/get_my_signature', {
+                credentials: 'same-origin',
+                cache: 'no-store'
+            });
+            const data = await res.json();
+            const hasSignature = Boolean(res.ok && data.status === 'success' && data.has_signature && data.signature_data);
+            setSignatureBadge(hasSignature);
+
+            if (hasSignature) {
+                previewImg.src = data.signature_data;
+                previewWrap.classList.remove('d-none');
+            } else {
+                previewImg.removeAttribute('src');
+                previewWrap.classList.add('d-none');
+            }
+        } catch (err) {
+            console.error('Signature load failed:', err);
+            setSignatureBadge(false);
+            setSignatureMessage('Signature status could not be loaded.', 'danger');
+        }
+    }
+
+    async function saveMySignature() {
+        const uploadInput = document.getElementById('signature-upload-input');
+        const formData = new FormData();
+
+        if (uploadInput && uploadInput.files && uploadInput.files.length > 0) {
+            formData.append('signature_file', uploadInput.files[0]);
+        } else if (signaturePadCanvas && signatureHasInk) {
+            formData.append('signature_data', signaturePadCanvas.toDataURL('image/png'));
+        } else {
+            setSignatureMessage('Please draw or upload a signature first.', 'danger');
+            return;
+        }
+
+        try {
+            setSignatureMessage('Saving signature...', 'muted');
+            const res = await fetch('/save_my_signature', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getCSRFToken() },
+                body: formData
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || data.status !== 'success') {
+                throw new Error(data.message || 'Signature save failed.');
+            }
+
+            if (uploadInput) uploadInput.value = '';
+            setSignatureEditorVisible(false);
+            setSignatureMessage('Signature saved successfully.', 'success');
+            await loadMySignature();
+        } catch (err) {
+            console.error('Signature save failed:', err);
+            setSignatureMessage(err.message || 'Signature save failed.', 'danger');
+        }
+    }
+
+    function showSignatureDeleteConfirmPanel(event) {
+        if (event && event.preventDefault) event.preventDefault();
+
+        const panel = document.getElementById('signature-delete-confirm-panel');
+        if (panel) {
+            panel.classList.remove('d-none');
+            try {
+                panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } catch (err) {}
+        }
+
+        setSignatureMessage('Please confirm deletion below.', 'muted');
+    }
+
+    function hideSignatureDeleteConfirmPanel(event) {
+        if (event && event.preventDefault) event.preventDefault();
+
+        const panel = document.getElementById('signature-delete-confirm-panel');
+        if (panel) {
+            panel.classList.add('d-none');
+        }
+
+        setSignatureMessage('', 'muted');
+    }
+
+    function resetSignatureDeleteUi() {
+        const panel = document.getElementById('signature-delete-confirm-panel');
+        const confirmBtn = document.getElementById('confirm-delete-signature-btn');
+        const openBtn = document.getElementById('open-signature-delete-confirm-btn');
+
+        if (panel) panel.classList.add('d-none');
+
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="fa-solid fa-trash-can me-2"></i>Yes, Delete Signature';
+        }
+
+        if (openBtn) {
+            openBtn.disabled = false;
+        }
+    }
+
+    function clearSavedSignaturePreviewUi() {
+        setSignatureEditorVisible(false);
+
+        const uploadInput = document.getElementById('signature-upload-input');
+        if (uploadInput) uploadInput.value = '';
+
+        const previewWrap = document.getElementById('signature-preview-wrap');
+        const previewImg = document.getElementById('signature-preview-img');
+        if (previewImg) previewImg.removeAttribute('src');
+        if (previewWrap) previewWrap.classList.add('d-none');
+
+        setSignatureBadge(false);
+    }
+
+    async function deleteMySignature(event) {
+        if (event && event.preventDefault) event.preventDefault();
+
+        const confirmBtn = document.getElementById('confirm-delete-signature-btn');
+        const openBtn = document.getElementById('open-signature-delete-confirm-btn');
+
+        try {
+            if (confirmBtn) {
+                confirmBtn.disabled = true;
+                confirmBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin me-2"></i>Deleting...';
+            }
+            if (openBtn) openBtn.disabled = true;
+
+            setSignatureMessage('Deleting signature...', 'muted');
+
+            const res = await fetch('/delete_my_signature', {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({})
+            });
+
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || (data.status !== 'success' && data.success !== true)) {
+                throw new Error(data.message || data.error || 'Signature delete failed.');
+            }
+
+            clearSavedSignaturePreviewUi();
+            setSignatureMessage('Signature deleted.', 'success');
+            await loadMySignature();
+        } catch (err) {
+            console.error('Signature delete failed:', err);
+            setSignatureMessage(err.message || 'Signature delete failed.', 'danger');
+            settingsAlert(err.message || 'Signature delete failed.');
+        } finally {
+            resetSignatureDeleteUi();
+        }
+    }
+
+    function bindSignatureDeleteControls() {
+        const openBtn = document.getElementById('open-signature-delete-confirm-btn');
+        const confirmBtn = document.getElementById('confirm-delete-signature-btn');
+        const cancelBtn = document.getElementById('cancel-delete-signature-btn');
+
+        if (openBtn && openBtn.dataset.bound !== '1') {
+            openBtn.dataset.bound = '1';
+            openBtn.addEventListener('click', showSignatureDeleteConfirmPanel);
+            openBtn.addEventListener('touchend', showSignatureDeleteConfirmPanel, { passive: false });
+        }
+
+        if (confirmBtn && confirmBtn.dataset.bound !== '1') {
+            confirmBtn.dataset.bound = '1';
+            confirmBtn.addEventListener('click', deleteMySignature);
+            confirmBtn.addEventListener('touchend', deleteMySignature, { passive: false });
+        }
+
+        if (cancelBtn && cancelBtn.dataset.bound !== '1') {
+            cancelBtn.dataset.bound = '1';
+            cancelBtn.addEventListener('click', hideSignatureDeleteConfirmPanel);
+            cancelBtn.addEventListener('touchend', hideSignatureDeleteConfirmPanel, { passive: false });
         }
     }
 
@@ -408,7 +1484,16 @@
             setStorageText('storage-database', data.database ? data.database.size_human : '--');
             setStorageText('storage-uploads', data.active_upload_folder ? data.active_upload_folder.size_human : '--');
             setStorageText('storage-files', String(data.total_file_count || 0));
-            setStorageText('storage-recommendation', data.recommendation || 'Storage status checked.');
+            const recommendation = document.getElementById('storage-recommendation');
+            const status = String(data.storage_status || '').toLowerCase();
+            const statusLabel = status === 'healthy'
+                ? 'Healthy'
+                : (status === 'warning' ? 'Watch soon' : (status === 'critical' ? 'Action needed' : 'Status checked'));
+            if (recommendation) {
+                recommendation.className = 'storage-recommendation storage-recommendation-' + (status || 'unknown');
+                recommendation.textContent = `${statusLabel}: ${data.recommendation || 'Storage status checked.'}`;
+            }
+            setStorageText('storage-last-checked', `Last checked: ${new Date().toLocaleString()}`);
 
             const meter = document.getElementById('storage-meter-fill');
             if (meter) {
@@ -435,10 +1520,1160 @@
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-        if (document.getElementById('storage-health-content')) {
-            loadStorageHealth();
-        }
+        setSignatureEditorVisible(false);
+        bindSignatureDeleteControls();
+        restoreSettingsSection();
     });
+
+    /**
+     * APPROVAL ROUTING LOGIC:
+     */
+    let approvalRoutingState = {
+        users: [],
+        approvers: [],
+        scopes: [],
+        routes: []
+    };
+
+    function approvalEscape(value) {
+        return String(value === null || value === undefined ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function approvalScopeLabel(scope) {
+        const map = {
+            all: 'All Requests',
+            reimbursement: 'Reimbursement',
+            travel_request: 'Travel Request',
+            cash_advance: 'Cash Advance',
+            request_for_payment: 'Request for Payment'
+        };
+        return map[scope] || scope;
+    }
+
+    function approvalRoleBadge(user) {
+        const label = user.display_role || user.role || 'User';
+        let cls = 'bg-secondary';
+        if (label === 'Superadmin') cls = 'bg-danger';
+        else if (label === 'Manager') cls = 'bg-purple';
+        else if (label === 'Scheduler') cls = 'bg-warning text-dark';
+        else if (label === 'Administrator') cls = 'bg-success';
+        else if (label === 'Approver') cls = 'bg-info text-dark';
+        else if (label === 'Engineer') cls = 'bg-primary';
+        return `<span class="badge ${cls}">${approvalEscape(label)}</span>`;
+    }
+
+    function populateApprovalSelects() {
+        const requesterSelect = document.getElementById('approval-route-requester');
+        const approverSelect = document.getElementById('approval-route-approver');
+        const scopeSelect = document.getElementById('approval-route-scope');
+        if (!requesterSelect || !approverSelect || !scopeSelect) return;
+
+        requesterSelect.innerHTML = approvalRoutingState.users.map(user => {
+            return `<option value="${user.id}">${approvalEscape(user.display_name || user.username)} (${approvalEscape(user.username)})</option>`;
+        }).join('');
+
+        const approverPool = approvalRoutingState.approvers.length ? approvalRoutingState.approvers : approvalRoutingState.users;
+        approverSelect.innerHTML = approverPool.map(user => {
+            return `<option value="${user.id}">${approvalEscape(user.display_name || user.username)} (${approvalEscape(user.username)})</option>`;
+        }).join('');
+
+        scopeSelect.innerHTML = approvalRoutingState.scopes.map(scope => {
+            return `<option value="${approvalEscape(scope)}">${approvalEscape(approvalScopeLabel(scope))}</option>`;
+        }).join('');
+
+        if ([...scopeSelect.options].some(opt => opt.value === 'all')) {
+            scopeSelect.value = 'all';
+        }
+
+        populateApprovalBulkControls();
+    }
+
+    function renderApprovalUsers() {
+        const container = document.getElementById('approval-users-list');
+        if (!container) return;
+
+        if (!approvalRoutingState.users.length) {
+            container.innerHTML = `<div class="text-muted small border rounded-3 p-3">No users found.</div>`;
+            return;
+        }
+
+        container.innerHTML = approvalRoutingState.users.map(user => {
+            const checked = user.can_approve_requests ? 'checked' : '';
+            const activeChecked = user.is_active ? 'checked' : '';
+            const approverOnlyChecked = user.approver_only ? 'checked' : '';
+            return `
+                <div class="approval-user-card" data-user-id="${user.id}">
+                    <div class="approval-user-main">
+                        <div>
+                            <div class="approval-user-name">${approvalEscape(user.display_name || user.username)}</div>
+                            <div class="approval-user-meta">@${approvalEscape(user.username)} ${approvalRoleBadge(user)}</div>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input approval-can-approve" type="checkbox" ${checked}>
+                            <label class="form-check-label small fw-bold">Can Approve</label>
+                        </div>
+                    </div>
+                    <div class="row g-2 mt-2">
+                        <div class="col-md-5">
+                            <input type="text" class="form-control form-control-sm approval-title-input" value="${approvalEscape(user.approval_title || '')}" placeholder="Title e.g. Vice President">
+                        </div>
+                        <div class="col-md-4">
+                            <input type="text" class="form-control form-control-sm approval-scope-input" value="${approvalEscape(user.approval_scope || '')}" placeholder="Scope e.g. executive">
+                        </div>
+                        <div class="col-md-3 d-flex align-items-center gap-2">
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input approval-active-input" type="checkbox" ${activeChecked}>
+                                <label class="form-check-label small fw-bold">Active</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input approval-approver-only-input" type="checkbox" ${approverOnlyChecked} onchange="if(this.checked){const canApprove=this.closest('.approval-user-card')?.querySelector('.approval-can-approve'); if(canApprove){canApprove.checked=true;}}">
+                        <label class="form-check-label small fw-bold">Approver-only view</label>
+                        <div class="form-text small">Use for executives/approvers who should only see Dashboard, My Requests, Approvals, Settings, and Logout.</div>
+                    </div>
+                    <div class="text-end mt-2">
+                        <button type="button" class="btn btn-outline-indigo btn-sm fw-bold rounded-3" onclick="saveApprovalUser(${user.id})">
+                            <i class="fa-solid fa-check me-1"></i>Save
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderApprovalRoutes() {
+        const container = document.getElementById('approval-routes-list');
+        const summary = document.getElementById('approval-routes-summary');
+        if (!container) return;
+
+        const activeRoutes = (approvalRoutingState.routes || [])
+            .filter(route => Boolean(route.active))
+            .sort((a, b) => {
+                const scopeCompare = String(a.request_scope || '').localeCompare(String(b.request_scope || ''));
+                if (scopeCompare !== 0) return scopeCompare;
+                const requesterCompare = String(a.requester_name || a.requester_username || '').localeCompare(String(b.requester_name || b.requester_username || ''));
+                if (requesterCompare !== 0) return requesterCompare;
+                return String(a.approver_name || a.approver_username || '').localeCompare(String(b.approver_name || b.approver_username || ''));
+            });
+
+        const inactiveCount = (approvalRoutingState.routes || []).filter(route => !Boolean(route.active)).length;
+        const uniqueRequesterScopeKeys = new Set(activeRoutes.map(route => `${route.request_scope || 'all'}::${route.requester_user_id}`));
+        if (summary) {
+            summary.textContent = activeRoutes.length
+                ? `Showing ${activeRoutes.length} active approver assignment(s) for ${uniqueRequesterScopeKeys.size} requester/request type combination(s). ${inactiveCount ? inactiveCount + ' inactive route(s) hidden.' : ''}`
+                : `${inactiveCount ? inactiveCount + ' inactive route(s) hidden. ' : ''}No active approval routes.`;
+        }
+
+        if (!activeRoutes.length) {
+            container.innerHTML = `<div class="text-muted small border rounded-3 p-3">No active approval routes yet. Add a single route or create routes in bulk.</div>`;
+            return;
+        }
+
+        const groupedByScope = {};
+        activeRoutes.forEach(route => {
+            const scope = route.request_scope || 'all';
+            const requesterKey = `${route.requester_user_id || ''}`;
+            if (!groupedByScope[scope]) groupedByScope[scope] = {};
+            if (!groupedByScope[scope][requesterKey]) {
+                groupedByScope[scope][requesterKey] = {
+                    requesterName: route.requester_name || route.requester_username || 'Requester',
+                    requesterUsername: route.requester_username || '',
+                    routes: []
+                };
+            }
+            groupedByScope[scope][requesterKey].routes.push(route);
+        });
+
+        const htmlParts = [];
+        Object.keys(groupedByScope).sort().forEach(scope => {
+            htmlParts.push(`<div class="approval-route-scope-header mt-2 mb-2"><span class="badge bg-light text-dark border">${approvalEscape(approvalScopeLabel(scope))}</span></div>`);
+
+            Object.values(groupedByScope[scope])
+                .sort((a, b) => String(a.requesterName).localeCompare(String(b.requesterName)))
+                .forEach(group => {
+                    const approverChips = group.routes.map(route => {
+                        const approverLabel = route.approver_name || route.approver_username || 'Approver';
+                        return `
+                            <div class="approval-approver-chip">
+                                <span><i class="fa-solid fa-user-check me-1 text-success"></i>${approvalEscape(approverLabel)}</span>
+                                <button type="button" class="approval-chip-remove" title="Deactivate this route" onclick="deleteApprovalRoute(${route.id})">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                        `;
+                    }).join('');
+
+                    const routeIds = group.routes.map(route => `#${route.id}`).join(', ');
+                    const approverCount = group.routes.length;
+
+                    htmlParts.push(`
+                        <div class="approval-route-card approval-route-card-grouped">
+                            <div class="approval-route-group-main">
+                                <div>
+                                    <div class="approval-route-line">
+                                        <span>${approvalEscape(group.requesterName)}</span>
+                                        <span class="approval-route-count-badge">${approverCount} approver${approverCount === 1 ? '' : 's'}</span>
+                                    </div>
+                                    <div class="approval-user-meta">
+                                        @${approvalEscape(group.requesterUsername)} - Route ID(s): ${approvalEscape(routeIds)}
+                                    </div>
+                                </div>
+                                <div class="approval-approver-chip-list">
+                                    ${approverChips}
+                                </div>
+                            </div>
+                        </div>
+                    `);
+                });
+        });
+
+        container.innerHTML = htmlParts.join('');
+    }
+
+    async function loadApprovalRouting() {
+        const loading = document.getElementById('approval-routing-loading');
+        const content = document.getElementById('approval-routing-content');
+        const error = document.getElementById('approval-routing-error');
+
+        if (!loading || !content) return;
+
+        loading.classList.remove('d-none');
+        if (error) error.classList.add('d-none');
+
+        try {
+            const res = await fetch('/settings/approval-routing-data?_=' + Date.now(), {
+                credentials: 'same-origin',
+                cache: 'no-store'
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Approval routing request failed.');
+            }
+
+            approvalRoutingState = {
+                users: data.users || [],
+                approvers: data.approvers || [],
+                scopes: data.scopes || [],
+                routes: data.routes || []
+            };
+
+            populateApprovalSelects();
+            renderApprovalUsers();
+            renderApprovalRoutes();
+            content.classList.remove('d-none');
+        } catch (err) {
+            console.error('Approval routing load failed:', err);
+            if (error) {
+                error.textContent = err.message || 'Approval routing could not be loaded.';
+                error.classList.remove('d-none');
+            }
+        } finally {
+            loading.classList.add('d-none');
+        }
+    }
+
+    async function saveApprovalUser(userId) {
+        const card = document.querySelector(`.approval-user-card[data-user-id="${userId}"]`);
+        if (!card) return;
+
+        const payload = {
+            user_id: userId,
+            can_approve_requests: Boolean(card.querySelector('.approval-can-approve')?.checked),
+            approver_only: Boolean(card.querySelector('.approval-approver-only-input')?.checked),
+            approval_title: card.querySelector('.approval-title-input')?.value || '',
+            approval_scope: card.querySelector('.approval-scope-input')?.value || '',
+            is_active: Boolean(card.querySelector('.approval-active-input')?.checked)
+        };
+
+        try {
+            const res = await fetch('/settings/update-approval-user', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Approver update failed.');
+            }
+
+            await loadApprovalRouting();
+            settingsAlert('Approval user settings saved.', 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Approver update failed.'));
+        }
+    }
+
+    function approvalUserIsEngineer(user) {
+        const roleLabel = String(user.display_role || user.role || '').toLowerCase();
+        return roleLabel === 'engineer' || String(user.role || '').toLowerCase() === 'engineer' || Boolean(user.engineer_id);
+    }
+
+    function getApprovalBulkRequesterIds() {
+        const group = document.getElementById('approval-bulk-group')?.value || 'engineers';
+        const approverId = String(document.getElementById('approval-bulk-approver')?.value || '');
+
+        let selectedUsers = [];
+
+        if (group === 'manual') {
+            selectedUsers = Array.from(document.querySelectorAll('.approval-bulk-manual-check:checked')).map(input => {
+                const userId = Number(input.value);
+                return approvalRoutingState.users.find(user => Number(user.id) === userId);
+            }).filter(Boolean);
+        } else if (group === 'active') {
+            selectedUsers = approvalRoutingState.users.filter(user => user.is_active);
+        } else if (group === 'non_approvers') {
+            selectedUsers = approvalRoutingState.users.filter(user => user.is_active && !user.can_approve_requests);
+        } else {
+            selectedUsers = approvalRoutingState.users.filter(user => user.is_active && approvalUserIsEngineer(user));
+        }
+
+        return selectedUsers
+            .filter(user => String(user.id) !== approverId)
+            .map(user => user.id);
+    }
+
+    function populateApprovalBulkControls() {
+        const approverSelect = document.getElementById('approval-bulk-approver');
+        const scopeSelect = document.getElementById('approval-bulk-scope');
+        const manualList = document.getElementById('approval-bulk-manual-list');
+        if (!approverSelect || !scopeSelect) return;
+
+        const approverPool = approvalRoutingState.approvers.length ? approvalRoutingState.approvers : approvalRoutingState.users;
+        approverSelect.innerHTML = approverPool.map(user => {
+            return `<option value="${user.id}">${approvalEscape(user.display_name || user.username)} (${approvalEscape(user.username)})</option>`;
+        }).join('');
+
+        scopeSelect.innerHTML = approvalRoutingState.scopes.map(scope => {
+            return `<option value="${approvalEscape(scope)}">${approvalEscape(approvalScopeLabel(scope))}</option>`;
+        }).join('');
+
+        if ([...scopeSelect.options].some(opt => opt.value === 'all')) {
+            scopeSelect.value = 'all';
+        }
+
+        if (manualList) {
+            manualList.innerHTML = approvalRoutingState.users.map(user => {
+                return `
+                    <label class="approval-bulk-manual-item">
+                        <input type="checkbox" class="form-check-input approval-bulk-manual-check" value="${user.id}" onchange="updateApprovalBulkPreview()">
+                        <span>
+                            <strong>${approvalEscape(user.display_name || user.username)}</strong>
+                            <small>@${approvalEscape(user.username)} - ${approvalEscape(user.display_role || user.role || 'User')}</small>
+                        </span>
+                    </label>
+                `;
+            }).join('');
+        }
+
+        updateApprovalBulkPreview();
+    }
+
+    function updateApprovalBulkPreview() {
+        const group = document.getElementById('approval-bulk-group')?.value || 'engineers';
+        const manualWrap = document.getElementById('approval-bulk-manual-wrap');
+        const preview = document.getElementById('approval-bulk-preview');
+
+        if (manualWrap) {
+            manualWrap.classList.toggle('d-none', group !== 'manual');
+        }
+
+        const ids = getApprovalBulkRequesterIds();
+        const label = ids.length === 1 ? '1 requester selected' : `${ids.length} requesters selected`;
+        if (preview) preview.textContent = label;
+    }
+
+    async function saveApprovalRoutesBulk() {
+        const approverId = document.getElementById('approval-bulk-approver')?.value;
+        const scope = document.getElementById('approval-bulk-scope')?.value || 'all';
+        const requesterIds = getApprovalBulkRequesterIds();
+        const overwriteExisting = false;
+
+        if (!approverId) {
+            settingsAlert('Please select an approver.');
+            return;
+        }
+
+        if (!requesterIds.length) {
+            settingsAlert('No valid requesters selected. The system also skips self-approval automatically.');
+            return;
+        }
+
+        const approverUser = approvalRoutingState.users.find(user => String(user.id) === String(approverId));
+        const approverName = approverUser ? (approverUser.display_name || approverUser.username) : 'selected approver';
+
+        const confirmAction = overwriteExisting ? 'Create/update' : 'Create missing routes only';
+        const confirmNote = overwriteExisting
+            ? 'Existing routes for selected requesters may be replaced.'
+            : 'Existing routes for selected requesters will be preserved.';
+
+        const shouldSaveBulk = await settingsConfirmDialog({
+            title: 'Create Bulk Approval Routes?',
+            message: `${confirmAction} ${requesterIds.length} route(s) to ${approverName} for ${approvalScopeLabel(scope)}?\n\n${confirmNote}`,
+            confirmText: 'Create Routes',
+            cancelText: 'Cancel',
+            tone: 'warning',
+            icon: 'route'
+        });
+        if (!shouldSaveBulk) {
+            return;
+        }
+
+        try {
+            const res = await fetch('/settings/save-approval-routes-bulk', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({
+                    requester_user_ids: requesterIds,
+                    approver_user_id: approverId,
+                    request_scope: scope,
+                    active: true,
+                    overwrite_existing: overwriteExisting
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Bulk approval route save failed.');
+            }
+
+            await loadApprovalRouting();
+            settingsAlert(`Bulk routing complete. Added: ${data.created_count || 0}, Reactivated: ${data.reactivated_count || data.updated_count || 0}, Exact duplicates skipped: ${data.skipped_count || 0}.`, 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Bulk approval route save failed.'));
+        }
+    }
+
+    async function saveApprovalRoute() {
+        const requesterId = document.getElementById('approval-route-requester')?.value;
+        const approverId = document.getElementById('approval-route-approver')?.value;
+        const scope = document.getElementById('approval-route-scope')?.value || 'all';
+
+        if (!requesterId || !approverId) {
+            settingsAlert('Please select both requester and approver.');
+            return;
+        }
+
+        if (String(requesterId) === String(approverId)) {
+            settingsAlert('A user cannot approve their own requests.');
+            return;
+        }
+
+        try {
+            const res = await fetch('/settings/save-approval-route', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({
+                    requester_user_id: requesterId,
+                    approver_user_id: approverId,
+                    request_scope: scope,
+                    active: true
+                })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Approval route save failed.');
+            }
+
+            await loadApprovalRouting();
+            settingsAlert('Approval route saved.', 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Approval route save failed.'));
+        }
+    }
+
+    async function deleteApprovalRoute(routeId) {
+        const shouldDeactivate = await settingsConfirmDialog({
+            title: 'Deactivate Approval Route?',
+            message: 'This approval route will stop being used. Past activity stays available for reference.',
+            confirmText: 'Deactivate',
+            cancelText: 'Cancel',
+            tone: 'danger',
+            icon: 'route'
+        });
+        if (!shouldDeactivate) return;
+
+        try {
+            const res = await fetch('/settings/delete-approval-route', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({ route_id: routeId })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Approval route deactivation failed.');
+            }
+
+            await loadApprovalRouting();
+            settingsAlert('Approval route deactivated.', 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Approval route deactivation failed.'));
+        }
+    }
+
+
+    async function deleteAllApprovalRoutes() {
+        const routeCount = (approvalRoutingState.routes || []).filter(route => Boolean(route.active)).length;
+        if (!routeCount) {
+            settingsAlert('There are no active approval routes to delete.');
+            return;
+        }
+
+        const shouldDeleteAll = await settingsConfirmDialog({
+            title: 'Delete All Approval Routes?',
+            message: `This will deactivate all ${routeCount} active approval route(s). Continue?`,
+            confirmText: 'Continue',
+            cancelText: 'Cancel',
+            tone: 'danger',
+            icon: 'trash'
+        });
+        if (!shouldDeleteAll) {
+            return;
+        }
+
+        const confirmText = await settingsPromptDialog({
+            title: 'Confirm Route Deactivation',
+            message: 'Type DELETE ALL ROUTES to stop using every active approval route. Past activity stays available for reference.',
+            inputLabel: 'Confirmation Text',
+            placeholder: 'DELETE ALL ROUTES',
+            inputHelp: 'This stops active approval routing. It does not erase past activity.',
+            confirmText: 'Deactivate Routes',
+            cancelText: 'Cancel',
+            tone: 'danger',
+            icon: 'trash'
+        });
+        if (!confirmText) return;
+
+        try {
+            const res = await fetch('/settings/delete-all-approval-routes', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({ confirm_text: confirmText })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Delete all approval routes failed.');
+            }
+
+            await loadApprovalRouting();
+            settingsAlert(data.message || 'All active approval routes were deactivated.', 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Delete all approval routes failed.'));
+        }
+    }
+
+
+    /**
+     * EMAIL RECIPIENT SETTINGS LOGIC:
+     */
+    let emailRecipientState = {
+        groups: [],
+        recipients: []
+    };
+
+    const emailRecipientGroupFallbacks = [
+        {
+            key: 'tsr_client_cc',
+            label: 'TSR Client Email CC',
+            description: 'Reusable CC recipients when TSR files are emailed to clients.'
+        },
+        {
+            key: 'travel_accounting',
+            label: 'Travel Request Accounting',
+            description: 'Accounting recipients for approved Travel Request handoff and cash advance processing.'
+        },
+        {
+            key: 'reimbursement_accounting',
+            label: 'Reimbursement Accounting',
+            description: 'Accounting recipients for approved Reimbursement handoff.'
+        },
+        {
+            key: 'cash_advance_accounting',
+            label: 'Cash Advance Accounting',
+            description: 'Accounting recipients for standalone Cash Advance release after manager approval.'
+        }
+    ];
+
+    function normalizeEmailRecipientGroups(groups) {
+        const incoming = Array.isArray(groups) ? groups.slice() : [];
+        const seen = new Set(incoming.map(group => String(group.key || '').trim()).filter(Boolean));
+
+        emailRecipientGroupFallbacks.forEach(function(group) {
+            if (!seen.has(group.key)) {
+                incoming.push({ ...group, frontend_fallback: true });
+                seen.add(group.key);
+            }
+        });
+
+        const preferredOrder = new Map(emailRecipientGroupFallbacks.map((group, index) => [group.key, index]));
+        incoming.sort(function(a, b) {
+            const aOrder = preferredOrder.has(a.key) ? preferredOrder.get(a.key) : 100;
+            const bOrder = preferredOrder.has(b.key) ? preferredOrder.get(b.key) : 100;
+            if (aOrder !== bOrder) return aOrder - bOrder;
+            return String(a.label || a.key || '').localeCompare(String(b.label || b.key || ''));
+        });
+
+        return incoming;
+    }
+
+    function emailRecipientEscape(value) {
+        return settingsEscape(value);
+    }
+
+    function emailRecipientGroupLabel(groupKey) {
+        const group = (emailRecipientState.groups || []).find(item => item.key === groupKey);
+        return group ? group.label : (groupKey || 'Email Group');
+    }
+
+    function emailRecipientGroupDescription(groupKey) {
+        const group = (emailRecipientState.groups || []).find(item => item.key === groupKey);
+        return group ? group.description : '';
+    }
+
+    function emailRecipientUsageLabel(groupKey) {
+        const map = {
+            tsr_client_cc: 'Used by Send TSR',
+            travel_accounting: 'Used by Travel Request',
+            reimbursement_accounting: 'Used by Reimbursement',
+            cash_advance_accounting: 'Used by Cash Advance'
+        };
+        return map[groupKey] || 'Used by system email';
+    }
+
+    function populateEmailRecipientGroupSelect() {
+        const select = document.getElementById('email-recipient-group');
+        if (!select) return;
+
+        select.innerHTML = (emailRecipientState.groups || []).map(group => {
+            return `<option value="${emailRecipientEscape(group.key)}">${emailRecipientEscape(group.label)}</option>`;
+        }).join('');
+    }
+
+    function resetEmailRecipientForm() {
+        const idEl = document.getElementById('email-recipient-id');
+        const nameEl = document.getElementById('email-recipient-name');
+        const emailEl = document.getElementById('email-recipient-email');
+        const orderEl = document.getElementById('email-recipient-order');
+        const activeEl = document.getElementById('email-recipient-active');
+        const remarksEl = document.getElementById('email-recipient-remarks');
+
+        if (idEl) idEl.value = '';
+        if (nameEl) nameEl.value = '';
+        if (emailEl) emailEl.value = '';
+        if (orderEl) orderEl.value = '100';
+        if (activeEl) activeEl.checked = true;
+        if (remarksEl) remarksEl.value = '';
+    }
+
+    function editEmailRecipient(recipientId) {
+        const recipient = (emailRecipientState.recipients || []).find(item => Number(item.id) === Number(recipientId));
+        if (!recipient) return;
+
+        const idEl = document.getElementById('email-recipient-id');
+        const groupEl = document.getElementById('email-recipient-group');
+        const nameEl = document.getElementById('email-recipient-name');
+        const emailEl = document.getElementById('email-recipient-email');
+        const orderEl = document.getElementById('email-recipient-order');
+        const activeEl = document.getElementById('email-recipient-active');
+        const remarksEl = document.getElementById('email-recipient-remarks');
+
+        if (idEl) idEl.value = recipient.id || '';
+        if (groupEl) groupEl.value = recipient.group_key || '';
+        if (nameEl) nameEl.value = recipient.display_name || '';
+        if (emailEl) emailEl.value = recipient.email || '';
+        if (orderEl) orderEl.value = recipient.sort_order || 100;
+        if (activeEl) activeEl.checked = Boolean(recipient.is_active);
+        if (remarksEl) remarksEl.value = recipient.remarks || '';
+
+        try {
+            document.querySelector('.settings-email-recipients-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } catch (err) {}
+    }
+
+    function renderEmailRecipients() {
+        const container = document.getElementById('email-recipient-groups');
+        if (!container) return;
+
+        const groups = emailRecipientState.groups || [];
+        const recipients = emailRecipientState.recipients || [];
+
+        if (!groups.length) {
+            container.innerHTML = `<div class="text-muted small border rounded-3 p-3">No recipient groups configured.</div>`;
+            return;
+        }
+
+        container.innerHTML = groups.map(group => {
+            const groupRecipients = recipients
+                .filter(recipient => recipient.group_key === group.key)
+                .sort((a, b) => Number(a.sort_order || 100) - Number(b.sort_order || 100) || String(a.email || '').localeCompare(String(b.email || '')));
+            const activeCount = groupRecipients.filter(recipient => recipient.is_active).length;
+
+            const cardsHtml = groupRecipients.length
+                ? groupRecipients.map(recipient => {
+                    const statusClass = recipient.is_active ? 'success' : 'secondary';
+                    const statusText = recipient.is_active ? 'Active' : 'Inactive';
+                    const metaParts = [
+                        recipient.display_name || '',
+                        recipient.remarks || ''
+                    ].filter(Boolean);
+                    return `
+                        <div class="email-recipient-card ${recipient.is_active ? '' : 'inactive'}">
+                            <div class="email-recipient-card-main">
+                                <div>
+                                    <div class="email-recipient-email-line">
+                                        <i class="fa-solid fa-envelope me-1 text-email-recipients"></i>
+                                        ${emailRecipientEscape(recipient.email)}
+                                        <span class="badge bg-${statusClass} ms-2">${statusText}</span>
+                                        <span class="email-recipient-usage-badge">${emailRecipientEscape(emailRecipientUsageLabel(group.key))}</span>
+                                    </div>
+                                    <div class="email-recipient-meta">
+                                        ${emailRecipientEscape(metaParts.join(' - '))}
+                                    </div>
+                                </div>
+                                <div class="email-recipient-actions">
+                                    <button type="button" class="btn btn-outline-email-recipients btn-sm fw-bold rounded-3" onclick="editEmailRecipient(${recipient.id})">
+                                        <i class="fa-solid fa-pen-to-square me-1"></i>Edit
+                                    </button>
+                                    <button type="button" class="btn btn-outline-danger btn-sm fw-bold rounded-3" onclick="deleteEmailRecipient(${recipient.id})">
+                                        <i class="fa-solid fa-trash-can me-1"></i>Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('')
+                : `<div class="text-muted small border rounded-3 p-3 bg-light">No recipients yet for this group.</div>`;
+
+            return `
+                <div class="email-recipient-group-card">
+                    <div class="email-recipient-group-header">
+                        <div>
+                            <div class="email-recipient-group-title">${emailRecipientEscape(group.label)}</div>
+                            <div class="email-recipient-group-description">
+                                <span class="email-recipient-usage-pill">${emailRecipientEscape(emailRecipientUsageLabel(group.key))}</span>
+                                ${emailRecipientEscape(group.description || '')}
+                            </div>
+                        </div>
+                        <span class="email-recipient-count">${activeCount}/${groupRecipients.length} active</span>
+                    </div>
+                    <div class="email-recipient-list">
+                        ${cardsHtml}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function loadEmailRecipients(silent=false) {
+        const loading = document.getElementById('email-recipient-loading');
+        const content = document.getElementById('email-recipient-content');
+        const error = document.getElementById('email-recipient-error');
+
+        if (!loading || !content) return;
+
+        if (!silent) loading.classList.remove('d-none');
+        if (error) error.classList.add('d-none');
+
+        try {
+            const res = await fetch('/settings/email-recipients-data?_=' + Date.now(), {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Email recipient request failed.');
+            }
+
+            emailRecipientState = {
+                groups: normalizeEmailRecipientGroups(data.groups || []),
+                recipients: data.recipients || []
+            };
+
+            populateEmailRecipientGroupSelect();
+            renderEmailRecipients();
+            content.classList.remove('d-none');
+        } catch (err) {
+            console.error('Email recipients load failed:', err);
+            if (error) {
+                error.textContent = err.message || 'Email recipients could not be loaded.';
+                error.classList.remove('d-none');
+            }
+        } finally {
+            loading.classList.add('d-none');
+        }
+    }
+
+    async function saveEmailRecipient() {
+        const payload = {
+            id: document.getElementById('email-recipient-id')?.value || null,
+            group_key: document.getElementById('email-recipient-group')?.value || '',
+            display_name: document.getElementById('email-recipient-name')?.value || '',
+            email: document.getElementById('email-recipient-email')?.value || '',
+            sort_order: Number(document.getElementById('email-recipient-order')?.value || 100),
+            is_active: Boolean(document.getElementById('email-recipient-active')?.checked),
+            remarks: document.getElementById('email-recipient-remarks')?.value || ''
+        };
+
+        if (!payload.group_key) {
+            settingsAlert('Please select a recipient group.');
+            return;
+        }
+        if (!payload.email) {
+            settingsAlert('Please enter an email address.');
+            return;
+        }
+
+        try {
+            const res = await fetch('/settings/email-recipients-save', {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Email recipient save failed.');
+            }
+
+            resetEmailRecipientForm();
+            await loadEmailRecipients(true);
+            settingsAlert(data.message || 'Email recipient saved.', 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Email recipient save failed.'));
+        }
+    }
+
+    async function deleteEmailRecipient(recipientId) {
+        const recipient = (emailRecipientState.recipients || []).find(item => Number(item.id) === Number(recipientId));
+        const emailLabel = recipient ? recipient.email : 'this recipient';
+
+        const shouldDelete = await settingsConfirmDialog({
+            title: 'Delete Email Recipient?',
+            message: `Delete ${emailLabel} from ${recipient ? emailRecipientGroupLabel(recipient.group_key) : 'this group'}?`,
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            tone: 'danger',
+            icon: 'trash'
+        });
+        if (!shouldDelete) return;
+
+        try {
+            const res = await fetch(`/settings/email-recipients-delete/${recipientId}`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({})
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Email recipient delete failed.');
+            }
+
+            resetEmailRecipientForm();
+            await loadEmailRecipients(true);
+            settingsAlert(data.message || 'Email recipient deleted.', 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Email recipient delete failed.'));
+        }
+    }
+
+
+
+    /**
+     * EMAIL SUBJECT TEMPLATE SETTINGS LOGIC:
+     */
+    let emailTemplateState = {
+        templates: []
+    };
+
+    function emailTemplateEscape(value) {
+        return settingsEscape(value);
+    }
+
+    function renderEmailTemplatePlaceholders(template) {
+        const placeholders = template.allowed_placeholders || [];
+        if (!placeholders.length) {
+            return `<div class="email-template-placeholder-muted">No placeholders configured.</div>`;
+        }
+
+        return placeholders.map(key => {
+            return `<button type="button" class="email-template-placeholder-chip" onclick="insertEmailTemplatePlaceholder('${emailTemplateEscape(template.template_key)}', '${emailTemplateEscape(key)}')">{${emailTemplateEscape(key)}}</button>`;
+        }).join('');
+    }
+
+    function emailTemplateSampleContext(templateKey) {
+        const shared = {
+            billing_marker: '_BILLING',
+            billing_label: 'Billing',
+            client_name: 'Sample Medical Center',
+            machine_name: 'Mobile X-Ray',
+            service_case: 'Preventive Maintenance',
+            date_mmddyyyy: '06-25-2026',
+            date_mmddyy: '06-25-26',
+            service_date: 'June 25, 2026',
+            task: 'Preventive Maintenance',
+            product: 'Mobile X-Ray',
+            serial: 'MXR-12345',
+            shift_id: '1001',
+            tsr_count: '1',
+            request_no: 'TR-2026-001',
+            requester: 'Juan Dela Cruz',
+            destination: 'Cebu City',
+            travel_dates: 'June 25-27, 2026',
+            requested_amount: '12,000.00',
+            approved_amount: '10,000.00',
+            approved_by: 'Approver Name',
+            cash_advance_no: 'CA-2026-001',
+            request_date: 'June 20, 2026',
+            needed_date: 'June 25, 2026',
+            liquidation_days: '7',
+            employee_name: 'Juan Dela Cruz',
+            date_range: 'June 1-15, 2026',
+            period_start: 'June 1, 2026',
+            period_end: 'June 15, 2026',
+            grand_total: '8,500.00'
+        };
+        return shared;
+    }
+
+    function previewEmailTemplateSubject(templateKey, templateValue) {
+        const context = emailTemplateSampleContext(templateKey);
+        return String(templateValue || '').replace(/\{([a-zA-Z0-9_]+)\}/g, function(match, key) {
+            return Object.prototype.hasOwnProperty.call(context, key) ? context[key] : match;
+        });
+    }
+
+    function updateEmailTemplatePreview(templateKey) {
+        const card = document.querySelector(`.email-template-card[data-template-key="${templateKey}"]`);
+        const input = card?.querySelector('.email-template-input');
+        const preview = card?.querySelector('.email-template-preview-value');
+        if (!input || !preview) return;
+        preview.textContent = previewEmailTemplateSubject(templateKey, input.value);
+    }
+
+    function renderEmailTemplates() {
+        const container = document.getElementById('email-template-list');
+        if (!container) return;
+
+        const templates = emailTemplateState.templates || [];
+        if (!templates.length) {
+            container.innerHTML = `<div class="text-muted small border rounded-3 p-3">No email subject templates found.</div>`;
+            return;
+        }
+
+        container.innerHTML = templates.map(template => {
+            const templateKey = emailTemplateEscape(template.template_key || '');
+            const isActiveChecked = template.is_active ? 'checked' : '';
+            return `
+                <div class="email-template-card" data-template-key="${templateKey}">
+                    <div class="email-template-header">
+                        <div>
+                            <div class="email-template-title">${emailTemplateEscape(template.label || template.template_key)}</div>
+                            <div class="email-template-description">${emailTemplateEscape(template.description || '')}</div>
+                        </div>
+                        <span class="email-template-type-badge">${emailTemplateEscape(template.template_type || 'subject')}</span>
+                    </div>
+
+                    <div class="email-template-body">
+                        <label class="small fw-bold text-muted text-uppercase mb-1">Subject Template</label>
+                        <input type="text"
+                               class="form-control form-control-sm rounded-3 email-template-input"
+                               value="${emailTemplateEscape(template.template_value || '')}"
+                               placeholder="${emailTemplateEscape(template.default_template || '')}"
+                               oninput="updateEmailTemplatePreview('${templateKey}')">
+
+                        <div class="email-template-placeholder-wrap mt-2">
+                            <div class="email-template-placeholder-label">Available placeholders</div>
+                            <div class="email-template-placeholder-list">
+                                ${renderEmailTemplatePlaceholders(template)}
+                            </div>
+                        </div>
+
+                        <div class="email-template-default mt-2">
+                            <strong>Default:</strong> ${emailTemplateEscape(template.default_template || '')}
+                        </div>
+
+                        <div class="email-template-preview mt-2">
+                            <strong>Preview:</strong>
+                            <span class="email-template-preview-value">${emailTemplateEscape(previewEmailTemplateSubject(template.template_key, template.template_value || template.default_template || ''))}</span>
+                        </div>
+
+                        <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+                            <button type="button" class="btn btn-email-templates btn-sm fw-bold rounded-3" onclick="saveEmailTemplate('${templateKey}')">
+                                <i class="fa-solid fa-floppy-disk me-1"></i>Save Subject
+                            </button>
+                            <button type="button" class="btn btn-outline-email-templates btn-sm fw-bold rounded-3" onclick="resetEmailTemplate('${templateKey}')">
+                                <i class="fa-solid fa-rotate-left me-1"></i>Reset Default
+                            </button>
+                            <div class="form-check form-switch ms-sm-auto">
+                                <input class="form-check-input email-template-active" type="checkbox" ${isActiveChecked}>
+                                <label class="form-check-label small fw-bold">Active</label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function insertEmailTemplatePlaceholder(templateKey, placeholderKey) {
+        const card = document.querySelector(`.email-template-card[data-template-key="${templateKey}"]`);
+        const input = card?.querySelector('.email-template-input');
+        if (!input) return;
+
+        const insertText = `{${placeholderKey}}`;
+        const start = input.selectionStart || input.value.length;
+        const end = input.selectionEnd || input.value.length;
+        input.value = input.value.slice(0, start) + insertText + input.value.slice(end);
+        input.focus();
+        const cursorPos = start + insertText.length;
+        try {
+            input.setSelectionRange(cursorPos, cursorPos);
+        } catch (err) {}
+    }
+
+    async function loadEmailTemplates(silent=false) {
+        const loading = document.getElementById('email-template-loading');
+        const content = document.getElementById('email-template-content');
+        const error = document.getElementById('email-template-error');
+
+        if (!loading || !content) return;
+
+        if (!silent) loading.classList.remove('d-none');
+        if (error) error.classList.add('d-none');
+
+        try {
+            const res = await fetch('/settings/email-templates-data?_=' + Date.now(), {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Accept': 'application/json' }
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Email template request failed.');
+            }
+
+            emailTemplateState = {
+                templates: data.templates || []
+            };
+
+            renderEmailTemplates();
+            content.classList.remove('d-none');
+        } catch (err) {
+            console.error('Email templates load failed:', err);
+            if (error) {
+                error.textContent = err.message || 'Email subject templates could not be loaded.';
+                error.classList.remove('d-none');
+            }
+        } finally {
+            loading.classList.add('d-none');
+        }
+    }
+
+    async function saveEmailTemplate(templateKey) {
+        const card = document.querySelector(`.email-template-card[data-template-key="${templateKey}"]`);
+        if (!card) return;
+
+        const payload = {
+            template_key: templateKey,
+            template_value: card.querySelector('.email-template-input')?.value || '',
+            is_active: Boolean(card.querySelector('.email-template-active')?.checked)
+        };
+
+        if (!payload.template_value.trim()) {
+            settingsAlert('Email subject template cannot be blank.');
+            return;
+        }
+
+        try {
+            const res = await fetch('/settings/email-templates-save', {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Email template save failed.');
+            }
+
+            await loadEmailTemplates(true);
+            settingsAlert(data.message || 'Email subject template saved.', 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Email template save failed.'));
+        }
+    }
+
+    async function resetEmailTemplate(templateKey) {
+        const shouldReset = await settingsConfirmDialog({
+            title: 'Reset Subject Template?',
+            message: 'This will restore the default subject format for this email template.',
+            confirmText: 'Reset Default',
+            cancelText: 'Cancel',
+            tone: 'warning',
+            icon: 'rotate-left'
+        });
+        if (!shouldReset) return;
+
+        try {
+            const res = await fetch(`/settings/email-templates-reset/${templateKey}`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRFToken': getCSRFToken()
+                },
+                body: JSON.stringify({})
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || data.message || 'Email template reset failed.');
+            }
+
+            await loadEmailTemplates(true);
+            settingsAlert(data.message || 'Email subject template reset.', 'success');
+        } catch (err) {
+            settingsAlert('Error: ' + (err.message || 'Email template reset failed.'));
+        }
+    }
+
 
     /**
      * ROLE ESCALATION LOGIC:
@@ -447,22 +2682,107 @@
         const userId = buttonElement.getAttribute('data-id');
         const username = buttonElement.getAttribute('data-user');
 
-        if (!confirm(`Grant Administrative privileges to ${username}?`)) return;
+        const shouldPromote = await settingsConfirmDialog({
+            title: 'Grant Admin Privileges?',
+            message: `Grant Administrative privileges to ${username}?`,
+            confirmText: 'Grant Access',
+            cancelText: 'Cancel',
+            tone: 'warning',
+            icon: 'user-shield'
+        });
+        if (!shouldPromote) return;
 
-        const res = await fetch(`/make_user_admin/${userId}`, { 
+        const res = await fetch(`/make_user_admin/${userId}`, {
             method: 'POST',
             headers: { 'X-CSRFToken': getCSRFToken() }
         });
         if (res.ok) {
-            alert(`${username} is now a System Administrator.`);
+            settingsAlert(`${username} is now a System Administrator.`, 'success');
             location.reload();
         } else {
-            alert("Error: Promotion failed.");
+            settingsAlert("Error: Promotion failed.");
         }
     }
 </script>
 
 <style>
+    .settings-page {
+        max-width: 1320px;
+    }
+    .settings-page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 1rem;
+        padding: 1.25rem 1.35rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 1.25rem;
+        background: linear-gradient(135deg, #ffffff, #f8fafc);
+        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.06);
+    }
+    .settings-eyebrow {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 0.25rem;
+    }
+    .settings-title {
+        color: #0f172a;
+        font-weight: 950;
+        letter-spacing: -0.02em;
+    }
+    .settings-subtitle {
+        color: #64748b;
+        font-size: 0.92rem;
+        font-weight: 700;
+    }
+    .settings-section-nav {
+        display: flex;
+        gap: 0.65rem;
+        overflow-x: auto;
+        padding: 0.35rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        background: #fff;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+    }
+    .settings-section-tab {
+        border: 0;
+        border-radius: 0.8rem;
+        background: transparent;
+        color: #64748b;
+        min-height: 2.8rem;
+        padding: 0.65rem 1rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.86rem;
+        font-weight: 900;
+        white-space: nowrap;
+        transition: all 0.18s ease;
+    }
+    .settings-section-tab:hover {
+        background: #f8fafc;
+        color: #0f172a;
+    }
+    .settings-section-tab.active {
+        background: #0f172a;
+        color: #fff;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.2);
+    }
+    .settings-section-panel {
+        display: none;
+    }
+    .settings-section-panel.active {
+        display: flex;
+    }
+
+    .settings-section-panel[data-settings-section="account"].active {
+        align-items: stretch;
+    }
+
     .rounded-4 { border-radius: 1rem !important; }
     .xsmall { font-size: 0.65rem; }
     .italic { font-style: italic; }
@@ -471,6 +2791,356 @@
     .form-control:focus { border-color: #0d6efd; box-shadow: none; }
     .bg-purple { background-color: #6f42c1 !important; }
     .settings-backup-card { border-left: 5px solid #198754 !important; }
+    .settings-approval-card { border-left: 5px solid #4f46e5 !important; }
+    .settings-user-filter-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 1rem;
+        border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc;
+    }
+    .settings-user-filter {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        width: min(420px, 100%);
+        padding: 0.35rem 0.65rem;
+        border: 1px solid #dbe3ef;
+        border-radius: 0.85rem;
+        background: #fff;
+        color: #64748b;
+    }
+    .settings-user-filter .form-control {
+        border: 0;
+        box-shadow: none;
+        min-height: 2rem;
+        padding-left: 0;
+    }
+    .settings-user-filter-count {
+        color: #64748b;
+        font-size: 0.76rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+    .bg-indigo { background-color: #4f46e5 !important; }
+    .text-indigo { color: #4f46e5 !important; }
+    .btn-indigo {
+        background: #4f46e5;
+        border-color: #4f46e5;
+        color: #fff;
+    }
+    .btn-indigo:hover {
+        background: #4338ca;
+        border-color: #4338ca;
+        color: #fff;
+    }
+    .btn-outline-indigo {
+        color: #4f46e5;
+        border-color: #4f46e5;
+    }
+    .btn-outline-indigo:hover {
+        color: #fff;
+        background: #4f46e5;
+        border-color: #4f46e5;
+    }
+    .approval-section-title {
+        color: #0f172a;
+        font-size: 0.78rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.65rem;
+    }
+    .approval-workspace {
+        display: grid;
+        gap: 1rem;
+    }
+    .approval-work-panel {
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        border-radius: 1rem;
+        padding: 1rem;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+    }
+    .approval-panel-note {
+        color: #64748b;
+        font-size: 0.78rem;
+        font-weight: 800;
+        margin: -0.25rem 0 0.85rem;
+        line-height: 1.35;
+    }
+    .approval-user-card,
+    .approval-route-card {
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        border-radius: 1rem;
+        padding: 0.9rem;
+        margin-bottom: 0.75rem;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+    }
+    .approval-user-main,
+    .approval-route-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.85rem;
+    }
+    .approval-user-name,
+    .approval-route-line {
+        color: #0f172a;
+        font-weight: 900;
+        font-size: 0.92rem;
+    }
+    .approval-route-line span {
+        display: inline-block;
+    }
+    .approval-user-meta {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 800;
+        margin-top: 0.18rem;
+    }
+    .approval-users-list,
+    .approval-routes-list {
+        max-height: 420px;
+        overflow: auto;
+        padding-right: 0.25rem;
+    }
+
+    .approval-bulk-panel {
+        border: 1px solid #c7d2fe;
+        background: linear-gradient(135deg, #eef2ff 0%, #ffffff 100%);
+        border-radius: 1rem;
+        padding: 1rem;
+        box-shadow: 0 10px 26px rgba(79, 70, 229, 0.06);
+        margin-bottom: 0 !important;
+    }
+
+    .approval-bulk-note {
+        color: #475569;
+        font-size: 0.78rem;
+        font-weight: 800;
+        line-height: 1.35;
+    }
+
+    .approval-bulk-preview {
+        min-height: 31px;
+        display: flex;
+        align-items: center;
+        padding: 0.35rem 0.7rem;
+        border: 1px dashed #a5b4fc;
+        border-radius: 0.75rem;
+        background: #fff;
+        color: #3730a3;
+        font-size: 0.8rem;
+        font-weight: 900;
+    }
+
+    .approval-bulk-manual-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 0.5rem;
+        max-height: 220px;
+        overflow: auto;
+        padding: 0.25rem;
+    }
+
+    .approval-bulk-manual-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.55rem;
+        padding: 0.65rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.85rem;
+        background: #fff;
+        cursor: pointer;
+    }
+
+    .approval-bulk-manual-item strong {
+        display: block;
+        color: #0f172a;
+        font-size: 0.78rem;
+        font-weight: 900;
+        line-height: 1.15;
+    }
+
+    .approval-bulk-manual-item small {
+        display: block;
+        color: #64748b;
+        font-size: 0.68rem;
+        font-weight: 800;
+        margin-top: 0.12rem;
+    }
+
+    .approval-route-card-grouped {
+        display: block;
+    }
+    .approval-route-group-main {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        width: 100%;
+    }
+    .approval-route-count-badge {
+        display: inline-flex;
+        align-items: center;
+        margin-left: 0.5rem;
+        padding: 0.15rem 0.45rem;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #3730a3;
+        font-size: 0.68rem;
+        font-weight: 900;
+        vertical-align: middle;
+    }
+    .approval-approver-chip-list {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.4rem;
+        max-width: 58%;
+    }
+    .approval-approver-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border: 1px solid #bbf7d0;
+        background: #f0fdf4;
+        color: #14532d;
+        border-radius: 999px;
+        padding: 0.32rem 0.45rem 0.32rem 0.65rem;
+        font-size: 0.76rem;
+        font-weight: 900;
+    }
+    .approval-chip-remove {
+        border: 0;
+        background: rgba(22, 101, 52, 0.12);
+        color: #166534;
+        border-radius: 999px;
+        width: 1.35rem;
+        height: 1.35rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+    }
+    .approval-chip-remove:hover {
+        background: #dc3545;
+        color: #fff;
+    }
+    .approval-multi-note {
+        border: 1px solid #bfdbfe;
+        background: #eff6ff;
+        color: #1e3a8a;
+        border-radius: 0.85rem;
+        padding: 0.65rem 0.75rem;
+        font-size: 0.78rem;
+        font-weight: 800;
+        line-height: 1.35;
+    }
+
+    .settings-signature-card { border-left: 5px solid #0d6efd !important; }
+    .signature-preview-wrap {
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        border-radius: 0.9rem;
+        padding: 0.8rem;
+    }
+    .signature-preview-label {
+        color: #64748b;
+        font-size: 0.68rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.5rem;
+    }
+    .signature-preview-img {
+        display: block;
+        width: 100%;
+        max-height: 120px;
+        object-fit: contain;
+        background: #fff;
+        border: 1px dashed #cbd5e1;
+        border-radius: 0.75rem;
+        padding: 0.45rem;
+    }
+    .signature-action-panel {
+        border: 1px solid #dbeafe;
+        background: linear-gradient(135deg, #eff6ff, #ffffff);
+        border-radius: 0.95rem;
+        padding: 0.85rem;
+    }
+    .signature-options-panel {
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        border-radius: 0.95rem;
+        padding: 0.85rem;
+    }
+    .signature-option-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.65rem;
+    }
+    .signature-upload-wrap {
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        border-radius: 0.95rem;
+        padding: 0.85rem;
+    }
+    .signature-delete-confirm-panel {
+        border: 1px solid #fecaca;
+        background: #fff5f5;
+        border-radius: 0.95rem;
+        padding: 0.9rem;
+        position: relative;
+        z-index: 60;
+    }
+    .signature-delete-title {
+        color: #991b1b;
+        font-size: 0.9rem;
+        font-weight: 950;
+        margin-bottom: 0.25rem;
+    }
+    .signature-delete-text {
+        color: #7f1d1d;
+        font-size: 0.78rem;
+        font-weight: 750;
+        line-height: 1.35;
+    }
+    #open-signature-delete-confirm-btn,
+    #confirm-delete-signature-btn,
+    #cancel-delete-signature-btn {
+        touch-action: manipulation;
+        pointer-events: auto;
+        position: relative;
+        z-index: 61;
+    }
+    .signature-pad-wrap {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.9rem;
+        background: #f8fafc;
+        padding: 0.75rem;
+    }
+    .signature-pad-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.55rem;
+    }
+    .signature-pad {
+        width: 100%;
+        height: 150px;
+        border: 1px dashed #94a3b8;
+        border-radius: 0.75rem;
+        background: #fff;
+        touch-action: none;
+        cursor: crosshair;
+    }
+
 
     .settings-storage-card { border-left: 5px solid #0dcaf0 !important; }
     .storage-meter {
@@ -527,6 +3197,304 @@
     }
     .storage-breakdown-row:last-child {
         border-bottom: 0;
+    }
+    .storage-recommendation {
+        border-radius: 0.85rem;
+        padding: 0.75rem 0.85rem;
+        font-size: 0.82rem;
+        font-weight: 900;
+        line-height: 1.35;
+        border: 1px solid #dbe3ef;
+        background: #f8fafc;
+        color: #334155;
+    }
+    .storage-recommendation-healthy {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #166534;
+    }
+    .storage-recommendation-warning {
+        border-color: #fde68a;
+        background: #fffbeb;
+        color: #92400e;
+    }
+    .storage-recommendation-critical {
+        border-color: #fecaca;
+        background: #fff1f2;
+        color: #991b1b;
+    }
+    .storage-last-checked {
+        color: #64748b;
+        font-size: 0.75rem;
+        font-weight: 800;
+    }
+
+    .settings-email-recipients-card { border-left: 5px solid #0891b2 !important; }
+    .bg-email-recipients { background-color: #0891b2 !important; }
+    .text-email-recipients { color: #0891b2 !important; }
+    .btn-email-recipients {
+        background: #0891b2;
+        border-color: #0891b2;
+        color: #fff;
+    }
+    .btn-email-recipients:hover {
+        background: #0e7490;
+        border-color: #0e7490;
+        color: #fff;
+    }
+    .btn-outline-email-recipients {
+        color: #0891b2;
+        border-color: #0891b2;
+    }
+    .btn-outline-email-recipients:hover {
+        color: #fff;
+        background: #0891b2;
+        border-color: #0891b2;
+    }
+    .email-recipient-section-title {
+        color: #0f172a;
+        font-size: 0.78rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .email-recipient-form-panel {
+        border: 1px solid #bae6fd;
+        background: linear-gradient(135deg, #ecfeff 0%, #ffffff 100%);
+        border-radius: 1rem;
+        padding: 1rem;
+        box-shadow: 0 10px 26px rgba(8, 145, 178, 0.06);
+    }
+    .email-recipient-groups {
+        display: grid;
+        gap: 1rem;
+    }
+    .email-recipient-group-card {
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        border-radius: 1rem;
+        overflow: hidden;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.045);
+    }
+    .email-recipient-group-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        padding: 1rem;
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .email-recipient-group-title {
+        color: #0f172a;
+        font-weight: 950;
+        font-size: 0.98rem;
+    }
+    .email-recipient-group-description {
+        color: #64748b;
+        font-size: 0.76rem;
+        font-weight: 800;
+        margin-top: 0.18rem;
+        line-height: 1.35;
+    }
+    .email-recipient-count {
+        flex: 0 0 auto;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        background: #cffafe;
+        color: #155e75;
+        font-size: 0.72rem;
+        font-weight: 950;
+    }
+    .email-recipient-usage-pill,
+    .email-recipient-usage-badge {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        border-radius: 999px;
+        border: 1px solid #bae6fd;
+        background: #ecfeff;
+        color: #155e75;
+        font-size: 0.68rem;
+        font-weight: 950;
+        line-height: 1;
+    }
+    .email-recipient-usage-pill {
+        padding: 0.24rem 0.5rem;
+        margin-right: 0.4rem;
+        margin-bottom: 0.18rem;
+    }
+    .email-recipient-usage-badge {
+        padding: 0.2rem 0.45rem;
+        margin-left: 0.35rem;
+        vertical-align: middle;
+    }
+    .email-recipient-list {
+        display: grid;
+        gap: 0.65rem;
+        padding: 0.9rem;
+    }
+    .email-recipient-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 0.9rem;
+        padding: 0.8rem;
+        background: #ffffff;
+    }
+    .email-recipient-card.inactive {
+        background: #f8fafc;
+        opacity: 0.75;
+    }
+    .email-recipient-card-main {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.85rem;
+    }
+    .email-recipient-email-line {
+        color: #0f172a;
+        font-weight: 950;
+        font-size: 0.9rem;
+        word-break: break-word;
+    }
+    .email-recipient-meta {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 800;
+        margin-top: 0.18rem;
+        line-height: 1.35;
+    }
+    .email-recipient-actions {
+        display: flex;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+
+    .settings-email-templates-card { border-left: 5px solid #7c3aed !important; }
+    .bg-email-templates { background-color: #7c3aed !important; }
+    .text-email-templates { color: #7c3aed !important; }
+    .btn-email-templates {
+        background: #7c3aed;
+        border-color: #7c3aed;
+        color: #fff;
+    }
+    .btn-email-templates:hover {
+        background: #6d28d9;
+        border-color: #6d28d9;
+        color: #fff;
+    }
+    .btn-outline-email-templates {
+        color: #7c3aed;
+        border-color: #7c3aed;
+    }
+    .btn-outline-email-templates:hover {
+        color: #fff;
+        background: #7c3aed;
+        border-color: #7c3aed;
+    }
+    .email-template-list {
+        display: grid;
+        gap: 1rem;
+    }
+    .email-template-card {
+        border: 1px solid #ddd6fe;
+        background: #fff;
+        border-radius: 1rem;
+        overflow: hidden;
+        box-shadow: 0 8px 22px rgba(124, 58, 237, 0.06);
+    }
+    .email-template-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 1rem;
+        padding: 1rem;
+        background: linear-gradient(135deg, #f5f3ff 0%, #ffffff 100%);
+        border-bottom: 1px solid #e9d5ff;
+    }
+    .email-template-title {
+        color: #0f172a;
+        font-weight: 950;
+        font-size: 0.98rem;
+    }
+    .email-template-description {
+        color: #64748b;
+        font-size: 0.76rem;
+        font-weight: 800;
+        margin-top: 0.18rem;
+        line-height: 1.35;
+    }
+    .email-template-type-badge {
+        flex: 0 0 auto;
+        padding: 0.25rem 0.55rem;
+        border-radius: 999px;
+        background: #ede9fe;
+        color: #5b21b6;
+        font-size: 0.72rem;
+        font-weight: 950;
+        text-transform: uppercase;
+    }
+    .email-template-body {
+        padding: 1rem;
+    }
+    .email-template-input {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.82rem;
+        font-weight: 800;
+    }
+    .email-template-placeholder-wrap {
+        border: 1px dashed #c4b5fd;
+        background: #faf5ff;
+        border-radius: 0.85rem;
+        padding: 0.7rem;
+    }
+    .email-template-placeholder-label {
+        color: #6b21a8;
+        font-size: 0.68rem;
+        font-weight: 950;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 0.45rem;
+    }
+    .email-template-placeholder-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+    .email-template-placeholder-chip {
+        border: 1px solid #c4b5fd;
+        background: #ffffff;
+        color: #5b21b6;
+        border-radius: 999px;
+        padding: 0.25rem 0.5rem;
+        font-size: 0.72rem;
+        font-weight: 950;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    .email-template-placeholder-chip:hover {
+        background: #7c3aed;
+        color: #fff;
+    }
+    .email-template-placeholder-muted,
+    .email-template-default,
+    .email-template-preview {
+        color: #64748b;
+        font-size: 0.72rem;
+        font-weight: 800;
+        line-height: 1.35;
+    }
+    .email-template-preview {
+        border: 1px solid #e9d5ff;
+        background: #faf5ff;
+        border-radius: 0.75rem;
+        padding: 0.55rem 0.65rem;
+        color: #4c1d95;
+    }
+    .email-template-preview-value {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-weight: 900;
+        overflow-wrap: anywhere;
     }
 
     /* MOBILE SETTINGS PAGE UPGRADE */
@@ -596,6 +3564,46 @@
             padding: 0.85rem !important;
         }
 
+        .settings-page-header {
+            padding: 1rem;
+            align-items: flex-start;
+        }
+
+        .settings-title {
+            font-size: 1.25rem;
+        }
+
+        .settings-subtitle {
+            font-size: 0.82rem;
+        }
+
+        .settings-section-nav {
+            position: sticky;
+            top: 0.35rem;
+            z-index: 20;
+            margin-left: -0.1rem;
+            margin-right: -0.1rem;
+        }
+
+        .settings-section-tab {
+            min-height: 2.6rem;
+            padding: 0.58rem 0.85rem;
+            font-size: 0.78rem;
+        }
+
+        .settings-user-filter-wrap {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .settings-user-filter {
+            width: 100%;
+        }
+
+        .settings-user-filter-count {
+            white-space: normal;
+        }
+
         .row.g-4 > [class*="col-"] {
             flex: 0 0 100%;
             max-width: 100%;
@@ -643,6 +3651,286 @@
         .card-footer {
             padding: 0.95rem !important;
         }
+
+        .approval-user-main,
+        .approval-route-card {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .approval-route-card .btn {
+            width: 100%;
+        }
+
+        .approval-route-group-main {
+            flex-direction: column;
+        }
+
+        .approval-approver-chip-list {
+            max-width: 100%;
+            justify-content: flex-start;
+        }
+
+        .approval-bulk-panel {
+            padding: 0.85rem;
+        }
+
+        .approval-work-panel {
+            padding: 0.85rem;
+        }
+
+        .signature-option-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .approval-bulk-manual-list {
+            grid-template-columns: 1fr;
+            max-height: 260px;
+        }
+
+        .email-recipient-group-header,
+        .email-recipient-card-main {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .email-recipient-actions {
+            justify-content: stretch;
+        }
+
+        .email-recipient-actions .btn {
+            flex: 1 1 140px;
+        }
+
+        .email-template-header {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .email-template-placeholder-list {
+            gap: 0.3rem;
+        }
+
+        .email-template-placeholder-chip {
+            flex: 1 1 auto;
+        }
     }
+    /* S11F8 SETTINGS CUSTOM ALERTS / CONFIRMATIONS */
+    .settings-toast-stack {
+        position: fixed;
+        top: 18px;
+        right: 18px;
+        z-index: 4090;
+        display: grid;
+        gap: 10px;
+        width: min(370px, calc(100vw - 32px));
+        pointer-events: none;
+    }
+
+    .settings-toast {
+        pointer-events: auto;
+        border-radius: 16px;
+        padding: 12px 14px;
+        border: 1px solid #dbeafe;
+        background: #ffffff;
+        color: #0f172a;
+        box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 10px;
+        align-items: start;
+        animation: settingsToastIn .18s ease-out;
+    }
+
+    .settings-toast.success,
+    .settings-toast.ok {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #166534;
+    }
+
+    .settings-toast.error,
+    .settings-toast.err {
+        border-color: #fecaca;
+        background: #fff1f2;
+        color: #991b1b;
+    }
+
+    .settings-toast.warn,
+    .settings-toast.warning {
+        border-color: #fde68a;
+        background: #fffbeb;
+        color: #92400e;
+    }
+
+    .settings-toast-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(13,110,253,.12);
+        color: #0d6efd;
+        font-weight: 950;
+    }
+
+    .settings-toast-title {
+        font-weight: 950;
+        margin-bottom: 2px;
+    }
+
+    .settings-toast-message {
+        font-weight: 800;
+        line-height: 1.35;
+        font-size: .86rem;
+        white-space: pre-wrap;
+    }
+
+    .settings-toast-close {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font-size: 1.05rem;
+        font-weight: 950;
+        cursor: pointer;
+        line-height: 1;
+    }
+
+    .settings-dialog-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 4100;
+        background: rgba(15, 23, 42, 0.55);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+    }
+
+    .settings-dialog-backdrop.show {
+        display: flex;
+    }
+
+    .settings-dialog {
+        width: min(460px, 100%);
+        background: #ffffff;
+        border-radius: 22px;
+        box-shadow: 0 28px 90px rgba(15, 23, 42, 0.38);
+        border: 1px solid #dbeafe;
+        overflow: hidden;
+        animation: settingsDialogIn .18s ease-out;
+    }
+
+    .settings-dialog-header {
+        padding: 18px 18px 10px;
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .settings-dialog-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 16px;
+        background: #eff6ff;
+        color: #0d6efd;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.05rem;
+        flex: 0 0 auto;
+    }
+
+    .settings-dialog.danger .settings-dialog-icon {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .settings-dialog.success .settings-dialog-icon {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .settings-dialog.warning .settings-dialog-icon {
+        background: #fffbeb;
+        color: #b45309;
+    }
+
+    .settings-dialog-title {
+        margin: 0;
+        color: #0f172a;
+        font-weight: 950;
+        font-size: 1.08rem;
+    }
+
+    .settings-dialog-message {
+        margin-top: 5px;
+        color: #475569;
+        font-weight: 800;
+        line-height: 1.45;
+        white-space: pre-wrap;
+    }
+
+    .settings-dialog-input-wrap {
+        margin-top: 12px;
+    }
+
+    .settings-dialog-input-label {
+        display: block;
+        color: #64748b;
+        font-size: .68rem;
+        font-weight: 950;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+    }
+
+    .settings-dialog-input-help {
+        color: #64748b;
+        font-size: .75rem;
+        font-weight: 750;
+        line-height: 1.35;
+        margin-top: 6px;
+    }
+
+    .settings-dialog-actions {
+        padding: 12px 18px 18px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    @keyframes settingsDialogIn {
+        from { opacity: 0; transform: translateY(10px) scale(.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes settingsToastIn {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 768px) {
+        .settings-toast-stack {
+            top: 12px;
+            left: 10px;
+            right: 10px;
+            width: auto;
+        }
+
+        .settings-dialog-backdrop {
+            align-items: flex-end;
+            padding: 12px;
+        }
+
+        .settings-dialog {
+            width: 100%;
+            border-radius: 20px;
+        }
+    }
+
+
 </style>
 {% endblock %}

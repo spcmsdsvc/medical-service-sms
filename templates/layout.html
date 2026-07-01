@@ -480,6 +480,233 @@
         border-bottom: 2px solid #facc15;
     }
 }
+
+/* =========================================================
+   SIDEBAR VISUAL CLEANUP — M2C
+   Visual-only standardization for sidebar row height, spacing,
+   icon alignment, text sizing, arrows, and active states.
+   ========================================================= */
+
+.sidebar nav {
+    padding: 0;
+}
+
+.sidebar a,
+.sidebar-section-toggle,
+.sidebar-calendar-main,
+.sidebar-calendar-arrow {
+    box-sizing: border-box;
+}
+
+.sidebar a,
+.sidebar-section-toggle,
+.sidebar-calendar-main {
+    min-height: 58px;
+    height: 58px;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    color: #cbd5e1;
+    font-size: 0.96rem;
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: 0.01em;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    white-space: nowrap;
+}
+
+.sidebar a i,
+.sidebar-section-toggle i:first-child,
+.sidebar-calendar-main i {
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 0 !important;
+    font-size: 0.98rem;
+    opacity: 0.95;
+}
+
+.sidebar a span,
+.sidebar-section-toggle span,
+.sidebar-calendar-main span {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar a:hover,
+.sidebar-section-toggle:hover,
+.sidebar-calendar-arrow:hover {
+    background: #34495e;
+    color: #ffffff;
+}
+
+.sidebar a.active,
+.sidebar-section-toggle.active,
+.sidebar-calendar-main.active {
+    color: #ffffff;
+    background: #1a252f;
+    border-left: 4px solid #d63384;
+    padding-left: 16px;
+}
+
+.sidebar-calendar-row {
+    display: grid;
+    grid-template-columns: 1fr 58px;
+    min-height: 58px;
+    height: 58px;
+    align-items: stretch;
+    border-bottom: 0;
+}
+
+.sidebar-calendar-row .sidebar-calendar-main {
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.sidebar-calendar-arrow {
+    width: 58px;
+    min-height: 58px;
+    height: 58px;
+    border: 0;
+    border-left: 1px solid rgba(148, 163, 184, 0.14);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    background: transparent;
+    color: #cbd5e1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sidebar-section-toggle .sidebar-section-arrow,
+.sidebar-calendar-arrow .sidebar-section-arrow {
+    margin-left: auto;
+    width: 18px;
+    min-width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.82rem;
+    opacity: 0.9;
+    transition: transform 0.2s ease;
+}
+
+.sidebar-subnav {
+    background: rgba(15, 23, 42, 0.18);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.sidebar-subnav a {
+    min-height: 46px;
+    height: 46px;
+    padding: 0 20px 0 58px;
+    font-size: 0.88rem;
+    font-weight: 750;
+    border-bottom: 0;
+    color: #cbd5e1;
+}
+
+.sidebar-subnav a.active {
+    padding-left: 54px;
+}
+
+.sidebar-subnav a.text-muted {
+    color: rgba(203, 213, 225, 0.56) !important;
+}
+
+.sidebar a.text-warning {
+    color: #facc15 !important;
+    margin-top: 18px !important;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.sidebar a.text-warning:hover {
+    color: #fff3cd !important;
+}
+
+.sidebar-header {
+    min-height: 102px;
+    padding: 22px 24px;
+}
+
+.sidebar-header h5 {
+    font-size: 1.28rem;
+    line-height: 1.08;
+    letter-spacing: 0.02em;
+}
+
+.toggle-btn {
+    width: 28px;
+    min-width: 28px;
+    text-align: center;
+}
+
+/* Keep mobile optimization from inflating sidebar buttons unevenly. */
+@media (max-width: 768px) {
+    .mobile-device .sidebar a,
+    .mobile-device .sidebar-section-toggle,
+    .mobile-device .sidebar-calendar-main {
+        min-height: 58px !important;
+        height: 58px !important;
+        font-size: 0.96rem !important;
+        font-weight: 800 !important;
+        border-radius: 0 !important;
+    }
+
+    .mobile-device .sidebar-calendar-arrow {
+        min-height: 58px !important;
+        height: 58px !important;
+        border-radius: 0 !important;
+    }
+
+    .mobile-device .sidebar-subnav a {
+        min-height: 46px !important;
+        height: 46px !important;
+        font-size: 0.88rem !important;
+        border-radius: 0 !important;
+    }
+}
+
+/* =========================================================
+   S12B5C — MOBILE SIDEBAR SCROLL POLISH
+   Keeps Logout and lower menu items reachable when Field Operations expands.
+   ========================================================= */
+.sidebar{
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.sidebar nav{
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: calc(24px + var(--mobile-safe-bottom));
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+.sidebar nav::-webkit-scrollbar{
+    width: 6px;
+}
+
+.sidebar nav::-webkit-scrollbar-thumb{
+    background: rgba(203, 213, 225, 0.32);
+    border-radius: 999px;
+}
+
+@media (max-width: 992px){
+    .sidebar nav{
+        padding-bottom: calc(72px + var(--mobile-safe-bottom));
+    }
+}
+
 </style>
 
 
@@ -504,45 +731,146 @@
         </div>
         
         <nav class="mt-2">
+            {% set username_lc = (current_user.username|lower) if current_user.is_authenticated else '' %}
+            {% set is_management_user = current_user.is_authenticated and current_user.role in ['superadmin', 'regional_admin'] %}
+            {% set is_scheduler_user = current_user.is_authenticated and username_lc in ['hanna', 'diary'] %}
+            {% set is_engineer_only = current_user.is_authenticated and current_user.role == 'engineer' %}
+            {% set is_rodito_manager = current_user.is_authenticated and username_lc == 'rodito' %}
+            {% set is_approver_user = current_user.is_authenticated and (
+                is_rodito_manager or
+                (current_user.can_approve_requests is defined and current_user.can_approve_requests)
+            ) %}
+            {% set is_approver_only_user = current_user.is_authenticated and (
+                current_user.role is defined and (current_user.role|string|lower) == 'approver' and
+                current_user.can_approve_requests is defined and current_user.can_approve_requests
+            ) %}
+            {# S12B4: Accounting Center is now a self-service records center for all logged-in users. #}
+            {% set is_accounting_center_user = current_user.is_authenticated and not is_approver_only_user %}
+            {% set is_reports_sidebar_user = is_management_user or is_engineer_only %}
+            {% set field_ops_paths = ['/travel_request', '/reimbursement', '/cash_advance'] %}
+            {% set approval_paths = ['/approvals'] %}
+            {% set reports_paths = ['/analytics_page', '/reports_page'] %}
+            {% set records_paths = ['/engineers_page', '/clients_page', '/products_page'] %}
+            {% set admin_paths = ['/activity_page', '/settings'] %}
+
             <a href="/" class="{{ 'active' if request.path == '/' }}"><i class="fa-solid fa-chart-line me-2"></i> Dashboard</a>
-            <div class="sidebar-calendar-row {{ 'active' if request.path in ['/timeline', '/offline-tsr'] }}">
-                <a href="/timeline" class="sidebar-calendar-main {{ 'active' if request.path == '/timeline' }}">
-                    <i class="fa-solid fa-calendar-days me-2"></i>
-                    <span>Calendar</span>
-                </a>
+
+            {% if not is_approver_only_user %}
+                <div class="sidebar-calendar-row {{ 'active' if request.path in ['/timeline', '/offline-tsr'] }}">
+                    <a href="/timeline" class="sidebar-calendar-main {{ 'active' if request.path == '/timeline' }}">
+                        <i class="fa-solid fa-calendar-days me-2"></i>
+                        <span>Calendar</span>
+                    </a>
+                    <button
+                        type="button"
+                        class="sidebar-calendar-arrow"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#calendar-sidebar-section"
+                        aria-expanded="{{ 'true' if request.path == '/offline-tsr' else 'false' }}"
+                        aria-controls="calendar-sidebar-section"
+                        title="Show Create TSR"
+                    >
+                        <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
+                    </button>
+                </div>
+                <div id="calendar-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path == '/offline-tsr' }}">
+                    <a href="/offline-tsr" class="{{ 'active' if request.path == '/offline-tsr' }}"><i class="fa-solid fa-file-pen me-2"></i> Create TSR</a>
+                </div>
+            {% endif %}
+
+            {% if new_workflows_enabled and current_user.is_authenticated and not is_approver_only_user %}
                 <button
                     type="button"
-                    class="sidebar-calendar-arrow"
+                    class="sidebar-section-toggle {{ 'active' if request.path in field_ops_paths }}"
                     data-bs-toggle="collapse"
-                    data-bs-target="#calendar-sidebar-section"
-                    aria-expanded="{{ 'true' if request.path == '/offline-tsr' else 'false' }}"
-                    aria-controls="calendar-sidebar-section"
-                    title="Show Create TSR"
+                    data-bs-target="#field-operations-sidebar-section"
+                    aria-expanded="{{ 'true' if request.path in field_ops_paths else 'false' }}"
+                    aria-controls="field-operations-sidebar-section"
                 >
+                    <i class="fa-solid fa-briefcase-medical"></i>
+                    <span>Field Operations</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
                 </button>
-            </div>
-            <div id="calendar-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path == '/offline-tsr' }}">
-                <a href="/offline-tsr" class="{{ 'active' if request.path == '/offline-tsr' }}"><i class="fa-solid fa-file-pen me-2"></i> Create TSR</a>
-            </div>
-{% if current_user.is_authenticated and current_user.role in ['superadmin', 'regional_admin'] %}
-                <a href="/analytics_page" class="{{ 'active' if request.path == '/analytics_page' }}"><i class="fa-solid fa-chart-pie me-2"></i> Analytics</a>
+                <div id="field-operations-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in field_ops_paths }}">
+                    <a href="/travel_request" class="{{ 'active' if request.path == '/travel_request' }}"><i class="fa-solid fa-plane-departure me-2"></i> Travel Request</a>
+                    <a href="/reimbursement" class="{{ 'active' if request.path == '/reimbursement' }}"><i class="fa-solid fa-file-invoice-dollar me-2"></i> Liquidation</a>
+                    <a href="/cash_advance"><i class="fa-solid fa-money-bill-transfer me-2"></i> Cash Advance</a>
+                </div>
+            {% endif %}
+
+            {% if new_workflows_enabled and is_accounting_center_user %}
+                <a href="/accounting_center" class="{{ 'active' if request.path == '/accounting_center' }}"><i class="fa-solid fa-folder-tree me-2"></i> My Requests</a>
+            {% endif %}
+
+            {% if new_workflows_enabled and is_approver_user %}
+                <a href="/approvals" class="{{ 'active' if request.path == '/approvals' }}"><i class="fa-solid fa-clipboard-check me-2"></i> Approvals</a>
+            {% endif %}
+
+            {% if is_reports_sidebar_user %}
+                <button
+                    type="button"
+                    class="sidebar-section-toggle {{ 'active' if request.path in reports_paths }}"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#reports-insights-sidebar-section"
+                    aria-expanded="{{ 'true' if request.path in reports_paths else 'false' }}"
+                    aria-controls="reports-insights-sidebar-section"
+                >
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <span>{{ 'Reports & Insights' if is_management_user else 'Reports' }}</span>
+                    <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
+                </button>
+                <div id="reports-insights-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}">
+                    {% if is_management_user %}
+                    <a href="/analytics_page" class="{{ 'active' if request.path == '/analytics_page' }}"><i class="fa-solid fa-chart-pie me-2"></i> Analytics</a>
+                    {% endif %}
+                    <a href="/reports_page" class="{{ 'active' if request.path == '/reports_page' }}"><i class="fa-solid fa-file-lines me-2"></i> Reports</a>
+                </div>
+            {% endif %}
+
+            {% if current_user.is_authenticated and not is_approver_only_user %}
+                <button
+                    type="button"
+                    class="sidebar-section-toggle {{ 'active' if request.path in records_paths }}"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#records-sidebar-section"
+                    aria-expanded="{{ 'true' if request.path in records_paths else 'false' }}"
+                    aria-controls="records-sidebar-section"
+                >
+                    <i class="fa-solid fa-folder-open"></i>
+                    <span>{{ 'Records' if is_management_user else 'Resources' }}</span>
+                    <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
+                </button>
+                <div id="records-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in records_paths }}">
+                    {% if is_management_user or is_engineer_only %}
+                        <a href="/engineers_page" class="{{ 'active' if request.path == '/engineers_page' }}"><i class="fa-solid fa-user-gear me-2"></i> Personnel</a>
+                    {% endif %}
+                    <a href="/clients_page" class="{{ 'active' if request.path == '/clients_page' }}"><i class="fa-solid fa-hospital me-2"></i> Medical Centers</a>
+                    <a href="/products_page" class="{{ 'active' if request.path == '/products_page' }}"><i class="fa-solid fa-boxes-stacked me-2"></i> Inventory</a>
+                </div>
+            {% endif %}
+
+            {% if is_management_user %}
+                <button
+                    type="button"
+                    class="sidebar-section-toggle {{ 'active' if request.path in admin_paths }}"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#admin-sidebar-section"
+                    aria-expanded="{{ 'true' if request.path in admin_paths else 'false' }}"
+                    aria-controls="admin-sidebar-section"
+                >
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span>Admin</span>
+                    <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
+                </button>
+                <div id="admin-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}">
+                    <a href="/activity_page" class="{{ 'active' if request.path == '/activity_page' }}"><i class="fa-solid fa-clock-rotate-left me-2"></i> Activity Logs</a>
+                    <a href="/settings" class="{{ 'active' if request.path == '/settings' }}"><i class="fa-solid fa-gear me-2"></i> System Settings</a>
+                </div>
+            {% elif current_user.is_authenticated %}
+                <a href="/settings" class="{{ 'active' if request.path == '/settings' }}"><i class="fa-solid fa-gear me-2"></i> System Settings</a>
             {% endif %}
 
             {% if current_user.is_authenticated %}
-                <a href="/reports_page" class="{{ 'active' if request.path == '/reports_page' }}"><i class="fa-solid fa-file-lines me-2"></i> Reports</a>
-            {% endif %}
-            
-            <a href="/engineers_page" class="{{ 'active' if request.path == '/engineers_page' }}"><i class="fa-solid fa-user-gear me-2"></i> Personnel</a>
-            <a href="/clients_page" class="{{ 'active' if request.path == '/clients_page' }}"><i class="fa-solid fa-hospital me-2"></i> Medical Centers</a>
-            <a href="/products_page" class="{{ 'active' if request.path == '/products_page' }}"><i class="fa-solid fa-boxes-stacked me-2"></i> Inventory</a>
-
-            {% if current_user.is_authenticated and current_user.role in ['superadmin', 'regional_admin'] %}
-                <a href="/activity_page" class="{{ 'active' if request.path == '/activity_page' }}"><i class="fa-solid fa-clock-rotate-left me-2"></i> Activity Logs</a>
-            {% endif %}
-
-            {% if current_user.is_authenticated %}
-                <a href="/settings" class="{{ 'active' if request.path == '/settings' }}"><i class="fa-solid fa-shield-halved me-2"></i> Security Settings</a>
                 <a href="/logout" class="text-warning mt-4"><i class="fa-solid fa-right-from-bracket me-2"></i> Logout ({{ current_user.username }})</a>
             {% endif %}
         </nav>
@@ -567,7 +895,7 @@
 
         // Global Helper for CSRF Header
         function getCSRFToken() {
-            return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+            return window.__freshCSRFToken || document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         }
     </script>
 

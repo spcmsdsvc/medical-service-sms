@@ -21,6 +21,9 @@ static/uploads/
 # Logs
 *.log
 
+# Generated presentations / local artifacts
+outputs/
+
 # OS
 .DS_Store
 Thumbs.db

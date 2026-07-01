@@ -1,0 +1,1573 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+    .accounting-shell{
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    .accounting-hero{
+        background: linear-gradient(135deg, #0f172a, #1e3a8a);
+        color: #fff;
+        border-radius: 22px;
+        padding: 24px;
+        box-shadow: 0 18px 45px rgba(15,23,42,.18);
+    }
+    .accounting-hero h1{
+        font-weight: 900;
+        letter-spacing: -.03em;
+    }
+    .kpi-card{
+        border: 0;
+        border-radius: 18px;
+        box-shadow: 0 10px 28px rgba(15,23,42,.07);
+        height: 100%;
+    }
+    .kpi-label{
+        color: #64748b;
+        font-weight: 800;
+        font-size: .82rem;
+        text-transform: uppercase;
+        letter-spacing: .08em;
+    }
+    .kpi-value{
+        font-size: 2rem;
+        font-weight: 900;
+        color: #0f172a;
+        line-height: 1;
+    }
+    .queue-card{
+        border: 0;
+        border-radius: 20px;
+        box-shadow: 0 12px 30px rgba(15,23,42,.08);
+        overflow: hidden;
+    }
+    .module-tabs{
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 12px;
+    }
+    .module-tab{
+        border: 1px solid #e2e8f0;
+        background: #fff;
+        border-radius: 18px;
+        padding: 14px 16px;
+        text-align: left;
+        box-shadow: 0 8px 22px rgba(15,23,42,.05);
+        transition: .18s ease;
+        min-height: 98px;
+    }
+    .module-tab:hover{
+        transform: none;
+        box-shadow: 0 12px 28px rgba(15,23,42,.08);
+    }
+    .module-tab.active{
+        border-color: #0f172a;
+        background: #0f172a;
+        color: #fff;
+    }
+    .module-tab .module-title{
+        font-weight: 900;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+    .module-tab .module-desc{
+        font-size: .78rem;
+        color: #64748b;
+        margin-top: 6px;
+        line-height: 1.25;
+    }
+    .module-tab.active .module-desc{
+        color: rgba(255,255,255,.72);
+    }
+    .module-badge{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 26px;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: #e2e8f0;
+        color: #0f172a;
+        font-size: .75rem;
+        font-weight: 900;
+    }
+    .module-tab.active .module-badge{
+        background: #fff;
+        color: #0f172a;
+    }
+    .coming-soon-pill{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #fef3c7;
+        color: #92400e;
+        font-size: .68rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+    .accounting-tabs .btn{
+        font-weight: 800;
+        border-radius: 999px !important;
+        min-height: 42px !important;
+    }
+    .accounting-tabs .btn.active{
+        background: #0f172a;
+        color: #fff;
+        border-color: #0f172a;
+    }
+    .status-pill{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: .78rem;
+        font-weight: 900;
+        letter-spacing: .02em;
+        white-space: nowrap;
+    }
+    .status-pending{ background:#fef3c7; color:#92400e; }
+    .status-processing{ background:#dbeafe; color:#1d4ed8; }
+    .status-paid{ background:#dcfce7; color:#166534; }
+    .status-other{ background:#e5e7eb; color:#374151; }
+    .liquidation-reminder-note{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #fff7ed;
+        color: #9a3412;
+        font-size: .72rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+    .ready-liquidation-note{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #ecfdf5;
+        color: #166534;
+        font-size: .72rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+
+    .cash-advance-reference-note{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #eef2ff;
+        color: #3730a3;
+        font-size: .72rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+    .cash-advance-ready-note{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #ecfdf5;
+        color: #166534;
+        font-size: .72rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+    .cash-advance-completed-note{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #dcfce7;
+        color: #166534;
+        font-size: .72rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+    .travel-liquidation-completed-note{
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: #dcfce7;
+        color: #166534;
+        font-size: .72rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+    .cash-advance-purpose{
+        max-width: 320px;
+        white-space: normal;
+        line-height: 1.35;
+    }
+
+    .travel-row-overdue{
+        background: #fffbeb;
+    }
+    .travel-row-overdue td:first-child{
+        border-left: 4px solid #f59e0b;
+    }
+    .table-accounting th{
+        font-size: .78rem;
+        color: #475569;
+        text-transform: uppercase;
+        letter-spacing: .05em;
+        white-space: nowrap;
+        background: #f8fafc;
+    }
+    .table-accounting td{
+        vertical-align: middle;
+    }
+    .amount-cell{
+        font-weight: 900;
+        color: #0f172a;
+        white-space: nowrap;
+    }
+    .action-btns{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: flex-end;
+    }
+    .empty-state{
+        text-align: center;
+        padding: 56px 16px;
+        color: #64748b;
+    }
+    .empty-state i{
+        font-size: 2.5rem;
+        margin-bottom: 12px;
+        color: #94a3b8;
+    }
+
+    .liquidation-row td{
+        background:#ffffff;
+    }
+    .liquidation-record-title{
+        font-weight:950;
+        color:#0f172a;
+        line-height:1.2;
+    }
+    .liquidation-record-sub{
+        color:#64748b;
+        font-size:.78rem;
+        font-weight:750;
+        margin-top:2px;
+    }
+    .liquidation-trip-title{
+        font-weight:900;
+        color:#0f172a;
+        line-height:1.25;
+    }
+    .liquidation-trip-sub{
+        color:#64748b;
+        font-size:.78rem;
+        font-weight:750;
+        margin-top:2px;
+        line-height:1.35;
+    }
+    .liquidation-money-stack{
+        display:grid;
+        gap:2px;
+        white-space:nowrap;
+    }
+    .liquidation-money-main{
+        font-weight:950;
+        color:#0f172a;
+    }
+    .liquidation-money-sub{
+        font-size:.75rem;
+        color:#64748b;
+        font-weight:800;
+    }
+    .liquidation-balance-card{
+        display:inline-grid;
+        gap:2px;
+        padding:7px 9px;
+        border-radius:12px;
+        background:#f8fafc;
+        border:1px solid #e2e8f0;
+        min-width:150px;
+    }
+    .liquidation-balance-card.employee{
+        background:#ecfdf5;
+        border-color:#bbf7d0;
+        color:#166534;
+    }
+    .liquidation-balance-card.shimadzu{
+        background:#fff7ed;
+        border-color:#fed7aa;
+        color:#9a3412;
+    }
+    .liquidation-balance-label{
+        font-size:.68rem;
+        font-weight:950;
+        text-transform:uppercase;
+        letter-spacing:.045em;
+    }
+    .liquidation-balance-amount{
+        font-weight:950;
+        font-size:.92rem;
+    }
+    .liquidation-action-note{
+        display:block;
+        color:#64748b;
+        font-size:.72rem;
+        font-weight:800;
+        margin-top:4px;
+    }
+
+    @media (max-width: 992px){
+        .module-tabs{
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+    @media (max-width: 768px){
+        .accounting-hero{
+            padding: 18px;
+            border-radius: 18px;
+        }
+        .kpi-value{
+            font-size: 1.6rem;
+        }
+        .action-btns{
+            justify-content: flex-start;
+        }
+    }
+    @media (max-width: 576px){
+        .module-tabs{
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+
+<div class="accounting-shell">
+    <div class="accounting-hero mb-4">
+        <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
+            <div>
+                <div class="text-uppercase fw-bold small opacity-75 mb-1">S12 My Requests</div>
+                <h1 class="h3 mb-2">My Requests</h1>
+                <p class="mb-0 opacity-75">Track and monitor the status of all your submitted requests.</p>
+            </div>
+            <button class="btn btn-light fw-bold" onclick="refreshAccountingQueue()">
+                <i class="fa-solid fa-rotate me-2"></i>Refresh
+            </button>
+        </div>
+    </div>
+
+    <div class="alert alert-info border-0 shadow-sm mb-4" style="border-radius:16px;">
+        <div class="fw-bold"><i class="fa-solid fa-user-check me-2"></i>Personal Request Tracking</div>
+        <div class="small mb-0">You are viewing only your own request records. Reimbursements, approved Travel Requests, and approved standalone Cash Advances can be confirmed as received here. Ready standalone Cash Advances can also be liquidated here.</div>
+    </div>
+
+    <div class="module-tabs mb-4" id="accountingModuleTabs">
+        <button class="module-tab active" type="button" disabled>
+            <div class="module-title">Loading Modules <span class="module-badge">...</span></div>
+            <div class="module-desc">Preparing My Requests structure...</div>
+        </button>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-md-4">
+            <div class="card kpi-card">
+                <div class="card-body">
+                    <div class="kpi-label">Pending Confirmation</div>
+                    <div class="kpi-value" id="kpiPending">0</div>
+                    <div class="text-muted small mt-2">Approved, not yet confirmed received</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="card kpi-card">
+                <div class="card-body">
+                    <div class="kpi-label">Processing</div>
+                    <div class="kpi-value" id="kpiProcessing">0</div>
+                    <div class="text-muted small mt-2">Approved or in release process</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4">
+            <div class="card kpi-card">
+                <div class="card-body">
+                    <div class="kpi-label">Paid / Received</div>
+                    <div class="kpi-value" id="kpiPaid">0</div>
+                    <div class="text-muted small mt-2">Received or completed records</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card queue-card">
+        <div class="card-header bg-white border-0 p-3 p-md-4">
+            <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+                <div>
+                    <h2 class="h5 fw-bold mb-1" id="activeQueueTitle">My Reimbursements</h2>
+                    <div class="text-muted small" id="queueSubtitle">Loading queue...</div>
+                </div>
+                <div class="accounting-tabs btn-group flex-wrap" role="group" aria-label="Accounting queue tabs">
+                    <button class="btn btn-outline-dark active" data-status="pending">Pending</button>
+                    <button class="btn btn-outline-dark" data-status="processing">Processing</button>
+                    <button class="btn btn-outline-dark" data-status="paid">Paid</button>
+                    <button class="btn btn-outline-dark" data-status="all">All</button>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div id="accountingAlert" class="alert d-none m-3" role="alert"></div>
+            <div class="table-responsive">
+                <table class="table table-hover table-accounting mb-0">
+                    <thead>
+                        <tr>
+                            <th>Record</th>
+                            <th>Engineer</th>
+                            <th>Period</th>
+                            <th>Amount</th>
+                            <th>Approved</th>
+                            <th>Request Status</th>
+                            <th>Details / Reference</th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accountingQueueBody">
+                        <tr>
+                            <td colspan="8" class="empty-state">
+                                <i class="fa-solid fa-spinner fa-spin"></i>
+                                <div class="fw-bold">Loading Request Queue...</div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="processingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title fw-bold">Mark as Processing</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="processingRecordId">
+                <p class="text-muted small mb-3">Internal processing status is retained for compatibility. Regular users only need to confirm received payment.</p>
+                <label class="form-label fw-bold">Remarks</label>
+                <textarea id="processingRemarks" class="form-control" rows="4" placeholder="Optional remarks"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary fw-bold" id="confirmProcessingBtn" onclick="confirmMarkProcessing()">Confirm Processing</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="paidModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title fw-bold">Confirm Payment Received</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="paidRecordId">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Received Method</label>
+                    <select id="paymentMethod" class="form-select">
+                        <option value="">Select method</option>
+                        <option value="Cash">Cash</option>
+                        <option value="Bank Transfer">Bank Transfer</option>
+                        <option value="Check">Check</option>
+                        <option value="Petty Cash">Petty Cash</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Reference Number <span class="text-muted fw-normal">(optional)</span></label>
+                    <input id="paymentReference" class="form-control" placeholder="OR / Check No. / Bank Ref. / Transaction No. / Optional note">
+                </div>
+                <div>
+                    <label class="form-label fw-bold">Remarks</label>
+                    <textarea id="paymentRemarks" class="form-control" rows="4" placeholder="Optional payment remarks"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success fw-bold" id="confirmPaidBtn" onclick="confirmMarkPaid()">Confirm Received</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="travelCompletedConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold"><i class="fa-solid fa-clipboard-check me-2"></i>Mark Travel Completed</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="travelCompletedRecordId">
+                <div class="fw-bold mb-2">Mark this Travel Request as Travel Completed / Ready for Liquidation?</div>
+                <div class="text-muted small">This will create or open the liquidation draft and stop liquidation reminder prompts for this request.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary fw-bold" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning fw-bold" id="confirmTravelCompletedBtn" onclick="confirmTravelCompletedReady()">
+                    <i class="fa-solid fa-check me-1"></i>Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="cashAdvanceLiquidationCompleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title fw-bold"><i class="fa-solid fa-circle-check me-2"></i>Mark Liquidation Completed</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="cashAdvanceLiquidationCompleteId">
+                <div class="fw-bold mb-2">Mark this Cash Advance Liquidation as completed?</div>
+                <div class="text-muted small mb-3">This will close the liquidation and mark the original Cash Advance as completed. This does not resend email or change the manager approval.</div>
+                <label class="form-label fw-bold">Completion Remarks <span class="text-muted fw-normal">(optional)</span></label>
+                <textarea id="cashAdvanceLiquidationCompleteRemarks" class="form-control" rows="4" placeholder="Optional completion remarks"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary fw-bold" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success fw-bold" id="confirmCashAdvanceLiquidationCompleteBtn" onclick="confirmCashAdvanceLiquidationComplete()">
+                    <i class="fa-solid fa-check me-1"></i>Mark Completed
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="travelLiquidationCompleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title fw-bold"><i class="fa-solid fa-circle-check me-2"></i>Mark Travel Liquidation Completed</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="travelLiquidationCompleteId">
+                <div class="fw-bold mb-2">Mark this Travel Liquidation as completed?</div>
+                <div class="text-muted small mb-3">This will close the liquidation and mark the linked Travel Request as Liquidation Completed. This does not resend email or change the manager approval.</div>
+                <label class="form-label fw-bold">Completion Remarks <span class="text-muted fw-normal">(optional)</span></label>
+                <textarea id="travelLiquidationCompleteRemarks" class="form-control" rows="4" placeholder="Optional completion remarks"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary fw-bold" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success fw-bold" id="confirmTravelLiquidationCompleteBtn" onclick="confirmTravelLiquidationComplete()">
+                    <i class="fa-solid fa-check me-1"></i>Mark Completed
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let accountingStatus = 'pending';
+let accountingItems = [];
+let accountingModules = [];
+let activeAccountingModule = 'reimbursements';
+let activeQueueEndpoint = '/get_accounting_reimbursement_queue';
+let processingModalInstance = null;
+let paidModalInstance = null;
+let travelCompletedConfirmModalInstance = null;
+let cashAdvanceLiquidationCompleteModalInstance = null;
+let travelLiquidationCompleteModalInstance = null;
+let pendingTravelCompletedId = null;
+let pendingCashAdvanceLiquidationCompleteId = null;
+let pendingTravelLiquidationCompleteId = null;
+let paidModalRecordModule = 'reimbursements';
+let accountingActionBusy = false;
+let accountingQueueRequestSeq = 0;
+let accountingModuleRequestSeq = 0;
+
+function setAccountingActionBusy(isBusy, buttonId='', busyLabel='Processing...'){
+    accountingActionBusy = Boolean(isBusy);
+    const btn = buttonId ? document.getElementById(buttonId) : null;
+    if(btn){
+        if(isBusy){
+            btn.dataset.originalHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin me-1"></i>${esc(busyLabel)}`;
+        }else{
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.originalHtml || btn.innerHTML;
+        }
+    }
+    document.querySelectorAll('.action-btns .btn, .accounting-tabs .btn, .module-tab, .accounting-hero .btn').forEach(el => {
+        if(!btn || el !== btn){
+            el.disabled = Boolean(isBusy);
+            if(el.tagName === 'A'){
+                el.classList.toggle('disabled', Boolean(isBusy));
+                el.style.pointerEvents = isBusy ? 'none' : '';
+            }
+        }
+    });
+}
+
+function peso(value, currency='PHP'){
+    const num = Number(value || 0);
+    const code = String(currency || 'PHP').toUpperCase() === 'USD' ? 'USD' : 'PHP';
+    return code + ' ' + num.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function esc(value){
+    return String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
+}
+
+function statusClass(status){
+    const key = String(status || '').toLowerCase();
+    if(key.includes('paid') || key.includes('received') || key.includes('completed')) return 'status-paid';
+    if(key.includes('approved') || key.includes('processing') || key.includes('accounting')) return 'status-processing';
+    if(key.includes('pending') || key.includes('submitted') || key.includes('sent')) return 'status-pending';
+    return 'status-other';
+}
+
+function currentModuleLabel(){
+    const selectedModule = accountingModules.find(mod => mod.key === activeAccountingModule);
+    return selectedModule ? (selectedModule.label || 'Records') : 'Records';
+}
+
+function currentModuleRecordName(){
+    if(activeAccountingModule === 'travel_requests') return 'travel request';
+    if(activeAccountingModule === 'reimbursements') return 'reimbursement';
+    if(activeAccountingModule === 'liquidations') return 'liquidation';
+    if(isCashAdvanceModuleKey(activeAccountingModule)) return 'cash advance';
+    return 'record';
+}
+
+function isCashAdvanceModuleKey(value){
+    const key = String(value || '').toLowerCase();
+    return key === 'cash_advances' || key === 'cash_advance' || key.includes('cash_advance');
+}
+
+function cashAdvanceStatusLabel(item){
+    const accountingStatusValue = String(item.accounting_status || '').trim();
+    const requestStatusValue = String(item.status || '').trim();
+    const combined = `${requestStatusValue} ${accountingStatusValue}`.toLowerCase();
+    if(combined.includes('ready for liquidation')) return 'Ready for Liquidation';
+    if(combined.includes('received')) return 'Received / Ready for Liquidation';
+    if(combined.includes('sent to accounting') || combined.includes('accounting email sent') || combined.includes('accounting email queued')) return 'Sent to Accounting';
+    if(combined.includes('approved')) return 'Approved / For Release';
+    if(combined.includes('submitted')) return 'Submitted';
+    if(combined.includes('reject')) return 'Rejected';
+    if(combined.includes('return')) return 'Returned';
+    return accountingStatusValue || requestStatusValue || 'Cash Advance';
+}
+
+function cashAdvanceCanConfirmReceived(item){
+    const status = `${item.status || ''} ${item.accounting_status || ''}`.toLowerCase();
+    const alreadyReceived = Boolean(item.received_at || item.ready_for_liquidation_at || status.includes('received') || status.includes('ready for liquidation'));
+    const isApprovedOrSent = status.includes('approved') || status.includes('sent to accounting') || status.includes('accounting email');
+    return Boolean(item.can_confirm_received || item.can_mark_paid || item.can_mark_received || isApprovedOrSent) && !alreadyReceived;
+}
+
+function isTravelCompletionModule(mod){
+    const key = String(mod?.key || '').toLowerCase();
+    const label = String(mod?.label || '').toLowerCase();
+    const desc = String(mod?.description || '').toLowerCase();
+    return (
+        key.includes('travel_completion') ||
+        key.includes('completion') ||
+        label.includes('travel completion') ||
+        desc.includes('travel completion queue')
+    );
+}
+
+function visibleAccountingModules(){
+    return (accountingModules || []).filter(mod => !isTravelCompletionModule(mod));
+}
+
+function normalizeStatusLabel(value){
+    const raw = String(value || '').trim();
+    const key = raw.toLowerCase();
+    if(key === 'draft') return 'Draft';
+    if(key.includes('submit')) return 'Submitted';
+    if(key.includes('manager approved') || key === 'approved' || key.includes('approve')) return 'Manager Approved';
+    if(key.includes('return')) return 'Returned';
+    if(key.includes('reject')) return 'Rejected';
+    if(key.includes('accounting') || key.includes('process')) return 'Accounting Processing';
+    if(key.includes('completed')) return 'Completed';
+    if(key.includes('liquidated')) return 'Liquidated';
+    return raw || 'Draft';
+}
+
+function liquidationActionLabel(status){
+    const key = String(status || '').toLowerCase();
+    if(key === 'draft' || key.includes('return') || key.includes('reject')) return 'Continue Liquidation';
+    if(key.includes('submit')) return 'View Submitted';
+    if(key.includes('approve')) return 'View Approved';
+    if(key.includes('accounting') || key.includes('process')) return 'View Processing';
+    if(key.includes('liquidated') || key.includes('completed')) return 'View Completed';
+    return 'Open Liquidation';
+}
+
+function showAccountingAlert(message, type='info'){
+    const box = document.getElementById('accountingAlert');
+    box.className = `alert alert-${type} m-3`;
+    box.textContent = message;
+    box.classList.remove('d-none');
+    setTimeout(() => box.classList.add('d-none'), 4500);
+}
+
+async function refreshAccountingQueueAfterAction(){
+    /*
+     * F4A4B: Action buttons set accountingActionBusy=true while saving.
+     * A normal refreshAccountingQueue() call is intentionally blocked during busy state,
+     * so action flows must unlock first, then force-refresh the current module/status.
+     * This keeps Reimbursement, Travel Request, Liquidation, and Cash Advance rows/KPIs
+     * updated without requiring browser F5.
+     */
+    try{
+        await loadAccountingModules();
+    }catch(err){
+        console.warn('[My Requests] Module badge refresh skipped after action', err);
+    }
+    await refreshAccountingQueue(true);
+}
+
+async function loadAccountingModules(options={}){
+    const box = document.getElementById('accountingModuleTabs');
+    const preserveActive = options.preserveActive !== false;
+    const requestSeq = ++accountingModuleRequestSeq;
+    const activeBeforeLoad = activeAccountingModule;
+    try{
+        const res = await fetch(`/get_accounting_center_modules?_=${Date.now()}`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        const data = await res.json();
+        if(requestSeq !== accountingModuleRequestSeq){
+            return;
+        }
+        if(!res.ok || !data.success){
+            throw new Error(data.error || 'Unable to load My Requests modules.');
+        }
+        accountingModules = (data.modules || data.tabs || []).filter(mod => !isTravelCompletionModule(mod));
+        const currentModule = accountingModules.find(mod => mod.key === activeAccountingModule);
+        const previousModule = accountingModules.find(mod => mod.key === activeBeforeLoad);
+        const defaultModule = (preserveActive && (currentModule || previousModule)) || accountingModules.find(mod => mod.is_active) || accountingModules[0];
+        if(defaultModule){
+            activeAccountingModule = defaultModule.key;
+            activeQueueEndpoint = defaultModule.queue_endpoint || activeQueueEndpoint;
+        }
+        renderAccountingModuleTabs();
+    }catch(err){
+        if(requestSeq !== accountingModuleRequestSeq){
+            return;
+        }
+        box.innerHTML = `
+            <button class="module-tab active" type="button" disabled>
+                <div class="module-title">My Requests <span class="coming-soon-pill"><i class="fa-solid fa-triangle-exclamation"></i>Error</span></div>
+                <div class="module-desc">${esc(err.message || err)}</div>
+            </button>
+        `;
+    }
+}
+
+function renderAccountingModuleTabs(){
+    const box = document.getElementById('accountingModuleTabs');
+    if(!accountingModules.length){
+        return;
+    }
+    box.innerHTML = visibleAccountingModules().map(mod => {
+        const active = mod.key === activeAccountingModule;
+        const badge = mod.is_coming_soon
+            ? `<span class="coming-soon-pill"><i class="fa-solid fa-clock"></i>${esc(mod.phase || 'Soon')}</span>`
+            : `<span class="module-badge">${esc(mod.badge_count ?? 0)}</span>`;
+        return `
+            <button class="module-tab ${active ? 'active' : ''}" type="button" data-module-key="${esc(mod.key)}">
+                <div class="module-title">${esc(mod.label)} ${badge}</div>
+                <div class="module-desc">${esc(mod.description || '')}</div>
+            </button>
+        `;
+    }).join('');
+}
+
+function setAccountingModule(moduleKey){
+    if(accountingActionBusy) return;
+    const selected = visibleAccountingModules().find(mod => mod.key === moduleKey);
+    if(!selected){
+        return;
+    }
+    activeAccountingModule = selected.key;
+    activeQueueEndpoint = selected.queue_endpoint || '/get_accounting_reimbursement_queue';
+    accountingStatus = 'pending';
+    document.querySelectorAll('.accounting-tabs .btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.status === accountingStatus);
+    });
+    renderAccountingModuleTabs();
+    document.getElementById('activeQueueTitle').textContent = selected.key === 'reimbursements' ? 'My Reimbursements' : `My ${selected.label}`;
+    document.getElementById('queueSubtitle').textContent = selected.is_coming_soon ? `${selected.phase || 'Future'} module foundation ready` : 'Loading queue...';
+    refreshAccountingQueue(true);
+}
+
+function setAccountingTab(status){
+    if(accountingActionBusy) return;
+    const nextStatus = String(status || '').toLowerCase();
+    if(!['pending','processing','paid','all'].includes(nextStatus)){
+        return;
+    }
+    accountingStatus = nextStatus;
+    document.querySelectorAll('.accounting-tabs .btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.status === accountingStatus);
+    });
+    refreshAccountingQueue(true);
+}
+
+async function openLiquidationsModuleAfterTravelCompleted(){
+    await loadAccountingModules();
+    const liquidationModule = visibleAccountingModules().find(mod => {
+        const key = String(mod.key || '').toLowerCase();
+        const label = String(mod.label || '').toLowerCase();
+        return key.includes('liquidation') || label.includes('liquidation');
+    });
+
+    if(liquidationModule){
+        activeAccountingModule = liquidationModule.key;
+        activeQueueEndpoint = liquidationModule.queue_endpoint || activeQueueEndpoint || '/get_accounting_travel_liquidation_queue';
+        accountingStatus = 'pending';
+        document.querySelectorAll('.accounting-tabs .btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.status === accountingStatus);
+        });
+        renderAccountingModuleTabs();
+        document.getElementById('activeQueueTitle').textContent = `My ${liquidationModule.label || 'Travel Liquidations'}`;
+        document.getElementById('queueSubtitle').textContent = 'Loading liquidation draft...';
+        await refreshAccountingQueue(true);
+        return;
+    }
+
+    await refreshAccountingQueue(true);
+}
+
+async function refreshAccountingQueue(forceRefresh=false){
+    if(accountingActionBusy && !forceRefresh) return;
+    const requestSeq = ++accountingQueueRequestSeq;
+    const body = document.getElementById('accountingQueueBody');
+    body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-spinner fa-spin"></i><div class="fw-bold">Loading Request Queue...</div></td></tr>`;
+    try{
+        const endpointAtRequest = activeQueueEndpoint;
+        const statusAtRequest = accountingStatus;
+        const moduleAtRequest = activeAccountingModule;
+        const separator = endpointAtRequest.includes('?') ? '&' : '?';
+        const res = await fetch(`${endpointAtRequest}${separator}status=${encodeURIComponent(statusAtRequest)}&_=${Date.now()}`, {
+            headers: { 'Accept': 'application/json' }
+        });
+        const data = await res.json();
+        if(requestSeq !== accountingQueueRequestSeq || moduleAtRequest !== activeAccountingModule || statusAtRequest !== accountingStatus){
+            return;
+        }
+        if(!res.ok || !data.success){
+            throw new Error(data.error || 'Unable to load Request Queue.');
+        }
+        accountingItems = data.items || [];
+        updateSummary(data.summary || {});
+        if(data.status === 'coming_soon'){
+            renderComingSoonQueue(data);
+        }else if(activeAccountingModule === 'travel_requests' || data.queue === 'travel_requests'){
+            renderTravelRequestRows(accountingItems);
+        }else if(activeAccountingModule === 'liquidations' || data.queue === 'liquidations'){
+            renderLiquidationRows(accountingItems);
+        }else if(isCashAdvanceModuleKey(activeAccountingModule) || isCashAdvanceModuleKey(data.queue)){
+            renderCashAdvanceRows(accountingItems);
+        }else{
+            renderReimbursementRows(accountingItems);
+        }
+        const selectedModule = accountingModules.find(mod => mod.key === activeAccountingModule);
+        if(selectedModule && selectedModule.key === 'liquidations'){
+            document.getElementById('queueSubtitle').textContent = `${data.count || 0} of your liquidation record(s) shown • Draft, Submitted, Returned, and Approved records are tracked here`;
+        }else if(selectedModule && isCashAdvanceModuleKey(selectedModule.key)){
+            document.getElementById('queueSubtitle').textContent = `${data.count || 0} of your standalone cash advance request(s) shown • Approved records can be confirmed as received here`;
+        }else if(selectedModule && selectedModule.key !== 'reimbursements' && selectedModule.key !== 'travel_requests'){
+            document.getElementById('queueSubtitle').textContent = data.message || `${selectedModule.label} module foundation ready`;
+        }else{
+            document.getElementById('queueSubtitle').textContent = `${data.count || 0} of your ${currentModuleRecordName()} record(s) shown`;
+        }
+    }catch(err){
+        if(requestSeq !== accountingQueueRequestSeq){
+            return;
+        }
+        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-triangle-exclamation"></i><div class="fw-bold">${esc(err.message || err)}</div></td></tr>`;
+    }
+}
+
+function updateSummary(summary){
+    document.getElementById('kpiPending').textContent = summary.pending || 0;
+    document.getElementById('kpiProcessing').textContent = summary.processing || 0;
+    document.getElementById('kpiPaid').textContent = summary.paid || 0;
+}
+
+
+function renderComingSoonQueue(data){
+    const body = document.getElementById('accountingQueueBody');
+    body.innerHTML = `
+        <tr>
+            <td colspan="8" class="empty-state">
+                <i class="fa-solid fa-screwdriver-wrench"></i>
+                <div class="fw-bold">${esc(data.label || 'Module')} Coming Soon</div>
+                <div class="small">${esc(data.description || data.message || 'This My Requests section is ready for future workflow integration.')}</div>
+                <div class="small mt-2 text-muted">${esc(data.phase || '')}</div>
+            </td>
+        </tr>
+    `;
+}
+
+function renderReimbursementRows(items){
+    const body = document.getElementById('accountingQueueBody');
+    if(!items.length){
+        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-folder-open"></i><div class="fw-bold">No records found</div><div class="small">There are no reimbursement records in your queue.</div></td></tr>`;
+        return;
+    }
+
+    body.innerHTML = items.map(item => {
+        const status = item.accounting_status || item.status || 'Pending Release';
+        const isPaid = String(status).toLowerCase().includes('paid') || String(item.status || '').toLowerCase() === 'paid';
+        const isProcessing = String(status).toLowerCase().includes('processing');
+        const packageUrl = item.package_download_url || `/download_reimbursement_package?reimbursement_id=${item.id}`;
+        const period = [item.start, item.end].filter(Boolean).join(' to ');
+        const approvedLabel = item.approved_at_label || item.approved_at || '';
+        const paymentLabel = [item.payment_method, item.payment_reference].filter(Boolean).join(' / ');
+        const processingBtn = '';
+        const paidBtn = !isPaid ? `<button class="btn btn-sm btn-success fw-bold" onclick="openPaidModal(${item.id}, 'reimbursements')"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Confirm Received</button>` : '';
+        return `
+            <tr>
+                <td><div class="fw-bold">Reimbursement #${esc(item.id)}</div><div class="small text-muted">${esc(item.username || '')}</div></td>
+                <td class="wrap-mobile"><div class="fw-bold">${esc(item.engineer_name || 'N/A')}</div></td>
+                <td>${esc(period || 'N/A')}</td>
+                <td class="amount-cell">${peso(item.grand_total)}</td>
+                <td><div class="small fw-bold">${esc(item.approved_by_name || '')}</div><div class="small text-muted">${esc(approvedLabel || '')}</div></td>
+                <td><span class="status-pill ${statusClass(status)}"><i class="fa-solid fa-circle"></i>${esc(status)}</span></td>
+                <td><div class="small fw-bold">${esc(paymentLabel || '—')}</div><div class="small text-muted">${esc(item.paid_at_label || '')}</div></td>
+                <td>
+                    <div class="action-btns">
+                        <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(packageUrl)}" target="_blank"><i class="fa-solid fa-file-zipper me-1"></i>Package</a>
+                        ${processingBtn}
+                        ${paidBtn}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+
+
+function renderLiquidationRows(items){
+    const body = document.getElementById('accountingQueueBody');
+    if(!items.length){
+        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-file-invoice-dollar"></i><div class="fw-bold">No travel liquidation records found</div><div class="small">After you submit a liquidation, it will return here for tracking.</div></td></tr>`;
+        return;
+    }
+
+    body.innerHTML = items.map(item => {
+        const rawStatus = item.status || item.accounting_status || 'Draft';
+        const status = normalizeStatusLabel(rawStatus);
+        const liquidationUrl = item.liquidation_url || `/travel_liquidation?liquidation_id=${item.id}`;
+        const travelDates = item.travel_dates || item.period || [item.departure_date, item.return_date].filter(Boolean).join(' to ');
+        const destination = item.destination || item.route_label || item.client_name || '';
+        const purpose = item.purpose || item.request_type || item.travel_purpose || 'Travel Liquidation';
+        const rowCount = item.row_count ?? item.rows_count ?? 0;
+        const currency = item.currency_code || 'PHP';
+        const dueEmployee = Number(item.due_to_employee || 0);
+        const dueShimadzu = Number(item.due_to_shimadzu || 0);
+        let balanceCard = `<div class="liquidation-balance-card"><div class="liquidation-balance-label">Balanced</div><div class="liquidation-balance-amount">No variance</div></div>`;
+        if(dueEmployee > 0){
+            balanceCard = `<div class="liquidation-balance-card employee"><div class="liquidation-balance-label">Due to Employee</div><div class="liquidation-balance-amount">${peso(dueEmployee, currency)}</div></div>`;
+        }else if(dueShimadzu > 0){
+            balanceCard = `<div class="liquidation-balance-card shimadzu"><div class="liquidation-balance-label">Due to Shimadzu</div><div class="liquidation-balance-amount">${peso(dueShimadzu, currency)}</div></div>`;
+        }
+        const actionLabel = liquidationActionLabel(rawStatus);
+        const actionIcon = String(rawStatus || '').toLowerCase() === 'draft' || String(rawStatus || '').toLowerCase().includes('return') || String(rawStatus || '').toLowerCase().includes('reject')
+            ? 'pen-to-square'
+            : 'eye';
+        const completedLabel = item.completed_at_label || item.liquidation_completed_at_label || '';
+        const isLiquidationCompleted = Boolean(completedLabel || item.completed_at || String(item.accounting_status || '').toLowerCase().includes('completed') || String(rawStatus || '').toLowerCase().includes('completed'));
+        const canCompleteTravelLiquidation = Boolean((item.can_complete_liquidation || item.can_mark_completed || item.can_complete) && item.id) && !isLiquidationCompleted;
+        const completeTravelLiquidationBtn = canCompleteTravelLiquidation
+            ? `<button class="btn btn-sm btn-success fw-bold" onclick="openTravelLiquidationCompleteModal(${Number(item.id) || 0})"><i class="fa-solid fa-circle-check me-1"></i>Mark Completed</button>`
+            : '';
+        const completedNote = completedLabel
+            ? `<div class="travel-liquidation-completed-note"><i class="fa-solid fa-circle-check"></i>Completed: ${esc(completedLabel)}</div>`
+            : '';
+        return `
+            <tr class="liquidation-row">
+                <td>
+                    <div class="liquidation-record-title">${esc(item.liquidation_no || `TL-${item.id}`)}</div>
+                    <div class="liquidation-record-sub">TR: ${esc(item.travel_request_no || item.request_no || '—')}</div>
+                    <div class="liquidation-record-sub">Rows: ${esc(rowCount)}</div>
+                </td>
+                <td class="wrap-mobile">
+                    <div class="fw-bold">${esc(item.requester_name || item.engineer_name || 'Me')}</div>
+                    <div class="small text-muted">${esc(item.submitted_at_label || item.updated_at_label || '')}</div>
+                </td>
+                <td>
+                    <div class="liquidation-trip-title">${esc(travelDates || 'N/A')}</div>
+                    <div class="liquidation-trip-sub">${esc(destination || 'No destination')}</div>
+                    <div class="liquidation-trip-sub">${esc(purpose)}</div>
+                </td>
+                <td class="amount-cell">
+                    <div class="liquidation-money-stack">
+                        <div class="liquidation-money-main">${peso(item.cash_advance_amount || item.cash_advance || 0, currency)}</div>
+                        <div class="liquidation-money-sub">Cash Advance</div>
+                    </div>
+                </td>
+                <td>
+                    <div class="liquidation-money-stack">
+                        <div class="liquidation-money-main">${peso(item.total_actual_expenses || 0, currency)}</div>
+                        <div class="liquidation-money-sub">Actual Expenses</div>
+                    </div>
+                </td>
+                <td><span class="status-pill ${statusClass(status)}"><i class="fa-solid fa-circle"></i>${esc(status)}</span>${completedNote}</td>
+                <td>${balanceCard}</td>
+                <td>
+                    <div class="action-btns">
+                        <a class="btn btn-sm btn-primary fw-bold" href="${esc(liquidationUrl)}"><i class="fa-solid fa-${actionIcon} me-1"></i>${esc(actionLabel)}</a>
+                        ${completeTravelLiquidationBtn}
+                        <span class="liquidation-action-note">${esc(status === 'Draft' ? 'Still editable' : (isLiquidationCompleted ? 'Completed' : 'Tracking only'))}</span>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+
+
+async function openCashAdvanceLiquidationDraft(cashAdvanceId){
+    if(accountingActionBusy) return;
+    const id = Number(cashAdvanceId || 0);
+    if(!id){
+        showAccountingAlert('No Cash Advance selected for liquidation.', 'warning');
+        return;
+    }
+
+    const item = (accountingItems || []).find(row => Number(row.id) === id || Number(row.cash_advance_id) === id);
+    const existingUrl = item?.liquidation_url || item?.open_liquidation_url || '';
+    if(existingUrl){
+        window.location.href = existingUrl;
+        return;
+    }
+
+    const createUrl = item?.create_liquidation_url || `/create_cash_advance_liquidation_draft/${id}`;
+    setAccountingActionBusy(true, '', 'Creating...');
+    try{
+        const res = await fetch(createUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({})
+        });
+        const data = await res.json();
+        if(!res.ok || !data.success){
+            throw new Error(data.error || data.message || 'Unable to create Cash Advance Liquidation draft.');
+        }
+        const liquidationUrl = data?.liquidation?.liquidation_url || data?.liquidation?.detail_url || '';
+        if(liquidationUrl){
+            window.location.href = liquidationUrl;
+            return;
+        }
+        showAccountingAlert(data.message || 'Cash Advance Liquidation draft created.', 'success');
+        setAccountingActionBusy(false);
+        await refreshAccountingQueueAfterAction();
+    }catch(err){
+        showAccountingAlert(err.message || String(err), 'danger');
+        setAccountingActionBusy(false);
+    }
+}
+
+function renderCashAdvanceRows(items){
+    const body = document.getElementById('accountingQueueBody');
+    if(!items.length){
+        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-money-bill-transfer"></i><div class="fw-bold">No cash advance requests found</div><div class="small">Standalone Cash Advance records will appear here after submission.</div></td></tr>`;
+        return;
+    }
+
+    body.innerHTML = items.map(item => {
+        const status = cashAdvanceStatusLabel(item);
+        const recordLabel = item.cash_advance_no || item.request_no || item.record_label || `CA-${item.id}`;
+        const requester = item.requester_name || item.engineer_name || item.username || 'Me';
+        const requestDate = item.request_date_label || item.request_date || item.created_at_label || '';
+        const neededDate = item.needed_date_label || item.needed_date || item.date_needed || '';
+        const amount = item.approved_amount || item.amount_requested || item.amount || 0;
+        const approvedLabel = item.approved_at_label || item.approved_at || item.approval_signed_at || '';
+        const approvedBy = item.approved_by_name || item.approver_name || item.approval_name_snapshot || '';
+        const accountingLabel = item.sent_to_accounting_at_label || item.sent_to_accounting_at || item.accounting_status || '';
+        const receivedLabel = item.received_at_label || item.received_at || item.ready_for_liquidation_at_label || '';
+        const liquidationStatus = item.liquidation_status || '';
+        const liquidationCompletedLabel = item.liquidation_completed_at_label || '';
+        const canCompleteLiquidation = Boolean(item.can_complete_liquidation && item.liquidation_id);
+        const paymentLabel = [item.payment_method, item.payment_reference].filter(Boolean).join(' / ');
+        const refLabel = paymentLabel || receivedLabel || accountingLabel || recordLabel;
+        const detailUrl = item.detail_url || item.cash_advance_url || `/cash_advance?cash_advance_id=${encodeURIComponent(item.id || '')}`;
+        const purpose = item.purpose || item.description || 'Standalone Cash Advance';
+        const canConfirmReceived = cashAdvanceCanConfirmReceived(item);
+        const isReady = String(status).toLowerCase().includes('ready for liquidation');
+        const isReceived = String(status).toLowerCase().includes('received') || Boolean(item.received_at || item.ready_for_liquidation_at);
+        const hasLiquidation = Boolean(item.liquidation_id || item.liquidation_url || item.open_liquidation_url);
+        const canOpenLiquidation = Boolean(item.can_open_liquidation || hasLiquidation);
+        const canCreateLiquidation = Boolean(item.can_create_liquidation || ((isReady || isReceived) && !hasLiquidation));
+        const paidBtn = canConfirmReceived
+            ? `<button class="btn btn-sm btn-success fw-bold" onclick="openPaidModal(${Number(item.id) || 0}, 'cash_advances')"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Confirm Received</button>`
+            : '';
+        const liquidationBtn = canOpenLiquidation
+            ? `<a class="btn btn-sm btn-primary fw-bold" href="${esc(item.liquidation_url || item.open_liquidation_url || '#')}"><i class="fa-solid fa-file-invoice-dollar me-1"></i>Open Liquidation</a>`
+            : (canCreateLiquidation
+                ? `<button class="btn btn-sm btn-warning fw-bold" onclick="openCashAdvanceLiquidationDraft(${Number(item.id) || 0})"><i class="fa-solid fa-file-circle-plus me-1"></i>Create Liquidation</button>`
+                : '');
+        const completeLiquidationBtn = canCompleteLiquidation
+            ? `<button class="btn btn-sm btn-success fw-bold" onclick="openCashAdvanceLiquidationCompleteModal(${Number(item.liquidation_id) || 0})"><i class="fa-solid fa-circle-check me-1"></i>Mark Completed</button>`
+            : '';
+        const readyNote = isReady || isReceived
+            ? `<div class="cash-advance-ready-note"><i class="fa-solid fa-circle-check"></i>Ready for Liquidation</div>`
+            : '';
+        const liquidationNote = liquidationStatus
+            ? `<div class="cash-advance-reference-note"><i class="fa-solid fa-file-invoice-dollar"></i>Liquidation: ${esc(liquidationStatus)}</div>`
+            : '';
+        const completedNote = liquidationCompletedLabel
+            ? `<div class="cash-advance-completed-note"><i class="fa-solid fa-circle-check"></i>Completed: ${esc(liquidationCompletedLabel)}</div>`
+            : '';
+        const accountingNote = accountingLabel && !isReceived
+            ? `<div class="cash-advance-reference-note"><i class="fa-solid fa-envelope-circle-check"></i>${esc(accountingLabel)}</div>`
+            : '';
+        return `
+            <tr>
+                <td>
+                    <div class="fw-bold">${esc(recordLabel)}</div>
+                    <div class="small text-muted">${esc(requestDate || '')}</div>
+                </td>
+                <td class="wrap-mobile"><div class="fw-bold">${esc(requester)}</div></td>
+                <td>
+                    <div class="fw-bold">Needed: ${esc(neededDate || 'N/A')}</div>
+                    <div class="small text-muted">Liquidation: ${esc(item.liquidation_days || 30)} day(s)</div>
+                </td>
+                <td class="amount-cell">${peso(amount)}</td>
+                <td><div class="small fw-bold">${esc(approvedBy || '—')}</div><div class="small text-muted">${esc(approvedLabel || '')}</div></td>
+                <td><span class="status-pill ${statusClass(status)}"><i class="fa-solid fa-circle"></i>${esc(status)}</span>${readyNote}${liquidationNote}${completedNote}${accountingNote}</td>
+                <td><div class="small fw-bold">${esc(refLabel || '—')}</div><div class="small text-muted cash-advance-purpose">${esc(purpose)}</div></td>
+                <td>
+                    <div class="action-btns">
+                        <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(detailUrl)}" target="_blank"><i class="fa-solid fa-eye me-1"></i>Open</a>
+                        ${paidBtn}
+                        ${liquidationBtn}
+                        ${completeLiquidationBtn}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderTravelRequestRows(items){
+    const body = document.getElementById('accountingQueueBody');
+    if(!items.length){
+        body.innerHTML = `<tr><td colspan="8" class="empty-state"><i class="fa-solid fa-plane-departure"></i><div class="fw-bold">No travel requests found</div><div class="small">There are no travel request records in this status.</div></td></tr>`;
+        return;
+    }
+
+    body.innerHTML = items.map(item => {
+        const status = item.stage_label || item.accounting_status || item.status || 'Travel Request';
+        const detailUrl = item.detail_url || item.package_preview_url || `/travel_request?travel_request_id=${item.id}`;
+        const travelDates = item.travel_dates || item.period || [item.start, item.end].filter(Boolean).join(' to ');
+        const submittedLabel = item.submitted_at_label || item.created_at_label || '';
+        const approvedLabel = item.approved_at_label || item.approved_at || '';
+        const amount = item.approved_amount || item.requested_amount || item.grand_total || item.amount || 0;
+        const currency = item.currency_code || 'PHP';
+        const destination = item.destination || item.client_name || 'N/A';
+        const purpose = item.purpose || 'Travel Request';
+        const paymentLabel = [item.payment_method, item.payment_reference].filter(Boolean).join(' / ');
+        const refLabel = paymentLabel || item.funds_received_at_label || item.completed_at_label || item.request_no || item.record_label || `TR-${item.id}`;
+        const reminderText = item.liquidation_reminder_label || item.liquidation_reminder_message || item.reminder_message || '';
+        const isLiquidationOverdue = Boolean(
+            item.liquidation_reminder_due ||
+            item.liquidation_overdue ||
+            item.is_liquidation_overdue ||
+            String(status).toLowerCase().includes('liquidation reminder') ||
+            String(reminderText).toLowerCase().includes('liquidation')
+        );
+        const reminderBadge = isLiquidationOverdue
+            ? `<div class="liquidation-reminder-note"><i class="fa-solid fa-bell"></i>${esc(reminderText || 'Liquidation reminder sent')}</div>`
+            : '';
+        const isReadyForLiquidation = String(status).toLowerCase().includes('ready for liquidation') || Boolean(item.liquidation_started_at || item.liquidation_started_at_label);
+        const isPaid = Boolean(item.paid_at || item.funds_received_at_label || String(status).toLowerCase().includes('received') || String(status).toLowerCase().includes('paid'));
+        const canConfirmReceived = Boolean(item.can_mark_paid || item.can_confirm_received) && !isPaid;
+        const canMarkReadyForLiquidation = Boolean(item.can_mark_ready_for_liquidation || item.can_mark_travel_completed || item.can_mark_ready_liquidation);
+        const paidBtn = canConfirmReceived ? `<button class="btn btn-sm btn-success fw-bold" onclick="openPaidModal(${item.id}, 'travel_requests')"><i class="fa-solid fa-hand-holding-dollar me-1"></i>Confirm Received</button>` : '';
+        const readyBtn = canMarkReadyForLiquidation
+            ? `<button class="btn btn-sm btn-warning fw-bold" onclick="openTravelCompletedConfirm(${item.id})"><i class="fa-solid fa-clipboard-check me-1"></i>Travel Completed</button>`
+            : '';
+        const liquidationBtn = item.can_open_liquidation && item.liquidation_url
+            ? `<a class="btn btn-sm btn-primary fw-bold" href="${esc(item.liquidation_url)}"><i class="fa-solid fa-file-invoice-dollar me-1"></i>Open Liquidation</a>`
+            : '';
+        const readyNote = isReadyForLiquidation
+            ? `<div class="ready-liquidation-note"><i class="fa-solid fa-circle-check"></i>Ready for Liquidation</div>`
+            : '';
+        return `
+            <tr class="${isLiquidationOverdue && !isReadyForLiquidation ? 'travel-row-overdue' : ''}">
+                <td><div class="fw-bold">${esc(item.record_label || item.request_no || `TR-${item.id}`)}</div><div class="small text-muted">${esc(submittedLabel || '')}</div></td>
+                <td class="wrap-mobile"><div class="fw-bold">${esc(item.requester_name || item.engineer_name || item.username || 'Me')}</div></td>
+                <td><div class="fw-bold">${esc(travelDates || 'N/A')}</div><div class="small text-muted">${esc(destination)}</div></td>
+                <td class="amount-cell">${peso(amount, currency)}</td>
+                <td><div class="small fw-bold">${esc(item.approved_by_name || '')}</div><div class="small text-muted">${esc(approvedLabel || '')}</div></td>
+                <td><span class="status-pill ${statusClass(status)}"><i class="fa-solid fa-circle"></i>${esc(status)}</span>${readyNote}${!isReadyForLiquidation ? reminderBadge : ''}</td>
+                <td><div class="small fw-bold">${esc(refLabel || '—')}</div><div class="small text-muted">${esc(purpose)}</div>${isLiquidationOverdue && !isReadyForLiquidation ? '<div class="small text-warning fw-bold mt-1">Please update to Travel Completed / Ready for Liquidation.</div>' : ''}</td>
+                <td>
+                    <div class="action-btns">
+                        <a class="btn btn-sm btn-outline-dark fw-bold" href="${esc(detailUrl)}" target="_blank"><i class="fa-solid fa-eye me-1"></i>View</a>
+                        ${paidBtn}
+                        ${readyBtn}
+                        ${liquidationBtn}
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+
+function applyAccountingUrlParams(){
+    try{
+        const params = new URLSearchParams(window.location.search || '');
+        const moduleParam = String(params.get('module') || params.get('tab') || '').toLowerCase();
+        const statusParam = String(params.get('status') || '').toLowerCase();
+        if(moduleParam){
+            const selected = visibleAccountingModules().find(mod => {
+                const key = String(mod.key || '').toLowerCase();
+                const label = String(mod.label || '').toLowerCase();
+                return key === moduleParam || key.includes(moduleParam) || label.includes(moduleParam);
+            });
+            if(selected){
+                activeAccountingModule = selected.key;
+                activeQueueEndpoint = selected.queue_endpoint || activeQueueEndpoint;
+            }
+        }
+        if(['pending','processing','paid','all'].includes(statusParam)){
+            accountingStatus = statusParam;
+            document.querySelectorAll('.accounting-tabs .btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.status === accountingStatus);
+            });
+        }
+    }catch(err){
+        console.warn('[My Requests] URL parameter selection skipped', err);
+    }
+}
+
+function openTravelCompletedConfirm(id){
+    if(accountingActionBusy) return;
+    pendingTravelCompletedId = id;
+    const idInput = document.getElementById('travelCompletedRecordId');
+    if(idInput) idInput.value = id;
+    travelCompletedConfirmModalInstance = travelCompletedConfirmModalInstance || new bootstrap.Modal(document.getElementById('travelCompletedConfirmModal'));
+    travelCompletedConfirmModalInstance.show();
+}
+
+async function confirmTravelCompletedReady(){
+    if(accountingActionBusy) return;
+    const id = pendingTravelCompletedId || document.getElementById('travelCompletedRecordId')?.value;
+    if(!id){
+        showAccountingAlert('No Travel Request selected.', 'warning');
+        return;
+    }
+
+    setAccountingActionBusy(true, 'confirmTravelCompletedBtn', 'Saving...');
+    try{
+        const res = await fetch(`/mark_travel_completed_ready_for_liquidation/${id}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({})
+        });
+        const data = await res.json();
+        if(!res.ok || !data.success){
+            throw new Error(data.error || data.message || 'Unable to mark as ready for liquidation.');
+        }
+        if(travelCompletedConfirmModalInstance) travelCompletedConfirmModalInstance.hide();
+        pendingTravelCompletedId = null;
+        showAccountingAlert(data.message || 'Travel Request marked as ready for liquidation. Loading liquidation draft...', 'success');
+        setAccountingActionBusy(false, 'confirmTravelCompletedBtn');
+        await openLiquidationsModuleAfterTravelCompleted();
+    }catch(err){
+        showAccountingAlert(err.message || String(err), 'danger');
+        setAccountingActionBusy(false, 'confirmTravelCompletedBtn');
+    }
+}
+
+
+function openCashAdvanceLiquidationCompleteModal(liquidationId){
+    if(accountingActionBusy) return;
+    const id = Number(liquidationId || 0);
+    if(!id){
+        showAccountingAlert('No Cash Advance Liquidation selected.', 'warning');
+        return;
+    }
+    pendingCashAdvanceLiquidationCompleteId = id;
+    const idInput = document.getElementById('cashAdvanceLiquidationCompleteId');
+    const remarksInput = document.getElementById('cashAdvanceLiquidationCompleteRemarks');
+    if(idInput) idInput.value = String(id);
+    if(remarksInput) remarksInput.value = '';
+    cashAdvanceLiquidationCompleteModalInstance = cashAdvanceLiquidationCompleteModalInstance || new bootstrap.Modal(document.getElementById('cashAdvanceLiquidationCompleteModal'));
+    cashAdvanceLiquidationCompleteModalInstance.show();
+}
+
+async function confirmCashAdvanceLiquidationComplete(){
+    if(accountingActionBusy) return;
+    const id = Number(pendingCashAdvanceLiquidationCompleteId || document.getElementById('cashAdvanceLiquidationCompleteId')?.value || 0);
+    const remarks = String(document.getElementById('cashAdvanceLiquidationCompleteRemarks')?.value || '').trim();
+    if(!id){
+        showAccountingAlert('No Cash Advance Liquidation selected.', 'warning');
+        return;
+    }
+
+    setAccountingActionBusy(true, 'confirmCashAdvanceLiquidationCompleteBtn', 'Saving...');
+    try{
+        const res = await fetch(`/complete_cash_advance_liquidation/${encodeURIComponent(id)}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({ remarks, completion_remarks: remarks })
+        });
+        const text = await res.text();
+        let data = {};
+        try{
+            data = text ? JSON.parse(text) : {};
+        }catch(parseError){
+            data = { success: false, error: text || 'Unexpected server response.' };
+        }
+        if(!res.ok || data.success === false){
+            throw new Error(data.error || data.message || 'Unable to mark Cash Advance Liquidation as completed.');
+        }
+        if(cashAdvanceLiquidationCompleteModalInstance) cashAdvanceLiquidationCompleteModalInstance.hide();
+        pendingCashAdvanceLiquidationCompleteId = null;
+        showAccountingAlert(data.message || 'Cash Advance Liquidation marked completed.', 'success');
+        setAccountingActionBusy(false, 'confirmCashAdvanceLiquidationCompleteBtn');
+        await refreshAccountingQueueAfterAction();
+    }catch(err){
+        showAccountingAlert(err.message || String(err), 'danger');
+        setAccountingActionBusy(false, 'confirmCashAdvanceLiquidationCompleteBtn');
+    }
+}
+
+
+function openTravelLiquidationCompleteModal(liquidationId){
+    if(accountingActionBusy) return;
+    const id = Number(liquidationId || 0);
+    if(!id){
+        showAccountingAlert('No Travel Liquidation selected.', 'warning');
+        return;
+    }
+    pendingTravelLiquidationCompleteId = id;
+    const idInput = document.getElementById('travelLiquidationCompleteId');
+    const remarksInput = document.getElementById('travelLiquidationCompleteRemarks');
+    if(idInput) idInput.value = String(id);
+    if(remarksInput) remarksInput.value = '';
+    travelLiquidationCompleteModalInstance = travelLiquidationCompleteModalInstance || new bootstrap.Modal(document.getElementById('travelLiquidationCompleteModal'));
+    travelLiquidationCompleteModalInstance.show();
+}
+
+async function confirmTravelLiquidationComplete(){
+    if(accountingActionBusy) return;
+    const id = Number(pendingTravelLiquidationCompleteId || document.getElementById('travelLiquidationCompleteId')?.value || 0);
+    const remarks = String(document.getElementById('travelLiquidationCompleteRemarks')?.value || '').trim();
+    if(!id){
+        showAccountingAlert('No Travel Liquidation selected.', 'warning');
+        return;
+    }
+
+    setAccountingActionBusy(true, 'confirmTravelLiquidationCompleteBtn', 'Saving...');
+    try{
+        const res = await fetch(`/complete_travel_liquidation/${encodeURIComponent(id)}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({ remarks, completion_remarks: remarks })
+        });
+        const text = await res.text();
+        let data = {};
+        try{
+            data = text ? JSON.parse(text) : {};
+        }catch(parseError){
+            data = { success: false, error: text || 'Unexpected server response.' };
+        }
+        if(!res.ok || data.success === false){
+            throw new Error(data.error || data.message || 'Unable to mark Travel Liquidation as completed.');
+        }
+        if(travelLiquidationCompleteModalInstance) travelLiquidationCompleteModalInstance.hide();
+        pendingTravelLiquidationCompleteId = null;
+        showAccountingAlert(data.message || 'Travel Liquidation marked completed.', 'success');
+        setAccountingActionBusy(false, 'confirmTravelLiquidationCompleteBtn');
+        await refreshAccountingQueueAfterAction();
+    }catch(err){
+        showAccountingAlert(err.message || String(err), 'danger');
+        setAccountingActionBusy(false, 'confirmTravelLiquidationCompleteBtn');
+    }
+}
+
+function openProcessingModal(id){
+    document.getElementById('processingRecordId').value = id;
+    document.getElementById('processingRemarks').value = '';
+    processingModalInstance = processingModalInstance || new bootstrap.Modal(document.getElementById('processingModal'));
+    processingModalInstance.show();
+}
+
+async function confirmMarkProcessing(){
+    if(accountingActionBusy) return;
+    const id = document.getElementById('processingRecordId').value;
+    const remarks = document.getElementById('processingRemarks').value.trim();
+    setAccountingActionBusy(true, 'confirmProcessingBtn', 'Saving...');
+    try{
+        const res = await fetch(`/accounting_mark_processing/${id}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({ remarks })
+        });
+        const data = await res.json();
+        if(!res.ok || !data.success) throw new Error(data.error || 'Unable to mark as Processing.');
+        if(processingModalInstance) processingModalInstance.hide();
+        showAccountingAlert(data.message || 'Marked as Processing.', 'success');
+        setAccountingActionBusy(false, 'confirmProcessingBtn');
+        await refreshAccountingQueueAfterAction();
+    }catch(err){
+        showAccountingAlert(err.message || String(err), 'danger');
+    }finally{
+        setAccountingActionBusy(false, 'confirmProcessingBtn');
+    }
+}
+
+function openPaidModal(id, moduleKey=''){
+    paidModalRecordModule = moduleKey || activeAccountingModule || 'reimbursements';
+    document.getElementById('paidRecordId').value = id;
+    document.getElementById('paymentMethod').value = '';
+    document.getElementById('paymentReference').value = '';
+    document.getElementById('paymentRemarks').value = '';
+
+    const title = document.querySelector('#paidModal .modal-title');
+    if(title){
+        title.textContent = paidModalRecordModule === 'travel_requests'
+            ? 'Confirm Travel Cash Advance Received'
+            : (paidModalRecordModule === 'liquidations'
+                ? 'Confirm Liquidation Payment Received'
+                : (isCashAdvanceModuleKey(paidModalRecordModule) ? 'Confirm Standalone Cash Advance Received' : 'Confirm Payment Received'));
+    }
+
+    const referenceInput = document.getElementById('paymentReference');
+    if(referenceInput){
+        referenceInput.placeholder = paidModalRecordModule === 'travel_requests'
+            ? 'Check No. / Bank Ref. / Cash voucher / Optional note'
+            : (paidModalRecordModule === 'liquidations'
+                ? 'OR / Bank Ref. / Check No. / Liquidation payment reference'
+                : (isCashAdvanceModuleKey(paidModalRecordModule) ? 'Check No. / Bank Ref. / Cash voucher / Transaction No. / Optional note' : 'OR / Check No. / Bank Ref. / Transaction No. / Optional note'));
+    }
+
+    paidModalInstance = paidModalInstance || new bootstrap.Modal(document.getElementById('paidModal'));
+    paidModalInstance.show();
+}
+
+async function confirmMarkPaid(){
+    if(accountingActionBusy) return;
+    const id = document.getElementById('paidRecordId').value;
+    const payment_method = document.getElementById('paymentMethod').value.trim();
+    const payment_reference = document.getElementById('paymentReference').value.trim();
+    const payment_remarks = document.getElementById('paymentRemarks').value.trim();
+
+    if(!payment_method){
+        showAccountingAlert('Please select a received method before confirming receipt.', 'warning');
+        document.getElementById('paymentMethod').focus();
+        return;
+    }
+    setAccountingActionBusy(true, 'confirmPaidBtn', 'Saving...');
+    try{
+        const endpoint = paidModalRecordModule === 'travel_requests'
+            ? `/accounting_mark_travel_request_paid/${id}`
+            : (paidModalRecordModule === 'liquidations'
+                ? `/accounting_mark_travel_liquidation_paid/${id}`
+                : (isCashAdvanceModuleKey(paidModalRecordModule) ? `/accounting_mark_cash_advance_received/${id}` : `/accounting_mark_paid/${id}`));
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({ payment_method, payment_reference, payment_remarks })
+        });
+        const data = await res.json();
+        if(!res.ok || !data.success) throw new Error(data.error || 'Unable to confirm receipt.');
+        if(paidModalInstance) paidModalInstance.hide();
+        showAccountingAlert(data.message || 'Marked as received.', 'success');
+        setAccountingActionBusy(false, 'confirmPaidBtn');
+        await refreshAccountingQueueAfterAction();
+    }catch(err){
+        showAccountingAlert(err.message || String(err), 'danger');
+    }finally{
+        setAccountingActionBusy(false, 'confirmPaidBtn');
+    }
+}
+
+document.addEventListener('click', (event) => {
+    const moduleBtn = event.target.closest('#accountingModuleTabs .module-tab[data-module-key]');
+    if(moduleBtn){
+        event.preventDefault();
+        setAccountingModule(moduleBtn.dataset.moduleKey || '');
+        return;
+    }
+
+    const statusBtn = event.target.closest('.accounting-tabs .btn[data-status]');
+    if(statusBtn){
+        event.preventDefault();
+        setAccountingTab(statusBtn.dataset.status || 'pending');
+    }
+});
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadAccountingModules();
+    applyAccountingUrlParams();
+    renderAccountingModuleTabs();
+    const selectedModule = visibleAccountingModules().find(mod => mod.key === activeAccountingModule);
+    if(selectedModule){
+        document.getElementById('activeQueueTitle').textContent = selectedModule.key === 'reimbursements' ? 'My Reimbursements' : `My ${selectedModule.label}`;
+    }
+    refreshAccountingQueue();
+});
+</script>
+{% endblock %}

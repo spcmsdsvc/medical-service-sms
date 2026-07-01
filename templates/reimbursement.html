@@ -1,0 +1,4155 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    .reim-page {
+        max-width: none;
+        width: 100%;
+        margin: 0 auto;
+        padding: 10px 12px;
+    }
+
+    .reim-hero {
+        background: linear-gradient(135deg, #0f5132, #198754);
+        color: #fff;
+        border-radius: 16px;
+        padding: 16px 18px;
+        box-shadow: 0 10px 22px rgba(15, 81, 50, 0.16);
+        margin-bottom: 10px;
+    }
+
+    .reim-hero h1 {
+        margin: 0;
+        font-size: 1.35rem;
+        font-weight: 800;
+    }
+
+    .reim-hero p {
+        margin: 5px 0 0;
+        opacity: 0.92;
+    }
+
+    .reim-filter-card,
+    .reim-table-card {
+        background: #fff;
+        border: 1px solid #e6edf0;
+        border-radius: 14px;
+        box-shadow: 0 6px 18px rgba(30, 41, 59, 0.05);
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+
+    .reim-filter-grid {
+        display: grid;
+        grid-template-columns: 180px 180px auto auto;
+        gap: 8px;
+        align-items: end;
+    }
+
+    .reim-field label {
+        display: block;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: #475569;
+        margin-bottom: 6px;
+    }
+
+    .reim-field input,
+    .reim-field select {
+        width: 100%;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 0.95rem;
+        outline: none;
+        background: #fff;
+    }
+
+    .reim-btn {
+        border: none;
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+
+    .reim-btn:active {
+        transform: translateY(1px);
+    }
+
+    .reim-btn-primary {
+        background: #198754;
+        color: #fff;
+        box-shadow: 0 8px 18px rgba(25, 135, 84, 0.2);
+    }
+
+    .reim-btn-secondary {
+        background: #f1f5f9;
+        color: #334155;
+    }
+
+    .reim-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .reim-summary {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+    }
+
+    .reim-chip {
+        background: #ecfdf5;
+        color: #166534;
+        border: 1px solid #bbf7d0;
+        border-radius: 999px;
+        padding: 7px 11px;
+        font-size: 0.82rem;
+        font-weight: 800;
+    }
+
+    .reim-muted {
+        color: #64748b;
+        font-size: 0.9rem;
+    }
+
+    .reim-table-wrap {
+        overflow-x: hidden;
+        overflow-y: auto;
+        max-height: calc(100vh - 190px);
+        min-height: 430px;
+        border-radius: 12px 12px 0 0;
+        border: 1px solid #e2e8f0;
+        border-bottom: 0;
+        position: relative;
+    }
+
+    .reim-table-wrap::-webkit-scrollbar {
+        width: 12px;
+        height: 0;
+    }
+
+    .reim-table-wrap::-webkit-scrollbar-thumb {
+        background: #94a3b8;
+        border-radius: 999px;
+        border: 3px solid #f8fafc;
+    }
+
+    .reim-table-wrap::-webkit-scrollbar-track {
+        background: #f8fafc;
+        border-radius: 999px;
+    }
+
+    .reim-sticky-xscroll {
+        position: sticky;
+        bottom: 0;
+        z-index: 30;
+        overflow-x: auto;
+        overflow-y: hidden;
+        height: 18px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-top: 0;
+        border-radius: 0 0 12px 12px;
+    }
+
+    .reim-sticky-xscroll-inner {
+        height: 1px;
+    }
+
+    .reim-sticky-xscroll::-webkit-scrollbar {
+        height: 14px;
+    }
+
+    .reim-sticky-xscroll::-webkit-scrollbar-thumb {
+        background: #94a3b8;
+        border-radius: 999px;
+        border: 3px solid #f8fafc;
+    }
+
+    .reim-sticky-xscroll::-webkit-scrollbar-track {
+        background: #f8fafc;
+        border-radius: 999px;
+    }
+
+    .reim-table {
+        width: 100%;
+        min-width: 1480px;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 0.84rem;
+    }
+
+    .reim-table th {
+        position: sticky;
+        top: 0;
+        background: #f8fafc;
+        color: #334155;
+        z-index: 8;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        box-shadow: 0 1px 0 #e2e8f0;
+    }
+
+    .reim-table th,
+    .reim-table td {
+        padding: 8px;
+        border-bottom: 1px solid #e2e8f0;
+        vertical-align: top;
+        background: #fff;
+    }
+
+    .reim-table th:nth-child(1),
+    .reim-table td:nth-child(1) {
+        position: sticky;
+        left: 0;
+        z-index: 5;
+        width: 104px;
+        min-width: 104px;
+        max-width: 104px;
+        white-space: nowrap;
+        background: #fff;
+    }
+
+    .reim-table th:nth-child(2),
+    .reim-table td:nth-child(2) {
+        position: sticky;
+        left: 104px;
+        z-index: 5;
+        width: 118px;
+        min-width: 118px;
+        max-width: 118px;
+        background: #fff;
+    }
+
+    .reim-table th:nth-child(3),
+    .reim-table td:nth-child(3) {
+        position: sticky;
+        left: 222px;
+        z-index: 5;
+        width: 142px;
+        min-width: 142px;
+        max-width: 142px;
+        background: #fff;
+        box-shadow: 4px 0 8px rgba(15, 23, 42, 0.06);
+    }
+
+    .reim-table th:nth-child(-n+3) {
+        z-index: 12;
+        background: #f8fafc;
+    }
+
+    .reim-table tbody tr:hover td {
+        background: #f8fafc;
+    }
+
+    .reim-table tbody tr:hover td:nth-child(-n+3) {
+        background: #f8fafc;
+    }
+
+    .reim-amount {
+        width: 82px;
+        border: 1px solid #dbe3ea;
+        border-radius: 8px;
+        padding: 7px;
+        text-align: right;
+    }
+
+    .reim-remarks {
+        min-width: 210px;
+        border: 1px solid #dbe3ea;
+        border-radius: 8px;
+        padding: 7px;
+        width: 100%;
+    }
+
+    .reim-empty {
+        text-align: center;
+        padding: 32px;
+        color: #64748b;
+    }
+
+    .reim-mobile-list {
+        display: none;
+    }
+
+    .reim-mobile-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 14px;
+        margin-bottom: 12px;
+        background: #fff;
+    }
+
+    .reim-mobile-card h3 {
+        margin: 0 0 6px;
+        font-size: 1rem;
+        color: #0f172a;
+    }
+
+    .reim-mobile-meta {
+        color: #64748b;
+        font-size: 0.84rem;
+        margin-bottom: 10px;
+    }
+
+
+    @media (min-width: 821px) {
+        .reim-table-card h2 {
+            margin: 0 0 8px;
+            font-size: 1.05rem;
+        }
+
+        .reim-table-card > p.reim-muted {
+            margin: 0 0 8px;
+        }
+    }
+
+    @media (max-width: 820px) {
+        .reim-page {
+            padding: 12px;
+        }
+
+        .reim-filter-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .reim-table-wrap,
+        .reim-sticky-xscroll {
+            display: none;
+        }
+
+        .reim-mobile-list {
+            display: block;
+        }
+
+        .reim-hero {
+            padding: 18px;
+        }
+    }
+
+.reimb-date-cell {
+    white-space: nowrap !important;
+    min-width: 104px !important;
+    width: 104px !important;
+}
+
+
+    .reim-total-cell {
+        white-space: nowrap;
+        font-weight: 800;
+        color: #0f5132;
+        background: #f0fdf4;
+        text-align: right;
+        min-width: 105px;
+    }
+
+    .reim-table tfoot td {
+        position: sticky;
+        bottom: 0;
+        z-index: 11;
+        background: #ecfdf5;
+        border-top: 2px solid #198754;
+        font-weight: 800;
+        color: #0f5132;
+    }
+
+    .reim-table tfoot td:nth-child(-n+3) {
+        z-index: 13;
+        background: #dcfce7;
+    }
+
+    .reim-category-total {
+        text-align: right;
+        white-space: nowrap;
+    }
+
+
+    .reim-grand-total-cell {
+        background: linear-gradient(135deg, #0f5132, #198754) !important;
+        color: #ffffff !important;
+        font-size: 1.08rem;
+        font-weight: 900;
+        letter-spacing: 0.2px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 -2px 8px rgba(15,81,50,0.16);
+        border-top: 2px solid #0f5132 !important;
+    }
+
+    .reim-grand-total-cell::before {
+        content: '₱ ';
+        opacity: 0.95;
+        font-weight: 900;
+    }
+
+    .reim-grand-total-label {
+        background: #0f5132 !important;
+        color: #ffffff !important;
+        font-weight: 900 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+    }
+
+    @media (max-width: 768px) {
+        .reim-grand-total-cell {
+            font-size: 1rem;
+        }
+    }
+
+
+    .reim-amount {
+        text-align: right;
+    }
+
+    .reim-mobile-expense-grid {
+        display: grid;
+        grid-template-columns: 1fr 110px;
+        gap: 8px 10px;
+        align-items: center;
+        margin-top: 10px;
+    }
+
+    .reim-mobile-expense-grid label {
+        font-size: 0.82rem;
+        color: #475569;
+        font-weight: 700;
+    }
+
+    .reim-mobile-total {
+        margin-top: 10px;
+        padding: 9px 10px;
+        border-radius: 10px;
+        background: #ecfdf5;
+        color: #0f5132;
+        font-weight: 800;
+        text-align: right;
+    }
+
+    .reim-save-status {
+        font-size: 0.84rem;
+        color: #64748b;
+        font-weight: 700;
+    }
+
+    .reim-btn-success {
+        background: #0f5132;
+        color: #fff;
+        box-shadow: 0 8px 18px rgba(15, 81, 50, 0.18);
+    }
+
+    .reim-btn-warning {
+        background: #f59e0b;
+        color: #111827;
+        box-shadow: 0 8px 18px rgba(245, 158, 11, 0.18);
+    }
+
+    .reim-btn-danger-outline {
+        background: #ffffff;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+        box-shadow: 0 8px 18px rgba(220, 38, 38, 0.08);
+    }
+
+    .reim-delete-draft-panel {
+        display: none;
+        margin: 0 0 10px 0;
+        padding: 12px 14px;
+        border-radius: 14px;
+        border: 1px solid #fecaca;
+        background: #fff5f5;
+        color: #7f1d1d;
+        font-weight: 800;
+        line-height: 1.35;
+    }
+
+    .reim-delete-draft-panel.show {
+        display: block;
+    }
+
+    .reim-delete-draft-panel h3 {
+        margin: 0 0 6px 0;
+        color: #991b1b;
+        font-size: 1rem;
+        font-weight: 950;
+    }
+
+    .reim-delete-draft-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+    }
+
+    .reim-btn[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+        box-shadow: none;
+    }
+
+
+    .reim-receipt-cell {
+        min-width: 150px;
+        white-space: nowrap;
+    }
+
+    .reim-receipt-tools {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .reim-receipt-btn {
+        border: 1px solid #bbf7d0;
+        background: #f0fdf4;
+        color: #166534;
+        border-radius: 999px;
+        padding: 5px 9px;
+        font-size: 0.74rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .reim-receipt-btn:hover {
+        background: #dcfce7;
+    }
+
+    .reim-receipt-btn.danger {
+        border-color: #fecaca;
+        background: #fff1f2;
+        color: #be123c;
+    }
+
+    .reim-receipt-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border-radius: 999px;
+        background: #e0f2fe;
+        color: #075985;
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 4px 8px;
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .reim-receipt-list {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        margin-top: 6px;
+    }
+
+    .reim-mobile-receipts {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px dashed #d1d5db;
+    }
+
+
+    .reim-additional-receipts-card {
+        margin-top: 16px;
+        border: 1px solid #dbeafe;
+        background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+        border-radius: 14px;
+        padding: 14px;
+    }
+
+    .reim-additional-receipts-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .reim-additional-receipts-head h3 {
+        margin: 0;
+        font-size: 1rem;
+        color: #1e3a8a;
+    }
+
+    .reim-additional-receipts-body {
+        margin-top: 10px;
+    }
+
+    .reim-additional-receipts-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+    }
+
+
+    .reim-manual-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.46);
+        z-index: 3000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+    }
+
+    .reim-manual-modal.show {
+        display: flex;
+    }
+
+    .reim-manual-card {
+        width: min(720px, 100%);
+        max-height: 92vh;
+        overflow: auto;
+        background: #fff;
+        border-radius: 18px;
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+        border: 1px solid #e2e8f0;
+    }
+
+    .reim-manual-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 16px 18px;
+        border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc;
+    }
+
+    .reim-manual-head h3 {
+        margin: 0;
+        color: #0f172a;
+        font-size: 1.1rem;
+    }
+
+    .reim-manual-body {
+        padding: 16px 18px 18px;
+    }
+
+    .reim-manual-grid {
+        display: grid;
+        grid-template-columns: 1fr 160px;
+        gap: 12px;
+        margin-top: 12px;
+    }
+
+    .reim-manual-date-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        gap: 8px;
+        margin-top: 8px;
+        max-height: 220px;
+        overflow: auto;
+        padding: 8px;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #f8fafc;
+    }
+
+    .reim-manual-date-btn {
+        border: 1px solid #cbd5e1;
+        background: #fff;
+        border-radius: 10px;
+        padding: 8px 6px;
+        font-weight: 800;
+        color: #334155;
+        cursor: pointer;
+    }
+
+    .reim-manual-date-btn:hover:not(:disabled) {
+        border-color: #198754;
+        color: #0f5132;
+        background: #ecfdf5;
+    }
+
+    .reim-manual-date-btn.selected {
+        background: #198754;
+        border-color: #198754;
+        color: #fff;
+    }
+
+    .reim-manual-date-btn:disabled {
+        background: #e5e7eb;
+        color: #94a3b8;
+        cursor: not-allowed;
+        text-decoration: line-through;
+    }
+
+    .reim-manual-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+    }
+
+    .reim-manual-badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 4px 8px;
+        background: #fef3c7;
+        color: #92400e;
+        font-size: 0.72rem;
+        font-weight: 900;
+        margin-left: 6px;
+    }
+
+    @media (max-width: 680px) {
+        .reim-manual-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .reim-status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 9px;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 900;
+        background: #f1f5f9;
+        color: #334155;
+        border: 1px solid #cbd5e1;
+    }
+
+    .reim-top-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .reim-utility-card {
+        margin: 0 0 10px 0;
+        padding: 12px 14px;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: #f8fafc;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    .reim-utility-card h3 {
+        margin: 0;
+        font-size: 1rem;
+        color: #0f172a;
+    }
+
+    .reim-btn-download {
+        background: #0f766e;
+        color: #fff;
+        box-shadow: 0 8px 18px rgba(15, 118, 110, 0.18);
+    }
+
+
+    /* REIMBURSEMENT SIGNATURE PROMPT */
+    .reim-signature-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.58);
+        z-index: 10050;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+    }
+
+    .reim-signature-modal.show {
+        display: flex;
+    }
+
+    .reim-signature-card {
+        width: min(720px, 96vw);
+        max-height: 92vh;
+        overflow: auto;
+        background: #ffffff;
+        border-radius: 18px;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.32);
+    }
+
+    .reim-signature-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: flex-start;
+        padding: 16px 18px;
+        border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc;
+    }
+
+    .reim-signature-head h3 {
+        margin: 0;
+        color: #0f172a;
+        font-size: 1.1rem;
+        font-weight: 900;
+    }
+
+    .reim-signature-body {
+        padding: 16px 18px 18px;
+    }
+
+    .reim-signature-pad-wrap {
+        border: 1px dashed #94a3b8;
+        background: #ffffff;
+        border-radius: 14px;
+        overflow: hidden;
+        margin-top: 10px;
+    }
+
+    #reimSignatureCanvas {
+        display: block;
+        width: 100%;
+        height: 190px;
+        touch-action: none;
+        background: #ffffff;
+    }
+
+    .reim-signature-upload-row {
+        margin-top: 12px;
+        padding: 12px;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+    }
+
+    .reim-signature-preview {
+        margin-top: 12px;
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        background: #fff;
+        padding: 10px;
+        min-height: 72px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .reim-signature-preview img {
+        max-width: 100%;
+        max-height: 110px;
+        object-fit: contain;
+    }
+
+    .reim-signature-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+    }
+
+    .reim-signature-note {
+        color: #64748b;
+        font-size: 0.84rem;
+        font-weight: 700;
+        margin-top: 6px;
+    }
+
+
+    .reim-submit-notice {
+        display: none;
+        margin: 0 0 10px 0;
+        padding: 11px 13px;
+        border-radius: 12px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        color: #334155;
+        font-weight: 800;
+        line-height: 1.35;
+    }
+
+    .reim-submit-notice.show {
+        display: block;
+    }
+
+    .reim-submit-notice.ok {
+        border-color: #86efac;
+        background: #f0fdf4;
+        color: #166534;
+    }
+
+    .reim-submit-notice.error {
+        border-color: #fecaca;
+        background: #fff1f2;
+        color: #b91c1c;
+    }
+
+    .reim-submit-notice.warn {
+        border-color: #fde68a;
+        background: #fffbeb;
+        color: #92400e;
+    }
+
+    .reim-signature-required-panel {
+        display: none;
+        margin: 0 0 12px 0;
+        padding: 14px;
+        border-radius: 14px;
+        border: 1px solid #fde68a;
+        background: #fffbeb;
+        color: #78350f;
+        box-shadow: 0 8px 20px rgba(245, 158, 11, 0.08);
+    }
+
+    .reim-signature-required-panel.show {
+        display: block;
+    }
+
+    .reim-signature-required-panel h3 {
+        margin: 0 0 6px 0;
+        font-size: 1rem;
+        font-weight: 900;
+        color: #92400e;
+    }
+
+    .reim-signature-required-panel p {
+        margin: 0 0 10px 0;
+        color: #78350f;
+        font-weight: 700;
+        line-height: 1.35;
+    }
+
+    .reim-signature-required-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+
+    .reim-status-window-card {
+        background: #ffffff;
+        border: 1px solid #dbeafe;
+        border-radius: 14px;
+        box-shadow: 0 8px 22px rgba(37, 99, 235, 0.06);
+        padding: 12px;
+        margin-bottom: 10px;
+    }
+
+    .reim-status-window-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+    }
+
+    .reim-status-window-head h2 {
+        margin: 0;
+        font-size: 1.05rem;
+        color: #0f172a;
+        font-weight: 900;
+    }
+
+    .reim-status-window-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 8px;
+    }
+
+    .reim-status-window-item {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #f8fafc;
+        padding: 10px;
+    }
+
+    .reim-status-window-title {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        font-weight: 900;
+        color: #0f172a;
+    }
+
+    .reim-status-window-meta {
+        color: #64748b;
+        font-size: 0.84rem;
+        margin-top: 5px;
+        line-height: 1.35;
+    }
+
+    .reim-status-window-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 8px;
+    }
+
+    .reim-status-pill-draft {
+        background: #e0f2fe;
+        color: #075985;
+        border-color: #bae6fd;
+    }
+
+    .reim-status-pill-submitted {
+        background: #fef3c7;
+        color: #92400e;
+        border-color: #fde68a;
+    }
+
+    .reim-status-pill-approved {
+        background: #dcfce7;
+        color: #166534;
+        border-color: #bbf7d0;
+    }
+
+    .reim-status-pill-rejected {
+        background: #fee2e2;
+        color: #991b1b;
+        border-color: #fecaca;
+    }
+
+    .reim-lifecycle-banner {
+        display: none;
+        margin: 0 0 10px 0;
+        border-radius: 14px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        padding: 12px 14px;
+        color: #334155;
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+    }
+
+    .reim-lifecycle-banner.show {
+        display: block;
+    }
+
+    .reim-lifecycle-banner h3 {
+        margin: 0 0 5px 0;
+        font-size: 1rem;
+        font-weight: 900;
+        color: #0f172a;
+    }
+
+    .reim-lifecycle-banner p {
+        margin: 0;
+        font-size: 0.9rem;
+        font-weight: 750;
+        line-height: 1.35;
+    }
+
+    .reim-lifecycle-banner .reim-lifecycle-meta {
+        margin-top: 8px;
+        font-size: 0.84rem;
+        font-weight: 800;
+        color: #475569;
+    }
+
+    /* S8 APPROVAL DOCUMENT STAMP PREVIEW */
+    .reim-approval-stamp-preview {
+        display: none;
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-top: 1px dashed rgba(22, 101, 52, 0.35);
+        background: rgba(255,255,255,0.55);
+        border-radius: 12px;
+    }
+
+    .reim-lifecycle-banner.approved .reim-approval-stamp-preview,
+    .reim-lifecycle-banner.rejected .reim-approval-stamp-preview {
+        display: block;
+    }
+
+    .reim-approval-stamp-label {
+        font-size: 0.72rem;
+        font-weight: 950;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #475569;
+        margin-bottom: 5px;
+    }
+
+    .reim-approval-stamp-signature {
+        max-width: 230px;
+        max-height: 82px;
+        object-fit: contain;
+        display: block;
+        margin: 0 0 4px 0;
+    }
+
+    .reim-approval-stamp-name {
+        display: inline-block;
+        min-width: 220px;
+        border-top: 1px solid rgba(15, 23, 42, 0.55);
+        padding-top: 4px;
+        font-weight: 950;
+        color: #0f172a;
+        line-height: 1.15;
+    }
+
+    .reim-approval-stamp-title,
+    .reim-approval-stamp-time {
+        font-size: 0.78rem;
+        color: #475569;
+        font-weight: 800;
+        line-height: 1.3;
+    }
+
+    .reim-approval-stamp-note {
+        margin-top: 6px;
+        color: #64748b;
+        font-size: 0.76rem;
+        font-weight: 800;
+    }
+
+    .reim-lifecycle-banner.draft {
+        border-color: #bae6fd;
+        background: #f0f9ff;
+    }
+
+    .reim-lifecycle-banner.submitted {
+        border-color: #fde68a;
+        background: #fffbeb;
+    }
+
+    .reim-lifecycle-banner.approved {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+    }
+
+    .reim-lifecycle-banner.rejected {
+        border-color: #fecaca;
+        background: #fff1f2;
+    }
+
+    .reim-locked-field {
+        background: #f8fafc !important;
+        color: #64748b !important;
+        cursor: not-allowed !important;
+    }
+
+
+
+
+    /* S11E REIMBURSEMENT NOTIFICATIONS */
+    .reim-notification-card {
+        background: #ffffff;
+        border: 1px solid #d1fae5;
+        border-radius: 14px;
+        box-shadow: 0 8px 22px rgba(16, 185, 129, 0.06);
+        padding: 12px;
+        margin-bottom: 10px;
+    }
+
+    .reim-notification-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+    }
+
+    .reim-notification-head h2 {
+        margin: 0;
+        font-size: 1.05rem;
+        color: #064e3b;
+        font-weight: 900;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .reim-notification-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 24px;
+        height: 24px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: #dc2626;
+        color: #ffffff;
+        font-size: 0.76rem;
+        font-weight: 950;
+    }
+
+    .reim-notification-list {
+        display: grid;
+        gap: 8px;
+    }
+
+    .reim-notification-item {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #f8fafc;
+        padding: 10px;
+        cursor: pointer;
+    }
+
+    .reim-notification-item.unread {
+        border-color: #86efac;
+        background: #f0fdf4;
+    }
+
+    .reim-notification-title {
+        font-weight: 950;
+        color: #0f172a;
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .reim-notification-message {
+        color: #475569;
+        font-size: 0.86rem;
+        font-weight: 750;
+        margin-top: 4px;
+        line-height: 1.35;
+    }
+
+    .reim-notification-time {
+        color: #64748b;
+        font-size: 0.78rem;
+        font-weight: 800;
+        margin-top: 5px;
+    }
+
+    .reim-notification-close {
+        width: 32px;
+        height: 32px;
+        border: 0;
+        border-radius: 999px;
+        background: #e2e8f0;
+        color: #475569;
+        font-weight: 950;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        touch-action: manipulation;
+        flex: 0 0 auto;
+    }
+
+    .reim-notification-close:hover {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+
+    /* S11F8 REIMBURSEMENT CUSTOM ALERTS / CONFIRMATIONS */
+    .reim-toast-stack {
+        position: fixed;
+        top: 18px;
+        right: 18px;
+        z-index: 10080;
+        display: grid;
+        gap: 10px;
+        width: min(360px, calc(100vw - 32px));
+        pointer-events: none;
+    }
+
+    .reim-toast {
+        pointer-events: auto;
+        border-radius: 16px;
+        padding: 12px 14px;
+        border: 1px solid #d1fae5;
+        background: #ffffff;
+        color: #0f172a;
+        box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 10px;
+        align-items: start;
+        animation: reimToastIn .18s ease-out;
+    }
+
+    .reim-toast.ok,
+    .reim-toast.success {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #166534;
+    }
+
+    .reim-toast.error,
+    .reim-toast.err {
+        border-color: #fecaca;
+        background: #fff1f2;
+        color: #991b1b;
+    }
+
+    .reim-toast.warn {
+        border-color: #fde68a;
+        background: #fffbeb;
+        color: #92400e;
+    }
+
+    .reim-toast-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(25,135,84,.12);
+        color: #0f5132;
+        font-weight: 950;
+    }
+
+    .reim-toast-title {
+        font-weight: 950;
+        margin-bottom: 2px;
+    }
+
+    .reim-toast-message {
+        font-weight: 800;
+        line-height: 1.35;
+        font-size: .86rem;
+        white-space: pre-wrap;
+    }
+
+    .reim-toast-close {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font-size: 1.05rem;
+        font-weight: 950;
+        cursor: pointer;
+        line-height: 1;
+    }
+
+    .reim-dialog-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 10090;
+        background: rgba(15, 23, 42, 0.55);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+    }
+
+    .reim-dialog-backdrop.show {
+        display: flex;
+    }
+
+    .reim-dialog {
+        width: min(460px, 100%);
+        background: #ffffff;
+        border-radius: 22px;
+        box-shadow: 0 28px 90px rgba(15, 23, 42, 0.38);
+        border: 1px solid #d1fae5;
+        overflow: hidden;
+        animation: reimDialogIn .18s ease-out;
+    }
+
+    .reim-dialog-header {
+        padding: 18px 18px 10px;
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .reim-dialog-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 16px;
+        background: #ecfdf5;
+        color: #0f5132;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.05rem;
+        flex: 0 0 auto;
+    }
+
+    .reim-dialog.danger .reim-dialog-icon {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .reim-dialog.warning .reim-dialog-icon {
+        background: #fffbeb;
+        color: #b45309;
+    }
+
+    .reim-dialog-title {
+        margin: 0;
+        color: #0f172a;
+        font-weight: 950;
+        font-size: 1.08rem;
+    }
+
+    .reim-dialog-message {
+        margin-top: 5px;
+        color: #475569;
+        font-weight: 800;
+        line-height: 1.45;
+        white-space: pre-wrap;
+    }
+
+    .reim-dialog-actions {
+        padding: 12px 18px 18px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    @keyframes reimDialogIn {
+        from { opacity: 0; transform: translateY(10px) scale(.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes reimToastIn {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* S11G REIMBURSEMENT STATUS LOCKING HARDENING */
+    .reim-page.reim-locked .reim-amount,
+    .reim-page.reim-locked .reim-remarks,
+    .reim-page.reim-locked #reimManualItemModal input,
+    .reim-page.reim-locked #reimManualItemModal button,
+    .reim-page.reim-locked #reimAdditionalReceiptInput {
+        pointer-events: none;
+    }
+
+    .reim-page.reim-locked .reim-manual-modal.show {
+        display: none !important;
+    }
+
+</style>
+
+<div class="reim-page">
+    <section class="reim-hero">
+        <h1>Reimbursement</h1>
+        <p>Select a date range and the system will auto-load your assigned schedules as reimbursement rows.</p>
+    </section>
+
+    <div id="reim-toast-stack" class="reim-toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <div id="reim-dialog-backdrop" class="reim-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="reim-dialog-title">
+        <div id="reim-dialog-box" class="reim-dialog">
+            <div class="reim-dialog-header">
+                <div id="reim-dialog-icon" class="reim-dialog-icon"><i class="fa-solid fa-circle-question"></i></div>
+                <div>
+                    <h3 id="reim-dialog-title" class="reim-dialog-title">Confirm Action</h3>
+                    <div id="reim-dialog-message" class="reim-dialog-message"></div>
+                </div>
+            </div>
+            <div class="reim-dialog-actions">
+                <button type="button" id="reim-dialog-cancel" class="reim-btn reim-btn-secondary">Cancel</button>
+                <button type="button" id="reim-dialog-confirm" class="reim-btn reim-btn-primary">Continue</button>
+            </div>
+        </div>
+    </div>
+
+
+
+    <section class="reim-notification-card" id="reimNotificationCard">
+        <div class="reim-notification-head">
+            <div>
+                <h2><i class="fa-solid fa-bell"></i> Reimbursement Notifications <span class="reim-notification-badge" id="reimNotificationBadge" style="display:none;">0</span></h2>
+                <div class="reim-muted">Approval updates and reimbursement review notices.</div>
+            </div>
+            <div class="reim-actions">
+                <button type="button" class="reim-btn reim-btn-secondary" onclick="loadReimbursementNotifications()">Refresh</button>
+                <button type="button" class="reim-btn reim-btn-secondary" onclick="markAllReimbursementNotificationsRead()">Mark All Read</button>
+            </div>
+        </div>
+        <div class="reim-notification-list" id="reimNotificationList">
+            <div class="reim-empty">Loading reimbursement notifications...</div>
+        </div>
+    </section>
+
+    <section class="reim-status-window-card" id="reimStatusWindowCard">
+        <div class="reim-status-window-head">
+            <div>
+                <h2>My Reimbursement Status</h2>
+                <div class="reim-muted">Quickly view and reopen your draft, submitted, approved, and rejected reimbursements.</div>
+            </div>
+            <div class="reim-actions">
+                <button type="button" class="reim-btn reim-btn-secondary" onclick="loadMyReimbursementStatuses()">Refresh Status</button>
+            </div>
+        </div>
+        <div class="reim-status-window-list" id="reimStatusWindowList">
+            <div class="reim-empty">Loading reimbursement status...</div>
+        </div>
+    </section>
+<section class="reim-filter-card">
+        <div class="reim-filter-grid">
+            <div class="reim-field">
+                <label for="reimStartDate">Start Date</label>
+                <input type="date" id="reimStartDate">
+            </div>
+            <div class="reim-field">
+                <label for="reimEndDate">End Date</label>
+                <input type="date" id="reimEndDate">
+            </div>
+            <div class="reim-actions">
+                <button type="button" class="reim-btn reim-btn-primary" onclick="loadReimbursementRows()">Load Schedules</button>
+                <button type="button" class="reim-btn reim-btn-secondary" onclick="setReimbursementThisWeek()">This Week</button>
+                <button type="button" class="reim-btn reim-btn-secondary" onclick="setReimbursementThisMonth()">This Month</button>
+            </div>
+        </div>
+        <div class="reim-summary" id="reimSummary">
+            <span class="reim-chip">Personal reimbursement only</span>
+            <span class="reim-chip">Excel export will follow next</span>
+        </div>
+    </section>
+
+    <section class="reim-table-card">
+        <div class="reim-lifecycle-banner draft" id="reimLifecycleBanner" role="status" aria-live="polite">
+            <h3 id="reimLifecycleTitle">Draft</h3>
+            <p id="reimLifecycleReason">Draft reimbursement. You may edit, save, and submit.</p>
+            <div class="reim-lifecycle-meta" id="reimLifecycleMeta"></div>
+            <div class="reim-approval-stamp-preview" id="reimApprovalStampPreview"></div>
+        </div>
+
+        <div class="reim-submit-notice" id="reimSubmitNotice" role="status" aria-live="polite"></div>
+
+        <div id="reimDeleteDraftPanel" class="reim-delete-draft-panel">
+            <h3><i class="fa-solid fa-triangle-exclamation"></i> Delete this reimbursement draft?</h3>
+            <div>This will permanently remove this saved reimbursement draft, manual items, and attached draft receipts for the selected date range. Submitted and approved reimbursements cannot be deleted.</div>
+            <div class="reim-delete-draft-actions">
+                <button type="button" class="reim-btn reim-btn-danger" id="reimConfirmDeleteDraftBtn" onclick="deleteReimbursementDraft()">Yes, Delete Draft</button>
+                <button type="button" class="reim-btn reim-btn-secondary" onclick="hideReimbursementDeleteDraftConfirm()">Cancel</button>
+            </div>
+        </div>
+
+        <div class="reim-signature-required-panel" id="reimSignatureRequiredPanel" role="status" aria-live="polite">
+            <h3>Signature Required</h3>
+            <p>Your reimbursement draft has been saved. Please add your signature in Settings, then return to this page and continue submission. Keep this reimbursement page open so your loaded worksheet stays available.</p>
+            <div class="reim-signature-required-actions">
+                <button type="button" class="reim-btn reim-btn-primary" onclick="openReimbursementSettingsForSignature()">Open Settings</button>
+                <button type="button" class="reim-btn reim-btn-success" onclick="recheckReimbursementSignatureAndContinue()">I Added My Signature — Continue Submit</button>
+                <button type="button" class="reim-btn reim-btn-secondary" onclick="hideReimbursementSignatureRequiredPanel()">Hide</button>
+            </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <div>
+                <h2 style="margin:0;font-size:1.15rem;">Reimbursement Worksheet</h2>
+                <div class="reim-muted" id="reimStatusText">Select a date range to begin.</div>
+            </div>
+            <div class="reim-top-actions">
+                <span class="reim-save-status" id="reimDraftStatus">Not saved yet.</span>
+                <button type="button" class="reim-btn reim-btn-success" id="reimSaveDraftBtn" onclick="saveReimbursementDraft()">Save Draft</button>
+                <button type="button" class="reim-btn reim-btn-download" id="reimDownloadExcelBtn" onclick="downloadReimbursementExcel()">Download Form</button>
+                <button type="button" class="reim-btn reim-btn-danger-outline" id="reimDeleteDraftBtn" onclick="showReimbursementDeleteDraftConfirm()">Delete Draft</button>
+                <button type="button" class="reim-btn reim-btn-danger" id="reimClearBtn" onclick="clearReimbursementForm()">Clear Form</button>
+                <button type="button" class="reim-btn reim-btn-warning" id="reimSubmitBtn" onclick="submitReimbursement()">Submit</button>
+                <div class="reim-muted" id="reimRowCount">0 rows</div>
+            </div>
+        </div>
+
+        <div class="reim-utility-card" id="reimManualAdjustmentsCard">
+            <div>
+                <h3>Manual Adjustments</h3>
+                <div class="reim-muted">Add weekend, day-off, or non-schedule purchases. These will be placed under Others.</div>
+            </div>
+            <button type="button" class="reim-btn reim-btn-secondary" id="reimAddManualBtn" onclick="openManualReimbursementModal()">Add Another Item</button>
+        </div>
+
+        <div class="reim-table-wrap" id="reimTableWrap">
+            <table class="reim-table" id="reimExpenseTable">
+                <thead>
+                    <tr>
+                        <th class="reimb-date-cell">Date</th>
+                        <th>Schedule</th>
+                        <th>Client / Product</th>
+                        <th>Representation</th>
+                        <th>Car Repair</th>
+                        <th>Toll Fee</th>
+                        <th>Gasoline</th>
+                        <th>Transpo</th>
+                        <th>Office Supplies</th>
+                        <th>Parking</th>
+                        <th>Per Diem</th>
+                        <th>Coding</th>
+                        <th>Others</th>
+                        <th>Row Total</th>
+                        <th class="reim-receipt-cell">Receipts</th>
+                        <th>Remarks / Purpose</th>
+                    </tr>
+                </thead>
+                <tbody id="reimTableBody">
+                    <tr>
+                        <td colspan="16" class="reim-empty">No rows loaded yet.</td>
+                    </tr>
+                </tbody>
+                <tfoot id="reimTotalsFoot">
+                    <tr>
+                        <td class="reimb-date-cell reim-grand-total-label" colspan="3">Totals</td>
+                        <td class="reim-category-total" data-total-expense="representation">0.00</td>
+                        <td class="reim-category-total" data-total-expense="car_repair">0.00</td>
+                        <td class="reim-category-total" data-total-expense="toll_fee">0.00</td>
+                        <td class="reim-category-total" data-total-expense="gasoline">0.00</td>
+                        <td class="reim-category-total" data-total-expense="transpo">0.00</td>
+                        <td class="reim-category-total" data-total-expense="office_supplies">0.00</td>
+                        <td class="reim-category-total" data-total-expense="parking">0.00</td>
+                        <td class="reim-category-total" data-total-expense="per_diem">0.00</td>
+                        <td class="reim-category-total" data-total-expense="coding">0.00</td>
+                        <td class="reim-category-total" data-total-expense="others">0.00</td>
+                        <td class="reim-total-cell reim-grand-total-cell" id="reimGrandTotal">0.00</td>
+                        <td class="reim-receipt-cell"></td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <div class="reim-sticky-xscroll" id="reimStickyXScroll" aria-label="Horizontal reimbursement table scroll">
+            <div class="reim-sticky-xscroll-inner" id="reimStickyXScrollInner"></div>
+        </div>
+<div class="reim-mobile-list" id="reimMobileList">
+            <div class="reim-empty">No rows loaded yet.</div>
+        </div>
+
+        <div class="reim-additional-receipts-card" id="reimAdditionalReceiptsCard">
+            <div class="reim-additional-receipts-head">
+                <div>
+                    <h3>Additional Receipts</h3>
+                    <div class="reim-muted">Attach reimbursement-level receipts not tied to a specific schedule row.</div>
+                </div>
+                <div>
+                    <input type="file" id="reimAdditionalReceiptInput" multiple accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="uploadAdditionalReimbursementReceipts(this.files)">
+                    <button type="button" class="reim-btn reim-btn-secondary" id="reimAdditionalReceiptBtn" onclick="document.getElementById('reimAdditionalReceiptInput').click()">Add Additional Receipts</button>
+                </div>
+            </div>
+            <div class="reim-additional-receipts-body">
+                <div class="reim-muted">Allowed: PDF, JPG, JPEG, PNG. Max 2MB each.</div>
+                <div class="reim-additional-receipts-list" id="reimAdditionalReceiptsList">
+                    <span class="reim-muted">No additional receipts uploaded.</span>
+                </div>
+            </div>
+        </div>
+
+    </section>
+
+    <div class="reim-manual-modal" id="reimManualItemModal" aria-hidden="true">
+        <div class="reim-manual-card" role="dialog" aria-modal="true" aria-labelledby="reimManualTitle">
+            <div class="reim-manual-head">
+                <div>
+                    <h3 id="reimManualTitle">Add Another Item</h3>
+                    <div class="reim-muted">Use this for weekend, day-off, or non-schedule purchases. The amount will be placed under Others.</div>
+                </div>
+                <button type="button" class="reim-btn reim-btn-secondary" onclick="closeManualReimbursementModal()">Close</button>
+            </div>
+            <div class="reim-manual-body">
+                <div class="reim-field">
+                    <label>Special Date Selector</label>
+                    <div class="reim-muted">Dates already loaded in the worksheet are greyed out.</div>
+                    <input type="hidden" id="reimManualDate">
+                    <div class="reim-manual-date-grid" id="reimManualDateGrid"></div>
+                </div>
+
+                <div class="reim-manual-grid">
+                    <div class="reim-field">
+                        <label for="reimManualItemName">Item / Description</label>
+                        <input type="text" id="reimManualItemName" placeholder="Example: Emergency parking, supplies, courier fee">
+                    </div>
+                    <div class="reim-field">
+                        <label for="reimManualAmount">Price</label>
+                        <input type="number" min="0" step="0.01" inputmode="decimal" id="reimManualAmount" placeholder="0.00">
+                    </div>
+                </div>
+
+                <div class="reim-field" style="margin-top:12px;">
+                    <label for="reimManualReceipt">Attach Receipt</label>
+                    <input type="file" id="reimManualReceipt" multiple accept=".pdf,.jpg,.jpeg,.png">
+                    <div class="reim-muted">Optional now, but recommended before submitting. PDF, JPG, JPEG, PNG only. Max 2MB each.</div>
+                </div>
+
+                <div class="reim-manual-actions">
+                    <button type="button" class="reim-btn reim-btn-secondary" onclick="closeManualReimbursementModal()">Cancel</button>
+                    <button type="button" class="reim-btn reim-btn-primary" onclick="saveManualReimbursementItem()">Save Item</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="reim-signature-modal" id="reimSignatureModal" aria-hidden="true">
+        <div class="reim-signature-card" role="dialog" aria-modal="true" aria-labelledby="reimSignatureTitle">
+            <div class="reim-signature-head">
+                <div>
+                    <h3 id="reimSignatureTitle">Signature Required</h3>
+                    <div class="reim-muted">Please draw or upload your signature before submitting this reimbursement.</div>
+                </div>
+                <button type="button" class="reim-btn reim-btn-secondary" onclick="cancelReimbursementSignaturePrompt()">Cancel</button>
+            </div>
+            <div class="reim-signature-body">
+                <label class="fw-bold text-muted small text-uppercase">Draw Signature</label>
+                <div class="reim-signature-pad-wrap">
+                    <canvas id="reimSignatureCanvas" width="900" height="260"></canvas>
+                </div>
+                <div class="reim-signature-actions" style="justify-content:flex-start;">
+                    <button type="button" class="reim-btn reim-btn-secondary" onclick="clearReimbursementSignatureCanvas()">Clear Drawing</button>
+                </div>
+
+                <div class="reim-signature-upload-row">
+                    <label class="fw-bold text-muted small text-uppercase" for="reimSignatureUpload">Or Upload Signature Image</label>
+                    <input type="file" id="reimSignatureUpload" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" class="form-control mt-2" onchange="previewReimbursementSignatureUpload(this.files)">
+                    <div class="reim-signature-note">Allowed: PNG, JPG, JPEG, or WEBP.</div>
+                </div>
+
+                <div class="reim-signature-preview" id="reimSignaturePreview">
+                    <span class="reim-muted">Signature preview will appear here.</span>
+                </div>
+                <div class="reim-signature-note" id="reimSignatureSaveStatus"></div>
+
+                <div class="reim-signature-actions">
+                    <button type="button" class="reim-btn reim-btn-secondary" onclick="cancelReimbursementSignaturePrompt()">Cancel</button>
+                    <button type="button" class="reim-btn reim-btn-success" id="reimSaveSignatureContinueBtn" onclick="saveReimbursementSignatureAndContinue()">Save Signature & Continue Submit</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+<script>
+    const reimbursementExpenseKeys = [
+        'representation',
+        'car_repair',
+        'toll_fee',
+        'gasoline',
+        'transpo',
+        'office_supplies',
+        'parking',
+        'per_diem',
+        'coding',
+        'others'
+    ];
+
+    let currentReimbursementRows = [];
+    let currentReimbursementStatus = 'Draft';
+    let currentReimbursementLifecycle = {
+        status: 'Draft',
+        editable: true,
+        locked: false,
+        lock_reason: 'Draft reimbursement. You may edit, save, and submit.',
+        lifecycle_label: 'Draft',
+        approval_remarks: '',
+        approved_at: null,
+        approved_by: '',
+        rejected_at: null,
+        rejected_by: '',
+        approval_action: '',
+        approval_name_snapshot: '',
+        approval_title_snapshot: '',
+        approval_signature_snapshot: '',
+        approval_signature_layout: 'signature_over_printed_name',
+        approval_signed_at: null,
+        approval_has_signature_snapshot: false
+    };
+    let reimbursementReceiptsByShift = {};
+    let reimbursementAdditionalReceipts = [];
+
+    function reimEscape(value) {
+        return String(value || '').replace(/[&<>"']/g, function(match) {
+            return ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[match];
+        });
+    }
+
+
+    function reimToast(message, tone, title) {
+        const stack = document.getElementById('reim-toast-stack');
+        if (!stack || !message) return;
+
+        const toast = document.createElement('div');
+        toast.className = 'reim-toast ' + (tone || '');
+        const normalizedTone = String(tone || '').toLowerCase();
+        const icon = normalizedTone === 'ok' || normalizedTone === 'success'
+            ? 'check'
+            : (normalizedTone === 'error' || normalizedTone === 'err'
+                ? 'triangle-exclamation'
+                : (normalizedTone === 'warn' ? 'circle-exclamation' : 'circle-info'));
+        const fallbackTitle = normalizedTone === 'ok' || normalizedTone === 'success'
+            ? 'Success'
+            : (normalizedTone === 'error' || normalizedTone === 'err'
+                ? 'Action Needed'
+                : (normalizedTone === 'warn' ? 'Reminder' : 'Notice'));
+
+        toast.innerHTML = `
+            <div class="reim-toast-icon"><i class="fa-solid fa-${icon}"></i></div>
+            <div>
+                <div class="reim-toast-title">${reimEscape(title || fallbackTitle)}</div>
+                <div class="reim-toast-message">${reimEscape(message)}</div>
+            </div>
+            <button type="button" class="reim-toast-close" aria-label="Close notice">×</button>
+        `;
+
+        toast.querySelector('.reim-toast-close')?.addEventListener('click', function() {
+            toast.remove();
+        });
+        stack.appendChild(toast);
+
+        window.setTimeout(function() {
+            if (toast && toast.parentNode) toast.remove();
+        }, normalizedTone === 'error' || normalizedTone === 'err' ? 6500 : 4200);
+    }
+
+    function reimAlert(message, tone) {
+        reimToast(message, tone || 'error');
+    }
+
+    function reimConfirmDialog(options) {
+        options = options || {};
+        return new Promise(function(resolve) {
+            const backdrop = document.getElementById('reim-dialog-backdrop');
+            const dialog = document.getElementById('reim-dialog-box');
+            const icon = document.getElementById('reim-dialog-icon');
+            const title = document.getElementById('reim-dialog-title');
+            const message = document.getElementById('reim-dialog-message');
+            const cancelBtn = document.getElementById('reim-dialog-cancel');
+            const confirmBtn = document.getElementById('reim-dialog-confirm');
+
+            if (!backdrop || !dialog || !title || !message || !cancelBtn || !confirmBtn) {
+                resolve(false);
+                return;
+            }
+
+            const tone = options.tone || '';
+            dialog.className = 'reim-dialog ' + tone;
+            title.textContent = options.title || 'Confirm Action';
+            message.textContent = options.message || 'Continue?';
+            cancelBtn.textContent = options.cancelText || 'Cancel';
+            confirmBtn.textContent = options.confirmText || 'Continue';
+            confirmBtn.className = 'reim-btn ' + (options.confirmClass || (tone === 'danger' ? 'reim-btn-danger' : 'reim-btn-primary'));
+
+            if (icon) {
+                const iconName = options.icon || (tone === 'danger' ? 'trash' : (tone === 'warning' ? 'triangle-exclamation' : 'circle-question'));
+                icon.innerHTML = `<i class="fa-solid fa-${iconName}"></i>`;
+            }
+
+            let resolved = false;
+            const cleanup = function(value) {
+                if (resolved) return;
+                resolved = true;
+                backdrop.classList.remove('show');
+                confirmBtn.onclick = null;
+                cancelBtn.onclick = null;
+                backdrop.onclick = null;
+                document.removeEventListener('keydown', keyHandler);
+                resolve(value);
+            };
+
+            const keyHandler = function(event) {
+                if (event.key === 'Escape') cleanup(false);
+            };
+
+            confirmBtn.onclick = function() { cleanup(true); };
+            cancelBtn.onclick = function() { cleanup(false); };
+            backdrop.onclick = function(event) {
+                if (event.target === backdrop) cleanup(false);
+            };
+            document.addEventListener('keydown', keyHandler);
+
+            backdrop.classList.add('show');
+            window.setTimeout(function() { confirmBtn.focus(); }, 60);
+        });
+    }
+
+
+    function normalizeReimbursementAmounts(amounts) {
+        amounts = amounts || {};
+        return {
+            representation: Number(amounts.representation || 0),
+            car_repair: Number(amounts.car_repair || 0),
+            toll_fee: Number(amounts.toll_fee || 0),
+            gasoline: Number(amounts.gasoline || 0),
+            transpo: Number(amounts.transpo || 0),
+            office_supplies: Number(amounts.office_supplies || 0),
+            parking: Number(amounts.parking || 0),
+            per_diem: Number(amounts.per_diem || 0),
+            coding: Number(amounts.coding || amounts.parking_coding || 0),
+            others: Number(amounts.others || amounts.others_misc || 0),
+            parking_coding: Number(amounts.parking_coding || amounts.coding || 0),
+            others_misc: Number(amounts.others_misc || amounts.others || 0)
+        };
+    }
+
+    function getReimbursementRowKey(row) {
+        if (!row) return '';
+        if (row.manual_key) return String(row.manual_key);
+        if (row.manual && row.id) return `manual_${row.id}`;
+        if (row.local_manual_key) return String(row.local_manual_key);
+        if (row.shift_id !== undefined && row.shift_id !== null && row.shift_id !== '') return String(row.shift_id);
+        return `manual_local_${Date.now()}`;
+    }
+
+    function getReimbursementReceiptKey(row) {
+        return getReimbursementRowKey(row);
+    }
+
+    function sortReimbursementRows(rows) {
+        return (rows || []).slice().sort(function(a, b) {
+            const ad = String(a.date || '');
+            const bd = String(b.date || '');
+            if (ad !== bd) return ad.localeCompare(bd);
+            const am = a.manual ? 1 : 0;
+            const bm = b.manual ? 1 : 0;
+            if (am !== bm) return am - bm;
+            return String(a.task || '').localeCompare(String(b.task || ''));
+        });
+    }
+
+    function setReimbursementThisWeek() {
+        const today = new Date();
+        const day = today.getDay() || 7;
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - day + 1);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+
+        document.getElementById('reimStartDate').value = toDateInputValue(monday);
+        document.getElementById('reimEndDate').value = toDateInputValue(sunday);
+    }
+
+    function setReimbursementThisMonth() {
+        const today = new Date();
+        const first = new Date(today.getFullYear(), today.getMonth(), 1);
+        const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+        document.getElementById('reimStartDate').value = toDateInputValue(first);
+        document.getElementById('reimEndDate').value = toDateInputValue(last);
+    }
+
+    function toDateInputValue(dateObj) {
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    function buildExpenseInputs(row) {
+        const amounts = normalizeReimbursementAmounts(row.amounts || {});
+        const rowKey = getReimbursementRowKey(row);
+        return reimbursementExpenseKeys.map(function(key) {
+            const value = Number(amounts[key] || 0) > 0 ? Number(amounts[key]).toFixed(2) : '';
+            const readonly = row.manual && key !== 'others' ? 'readonly tabindex="-1"' : '';
+            const manualClass = row.manual && key !== 'others' ? ' style="background:#f8fafc;color:#94a3b8;"' : '';
+            return `<td><input class="reim-amount" type="number" min="0" step="0.01" inputmode="decimal" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" data-expense="${key}" value="${reimEscape(value)}" placeholder="0.00" ${readonly}${manualClass} oninput="handleReimbursementAmountInput(this)"></td>`;
+        }).join('');
+    }
+
+    function formatMoney(value) {
+        const number = Number(value || 0);
+        return number.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    }
+
+    function getReimAmountValue(input) {
+        const raw = String(input?.value || '').replace(/,/g, '').trim();
+        const value = Number(raw);
+        return Number.isFinite(value) && value > 0 ? value : 0;
+    }
+
+
+    function getActiveReimbursementAmountSelector() {
+        const mobileVisible = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+        return mobileVisible ? '#reimMobileList .reim-amount' : '#reimTableBody .reim-amount';
+    }
+
+    function getActiveReimbursementRemarksSelector() {
+        const mobileVisible = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+        return mobileVisible ? '#reimMobileList .reim-remarks' : '#reimTableBody .reim-remarks';
+    }
+
+    function handleReimbursementAmountInput(input) {
+        if (!input) return;
+        if (!reimbursementIsEditable()) {
+            applyReimbursementStatusUi();
+            return;
+        }
+        const rowKey = input.dataset.rowKey;
+        const expenseKey = input.dataset.expense;
+        if (rowKey && expenseKey) {
+            document.querySelectorAll(`.reim-amount[data-row-key="${CSS.escape(rowKey)}"][data-expense="${CSS.escape(expenseKey)}"]`).forEach(function(peer) {
+                if (peer !== input) {
+                    peer.value = input.value;
+                }
+            });
+        }
+        markReimbursementDirty();
+        recalculateReimbursementTotals();
+    }
+
+    function handleReimbursementRemarksInput(input) {
+        if (!input) return;
+        if (!reimbursementIsEditable()) {
+            applyReimbursementStatusUi();
+            return;
+        }
+        const rowKey = input.dataset.rowKey;
+        if (rowKey) {
+            document.querySelectorAll(`.reim-remarks[data-row-key="${CSS.escape(rowKey)}"]`).forEach(function(peer) {
+                if (peer !== input) {
+                    peer.value = input.value;
+                }
+            });
+        }
+        markReimbursementDirty();
+    }
+
+    function calculateRowTotal(rowKey) {
+        let total = 0;
+        const activeSelector = getActiveReimbursementAmountSelector();
+        document.querySelectorAll(`${activeSelector}[data-row-key="${CSS.escape(rowKey)}"]`).forEach(function(input) {
+            total += getReimAmountValue(input);
+        });
+        return total;
+    }
+
+    function recalculateReimbursementTotals() {
+        const categoryTotals = {};
+        reimbursementExpenseKeys.forEach(function(key) {
+            categoryTotals[key] = 0;
+        });
+
+        const seenRows = new Set();
+        const activeSelector = getActiveReimbursementAmountSelector();
+
+        document.querySelectorAll(activeSelector).forEach(function(input) {
+            const key = input.dataset.expense;
+            const rowKey = input.dataset.rowKey;
+            const value = getReimAmountValue(input);
+
+            if (key in categoryTotals) {
+                categoryTotals[key] += value;
+            }
+            if (rowKey) {
+                seenRows.add(rowKey);
+            }
+        });
+
+        let grandTotal = 0;
+
+        seenRows.forEach(function(rowKey) {
+            const rowTotal = calculateRowTotal(rowKey);
+            grandTotal += rowTotal;
+
+            document.querySelectorAll(`[data-row-total="${CSS.escape(rowKey)}"]`).forEach(function(el) {
+                el.textContent = formatMoney(rowTotal);
+            });
+        });
+
+        reimbursementExpenseKeys.forEach(function(key) {
+            document.querySelectorAll(`[data-total-expense="${key}"]`).forEach(function(el) {
+                el.textContent = formatMoney(categoryTotals[key] || 0);
+            });
+        });
+
+        const grandTotalEl = document.getElementById('reimGrandTotal');
+        if (grandTotalEl) {
+            grandTotalEl.textContent = formatMoney(grandTotal);
+        }
+    }
+
+    function buildMobileExpenseInputs(row) {
+        const labels = {
+            representation: 'Representation',
+            car_repair: 'Car Repair',
+            toll_fee: 'Toll Fee',
+            gasoline: 'Gasoline',
+            transpo: 'Transpo',
+            office_supplies: 'Office Supplies',
+            parking: 'Parking',
+            per_diem: 'Per Diem',
+            coding: 'Coding',
+            others: 'Others'
+        };
+        const amounts = normalizeReimbursementAmounts(row.amounts || {});
+        const rowKey = getReimbursementRowKey(row);
+
+        return `<div class="reim-mobile-expense-grid">
+            ${reimbursementExpenseKeys.map(function(key) {
+                const value = Number(amounts[key] || 0) > 0 ? Number(amounts[key]).toFixed(2) : '';
+                const readonly = row.manual && key !== 'others' ? 'readonly tabindex="-1"' : '';
+                const manualStyle = row.manual && key !== 'others' ? ' style="background:#f8fafc;color:#94a3b8;"' : '';
+                return `<label>${labels[key] || key}</label><input class="reim-amount" type="number" min="0" step="0.01" inputmode="decimal" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" data-expense="${key}" value="${reimEscape(value)}" placeholder="0.00" ${readonly}${manualStyle} oninput="handleReimbursementAmountInput(this)">`;
+            }).join('')}
+        </div>
+        <div class="reim-mobile-total">Row Total: ₱ <span data-row-total="${reimEscape(rowKey)}">0.00</span></div>`;
+    }
+
+
+
+function formatExpenseDate(value) {
+    if (!value) return '';
+    const parts = String(value).split('-');
+    if (parts.length === 3) {
+        return `${parts[1]}-${parts[2]}-${parts[0]}`;
+    }
+    return value;
+}
+
+function renderReimbursementRows(rows) {
+        currentReimbursementRows = sortReimbursementRows(Array.isArray(rows) ? rows : []);
+        rows = currentReimbursementRows;
+        const body = document.getElementById('reimTableBody');
+        const mobile = document.getElementById('reimMobileList');
+        const countLabel = document.getElementById('reimRowCount');
+
+        countLabel.textContent = `${rows.length} row${rows.length === 1 ? '' : 's'}`;
+
+        if (!rows.length) {
+            body.innerHTML = '<tr><td colspan="16" class="reim-empty">No schedules found for this date range.</td></tr>';
+            mobile.innerHTML = '<div class="reim-empty">No schedules found for this date range.</div>';
+            recalculateReimbursementTotals();
+            syncReimbursementHorizontalScroll();
+            return;
+        }
+
+        body.innerHTML = rows.map(function(row) {
+            const rowKey = getReimbursementRowKey(row);
+            const receiptKey = getReimbursementReceiptKey(row);
+            const productLine = [row.product, row.serial_number].filter(Boolean).join(' / ');
+            const scheduleLine = row.manual ? 'Manual reimbursement item' : [row.start_time, row.end_time].filter(Boolean).join(' - ');
+            const manualBadge = row.manual ? '<span class="reim-manual-badge">Manual</span>' : '';
+
+            return `
+                <tr data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" data-manual="${row.manual ? '1' : '0'}">
+                    <td class="reimb-date-cell"><strong>${reimEscape(formatExpenseDate(row.date))}</strong></td>
+                    <td>
+                        <strong>${reimEscape(row.task)}</strong>${manualBadge}<br>
+                        <span class="reim-muted">${reimEscape(scheduleLine)}</span><br>
+                        <span class="reim-muted">${reimEscape((row.engineers || []).join(', '))}</span>
+                    </td>
+                    <td>
+                        <strong>${reimEscape(row.manual ? 'Manual Item' : row.client)}</strong><br>
+                        <span class="reim-muted">${reimEscape(productLine)}</span>
+                    </td>
+                    ${buildExpenseInputs(row)}
+                    <td class="reim-total-cell">₱ <span data-row-total="${reimEscape(rowKey)}">0.00</span></td>
+                    <td class="reim-receipt-cell" data-receipt-cell="${reimEscape(receiptKey)}">${renderReimbursementReceiptTools(receiptKey)}</td>
+                    <td><input class="reim-remarks" type="text" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" value="${reimEscape(row.remarks || '')}" oninput="handleReimbursementRemarksInput(this)"></td>
+                </tr>
+            `;
+        }).join('');
+
+        mobile.innerHTML = rows.map(function(row) {
+            const rowKey = getReimbursementRowKey(row);
+            const receiptKey = getReimbursementReceiptKey(row);
+            const productLine = [row.product, row.serial_number].filter(Boolean).join(' / ');
+            const manualBadge = row.manual ? '<span class="reim-manual-badge">Manual</span>' : '';
+            return `
+                <div class="reim-mobile-card" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}">
+                    <h3>${reimEscape(row.manual ? row.task : (row.client || row.task || 'Schedule'))} ${manualBadge}</h3>
+                    <div class="reim-mobile-meta">${reimEscape(formatExpenseDate(row.date))} • ${reimEscape(row.manual ? 'Manual item' : `${row.start_time || ''}-${row.end_time || ''}`)}</div>
+                    <div><strong>Task:</strong> ${reimEscape(row.task)}</div>
+                    <div><strong>Product:</strong> ${reimEscape(productLine)}</div>
+                    <div style="margin-top:10px;">
+                        <input class="reim-remarks" type="text" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" value="${reimEscape(row.remarks || '')}" oninput="handleReimbursementRemarksInput(this)" placeholder="Purpose / remarks">
+                    </div>
+                    ${buildMobileExpenseInputs(row)}
+                    <div class="reim-mobile-receipts" data-mobile-receipt-cell="${reimEscape(receiptKey)}">${renderReimbursementReceiptTools(receiptKey)}</div>
+                </div>
+            `;
+        }).join('');
+        recalculateReimbursementTotals();
+        syncReimbursementHorizontalScroll();
+        refreshReimbursementReceiptCells();
+        applyReimbursementStatusUi();
+    }
+
+    function syncReimbursementHorizontalScroll() {
+        const wrap = document.getElementById('reimTableWrap');
+        const table = document.getElementById('reimExpenseTable');
+        const bar = document.getElementById('reimStickyXScroll');
+        const inner = document.getElementById('reimStickyXScrollInner');
+
+        if (!wrap || !table || !bar || !inner) return;
+
+        inner.style.width = `${Math.max(table.scrollWidth, wrap.clientWidth)}px`;
+
+        if (bar.dataset.bound !== '1') {
+            let syncing = false;
+
+            bar.addEventListener('scroll', () => {
+                if (syncing) return;
+                syncing = true;
+                wrap.scrollLeft = bar.scrollLeft;
+                syncing = false;
+            });
+
+            wrap.addEventListener('scroll', () => {
+                if (syncing) return;
+                syncing = true;
+                bar.scrollLeft = wrap.scrollLeft;
+                syncing = false;
+            });
+
+            bar.dataset.bound = '1';
+        }
+
+        bar.scrollLeft = wrap.scrollLeft;
+    }
+
+
+
+    function normalizeReimbursementLifecycleStatus(status) {
+        const normalized = String(status || 'Draft').trim().toLowerCase();
+        if (normalized === 'approved') return 'Approved';
+        if (normalized === 'submitted') return 'Submitted';
+        if (normalized === 'rejected' || normalized === 'returned' || normalized === 'returned for correction') return 'Rejected';
+        return 'Draft';
+    }
+
+    function setCurrentReimbursementLifecycle(source) {
+        source = source || {};
+        const status = normalizeReimbursementLifecycleStatus(source.status || currentReimbursementStatus || 'Draft');
+        const fallbackEditable = ['Draft', 'Rejected'].includes(status);
+        currentReimbursementStatus = status;
+        currentReimbursementLifecycle = {
+            status,
+            editable: source.editable !== undefined ? !!source.editable : fallbackEditable,
+            locked: source.locked !== undefined ? !!source.locked : !fallbackEditable,
+            lock_reason: source.lock_reason || (
+                status === 'Approved'
+                    ? 'Approved by manager. This reimbursement is permanently locked.'
+                    : (status === 'Submitted'
+                        ? 'Submitted for manager review. This reimbursement is locked until manager action.'
+                        : (status === 'Rejected'
+                            ? 'Returned by manager. You may edit and resubmit this reimbursement.'
+                            : 'Draft reimbursement. You may edit, save, and submit.'))
+            ),
+            lifecycle_label: source.lifecycle_label || (
+                status === 'Approved'
+                    ? 'Approved / Locked'
+                    : (status === 'Submitted'
+                        ? 'Submitted / Waiting for Approval'
+                        : (status === 'Rejected' ? 'Returned for Correction' : 'Draft'))
+            ),
+            approval_remarks: source.approval_remarks || '',
+            approved_at: source.approved_at || null,
+            approved_by: source.approved_by || '',
+            rejected_at: source.rejected_at || null,
+            rejected_by: source.rejected_by || '',
+            approval_action: source.approval_action || '',
+            approval_name_snapshot: source.approval_name_snapshot || '',
+            approval_title_snapshot: source.approval_title_snapshot || '',
+            approval_signature_snapshot: source.approval_signature_snapshot || '',
+            approval_signature_layout: source.approval_signature_layout || 'signature_over_printed_name',
+            approval_signed_at: source.approval_signed_at || source.approved_at || source.rejected_at || null,
+            approval_has_signature_snapshot: !!(source.approval_has_signature_snapshot || source.approval_signature_snapshot)
+        };
+        return currentReimbursementLifecycle;
+    }
+
+    function updateReimbursementLifecycleFromPayload(payload) {
+        if (!payload) return currentReimbursementLifecycle;
+        return setCurrentReimbursementLifecycle(payload);
+    }
+
+    function getReimbursementLifecycleCssClass(status) {
+        const normalized = String(status || 'Draft').toLowerCase();
+        if (normalized === 'approved') return 'approved';
+        if (normalized === 'submitted') return 'submitted';
+        if (normalized === 'rejected') return 'rejected';
+        return 'draft';
+    }
+
+
+    function renderReimbursementApprovalStampPreview() {
+        const target = document.getElementById('reimApprovalStampPreview');
+        if (!target) return;
+
+        const lifecycle = currentReimbursementLifecycle || {};
+        const status = String(lifecycle.status || '').toLowerCase();
+
+        if (!['approved', 'rejected'].includes(status)) {
+            target.innerHTML = '';
+            target.style.display = 'none';
+            return;
+        }
+
+        const actionLabel = status === 'approved' ? 'Approved By' : 'Rejected / Returned By';
+        const signature = lifecycle.approval_signature_snapshot || '';
+        const printedName = lifecycle.approval_name_snapshot || lifecycle.approved_by || lifecycle.rejected_by || '';
+        const title = lifecycle.approval_title_snapshot || '';
+        const signedAt = lifecycle.approval_signed_at || lifecycle.approved_at || lifecycle.rejected_at || '';
+
+        if (!signature && !printedName) {
+            target.innerHTML = '';
+            target.style.display = 'none';
+            return;
+        }
+
+        target.style.display = '';
+        target.innerHTML = `
+            <div class="reim-approval-stamp-label">${reimEscape(actionLabel)}</div>
+            ${signature ? `<img src="${reimEscape(signature)}" class="reim-approval-stamp-signature" alt="${reimEscape(actionLabel)} Signature">` : ''}
+            ${printedName ? `<div class="reim-approval-stamp-name">${reimEscape(printedName)}</div>` : ''}
+            ${title ? `<div class="reim-approval-stamp-title">${reimEscape(title)}</div>` : ''}
+            ${signedAt ? `<div class="reim-approval-stamp-time">${reimEscape(actionLabel.replace(' By', ''))}: ${reimEscape(formatApprovalDateTime(signedAt))}</div>` : ''}
+            <div class="reim-approval-stamp-note">This same saved approval snapshot is used when generating the reimbursement package.</div>
+        `;
+    }
+
+    function renderReimbursementLifecycleBanner() {
+        const banner = document.getElementById('reimLifecycleBanner');
+        const title = document.getElementById('reimLifecycleTitle');
+        const reason = document.getElementById('reimLifecycleReason');
+        const meta = document.getElementById('reimLifecycleMeta');
+        if (!banner) return;
+
+        const lifecycle = currentReimbursementLifecycle || setCurrentReimbursementLifecycle({});
+        const cssClass = getReimbursementLifecycleCssClass(lifecycle.status);
+
+        banner.className = `reim-lifecycle-banner show ${cssClass}`;
+        if (title) title.textContent = lifecycle.lifecycle_label || lifecycle.status || 'Draft';
+        if (reason) reason.textContent = lifecycle.lock_reason || '';
+
+        let metaText = '';
+        if (lifecycle.status === 'Approved') {
+            metaText = [
+                lifecycle.approved_by ? `Approved by: ${lifecycle.approved_by}` : '',
+                lifecycle.approved_at ? `Approved date: ${formatApprovalDateTime(lifecycle.approved_at)}` : '',
+                lifecycle.approval_remarks ? `Remarks: ${lifecycle.approval_remarks}` : ''
+            ].filter(Boolean).join(' • ');
+        } else if (lifecycle.status === 'Rejected') {
+            metaText = [
+                lifecycle.rejected_by ? `Returned by: ${lifecycle.rejected_by}` : '',
+                lifecycle.rejected_at ? `Returned date: ${formatApprovalDateTime(lifecycle.rejected_at)}` : '',
+                lifecycle.approval_remarks ? `Manager remarks: ${lifecycle.approval_remarks}` : ''
+            ].filter(Boolean).join(' • ');
+        } else if (lifecycle.status === 'Submitted') {
+            metaText = 'Waiting for manager review.';
+        }
+
+        if (meta) {
+            meta.textContent = metaText;
+            meta.style.display = metaText ? '' : 'none';
+        }
+
+        renderReimbursementApprovalStampPreview();
+    }
+
+    function reimbursementIsEditable() {
+        if (currentReimbursementLifecycle && currentReimbursementLifecycle.editable !== undefined) {
+            return !!currentReimbursementLifecycle.editable;
+        }
+        return ['Draft', 'Rejected'].includes(currentReimbursementStatus || 'Draft');
+    }
+
+    function guardReimbursementEditableAction(actionLabel) {
+        if (reimbursementIsEditable()) {
+            return true;
+        }
+        const lifecycle = currentReimbursementLifecycle || {};
+        const status = currentReimbursementStatus || lifecycle.status || 'locked';
+        const message = lifecycle.lock_reason || `This reimbursement is ${status} and cannot be edited.`;
+        setReimbursementDraftStatus(message, 'error');
+        setReimbursementSubmitNotice(message, 'warn');
+        reimAlert(message);
+        return false;
+    }
+
+
+    function applyReimbursementStatusUi() {
+        const lifecycle = currentReimbursementLifecycle || setCurrentReimbursementLifecycle({});
+        const status = String(lifecycle.status || currentReimbursementStatus || 'Draft');
+        const normalized = status.toLowerCase();
+        const editable = reimbursementIsEditable();
+        const saveBtn = document.getElementById('reimSaveDraftBtn');
+        const submitBtn = document.getElementById('reimSubmitBtn');
+        const clearBtn = document.getElementById('reimClearBtn');
+        const manualBtn = document.getElementById('reimAddManualBtn');
+        const deleteBtn = document.getElementById('reimDeleteDraftBtn');
+        const statusText = document.getElementById('reimStatusText');
+        const page = document.querySelector('.reim-page');
+        if (page) {
+            page.classList.toggle('reim-locked', !editable);
+        }
+
+        renderReimbursementLifecycleBanner();
+
+        if (saveBtn) {
+            saveBtn.disabled = !editable;
+            saveBtn.style.display = editable ? '' : 'none';
+            saveBtn.textContent = normalized === 'rejected' ? 'Save Changes' : 'Save Draft';
+            saveBtn.title = editable ? '' : (lifecycle.lock_reason || `This reimbursement is ${status} and locked.`);
+        }
+        if (submitBtn) {
+            submitBtn.disabled = !editable;
+            submitBtn.style.display = editable ? '' : 'none';
+            submitBtn.textContent = normalized === 'rejected' ? 'Resubmit' : 'Submit';
+            submitBtn.title = editable ? '' : (lifecycle.lock_reason || `This reimbursement is ${status} and locked.`);
+        }
+        if (clearBtn) {
+            clearBtn.disabled = !editable;
+            clearBtn.style.display = editable ? '' : 'none';
+            clearBtn.title = editable ? '' : (lifecycle.lock_reason || `This reimbursement is ${status} and locked.`);
+        }
+        if (manualBtn) {
+            manualBtn.disabled = !editable;
+            manualBtn.style.display = editable ? '' : 'none';
+            manualBtn.title = editable ? '' : (lifecycle.lock_reason || `This reimbursement is ${status} and locked.`);
+        }
+        if (deleteBtn) {
+            const range = getDateRangeValues();
+            const showDelete = editable && !!range.start && !!range.end && (currentReimbursementRows || []).length > 0;
+            deleteBtn.disabled = !showDelete;
+            deleteBtn.style.display = showDelete ? '' : 'none';
+            deleteBtn.title = showDelete ? '' : 'Delete is available only for saved Draft or Rejected reimbursement records.';
+        }
+        if (!editable) {
+            hideReimbursementDeleteDraftConfirm();
+        }
+
+        document.querySelectorAll('.reim-amount, .reim-remarks').forEach(function(input) {
+            // Keep values visible/readable when locked.
+            // Do not disable amount/remarks fields because disabled inputs can be skipped by
+            // browser/UI logic and caused saved expense values to appear blank.
+            input.readOnly = !editable;
+            input.disabled = false;
+            input.classList.toggle('reim-locked-field', !editable);
+            if (!editable) {
+                input.title = lifecycle.lock_reason || `This reimbursement is ${status} and locked.`;
+            } else {
+                input.title = '';
+            }
+        });
+
+        document.querySelectorAll('#reimManualItemModal input, #reimManualItemModal button').forEach(function(el) {
+            el.disabled = !editable;
+            el.classList.toggle('reim-locked-field', !editable);
+        });
+
+        const manualModal = document.getElementById('reimManualItemModal');
+        if (!editable && manualModal) {
+            manualModal.classList.remove('show');
+        }
+
+        refreshReimbursementReceiptCells();
+
+        if (statusText) {
+            statusText.textContent = lifecycle.lock_reason || (
+                normalized === 'approved'
+                    ? 'Approved by manager. This reimbursement is locked, but Download Form remains available.'
+                    : (normalized === 'submitted'
+                        ? 'Submitted for manager review. This reimbursement is locked until manager action.'
+                        : (normalized === 'rejected'
+                            ? 'Returned by manager. You may edit and resubmit this reimbursement.'
+                            : 'Draft reimbursement. You may edit, save, and submit.'))
+            );
+        }
+    }
+
+    function getReimbursementReceiptList(rowKey) {
+        return reimbursementReceiptsByShift[String(rowKey)] || [];
+    }
+
+
+    const REIMBURSEMENT_RECEIPT_MAX_BYTES = 2 * 1024 * 1024;
+    const REIMBURSEMENT_RECEIPT_ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'];
+
+    function validateReimbursementReceiptFiles(files) {
+        const selected = Array.from(files || []);
+        if (!selected.length) return { ok: true, files: [] };
+
+        for (const file of selected) {
+            const name = String(file.name || '').toLowerCase();
+            const ext = name.includes('.') ? name.split('.').pop() : '';
+            if (!REIMBURSEMENT_RECEIPT_ALLOWED_EXTENSIONS.includes(ext)) {
+                return {
+                    ok: false,
+                    message: `Invalid receipt file: ${file.name || 'Unknown file'}.\nAllowed files: PDF, JPG, JPEG, PNG only.`
+                };
+            }
+            if (file.size > REIMBURSEMENT_RECEIPT_MAX_BYTES) {
+                return {
+                    ok: false,
+                    message: `Receipt file is too large: ${file.name || 'Unknown file'}.\nMaximum size is 2MB per file.`
+                };
+            }
+        }
+
+        return { ok: true, files: selected };
+    }
+
+    function renderReimbursementReceiptTools(rowKey) {
+        rowKey = String(rowKey || '');
+        const receipts = getReimbursementReceiptList(rowKey);
+        const editable = reimbursementIsEditable();
+        const safeId = rowKey.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const isUnsavedManual = rowKey.indexOf('manual_local_') === 0;
+        const receiptItems = receipts.length
+            ? `<div class="reim-receipt-list">${receipts.map(function(receipt) {
+                const name = reimEscape(receipt.original_filename || receipt.filename || 'Receipt');
+                return `<span class="reim-receipt-pill" title="${name}">
+                    📎 <a href="/download_reimbursement_receipt/${receipt.id}" target="_blank" rel="noopener">${name}</a>
+                    ${editable ? `<button type="button" class="reim-receipt-btn danger" onclick="deleteReimbursementReceipt(${receipt.id})">×</button>` : ''}
+                </span>`;
+            }).join('')}</div>`
+            : `<span class="reim-muted">${isUnsavedManual ? 'Save draft before attaching' : 'No receipt'}</span>`;
+
+        const upload = editable && !isUnsavedManual
+            ? `<div class="reim-receipt-tools">
+                <input type="file" id="reimReceiptInput-${safeId}" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none" onchange="uploadReimbursementReceipt('${reimEscape(rowKey)}', this.files)">
+                <button type="button" class="reim-receipt-btn" onclick="document.getElementById('reimReceiptInput-${safeId}').click()">+ Receipt</button>
+            </div>`
+            : '';
+
+        return `${upload}${receiptItems}`;
+    }
+
+
+    function renderAdditionalReimbursementReceipts() {
+        const list = document.getElementById('reimAdditionalReceiptsList');
+        const btn = document.getElementById('reimAdditionalReceiptBtn');
+        if (!list) return;
+
+        const editable = reimbursementIsEditable();
+        if (btn) {
+            btn.disabled = !editable;
+            btn.title = editable ? '' : 'Receipts are locked after submission.';
+        }
+
+        const receipts = reimbursementAdditionalReceipts || [];
+        if (!receipts.length) {
+            list.innerHTML = '<span class="reim-muted">No additional receipts uploaded.</span>';
+            return;
+        }
+
+        list.innerHTML = receipts.map(function(receipt) {
+            const name = reimEscape(receipt.original_filename || receipt.filename || 'Receipt');
+            return `<span class="reim-receipt-pill" title="${name}">
+                📎 <a href="/download_reimbursement_receipt/${receipt.id}" target="_blank" rel="noopener">${name}</a>
+                ${editable ? `<button type="button" class="reim-receipt-btn danger" onclick="deleteReimbursementReceipt(${receipt.id})">×</button>` : ''}
+            </span>`;
+        }).join('');
+    }
+
+    async function uploadAdditionalReimbursementReceipts(files) {
+        const input = document.getElementById('reimAdditionalReceiptInput');
+        const start = document.getElementById('reimStartDate').value;
+        const end = document.getElementById('reimEndDate').value;
+
+        if (!start || !end) {
+            reimAlert('Please load a date range first.');
+            if (input) input.value = '';
+            return;
+        }
+        if (!files || !files.length) return;
+
+        if (!reimbursementIsEditable()) {
+            reimAlert('Receipts are locked after submission.');
+            if (input) input.value = '';
+            return;
+        }
+
+        const validation = validateReimbursementReceiptFiles(files);
+        if (!validation.ok) {
+            reimAlert(validation.message);
+            if (input) input.value = '';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('start', start);
+        formData.append('end', end);
+        formData.append('additional_receipt', 'true');
+
+        validation.files.forEach(function(file) {
+            formData.append('receipt_files', file);
+        });
+
+        setReimbursementDraftStatus('Uploading additional receipt...', '');
+
+        try {
+            const response = await fetch('/upload_reimbursement_receipt', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getReimbursementCsrfToken() },
+                body: formData
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Unable to upload additional receipt.');
+            }
+
+            await fetchReimbursementReceipts(start, end);
+            setReimbursementDraftStatus('Additional receipt uploaded.', 'ok');
+        } catch (error) {
+            console.error(error);
+            setReimbursementDraftStatus(error.message || 'Unable to upload additional receipt.', 'err');
+            reimAlert(error.message || 'Unable to upload additional receipt.');
+        } finally {
+            if (input) input.value = '';
+        }
+    }
+
+    function refreshReimbursementReceiptCells() {
+        document.querySelectorAll('[data-receipt-cell]').forEach(function(cell) {
+            const rowKey = cell.dataset.receiptCell;
+            cell.innerHTML = renderReimbursementReceiptTools(rowKey);
+        });
+        document.querySelectorAll('[data-mobile-receipt-cell]').forEach(function(cell) {
+            const rowKey = cell.dataset.mobileReceiptCell;
+            cell.innerHTML = renderReimbursementReceiptTools(rowKey);
+        });
+        renderAdditionalReimbursementReceipts();
+    }
+
+    async function fetchReimbursementReceipts(start, end) {
+        const params = new URLSearchParams({ start, end });
+        const response = await fetch(`/get_reimbursement_receipts?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok || !payload.success) {
+            reimbursementReceiptsByShift = {};
+            reimbursementAdditionalReceipts = [];
+            renderAdditionalReimbursementReceipts();
+            return;
+        }
+        reimbursementReceiptsByShift = payload.receipts_by_shift || {};
+        reimbursementAdditionalReceipts = payload.additional_receipts || reimbursementReceiptsByShift.additional || [];
+        refreshReimbursementReceiptCells();
+    }
+
+    async function uploadReimbursementReceipt(rowKey, files) {
+        if (!reimbursementIsEditable()) {
+            const message = currentReimbursementLifecycle.lock_reason || 'Receipts are locked after submission.';
+            reimAlert(message);
+            return;
+        }
+        const start = document.getElementById('reimStartDate').value;
+        const end = document.getElementById('reimEndDate').value;
+
+        if (!start || !end) {
+            reimAlert('Please load a date range first.');
+            return;
+        }
+        if (!files || !files.length) return;
+
+        const validation = validateReimbursementReceiptFiles(files);
+        if (!validation.ok) {
+            reimAlert(validation.message);
+            if (files && files.value !== undefined) files.value = '';
+            return;
+        }
+
+        rowKey = String(rowKey || '');
+        if (rowKey.indexOf('manual_local_') === 0) {
+            reimAlert('Please save the draft first before attaching receipts to this manual item.');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('start', start);
+        formData.append('end', end);
+
+        if (rowKey.indexOf('manual_') === 0) {
+            formData.append('manual_row_id', rowKey.replace('manual_', ''));
+        } else {
+            formData.append('shift_id', rowKey);
+        }
+
+        validation.files.forEach(function(file) {
+            formData.append('receipt_files', file);
+        });
+
+        setReimbursementDraftStatus('Uploading receipt...', '');
+
+        try {
+            const response = await fetch('/upload_reimbursement_receipt', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getReimbursementCsrfToken() },
+                body: formData
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Unable to upload receipt.');
+            }
+            await fetchReimbursementReceipts(start, end);
+            setReimbursementDraftStatus('Receipt uploaded', 'ok');
+        } catch (error) {
+            console.error(error);
+            setReimbursementDraftStatus(error.message || 'Unable to upload receipt.', 'error');
+            reimAlert(error.message || 'Unable to upload receipt.');
+        }
+    }
+
+    async function deleteReimbursementReceipt(receiptId) {
+        if (!guardReimbursementEditableAction('remove receipt')) return;
+        const shouldRemoveReceipt = await reimConfirmDialog({
+            title: 'Remove Receipt?',
+            message: 'This will remove the selected receipt from this reimbursement.',
+            confirmText: 'Remove Receipt',
+            cancelText: 'Cancel',
+            tone: 'danger',
+            icon: 'trash'
+        });
+        if (!shouldRemoveReceipt) return;
+
+        const start = document.getElementById('reimStartDate').value;
+        const end = document.getElementById('reimEndDate').value;
+
+        try {
+            const response = await fetch(`/delete_reimbursement_receipt/${receiptId}`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': getReimbursementCsrfToken() }
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Unable to delete receipt.');
+            }
+            await fetchReimbursementReceipts(start, end);
+            setReimbursementDraftStatus('Receipt removed', 'ok');
+        } catch (error) {
+            console.error(error);
+            setReimbursementDraftStatus(error.message || 'Unable to delete receipt.', 'error');
+            reimAlert(error.message || 'Unable to delete receipt.');
+        }
+    }
+
+    function setReimbursementDraftStatus(message, tone) {
+        const el = document.getElementById('reimDraftStatus');
+        if (!el) return;
+        el.textContent = message || '';
+        el.style.color = tone === 'error' ? '#b91c1c' : (tone === 'ok' ? '#0f5132' : '#64748b');
+        if (message && (tone === 'error' || tone === 'ok')) {
+            reimToast(message, tone);
+        }
+    }
+
+
+    function setReimbursementSubmitNotice(message, tone) {
+        const notice = document.getElementById('reimSubmitNotice');
+        if (!notice) return;
+
+        notice.classList.remove('show', 'ok', 'error', 'warn');
+        notice.textContent = message || '';
+
+        if (!message) return;
+        notice.classList.add('show');
+        if (tone) notice.classList.add(tone);
+        if (tone === 'error' || tone === 'ok') {
+            reimToast(message, tone);
+        }
+    }
+
+    function showReimbursementSignatureRequiredPanel() {
+        const panel = document.getElementById('reimSignatureRequiredPanel');
+        if (panel) {
+            panel.classList.add('show');
+            try {
+                panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } catch (error) {
+                panel.scrollIntoView();
+            }
+        }
+    }
+
+    function hideReimbursementSignatureRequiredPanel() {
+        const panel = document.getElementById('reimSignatureRequiredPanel');
+        if (panel) panel.classList.remove('show');
+    }
+
+    function openReimbursementSettingsForSignature() {
+        // Open Settings in a new tab so the reimbursement worksheet remains loaded here.
+        window.open('/settings', '_blank', 'noopener');
+    }
+
+    async function recheckReimbursementSignatureAndContinue() {
+        setReimbursementSubmitNotice('Re-checking saved signature...', 'warn');
+
+        try {
+            const signature = await fetchCurrentReimbursementSignatureStatus();
+            if (signature && signature.has_signature) {
+                hideReimbursementSignatureRequiredPanel();
+                setReimbursementDraftStatus('Signature found. Continuing submit...', 'ok');
+                setReimbursementSubmitNotice('Signature found. Continuing reimbursement submission...', 'ok');
+                await submitReimbursement();
+                return;
+            }
+
+            showReimbursementSignatureRequiredPanel();
+            setReimbursementSubmitNotice('No saved signature found yet. Please add your signature in Settings, then click Continue Submit again.', 'warn');
+            reimAlert('No saved signature found yet. Please add your signature in Settings, then return here and click Continue Submit again.');
+        } catch (error) {
+            console.error('[Reimbursement] Signature recheck failed', error);
+            showReimbursementSignatureRequiredPanel();
+            const message = error.message || 'Unable to check saved signature.';
+            setReimbursementSubmitNotice(message, 'error');
+            reimAlert(message);
+        }
+    }
+
+    async function parseReimbursementJsonResponse(response, fallbackMessage) {
+        const rawText = await response.text();
+        let payload = {};
+
+        if (rawText) {
+            try {
+                payload = JSON.parse(rawText);
+            } catch (jsonError) {
+                payload = {
+                    success: false,
+                    error: rawText.slice(0, 500) || fallbackMessage || 'Unexpected server response.'
+                };
+            }
+        }
+
+        if (!response.ok || payload.success === false || payload.status === 'error') {
+            const message = payload.error || payload.message || fallbackMessage || `Request failed (${response.status}).`;
+            throw new Error(message);
+        }
+
+        return payload;
+    }
+
+    function markReimbursementDirty() {
+        if (!reimbursementIsEditable()) {
+            applyReimbursementStatusUi();
+            return;
+        }
+        setReimbursementDraftStatus('Unsaved changes', 'warn');
+    }
+
+    function getReimbursementCsrfToken() {
+        return document.querySelector('meta[name="csrf-token"]')?.content
+            || document.querySelector('input[name="csrf_token"]')?.value
+            || '';
+    }
+
+    function mergeReimbursementDraftRows(scheduleRows, draftRows) {
+        const draftByShift = new Map();
+        const manualRows = [];
+
+        (draftRows || []).forEach(function(row) {
+            if (!row) return;
+            row.amounts = normalizeReimbursementAmounts(row.amounts || {});
+            if (row.manual || !row.shift_id) {
+                row.manual = true;
+                row.manual_key = row.manual_key || (row.id ? `manual_${row.id}` : `manual_local_${Date.now()}`);
+                manualRows.push(row);
+                return;
+            }
+            if (row.shift_id !== undefined && row.shift_id !== null) {
+                draftByShift.set(String(row.shift_id), row);
+            }
+        });
+
+        const merged = (scheduleRows || []).map(function(row) {
+            const saved = draftByShift.get(String(row.shift_id));
+            if (!saved) {
+                row.amounts = normalizeReimbursementAmounts(row.amounts || {});
+                row.remarks = row.manual ? (row.remarks || '') : '';
+                return row;
+            }
+            return Object.assign({}, row, {
+                amounts: normalizeReimbursementAmounts(saved.amounts || {}),
+                remarks: saved.remarks || '',
+                row_total: saved.row_total || 0
+            });
+        });
+
+        return sortReimbursementRows(merged.concat(manualRows));
+    }
+
+    async function fetchReimbursementDraft(start, end) {
+        const params = new URLSearchParams({ start, end });
+        const response = await fetch(`/get_reimbursement_draft?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.error || 'Unable to load saved reimbursement draft.');
+        }
+        return payload;
+    }
+
+    function collectReimbursementRowsForSave() {
+        const rows = [];
+        document.querySelectorAll('#reimTableBody tr[data-row-key]').forEach(function(tr) {
+            const rowKey = tr.dataset.rowKey;
+            const shiftId = tr.dataset.shiftId;
+            const isManual = tr.dataset.manual === '1';
+            const amounts = {};
+            reimbursementExpenseKeys.forEach(function(key) {
+                const input = tr.querySelector(`.reim-amount[data-expense="${key}"]`) || document.querySelector(`${getActiveReimbursementAmountSelector()}[data-row-key="${CSS.escape(rowKey)}"][data-expense="${CSS.escape(key)}"]`);
+                amounts[key] = getReimAmountValue(input);
+            });
+            amounts.parking_coding = amounts.coding || 0;
+            amounts.others_misc = amounts.others || 0;
+
+            const remarksInput = tr.querySelector('.reim-remarks') || document.querySelector(`${getActiveReimbursementRemarksSelector()}[data-row-key="${CSS.escape(rowKey)}"]`);
+            const originalRow = currentReimbursementRows.find(function(row) {
+                return getReimbursementRowKey(row) === rowKey;
+            }) || {};
+
+            if (isManual) {
+                rows.push({
+                    manual: true,
+                    manual_key: rowKey,
+                    date: originalRow.date || '',
+                    item_name: originalRow.task || (remarksInput ? remarksInput.value.trim() : 'Manual reimbursement item'),
+                    amount: amounts.others || amounts.others_misc || 0,
+                    amounts,
+                    remarks: remarksInput ? remarksInput.value.trim() : (originalRow.remarks || '')
+                });
+            } else {
+                rows.push({
+                    shift_id: Number(shiftId || rowKey),
+                    amounts,
+                    remarks: remarksInput ? remarksInput.value.trim() : ''
+                });
+            }
+        });
+        return rows;
+    }
+
+    function setReimbursementButtonsBusy(isBusy) {
+        ['reimSaveDraftBtn', 'reimDownloadExcelBtn', 'reimClearBtn', 'reimSubmitBtn', 'reimAddManualBtn', 'reimDeleteDraftBtn'].forEach(function(id) {
+            const btn = document.getElementById(id);
+            if (btn) btn.disabled = !!isBusy;
+        });
+        if (!isBusy) {
+            applyReimbursementStatusUi();
+        }
+    }
+
+    
+
+function showReimbursementDeleteDraftConfirm() {
+        const range = getDateRangeValues();
+        if (!range.start || !range.end) {
+            reimAlert('Please select and load a reimbursement date range first.');
+            return;
+        }
+        if (!reimbursementIsEditable()) {
+            reimAlert('Only Draft or Rejected reimbursements can be deleted.');
+            return;
+        }
+        if (!currentReimbursementRows || !currentReimbursementRows.length) {
+            reimAlert('No loaded reimbursement draft to delete.');
+            return;
+        }
+
+        const panel = document.getElementById('reimDeleteDraftPanel');
+        if (panel) {
+            panel.classList.add('show');
+            try {
+                panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } catch (error) {
+                panel.scrollIntoView();
+            }
+        }
+    }
+
+    function hideReimbursementDeleteDraftConfirm() {
+        const panel = document.getElementById('reimDeleteDraftPanel');
+        if (panel) panel.classList.remove('show');
+    }
+
+    async function deleteReimbursementDraft() {
+        const range = getDateRangeValues();
+        if (!range.start || !range.end) {
+            reimAlert('Please select and load a reimbursement date range first.');
+            return;
+        }
+        if (!reimbursementIsEditable()) {
+            reimAlert('Only Draft or Rejected reimbursements can be deleted.');
+            return;
+        }
+
+        const button = document.getElementById('reimConfirmDeleteDraftBtn');
+        const oldText = button ? button.textContent : '';
+
+        try {
+            if (button) {
+                button.disabled = true;
+                button.textContent = 'Deleting...';
+            }
+
+            setReimbursementDraftStatus('Deleting reimbursement draft...', '');
+
+            const response = await fetch('/delete_reimbursement_draft', {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRFToken': getReimbursementCsrfToken()
+                },
+                body: JSON.stringify({ start: range.start, end: range.end })
+            });
+
+            const payload = await parseReimbursementJsonResponse(response, 'Unable to delete reimbursement draft.');
+
+            hideReimbursementDeleteDraftConfirm();
+            reimbursementReceiptsByShift = {};
+            reimbursementAdditionalReceipts = [];
+            setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
+            setReimbursementDraftStatus(payload.message || 'Reimbursement draft deleted.', 'ok');
+            setReimbursementSubmitNotice('', '');
+
+            await loadReimbursementRows();
+            await loadMyReimbursementStatuses();
+            await loadReimbursementNotifications();
+        } catch (error) {
+            console.error('[Reimbursement] Delete draft failed', error);
+            setReimbursementDraftStatus(error.message || 'Unable to delete reimbursement draft.', 'error');
+            reimAlert(error.message || 'Unable to delete reimbursement draft.');
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent = oldText || 'Yes, Delete Draft';
+            }
+            applyReimbursementStatusUi();
+        }
+    }
+
+    async function clearReimbursementForm() {
+        hideReimbursementDeleteDraftConfirm();
+        if (!guardReimbursementEditableAction('clear this reimbursement')) return;
+        const start = document.getElementById('reimStartDate').value;
+        const end = document.getElementById('reimEndDate').value;
+
+        if (!start || !end) {
+            reimAlert('Please select start and end date first.');
+            return;
+        }
+
+        const confirmed = await reimConfirmDialog({
+            title: 'Clear Reimbursement Form?',
+            message: 'This will remove all entered amounts, remarks, manual items, saved draft data, and attached receipts for this date range. This cannot be undone.',
+            confirmText: 'Clear Form',
+            cancelText: 'Cancel',
+            tone: 'danger',
+            icon: 'eraser'
+        });
+        if (!confirmed) return;
+
+        setReimbursementButtonsBusy(true);
+        setReimbursementDraftStatus('Clearing reimbursement form...', '');
+
+        try {
+            const response = await fetch('/clear_reimbursement_draft', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getReimbursementCsrfToken()
+                },
+                body: JSON.stringify({ start, end })
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Unable to clear reimbursement form.');
+            }
+
+            setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
+            reimbursementReceiptsByShift = {};
+            reimbursementAdditionalReceipts = [];
+            setReimbursementDraftStatus('Form cleared.', 'ok');
+
+            await loadReimbursementRows();
+        } catch (error) {
+            console.error(error);
+            setReimbursementDraftStatus(error.message || 'Unable to clear reimbursement form.', 'error');
+            reimAlert(error.message || 'Unable to clear reimbursement form.');
+        } finally {
+            setReimbursementButtonsBusy(false);
+        }
+    }
+
+function triggerReimbursementDownload(url) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+        window.setTimeout(() => link.remove(), 1000);
+}
+
+async function downloadReimbursementExcel() {
+        const start = document.getElementById('reimStartDate').value;
+        const end = document.getElementById('reimEndDate').value;
+
+        if (!start || !end) {
+            reimAlert('Please select start and end date first.');
+            return;
+        }
+
+        try {
+            setReimbursementButtonsBusy(true);
+            setReimbursementDraftStatus('Preparing reimbursement forms...', '');
+
+            // Save the latest editable values before generating the downloadable forms.
+            // Submitted/Approved records may already be locked, so skip silent save for non-editable statuses.
+            const status = String(currentReimbursementStatus || 'Draft').toLowerCase();
+            if (status === 'draft' || status === 'rejected') {
+                const saved = await saveReimbursementDraft(true);
+                if (!saved) return;
+            }
+
+            const params = new URLSearchParams({ start, end });
+            const query = params.toString();
+
+            // Download Form now generates one ZIP package containing:
+            // 1) Reimbursement Excel worksheet
+            // 2) Petty Cash Voucher Excel workbook
+            // Future forms/receipts can be added inside the same ZIP package.
+            triggerReimbursementDownload(`/download_reimbursement_package?${query}`);
+
+            if (String(currentReimbursementStatus || '').toLowerCase() === 'approved') {
+                setReimbursementDraftStatus('Download started: approved reimbursement package with approval stamp.', 'ok');
+            } else {
+                setReimbursementDraftStatus('Download started: reimbursement package ZIP.', 'ok');
+            }
+        } catch (error) {
+            console.error(error);
+            setReimbursementDraftStatus(error.message || 'Unable to download reimbursement package.', 'error');
+            reimAlert(error.message || 'Unable to download reimbursement package.');
+        } finally {
+            setReimbursementButtonsBusy(false);
+        }
+}
+
+async function saveReimbursementDraft(silent) {
+        if (!reimbursementIsEditable()) {
+            const message = `This reimbursement is ${currentReimbursementStatus} and cannot be edited.`;
+            setReimbursementDraftStatus(message, 'error');
+            if (!silent) reimAlert(message);
+            return false;
+        }
+        const start = document.getElementById('reimStartDate').value;
+        const end = document.getElementById('reimEndDate').value;
+
+        if (!start || !end) {
+            reimAlert('Please select start and end date first.');
+            return false;
+        }
+
+        const rows = collectReimbursementRowsForSave();
+        if (!rows.length) {
+            reimAlert('No reimbursement rows to save.');
+            return false;
+        }
+
+        setReimbursementButtonsBusy(true);
+        if (!silent) setReimbursementDraftStatus('Saving draft...', '');
+
+        try {
+            const response = await fetch('/save_reimbursement_draft', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getReimbursementCsrfToken()
+                },
+                body: JSON.stringify({ start, end, rows })
+            });
+
+            const payload = await parseReimbursementJsonResponse(response, 'Unable to save reimbursement draft.');
+
+            updateReimbursementLifecycleFromPayload(payload);
+            applyReimbursementStatusUi();
+            setReimbursementDraftStatus(`Draft saved (${payload.rows_saved || rows.length} rows)`, 'ok');
+            return true;
+        } catch (error) {
+            console.error(error);
+            setReimbursementDraftStatus(error.message || 'Unable to save draft.', 'error');
+            if (!silent) reimAlert(error.message || 'Unable to save draft.');
+            return false;
+        } finally {
+            setReimbursementButtonsBusy(false);
+        }
+    }
+
+    async function submitReimbursement() {
+        if (!reimbursementIsEditable()) {
+            const message = `This reimbursement is ${currentReimbursementStatus} and cannot be submitted again.`;
+            setReimbursementSubmitNotice(message, 'warn');
+            reimAlert(message);
+            return;
+        }
+        const start = document.getElementById('reimStartDate').value;
+        const end = document.getElementById('reimEndDate').value;
+
+        setReimbursementSubmitNotice('', '');
+
+        if (!start || !end) {
+            const msg = 'Please select start and end date first.';
+            setReimbursementSubmitNotice(msg, 'warn');
+            reimAlert(msg);
+            return;
+        }
+
+        setReimbursementSubmitNotice('Saving latest reimbursement values before submit...', 'warn');
+
+        // IMPORTANT: do not save silently during Submit. If draft save fails,
+        // the user must see the exact issue instead of the button appearing to do nothing.
+        const saved = await saveReimbursementDraft(false);
+        if (!saved) {
+            setReimbursementSubmitNotice('Submit stopped because the draft could not be saved. Please check the message beside the buttons.', 'error');
+            return;
+        }
+
+        const signatureReady = await ensureReimbursementSignatureBeforeSubmit();
+        if (!signatureReady) {
+            setReimbursementSubmitNotice('Draft saved. Signature is required before submission. Open Settings in a new tab, add your signature, then continue here.', 'warn');
+            return;
+        }
+
+        const shouldSubmit = await reimConfirmDialog({
+            title: 'Submit Reimbursement?',
+            message: 'This will submit your reimbursement for review. You cannot edit it as draft after submission unless it is returned/rejected.',
+            confirmText: 'Submit for Review',
+            cancelText: 'Review Again',
+            tone: 'warning',
+            icon: 'paper-plane'
+        });
+        if (!shouldSubmit) {
+            setReimbursementSubmitNotice('Submit cancelled by user.', 'warn');
+            return;
+        }
+
+        setReimbursementButtonsBusy(true);
+        setReimbursementDraftStatus('Submitting reimbursement...', '');
+        setReimbursementSubmitNotice('Submitting reimbursement to manager queue...', 'warn');
+
+        try {
+            const response = await fetch('/submit_reimbursement', {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRFToken': getReimbursementCsrfToken()
+                },
+                body: JSON.stringify({ start, end })
+            });
+
+            const payload = await parseReimbursementJsonResponse(response, 'Unable to submit reimbursement.');
+            updateReimbursementLifecycleFromPayload(payload);
+            refreshReimbursementReceiptCells();
+            applyReimbursementStatusUi();
+
+            const message = payload.message || 'Reimbursement submitted for manager review.';
+            setReimbursementDraftStatus(message, 'ok');
+            setReimbursementSubmitNotice(`${message} Reimbursement #${payload.reimbursement_id || payload.id || ''} is now visible in Rodito's Submitted queue.`, 'ok');
+
+            const statusText = document.getElementById('reimStatusText');
+            if (statusText) {
+                statusText.textContent = 'Submitted for review. This reimbursement is now locked until manager action.';
+            }
+
+            await loadReimbursementNotifications();
+            reimAlert(message);
+        } catch (error) {
+            console.error('[Reimbursement] Submit failed', error);
+            const message = error.message || 'Unable to submit reimbursement.';
+            setReimbursementDraftStatus(message, 'error');
+            setReimbursementSubmitNotice(message, 'error');
+            reimAlert(message);
+        } finally {
+            setReimbursementButtonsBusy(false);
+        }
+    }
+
+    function getLoadedReimbursementDates() {
+        const dates = new Set();
+        currentReimbursementRows.forEach(function(row) {
+            if (row && row.date) dates.add(String(row.date));
+        });
+        return dates;
+    }
+
+    function getDateRangeValues() {
+        return {
+            start: document.getElementById('reimStartDate').value,
+            end: document.getElementById('reimEndDate').value
+        };
+    }
+
+    function buildManualDateSelector() {
+        const grid = document.getElementById('reimManualDateGrid');
+        const hidden = document.getElementById('reimManualDate');
+        if (!grid || !hidden) return;
+
+        const range = getDateRangeValues();
+        hidden.value = '';
+        grid.innerHTML = '';
+
+        if (!range.start || !range.end) {
+            grid.innerHTML = '<div class="reim-empty" style="grid-column:1/-1;padding:14px;">Please select and load a date range first.</div>';
+            return;
+        }
+
+        const loadedDates = getLoadedReimbursementDates();
+        const startDate = new Date(range.start + 'T00:00:00');
+        const endDate = new Date(range.end + 'T00:00:00');
+        const cursor = new Date(startDate);
+
+        while (cursor <= endDate) {
+            const iso = toDateInputValue(cursor);
+            const disabled = loadedDates.has(iso);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'reim-manual-date-btn';
+            btn.textContent = formatExpenseDate(iso);
+            btn.disabled = disabled;
+            btn.title = disabled ? 'Already loaded in the worksheet' : 'Select this date';
+            btn.onclick = function() {
+                document.querySelectorAll('.reim-manual-date-btn').forEach(function(el) {
+                    el.classList.remove('selected');
+                });
+                btn.classList.add('selected');
+                hidden.value = iso;
+            };
+            grid.appendChild(btn);
+            cursor.setDate(cursor.getDate() + 1);
+        }
+    }
+
+    function openManualReimbursementModal() {
+        if (!reimbursementIsEditable()) {
+            reimAlert(currentReimbursementLifecycle.lock_reason || 'This reimbursement is locked.');
+            return;
+        }
+        const range = getDateRangeValues();
+        if (!range.start || !range.end) {
+            reimAlert('Please select and load a reimbursement date range first.');
+            return;
+        }
+        document.getElementById('reimManualItemName').value = '';
+        document.getElementById('reimManualAmount').value = '';
+        document.getElementById('reimManualReceipt').value = '';
+        buildManualDateSelector();
+        document.getElementById('reimManualItemModal').classList.add('show');
+    }
+
+    function closeManualReimbursementModal() {
+        const modal = document.getElementById('reimManualItemModal');
+        if (modal) modal.classList.remove('show');
+    }
+
+    function findSavedManualRow(dateValue, itemName, amount) {
+        const targetAmount = Number(amount || 0).toFixed(2);
+        const targetName = String(itemName || '').trim().toLowerCase();
+        return currentReimbursementRows.find(function(row) {
+            const rowAmount = Number((normalizeReimbursementAmounts(row.amounts || {}).others) || row.row_total || 0).toFixed(2);
+            return row.manual
+                && String(row.date || '') === String(dateValue || '')
+                && String(row.task || row.remarks || '').trim().toLowerCase() === targetName
+                && rowAmount === targetAmount
+                && String(getReimbursementRowKey(row)).indexOf('manual_') === 0
+                && String(getReimbursementRowKey(row)).indexOf('manual_local_') !== 0;
+        });
+    }
+
+    async function reloadCurrentReimbursementDraftOnly() {
+        const range = getDateRangeValues();
+        const draft = await fetchReimbursementDraft(range.start, range.end);
+        if (draft.exists) {
+            const scheduleRows = currentReimbursementRows.filter(function(row) { return !row.manual; });
+            const mergedRows = mergeReimbursementDraftRows(scheduleRows, draft.rows || []);
+            updateReimbursementLifecycleFromPayload(draft);
+            renderReimbursementRows(mergedRows);
+            await fetchReimbursementReceipts(range.start, range.end);
+        }
+        return draft;
+    }
+
+    async function saveManualReimbursementItem() {
+        if (!reimbursementIsEditable()) {
+            reimAlert(currentReimbursementLifecycle.lock_reason || 'This reimbursement is locked.');
+            return;
+        }
+        const dateValue = document.getElementById('reimManualDate').value;
+        const itemName = document.getElementById('reimManualItemName').value.trim();
+        const amount = Number(document.getElementById('reimManualAmount').value || 0);
+        const receiptInput = document.getElementById('reimManualReceipt');
+        const receiptFiles = receiptInput ? receiptInput.files : null;
+        const receiptValidation = validateReimbursementReceiptFiles(receiptFiles);
+
+        if (!receiptValidation.ok) {
+            reimAlert(receiptValidation.message);
+            if (receiptInput) receiptInput.value = '';
+            return;
+        }
+
+        if (!dateValue) {
+            reimAlert('Please select a date.');
+            return;
+        }
+        if (!itemName) {
+            reimAlert('Please enter the item name or description.');
+            return;
+        }
+        if (!Number.isFinite(amount) || amount <= 0) {
+            reimAlert('Please enter a valid price.');
+            return;
+        }
+
+        const localKey = `manual_local_${Date.now()}`;
+        const manualRow = {
+            manual: true,
+            local_manual_key: localKey,
+            manual_key: localKey,
+            date: dateValue,
+            start_time: '',
+            end_time: '',
+            client: '',
+            product: '',
+            serial_number: '',
+            task: itemName,
+            engineers: [],
+            remarks: itemName,
+            amounts: {
+                others: amount,
+                others_misc: amount
+            },
+            row_total: amount
+        };
+
+        const rows = sortReimbursementRows((currentReimbursementRows || []).concat([manualRow]));
+        renderReimbursementRows(rows);
+        markReimbursementDirty();
+        closeManualReimbursementModal();
+
+        if (receiptValidation.files && receiptValidation.files.length) {
+            const saved = await saveReimbursementDraft(true);
+            if (!saved) {
+                reimAlert('Manual item was added locally, but receipt upload needs a saved draft first.');
+                return;
+            }
+            await reloadCurrentReimbursementDraftOnly();
+            const savedManual = findSavedManualRow(dateValue, itemName, amount);
+            if (savedManual) {
+                await uploadReimbursementReceipt(getReimbursementRowKey(savedManual), receiptValidation.files);
+            } else {
+                setReimbursementDraftStatus('Manual item saved. Please attach receipt from the row.', 'ok');
+            }
+        }
+    }
+
+
+    async function loadReimbursementRows() {
+        hideReimbursementDeleteDraftConfirm();
+        const start = document.getElementById('reimStartDate').value;
+        const end = document.getElementById('reimEndDate').value;
+        const status = document.getElementById('reimStatusText');
+
+        if (!start || !end) {
+            reimAlert('Please select start and end date.');
+            return;
+        }
+
+        status.textContent = 'Loading schedules...';
+
+        try {
+            const params = new URLSearchParams({ start, end });
+            const response = await fetch(`/get_reimbursement_schedule_rows?${params.toString()}`);
+            const payload = await response.json();
+
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Unable to load reimbursement rows.');
+            }
+
+            let rows = payload.rows || [];
+            let draftMessage = '';
+
+            try {
+                const draft = await fetchReimbursementDraft(start, end);
+                if (draft.exists) {
+                    rows = mergeReimbursementDraftRows(rows, draft.rows || []);
+                    updateReimbursementLifecycleFromPayload(draft);
+                    draftMessage = ` Saved ${currentReimbursementStatus} reloaded.`;
+                    setReimbursementDraftStatus(`${currentReimbursementStatus} reimbursement loaded`, 'ok');
+                } else {
+                    setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
+                    setReimbursementDraftStatus('No saved draft yet.', '');
+                }
+            } catch (draftError) {
+                console.warn(draftError);
+                setReimbursementDraftStatus('Schedules loaded. Saved draft was not loaded.', 'error');
+            }
+
+            renderReimbursementRows(rows);
+            await fetchReimbursementReceipts(start, end);
+            status.textContent = `Loaded schedules from ${payload.start} to ${payload.end}.${draftMessage}`;
+            applyReimbursementStatusUi();
+        } catch (error) {
+            console.error(error);
+            status.textContent = error.message || 'Unable to load reimbursement rows.';
+            renderReimbursementRows([]);
+        }
+    }
+
+    function formatApprovalDateTime(value) {
+        if (!value) return '';
+        try {
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return value;
+            return date.toLocaleString();
+        } catch (err) {
+            return value;
+        }
+    }
+
+    function getReimbursementStatusPillClass(status) {
+        const normalized = String(status || '').toLowerCase();
+        if (normalized === 'approved') return 'reim-status-pill-approved';
+        if (normalized === 'submitted') return 'reim-status-pill-submitted';
+        if (normalized === 'rejected') return 'reim-status-pill-rejected';
+        return 'reim-status-pill-draft';
+    }
+
+    function renderMyReimbursementStatuses(items) {
+        const container = document.getElementById('reimStatusWindowList');
+        if (!container) return;
+
+        const list = Array.isArray(items) ? items : [];
+        if (!list.length) {
+            container.innerHTML = '<div class="reim-empty">No reimbursement records yet.</div>';
+            return;
+        }
+
+        container.innerHTML = list.map(function(item) {
+            const status = item.status || 'Draft';
+            const start = item.start || item.start_date || '';
+            const end = item.end || item.end_date || '';
+            const total = Number(item.grand_total || item.total || 0);
+            const rowCount = Number(item.row_count || 0);
+            const remarks = item.approval_remarks || item.remarks || '';
+            const lifecycleLabel = item.lifecycle_label || status;
+            const updated = item.updated_at || item.submitted_at || item.approved_at || item.rejected_at || '';
+            const pillClass = getReimbursementStatusPillClass(status);
+
+            return `
+                <div class="reim-status-window-item">
+                    <div class="reim-status-window-title">
+                        <span>${reimEscape(formatExpenseDate(start))} to ${reimEscape(formatExpenseDate(end))}</span>
+                        <span class="reim-status-pill ${pillClass}">${reimEscape(lifecycleLabel)}</span>
+                    </div>
+                    <div class="reim-status-window-meta">
+                        Rows: ${reimEscape(rowCount)} • Total: ₱${formatMoney(total)}
+                        ${updated ? `<br>Updated: ${reimEscape(formatApprovalDateTime(updated))}` : ''}
+                        ${remarks ? `<br>Remarks: ${reimEscape(remarks)}` : ''}
+                    </div>
+                    <div class="reim-status-window-actions">
+                        <button type="button" class="reim-btn reim-btn-secondary" onclick="openReimbursementStatusRange('${reimEscape(start)}', '${reimEscape(end)}')">Open / Load</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    async function loadMyReimbursementStatuses() {
+        const container = document.getElementById('reimStatusWindowList');
+        if (container) {
+            container.innerHTML = '<div class="reim-empty">Loading reimbursement status...</div>';
+        }
+
+        try {
+            const response = await fetch('/get_my_reimbursement_statuses', {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Accept': 'application/json' }
+            });
+            const payload = await parseReimbursementJsonResponse(response, 'Unable to load reimbursement status.');
+            renderMyReimbursementStatuses(payload.items || payload.reimbursements || []);
+        } catch (error) {
+            console.error('[Reimbursement] Status window failed', error);
+            if (container) {
+                container.innerHTML = `<div class="reim-empty">${reimEscape(error.message || 'Unable to load reimbursement status.')}</div>`;
+            }
+        }
+    }
+
+    async function openReimbursementStatusRange(start, end) {
+        if (!start || !end) {
+            reimAlert('This reimbursement record has no valid date range.');
+            return;
+        }
+
+        const startInput = document.getElementById('reimStartDate');
+        const endInput = document.getElementById('reimEndDate');
+        if (startInput) startInput.value = start;
+        if (endInput) endInput.value = end;
+
+        await loadReimbursementRows();
+
+        const worksheet = document.querySelector('.reim-table-card');
+        if (worksheet) {
+            try {
+                worksheet.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } catch (error) {
+                worksheet.scrollIntoView();
+            }
+        }
+    }
+
+
+
+
+
+
+    let reimbursementSignaturePromptResolver = null;
+    let reimbursementSignatureIsDrawing = false;
+    let reimbursementSignatureHasDrawing = false;
+    let reimbursementSignatureUploadedData = '';
+    let reimbursementSignatureUploadedFile = null;
+
+    function getReimbursementSignatureCanvas() {
+        return document.getElementById('reimSignatureCanvas');
+    }
+
+    function initializeReimbursementSignatureCanvas() {
+        const canvas = getReimbursementSignatureCanvas();
+        if (!canvas || canvas.dataset.bound === '1') return;
+
+        const ctx = canvas.getContext('2d');
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#111827';
+
+        function pointFromEvent(event) {
+            const rect = canvas.getBoundingClientRect();
+            const client = event.touches && event.touches.length ? event.touches[0] : event;
+            return {
+                x: (client.clientX - rect.left) * (canvas.width / rect.width),
+                y: (client.clientY - rect.top) * (canvas.height / rect.height)
+            };
+        }
+
+        function start(event) {
+            event.preventDefault();
+            reimbursementSignatureIsDrawing = true;
+            reimbursementSignatureHasDrawing = true;
+            const point = pointFromEvent(event);
+            ctx.beginPath();
+            ctx.moveTo(point.x, point.y);
+        }
+
+        function move(event) {
+            if (!reimbursementSignatureIsDrawing) return;
+            event.preventDefault();
+            const point = pointFromEvent(event);
+            ctx.lineTo(point.x, point.y);
+            ctx.stroke();
+            updateReimbursementSignaturePreviewFromCanvas();
+        }
+
+        function end(event) {
+            if (!reimbursementSignatureIsDrawing) return;
+            event.preventDefault();
+            reimbursementSignatureIsDrawing = false;
+            updateReimbursementSignaturePreviewFromCanvas();
+        }
+
+        canvas.addEventListener('mousedown', start);
+        canvas.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', end);
+        canvas.addEventListener('touchstart', start, { passive: false });
+        canvas.addEventListener('touchmove', move, { passive: false });
+        canvas.addEventListener('touchend', end, { passive: false });
+        canvas.dataset.bound = '1';
+    }
+
+    function updateReimbursementSignaturePreview(src) {
+        const preview = document.getElementById('reimSignaturePreview');
+        if (!preview) return;
+        if (src) {
+            preview.innerHTML = `<img src="${src}" alt="Signature preview">`;
+        } else {
+            preview.innerHTML = '<span class="reim-muted">Signature preview will appear here.</span>';
+        }
+    }
+
+    function updateReimbursementSignaturePreviewFromCanvas() {
+        const canvas = getReimbursementSignatureCanvas();
+        if (!canvas || !reimbursementSignatureHasDrawing) return;
+        reimbursementSignatureUploadedData = '';
+        updateReimbursementSignaturePreview(canvas.toDataURL('image/png'));
+    }
+
+    function clearReimbursementSignatureCanvas() {
+        const canvas = getReimbursementSignatureCanvas();
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        reimbursementSignatureHasDrawing = false;
+        reimbursementSignatureUploadedData = '';
+        reimbursementSignatureUploadedFile = null;
+        const upload = document.getElementById('reimSignatureUpload');
+        if (upload) upload.value = '';
+        updateReimbursementSignaturePreview('');
+    }
+
+    function setReimbursementSignatureSaveStatus(message, tone) {
+        const el = document.getElementById('reimSignatureSaveStatus');
+        if (!el) return;
+        el.textContent = message || '';
+        el.style.color = tone === 'error' ? '#b91c1c' : (tone === 'ok' ? '#0f5132' : '#64748b');
+    }
+
+    function compressReimbursementSignatureDataUrl(sourceDataUrl) {
+        return new Promise(function(resolve, reject) {
+            if (!sourceDataUrl) {
+                resolve('');
+                return;
+            }
+
+            const img = new Image();
+            img.onload = function() {
+                const maxWidth = 900;
+                const maxHeight = 260;
+                const ratio = Math.min(maxWidth / img.width, maxHeight / img.height, 1);
+                const targetWidth = Math.max(1, Math.round(img.width * ratio));
+                const targetHeight = Math.max(1, Math.round(img.height * ratio));
+                const canvas = document.createElement('canvas');
+                canvas.width = maxWidth;
+                canvas.height = maxHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                const x = Math.round((maxWidth - targetWidth) / 2);
+                const y = Math.round((maxHeight - targetHeight) / 2);
+                ctx.drawImage(img, x, y, targetWidth, targetHeight);
+                resolve(canvas.toDataURL('image/png'));
+            };
+            img.onerror = function() {
+                reject(new Error('Signature image could not be loaded.'));
+            };
+            img.src = sourceDataUrl;
+        });
+    }
+
+    function previewReimbursementSignatureUpload(files) {
+        const file = files && files.length ? files[0] : null;
+        if (!file) return;
+
+        const fileName = String(file.name || '').toLowerCase();
+        const fileExt = fileName.includes('.') ? fileName.split('.').pop() : '';
+        const allowedTypes = ['image/png', 'image/jpeg', 'image/webp'];
+        const allowedExts = ['png', 'jpg', 'jpeg', 'webp'];
+
+        if (!(allowedTypes.includes(file.type) || allowedExts.includes(fileExt))) {
+            reimAlert('Please upload a PNG, JPG, JPEG, or WEBP signature image.');
+            const upload = document.getElementById('reimSignatureUpload');
+            if (upload) upload.value = '';
+            reimbursementSignatureUploadedFile = null;
+            reimbursementSignatureUploadedData = '';
+            return;
+        }
+
+        // Keep the original File object. Saving will upload it directly as multipart/form-data.
+        // This avoids browser freezes and oversized JSON payloads from base64 data URLs.
+        reimbursementSignatureUploadedFile = file;
+        reimbursementSignatureUploadedData = '';
+        reimbursementSignatureHasDrawing = false;
+
+        const canvas = getReimbursementSignatureCanvas();
+        if (canvas) {
+            canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        setReimbursementSignatureSaveStatus('Signature file selected. Click Save Signature & Continue Submit.', 'ok');
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const rawData = event.target.result || '';
+            if (rawData) {
+                reimbursementSignatureUploadedData = rawData;
+                updateReimbursementSignaturePreview(rawData);
+            } else {
+                updateReimbursementSignaturePreview('');
+            }
+        };
+        reader.onerror = function() {
+            // Preview is optional; the original File object is still available for upload.
+            updateReimbursementSignaturePreview('');
+            setReimbursementSignatureSaveStatus('Signature file selected. Preview failed, but you can still save.', 'ok');
+        };
+        reader.readAsDataURL(file);
+    }
+
+    async function fetchCurrentReimbursementSignatureStatus() {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(function() {
+            controller.abort();
+        }, 6000);
+
+        try {
+            const response = await fetch('/get_my_signature', {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                signal: controller.signal,
+                headers: { 'Accept': 'application/json' }
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.status === 'error') {
+                throw new Error(payload.message || 'Unable to check saved signature.');
+            }
+            return payload;
+        } finally {
+            window.clearTimeout(timeoutId);
+        }
+    }
+
+    async function ensureReimbursementSignatureBeforeSubmit() {
+        setReimbursementSubmitNotice('Checking saved signature...', 'warn');
+
+        try {
+            const signature = await fetchCurrentReimbursementSignatureStatus();
+            if (signature && signature.has_signature) {
+                hideReimbursementSignatureRequiredPanel();
+                setReimbursementSubmitNotice('Saved signature found. Ready to submit.', 'ok');
+                return true;
+            }
+        } catch (error) {
+            console.warn('Signature check failed:', error);
+        }
+
+        setReimbursementButtonsBusy(false);
+        setReimbursementDraftStatus('Draft saved. Signature required before submit.', 'ok');
+        setReimbursementSubmitNotice('Draft saved. Please add your signature in Settings, then return here and continue submission.', 'warn');
+        showReimbursementSignatureRequiredPanel();
+        return false;
+    }
+
+    function openReimbursementSignaturePrompt() {
+        const modal = document.getElementById('reimSignatureModal');
+        if (!modal) {
+            reimAlert('Signature prompt could not be opened. Please refresh the page and try again.');
+            return Promise.resolve(false);
+        }
+
+        modal.classList.add('show');
+        modal.style.display = 'flex';
+        modal.setAttribute('aria-hidden', 'false');
+
+        window.setTimeout(function() {
+            initializeReimbursementSignatureCanvas();
+            clearReimbursementSignatureCanvas();
+        }, 50);
+
+        return new Promise(function(resolve) {
+            reimbursementSignaturePromptResolver = resolve;
+        });
+    }
+
+    function closeReimbursementSignaturePrompt(result) {
+        const modal = document.getElementById('reimSignatureModal');
+        if (modal) {
+            modal.classList.remove('show');
+            modal.style.display = 'none';
+            modal.setAttribute('aria-hidden', 'true');
+        }
+
+        if (typeof reimbursementSignaturePromptResolver === 'function') {
+            reimbursementSignaturePromptResolver(!!result);
+        }
+        reimbursementSignaturePromptResolver = null;
+    }
+
+    function cancelReimbursementSignaturePrompt() {
+        closeReimbursementSignaturePrompt(false);
+    }
+
+    function canvasToBlobPromise(canvas, type) {
+        return new Promise(function(resolve) {
+            if (!canvas || !canvas.toBlob) {
+                resolve(null);
+                return;
+            }
+            canvas.toBlob(function(blob) {
+                resolve(blob || null);
+            }, type || 'image/png');
+        });
+    }
+
+    async function saveReimbursementSignatureAndContinue() {
+        const button = document.getElementById('reimSaveSignatureContinueBtn');
+        const canvas = getReimbursementSignatureCanvas();
+        const hasUploadedFile = !!reimbursementSignatureUploadedFile;
+        const hasDrawing = !!(reimbursementSignatureHasDrawing && canvas);
+        let signatureData = reimbursementSignatureUploadedData || '';
+
+        if (!hasUploadedFile && !hasDrawing && !signatureData) {
+            setReimbursementSignatureSaveStatus('Please draw or upload your signature first.', 'error');
+            reimAlert('Please draw or upload your signature first.');
+            return;
+        }
+
+        const oldText = button ? button.textContent : '';
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'Saving Signature...';
+        }
+        setReimbursementSignatureSaveStatus('Saving signature...', '');
+
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(function() {
+            controller.abort();
+        }, 20000);
+
+        try {
+            let response;
+
+            // Preferred path: upload as multipart file. This is much safer than sending
+            // a large base64 image inside JSON and matches the backend's file support.
+            if (hasUploadedFile) {
+                const formData = new FormData();
+                formData.append('signature_file', reimbursementSignatureUploadedFile, reimbursementSignatureUploadedFile.name || 'signature.png');
+                response = await fetch('/save_my_signature', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    signal: controller.signal,
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRFToken': getReimbursementCsrfToken()
+                    },
+                    body: formData
+                });
+            } else if (hasDrawing && canvas) {
+                const blob = await canvasToBlobPromise(canvas, 'image/png');
+                if (blob) {
+                    const formData = new FormData();
+                    formData.append('signature_file', blob, 'drawn-signature.png');
+                    response = await fetch('/save_my_signature', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                        signal: controller.signal,
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-CSRFToken': getReimbursementCsrfToken()
+                        },
+                        body: formData
+                    });
+                } else {
+                    signatureData = canvas.toDataURL('image/png');
+                }
+            }
+
+            // Fallback path only if file/blob upload was not possible.
+            if (!response) {
+                if (!signatureData && canvas) {
+                    signatureData = canvas.toDataURL('image/png');
+                }
+                response = await fetch('/save_my_signature', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    signal: controller.signal,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRFToken': getReimbursementCsrfToken()
+                    },
+                    body: JSON.stringify({ signature_data: signatureData })
+                });
+            }
+
+            const payload = await parseReimbursementJsonResponse(response, 'Unable to save signature.');
+            setReimbursementSignatureSaveStatus('Signature saved. Continuing submit...', 'ok');
+            setReimbursementDraftStatus('Signature saved. Continuing submit...', 'ok');
+            setReimbursementSubmitNotice('Signature saved. Continue submit confirmation.', 'ok');
+
+            // Force-close the modal on success.
+            closeReimbursementSignaturePrompt(true);
+        } catch (error) {
+            console.error('[Reimbursement] Signature save failed', error);
+            const message = error.name === 'AbortError'
+                ? 'Signature save timed out. Please try again or use a smaller PNG/JPG signature.'
+                : (error.message || 'Unable to save signature.');
+            setReimbursementSignatureSaveStatus(message, 'error');
+            setReimbursementSubmitNotice(message, 'error');
+            reimAlert(message);
+        } finally {
+            window.clearTimeout(timeoutId);
+            if (button) {
+                button.disabled = false;
+                button.textContent = oldText || 'Save Signature & Continue Submit';
+            }
+        }
+    }
+
+
+
+    async function loadReimbursementNotifications() {
+        const list = document.getElementById('reimNotificationList');
+        const badge = document.getElementById('reimNotificationBadge');
+        if (list) list.innerHTML = '<div class="reim-empty">Loading reimbursement notifications...</div>';
+
+        try {
+            const response = await fetch('/get_my_notifications?limit=50', {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Accept': 'application/json' }
+            });
+            const payload = await parseReimbursementJsonResponse(response, 'Unable to load notifications.');
+            const allItems = Array.isArray(payload.items) ? payload.items : [];
+            const items = allItems.filter(function(item) {
+                return String(item.module || '').toLowerCase() === 'reimbursement' && !item.is_read;
+            });
+            const unreadCount = items.length;
+
+            if (badge) {
+                badge.textContent = String(unreadCount);
+                badge.style.display = unreadCount > 0 ? 'inline-flex' : 'none';
+            }
+
+            if (!list) return;
+            if (!items.length) {
+                list.innerHTML = '<div class="reim-empty">No unread reimbursement notifications.</div>';
+                return;
+            }
+
+            list.innerHTML = items.slice(0, 8).map(function(item) {
+                return `
+                    <div class="reim-notification-item ${item.is_read ? '' : 'unread'}" onclick="openReimbursementNotification(${Number(item.id) || 0})">
+                        <div class="reim-notification-title">
+                            <span>${reimEscape(item.title || 'Reimbursement Notification')}</span>
+                            <span style="display:inline-flex;align-items:center;gap:6px;">
+                                ${item.is_read ? '' : '<span class="reim-status-pill reim-status-pill-submitted">New</span>'}
+                                <button type="button" class="reim-notification-close" title="Close notification" aria-label="Close notification" onclick="dismissReimbursementNotification(event, ${Number(item.id) || 0})">×</button>
+                            </span>
+                        </div>
+                        <div class="reim-notification-message">${reimEscape(item.message || '')}</div>
+                        <div class="reim-notification-time">${reimEscape(item.created_at_label || item.created_at || '')}</div>
+                    </div>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('[Reimbursement] Notifications failed', error);
+            if (list) list.innerHTML = `<div class="reim-empty">${reimEscape(error.message || 'Unable to load notifications.')}</div>`;
+            if (badge) badge.style.display = 'none';
+        }
+    }
+
+    async function markReimbursementNotificationRead(notificationId) {
+        if (!notificationId) return;
+        try {
+            await fetch('/mark_notification_read', {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRFToken': getReimbursementCsrfToken()
+                },
+                body: JSON.stringify({ notification_id: notificationId })
+            });
+        } catch (error) {
+            console.warn('[Reimbursement] Mark notification read failed', error);
+        }
+    }
+
+async function dismissReimbursementNotification(event, notificationId) {
+        if (event && event.preventDefault) event.preventDefault();
+        if (event && event.stopPropagation) event.stopPropagation();
+
+        const item = event?.target?.closest?.('.reim-notification-item');
+        if (item) {
+            item.style.opacity = '0.45';
+            item.style.pointerEvents = 'none';
+        }
+
+        await markReimbursementNotificationRead(notificationId);
+        await loadReimbursementNotifications();
+    }
+
+    async function markAllReimbursementNotificationsRead() {
+        try {
+            const response = await fetch('/mark_all_notifications_read', {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRFToken': getReimbursementCsrfToken()
+                },
+                body: JSON.stringify({})
+            });
+            await parseReimbursementJsonResponse(response, 'Unable to mark notifications as read.');
+            await loadReimbursementNotifications();
+        } catch (error) {
+            console.error('[Reimbursement] Mark all notifications read failed', error);
+            reimAlert(error.message || 'Unable to mark notifications as read.');
+        }
+    }
+
+    async function openReimbursementNotification(notificationId) {
+        await markReimbursementNotificationRead(notificationId);
+        await loadReimbursementNotifications();
+
+        try {
+            const response = await fetch('/get_my_notifications?limit=50', {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Accept': 'application/json' }
+            });
+            const payload = await parseReimbursementJsonResponse(response, 'Unable to load notification details.');
+            const item = (payload.items || []).find(function(entry) { return Number(entry.id) === Number(notificationId); });
+            const meta = item && item.metadata ? item.metadata : {};
+            const start = meta.start || meta.start_date || '';
+            const end = meta.end || meta.end_date || '';
+
+            if (start && end) {
+                await openReimbursementStatusRange(start, end);
+                return;
+            }
+
+            if (item && item.target_url) {
+                window.location.href = item.target_url;
+                return;
+            }
+        } catch (error) {
+            console.warn('[Reimbursement] Open notification fallback used', error);
+        }
+
+        const statusCard = document.getElementById('reimStatusWindowCard');
+        if (statusCard) {
+            try {
+                statusCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } catch (error) {
+                statusCard.scrollIntoView();
+            }
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        setReimbursementThisMonth();
+        syncReimbursementHorizontalScroll();
+        applyReimbursementStatusUi();
+        loadMyReimbursementStatuses();
+        loadReimbursementNotifications();
+    });
+    if (!window.reimResizeTotalRecalcBound) {
+        window.reimResizeTotalRecalcBound = true;
+        window.addEventListener('resize', function() {
+            if (document.getElementById('reimTableBody')) {
+                recalculateReimbursementTotals();
+            }
+        });
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,3487 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    .travel-page { max-width: 1220px; margin: 0 auto; }
+    .travel-hero {
+        background: linear-gradient(135deg, #0f172a, #1d4ed8);
+        color: #fff; border-radius: 18px; padding: 18px 20px; margin-bottom: 14px;
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.18);
+    }
+    .travel-hero h1 { margin: 0; font-size: 1.55rem; font-weight: 900; letter-spacing: .01em; }
+    .travel-hero p { margin: 6px 0 0; opacity: 0.92; font-weight: 700; }
+    .travel-card {
+        background: #ffffff; border: 1px solid #dbeafe; border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(37, 99, 235, 0.06);
+        padding: 16px; margin-bottom: 14px;
+    }
+    .travel-form-title { text-align: center; font-size: 1.1rem; font-weight: 950; color: #0f172a; margin: 0; }
+    .travel-form-subtitle { text-align: center; font-size: .82rem; color: #64748b; font-weight: 800; margin-top: 4px; }
+    .travel-section-title {
+        margin: 0 0 12px; color: #1e3a8a; font-size: 1.05rem; font-weight: 900;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .travel-label {
+        font-weight: 900; color: #334155; font-size: 0.8rem;
+        text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 5px;
+    }
+    .travel-input, .travel-select, .travel-textarea {
+        width: 100%; border: 1px solid #cbd5e1; border-radius: 12px;
+        padding: 10px 12px; font-weight: 700; color: #0f172a; background: #fff;
+    }
+    .travel-input[readonly], .travel-input:disabled, .travel-select:disabled, .travel-textarea:disabled {
+        background: #f1f5f9; color: #64748b; cursor: not-allowed;
+    }
+    .travel-textarea { min-height: 86px; resize: vertical; }
+    .travel-route-textarea { min-height: 120px; }
+    .travel-check-grid {
+        display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 8px;
+    }
+    .travel-check-grid.compact { grid-template-columns: repeat(3, minmax(130px, 1fr)); }
+    .travel-check {
+        border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 12px;
+        padding: 10px; font-weight: 800; color: #334155; display: flex;
+        align-items: center; gap: 8px; min-height: 44px;
+    }
+    .travel-check input { width: 18px; height: 18px; min-height: 18px !important; }
+    .travel-form-group-box {
+        border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px;
+        background: #f8fafc; height: 100%;
+    }
+    .travel-form-group-box h3 { margin: 0 0 10px; color: #0f172a; font-size: .92rem; font-weight: 950; }
+    .travel-amount-grid { display: grid; grid-template-columns: 1fr 190px; gap: 8px; align-items: center; }
+    .travel-money-settings { border: 1px solid #bfdbfe; border-radius: 14px; background: #eff6ff; padding: 12px; margin-bottom: 12px; }
+    .travel-money-options { display: flex; gap: 8px; flex-wrap: wrap; }
+    .travel-money-option { border: 1px solid #bfdbfe; border-radius: 12px; background: #fff; color: #1e3a8a; padding: 10px 12px; font-weight: 900; cursor: pointer; }
+    .travel-money-option.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+    .travel-currency-note { color: #475569; font-size: .78rem; font-weight: 750; margin-top: 8px; }
+    .travel-amount-hint { color: #64748b; font-size: .7rem; font-weight: 800; margin-bottom: 4px; text-transform: uppercase; }
+    .travel-amount-row { padding: 8px 0; border-bottom: 1px dashed #e2e8f0; }
+    .travel-total {
+        background: #eff6ff; border-radius: 14px; padding: 12px; display: flex;
+        justify-content: space-between; align-items: center; color: #1e3a8a;
+        font-weight: 900; font-size: 1.1rem; margin-top: 10px;
+    }
+    .travel-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    .travel-btn { border: none; border-radius: 12px; padding: 11px 16px; font-weight: 900; cursor: pointer; }
+    .travel-btn-primary { background: #2563eb; color: #fff; }
+    .travel-btn-success { background: #198754; color: #fff; }
+    .travel-btn-secondary { background: #e2e8f0; color: #334155; }
+    .travel-btn-warning { background: #f59e0b; color: #fff; }
+    .travel-btn-info { background: #7c3aed; color: #fff; }
+    .travel-timeline-link-note {
+        margin-top: 6px;
+        color: #5b21b6;
+        font-size: .74rem;
+        font-weight: 850;
+    }
+    .travel-url-highlight {
+        animation: travelUrlHighlight 1.8s ease-out;
+    }
+    @keyframes travelUrlHighlight {
+        0% { box-shadow: 0 0 0 0 rgba(124, 58, 237, .38); }
+        45% { box-shadow: 0 0 0 6px rgba(124, 58, 237, .16); }
+        100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0); }
+    }
+    .travel-history-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .travel-restore-result {
+        margin-top: 6px;
+        color: #92400e;
+        font-size: .74rem;
+        font-weight: 850;
+    }
+    .travel-status {
+        padding: 10px 12px; border-radius: 12px; background: #f8fafc;
+        border: 1px solid #e2e8f0; color: #475569; font-weight: 800; margin-bottom: 12px;
+    }
+    .travel-status.success { background: #dcfce7; border-color: #bbf7d0; color: #166534; }
+    .travel-status.error { background: #fee2e2; border-color: #fecaca; color: #991b1b; }
+    .travel-signature-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .travel-signature-box {
+        border: 1px solid #cbd5e1; border-radius: 14px; min-height: 92px;
+        padding: 12px; background: #f8fafc; display: flex; flex-direction: column;
+        justify-content: flex-end; text-align: center;
+    }
+    .travel-signature-line {
+        border-top: 1px solid #334155; padding-top: 6px; color: #334155;
+        font-size: .8rem; font-weight: 900; text-transform: uppercase;
+    }
+    .travel-approval-signature-img {
+        display: none;
+        max-width: 220px;
+        max-height: 72px;
+        object-fit: contain;
+        margin: 0 auto 5px;
+    }
+    .travel-approval-signed-name {
+        display: none;
+        color: #0f172a;
+        font-weight: 950;
+        font-size: .9rem;
+        line-height: 1.15;
+        margin-bottom: 2px;
+    }
+    .travel-approval-signed-title,
+    .travel-approval-signed-date {
+        display: none;
+        color: #64748b;
+        font-weight: 800;
+        font-size: .74rem;
+        line-height: 1.25;
+    }
+    .travel-history-list { display: grid; gap: 8px; }
+    .travel-history-item {
+        border: 1px solid #e2e8f0; background: #f8fafc; border-radius: 12px;
+        padding: 10px; display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;
+    }
+    .travel-history-title { font-weight: 900; color: #0f172a; }
+    .travel-history-meta { color: #64748b; font-size: 0.82rem; font-weight: 700; }
+    .travel-search-wrap { position: relative; }
+    .travel-search-results {
+        position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px);
+        background: #fff; border: 1px solid #cbd5e1; border-radius: 12px;
+        box-shadow: 0 16px 40px rgba(15,23,42,.16); overflow: hidden; display: none;
+    }
+    .travel-search-item {
+        padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #e2e8f0;
+        font-weight: 800; color: #0f172a;
+    }
+    .travel-search-item small { display: block; color: #64748b; font-weight: 700; margin-top: 2px; }
+    .travel-search-item:hover { background: #eff6ff; }
+    .travel-hint { color: #64748b; font-size: .78rem; font-weight: 800; margin-top: 5px; }
+
+    .travel-route-list {
+        display: grid;
+        gap: 14px;
+    }
+
+    .travel-route-card {
+        border: 1px solid #bfdbfe;
+        background: #eff6ff;
+        border-radius: 16px;
+        padding: 14px;
+    }
+
+    .travel-route-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 12px;
+    }
+
+    .travel-route-title {
+        font-weight: 950;
+        color: #1e3a8a;
+        font-size: 1rem;
+    }
+
+    .travel-visit-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 12px;
+    }
+
+    .travel-visit-card {
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        border-radius: 14px;
+        padding: 12px;
+    }
+
+    .travel-visit-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+
+    .travel-visit-title {
+        font-weight: 950;
+        color: #0f172a;
+        font-size: .9rem;
+    }
+
+    .travel-btn-danger {
+        background: #dc2626;
+        color: #fff;
+    }
+
+    .travel-btn-danger-outline {
+        background: #fff;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+    }
+
+    .travel-delete-draft-panel {
+        display: none;
+        border: 1px solid #fecaca;
+        background: #fff5f5;
+        border-radius: 14px;
+        padding: 12px;
+        margin-top: 12px;
+        color: #7f1d1d;
+        font-weight: 800;
+    }
+
+    .travel-delete-draft-panel.show {
+        display: block;
+    }
+
+    .travel-delete-draft-title {
+        font-weight: 950;
+        color: #991b1b;
+        margin-bottom: 4px;
+    }
+
+    .route-summary.auto-filled {
+        background: #f8fafc;
+        border-color: #93c5fd;
+    }
+
+    .travel-route-card {
+        border: 1px solid #bfdbfe;
+        background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+        border-radius: 20px;
+        padding: 16px;
+        box-shadow: 0 10px 28px rgba(37, 99, 235, 0.08);
+    }
+
+    .travel-route-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 14px;
+    }
+
+    .travel-route-title {
+        font-weight: 950;
+        color: #1e3a8a;
+        font-size: 1.05rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .travel-route-title::before {
+        content: "🗺️";
+        font-size: 1rem;
+    }
+
+    .travel-route-header-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .travel-icon-btn {
+        border: none;
+        border-radius: 14px;
+        width: 44px;
+        height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 950;
+        cursor: pointer;
+    }
+
+    .travel-icon-btn.secondary {
+        background: #e2e8f0;
+        color: #334155;
+    }
+
+    .travel-icon-btn.danger {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .travel-route-flow {
+        display: grid;
+        grid-template-columns: minmax(180px, 1fr) 52px minmax(180px, 1fr) minmax(150px, 220px);
+        gap: 12px;
+        align-items: end;
+    }
+
+    .travel-swap-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        padding: 0;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.05rem;
+    }
+
+    .travel-generated-route {
+        margin-top: 12px;
+        padding: 12px 14px;
+        border-radius: 16px;
+        border: 1px solid #bfdbfe;
+        background: #ffffff;
+        color: #1e3a8a;
+        font-weight: 900;
+        display: grid;
+        gap: 8px;
+    }
+
+    .travel-generated-route-title {
+        color: #64748b;
+        font-size: .76rem;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        font-weight: 950;
+    }
+
+    .travel-generated-route-body {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        color: #0f172a;
+        font-size: .98rem;
+    }
+
+    .travel-route-pill {
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: #eff6ff;
+        border: 1px solid #dbeafe;
+        color: #1d4ed8;
+        font-weight: 950;
+    }
+
+    .travel-equipment-dropdown {
+        position: relative;
+    }
+
+    .travel-equipment-toggle {
+        width: 100%;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        background: #ffffff;
+        padding: 10px 12px;
+        font-weight: 800;
+        color: #0f172a;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .travel-equipment-toggle:disabled {
+        background: #f1f5f9;
+        color: #64748b;
+        cursor: not-allowed;
+    }
+
+    .travel-equipment-menu {
+        display: none;
+        position: absolute;
+        z-index: 30;
+        left: 0;
+        right: 0;
+        top: calc(100% + 5px);
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        background: #ffffff;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+        padding: 10px;
+        max-height: 270px;
+        overflow-y: auto;
+    }
+
+    .travel-equipment-dropdown.open .travel-equipment-menu {
+        display: block;
+    }
+
+    .travel-equipment-search {
+        margin-bottom: 8px;
+    }
+
+    .travel-equipment-box {
+        background: #ffffff;
+    }
+
+    .travel-equipment-box.disabled {
+        background: #f1f5f9;
+        color: #64748b;
+    }
+
+    .travel-equipment-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 8px 6px;
+        border-bottom: 1px dashed #e2e8f0;
+        font-weight: 800;
+        color: #0f172a;
+    }
+
+    .travel-equipment-row:last-child {
+        border-bottom: none;
+    }
+
+    .travel-equipment-row input {
+        margin-top: 3px;
+        width: 18px;
+        height: 18px;
+        min-height: 18px !important;
+    }
+
+    .travel-equipment-row.all-row {
+        background: #eff6ff;
+        border-radius: 10px;
+        border-bottom: 1px solid #bfdbfe;
+        color: #1d4ed8;
+        margin-bottom: 6px;
+    }
+
+    .route-summary.auto-filled {
+        background: #f8fafc;
+        border-color: #93c5fd;
+    }
+
+
+    .travel-notification-panel {
+        background: #ffffff;
+        border: 1px solid #dbeafe;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(37, 99, 235, 0.06);
+        padding: 14px 16px;
+        margin-bottom: 14px;
+    }
+    .travel-notification-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+    .travel-notification-title {
+        margin: 0;
+        color: #0f172a;
+        font-size: 1rem;
+        font-weight: 950;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .travel-notification-badge {
+        min-width: 24px;
+        min-height: 24px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #dc2626;
+        color: #fff;
+        font-size: .74rem;
+        font-weight: 950;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .travel-notification-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .travel-notification-list {
+        display: grid;
+        gap: 8px;
+        max-height: 260px;
+        overflow: auto;
+        padding-right: 2px;
+    }
+    .travel-notification-item {
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        border-radius: 13px;
+        padding: 10px 12px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: center;
+        cursor: pointer;
+    }
+    .travel-notification-item.unread {
+        background: #eff6ff;
+        border-color: #93c5fd;
+    }
+    .travel-notification-item:hover {
+        border-color: #2563eb;
+    }
+    .travel-notification-item-title {
+        color: #0f172a;
+        font-weight: 950;
+        font-size: .88rem;
+        margin-bottom: 3px;
+    }
+    .travel-notification-item-message {
+        color: #475569;
+        font-weight: 750;
+        font-size: .78rem;
+        line-height: 1.35;
+    }
+    .travel-notification-item-time {
+        color: #64748b;
+        font-size: .7rem;
+        font-weight: 900;
+        white-space: nowrap;
+    }
+
+    .travel-notification-close {
+        width: 32px;
+        height: 32px;
+        border: 0;
+        border-radius: 999px;
+        background: #e2e8f0;
+        color: #475569;
+        font-weight: 950;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        touch-action: manipulation;
+    }
+    .travel-notification-close:hover {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+
+    .travel-page.travel-locked .travel-input:not([readonly]),
+    .travel-page.travel-locked .travel-select,
+    .travel-page.travel-locked .travel-textarea,
+    .travel-page.travel-locked input[type="checkbox"],
+    .travel-page.travel-locked input[type="radio"] {
+        pointer-events: none;
+    }
+    .travel-lock-banner {
+        display: none;
+        margin-bottom: 14px;
+    }
+    .travel-lock-banner.show {
+        display: block;
+    }
+
+
+    .travel-conflict-panel {
+        display: none;
+        margin-bottom: 14px;
+        border: 1px solid #fed7aa;
+        background: #fff7ed;
+        color: #9a3412;
+        border-radius: 14px;
+        padding: 12px 14px;
+        font-weight: 800;
+        line-height: 1.35;
+    }
+
+    .travel-conflict-panel.show {
+        display: block;
+    }
+
+    .travel-conflict-panel.blocking {
+        border-color: #fecaca;
+        background: #fff1f2;
+        color: #991b1b;
+    }
+
+    .travel-conflict-title {
+        font-weight: 950;
+        margin-bottom: 6px;
+        color: inherit;
+    }
+
+    .travel-conflict-list {
+        display: grid;
+        gap: 6px;
+        margin-top: 8px;
+    }
+
+    .travel-conflict-item {
+        background: rgba(255,255,255,0.72);
+        border: 1px solid rgba(251, 146, 60, 0.35);
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: .82rem;
+        color: inherit;
+    }
+
+    .travel-conflict-panel.blocking .travel-conflict-item {
+        border-color: rgba(248, 113, 113, 0.45);
+    }
+
+    .travel-toast-stack {
+        position: fixed;
+        top: 18px;
+        right: 18px;
+        z-index: 9998;
+        display: grid;
+        gap: 10px;
+        width: min(360px, calc(100vw - 32px));
+        pointer-events: none;
+    }
+
+    .travel-toast {
+        pointer-events: auto;
+        border-radius: 16px;
+        padding: 12px 14px;
+        border: 1px solid #dbeafe;
+        background: #ffffff;
+        color: #0f172a;
+        box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 10px;
+        align-items: start;
+        animation: travelToastIn .18s ease-out;
+    }
+
+    .travel-toast.success {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #166534;
+    }
+
+    .travel-toast.error {
+        border-color: #fecaca;
+        background: #fff1f2;
+        color: #991b1b;
+    }
+
+    .travel-toast-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(37,99,235,.12);
+        color: #1d4ed8;
+        font-weight: 950;
+    }
+
+    .travel-toast.success .travel-toast-icon {
+        background: rgba(22,101,52,.12);
+        color: #166534;
+    }
+
+    .travel-toast.error .travel-toast-icon {
+        background: rgba(153,27,27,.12);
+        color: #991b1b;
+    }
+
+    .travel-toast-title {
+        font-weight: 950;
+        margin-bottom: 2px;
+    }
+
+    .travel-toast-message {
+        font-weight: 800;
+        line-height: 1.35;
+        font-size: .86rem;
+        white-space: pre-wrap;
+    }
+
+    .travel-toast-close {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font-size: 1.05rem;
+        font-weight: 950;
+        cursor: pointer;
+        line-height: 1;
+    }
+
+    .travel-dialog-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: rgba(15, 23, 42, 0.55);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+    }
+
+    .travel-dialog-backdrop.show {
+        display: flex;
+    }
+
+    .travel-dialog {
+        width: min(440px, 100%);
+        background: #ffffff;
+        border-radius: 22px;
+        box-shadow: 0 28px 90px rgba(15, 23, 42, 0.38);
+        border: 1px solid #dbeafe;
+        overflow: hidden;
+        animation: travelDialogIn .18s ease-out;
+    }
+
+    .travel-dialog-header {
+        padding: 18px 18px 10px;
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .travel-dialog-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 16px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.05rem;
+        flex: 0 0 auto;
+    }
+
+    .travel-dialog.danger .travel-dialog-icon {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .travel-dialog.warning .travel-dialog-icon {
+        background: #fff7ed;
+        color: #c2410c;
+    }
+
+    .travel-dialog-title {
+        margin: 0;
+        color: #0f172a;
+        font-weight: 950;
+        font-size: 1.08rem;
+    }
+
+    .travel-dialog-message {
+        margin-top: 5px;
+        color: #475569;
+        font-weight: 800;
+        line-height: 1.45;
+        white-space: pre-wrap;
+    }
+
+    .travel-dialog-actions {
+        padding: 12px 18px 18px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    @keyframes travelDialogIn {
+        from { opacity: 0; transform: translateY(10px) scale(.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes travelToastIn {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+
+
+    .travel-purpose-type-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(150px, 1fr));
+        gap: 10px;
+    }
+
+    .travel-purpose-type-card {
+        border: 1px solid #dbeafe;
+        background: #f8fafc;
+        border-radius: 14px;
+        padding: 12px;
+        font-weight: 900;
+        color: #334155;
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        min-height: 72px;
+        cursor: pointer;
+    }
+
+    .travel-purpose-type-card input {
+        width: 18px;
+        height: 18px;
+        min-height: 18px !important;
+        margin-top: 2px;
+    }
+
+    .travel-purpose-type-card:has(input:checked) {
+        border-color: #2563eb;
+        background: #eff6ff;
+        color: #1e3a8a;
+    }
+
+    .travel-dynamic-panel {
+        display: none;
+        margin-top: 12px;
+    }
+
+    .travel-dynamic-panel.show {
+        display: block;
+    }
+
+    .travel-participant-list {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(150px, 1fr));
+        gap: 8px;
+        max-height: 260px;
+        overflow: auto;
+        padding-right: 2px;
+    }
+
+    .travel-participant-chip {
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 9px 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 850;
+        color: #334155;
+    }
+
+    .travel-participant-chip input {
+        width: 18px;
+        height: 18px;
+        min-height: 18px !important;
+    }
+
+    .travel-client-only.is-hidden {
+        display: none !important;
+    }
+
+
+    .travel-participant-view-note {
+        display: none;
+        margin-top: 10px;
+        border: 1px solid #bfdbfe;
+        background: #eff6ff;
+        color: #1e3a8a;
+        border-radius: 12px;
+        padding: 9px 11px;
+        font-weight: 850;
+        font-size: .82rem;
+    }
+
+    .travel-participant-view-note.show {
+        display: block;
+    }
+
+    @media (max-width: 768px) {
+        .travel-check-grid, .travel-check-grid.compact, .travel-amount-grid, .travel-history-item, .travel-signature-grid, .travel-purpose-type-grid, .travel-participant-list {
+            grid-template-columns: 1fr;
+        }
+        .travel-route-flow {
+            grid-template-columns: 1fr;
+        }
+
+        .travel-swap-btn {
+            width: 100%;
+            border-radius: 12px;
+        }
+
+        .travel-actions { flex-direction: column; }
+        .travel-btn { width: 100%; }
+    }
+</style>
+
+<div class="travel-page">
+    <section class="travel-hero">
+        <h1>Travel Request / Order Form</h1>
+        <p>Create travel cash advance requests subject to liquidation within 3 days after arrival.</p>
+    </section>
+
+    <div id="travelStatus" class="travel-status" style="display:none;"></div>
+    <div id="travelLockBanner" class="travel-status travel-lock-banner">
+        This travel request is locked because it has already been submitted or approved.
+    </div>
+
+    <div id="travelConflictPanel" class="travel-conflict-panel" role="status" aria-live="polite"></div>
+
+    <div id="travel-toast-stack" class="travel-toast-stack" aria-live="polite" aria-atomic="true"></div>
+
+    <div id="travel-dialog-backdrop" class="travel-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="travel-dialog-title">
+        <div id="travel-dialog-box" class="travel-dialog">
+            <div class="travel-dialog-header">
+                <div id="travel-dialog-icon" class="travel-dialog-icon"><i class="fa-solid fa-circle-question"></i></div>
+                <div>
+                    <h3 id="travel-dialog-title" class="travel-dialog-title">Confirm Action</h3>
+                    <div id="travel-dialog-message" class="travel-dialog-message"></div>
+                </div>
+            </div>
+            <div class="travel-dialog-actions">
+                <button type="button" id="travel-dialog-cancel" class="travel-btn travel-btn-secondary">Cancel</button>
+                <button type="button" id="travel-dialog-confirm" class="travel-btn travel-btn-primary">Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <section class="travel-notification-panel" id="travel-notification-panel">
+        <div class="travel-notification-header">
+            <h2 class="travel-notification-title">
+                <i class="fa-solid fa-bell text-warning"></i>
+                Notifications
+                <span id="travel-notification-badge" class="travel-notification-badge" style="display:none;">0</span>
+            </h2>
+            <div class="travel-notification-actions">
+                <button type="button" class="travel-btn travel-btn-secondary" style="padding:8px 12px;" onclick="loadTravelNotifications(true)">
+                    <i class="fa-solid fa-rotate me-1"></i>Refresh
+                </button>
+                <button type="button" class="travel-btn travel-btn-secondary" style="padding:8px 12px;" onclick="markAllTravelNotificationsRead()">
+                    Mark All Read
+                </button>
+            </div>
+        </div>
+        <div id="travel-notification-list" class="travel-notification-list">
+            <div class="travel-status" style="display:block;margin-bottom:0;">Loading notifications...</div>
+        </div>
+    </section>
+
+
+    <section class="travel-card">
+        <h2 class="travel-section-title"><i class="fa-solid fa-clock-rotate-left"></i> My Travel Requests</h2>
+        <div id="travel-history-list" class="travel-history-list">
+            <div class="travel-status" style="display:block;">Loading travel requests...</div>
+        </div>
+    </section>
+
+    <section class="travel-card">
+        <p class="travel-form-title">SHIMADZU PHILIPPINES CORPORATION</p>
+        <p class="travel-form-title">TRAVEL REQUEST / ORDER FORM</p>
+        <p class="travel-form-subtitle">SPCAcctgtravelrequest 002-2016</p>
+    </section>
+
+    <section class="travel-card">
+        <h2 class="travel-section-title"><i class="fa-solid fa-user"></i> Request Information</h2>
+        <input type="hidden" id="travel-request-id">
+        <input type="hidden" id="travel-client-id">
+        <input type="hidden" id="travel-product-serial">
+
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label class="travel-label">Request Date</label>
+                <input type="date" id="travel-date" class="travel-input">
+            </div>
+            <div class="col-md-3">
+                <label class="travel-label">Department</label>
+                <input type="text" id="travel-department-display" class="travel-input" value="Medical Service" readonly>
+            </div>
+            <div class="col-md-3">
+                <label class="travel-label">Status</label>
+                <input type="text" id="travel-current-status" class="travel-input" value="Draft" readonly>
+            </div>
+            <div class="col-md-3">
+                <label class="travel-label">Request No.</label>
+                <input type="text" id="travel-request-no" class="travel-input" value="Auto-generated" readonly>
+            </div>
+        </div>
+    </section>
+
+    <section class="travel-card">
+        <h2 class="travel-section-title"><i class="fa-solid fa-list-check"></i> Travel Purpose Type</h2>
+        <div class="travel-purpose-type-grid">
+            <label class="travel-purpose-type-card">
+                <input type="radio" name="travel-purpose-type" value="Client Visit / Service" checked onchange="updateTravelPurposeTypeUI()">
+                <span>Client Visit / Service</span>
+            </label>
+            <label class="travel-purpose-type-card">
+                <input type="radio" name="travel-purpose-type" value="Training / Seminar - RHQ" onchange="updateTravelPurposeTypeUI()">
+                <span>Training / Seminar - RHQ</span>
+            </label>
+            <label class="travel-purpose-type-card">
+                <input type="radio" name="travel-purpose-type" value="Training / Seminar - GHQ" onchange="updateTravelPurposeTypeUI()">
+                <span>Training / Seminar - GHQ</span>
+            </label>
+            <label class="travel-purpose-type-card">
+                <input type="radio" name="travel-purpose-type" value="Meeting" onchange="updateTravelPurposeTypeUI()">
+                <span>Meeting</span>
+            </label>
+        </div>
+
+        <div id="travel-training-panel" class="travel-dynamic-panel">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="travel-label">Training / Seminar Title</label>
+                    <input type="text" id="travel-training-title" class="travel-input" placeholder="Example: LCMS Advanced Service Training">
+                </div>
+                <div class="col-md-6">
+                    <label class="travel-label">Conducted By / Provider</label>
+                    <input type="text" id="travel-training-provider" class="travel-input" placeholder="Example: Shimadzu RHQ / GHQ / External Provider">
+                </div>
+                <div class="col-md-6">
+                    <label class="travel-label">Venue</label>
+                    <input type="text" id="travel-training-venue" class="travel-input" placeholder="Example: Singapore RHQ / Kyoto GHQ / Hotel venue">
+                </div>
+                <div class="col-md-6">
+                    <label class="travel-label">Objective</label>
+                    <textarea id="travel-training-objective" class="travel-textarea" placeholder="Training objective, certification, skills to be learned"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div id="travel-meeting-panel" class="travel-dynamic-panel">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="travel-label">Meeting Subject</label>
+                    <input type="text" id="travel-meeting-subject" class="travel-input" placeholder="Example: Service planning meeting">
+                </div>
+                <div class="col-md-6">
+                    <label class="travel-label">Meeting With</label>
+                    <input type="text" id="travel-meeting-with" class="travel-input" placeholder="Example: RHQ team / client / internal team">
+                </div>
+                <div class="col-12">
+                    <label class="travel-label">Meeting Objective</label>
+                    <textarea id="travel-meeting-objective" class="travel-textarea" placeholder="Purpose and expected outcome of the meeting"></textarea>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="travel-card">
+        <h2 class="travel-section-title"><i class="fa-solid fa-users"></i> Travel Team / Participants</h2>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="travel-label">Original Requester / Lead</label>
+                <input type="text" id="travel-lead-requester" class="travel-input" value="{{ current_user.username }}" readonly>
+                <div id="travel-participant-view-note" class="travel-participant-view-note">
+                    <i class="fa-solid fa-circle-info"></i> You are viewing this travel request as a participant.
+                </div>
+            </div>
+            <div class="col-md-8">
+                <label class="travel-label">Participants / Engineers</label>
+                <div id="travel-participant-list" class="travel-participant-list">
+                    <div class="travel-status" style="display:block;margin-bottom:0;">Loading personnel records...</div>
+                </div>
+                <div class="travel-hint">Select other engineers when one Travel Request covers a team travel, training, seminar, or meeting.</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="travel-card">
+        <h2 class="travel-section-title"><i class="fa-solid fa-route"></i> <span id="travel-route-section-title">Route Plans / Client Visits</span></h2>
+
+        <div class="travel-status" style="display:block;">
+            <span id="travel-route-section-help">Add one or more route plans. Each route can contain one or more client visits.</span>
+        </div>
+
+        <div id="travel-route-list" class="travel-route-list"></div>
+
+        <div class="travel-actions" style="justify-content:flex-start;">
+            <button type="button" class="travel-btn travel-btn-secondary" onclick="addTravelRoute()">+ Add Route Plan</button>
+        </div>
+    </section>
+
+    <section class="travel-card">
+        <h2 class="travel-section-title"><i class="fa-solid fa-calendar-days"></i> Travel Period</h2>
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="travel-label">Departure Date</label>
+                <input type="date" id="travel-departure-date" class="travel-input" onchange="updateTravelDurationLabel(); scheduleTravelConflictCheck();">
+            </div>
+            <div class="col-md-4">
+                <label class="travel-label">Return / Arrival Date</label>
+                <input type="date" id="travel-return-date" class="travel-input" onchange="updateTravelDurationLabel(); scheduleTravelConflictCheck();">
+            </div>
+            <div class="col-md-4">
+                <label class="travel-label">Duration / Date of Travel</label>
+                <input type="text" id="travel-duration-label" class="travel-input" readonly placeholder="Auto-calculated">
+            </div>
+        </div>
+        <div class="travel-actions" style="justify-content:flex-start;">
+            <button type="button" class="travel-btn travel-btn-secondary" onclick="checkTravelRequestConflicts(false)">
+                <i class="fa-solid fa-magnifying-glass"></i> Check Conflicts
+            </button>
+        </div>
+    </section>
+
+    <section class="travel-card">
+        <h2 class="travel-section-title"><i class="fa-solid fa-money-bill-wave"></i> Requested Cash Advance Subject to Liquidation</h2>
+        <div class="travel-money-settings">
+            <label class="travel-label">Travel Money Settings</label>
+            <input type="hidden" id="travel-currency-code" value="PHP">
+            <div class="travel-money-options">
+                <button type="button" class="travel-money-option active" data-currency="PHP" onclick="setTravelCurrencyCode('PHP')">Domestic / PHP</button>
+                <button type="button" class="travel-money-option" data-currency="USD" onclick="setTravelCurrencyCode('USD')">International / USD</button>
+            </div>
+            <div class="travel-currency-note">Official totals and all cash advance rows use the selected currency.</div>
+        </div>
+        <div class="travel-amount-row"><div class="travel-amount-grid"><strong>Plane Fare / Air Tickets</strong><div><div class="travel-amount-hint travel-currency-display">PHP Amount</div><input type="number" class="travel-input travel-amount" id="amount-plane" min="0" step="0.01" value="0"></div></div></div>
+        <div class="travel-amount-row"><div class="travel-amount-grid"><strong>Bus Fare / Land Travel Fare</strong><div><div class="travel-amount-hint travel-currency-display">PHP Amount</div><input type="number" class="travel-input travel-amount" id="amount-bus" min="0" step="0.01" value="0"></div></div></div>
+        <div class="travel-amount-row"><div class="travel-amount-grid"><strong>Per Diem / Travel Allowance</strong><div><div class="travel-amount-hint travel-currency-display">PHP Amount</div><input type="number" class="travel-input travel-amount" id="amount-per-diem" min="0" step="0.01" value="0"></div></div></div>
+        <div class="travel-amount-row"><div class="travel-amount-grid"><strong>Hotel Accommodation</strong><div><div class="travel-amount-hint travel-currency-display">PHP Amount</div><input type="number" class="travel-input travel-amount" id="amount-hotel" min="0" step="0.01" value="0"></div></div></div>
+        <div class="travel-amount-row"><div class="travel-amount-grid"><strong>Misc Expenses</strong><div><div class="travel-amount-hint travel-currency-display">PHP Amount</div><input type="number" class="travel-input travel-amount" id="amount-misc" min="0" step="0.01" value="0"></div></div></div>
+        <div class="travel-total"><span>Total Requested</span><span><span id="travel-total-currency">PHP</span> <span id="travel-total-amount">0.00</span></span></div>
+    </section>
+
+    <section class="travel-card">
+        <h2 class="travel-section-title"><i class="fa-solid fa-circle-info"></i> Special Instructions</h2>
+        <div class="travel-check-grid">
+            <label class="travel-check"><input type="radio" name="travel-special-instruction" value="Check for encashment" onchange="updateDepositFieldsState()"> Check for encashment</label>
+            <label class="travel-check"><input type="radio" name="travel-special-instruction" value="Check for deposit" onchange="updateDepositFieldsState()"> Check for deposit</label>
+        </div>
+        <div class="row g-3" style="margin-top:4px;">
+            <div class="col-md-6">
+                <label class="travel-label">Account Number (BPI only)</label>
+                <input type="text" id="travel-account-number" class="travel-input travel-deposit-field" placeholder="Select check for deposit first" disabled>
+            </div>
+            <div class="col-md-6">
+                <label class="travel-label">Health Condition</label>
+                <input type="text" id="travel-health-condition" class="travel-input" placeholder="Optional">
+            </div>
+            <div class="col-12">
+                <label class="travel-label">Notes / Special Instructions</label>
+                <textarea id="travel-special-notes" class="travel-textarea travel-deposit-field" placeholder="Select check for deposit to add deposit instructions" disabled></textarea>
+            </div>
+        </div>
+
+        <div class="travel-status" style="display:block;margin-top:12px;">
+            The proper liquidation of this cash advance should be done within 3 days after arrival. The corresponding Travel Report should be submitted to the immediate supervisor and/or approving officer.
+        </div>
+    </section>
+
+    <section class="travel-card">
+        <h2 class="travel-section-title"><i class="fa-solid fa-signature"></i> Sign-off Placeholders</h2>
+        <div class="travel-signature-grid">
+            <div class="travel-signature-box"><div class="travel-signature-line">Checked By</div></div>
+            <div class="travel-signature-box"><div class="travel-signature-line">Noted By</div></div>
+            <div class="travel-signature-box" id="travel-approved-signature-box">
+                <img id="travel-approved-signature-img" class="travel-approval-signature-img" alt="Approver Signature">
+                <div id="travel-approved-signed-name" class="travel-approval-signed-name"></div>
+                <div id="travel-approved-signed-title" class="travel-approval-signed-title"></div>
+                <div id="travel-approved-signed-date" class="travel-approval-signed-date"></div>
+                <div class="travel-signature-line">Approved By</div>
+            </div>
+        </div>
+
+        <div class="travel-actions">
+            <button type="button" class="travel-btn travel-btn-secondary" onclick="resetTravelForm()">New / Clear</button>
+            <button type="button" class="travel-btn travel-btn-warning" id="travel-restore-blocks-btn" style="display:none;" onclick="restoreTravelBlocksForRequest(document.getElementById('travel-request-id')?.value || 0, document.getElementById('travel-request-no')?.value || '')">
+                <i class="fa-solid fa-rotate-left"></i> Restore Travel Blocks
+            </button>
+            <button type="button" class="travel-btn travel-btn-info" id="travel-open-timeline-btn" style="display:none;" onclick="openTimelineForTravelRequest(document.getElementById('travel-request-id')?.value || 0)">
+                <i class="fa-solid fa-calendar-days"></i> Open Timeline
+            </button>
+            <button type="button" class="travel-btn travel-btn-danger-outline" id="travel-delete-draft-btn" onclick="showTravelDeleteDraftConfirm()">Delete Draft</button>
+            <button type="button" class="travel-btn travel-btn-primary" id="travel-save-btn" onclick="saveTravelRequestDraft()">Save Draft</button>
+            <button type="button" class="travel-btn travel-btn-success" id="travel-submit-btn" onclick="submitTravelRequest()">Submit for Approval</button>
+        </div>
+
+        <div id="travel-delete-draft-panel" class="travel-delete-draft-panel">
+            <div class="travel-delete-draft-title">
+                <i class="fa-solid fa-triangle-exclamation"></i> Delete this draft?
+            </div>
+            <div>This will permanently remove this Travel Request draft. Submitted and approved requests cannot be deleted.</div>
+            <div class="travel-actions" style="justify-content:flex-start;margin-top:10px;">
+                <button type="button" class="travel-btn travel-btn-danger" id="travel-confirm-delete-draft-btn" onclick="deleteTravelRequestDraft()">Yes, Delete Draft</button>
+                <button type="button" class="travel-btn travel-btn-secondary" onclick="hideTravelDeleteDraftConfirm()">Cancel</button>
+            </div>
+        </div>
+    </section>
+</div>
+
+<script>
+let travelClientsData = [];
+let travelProductsData = [];
+let travelEngineersData = [];
+let travelRouteCounter = 0;
+let travelVisitCounter = 0;
+let latestTravelConflictCheck = null;
+let travelConflictCheckTimer = null;
+
+function travelCsrfToken(){ return document.querySelector('meta[name="csrf-token"]')?.content || ''; }
+function travelEscape(value){ return String(value || '').replace(/[&<>"']/g, match => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[match]); }
+
+function getTravelPurposeType(){
+    return document.querySelector('input[name="travel-purpose-type"]:checked')?.value || 'Client Visit / Service';
+}
+
+function isClientVisitTravel(){
+    return getTravelPurposeType() === 'Client Visit / Service';
+}
+
+function isTrainingTravel(){
+    return getTravelPurposeType().startsWith('Training / Seminar');
+}
+
+function isMeetingTravel(){
+    return getTravelPurposeType() === 'Meeting';
+}
+
+function collectTravelParticipants(){
+    const selected = Array.from(document.querySelectorAll('.travel-participant-check:checked')).map(chk => ({
+        engineer_id: chk.dataset.engineerId || chk.value || '',
+        username: chk.dataset.username || '',
+        name: chk.dataset.name || chk.closest('.travel-participant-chip')?.textContent?.trim() || ''
+    })).filter(item => item.engineer_id || item.username || item.name);
+
+    // Keep participants tied to Personnel/Engineer records only.
+    // Do not inject current_user.username here, because that creates duplicates like:
+    // "jonamar" + "Jonamar Paunil".
+    if(!selected.length){
+        const currentEngineer = findCurrentTravelEngineer();
+        if(currentEngineer){
+            selected.push({
+                engineer_id: travelPersonEngineerId(currentEngineer),
+                username: travelPersonUsername(currentEngineer),
+                name: travelPersonDisplayName(currentEngineer)
+            });
+        }
+    }
+    return selected;
+}
+
+function normalizeTravelIdentity(value){
+    return String(value || '').trim().toLowerCase();
+}
+
+function travelPersonDisplayName(person){
+    if(!person) return '';
+    if(typeof person === 'string') return person;
+    return person.display_name || person.name || person.full_name || person.engineer_name || person.username || person.user_name || '';
+}
+
+function travelPersonUsername(person){
+    if(!person) return '';
+    if(typeof person === 'string') return person;
+    return person.username || person.user_name || person.login || '';
+}
+
+function travelPersonEngineerId(person){
+    if(!person || typeof person === 'string') return '';
+    return person.engineer_id || person.id || person.personnel_id || '';
+}
+
+function isCurrentUserTravelPerson(person){
+    const currentUsername = normalizeTravelIdentity('{{ current_user.username }}');
+    const currentUserId = normalizeTravelIdentity('{{ current_user.id }}');
+    if(!person) return false;
+
+    const username = normalizeTravelIdentity(travelPersonUsername(person));
+    const userId = normalizeTravelIdentity(person.user_id || person.account_user_id || person.linked_user_id || '');
+
+    // S12B6M-FRONTEND:
+    // Travel Request identity must be strict. Never match by first name/display name.
+    // Example bug: username "john" matched John Erick before John Michael.
+    if(currentUserId && userId && userId === currentUserId) return true;
+    if(currentUsername && username && username === currentUsername) return true;
+
+    return false;
+}
+
+function findCurrentTravelEngineer(){
+    return (travelEngineersData || []).find(person => isCurrentUserTravelPerson(person)) || null;
+}
+
+function findTravelPersonByAnyName(value){
+    const key = normalizeTravelIdentity(value);
+    if(!key) return null;
+    return (travelEngineersData || []).find(person => {
+        const names = [
+            person.id,
+            person.engineer_id,
+            person.personnel_id,
+            person.username,
+            person.user_name,
+            person.name,
+            person.full_name,
+            person.engineer_name,
+            person.display_name
+        ].map(normalizeTravelIdentity).filter(Boolean);
+        return names.includes(key);
+    }) || null;
+}
+
+function setTravelParticipantViewNotice(leadDisplayName, selectedParticipants){
+    const note = document.getElementById('travel-participant-view-note');
+    if(!note) return;
+
+    const currentUsername = normalizeTravelIdentity('{{ current_user.username }}');
+    const leadPerson = findTravelPersonByAnyName(leadDisplayName);
+    const leadKeys = [
+        leadDisplayName,
+        travelPersonUsername(leadPerson),
+        travelPersonDisplayName(leadPerson)
+    ].map(normalizeTravelIdentity).filter(Boolean);
+
+    const currentEngineer = findCurrentTravelEngineer();
+    const currentKeys = [
+        currentUsername,
+        travelPersonEngineerId(currentEngineer),
+        travelPersonUsername(currentEngineer),
+        travelPersonDisplayName(currentEngineer)
+    ].map(normalizeTravelIdentity).filter(Boolean);
+
+    const isLead = leadKeys.some(key => currentKeys.includes(key));
+    const participantNames = (selectedParticipants || []).flatMap(item => [
+        item.engineer_id,
+        travelPersonEngineerId(item),
+        travelPersonUsername(item),
+        travelPersonDisplayName(item)
+    ]);
+    const isParticipant = participantNames.map(normalizeTravelIdentity).some(key => currentKeys.includes(key));
+
+    if(!isLead && isParticipant){
+        note.innerHTML = `<i class="fa-solid fa-circle-info"></i> You are viewing this travel request as a participant. Original requester / lead: <strong>${travelEscape(leadDisplayName || 'Not specified')}</strong>.`;
+        note.classList.add('show');
+    }else{
+        note.classList.remove('show');
+    }
+}
+
+function setTravelParticipantsFromRequest(item){
+    item = item || {};
+    const text = [item.purpose || '', item.notes || ''].join('\n');
+    const currentUsername = '{{ current_user.username }}';
+
+    const leadDisplay =
+        item.lead_requester_name ||
+        item.lead_name ||
+        item.requester_name ||
+        item.requester_display_name ||
+        item.created_by_name ||
+        extractTravelFieldFromText(text, 'Lead Requester') ||
+        currentUsername;
+
+    const leadInput = document.getElementById('travel-lead-requester');
+    if(leadInput) leadInput.value = leadDisplay || currentUsername;
+
+    let participants = [];
+    if(Array.isArray(item.participants)){
+        participants = item.participants;
+    }else if(Array.isArray(item.travel_participants)){
+        participants = item.travel_participants;
+    }else{
+        const parsed = item.participant_names || item.participants_text || extractTravelFieldFromText(text, 'Participants') || '';
+        participants = String(parsed || '').split(',').map(name => name.trim()).filter(Boolean);
+    }
+
+    if(!participants.length && leadDisplay){
+        participants = [leadDisplay];
+    }
+
+    const participantKeys = new Set();
+    participants.forEach(person => {
+        const displayName = travelPersonDisplayName(person);
+        const username = travelPersonUsername(person);
+        const matched = findTravelPersonByAnyName(username) || findTravelPersonByAnyName(displayName);
+        [
+            person.engineer_id,
+            travelPersonEngineerId(person),
+            username,
+            displayName,
+            travelPersonEngineerId(matched),
+            travelPersonUsername(matched),
+            travelPersonDisplayName(matched)
+        ].forEach(value => {
+            const key = normalizeTravelIdentity(value);
+            if(key) participantKeys.add(key);
+        });
+    });
+
+    document.querySelectorAll('.travel-participant-check').forEach(chk => {
+        const keys = [chk.value, chk.dataset.engineerId, chk.dataset.username, chk.dataset.name, chk.closest('.travel-participant-chip')?.textContent]
+            .map(normalizeTravelIdentity)
+            .filter(Boolean);
+        chk.checked = keys.some(key => participantKeys.has(key));
+    });
+
+    // Safety: keep the current user selected if this record was opened from their own list
+    // and the backend did not include participant details in older records.
+    const anyChecked = !!document.querySelector('.travel-participant-check:checked');
+    if(!anyChecked){
+        const currentEngineer = findCurrentTravelEngineer();
+        const currentKeys = [
+            currentUsername,
+            travelPersonEngineerId(currentEngineer),
+            travelPersonUsername(currentEngineer),
+            travelPersonDisplayName(currentEngineer)
+        ].map(normalizeTravelIdentity).filter(Boolean);
+        document.querySelectorAll('.travel-participant-check').forEach(chk => {
+            const keys = [chk.value, chk.dataset.engineerId, chk.dataset.username, chk.dataset.name]
+                .map(normalizeTravelIdentity)
+                .filter(Boolean);
+            chk.checked = keys.some(key => currentKeys.includes(key));
+        });
+    }
+
+    setTravelParticipantViewNotice(leadDisplay || currentUsername, collectTravelParticipants());
+}
+
+function updateTravelPurposeTypeUI(){
+    const type = getTravelPurposeType();
+    const trainingPanel = document.getElementById('travel-training-panel');
+    const meetingPanel = document.getElementById('travel-meeting-panel');
+    const title = document.getElementById('travel-route-section-title');
+    const help = document.getElementById('travel-route-section-help');
+
+    if(trainingPanel) trainingPanel.classList.toggle('show', isTrainingTravel());
+    if(meetingPanel) meetingPanel.classList.toggle('show', isMeetingTravel());
+
+    document.querySelectorAll('.travel-client-only').forEach(el => {
+        el.classList.toggle('is-hidden', !isClientVisitTravel());
+    });
+
+    if(title){
+        title.textContent = isClientVisitTravel() ? 'Route Plans / Client Visits' : 'Route Plans / Travel Details';
+    }
+    if(help){
+        if(isClientVisitTravel()) help.textContent = 'Add one or more route plans. Each route can contain one or more client visits.';
+        else if(isTrainingTravel()) help.textContent = 'Add the route plan for the training/seminar venue. Client visit and equipment fields are not required.';
+        else help.textContent = 'Add the route plan for the meeting venue. Client visit and equipment fields are not required.';
+    }
+
+    document.querySelectorAll('.travel-route-card').forEach(route => {
+        const visitList = route.querySelector('.travel-visit-list');
+        if(visitList) visitList.style.display = isClientVisitTravel() ? '' : 'none';
+        if(isClientVisitTravel() && visitList && !visitList.querySelector('.travel-visit-card')){
+            addTravelVisit(route);
+        }
+        updateRouteSummaryAuto(route, true);
+    });
+}
+
+function renderTravelParticipants(){
+    const box = document.getElementById('travel-participant-list');
+    if(!box) return;
+
+    const people = Array.isArray(travelEngineersData) ? travelEngineersData : [];
+    const seen = new Set();
+
+    const normalized = people.map(person => {
+        const engineerId = String(travelPersonEngineerId(person) || '').trim();
+        const username = String(travelPersonUsername(person) || '').trim();
+        const name = String(travelPersonDisplayName(person) || '').trim();
+        return { engineer_id: engineerId, username, name };
+    }).filter(person => {
+        // Personnel/Engineer database only. Never add standalone usernames here.
+        const key = person.engineer_id || person.name.toLowerCase();
+        if(!person.name || !key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    }).sort((a,b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+    if(!normalized.length){
+        box.innerHTML = '<div class="travel-status error" style="display:block;margin-bottom:0;">No engineer/personnel records found.</div>';
+        return;
+    }
+
+    const currentEngineer = normalized.find(person => isCurrentUserTravelPerson(person));
+    const currentEngineerId = normalizeTravelIdentity(currentEngineer?.engineer_id);
+    const currentEngineerName = normalizeTravelIdentity(currentEngineer?.name);
+
+    box.innerHTML = normalized.map(person => {
+        const checked = (
+            (currentEngineerId && normalizeTravelIdentity(person.engineer_id) === currentEngineerId) ||
+            (currentEngineerName && normalizeTravelIdentity(person.name) === currentEngineerName)
+        ) ? 'checked' : '';
+
+        return `
+            <label class="travel-participant-chip">
+                <input type="checkbox"
+                       class="travel-participant-check"
+                       value="${travelEscape(person.engineer_id)}"
+                       data-engineer-id="${travelEscape(person.engineer_id)}"
+                       data-username="${travelEscape(person.username)}"
+                       data-name="${travelEscape(person.name)}"
+                       ${checked}>
+                <span>${travelEscape(person.name)}</span>
+            </label>
+        `;
+    }).join('');
+
+    const leadInput = document.getElementById('travel-lead-requester');
+    if(leadInput && (!leadInput.value || normalizeTravelIdentity(leadInput.value) === normalizeTravelIdentity('{{ current_user.username }}'))){
+        leadInput.value = currentEngineer?.name || leadInput.value || '{{ current_user.username }}';
+    }
+}
+function setTravelPurposeType(type){
+    const target = Array.from(document.querySelectorAll('input[name="travel-purpose-type"]')).find(input => input.value === type);
+    if(target){
+        target.checked = true;
+    }
+    updateTravelPurposeTypeUI();
+}
+
+function travelToast(message, type='', title=''){
+    const stack = document.getElementById('travel-toast-stack');
+    if(!stack || !message) return;
+
+    const toast = document.createElement('div');
+    toast.className = 'travel-toast ' + (type || '');
+    const icon = type === 'success' ? 'check' : (type === 'error' ? 'triangle-exclamation' : 'circle-info');
+    const fallbackTitle = type === 'success' ? 'Success' : (type === 'error' ? 'Action Needed' : 'Notice');
+
+    toast.innerHTML = `
+        <div class="travel-toast-icon"><i class="fa-solid fa-${icon}"></i></div>
+        <div>
+            <div class="travel-toast-title">${travelEscape(title || fallbackTitle)}</div>
+            <div class="travel-toast-message">${travelEscape(message)}</div>
+        </div>
+        <button type="button" class="travel-toast-close" aria-label="Close notice">×</button>
+    `;
+
+    toast.querySelector('.travel-toast-close')?.addEventListener('click', () => toast.remove());
+    stack.appendChild(toast);
+
+    window.setTimeout(() => {
+        if(toast && toast.parentNode){
+            toast.remove();
+        }
+    }, type === 'error' ? 6500 : 4200);
+}
+
+function travelConfirmDialog(options={}){
+    return new Promise(resolve => {
+        const backdrop = document.getElementById('travel-dialog-backdrop');
+        const dialog = document.getElementById('travel-dialog-box');
+        const icon = document.getElementById('travel-dialog-icon');
+        const title = document.getElementById('travel-dialog-title');
+        const message = document.getElementById('travel-dialog-message');
+        const cancelBtn = document.getElementById('travel-dialog-cancel');
+        const confirmBtn = document.getElementById('travel-dialog-confirm');
+
+        if(!backdrop || !dialog || !title || !message || !cancelBtn || !confirmBtn){
+            resolve(false);
+            return;
+        }
+
+        const tone = options.tone || '';
+        dialog.className = 'travel-dialog ' + tone;
+        title.textContent = options.title || 'Confirm Action';
+        message.textContent = options.message || 'Continue?';
+        cancelBtn.textContent = options.cancelText || 'Cancel';
+        confirmBtn.textContent = options.confirmText || 'Continue';
+        confirmBtn.className = 'travel-btn ' + (options.confirmClass || (tone === 'danger' ? 'travel-btn-danger' : 'travel-btn-primary'));
+
+        if(icon){
+            const iconName = options.icon || (tone === 'danger' ? 'trash' : (tone === 'warning' ? 'triangle-exclamation' : 'circle-question'));
+            icon.innerHTML = `<i class="fa-solid fa-${iconName}"></i>`;
+        }
+
+        let resolved = false;
+        const cleanup = (value) => {
+            if(resolved) return;
+            resolved = true;
+            backdrop.classList.remove('show');
+            confirmBtn.onclick = null;
+            cancelBtn.onclick = null;
+            backdrop.onclick = null;
+            document.removeEventListener('keydown', keyHandler);
+            resolve(value);
+        };
+
+        const keyHandler = (event) => {
+            if(event.key === 'Escape') cleanup(false);
+        };
+
+        confirmBtn.onclick = () => cleanup(true);
+        cancelBtn.onclick = () => cleanup(false);
+        backdrop.onclick = (event) => {
+            if(event.target === backdrop) cleanup(false);
+        };
+        document.addEventListener('keydown', keyHandler);
+
+        backdrop.classList.add('show');
+        window.setTimeout(() => confirmBtn.focus(), 60);
+    });
+}
+
+async function parseTravelJson(response, fallback){
+    const raw = await response.text();
+    let data = {};
+    if(raw){
+        try { data = JSON.parse(raw); }
+        catch(err){ data = { success:false, error: raw.slice(0,500) || fallback }; }
+    }
+    if(!response.ok || data.success === false){
+        const error = new Error(data.error || data.message || fallback || 'Request failed.');
+        error.payload = data;
+        error.response_status = response.status;
+        throw error;
+    }
+    return data;
+}
+
+function isApprovedTravelRequestStatus(value){
+    return normalizeTravelStatus(value) === 'approved';
+}
+
+function canShowRestoreTravelBlocks(item){
+    return !!(item && item.id && isApprovedTravelRequestStatus(item.status));
+}
+
+function canShowOpenTimelineButton(item){
+    return !!(item && item.id && isApprovedTravelRequestStatus(item.status));
+}
+
+function buildTimelineUrlForTravelRequest(itemOrId){
+    const item = (typeof itemOrId === 'object' && itemOrId) ? itemOrId : {};
+    const requestId = Number(item.id || itemOrId || document.getElementById('travel-request-id')?.value || 0);
+    if(!requestId) return '/timeline';
+
+    const dateValue = item.departure_date || document.getElementById('travel-departure-date')?.value || '';
+    const params = new URLSearchParams({
+        travel_request_id: String(requestId),
+        source: 'travel_request',
+        highlight: 'travel'
+    });
+    if(dateValue) params.set('date', dateValue);
+
+    return `/timeline?${params.toString()}`;
+}
+
+function openTimelineForTravelRequest(itemOrId){
+    const url = buildTimelineUrlForTravelRequest(itemOrId);
+    window.location.href = url;
+}
+
+function formatTravelRestoreDates(dates){
+    if(!Array.isArray(dates) || !dates.length) return '';
+    return dates.map(formatTravelConflictDate).join(', ');
+}
+
+async function restoreTravelBlocksForRequest(requestId, requestNo=''){
+    requestId = Number(requestId || 0);
+    if(!requestId){
+        showTravelStatus('No Travel Request selected for restore.', 'error');
+        return;
+    }
+
+    const confirmed = await travelConfirmDialog({
+        title: 'Restore Travel Blocks?',
+        message: 'Restore missing travel blocks for this approved Travel Request?\n\nExisting active travel blocks will not be duplicated. Converted/deleted days can be recreated.',
+        confirmText: 'Restore Blocks',
+        cancelText: 'Cancel',
+        tone: 'warning',
+        icon: 'rotate-left',
+        confirmClass: 'travel-btn-warning'
+    });
+
+    if(!confirmed) return;
+
+    try{
+        const res = await fetch(`/restore_travel_blocks/${encodeURIComponent(requestId)}`, {
+            method:'POST',
+            credentials:'same-origin',
+            cache:'no-store',
+            headers:{
+                'Content-Type':'application/json',
+                'Accept':'application/json',
+                'X-CSRFToken': travelCsrfToken()
+            },
+            body: JSON.stringify({})
+        });
+        const data = await parseTravelJson(res, 'Unable to restore travel blocks.');
+
+        const restoredDates = formatTravelRestoreDates(data.restored_dates || []);
+        const skippedDates = formatTravelRestoreDates(data.skipped_dates || []);
+        const overlapDates = formatTravelRestoreDates(data.converted_overlap_dates || []);
+
+        const details = [
+            data.message || `Restored ${Number(data.created_count || 0)} travel block day(s).`,
+            restoredDates ? `Restored: ${restoredDates}` : '',
+            skippedDates ? `Skipped existing: ${skippedDates}` : '',
+            overlapDates ? `Note: restored beside converted schedule on ${overlapDates}` : ''
+        ].filter(Boolean).join('\n');
+
+        await loadMyTravelRequests();
+        await loadTravelNotifications(true);
+
+        const currentId = Number(document.getElementById('travel-request-id')?.value || 0);
+        if(currentId === requestId){
+            await loadTravelRequestDetail(requestId);
+        }
+
+        showTravelStatus(details, 'success');
+    }catch(err){
+        showTravelStatus(err.message || 'Unable to restore travel blocks.', 'error');
+    }
+}
+
+function isTravelRequesterSignatureRequiredError(error){
+    const payload = error?.payload || {};
+    return !!(
+        payload.requires_signature ||
+        payload.signature_required ||
+        payload.settings_target === 'my_signature'
+    );
+}
+
+async function showTravelRequesterSignatureRequiredPrompt(error){
+    const payload = error?.payload || {};
+    const message = payload.message || payload.error || 'Signature required. Please upload your signature first before submitting this travel request.';
+    showTravelStatus(message, 'error');
+
+    const openSettings = await travelConfirmDialog({
+        title: 'Signature Required',
+        message: message + '\n\nOpen Settings → My Signature now?',
+        confirmText: 'Open Settings',
+        cancelText: 'Not Now',
+        tone: 'warning',
+        icon: 'signature'
+    });
+
+    if(openSettings){
+        window.location.href = '/settings#my_signature';
+    }
+}
+
+
+function normalizeTravelStatus(value){
+    return String(value || '').trim().toLowerCase();
+}
+
+function isTravelEditableStatus(statusValue){
+    const status = normalizeTravelStatus(statusValue);
+    return !status || status === 'draft' || status === 'rejected' || status === 'returned';
+}
+
+function isCurrentTravelEditable(){
+    return isTravelEditableStatus(document.getElementById('travel-current-status')?.value || 'Draft');
+}
+
+function setTravelRequestLockedState(statusValue){
+    const editable = isTravelEditableStatus(statusValue);
+    const page = document.querySelector('.travel-page');
+    const lockBanner = document.getElementById('travelLockBanner');
+    const saveBtn = document.getElementById('travel-save-btn');
+    const submitBtn = document.getElementById('travel-submit-btn');
+    const deleteBtn = document.getElementById('travel-delete-draft-btn');
+    const restoreBtn = document.getElementById('travel-restore-blocks-btn');
+    const timelineBtn = document.getElementById('travel-open-timeline-btn');
+
+    if(page){
+        page.classList.toggle('travel-locked', !editable);
+    }
+
+    if(lockBanner){
+        const statusText = String(statusValue || '').trim() || 'this status';
+        lockBanner.textContent = editable
+            ? ''
+            : `This travel request is locked because its status is ${statusText}.`;
+        lockBanner.classList.toggle('show', !editable);
+    }
+
+    document.querySelectorAll('.travel-route-card input, .travel-route-card select, .travel-route-card textarea, .travel-route-card button').forEach(el => {
+        if(el.classList.contains('route-summary') || el.classList.contains('visit-notes') || el.classList.contains('route-from-location') || el.classList.contains('route-to-location') || el.classList.contains('route-travel-type') || el.classList.contains('visit-client-name') || el.classList.contains('visit-product-toggle') || el.classList.contains('visit-product-search') || el.classList.contains('visit-product-check') || el.classList.contains('visit-product-all') || el.classList.contains('visit-purpose-check') || el.classList.contains('travel-btn') || el.classList.contains('travel-icon-btn')){
+            el.disabled = !editable;
+        }
+    });
+
+    document.querySelectorAll(
+        '#travel-date, #travel-departure-date, #travel-return-date, #travel-currency-code, #amount-plane, #amount-bus, #amount-per-diem, #amount-hotel, #amount-misc, #travel-account-number, #travel-health-condition, #travel-special-notes, #travel-training-title, #travel-training-provider, #travel-training-venue, #travel-training-objective, #travel-meeting-subject, #travel-meeting-with, #travel-meeting-objective, input[name="travel-special-instruction"], input[name="travel-purpose-type"], .travel-participant-check'
+    ).forEach(el => {
+        el.disabled = !editable;
+    });
+
+    document.querySelectorAll('button[onclick^="addTravelRoute"], button[onclick*="addTravelVisit"], button[onclick*="removeTravel"], button[onclick*="copyTravelRoute"], button[onclick*="swapRouteFromTo"]').forEach(el => {
+        el.disabled = !editable;
+    });
+
+    if(saveBtn){
+        saveBtn.style.display = editable ? '' : 'none';
+        saveBtn.disabled = !editable;
+    }
+    if(submitBtn){
+        submitBtn.style.display = editable ? '' : 'none';
+        submitBtn.disabled = !editable;
+    }
+
+    if(deleteBtn){
+        const requestId = document.getElementById('travel-request-id')?.value || '';
+        const showDelete = editable && !!requestId;
+        deleteBtn.style.display = showDelete ? '' : 'none';
+        deleteBtn.disabled = !showDelete;
+    }
+
+    if(restoreBtn){
+        const requestId = document.getElementById('travel-request-id')?.value || '';
+        const showRestore = !!requestId && isApprovedTravelRequestStatus(statusValue);
+        restoreBtn.style.display = showRestore ? '' : 'none';
+        restoreBtn.disabled = !showRestore;
+    }
+
+    if(timelineBtn){
+        const requestId = document.getElementById('travel-request-id')?.value || '';
+        const showTimeline = !!requestId && isApprovedTravelRequestStatus(statusValue);
+        timelineBtn.style.display = showTimeline ? '' : 'none';
+        timelineBtn.disabled = !showTimeline;
+    }
+
+    if(!editable){
+        hideTravelDeleteDraftConfirm();
+    }
+
+    updateDepositFieldsState();
+}
+
+function guardTravelEditableAction(actionLabel='edit this travel request'){
+    if(isCurrentTravelEditable()){
+        return true;
+    }
+    const status = document.getElementById('travel-current-status')?.value || 'locked';
+    showTravelStatus(`Cannot ${actionLabel}. This travel request is already ${status}.`, 'error');
+    return false;
+}
+
+
+function formatTravelNotificationTime(value){
+    if(!value) return '';
+    const date = new Date(value);
+    if(Number.isNaN(date.getTime())) return '';
+    return date.toLocaleString(undefined, { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+}
+
+function updateTravelNotificationBadge(unreadCount){
+    const badge = document.getElementById('travel-notification-badge');
+    if(!badge) return;
+    const count = Number(unreadCount || 0);
+    badge.textContent = String(count);
+    badge.style.display = count > 0 ? 'inline-flex' : 'none';
+}
+
+function renderTravelNotifications(items, unreadCount){
+    const list = document.getElementById('travel-notification-list');
+    if(!list) return;
+
+    const visibleItems = (Array.isArray(items) ? items : []).filter(item => !item.is_read);
+    updateTravelNotificationBadge(visibleItems.length);
+
+    if(!visibleItems.length){
+        list.innerHTML = '<div class="travel-status" style="display:block;margin-bottom:0;">No unread notifications.</div>';
+        return;
+    }
+
+    list.innerHTML = visibleItems.map(item => {
+        const unreadClass = 'unread';
+        return `
+            <div class="travel-notification-item ${unreadClass}" data-notification-id="${Number(item.id) || 0}" data-target-url="${travelEscape(item.target_url || '')}" onclick="openTravelNotification(this)">
+                <div>
+                    <div class="travel-notification-item-title">${travelEscape(item.title || 'Notification')}</div>
+                    <div class="travel-notification-item-message">${travelEscape(item.message || '')}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <div class="travel-notification-item-time">${travelEscape(item.created_at_label || formatTravelNotificationTime(item.created_at))}</div>
+                    <button type="button" class="travel-notification-close" title="Close notification" aria-label="Close notification" onclick="dismissTravelNotification(event, ${Number(item.id) || 0})">×</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function loadTravelNotifications(silent=false){
+    const list = document.getElementById('travel-notification-list');
+    if(list && !silent){
+        list.innerHTML = '<div class="travel-status" style="display:block;margin-bottom:0;">Loading notifications...</div>';
+    }
+
+    try{
+        const res = await fetch(`/get_my_notifications?limit=10&_=${Date.now()}`, {
+            credentials:'same-origin',
+            cache:'no-store',
+            headers:{ 'Accept':'application/json' }
+        });
+        const data = await parseTravelJson(res, 'Unable to load notifications.');
+        renderTravelNotifications(data.items || [], data.unread_count || 0);
+    }catch(err){
+        if(list){
+            list.innerHTML = `<div class="travel-status error" style="display:block;margin-bottom:0;">${travelEscape(err.message || 'Unable to load notifications.')}</div>`;
+        }
+    }
+}
+
+async function markTravelNotificationRead(notificationId){
+    if(!notificationId) return;
+    try{
+        await fetch('/mark_notification_read', {
+            method:'POST',
+            credentials:'same-origin',
+            cache:'no-store',
+            headers:{ 'Content-Type':'application/json', 'Accept':'application/json', 'X-CSRFToken': travelCsrfToken() },
+            body: JSON.stringify({ notification_id: notificationId })
+        });
+    }catch(err){
+        console.warn('[TravelRequest] Mark notification read failed', err);
+    }
+}
+
+async function dismissTravelNotification(event, notificationId){
+    if(event && event.preventDefault) event.preventDefault();
+    if(event && event.stopPropagation) event.stopPropagation();
+
+    const item = event?.target?.closest?.('.travel-notification-item');
+    if(item){
+        item.style.opacity = '0.45';
+        item.style.pointerEvents = 'none';
+    }
+
+    await markTravelNotificationRead(notificationId);
+    await loadTravelNotifications(true);
+}
+
+async function markAllTravelNotificationsRead(){
+    try{
+        const res = await fetch('/mark_all_notifications_read', {
+            method:'POST',
+            credentials:'same-origin',
+            cache:'no-store',
+            headers:{ 'Content-Type':'application/json', 'Accept':'application/json', 'X-CSRFToken': travelCsrfToken() },
+            body: JSON.stringify({})
+        });
+        await parseTravelJson(res, 'Unable to mark notifications as read.');
+        await loadTravelNotifications(true);
+    }catch(err){
+        showTravelStatus(err.message || 'Unable to mark notifications as read.', 'error');
+    }
+}
+
+async function openTravelNotification(element){
+    const notificationId = Number(element?.dataset?.notificationId || 0);
+    const targetUrl = element?.dataset?.targetUrl || '';
+    await markTravelNotificationRead(notificationId);
+    await loadTravelNotifications(true);
+
+    if(!targetUrl){
+        return;
+    }
+
+    try{
+        const target = new URL(targetUrl, window.location.origin);
+        const requestId = target.searchParams.get('travel_request_id') || target.searchParams.get('id');
+        if(target.pathname === window.location.pathname && requestId){
+            await loadTravelRequestDetail(Number(requestId));
+            return;
+        }
+    }catch(err){}
+
+    window.location.href = targetUrl;
+}
+
+async function openTravelRequestFromUrl(){
+    const params = new URLSearchParams(window.location.search);
+    const requestId = params.get('open_request_id') || params.get('travel_request_id') || params.get('id');
+    if(requestId){
+        await loadTravelRequestDetail(Number(requestId));
+
+        if(params.get('source') === 'timeline' || params.get('highlight') === 'travel'){
+            const page = document.querySelector('.travel-page');
+            if(page){
+                page.classList.add('travel-url-highlight');
+                window.setTimeout(() => page.classList.remove('travel-url-highlight'), 1900);
+            }
+            showTravelStatus('Opened Travel Request from Timeline.', 'success');
+        }
+
+        // After opening from notification/link, clean the URL so a normal browser/PWA
+        // refresh returns to a blank new Travel Request form instead of auto-reloading
+        // the same draft/request again.
+        try{
+            const cleanUrl = window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+        }catch(err){}
+    }
+}
+
+function prepareBlankTravelRequestOnPageLoad(){
+    // Refresh/opening the Travel Request page should always start with a blank form.
+    // Saved drafts remain visible in My Travel Requests and can be reopened manually.
+    resetTravelForm();
+}
+
+function showTravelStatus(message, type=''){
+    const box = document.getElementById('travelStatus');
+    if(!box) return;
+    box.textContent = message || '';
+    box.className = 'travel-status ' + (type || '');
+    box.style.display = message ? 'block' : 'none';
+    if(message){
+        box.scrollIntoView({behavior:'smooth', block:'nearest'});
+        travelToast(message, type);
+    }
+}
+
+function scrollToTravelConflictPanel(){
+    const panel = document.getElementById('travelConflictPanel');
+    if(!panel || !panel.classList.contains('show')) return;
+
+    window.setTimeout(() => {
+        try{
+            panel.scrollIntoView({ behavior:'smooth', block:'center', inline:'nearest' });
+        }catch(err){
+            try{ panel.scrollIntoView(true); }catch(innerErr){}
+        }
+    }, 80);
+}
+
+function formatTravelConflictDate(value){
+    if(!value) return '';
+    try{
+        const date = new Date(String(value) + 'T00:00:00');
+        if(Number.isNaN(date.getTime())) return String(value || '');
+        return date.toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'});
+    }catch(err){
+        return String(value || '');
+    }
+}
+
+function formatTravelConflictTime(value){
+    if(!value) return '';
+    const raw = String(value || '').trim();
+    const parts = raw.split(':');
+    if(parts.length >= 2){
+        const date = new Date();
+        date.setHours(Number(parts[0]) || 0, Number(parts[1]) || 0, 0, 0);
+        return date.toLocaleTimeString(undefined, {hour:'numeric', minute:'2-digit'});
+    }
+    return raw;
+}
+
+function buildTravelConflictHtml(conflicts, options={}){
+    conflicts = conflicts || {};
+    const travelConflicts = Array.isArray(conflicts.travel_request_conflicts) ? conflicts.travel_request_conflicts : [];
+    const scheduleConflicts = Array.isArray(conflicts.schedule_conflicts) ? conflicts.schedule_conflicts : [];
+    const message = conflicts.message || options.message || 'Selected travel period has conflict.';
+    const isBlocking = !!(options.blocking || conflicts.blocking || conflicts.has_conflicts);
+    const rows = [];
+
+    travelConflicts.forEach(item => {
+        rows.push(`
+            <div class="travel-conflict-item">
+                <strong>Travel Request:</strong> ${travelEscape(item.request_no || ('TR #' + item.id))}
+                ${item.status ? ` • ${travelEscape(item.status)}` : ''}
+                <br>${travelEscape(formatTravelConflictDate(item.departure_date))} to ${travelEscape(formatTravelConflictDate(item.return_date))}
+                ${item.destination ? `<br>${travelEscape(item.destination)}` : ''}
+            </div>
+        `);
+    });
+
+    scheduleConflicts.forEach(item => {
+        const time = [formatTravelConflictTime(item.start_time), formatTravelConflictTime(item.end_time)].filter(Boolean).join(' - ');
+        rows.push(`
+            <div class="travel-conflict-item">
+                <strong>Calendar Schedule:</strong> ${travelEscape(item.title || ('Schedule #' + item.id))}
+                ${item.status ? ` • ${travelEscape(item.status)}` : ''}
+                <br>${travelEscape(formatTravelConflictDate(item.date))}${time ? ` • ${travelEscape(time)}` : ''}
+                ${item.client_name ? `<br>${travelEscape(item.client_name)}` : ''}
+                ${item.product ? `<br>${travelEscape(item.product)}` : ''}
+            </div>
+        `);
+    });
+
+    return `
+        <div class="travel-conflict-title">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            ${isBlocking ? 'Schedule Conflict Detected' : 'Travel Period Warning'}
+        </div>
+        <div>${travelEscape(message)}</div>
+        ${rows.length ? `<div class="travel-conflict-list">${rows.join('')}</div>` : ''}
+    `;
+}
+
+function renderTravelConflictPanel(conflicts, options={}){
+    const panel = document.getElementById('travelConflictPanel');
+    if(!panel) return;
+
+    const hasConflicts = !!(conflicts && (conflicts.has_conflicts || (conflicts.travel_request_conflicts || []).length || (conflicts.schedule_conflicts || []).length));
+    panel.classList.remove('show', 'blocking');
+
+    if(!hasConflicts){
+        panel.innerHTML = '';
+        latestTravelConflictCheck = null;
+        return;
+    }
+
+    latestTravelConflictCheck = conflicts;
+    panel.innerHTML = buildTravelConflictHtml(conflicts, options);
+    panel.classList.add('show');
+    if(options.blocking || conflicts.blocking){
+        panel.classList.add('blocking');
+    }
+
+    if(options.scroll !== false){
+        scrollToTravelConflictPanel();
+    }
+}
+
+function clearTravelConflictPanel(){
+    renderTravelConflictPanel(null);
+}
+
+function handleTravelConflictPayload(data, options={}){
+    if(!data) return false;
+    const conflicts = data.conflicts || data;
+    const hasConflicts = !!(data.has_conflicts || data.blocking_conflicts || conflicts.has_conflicts);
+    if(hasConflicts){
+        renderTravelConflictPanel(conflicts, {
+            blocking: !!(options.blocking || data.blocking_conflicts || conflicts.blocking),
+            message: data.message || data.error || conflicts.message || '',
+            scroll: options.scroll !== false
+        });
+        return true;
+    }
+    clearTravelConflictPanel();
+    return false;
+}
+
+async function checkTravelRequestConflicts(silent=false){
+    const departure = document.getElementById('travel-departure-date')?.value || '';
+    const returnDate = document.getElementById('travel-return-date')?.value || '';
+    const requestId = document.getElementById('travel-request-id')?.value || '';
+
+    if(!departure && !returnDate){
+        clearTravelConflictPanel();
+        return null;
+    }
+
+    try{
+        const res = await fetch('/check_travel_request_conflicts', {
+            method:'POST',
+            credentials:'same-origin',
+            cache:'no-store',
+            headers:{
+                'Content-Type':'application/json',
+                'Accept':'application/json',
+                'X-CSRFToken': travelCsrfToken()
+            },
+            body: JSON.stringify({
+                id: requestId,
+                departure_date: departure,
+                return_date: returnDate || departure
+            })
+        });
+        const data = await parseTravelJson(res, 'Unable to check travel conflicts.');
+        handleTravelConflictPayload(data, {blocking:false, scroll: !silent});
+        if(data.ok && !silent){
+            showTravelStatus('No travel period conflicts found.', 'success');
+        }
+        return data;
+    }catch(err){
+        if(!silent){
+            showTravelStatus(err.message || 'Unable to check travel conflicts.', 'error');
+        }
+        return null;
+    }
+}
+
+function scheduleTravelConflictCheck(){
+    window.clearTimeout(travelConflictCheckTimer);
+    travelConflictCheckTimer = window.setTimeout(() => {
+        checkTravelRequestConflicts(true);
+    }, 450);
+}
+
+function moneyValue(id){ return Number(document.getElementById(id)?.value || 0) || 0; }
+function getTravelCurrencyCode(){ return (document.getElementById('travel-currency-code')?.value || 'PHP').toUpperCase() === 'USD' ? 'USD' : 'PHP'; }
+function formatTravelMoney(value){ return Number(value || 0).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}); }
+function travelAmountPrefixes(){ return ['amount-plane','amount-bus','amount-per-diem','amount-hotel','amount-misc']; }
+
+function setTravelCurrencyCode(code){
+    const currency = String(code || 'PHP').toUpperCase() === 'USD' ? 'USD' : 'PHP';
+    const input = document.getElementById('travel-currency-code');
+    if(input) input.value = currency;
+    document.querySelectorAll('.travel-money-option').forEach(btn => btn.classList.toggle('active', btn.dataset.currency === currency));
+    document.querySelectorAll('.travel-currency-display').forEach(el => { el.textContent = `${currency} Amount`; });
+    calculateTravelTotal();
+}
+
+function setTravelLineCurrencyValues(prefix, line){
+    const amount = Number(line?.amount || line?.value || 0) || 0;
+    const amountEl = document.getElementById(prefix);
+    if(amountEl) amountEl.value = amount > 0 ? amount.toFixed(2) : '0';
+}
+
+function clearTravelAmounts(){
+    travelAmountPrefixes().forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.value = '0';
+    });
+    calculateTravelTotal();
+}
+
+function normalizeTravelLineType(value){
+    return String(value || '').trim().toLowerCase();
+}
+
+function setTravelAmountFromLine(line){
+    if(!line) return;
+    const lineType = normalizeTravelLineType(line.line_type || line.type || line.category || line.description);
+    let targetId = '';
+    if(lineType.includes('plane') || lineType.includes('air')) targetId = 'amount-plane';
+    else if(lineType.includes('bus') || lineType.includes('land') || lineType.includes('fare')) targetId = 'amount-bus';
+    else if(lineType.includes('per diem') || lineType.includes('allowance')) targetId = 'amount-per-diem';
+    else if(lineType.includes('hotel') || lineType.includes('accommodation')) targetId = 'amount-hotel';
+    else if(lineType.includes('misc') || lineType.includes('other')) targetId = 'amount-misc';
+
+    if(targetId) setTravelLineCurrencyValues(targetId, line);
+}
+
+function populateTravelAmountsFromRequest(item){
+    setTravelCurrencyCode(item?.currency_code || 'PHP');
+    clearTravelAmounts();
+
+    const lines = Array.isArray(item?.lines) ? item.lines : [];
+    if(lines.length){
+        lines.forEach(setTravelAmountFromLine);
+    }else if(Number(item?.requested_amount || 0) > 0){
+        // Fallback only for old records without saved line breakdown.
+        setTravelLineCurrencyValues('amount-misc', {
+            amount: Number(item.requested_amount || 0),
+            source_amount: Number(item.requested_amount || 0),
+            source_currency_code: getTravelCurrencyCode(),
+            exchange_rate: 1
+        });
+    }
+
+    calculateTravelTotal();
+}
+
+
+function formatTravelApprovalDateTime(value){
+    if(!value) return '';
+    try{
+        const raw = String(value).trim();
+        const date = new Date(raw);
+        if(Number.isNaN(date.getTime())) return raw;
+        return date.toLocaleString(undefined, { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' });
+    }catch(err){ return String(value || ''); }
+}
+
+function clearTravelApprovalSignatureSnapshot(){
+    const img = document.getElementById('travel-approved-signature-img');
+    const name = document.getElementById('travel-approved-signed-name');
+    const title = document.getElementById('travel-approved-signed-title');
+    const date = document.getElementById('travel-approved-signed-date');
+    if(img){ img.removeAttribute('src'); img.style.display = 'none'; }
+    [name, title, date].forEach(el => { if(el){ el.textContent = ''; el.style.display = 'none'; } });
+}
+
+function renderTravelApprovalSignatureSnapshot(item){
+    item = item || {};
+    const img = document.getElementById('travel-approved-signature-img');
+    const name = document.getElementById('travel-approved-signed-name');
+    const title = document.getElementById('travel-approved-signed-title');
+    const date = document.getElementById('travel-approved-signed-date');
+    const signatureData = item.approval_signature_snapshot || item.approver_signature_snapshot || '';
+    const approverName = item.approval_name_snapshot || item.approved_by || item.rejected_by || '';
+    const approverTitle = item.approval_title_snapshot || '';
+    const signedAt = item.approval_signed_at || item.approved_at || item.rejected_at || '';
+
+    clearTravelApprovalSignatureSnapshot();
+
+    if(img && signatureData){
+        img.src = signatureData;
+        img.style.display = 'block';
+    }
+    if(name && approverName){
+        name.textContent = approverName;
+        name.style.display = 'block';
+    }
+    if(title && approverTitle){
+        title.textContent = approverTitle;
+        title.style.display = 'block';
+    }
+    if(date && signedAt){
+        date.textContent = 'Signed: ' + formatTravelApprovalDateTime(signedAt);
+        date.style.display = 'block';
+    }
+}
+
+function calculateTravelTotal(){
+    const total = travelAmountPrefixes().reduce((sum, id) => sum + moneyValue(id), 0);
+    const target = document.getElementById('travel-total-amount');
+    const currencyTarget = document.getElementById('travel-total-currency');
+    if(target) target.textContent = formatTravelMoney(total);
+    if(currencyTarget) currencyTarget.textContent = getTravelCurrencyCode();
+    if(target && !currencyTarget && target.parentElement){
+        target.parentElement.innerHTML = `<span id="travel-total-currency">${getTravelCurrencyCode()}</span> <span id="travel-total-amount">${formatTravelMoney(total)}</span>`;
+    }
+    return total;
+}
+
+function buildTravelCashLine(prefix, lineType, description){
+    const amount = moneyValue(prefix);
+    const currency = getTravelCurrencyCode();
+    return {
+        line_type: lineType,
+        description,
+        amount,
+        source_currency_code: currency,
+        source_amount: amount,
+        exchange_rate: 1
+    };
+}
+
+function updateTravelDurationLabel(){
+    const start = document.getElementById('travel-departure-date')?.value || '';
+    const end = document.getElementById('travel-return-date')?.value || '';
+    const target = document.getElementById('travel-duration-label');
+    if(!target) return;
+    if(!start && !end){ target.value = ''; return; }
+    if(start && end){
+        const startDate = new Date(start + 'T00:00:00');
+        const endDate = new Date(end + 'T00:00:00');
+        const days = Math.max(Math.round((endDate - startDate) / 86400000) + 1, 1);
+        target.value = `${start} to ${end} (${days} day${days > 1 ? 's' : ''})`;
+    }else{
+        target.value = start || end;
+    }
+}
+
+function updateDepositFieldsState(){
+    const selected = document.querySelector('input[name="travel-special-instruction"]:checked')?.value || '';
+    const isDeposit = selected === 'Check for deposit';
+    document.querySelectorAll('.travel-deposit-field').forEach(field => {
+        field.disabled = !isDeposit;
+        if(!isDeposit) field.value = '';
+    });
+}
+
+function normalizeTravelSearch(value){ return String(value || '').trim().toLowerCase(); }
+
+async function loadTravelReferenceData(){
+    try{
+        const [clientsRes, productsRes] = await Promise.all([
+            fetch('/get_clients', {credentials:'same-origin', cache:'no-store'}),
+            fetch('/get_products', {credentials:'same-origin', cache:'no-store'})
+        ]);
+        travelClientsData = await clientsRes.json();
+        travelProductsData = await productsRes.json();
+    }catch(err){
+        console.warn('[TravelRequest] Reference data load failed', err);
+        travelClientsData = [];
+        travelProductsData = [];
+    }
+
+    try{
+        const engineersRes = await fetch('/get_engineers', {credentials:'same-origin', cache:'no-store', headers:{ 'Accept':'application/json' }});
+        const engineersData = await engineersRes.json();
+        travelEngineersData = Array.isArray(engineersData) ? engineersData : (engineersData.items || engineersData.engineers || []);
+    }catch(err){
+        console.warn('[TravelRequest] Engineer reference data load failed', err);
+        travelEngineersData = [];
+    }
+    renderTravelParticipants();
+}
+
+function travelProductsForClient(clientId){
+    return travelProductsData.filter(product => Number(product.client_id) === Number(clientId));
+}
+
+function buildPurposeChecks(name){
+    return `
+        <div class="travel-check-grid compact">
+            ${['Warranty','Repair','PM','Installation','Others'].map(tag => `
+                <label class="travel-check"><input type="checkbox" class="visit-purpose-check" name="${travelEscape(name)}" value="${travelEscape(tag)}"> ${travelEscape(tag)}</label>
+            `).join('')}
+        </div>
+    `;
+}
+
+function swapRouteFromTo(routeCard){
+    if(!guardTravelEditableAction('modify route')) return;
+    if(!routeCard) return;
+    const fromInput = routeCard.querySelector('.route-from-location');
+    const toInput = routeCard.querySelector('.route-to-location');
+    if(!fromInput || !toInput) return;
+
+    const oldFrom = fromInput.value || '';
+    fromInput.value = toInput.value || '';
+    toInput.value = oldFrom;
+
+    const summary = routeCard.querySelector('.route-summary');
+    if(summary){
+        summary.dataset.manualSummary = 'false';
+    }
+    updateRouteSummaryAuto(routeCard, true);
+}
+
+function buildAutoRouteSummary(routeCard){
+    if(!routeCard) return '';
+    const fromLocation = (routeCard.querySelector('.route-from-location')?.value || '').trim();
+    const toLocation = (routeCard.querySelector('.route-to-location')?.value || '').trim();
+    const travelType = (routeCard.querySelector('.route-travel-type')?.value || '').trim();
+
+    if(!fromLocation && !toLocation && !travelType) return '';
+
+    let summary = '';
+    if(fromLocation && toLocation){
+        summary = `${fromLocation} → ${toLocation}`;
+    }else{
+        summary = fromLocation || toLocation || '';
+    }
+
+    if(travelType){
+        summary = summary ? `${summary} via ${travelType}` : travelType;
+    }
+
+    return summary;
+}
+
+function routeTravelTypeIcon(travelType){
+    const value = String(travelType || '').toLowerCase();
+    if(value.includes('air')) return '<i class="fa-solid fa-plane"></i>';
+    if(value.includes('land')) return '<i class="fa-solid fa-car-side"></i>';
+    if(value.includes('sea')) return '<i class="fa-solid fa-ship"></i>';
+    if(value.includes('mixed')) return '<i class="fa-solid fa-route"></i>';
+    return '<i class="fa-solid fa-location-dot"></i>';
+}
+
+function updateRouteGeneratedPreview(routeCard){
+    if(!routeCard) return;
+    const preview = routeCard.querySelector('.route-generated-preview');
+    if(!preview) return;
+
+    const fromLocation = (routeCard.querySelector('.route-from-location')?.value || '').trim();
+    const toLocation = (routeCard.querySelector('.route-to-location')?.value || '').trim();
+    const travelType = (routeCard.querySelector('.route-travel-type')?.value || '').trim();
+
+    if(!fromLocation && !toLocation && !travelType){
+        preview.innerHTML = '<span class="travel-route-pill">Enter route details</span>';
+        return;
+    }
+
+    preview.innerHTML = `
+        <span class="travel-route-pill"><i class="fa-solid fa-location-dot"></i> ${travelEscape(fromLocation || 'From')}</span>
+        <span>${routeTravelTypeIcon(travelType)} ${travelEscape(travelType || 'Travel')}</span>
+        <span class="travel-route-pill"><i class="fa-solid fa-location-dot"></i> ${travelEscape(toLocation || 'To')}</span>
+    `;
+}
+
+function updateRouteSummaryAuto(routeCard, force=false){
+    if(!routeCard) return;
+    const summary = routeCard.querySelector('.route-summary');
+    if(!summary) return;
+
+    const manualSummary = summary.dataset.manualSummary === 'true';
+    if(manualSummary && !force) return;
+
+    const nextSummary = buildAutoRouteSummary(routeCard);
+    summary.value = nextSummary;
+    summary.dataset.manualSummary = 'false';
+    summary.classList.toggle('auto-filled', !!nextSummary);
+    updateRouteGeneratedPreview(routeCard);
+}
+
+function setupRouteAutoSummary(routeCard){
+    if(!routeCard) return;
+    const watched = [
+        routeCard.querySelector('.route-from-location'),
+        routeCard.querySelector('.route-to-location'),
+        routeCard.querySelector('.route-travel-type')
+    ].filter(Boolean);
+
+    watched.forEach(field => {
+        field.addEventListener('input', () => updateRouteSummaryAuto(routeCard));
+        field.addEventListener('change', () => updateRouteSummaryAuto(routeCard));
+    });
+
+    const summary = routeCard.querySelector('.route-summary');
+    if(summary){
+        summary.addEventListener('input', () => {
+            summary.dataset.manualSummary = summary.value.trim() ? 'true' : 'false';
+            if(!summary.value.trim()){
+                updateRouteSummaryAuto(routeCard, true);
+            }else{
+                summary.classList.remove('auto-filled');
+            }
+        });
+    }
+
+    if(!summary?.value.trim()){
+        updateRouteSummaryAuto(routeCard, true);
+    }else{
+        summary.classList.remove('auto-filled');
+        updateRouteGeneratedPreview(routeCard);
+    }
+}
+
+function copyTravelRoute(routeCard){
+    if(!guardTravelEditableAction('copy route')) return;
+    if(!routeCard) return;
+    const routeData = collectSingleTravelRoute(routeCard, 1);
+    addTravelRoute(routeData);
+    showTravelStatus('Route plan copied. Please adjust the copied route if needed.', 'success');
+}
+
+function addTravelRoute(data = {}){
+    const isProgrammaticLoad = !!(data && Object.keys(data).length);
+    if(!isProgrammaticLoad && !guardTravelEditableAction('add route')) return;
+    travelRouteCounter += 1;
+    const routeNo = travelRouteCounter;
+    const list = document.getElementById('travel-route-list');
+    if(!list) return;
+
+    const card = document.createElement('div');
+    card.className = 'travel-route-card';
+    card.dataset.routeNo = String(routeNo);
+    card.innerHTML = `
+        <div class="travel-route-header">
+            <div class="travel-route-title">Route Plan ${routeNo}</div>
+            <div class="travel-route-header-actions">
+                <button type="button" class="travel-icon-btn secondary" title="Copy Route" onclick="copyTravelRoute(this.closest('.travel-route-card'))">
+                    <i class="fa-solid fa-copy"></i>
+                </button>
+                <button type="button" class="travel-icon-btn danger" title="Remove Route" onclick="removeTravelRoute(this)">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="travel-route-flow">
+            <div>
+                <label class="travel-label">From</label>
+                <input type="text" class="travel-input route-from-location" placeholder="Mandaluyong Office" value="${travelEscape(data.from_location || '')}">
+            </div>
+
+            <div style="display:flex;justify-content:center;">
+                <button type="button" class="travel-btn travel-btn-secondary travel-swap-btn" title="Vice versa" onclick="swapRouteFromTo(this.closest('.travel-route-card'))">
+                    <i class="fa-solid fa-right-left"></i>
+                </button>
+            </div>
+
+            <div>
+                <label class="travel-label">To</label>
+                <input type="text" class="travel-input route-to-location" placeholder="Cebu Doctors Hospital" value="${travelEscape(data.to_location || '')}">
+            </div>
+
+            <div>
+                <label class="travel-label">Travel Type</label>
+                <select class="travel-select route-travel-type">
+                    <option value="">Select Type</option>
+                    ${['Air Travel','Land Travel','Sea Travel','Mixed'].map(type => `<option value="${travelEscape(type)}" ${(data.travel_type || '') === type ? 'selected' : ''}>${travelEscape(type)}</option>`).join('')}
+                </select>
+            </div>
+        </div>
+
+        <div class="travel-generated-route">
+            <div class="travel-generated-route-title">Generated Route</div>
+            <div class="travel-generated-route-body route-generated-preview">
+                <span class="travel-route-pill">Enter route details</span>
+            </div>
+        </div>
+
+        <div style="margin-top:12px;">
+            <label class="travel-label">Route Notes / Summary</label>
+            <textarea class="travel-textarea route-summary" data-manual-summary="${data.route_summary ? 'true' : 'false'}" placeholder="Auto-filled from From, To, and Travel Type. You can still edit this.">${travelEscape(data.route_summary || '')}</textarea>
+            <div class="travel-hint">This auto-fills to reduce typing, but the requester can still edit it.</div>
+        </div>
+
+        <div class="travel-visit-list travel-client-only"></div>
+
+        <div class="travel-actions travel-client-only" style="justify-content:flex-start;">
+            <button type="button" class="travel-btn travel-btn-secondary" onclick="addTravelVisit(this.closest('.travel-route-card'))">+ Add Client Visit</button>
+        </div>
+    `;
+
+    list.appendChild(card);
+    setupRouteAutoSummary(card);
+
+    const visits = Array.isArray(data.visits) ? data.visits : [];
+    if(visits.length){
+        visits.forEach(visit => addTravelVisit(card, visit));
+    }else if(isClientVisitTravel()){
+        addTravelVisit(card);
+    }
+
+    refreshRouteTitles();
+    updateTravelPurposeTypeUI();
+}
+
+function removeTravelRoute(button){
+    if(!guardTravelEditableAction('remove route')) return;
+    const list = document.getElementById('travel-route-list');
+    if(!list) return;
+    const routes = list.querySelectorAll('.travel-route-card');
+    if(routes.length <= 1){
+        showTravelStatus('At least one route plan is required.', 'error');
+        return;
+    }
+    button.closest('.travel-route-card')?.remove();
+    refreshRouteTitles();
+}
+
+function refreshRouteTitles(){
+    document.querySelectorAll('.travel-route-card').forEach((route, index) => {
+        route.dataset.sequenceNo = String(index + 1);
+        const title = route.querySelector('.travel-route-title');
+        if(title) title.textContent = `Route Plan ${index + 1}`;
+        refreshVisitTitles(route);
+    });
+}
+
+function addTravelVisit(routeCard, data = {}){
+    const isProgrammaticLoad = !!(data && Object.keys(data).length);
+    if(!isProgrammaticLoad && !guardTravelEditableAction('add client visit')) return;
+    if(!routeCard) return;
+    travelVisitCounter += 1;
+    const visitNo = travelVisitCounter;
+    const list = routeCard.querySelector('.travel-visit-list');
+    if(!list) return;
+
+    const visit = document.createElement('div');
+    visit.className = 'travel-visit-card';
+    visit.dataset.visitNo = String(visitNo);
+    visit.innerHTML = `
+        <div class="travel-visit-header">
+            <div class="travel-visit-title">Client Visit</div>
+            <button type="button" class="travel-btn travel-btn-danger" onclick="removeTravelVisit(this)">Remove Visit</button>
+        </div>
+
+        <input type="hidden" class="visit-client-id" value="${travelEscape(data.client_id || '')}">
+        <input type="hidden" class="visit-product-id" value="${travelEscape(data.product_id || '')}">
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="travel-label">Customer/s</label>
+                <div class="travel-search-wrap">
+                    <input type="text" class="travel-input visit-client-name" placeholder="Search customer / medical center" autocomplete="off" value="${travelEscape(data.client_name || '')}">
+                    <div class="travel-search-results visit-client-results"></div>
+                </div>
+                <div class="travel-hint">Search and select a customer to load connected products. Multiple equipment can be selected.</div>
+            </div>
+            <div class="col-md-6">
+                <label class="travel-label">Equipment</label>
+                <div class="travel-equipment-dropdown visit-product-dropdown">
+                    <button type="button" class="travel-equipment-toggle visit-product-toggle" disabled onclick="toggleEquipmentDropdown(this)">
+                        <span class="visit-product-toggle-text">Select customer first</span>
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                    <div class="travel-equipment-menu">
+                        <input type="text" class="travel-input travel-equipment-search visit-product-search" placeholder="Search equipment..." oninput="filterEquipmentChecklist(this)">
+                        <div class="travel-equipment-box visit-product-box disabled">
+                            <div class="travel-hint">Select customer first</div>
+                        </div>
+                    </div>
+                </div>
+                <select class="visit-product-select" multiple style="display:none;" disabled></select>
+                <div class="travel-hint visit-product-hint">Product list is locked until a customer is selected.</div>
+            </div>
+            <div class="col-12">
+                <label class="travel-label">Purpose Tags</label>
+                ${buildPurposeChecks(`visit-purpose-${visitNo}`)}
+            </div>
+            <div class="col-md-6">
+                <label class="travel-label">Visit Purpose</label>
+                <textarea class="travel-textarea visit-purpose" placeholder="Auto-filled from equipment and purpose tags" readonly>${travelEscape(data.visit_purpose || data.purpose || '')}</textarea>
+            </div>
+            <div class="col-md-6">
+                <label class="travel-label">Visit Remarks</label>
+                <textarea class="travel-textarea visit-notes" placeholder="Optional remarks">${travelEscape(data.notes || '')}</textarea>
+            </div>
+        </div>
+    `;
+
+    list.appendChild(visit);
+    setupVisitClientSearch(visit);
+
+    const tags = String(data.purpose_tags || '').split(',').map(v => v.trim()).filter(Boolean);
+    visit.querySelectorAll('.visit-purpose-check').forEach(chk => {
+        chk.checked = tags.includes(chk.value);
+        chk.addEventListener('change', () => updateVisitPurposeAuto(visit));
+    });
+
+    if(data.client_id){
+        populateVisitProducts(visit, data.client_id, data.product_ids || data.product_id || '');
+    }
+
+    refreshVisitTitles(routeCard);
+}
+
+function removeTravelVisit(button){
+    if(!guardTravelEditableAction('remove client visit')) return;
+    const routeCard = button.closest('.travel-route-card');
+    const list = routeCard?.querySelector('.travel-visit-list');
+    if(!list) return;
+    const visits = list.querySelectorAll('.travel-visit-card');
+    if(visits.length <= 1){
+        showTravelStatus('At least one client visit is required per route.', 'error');
+        return;
+    }
+    button.closest('.travel-visit-card')?.remove();
+    refreshVisitTitles(routeCard);
+}
+
+function refreshVisitTitles(routeCard){
+    if(!routeCard) return;
+    routeCard.querySelectorAll('.travel-visit-card').forEach((visit, index) => {
+        visit.dataset.sequenceNo = String(index + 1);
+        const title = visit.querySelector('.travel-visit-title');
+        if(title) title.textContent = `Client Visit ${index + 1}`;
+    });
+}
+
+function setupVisitClientSearch(visitCard){
+    const input = visitCard.querySelector('.visit-client-name');
+    const results = visitCard.querySelector('.visit-client-results');
+    if(!input || !results) return;
+
+    input.addEventListener('input', function(){
+        visitCard.querySelector('.visit-client-id').value = '';
+        resetVisitProductSelect(visitCard);
+
+        const q = normalizeTravelSearch(input.value);
+        if(q.length < 2){
+            results.style.display = 'none';
+            results.innerHTML = '';
+            return;
+        }
+
+        const matches = travelClientsData
+            .filter(client => normalizeTravelSearch(client.name).includes(q) || normalizeTravelSearch(client.address).includes(q))
+            .slice(0, 8);
+
+        if(!matches.length){
+            results.innerHTML = '<div class="travel-search-item">No matching customer found</div>';
+            results.style.display = 'block';
+            return;
+        }
+
+        results.innerHTML = matches.map(client => `
+            <div class="travel-search-item" data-client-id="${Number(client.id) || 0}">
+                ${travelEscape(client.name)}
+                <small>${travelEscape(client.address || 'No address')}</small>
+            </div>
+        `).join('');
+
+        results.querySelectorAll('.travel-search-item').forEach(item => {
+            item.addEventListener('click', function(){
+                selectVisitClient(visitCard, Number(this.dataset.clientId || 0));
+            });
+        });
+
+        results.style.display = 'block';
+    });
+}
+
+document.addEventListener('click', function(e){
+    document.querySelectorAll('.visit-client-results').forEach(results => {
+        const wrap = results.closest('.travel-search-wrap');
+        if(wrap && !wrap.contains(e.target)){
+            results.style.display = 'none';
+        }
+    });
+
+    const equipmentDropdown = e.target.closest('.travel-equipment-dropdown');
+    closeEquipmentDropdowns(equipmentDropdown);
+});
+
+function selectVisitClient(visitCard, clientId){
+    const client = travelClientsData.find(item => Number(item.id) === Number(clientId));
+    if(!client) return;
+
+    visitCard.querySelector('.visit-client-id').value = client.id;
+    visitCard.querySelector('.visit-client-name').value = client.name || '';
+    visitCard.querySelector('.visit-client-results').style.display = 'none';
+    populateVisitProducts(visitCard, client.id);
+}
+
+
+function toggleEquipmentDropdown(button){
+    const dropdown = button.closest('.travel-equipment-dropdown');
+    if(!dropdown || button.disabled) return;
+    dropdown.classList.toggle('open');
+}
+
+function filterEquipmentChecklist(input){
+    const dropdown = input.closest('.travel-equipment-dropdown');
+    if(!dropdown) return;
+    const q = normalizeTravelSearch(input.value);
+    dropdown.querySelectorAll('.travel-equipment-row:not(.all-row)').forEach(row => {
+        row.style.display = normalizeTravelSearch(row.textContent).includes(q) ? 'flex' : 'none';
+    });
+}
+
+function closeEquipmentDropdowns(exceptDropdown=null){
+    document.querySelectorAll('.travel-equipment-dropdown.open').forEach(dropdown => {
+        if(dropdown !== exceptDropdown) dropdown.classList.remove('open');
+    });
+}
+
+function resetVisitProductSelect(visitCard){
+    const select = visitCard.querySelector('.visit-product-select');
+    const box = visitCard.querySelector('.visit-product-box');
+    const dropdown = visitCard.querySelector('.visit-product-dropdown');
+    const toggle = visitCard.querySelector('.visit-product-toggle');
+    const toggleText = visitCard.querySelector('.visit-product-toggle-text');
+    const search = visitCard.querySelector('.visit-product-search');
+    const hint = visitCard.querySelector('.visit-product-hint');
+    const productId = visitCard.querySelector('.visit-product-id');
+    if(productId) productId.value = '';
+    if(select){
+        select.innerHTML = '';
+        select.disabled = true;
+    }
+    if(dropdown) dropdown.classList.remove('open');
+    if(toggle) toggle.disabled = true;
+    if(toggleText) toggleText.textContent = 'Select customer first';
+    if(search) search.value = '';
+    if(box){
+        box.classList.add('disabled');
+        box.innerHTML = '<div class="travel-hint">Select customer first</div>';
+    }
+    if(hint) hint.textContent = 'Product list is locked until a customer is selected.';
+    updateVisitPurposeAuto(visitCard);
+}
+
+function populateVisitProducts(visitCard, clientId, selectedProductId = ''){
+    const select = visitCard.querySelector('.visit-product-select');
+    const box = visitCard.querySelector('.visit-product-box');
+    const dropdown = visitCard.querySelector('.visit-product-dropdown');
+    const toggle = visitCard.querySelector('.visit-product-toggle');
+    const toggleText = visitCard.querySelector('.visit-product-toggle-text');
+    const search = visitCard.querySelector('.visit-product-search');
+    const hint = visitCard.querySelector('.visit-product-hint');
+    if(!select || !box) return;
+
+    const products = travelProductsForClient(clientId);
+    select.disabled = false;
+    box.classList.remove('disabled');
+    if(toggle) toggle.disabled = false;
+    if(search) search.value = '';
+    if(dropdown) dropdown.classList.remove('open');
+
+    if(!products.length){
+        select.innerHTML = '';
+        box.innerHTML = '<div class="travel-hint">No connected products found</div>';
+        if(toggle) toggle.disabled = true;
+        if(toggleText) toggleText.textContent = 'No equipment found';
+        if(hint) hint.textContent = 'No products are currently connected to this customer.';
+        updateVisitPurposeAuto(visitCard);
+        return;
+    }
+
+    const selectedIds = Array.isArray(selectedProductId)
+        ? selectedProductId.map(String)
+        : String(selectedProductId || '').split(',').map(v => v.trim()).filter(Boolean);
+
+    select.innerHTML = products.map(product => {
+        const label = `${product.name || 'Equipment'}${product.serial_number ? ' / ' + product.serial_number : ''}`;
+        const selected = selectedIds.includes(String(product.serial_number || '')) ? 'selected' : '';
+        return `<option value="${travelEscape(product.serial_number || '')}" data-name="${travelEscape(product.name || '')}" ${selected}>${travelEscape(label)}</option>`;
+    }).join('');
+
+    box.innerHTML = `
+        <label class="travel-equipment-row all-row">
+            <input type="checkbox" class="visit-product-all">
+            <span>All of the above</span>
+        </label>
+        ${products.map(product => {
+            const label = `${product.name || 'Equipment'}${product.serial_number ? ' / ' + product.serial_number : ''}`;
+            const checked = selectedIds.includes(String(product.serial_number || '')) ? 'checked' : '';
+            return `
+                <label class="travel-equipment-row">
+                    <input type="checkbox" class="visit-product-check" value="${travelEscape(product.serial_number || '')}" data-label="${travelEscape(label)}" ${checked}>
+                    <span>${travelEscape(label)}</span>
+                </label>
+            `;
+        }).join('')}
+    `;
+
+    function syncHiddenSelectFromChecks(){
+        const checkedValues = Array.from(box.querySelectorAll('.visit-product-check:checked')).map(chk => chk.value);
+        Array.from(select.options || []).forEach(opt => {
+            opt.selected = checkedValues.includes(opt.value);
+        });
+        visitCard.querySelector('.visit-product-id').value = checkedValues[0] || '';
+
+        const allCheck = box.querySelector('.visit-product-all');
+        const itemChecks = Array.from(box.querySelectorAll('.visit-product-check'));
+        if(allCheck){
+            allCheck.checked = itemChecks.length > 0 && itemChecks.every(chk => chk.checked);
+            allCheck.indeterminate = itemChecks.some(chk => chk.checked) && !allCheck.checked;
+        }
+
+        if(toggleText){
+            if(!checkedValues.length){
+                toggleText.textContent = 'Select equipment';
+            }else if(checkedValues.length === itemChecks.length){
+                toggleText.textContent = `All equipment selected (${checkedValues.length})`;
+            }else if(checkedValues.length === 1){
+                const selectedRow = box.querySelector('.visit-product-check:checked');
+                toggleText.textContent = selectedRow?.dataset.label || '1 equipment selected';
+            }else{
+                toggleText.textContent = `${checkedValues.length} equipment selected`;
+            }
+        }
+
+        updateVisitPurposeAuto(visitCard);
+    }
+
+    box.querySelectorAll('.visit-product-check').forEach(chk => {
+        chk.addEventListener('change', syncHiddenSelectFromChecks);
+    });
+
+    const allCheck = box.querySelector('.visit-product-all');
+    if(allCheck){
+        allCheck.addEventListener('change', function(){
+            box.querySelectorAll('.visit-product-check').forEach(chk => {
+                chk.checked = allCheck.checked;
+            });
+            syncHiddenSelectFromChecks();
+        });
+    }
+
+    if(hint) hint.textContent = `${products.length} connected product(s) available.`;
+    syncHiddenSelectFromChecks();
+}
+
+
+function getVisitSelectedProductNames(visitCard){
+    const select = visitCard.querySelector('.visit-product-select');
+    return select ? Array.from(select.selectedOptions || []).map(opt => opt.text).filter(Boolean) : [];
+}
+
+function buildVisitPurposeFromInputs(visitCard){
+    const productNames = getVisitSelectedProductNames(visitCard);
+    const tags = Array.from(visitCard.querySelectorAll('.visit-purpose-check:checked')).map(chk => chk.value);
+    if(!tags.length) return '';
+
+    const primaryActions = tags.filter(tag => ['PM', 'Repair', 'Installation'].includes(tag));
+    const suffixTags = tags.filter(tag => !['PM', 'Repair', 'Installation'].includes(tag));
+    const action = primaryActions.length ? primaryActions.join(' / ') : tags[0];
+    const equipmentLabel = productNames.length ? productNames.join(', ') : 'selected equipment';
+
+    let purpose = `${action} of ${equipmentLabel}`;
+    if(suffixTags.length) purpose += ` - ${suffixTags.join(', ')}`;
+    return purpose;
+}
+
+function updateVisitPurposeAuto(visitCard){
+    const purpose = visitCard.querySelector('.visit-purpose');
+    if(!purpose) return;
+    purpose.value = buildVisitPurposeFromInputs(visitCard);
+}
+
+function collectSingleTravelRoute(route, routeIndex){
+    const visits = isClientVisitTravel() ? Array.from(route.querySelectorAll('.travel-visit-card')).map((visit, visitIndex) => {
+        const productSelect = visit.querySelector('.visit-product-select');
+        const selectedOptions = productSelect ? Array.from(productSelect.selectedOptions || []) : [];
+        const productIds = selectedOptions.map(opt => opt.value).filter(Boolean);
+        const productNames = selectedOptions.map(opt => opt.text).filter(Boolean);
+        const tags = Array.from(visit.querySelectorAll('.visit-purpose-check:checked')).map(chk => chk.value);
+
+        return {
+            sequence_no: visitIndex + 1,
+            client_id: visit.querySelector('.visit-client-id')?.value || '',
+            client_name: visit.querySelector('.visit-client-name')?.value || '',
+            product_id: productIds[0] || '',
+            product_name: productNames[0] || '',
+            product_ids: productIds,
+            product_names: productNames,
+            products: productIds.map((id,index)=>({product_id:id,product_name:productNames[index]||id})),
+            purpose_tags: tags,
+            visit_purpose: visit.querySelector('.visit-purpose')?.value || '',
+            notes: visit.querySelector('.visit-notes')?.value || ''
+        };
+    }).filter(visit => visit.client_id || visit.client_name || visit.product_id || visit.product_name || visit.purpose_tags.length || visit.visit_purpose || visit.notes) : [];
+
+    updateRouteSummaryAuto(route);
+
+    return {
+        sequence_no: routeIndex + 1,
+        from_location: route.querySelector('.route-from-location')?.value || '',
+        to_location: route.querySelector('.route-to-location')?.value || '',
+        travel_type: route.querySelector('.route-travel-type')?.value || '',
+        route_summary: route.querySelector('.route-summary')?.value || '',
+        visits: visits
+    };
+}
+
+function collectTravelRoutes(){
+    return Array.from(document.querySelectorAll('.travel-route-card'))
+        .map((route, routeIndex) => collectSingleTravelRoute(route, routeIndex))
+        .filter(route => route.from_location || route.to_location || route.travel_type || route.route_summary || route.visits.length);
+}
+
+function routeSummaryForHistory(routes){
+    const labels = [];
+    routes.forEach(route => {
+        if(route.from_location || route.to_location){
+            labels.push(`${route.from_location || '—'} → ${route.to_location || '—'}`);
+        }
+    });
+    return labels.join('; ');
+}
+
+function collectTravelPayload(){
+    const requestType = getTravelPurposeType();
+    const participants = collectTravelParticipants();
+    const routes = collectTravelRoutes();
+    const firstVisit = routes.flatMap(route => route.visits || [])[0] || {};
+
+    let mainPurpose = '';
+    if(isClientVisitTravel()){
+        mainPurpose = routes.map((route, idx) => {
+            const routeLabel = `Route ${idx + 1}: ${route.from_location || '—'} → ${route.to_location || '—'}`;
+            const visitLines = (route.visits || []).map((visit, vIdx) => {
+                const tags = Array.isArray(visit.purpose_tags) ? visit.purpose_tags.join(', ') : (visit.purpose_tags || '');
+                return `  Visit ${vIdx + 1}: ${visit.client_name || 'Client'}${visit.product_name ? ' / ' + visit.product_name : ''}${tags ? ' / ' + tags : ''}${visit.visit_purpose ? ' - ' + visit.visit_purpose : ''}`;
+            });
+            return [routeLabel, route.route_summary || '', ...visitLines].filter(Boolean).join('\n');
+        }).join('\n\n');
+    }else if(isTrainingTravel()){
+        const trainingTitle = document.getElementById('travel-training-title')?.value || '';
+        const provider = document.getElementById('travel-training-provider')?.value || '';
+        const venue = document.getElementById('travel-training-venue')?.value || '';
+        const objective = document.getElementById('travel-training-objective')?.value || '';
+        const routeLines = routes.map((route, idx) => `Route ${idx + 1}: ${route.from_location || '—'} → ${route.to_location || '—'}${route.travel_type ? ' via ' + route.travel_type : ''}${route.route_summary ? '\n' + route.route_summary : ''}`).join('\n\n');
+        mainPurpose = [
+            `${requestType}`,
+            trainingTitle ? `Training Title: ${trainingTitle}` : '',
+            provider ? `Conducted By: ${provider}` : '',
+            venue ? `Venue: ${venue}` : '',
+            objective ? `Objective: ${objective}` : '',
+            routeLines ? `Routes:\n${routeLines}` : ''
+        ].filter(Boolean).join('\n');
+    }else{
+        const subject = document.getElementById('travel-meeting-subject')?.value || '';
+        const meetingWith = document.getElementById('travel-meeting-with')?.value || '';
+        const objective = document.getElementById('travel-meeting-objective')?.value || '';
+        const routeLines = routes.map((route, idx) => `Route ${idx + 1}: ${route.from_location || '—'} → ${route.to_location || '—'}${route.travel_type ? ' via ' + route.travel_type : ''}${route.route_summary ? '\n' + route.route_summary : ''}`).join('\n\n');
+        mainPurpose = [
+            `${requestType}`,
+            subject ? `Meeting Subject: ${subject}` : '',
+            meetingWith ? `Meeting With: ${meetingWith}` : '',
+            objective ? `Objective: ${objective}` : '',
+            routeLines ? `Routes:\n${routeLines}` : ''
+        ].filter(Boolean).join('\n');
+    }
+
+    const cashLines = [
+        buildTravelCashLine('amount-plane', 'Plane Fare', 'Plane Fare / Air Tickets'),
+        buildTravelCashLine('amount-bus', 'Bus/Land Fare', 'Bus Fare / Land Travel Fare'),
+        buildTravelCashLine('amount-per-diem', 'Per Diem', 'Per Diem / Travel Allowance'),
+        buildTravelCashLine('amount-hotel', 'Hotel', 'Hotel Accommodation'),
+        buildTravelCashLine('amount-misc', 'Misc', 'Misc Expenses')
+    ].filter(item => Number(item.amount || 0) > 0 || item.line_type === 'Plane Fare');
+
+    const specialInstruction = document.querySelector('input[name="travel-special-instruction"]:checked')?.value || '';
+    const participantLabel = participants.map(item => item.name || item.username).join(', ');
+    const notes = [
+        `Request Type: ${requestType}`,
+        `Lead Requester: ${document.getElementById('travel-lead-requester')?.value || travelPersonDisplayName(findCurrentTravelEngineer()) || '{{ current_user.username }}'}`,
+        participantLabel ? `Participants: ${participantLabel}` : '',
+        document.getElementById('travel-special-notes')?.value || '',
+        specialInstruction ? `Special instruction: ${specialInstruction}` : '',
+        document.getElementById('travel-account-number')?.value ? `BPI Account Number: ${document.getElementById('travel-account-number').value}` : '',
+        document.getElementById('travel-health-condition')?.value ? `Health Condition: ${document.getElementById('travel-health-condition').value}` : '',
+        'Department: Medical Service'
+    ].filter(Boolean).join('\n');
+
+    const destination = isClientVisitTravel()
+        ? routeSummaryForHistory(routes)
+        : (document.getElementById('travel-training-venue')?.value || routeSummaryForHistory(routes) || document.getElementById('travel-meeting-with')?.value || '');
+
+    return {
+        id: document.getElementById('travel-request-id')?.value || '',
+        date: document.getElementById('travel-date')?.value || '',
+        department: 'Medical Service',
+        request_type: requestType,
+        travel_type: requestType,
+        participants: participants,
+        participant_names: participantLabel,
+        purpose: [mainPurpose, notes ? `Notes:\n${notes}` : ''].filter(Boolean).join('\n\n'),
+        client_id: isClientVisitTravel() ? (firstVisit.client_id || '') : '',
+        client_name: isClientVisitTravel() ? (firstVisit.client_name || '') : requestType,
+        product_id: isClientVisitTravel() ? (firstVisit.product_id || '') : '',
+        equipment: isClientVisitTravel() ? (firstVisit.product_name || '') : '',
+        destination: destination,
+        departure_date: document.getElementById('travel-departure-date')?.value || '',
+        return_date: document.getElementById('travel-return-date')?.value || '',
+        arrival_date: document.getElementById('travel-return-date')?.value || '',
+        currency_code: getTravelCurrencyCode(),
+        requested_amount: calculateTravelTotal(),
+        special_instruction: specialInstruction,
+        account_number: document.getElementById('travel-account-number')?.value || '',
+        health_condition: document.getElementById('travel-health-condition')?.value || '',
+        notes: notes,
+        lines: cashLines,
+        routes: routes
+    };
+}
+function setTravelBusy(isBusy){
+    ['travel-save-btn', 'travel-submit-btn'].forEach(id => {
+        const btn = document.getElementById(id);
+        if(btn) btn.disabled = isBusy;
+    });
+}
+
+function showTravelDeleteDraftConfirm(){
+    const requestId = document.getElementById('travel-request-id')?.value || '';
+    if(!requestId){
+        showTravelStatus('No saved draft selected to delete.', 'error');
+        return;
+    }
+    if(!isCurrentTravelEditable()){
+        showTravelStatus('Only Draft or Rejected travel requests can be deleted.', 'error');
+        return;
+    }
+
+    const panel = document.getElementById('travel-delete-draft-panel');
+    if(panel){
+        panel.classList.add('show');
+        try{ panel.scrollIntoView({behavior:'smooth', block:'center'}); }catch(err){}
+    }
+}
+
+function hideTravelDeleteDraftConfirm(){
+    const panel = document.getElementById('travel-delete-draft-panel');
+    if(panel){
+        panel.classList.remove('show');
+    }
+}
+
+async function deleteTravelRequestDraft(){
+    const requestId = document.getElementById('travel-request-id')?.value || '';
+    if(!requestId){
+        showTravelStatus('No saved draft selected to delete.', 'error');
+        return;
+    }
+    if(!isCurrentTravelEditable()){
+        showTravelStatus('Only Draft or Rejected travel requests can be deleted.', 'error');
+        return;
+    }
+
+    const btn = document.getElementById('travel-confirm-delete-draft-btn');
+    if(btn){
+        btn.disabled = true;
+        btn.dataset.originalText = btn.innerHTML;
+        btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Deleting...';
+    }
+
+    try{
+        const res = await fetch(`/delete_travel_request_draft/${encodeURIComponent(requestId)}`, {
+            method:'POST',
+            credentials:'same-origin',
+            cache:'no-store',
+            headers:{
+                'Content-Type':'application/json',
+                'Accept':'application/json',
+                'X-CSRFToken': travelCsrfToken()
+            },
+            body: JSON.stringify({})
+        });
+        const data = await parseTravelJson(res, 'Unable to delete travel request draft.');
+
+        hideTravelDeleteDraftConfirm();
+        resetTravelForm();
+        await loadMyTravelRequests();
+        await loadTravelNotifications(true);
+        showTravelStatus(data.message || 'Travel request draft deleted.', 'success');
+    }catch(err){
+        showTravelStatus(err.message || 'Unable to delete travel request draft.', 'error');
+    }finally{
+        if(btn){
+            btn.disabled = false;
+            btn.innerHTML = btn.dataset.originalText || 'Yes, Delete Draft';
+        }
+    }
+}
+
+async function saveTravelRequestDraft(){
+    if(!guardTravelEditableAction('save changes')) return null;
+    const payload = collectTravelPayload();
+    if(!payload.routes.length){
+        showTravelStatus('Please add at least one route plan.', 'error');
+        return null;
+    }
+    if(!payload.purpose || payload.purpose.trim().length < 3){
+        showTravelStatus('Please enter travel purpose details before saving.', 'error');
+        return null;
+    }
+
+    setTravelBusy(true);
+    try{
+        const res = await fetch('/save_travel_request_draft', {
+            method:'POST', credentials:'same-origin', cache:'no-store',
+            headers:{ 'Content-Type':'application/json', 'Accept':'application/json', 'X-CSRFToken': travelCsrfToken() },
+            body: JSON.stringify(payload)
+        });
+        const data = await parseTravelJson(res, 'Unable to save travel request.');
+        const requestData = data.travel_request || {};
+        document.getElementById('travel-request-id').value = requestData.id || '';
+        document.getElementById('travel-request-no').value = requestData.request_no || 'Auto-generated';
+        document.getElementById('travel-current-status').value = requestData.status || 'Draft';
+        setTravelRequestLockedState(requestData.status || 'Draft');
+        const hasWarningConflict = handleTravelConflictPayload(data, {blocking:false, scroll:true});
+        showTravelStatus(data.message || 'Travel request draft saved.', hasWarningConflict ? '' : 'success');
+        await loadMyTravelRequests();
+        return requestData;
+    }catch(err){
+        showTravelStatus(err.message || 'Unable to save travel request.', 'error');
+        return null;
+    }finally{
+        setTravelBusy(false);
+    }
+}
+
+async function submitTravelRequest(){
+    if(!guardTravelEditableAction('submit')) return;
+
+    const shouldSubmit = await travelConfirmDialog({
+        title: 'Submit Travel Request?',
+        message: 'This will save your latest changes and send the request to the assigned approver.',
+        confirmText: 'Submit for Approval',
+        cancelText: 'Review Again',
+        tone: 'warning',
+        icon: 'paper-plane'
+    });
+    if(!shouldSubmit) return;
+
+    /*
+        S11F7:
+        Always save the current editable form before submitting/resubmitting.
+        Rejected requests can be edited, so submitting the existing request ID
+        without saving first may send old line remarks/details to Approval Center.
+    */
+    const saved = await saveTravelRequestDraft();
+    const requestId = saved?.id || document.getElementById('travel-request-id')?.value || '';
+    if(!requestId) return;
+
+    setTravelBusy(true);
+    try{
+        const res = await fetch(`/submit_travel_request/${encodeURIComponent(requestId)}`, {
+            method:'POST', credentials:'same-origin', cache:'no-store',
+            headers:{ 'Content-Type':'application/json', 'Accept':'application/json', 'X-CSRFToken': travelCsrfToken() },
+            body: JSON.stringify({})
+        });
+        const data = await parseTravelJson(res, 'Unable to submit travel request.');
+        const successMessage = data.message || 'Travel request submitted.';
+
+        /*
+            S11G TEST 2 FIX:
+            After successful submit/resubmit, the page must return to a clean blank
+            Travel Request form. The submitted request remains available in
+            My Travel Requests, but the editable form should not stay populated.
+        */
+        resetTravelForm();
+        await loadMyTravelRequests();
+        await loadTravelNotifications(true);
+        showTravelStatus(successMessage, 'success');
+    }catch(err){
+        const payload = err?.payload || {};
+        if(isTravelRequesterSignatureRequiredError(err)){
+            await showTravelRequesterSignatureRequiredPrompt(err);
+        }else if(payload.has_conflicts || payload.blocking_conflicts || payload.status === 'conflict'){
+            handleTravelConflictPayload(payload, {blocking:true, scroll:true});
+            showTravelStatus(payload.message || payload.error || 'Travel request cannot be submitted because the selected period has conflicts.', 'error');
+        }else{
+            showTravelStatus(err.message || 'Unable to submit travel request.', 'error');
+        }
+    }finally{
+        setTravelBusy(false);
+    }
+}
+
+function clearRoutePlans(){
+    const list = document.getElementById('travel-route-list');
+    if(list) list.innerHTML = '';
+    travelRouteCounter = 0;
+    travelVisitCounter = 0;
+}
+
+function resetTravelForm(){
+    hideTravelDeleteDraftConfirm();
+    clearTravelConflictPanel();
+    document.getElementById('travel-request-id').value = '';
+    document.getElementById('travel-request-no').value = 'Auto-generated';
+    document.getElementById('travel-current-status').value = 'Draft';
+    const currentEngineer = findCurrentTravelEngineer();
+    const currentEngineerName = travelPersonDisplayName(currentEngineer) || '{{ current_user.username }}';
+    const leadInput = document.getElementById('travel-lead-requester');
+    if(leadInput) leadInput.value = currentEngineerName;
+    setTravelParticipantViewNotice(currentEngineerName, currentEngineer ? [currentEngineer] : []);
+    setTravelRequestLockedState('Draft');
+    document.getElementById('travel-departure-date').value = '';
+    document.getElementById('travel-return-date').value = '';
+    document.getElementById('travel-duration-label').value = '';
+    document.getElementById('travel-account-number').value = '';
+    document.getElementById('travel-health-condition').value = '';
+    document.getElementById('travel-special-notes').value = '';
+    ['travel-training-title','travel-training-provider','travel-training-venue','travel-training-objective','travel-meeting-subject','travel-meeting-with','travel-meeting-objective'].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.value = '';
+    });
+    setTravelPurposeType('Client Visit / Service');
+    const currentKeys = [
+        '{{ current_user.username }}',
+        travelPersonEngineerId(currentEngineer),
+        travelPersonUsername(currentEngineer),
+        travelPersonDisplayName(currentEngineer)
+    ].map(normalizeTravelIdentity).filter(Boolean);
+    document.querySelectorAll('.travel-participant-check').forEach(el => {
+        const keys = [el.value, el.dataset.engineerId, el.dataset.username, el.dataset.name]
+            .map(normalizeTravelIdentity)
+            .filter(Boolean);
+        el.checked = keys.some(key => currentKeys.includes(key));
+    });
+    document.querySelectorAll('input[name="travel-special-instruction"]').forEach(el => el.checked = false);
+    clearTravelAmounts();
+    clearRoutePlans();
+    addTravelRoute();
+    updateDepositFieldsState();
+    calculateTravelTotal();
+    clearTravelApprovalSignatureSnapshot();
+    showTravelStatus('', '');
+}
+
+async function loadMyTravelRequests(){
+    const list = document.getElementById('travel-history-list');
+    if(!list) return;
+    try{
+        const res = await fetch(`/get_my_travel_requests?_=${Date.now()}`, {
+            credentials:'same-origin', cache:'no-store', headers:{ 'Accept':'application/json' }
+        });
+        const data = await parseTravelJson(res, 'Unable to load travel requests.');
+        const items = Array.isArray(data.items) ? data.items : [];
+        if(!items.length){
+            list.innerHTML = '<div class="travel-status" style="display:block;">No travel requests yet.</div>';
+            return;
+        }
+        list.innerHTML = items.map(item => {
+            const id = Number(item.id) || 0;
+            const requestNo = item.request_no || ('Travel Request #' + id);
+            const restoreBtn = canShowRestoreTravelBlocks(item)
+                ? `<button type="button" class="travel-btn travel-btn-warning" onclick="restoreTravelBlocksForRequest(${id}, '${travelEscape(requestNo)}')"><i class="fa-solid fa-rotate-left"></i> Restore Travel Blocks</button>`
+                : '';
+            const timelineBtn = canShowOpenTimelineButton(item)
+                ? `<button type="button" class="travel-btn travel-btn-info" onclick='openTimelineForTravelRequest(${JSON.stringify(item).replace(/'/g, "&#39;")})'><i class="fa-solid fa-calendar-days"></i> Open Timeline</button>`
+                : '';
+            return `
+                <div class="travel-history-item">
+                    <div>
+                        <div class="travel-history-title">${travelEscape(requestNo)} • ${travelEscape(item.status || '')}</div>
+                        <div class="travel-history-meta">${travelEscape(item.destination || 'No destination')} • ${travelEscape(item.departure_date || '')} to ${travelEscape(item.return_date || '')} • ${travelEscape(item.currency_code || 'PHP')} ${formatTravelMoney(item.requested_amount || 0)}</div>
+                        ${canShowRestoreTravelBlocks(item) ? '<div class="travel-restore-result"><i class="fa-solid fa-circle-info"></i> Use restore if Timeline travel blocks were deleted or converted by mistake.</div>' : ''}
+                        ${canShowOpenTimelineButton(item) ? '<div class="travel-timeline-link-note"><i class="fa-solid fa-calendar-days"></i> Open the Timeline week for this approved travel request.</div>' : ''}
+                    </div>
+                    <div class="travel-history-actions">
+                        <button type="button" class="travel-btn travel-btn-secondary" onclick="loadTravelRequestDetail(${id})">Open</button>
+                        ${timelineBtn}
+                        ${restoreBtn}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }catch(err){
+        list.innerHTML = `<div class="travel-status error" style="display:block;">${travelEscape(err.message || 'Unable to load travel requests.')}</div>`;
+    }
+}
+
+
+function extractTravelFieldFromText(text, label){
+    const pattern = new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ':\\s*([^\\n]+)', 'i');
+    const match = String(text || '').match(pattern);
+    return match ? match[1].trim() : '';
+}
+
+function hydrateTravelPurposeFieldsFromRequest(item){
+    const text = [item?.purpose || '', item?.notes || ''].join('\n');
+    const savedType = item?.request_type || item?.travel_type || extractTravelFieldFromText(text, 'Request Type') || 'Client Visit / Service';
+    const allowedTypes = ['Client Visit / Service', 'Training / Seminar - RHQ', 'Training / Seminar - GHQ', 'Meeting'];
+    setTravelPurposeType(allowedTypes.includes(savedType) ? savedType : 'Client Visit / Service');
+
+    const trainingTitle = document.getElementById('travel-training-title');
+    const trainingProvider = document.getElementById('travel-training-provider');
+    const trainingVenue = document.getElementById('travel-training-venue');
+    const trainingObjective = document.getElementById('travel-training-objective');
+    const meetingSubject = document.getElementById('travel-meeting-subject');
+    const meetingWith = document.getElementById('travel-meeting-with');
+    const meetingObjective = document.getElementById('travel-meeting-objective');
+
+    if(trainingTitle) trainingTitle.value = extractTravelFieldFromText(text, 'Training Title');
+    if(trainingProvider) trainingProvider.value = extractTravelFieldFromText(text, 'Conducted By');
+    if(trainingVenue) trainingVenue.value = extractTravelFieldFromText(text, 'Venue');
+    if(trainingObjective) trainingObjective.value = extractTravelFieldFromText(text, 'Objective');
+    if(meetingSubject) meetingSubject.value = extractTravelFieldFromText(text, 'Meeting Subject');
+    if(meetingWith) meetingWith.value = extractTravelFieldFromText(text, 'Meeting With');
+    if(meetingObjective) meetingObjective.value = extractTravelFieldFromText(text, 'Objective');
+}
+
+async function loadTravelRequestDetail(id){
+    if(!id) return;
+    try{
+        const res = await fetch(`/get_travel_request/${encodeURIComponent(id)}`, {
+            credentials:'same-origin', cache:'no-store', headers:{ 'Accept':'application/json' }
+        });
+        const data = await parseTravelJson(res, 'Unable to load travel request.');
+        const item = data.travel_request || {};
+
+        document.getElementById('travel-request-id').value = item.id || '';
+        document.getElementById('travel-request-no').value = item.request_no || 'Auto-generated';
+        document.getElementById('travel-current-status').value = item.status || 'Draft';
+        setTravelRequestLockedState(item.status || 'Draft');
+        document.getElementById('travel-departure-date').value = item.departure_date || '';
+        document.getElementById('travel-return-date').value = item.return_date || '';
+        updateTravelDurationLabel();
+        populateTravelAmountsFromRequest(item);
+        renderTravelApprovalSignatureSnapshot(item);
+        hydrateTravelPurposeFieldsFromRequest(item);
+        setTravelParticipantsFromRequest(item);
+
+        clearRoutePlans();
+        if(Array.isArray(item.routes) && item.routes.length){
+            item.routes.forEach(route => addTravelRoute(route));
+        }else{
+            addTravelRoute({
+                route_summary: item.destination || '',
+                visits: item.client_name ? [{ client_name: item.client_name, visit_purpose: item.purpose || '' }] : []
+            });
+        }
+
+        setTravelRequestLockedState(item.status || 'Draft');
+        if(isTravelEditableStatus(item.status || 'Draft')){
+            checkTravelRequestConflicts(true);
+        }else{
+            clearTravelConflictPanel();
+        }
+        showTravelStatus(`Loaded ${item.request_no || ('Travel Request #' + item.id)}.`, 'success');
+    }catch(err){
+        showTravelStatus(err.message || 'Unable to load travel request.', 'error');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async function(){
+    const today = new Date().toISOString().slice(0,10);
+    const dateInput = document.getElementById('travel-date');
+    if(dateInput && !dateInput.value) dateInput.value = today;
+    document.querySelectorAll('.travel-amount').forEach(input => {
+        input.addEventListener('input', calculateTravelTotal);
+        input.addEventListener('change', calculateTravelTotal);
+    });
+    setTravelCurrencyCode(document.getElementById('travel-currency-code')?.value || 'PHP');
+
+    await loadTravelReferenceData();
+
+    // Default page state must be blank. Do not auto-load the latest draft.
+    prepareBlankTravelRequestOnPageLoad();
+    updateTravelPurposeTypeUI();
+
+    loadTravelNotifications();
+    await loadMyTravelRequests();
+
+    // Only an explicit URL id opens a saved request. Normal refresh stays blank.
+    await openTravelRequestFromUrl();
+});
+</script>
+{% endblock %}

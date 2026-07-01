@@ -2,6 +2,24 @@
 
 {% block content %}
 <div class="container-fluid">
+    <div id="product-alert-stack" class="product-alert-stack no-print" aria-live="polite" aria-atomic="true"></div>
+
+    <div id="product-confirm-backdrop" class="product-confirm-backdrop no-print" role="dialog" aria-modal="true" aria-labelledby="product-confirm-title">
+        <div id="product-confirm-box" class="product-confirm-box">
+            <div class="product-confirm-header">
+                <div id="product-confirm-icon" class="product-confirm-icon"><i class="fa-solid fa-circle-question"></i></div>
+                <div>
+                    <h3 id="product-confirm-title" class="product-confirm-title">Confirm Action</h3>
+                    <div id="product-confirm-message" class="product-confirm-message"></div>
+                </div>
+            </div>
+            <div class="product-confirm-actions">
+                <button type="button" id="product-confirm-cancel" class="btn btn-outline-secondary btn-sm fw-bold px-4">Cancel</button>
+                <button type="button" id="product-confirm-ok" class="btn btn-primary btn-sm fw-bold px-4">Continue</button>
+            </div>
+        </div>
+    </div>
+
     <div class="card shadow-sm border-0 p-4 bg-white">
         <!-- Header Section -->
         <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 no-print">
@@ -182,6 +200,103 @@
 </div>
 
 <script>
+    function productEscape(value){
+        return String(value || '').replace(/[&<>"']/g, function(match){
+            return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[match];
+        });
+    }
+
+    function productToast(message, tone='error', title=''){
+        const stack = document.getElementById('product-alert-stack');
+        if(!stack || !message) return;
+
+        const normalizedTone = String(tone || '').toLowerCase();
+        const icon = normalizedTone === 'success' || normalizedTone === 'ok'
+            ? 'check'
+            : (normalizedTone === 'warning' || normalizedTone === 'warn' ? 'circle-exclamation' : 'triangle-exclamation');
+        const fallbackTitle = normalizedTone === 'success' || normalizedTone === 'ok'
+            ? 'Success'
+            : (normalizedTone === 'warning' || normalizedTone === 'warn' ? 'Reminder' : 'Action Needed');
+
+        const toast = document.createElement('div');
+        toast.className = 'product-alert-toast ' + (tone || '');
+        toast.innerHTML = `
+            <div class="product-alert-icon"><i class="fa-solid fa-${icon}"></i></div>
+            <div>
+                <div class="product-alert-title">${productEscape(title || fallbackTitle)}</div>
+                <div class="product-alert-message">${productEscape(message)}</div>
+            </div>
+            <button type="button" class="product-alert-close" aria-label="Close notice">×</button>
+        `;
+
+        toast.querySelector('.product-alert-close')?.addEventListener('click', () => toast.remove());
+        stack.appendChild(toast);
+
+        setTimeout(() => {
+            if(toast && toast.parentNode) toast.remove();
+        }, normalizedTone === 'error' || normalizedTone === 'danger' ? 6500 : 4200);
+    }
+
+    function productAlert(message, tone='error'){
+        productToast(message, tone);
+    }
+
+    function productConfirmDialog(options={}){
+        return new Promise(resolve => {
+            const backdrop = document.getElementById('product-confirm-backdrop');
+            const box = document.getElementById('product-confirm-box');
+            const icon = document.getElementById('product-confirm-icon');
+            const title = document.getElementById('product-confirm-title');
+            const message = document.getElementById('product-confirm-message');
+            const cancelBtn = document.getElementById('product-confirm-cancel');
+            const okBtn = document.getElementById('product-confirm-ok');
+
+            if(!backdrop || !box || !title || !message || !cancelBtn || !okBtn){
+                resolve(false);
+                return;
+            }
+
+            const tone = options.tone || '';
+            box.className = 'product-confirm-box ' + tone;
+            title.textContent = options.title || 'Confirm Action';
+            message.textContent = options.message || 'Continue?';
+            cancelBtn.textContent = options.cancelText || 'Cancel';
+            okBtn.textContent = options.confirmText || 'Continue';
+            okBtn.className = 'btn btn-sm fw-bold px-4 ' + (options.confirmClass || (tone === 'danger' ? 'btn-danger' : 'btn-primary'));
+
+            if(icon){
+                const iconName = options.icon || (tone === 'danger' ? 'trash' : (tone === 'warning' ? 'triangle-exclamation' : 'circle-question'));
+                icon.innerHTML = `<i class="fa-solid fa-${iconName}"></i>`;
+            }
+
+            let resolved = false;
+            const cleanup = value => {
+                if(resolved) return;
+                resolved = true;
+                backdrop.classList.remove('show');
+                okBtn.onclick = null;
+                cancelBtn.onclick = null;
+                backdrop.onclick = null;
+                document.removeEventListener('keydown', keyHandler);
+                resolve(value);
+            };
+
+            const keyHandler = event => {
+                if(event.key === 'Escape') cleanup(false);
+            };
+
+            okBtn.onclick = () => cleanup(true);
+            cancelBtn.onclick = () => cleanup(false);
+            backdrop.onclick = event => {
+                if(event.target === backdrop) cleanup(false);
+            };
+            document.addEventListener('keydown', keyHandler);
+
+            backdrop.classList.add('show');
+            setTimeout(() => okBtn.focus(), 60);
+        });
+    }
+
     // --- GLOBAL STATE ---
     let prodModal;
     let productsData = [];
@@ -597,7 +712,7 @@ function renderTable(data) {
     function openEditModal(sn) { 
         const p = productsData.find(x => x.serial_number === sn); 
         if(!p){
-            return alert("Product record was not found. Please refresh and try again.");
+            return productAlert("Product record was not found. Please refresh and try again.");
         }
         document.getElementById('modal-title').innerText = "Modify Product Record"; 
         document.getElementById('edit-prod-serial').value = sn; 
@@ -643,19 +758,26 @@ function renderTable(data) {
         data.name = (data.name || '').trim();
 
         if (!data.serial_number) {
-            return alert("Validation Error: Serial number is required.");
+            return productAlert("Validation Error: Serial number is required.");
         }
 
         if (!data.name) {
-            return alert("Validation Error: Product name is required.");
+            return productAlert("Validation Error: Product name is required.");
         }
 
         if (!data.client_id) {
-            return alert("Validation Error: Please select a medical center from the autocomplete list.");
+            return productAlert("Validation Error: Please select a medical center from the autocomplete list.");
         }
 
         if (editSN && data.serial_number !== editSN) {
-            const proceed = confirm(`Change product serial number from ${editSN} to ${data.serial_number}?\n\nLinked schedules using this product will be updated and the action will be recorded in Activity Logs.`);
+            const proceed = await productConfirmDialog({
+                title: 'Change Serial Number?',
+                message: `Change product serial number from ${editSN} to ${data.serial_number}?\n\nLinked schedules using this product will be updated and the action will be recorded in Activity Logs.`,
+                confirmText: 'Change Serial',
+                cancelText: 'Cancel',
+                tone: 'warning',
+                icon: 'triangle-exclamation'
+            });
             if(!proceed) return;
         }
 
@@ -684,32 +806,200 @@ function renderTable(data) {
             }
         } else {
             const errData = await res.json();
-            alert("Database Error: " + (errData.message || "Action failed."));
+            productAlert("Database Error: " + (errData.message || "Action failed."));
         }
     }
 
     async function deleteProduct(s) { 
         // Updated Guard for v5.4.2
         if (authRole === 'engineer') return; 
-        
-        const confirmation = confirm("Permanently delete this product record? This cannot be undone.");
+
+        const confirmation = await productConfirmDialog({
+            title: 'Delete Product?',
+            message: 'Permanently delete this product record? This cannot be undone.',
+            confirmText: 'Delete Product',
+            cancelText: 'Cancel',
+            tone: 'danger',
+            icon: 'trash'
+        });
         if(!confirmation) return;
-        
+
         // Logic Fix: Use encodeURIComponent for hyphenated IDs
         const res = await fetch(`/delete_product/${encodeURIComponent(s)}`, {
             method:'DELETE',
             headers: { 'X-CSRFToken': getCSRFToken() } // SECURITY TOKEN ADDED
         }); 
-        
+
         if (res.ok) {
             await loadData(); 
         } else {
-            alert("Deletion failed on server.");
+            productAlert("Deletion failed on server.");
         }
     }
 </script>
 
 <style>
+    .product-alert-stack {
+        position: fixed;
+        top: 18px;
+        right: 18px;
+        z-index: 4090;
+        display: grid;
+        gap: 10px;
+        width: min(370px, calc(100vw - 32px));
+        pointer-events: none;
+    }
+
+    .product-alert-toast {
+        pointer-events: auto;
+        border-radius: 16px;
+        padding: 12px 14px;
+        border: 1px solid #dbeafe;
+        background: #ffffff;
+        color: #0f172a;
+        box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 10px;
+        align-items: start;
+        animation: productToastIn .18s ease-out;
+    }
+
+    .product-alert-toast.success,
+    .product-alert-toast.ok {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #166534;
+    }
+
+    .product-alert-toast.warning,
+    .product-alert-toast.warn {
+        border-color: #fde68a;
+        background: #fffbeb;
+        color: #92400e;
+    }
+
+    .product-alert-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(13,110,253,.12);
+        color: #0d6efd;
+    }
+
+    .product-alert-title {
+        font-weight: 950;
+        margin-bottom: 2px;
+    }
+
+    .product-alert-message {
+        font-weight: 800;
+        line-height: 1.35;
+        font-size: .86rem;
+        white-space: pre-wrap;
+    }
+
+    .product-alert-close {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font-size: 1.05rem;
+        font-weight: 950;
+        cursor: pointer;
+        line-height: 1;
+    }
+
+    .product-confirm-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 4100;
+        background: rgba(15, 23, 42, 0.55);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+    }
+
+    .product-confirm-backdrop.show {
+        display: flex;
+    }
+
+    .product-confirm-box {
+        width: min(460px, 100%);
+        background: #ffffff;
+        border-radius: 22px;
+        box-shadow: 0 28px 90px rgba(15, 23, 42, 0.38);
+        border: 1px solid #dbeafe;
+        overflow: hidden;
+        animation: productDialogIn .18s ease-out;
+    }
+
+    .product-confirm-header {
+        padding: 18px 18px 10px;
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .product-confirm-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 16px;
+        background: #eff6ff;
+        color: #0d6efd;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.05rem;
+        flex: 0 0 auto;
+    }
+
+    .product-confirm-box.danger .product-confirm-icon {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .product-confirm-box.warning .product-confirm-icon {
+        background: #fffbeb;
+        color: #b45309;
+    }
+
+    .product-confirm-title {
+        margin: 0;
+        color: #0f172a;
+        font-weight: 950;
+        font-size: 1.08rem;
+    }
+
+    .product-confirm-message {
+        margin-top: 5px;
+        color: #475569;
+        font-weight: 800;
+        line-height: 1.45;
+        white-space: pre-wrap;
+    }
+
+    .product-confirm-actions {
+        padding: 12px 18px 18px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    @keyframes productDialogIn {
+        from { opacity: 0; transform: translateY(10px) scale(.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes productToastIn {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
     /* AUTOCOMPLETE DROPDOWN STYLING */
     .search-results {
         position: absolute;
@@ -903,6 +1193,23 @@ function renderTable(data) {
     }
 
     @media (max-width: 768px) {
+        .product-alert-stack {
+            top: 12px;
+            left: 10px;
+            right: 10px;
+            width: auto;
+        }
+
+        .product-confirm-backdrop {
+            align-items: flex-end;
+            padding: 12px;
+        }
+
+        .product-confirm-box {
+            width: 100%;
+            border-radius: 20px;
+        }
+
         .container-fluid {
             padding-left: 0.85rem;
             padding-right: 0.85rem;

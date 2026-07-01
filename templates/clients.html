@@ -2,6 +2,24 @@
 
 {% block content %}
 <div class="container-fluid">
+    <div id="client-alert-stack" class="client-alert-stack no-print" aria-live="polite" aria-atomic="true"></div>
+
+    <div id="client-confirm-backdrop" class="client-confirm-backdrop no-print" role="dialog" aria-modal="true" aria-labelledby="client-confirm-title">
+        <div id="client-confirm-box" class="client-confirm-box">
+            <div class="client-confirm-header">
+                <div id="client-confirm-icon" class="client-confirm-icon"><i class="fa-solid fa-circle-question"></i></div>
+                <div>
+                    <h3 id="client-confirm-title" class="client-confirm-title">Confirm Action</h3>
+                    <div id="client-confirm-message" class="client-confirm-message"></div>
+                </div>
+            </div>
+            <div class="client-confirm-actions">
+                <button type="button" id="client-confirm-cancel" class="btn btn-outline-secondary btn-sm fw-bold px-4">Cancel</button>
+                <button type="button" id="client-confirm-ok" class="btn btn-primary btn-sm fw-bold px-4">Continue</button>
+            </div>
+        </div>
+    </div>
+
     <div class="card shadow-sm border-0 p-4 bg-white">
         <div class="d-flex justify-content-between align-items-center mb-4 no-print">
             <h2 class="h4 mb-0"><i class="fa-solid fa-handshake me-2 text-success"></i>Client Management</h2>
@@ -139,6 +157,103 @@
 </div>
 
 <script>
+function clientEscape(value){
+    return String(value || '').replace(/[&<>"']/g, function(match){
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[match];
+    });
+}
+
+function clientToast(message, tone='error', title=''){
+    const stack = document.getElementById('client-alert-stack');
+    if(!stack || !message) return;
+
+    const normalizedTone = String(tone || '').toLowerCase();
+    const icon = normalizedTone === 'success' || normalizedTone === 'ok'
+        ? 'check'
+        : (normalizedTone === 'warning' || normalizedTone === 'warn' ? 'circle-exclamation' : 'triangle-exclamation');
+    const fallbackTitle = normalizedTone === 'success' || normalizedTone === 'ok'
+        ? 'Success'
+        : (normalizedTone === 'warning' || normalizedTone === 'warn' ? 'Reminder' : 'Action Needed');
+
+    const toast = document.createElement('div');
+    toast.className = 'client-alert-toast ' + (tone || '');
+    toast.innerHTML = `
+        <div class="client-alert-icon"><i class="fa-solid fa-${icon}"></i></div>
+        <div>
+            <div class="client-alert-title">${clientEscape(title || fallbackTitle)}</div>
+            <div class="client-alert-message">${clientEscape(message)}</div>
+        </div>
+        <button type="button" class="client-alert-close" aria-label="Close notice">×</button>
+    `;
+
+    toast.querySelector('.client-alert-close')?.addEventListener('click', () => toast.remove());
+    stack.appendChild(toast);
+
+    setTimeout(() => {
+        if(toast && toast.parentNode) toast.remove();
+    }, normalizedTone === 'error' || normalizedTone === 'danger' ? 6500 : 4200);
+}
+
+function clientAlert(message, tone='error'){
+    clientToast(message, tone);
+}
+
+function clientConfirmDialog(options={}){
+    return new Promise(resolve => {
+        const backdrop = document.getElementById('client-confirm-backdrop');
+        const box = document.getElementById('client-confirm-box');
+        const icon = document.getElementById('client-confirm-icon');
+        const title = document.getElementById('client-confirm-title');
+        const message = document.getElementById('client-confirm-message');
+        const cancelBtn = document.getElementById('client-confirm-cancel');
+        const okBtn = document.getElementById('client-confirm-ok');
+
+        if(!backdrop || !box || !title || !message || !cancelBtn || !okBtn){
+            resolve(false);
+            return;
+        }
+
+        const tone = options.tone || '';
+        box.className = 'client-confirm-box ' + tone;
+        title.textContent = options.title || 'Confirm Action';
+        message.textContent = options.message || 'Continue?';
+        cancelBtn.textContent = options.cancelText || 'Cancel';
+        okBtn.textContent = options.confirmText || 'Continue';
+        okBtn.className = 'btn btn-sm fw-bold px-4 ' + (options.confirmClass || (tone === 'danger' ? 'btn-danger' : 'btn-primary'));
+
+        if(icon){
+            const iconName = options.icon || (tone === 'danger' ? 'trash' : 'circle-question');
+            icon.innerHTML = `<i class="fa-solid fa-${iconName}"></i>`;
+        }
+
+        let resolved = false;
+        const cleanup = value => {
+            if(resolved) return;
+            resolved = true;
+            backdrop.classList.remove('show');
+            okBtn.onclick = null;
+            cancelBtn.onclick = null;
+            backdrop.onclick = null;
+            document.removeEventListener('keydown', keyHandler);
+            resolve(value);
+        };
+
+        const keyHandler = event => {
+            if(event.key === 'Escape') cleanup(false);
+        };
+
+        okBtn.onclick = () => cleanup(true);
+        cancelBtn.onclick = () => cleanup(false);
+        backdrop.onclick = event => {
+            if(event.target === backdrop) cleanup(false);
+        };
+        document.addEventListener('keydown', keyHandler);
+
+        backdrop.classList.add('show');
+        setTimeout(() => okBtn.focus(), 60);
+    });
+}
+
 let clientModalInstance, viewModalInstance, clientsData = [], clientSummary = { total_clients: 0, total_contacts: 0, clients_with_contacts: 0 };
 
 let autoTimer;
@@ -603,11 +718,16 @@ async function saveClient(){
 
             if(checkData.match && String(checkData.id) !== String(id || '')){
 
-                if(confirm(`Duplicate found:
+                const openExisting = await clientConfirmDialog({
+                    title: 'Duplicate Client Found',
+                    message: `Duplicate found:\n\n${checkData.name} (${checkData.address || 'No address'})\n\nOpen existing client?`,
+                    confirmText: 'Open Existing',
+                    cancelText: 'Cancel',
+                    tone: 'warning',
+                    icon: 'triangle-exclamation'
+                });
 
-${checkData.name} (${checkData.address || 'No address'})
-
-Open existing client?`)){
+                if(openExisting){
                     await loadClients({ preserveFilters: true, filters: activeFilters });
                     openEditModal(checkData.id);
                 }
@@ -640,10 +760,10 @@ Open existing client?`)){
             clientModalInstance.hide();
         } else {
             const err = await res.json().catch(()=>({}));
-            alert(err.message || "Error saving client");
+            clientAlert(err.message || "Error saving client");
         }
     } catch(err) {
-        alert("Network or server error while saving client.");
+        clientAlert("Network or server error while saving client.");
     } finally {
         setClientSaveBusy(false);
     }
@@ -955,7 +1075,17 @@ async function viewContacts(id){
 
 async function deleteClient(id){
     if(!isAdminUser) return;
-    if(confirm("Are you sure you want to delete this client?")){
+
+    const shouldDelete = await clientConfirmDialog({
+        title: 'Delete Client?',
+        message: 'Are you sure you want to delete this client? This action cannot be undone.',
+        confirmText: 'Delete Client',
+        cancelText: 'Cancel',
+        tone: 'danger',
+        icon: 'trash'
+    });
+
+    if(shouldDelete){
         await fetch(`/delete_client/${id}`, {
             method: 'DELETE',
             headers: {'X-CSRFToken': getCSRFToken()}
@@ -967,7 +1097,7 @@ async function deleteClient(id){
 function exportClientExcel(){
     const id = document.getElementById('edit-client-id').value;
     if(!id){
-        alert("Please save client first before exporting.");
+        clientAlert("Please save client first before exporting.");
         return;
     }
     window.open(`/export_client_excel/${id}`);
@@ -1035,6 +1165,167 @@ function applyFilters(){
 
 
 <style>
+    .client-alert-stack {
+        position: fixed;
+        top: 18px;
+        right: 18px;
+        z-index: 4090;
+        display: grid;
+        gap: 10px;
+        width: min(370px, calc(100vw - 32px));
+        pointer-events: none;
+    }
+
+    .client-alert-toast {
+        pointer-events: auto;
+        border-radius: 16px;
+        padding: 12px 14px;
+        border: 1px solid #dbeafe;
+        background: #ffffff;
+        color: #0f172a;
+        box-shadow: 0 18px 50px rgba(15, 23, 42, 0.22);
+        display: grid;
+        grid-template-columns: 28px 1fr auto;
+        gap: 10px;
+        align-items: start;
+        animation: clientToastIn .18s ease-out;
+    }
+
+    .client-alert-toast.success,
+    .client-alert-toast.ok {
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+        color: #166534;
+    }
+
+    .client-alert-toast.warning,
+    .client-alert-toast.warn {
+        border-color: #fde68a;
+        background: #fffbeb;
+        color: #92400e;
+    }
+
+    .client-alert-icon {
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(25,135,84,.12);
+        color: #198754;
+    }
+
+    .client-alert-title {
+        font-weight: 950;
+        margin-bottom: 2px;
+    }
+
+    .client-alert-message {
+        font-weight: 800;
+        line-height: 1.35;
+        font-size: .86rem;
+        white-space: pre-wrap;
+    }
+
+    .client-alert-close {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font-size: 1.05rem;
+        font-weight: 950;
+        cursor: pointer;
+        line-height: 1;
+    }
+
+    .client-confirm-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 4100;
+        background: rgba(15, 23, 42, 0.55);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+    }
+
+    .client-confirm-backdrop.show {
+        display: flex;
+    }
+
+    .client-confirm-box {
+        width: min(460px, 100%);
+        background: #ffffff;
+        border-radius: 22px;
+        box-shadow: 0 28px 90px rgba(15, 23, 42, 0.38);
+        border: 1px solid #dbeafe;
+        overflow: hidden;
+        animation: clientDialogIn .18s ease-out;
+    }
+
+    .client-confirm-header {
+        padding: 18px 18px 10px;
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .client-confirm-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 16px;
+        background: #ecfdf5;
+        color: #198754;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.05rem;
+        flex: 0 0 auto;
+    }
+
+    .client-confirm-box.danger .client-confirm-icon {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .client-confirm-box.warning .client-confirm-icon {
+        background: #fffbeb;
+        color: #b45309;
+    }
+
+    .client-confirm-title {
+        margin: 0;
+        color: #0f172a;
+        font-weight: 950;
+        font-size: 1.08rem;
+    }
+
+    .client-confirm-message {
+        margin-top: 5px;
+        color: #475569;
+        font-weight: 800;
+        line-height: 1.45;
+        white-space: pre-wrap;
+    }
+
+    .client-confirm-actions {
+        padding: 12px 18px 18px;
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    @keyframes clientDialogIn {
+        from { opacity: 0; transform: translateY(10px) scale(.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes clientToastIn {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
     .directory-count-footer {
         font-size: 0.88rem;
     }
@@ -1215,6 +1506,23 @@ function applyFilters(){
     }
 
     @media (max-width: 768px) {
+        .client-alert-stack {
+            top: 12px;
+            left: 10px;
+            right: 10px;
+            width: auto;
+        }
+
+        .client-confirm-backdrop {
+            align-items: flex-end;
+            padding: 12px;
+        }
+
+        .client-confirm-box {
+            width: 100%;
+            border-radius: 20px;
+        }
+
         .container-fluid {
             padding-left: 0.85rem;
             padding-right: 0.85rem;
