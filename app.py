@@ -2982,6 +2982,9 @@ CLIENT_DUPLICATE_WEAK_TOKENS = {
     'diagnostic', 'diagnostics', 'laboratory', 'lab', 'health',
     'healthcare', 'institute', 'institution', 'university', 'memorial',
     'doctors', 'doctor',
+    # Saint/location prefixes are common across unrelated facilities. They
+    # should not make St. Vincent Medical Clinic match St. Vincent Hospital.
+    'st', 'saint', 'san', 'sta', 'santa', 'santo',
     # Country/location/common ownership words should not cause duplicates alone.
     # Example: Philippine General Hospital must not match Philippine Heart Center.
     'philippine', 'philippines', 'national', 'regional', 'city', 'province',
