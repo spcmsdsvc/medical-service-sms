@@ -13470,12 +13470,19 @@ async function openTSRClientEmailModal(shiftId){
                 fallbackLabel.className = "xsmall text-muted mt-2 mb-1";
                 fallbackLabel.innerHTML = detectedEmails.length
                     ? '<i class="fa-solid fa-address-book me-1"></i>Client contact suggestions from the Medical Center record.'
-                    : '<i class="fa-solid fa-address-book me-1"></i>No email found in TSR. Showing client record suggestions.';
+                    : '<i class="fa-solid fa-address-book me-1"></i>No readable email found in the TSR file. Showing Medical Center contact suggestions.';
                 detectedContainer.appendChild(fallbackLabel);
                 renderTSREmailChips(detectedContainer, fallbackEmails, true);
             }
 
-            const firstDetected = fallbackEmails?.[0]?.email || detectedEmails?.[0]?.email || "";
+            if(payload.note && fallbackEmails.length){
+                const noteEl = document.createElement('div');
+                noteEl.className = "xsmall text-muted mt-2";
+                noteEl.innerHTML = `<i class="fa-solid fa-circle-info me-1"></i>${escapeHtml(payload.note)}`;
+                detectedContainer.appendChild(noteEl);
+            }
+
+            const firstDetected = detectedEmails?.[0]?.email || fallbackEmails?.[0]?.email || "";
             if(firstDetected){
                 addTSRRecipients(firstDetected, false);
             }

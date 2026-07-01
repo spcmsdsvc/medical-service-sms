@@ -29204,8 +29204,12 @@ def save_uploaded_shift_files(shift):
         db.session.flush()
 
         upload_recipient_emails = extract_tsr_recipient_emails_from_request_payload()
-        if upload_recipient_emails and is_tsr_filename(original_name):
-            save_tsr_email_metadata_for_file_infos([file_rec], upload_recipient_emails, source='manual_upload')
+        if is_tsr_filename(original_name):
+            fallback_recipient_emails = get_shift_client_email_fallback_addresses(shift)
+            metadata_emails = normalize_email_list(upload_recipient_emails + fallback_recipient_emails)
+            if metadata_emails:
+                metadata_source = 'manual_upload' if upload_recipient_emails else 'client_record_upload'
+                save_tsr_email_metadata_for_file_infos([file_rec], metadata_emails, source=metadata_source)
 
         saved_filenames.append(unique_name)
 
@@ -30559,6 +30563,8 @@ def get_saved_tsr_email_metadata_candidates(tsr_files):
             source_label = 'Previously sent TSR recipient'
         elif metadata.get('source') == 'manual_upload':
             source_label = 'Uploaded TSR recipient'
+        elif metadata.get('source') == 'client_record_upload':
+            source_label = 'Medical Center contact'
         for email_addr in parse_manual_recipient_emails(metadata.get('emails')):
             email_key = email_addr.lower()
             if email_key in seen:
@@ -30572,8 +30578,13 @@ def get_saved_tsr_email_metadata_candidates(tsr_files):
 
 
 def merge_tsr_email_candidate_lists(*candidate_lists):
-    """Merge detected/saved email candidate rows without duplicating addresses."""
+    """Merge detected/saved email candidate rows without duplicating addresses.
+
+    Candidate order is meaningful: callers pass saved recipients first, then
+    readable PDF detections, then fallback lists. Preserve that priority.
+    """
     merged = {}
+    ordered_keys = []
     for candidate_list in candidate_lists:
         for candidate in candidate_list or []:
             email_addr = clean_str(candidate.get('email') if isinstance(candidate, dict) else '')
@@ -30587,12 +30598,14 @@ def merge_tsr_email_candidate_lists(*candidate_lists):
             sources = candidate.get('sources') if isinstance(candidate, dict) else []
             if isinstance(sources, str):
                 sources = [sources]
-            merged.setdefault(email_key, {'email': normalized_email, 'sources': []})
+            if email_key not in merged:
+                merged[email_key] = {'email': normalized_email, 'sources': []}
+                ordered_keys.append(email_key)
             for source in sources or []:
                 source = clean_str(source)
                 if source and source not in merged[email_key]['sources']:
                     merged[email_key]['sources'].append(source)
-    return [merged[key] for key in sorted(merged.keys())]
+    return [merged[key] for key in ordered_keys]
 
 def get_tsr_files_for_shift(shift):
     """Return stored TSR files attached to a shift for client email sending.
@@ -30873,6 +30886,15 @@ def get_shift_client_email_fallbacks(shift):
     return fallback_emails
 
 
+def get_shift_client_email_fallback_addresses(shift):
+    """Return only email strings from the standard TSR client fallback source."""
+    return normalize_email_list([
+        candidate.get('email')
+        for candidate in get_shift_client_email_fallbacks(shift)
+        if isinstance(candidate, dict)
+    ])
+
+
 def clean_tsr_subject_part(value, fallback=''):
     """Clean one TSR subject segment while keeping it readable and filename-like."""
     value = clean_str(value) or fallback or ''
@@ -31059,6 +31081,11 @@ def preview_tsr_client_email(shift_id):
             flush=True
         )
     fallback_emails = get_shift_client_email_fallbacks(shift)
+    preview_note = ''
+    if tsr_files and not detected_emails and fallback_emails:
+        preview_note = 'No readable email found in the TSR file. Showing Medical Center contact suggestions.'
+    elif tsr_files and not detected_emails:
+        preview_note = 'No readable email found in the TSR file. You may type the recipient manually.'
 
     # S12A0-2C:
     # The Send TSR modal now displays Settings-managed system CC recipients
@@ -31096,7 +31123,7 @@ def preview_tsr_client_email(shift_id):
         ],
         'default_font_key': DEFAULT_TSR_EMAIL_FONT_KEY,
         'can_send': bool(tsr_files),
-        'note': 'Scanned image TSR email detection is not available yet.'
+        'note': preview_note
     })
 
 
