@@ -1386,7 +1386,7 @@
     Detect email from attached TSR, let scheduler confirm/edit, then send.
 -->
 <div class="modal fade no-print" id="tsrClientEmailModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
             <div class="modal-header tsr-email-modal-header text-white border-0 py-3">
                 <div>
@@ -2584,14 +2584,30 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 
 #tsrClientEmailModal .modal-content {
     border-radius: 1.25rem !important;
+    max-height: calc(100vh - 1.5rem);
 }
 
 #tsrClientEmailModal .modal-body {
     background: #fbfefc;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 #tsrClientEmailModal .modal-footer {
     background: #fbfefc;
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    box-shadow: 0 -8px 18px rgba(15, 23, 42, 0.06);
+}
+
+body.timeline-dialog-over-modal #tsrClientEmailModal .modal-content {
+    pointer-events: none;
+}
+
+body.timeline-dialog-over-modal .timeline-dialog-backdrop,
+body.timeline-dialog-over-modal .timeline-dialog {
+    pointer-events: auto;
 }
 
 .tsr-email-context-icon {
@@ -6829,10 +6845,12 @@ function timelineConfirmDialog(options) {
         }
 
         let resolved = false;
+        const hasOpenBootstrapModal = !!document.querySelector('.modal.show');
         const cleanup = function(value) {
             if (resolved) return;
             resolved = true;
             backdrop.classList.remove('show');
+            document.body.classList.remove('timeline-dialog-over-modal');
             confirmBtn.onclick = null;
             cancelBtn.onclick = null;
             backdrop.onclick = null;
@@ -6851,6 +6869,9 @@ function timelineConfirmDialog(options) {
         };
         document.addEventListener('keydown', keyHandler);
 
+        if(hasOpenBootstrapModal){
+            document.body.classList.add('timeline-dialog-over-modal');
+        }
         backdrop.classList.add('show');
         window.setTimeout(function() { confirmBtn.focus(); }, 60);
     });
@@ -13594,6 +13615,13 @@ async function openTSRClientEmailModal(shiftId){
             if(!payload.can_send){
                 detectedContainer.innerHTML = '<div class="alert alert-warning small mb-0">No attached TSR file found for this schedule.</div>';
             }
+
+            setTimeout(() => {
+                document.getElementById('tsr-recipient-composer')?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+            }, 80);
 
         }catch(err){
             console.error(err);
