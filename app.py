@@ -6641,6 +6641,16 @@ def get_tsr_client_cc_emails_for_current_sender():
     return normalize_email_list(cc_emails)
 
 
+def no_store_jsonify(payload, status_code=200):
+    """Return JSON with no-store headers for settings-sensitive modal data."""
+    response = jsonify(payload)
+    response.status_code = status_code
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
+
+
 def send_brevo_email_notification(to_emails, subject, text_body, html_body=None):
     """Send email through Brevo API over HTTPS so it works when SMTP ports are blocked."""
     print("[EMAIL] Brevo API notification requested.", flush=True)
@@ -10469,7 +10479,7 @@ def settings_email_recipients_data():
         .all()
     )
 
-    return jsonify({
+    return no_store_jsonify({
         'success': True,
         'groups': get_email_recipient_groups_payload(),
         'recipients': [email_recipient_setting_to_dict(recipient) for recipient in recipients]
@@ -10532,7 +10542,7 @@ def settings_email_recipients_save():
     ))
     db.session.commit()
 
-    return jsonify({
+    return no_store_jsonify({
         'success': True,
         'message': 'Email recipient saved.',
         'recipient': email_recipient_setting_to_dict(recipient)
@@ -10554,18 +10564,29 @@ def settings_email_recipients_delete(recipient_id):
         return jsonify({'success': False, 'error': 'Email recipient not found.'}), 404
 
     email_addr = recipient.email or ''
-    group_label = EMAIL_RECIPIENT_GROUPS.get(recipient.group_key or '', {}).get('label', recipient.group_key or '')
+    group_key = recipient.group_key or ''
+    group_label = EMAIL_RECIPIENT_GROUPS.get(group_key, {}).get('label', group_key)
+    duplicate_recipients = (
+        EmailRecipientSetting.query
+        .filter(EmailRecipientSetting.group_key == group_key)
+        .filter(func.lower(EmailRecipientSetting.email) == (email_addr or '').lower())
+        .all()
+    )
 
-    db.session.delete(recipient)
+    deleted_count = 0
+    for duplicate_recipient in duplicate_recipients or [recipient]:
+        db.session.delete(duplicate_recipient)
+        deleted_count += 1
     db.session.add(ActivityLog(
         user=current_user.username.capitalize(),
         action=f"Deleted email recipient setting: {email_addr} ({group_label})"
     ))
     db.session.commit()
 
-    return jsonify({
+    return no_store_jsonify({
         'success': True,
-        'message': 'Email recipient deleted.'
+        'message': 'Email recipient deleted.',
+        'deleted_count': deleted_count
     })
 
 
@@ -31097,7 +31118,7 @@ def preview_tsr_client_email(shift_id):
     system_cc_emails = get_static_tsr_client_cc_emails()
     sender_copy_email = get_current_user_email_for_tsr_cc()
 
-    return jsonify({
+    return no_store_jsonify({
         'status': 'success',
         'shift_id': shift.id,
         'schedule_status': shift.status or '',

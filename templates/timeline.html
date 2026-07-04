@@ -1623,7 +1623,7 @@ body.timeline-dev-preview-manager .timeline-engineer-focus-strip {
 .timeline-scroll-wrapper {
     max-height: calc(100vh - var(--timeline-grid-maxheight-offset, 190px));
     overflow: auto;
-    overscroll-behavior: contain;
+    overscroll-behavior: auto;
     background: #ffffff;
 }
 
@@ -2139,28 +2139,6 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 .timeline-summary-action-btn:disabled {
     opacity: 0.48;
     cursor: not-allowed;
-}
-
-.timeline-summary-details-btn {
-    width: 1.9rem !important;
-    height: 1.9rem !important;
-    min-width: 1.9rem !important;
-    min-height: 1.9rem !important;
-    padding: 0 !important;
-    border-radius: 999px !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    background: rgba(15,23,42,.92) !important;
-    color: #ffffff !important;
-    border: 1px solid rgba(255,255,255,.18) !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,.18);
-    font-size: .82rem !important;
-}
-
-.timeline-summary-details-btn:hover {
-    background: #0f172a !important;
-    transform: scale(1.05);
 }
 
 .timeline-hover-summary-head {
@@ -10862,8 +10840,8 @@ function collectMobileEngineerSchedules(){
         window.clearTimeout(window.timelineScheduleHoverSummaryTimer);
         const tooltip = document.getElementById('timeline-schedule-hover-summary');
         if(tooltip) tooltip.classList.remove('show');
-        document.querySelectorAll('.schedule-card.schedule-actions-open')
-            .forEach(card => card.classList.remove('schedule-actions-open'));
+        document.querySelectorAll('.schedule-card.schedule-panel-open')
+            .forEach(card => card.classList.remove('schedule-panel-open'));
     }
 
     function showTimelineScheduleHoverSummary(card){
@@ -10942,6 +10920,7 @@ function collectMobileEngineerSchedules(){
         const shift = context?.shift || {};
         const canManage = canTimelineSummaryManageContext(context);
         const canSend = canSendTSRForSchedule(shift);
+        const canEditTSR = hasScheduleTSRAttachment(shift);
         const requestId = getTravelRequestIdFromShift(shift);
         const isTravelBlock = isTimelineTravelBlock(shift);
 
@@ -10953,6 +10932,11 @@ function collectMobileEngineerSchedules(){
                 <button type="button" class="timeline-summary-action-btn timeline-summary-action-delete" ${canManage ? '' : 'disabled'} onclick="openTimelineSummaryDelete(event)">
                     <i class="fa-solid fa-trash-can"></i>Delete
                 </button>
+                ${canEditTSR ? `
+                    <button type="button" class="timeline-summary-action-btn timeline-summary-action-edit" onclick="openTimelineSummaryEditTSR(event)">
+                        <i class="fa-solid fa-file-pen"></i>Edit TSR
+                    </button>
+                ` : ''}
                 ${canSend ? `
                     <button type="button" class="timeline-summary-action-btn timeline-summary-action-send" onclick="openTimelineSummarySendTSR(event)">
                         <i class="fa-solid fa-paper-plane"></i>Send TSR
@@ -11005,11 +10989,11 @@ function collectMobileEngineerSchedules(){
 
         if(!context) return;
         window.timelineScheduleSummaryContext = context;
-        document.querySelectorAll('.schedule-card.schedule-actions-open')
+        document.querySelectorAll('.schedule-card.schedule-panel-open')
             .forEach(openCard => {
-                if(openCard !== card) openCard.classList.remove('schedule-actions-open');
+                if(openCard !== card) openCard.classList.remove('schedule-panel-open');
             });
-        card.classList.add('schedule-actions-open');
+        card.classList.add('schedule-panel-open');
 
         const tooltip = document.getElementById('timeline-schedule-hover-summary') || (() => {
             const node = document.createElement('div');
@@ -11040,6 +11024,95 @@ function collectMobileEngineerSchedules(){
         positionTimelineScheduleHoverSummary(card, tooltip);
     }
 
+    function handleTimelineScheduleCardClick(card, event){
+        if(event){
+            if(event.target.closest && event.target.closest('button,a,input,select,textarea')){
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        const justDragged = window.timelineScheduleDragEndedAt && (Date.now() - window.timelineScheduleDragEndedAt < 350);
+        if(document.body.classList.contains('dragging-schedule') || justDragged){
+            return;
+        }
+
+        showTimelineScheduleDetailsPopover(card, event);
+    }
+
+    function bindTimelineScheduleCardPointerActions(){
+        if(window.timelineScheduleCardPointerBound) return;
+        window.timelineScheduleCardPointerBound = true;
+
+        const wrapper = document.getElementById('timeline-scroll-wrapper');
+        if(!wrapper) return;
+
+        wrapper.addEventListener('pointerdown', function(event){
+            const card = event.target.closest && event.target.closest('.schedule-card[data-summary-shift-id]');
+            if(!card || event.target.closest('button,a,input,select,textarea')) return;
+
+            window.timelineSchedulePointerDown = {
+                card,
+                x: event.clientX,
+                y: event.clientY,
+                time: Date.now()
+            };
+        }, { passive: true });
+
+        wrapper.addEventListener('pointerup', function(event){
+            const pointerStart = window.timelineSchedulePointerDown;
+            window.timelineSchedulePointerDown = null;
+
+            const card = event.target.closest && event.target.closest('.schedule-card[data-summary-shift-id]');
+            if(!pointerStart || !card || pointerStart.card !== card) return;
+            if(event.target.closest('button,a,input,select,textarea')) return;
+
+            const moved = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
+            const elapsed = Date.now() - pointerStart.time;
+            if(moved > 8 || elapsed > 1200) return;
+
+            handleTimelineScheduleCardClick(card, event);
+        });
+
+        wrapper.addEventListener('pointercancel', function(){
+            window.timelineSchedulePointerDown = null;
+        }, { passive: true });
+
+        wrapper.addEventListener('click', function(event){
+            const card = event.target.closest && event.target.closest('.schedule-card[data-summary-shift-id]');
+            if(!card) return;
+            event.preventDefault();
+            event.stopPropagation();
+        });
+    }
+
+    function bindTimelineVerticalScrollBridge(){
+        if(window.timelineVerticalScrollBridgeBound) return;
+        window.timelineVerticalScrollBridgeBound = true;
+
+        const wrapper = document.getElementById('timeline-scroll-wrapper');
+        if(!wrapper) return;
+
+        wrapper.addEventListener('wheel', function(event){
+            if(event.ctrlKey || event.metaKey || event.shiftKey) return;
+            if(Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+
+            const maxTop = wrapper.scrollHeight - wrapper.clientHeight;
+            if(maxTop <= 0) return;
+
+            const goingDown = event.deltaY > 0;
+            const goingUp = event.deltaY < 0;
+            const canScrollDown = wrapper.scrollTop < maxTop - 1;
+            const canScrollUp = wrapper.scrollTop > 1;
+
+            if((goingDown && canScrollDown) || (goingUp && canScrollUp)){
+                wrapper.scrollTop = Math.max(0, Math.min(maxTop, wrapper.scrollTop + event.deltaY));
+                event.preventDefault();
+            }
+        }, { passive: false });
+    }
+
     function openTimelineSummaryEdit(event){
         if(event){
             event.preventDefault();
@@ -11049,6 +11122,17 @@ function collectMobileEngineerSchedules(){
         if(!context) return;
         hideTimelineScheduleHoverSummary();
         openEditModal(context.shift, context.engineerId, context.dayIso);
+    }
+
+    function openTimelineSummaryEditTSR(event){
+        if(event){
+            event.preventDefault();
+            event.stopPropagation();
+        }
+        const context = window.timelineScheduleSummaryContext;
+        if(!context) return;
+        hideTimelineScheduleHoverSummary();
+        redirectToEditLatestTSRFromSchedule(context.shift, context.engineerId, context.dayIso);
     }
 
     async function openTimelineSummaryDelete(event){
@@ -11097,8 +11181,7 @@ function collectMobileEngineerSchedules(){
 
     document.addEventListener('click', function(event){
         const summary = event.target.closest && event.target.closest('#timeline-schedule-hover-summary');
-        const detailsBtn = event.target.closest && event.target.closest('.timeline-summary-details-btn');
-        if(summary || detailsBtn) return;
+        if(summary) return;
         const tooltip = document.getElementById('timeline-schedule-hover-summary');
         if(tooltip && tooltip.classList.contains('show')){
             hideTimelineScheduleHoverSummary();
@@ -12441,10 +12524,6 @@ async function loadGrid() {
                             ondragend="handleScheduleDragEnd(event)"
                         >
 
-                            <button type="button" class="schedule-more-btn timeline-summary-details-btn no-print" title="More schedule actions" aria-label="More schedule actions" onclick="showTimelineScheduleDetailsPopover(this, event)">
-                                <i class="fa-solid fa-ellipsis"></i>
-                            </button>
-
                             ${canManageThisSchedule ? `
                             <div class="schedule-drag-handle no-print" title="Drag to move schedule">
                                 <i class="fa-solid fa-grip-vertical"></i>
@@ -12488,15 +12567,6 @@ async function loadGrid() {
                                 <span class="schedule-time">${timeRange}</span>
                                 <span class="schedule-files">${paperIcon}${canSendTSRForSchedule(s) ? '<i class="fa-solid fa-paper-plane ms-1 text-success" title="TSR ready to send"></i>' : ''}</span>
                             </div>
-
-                            ${canManageThisSchedule ? `
-                            <div class="schedule-overlay">
-                                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); openEditModal(${JSON.stringify(s).replace(/"/g, '&quot;')}, ${eng.id}, '${day.iso}')">Edit</button>
-                                ${hasScheduleTSRAttachment(s) ? `<button class="btn btn-warning btn-sm" title="Edit latest TSR / create correction" onclick="event.stopPropagation(); redirectToEditLatestTSRFromSchedule(${JSON.stringify(s).replace(/"/g, '&quot;')}, ${eng.id}, '${day.iso}')"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
-                                ${canSendTSRForSchedule(s) ? `<button class="btn btn-success btn-sm tsr-send-btn" title="Send TSR to Client" onclick="event.stopPropagation(); openTSRClientEmailModal(${s.id})"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
-                                <button class="btn btn-danger btn-sm delete-btn" data-eid="${eng.id}" data-ename='${JSON.stringify(eng.name)}' data-shiftid="${s.id}" data-shiftdate="${day.iso}">Delete</button>
-                            </div>
-                            ` : ''}
 
                         </div>`);
                     });
@@ -12612,17 +12682,29 @@ async function loadGrid() {
             bottomMirrorInner.style.width = `${syncWidth}px`;
         }
 
-        let syncing = false;
+        let syncFrame = null;
+        let syncSource = null;
+        let syncLeft = 0;
+
+        function setScrollLeftIfNeeded(target, left){
+            if(!target || Math.abs(target.scrollLeft - left) < 1) return;
+            target.scrollLeft = left;
+        }
 
         function setAllScroll(left, source){
-            if(syncing) return;
-            syncing = true;
+            syncLeft = left;
+            syncSource = source;
 
-            if(source !== wrapper) wrapper.scrollLeft = left;
-            if(source !== topMirror) topMirror.scrollLeft = left;
-            if(bottomMirror && source !== bottomMirror) bottomMirror.scrollLeft = left;
+            if(syncFrame) return;
+            syncFrame = requestAnimationFrame(function(){
+                const leftValue = syncLeft;
+                const sourceEl = syncSource;
+                syncFrame = null;
 
-            syncing = false;
+                if(sourceEl !== wrapper) setScrollLeftIfNeeded(wrapper, leftValue);
+                if(sourceEl !== topMirror) setScrollLeftIfNeeded(topMirror, leftValue);
+                if(bottomMirror && sourceEl !== bottomMirror) setScrollLeftIfNeeded(bottomMirror, leftValue);
+            });
         }
 
         wrapper.onscroll = function(){
@@ -13443,8 +13525,13 @@ async function openTSRClientEmailModal(shiftId){
         modal.show();
 
         try{
-            const response = await fetch(`/preview_tsr_client_email/${shiftId}`, {
-                headers: { 'X-CSRFToken': getCSRFToken() }
+            const response = await fetch(`/preview_tsr_client_email/${shiftId}?_=${Date.now()}`, {
+                cache: 'no-store',
+                headers: {
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-cache',
+                    'X-CSRFToken': getCSRFToken()
+                }
             });
             const payload = await response.json().catch(() => ({}));
 
@@ -14419,7 +14506,6 @@ function handleCellClick(event){
     if(document.body.classList.contains('dragging-schedule') ||
        event.target.closest('.schedule-item') ||
        event.target.closest('.schedule-card') ||
-       event.target.closest('.schedule-overlay') ||
        event.target.closest('#engineer-dropdown') ||
        event.target.closest('#engineer-card-container') ||
        event.target.closest('button')){
@@ -14514,6 +14600,7 @@ function handleScheduleDragStart(event){
 function handleScheduleDragEnd(event){
     event.currentTarget.classList.remove('schedule-dragging');
     document.body.classList.remove('dragging-schedule');
+    window.timelineScheduleDragEndedAt = Date.now();
     document.querySelectorAll('.calendar-drop-cell').forEach(cell=>{
         cell.classList.remove('drop-ready', 'drop-hover', 'drop-denied');
     });
@@ -14827,10 +14914,11 @@ window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
-        bindLinkedScheduleHoverHandlers();
-        // S11H5C: hover summary disabled; linked hover remains active.
-        // Summary now opens only from the explicit Details button.
+        // Hover-based schedule actions are disabled. Schedule actions now open
+        // from a direct card click so desktop and mobile behavior stays stable.
         // bindTimelineScheduleHoverSummaryHandlers();
+        bindTimelineScheduleCardPointerActions();
+        bindTimelineVerticalScrollBridge();
 
         syncMobileRoleBadges();
         shiftModal = new bootstrap.Modal(document.getElementById('shiftModal'));
@@ -16836,39 +16924,6 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 
 <style>
 
-.schedule-item-legacy-disabled{
-    position:relative;
-    overflow:hidden;
-}
-
-.schedule-item-legacy-disabled .schedule-overlay{
-    position:absolute;
-    top:0;
-    left:0;
-    width:100%;
-    height:100%;
-    backdrop-filter: blur(3px);
-    background: rgba(255,255,255,0.6);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:8px;
-
-    opacity:0;
-    pointer-events:none;   /* 🔥 FIX */
-    transition:0.2s ease;
-}
-
-.schedule-item-legacy-disabled:hover .schedule-overlay{
-    opacity:1;
-    pointer-events:auto;   /* 🔥 FIX */
-}
-
-.schedule-item-legacy-disabled .schedule-overlay button{
-    font-size:0.7rem;
-    padding:4px 8px;
-}
-
 /* COMPONENT STYLE OVERRIDES */
     .search-results {
         position: absolute; width: 100%; max-height: 150px;
@@ -16903,62 +16958,13 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 
 
 
-.schedule-item-legacy-disabled,
-.schedule-item-legacy-disabled .schedule-overlay {
-    z-index: 1;
-}
-
-/* PREMIUM UI UPGRADE */
-.schedule-item-legacy-disabled {
-    position: relative;
-    border-radius: 12px;
-    overflow: hidden;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.schedule-item-legacy-disabled:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-}
-
-.schedule-item-legacy-disabled .schedule-overlay {
-    position:absolute;
-    top:0;
-    left:0;
-    width:100%;
-    height:100%;
-    backdrop-filter: blur(6px);
-    background: rgba(255,255,255,0.7);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:10px;
-    opacity:0;
-    pointer-events:none;
-    transition: all 0.25s ease;
-}
-
-.schedule-item-legacy-disabled:hover .schedule-overlay{
-    opacity:1;
-    pointer-events:auto;
-}
-
-.schedule-item-legacy-disabled .schedule-overlay button{
-    transform: scale(0.9);
-    transition: all 0.2s ease;
-}
-
-.schedule-item-legacy-disabled:hover .schedule-overlay button{
-    transform: scale(1);
-}
-
-
 /* VERTICAL SCHEDULE CARD UPGRADE */
 .schedule-card {
-    background: #fff;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
     border-left-width: 4px !important;
     border-left-style: solid !important;
     border-radius: 10px;
-    padding: 6px 34px 6px 8px;
+    padding: 6px 8px;
     margin-bottom: 6px;
     font-size: 0.72rem;
     position: relative;
@@ -16966,43 +16972,26 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     flex-direction: column;
     gap: 3px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.06);
-    transition: transform 0.18s ease, box-shadow 0.18s ease;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
     overflow: hidden;
+    cursor: pointer;
 }
 
-.schedule-card:hover {
+.schedule-card:hover,
+.schedule-card:focus-within {
     transform: translateY(-1px);
-    box-shadow: 0 6px 14px rgba(0,0,0,0.12);
+    box-shadow: 0 7px 16px rgba(15, 23, 42, 0.14);
+    filter: saturate(1.04);
 }
 
-.schedule-more-btn {
-    position: absolute;
-    top: 5px;
-    right: 6px;
-    width: 22px;
-    height: 22px;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(255,255,255,0.94);
-    color: #334155;
-    font-size: 0.72rem;
-    line-height: 1;
-    opacity: 0.92;
-    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
-    transition: all 0.18s ease;
-    z-index: 4;
+.schedule-card.schedule-panel-open {
+    box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.22), 0 8px 18px rgba(13, 110, 253, 0.14);
+    filter: saturate(1.06);
 }
 
-.schedule-more-btn:hover,
-.schedule-more-btn:focus {
-    opacity: 1;
-    color: #0d6efd;
-    border-color: rgba(13, 110, 253, 0.35);
-    box-shadow: 0 4px 10px rgba(13, 110, 253, 0.18);
-    outline: none;
+.schedule-card:active {
+    transform: translateY(0);
+    box-shadow: 0 3px 9px rgba(15, 23, 42, 0.12);
 }
 
 .schedule-status {
@@ -17065,45 +17054,6 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     font-size: 0.62rem;
     white-space: nowrap;
 }
-
-.schedule-card .schedule-overlay {
-    position:absolute;
-    top:0;
-    left:0;
-    width:100%;
-    height:100%;
-    backdrop-filter: blur(5px);
-    background: rgba(255,255,255,0.72);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    gap:8px;
-    opacity:0;
-    pointer-events:none;
-    transition: all 0.22s ease;
-    z-index: 2;
-}
-
-.schedule-card:hover .schedule-overlay,
-.schedule-card:focus-within .schedule-overlay,
-.schedule-card.schedule-actions-open .schedule-overlay {
-    opacity:1;
-    pointer-events:auto;
-}
-
-.schedule-card .schedule-overlay button {
-    font-size:0.68rem;
-    padding:4px 8px;
-    transform: scale(0.94);
-    transition: all 0.18s ease;
-}
-
-.schedule-card:hover .schedule-overlay button,
-.schedule-card:focus-within .schedule-overlay button,
-.schedule-card.schedule-actions-open .schedule-overlay button {
-    transform: scale(1);
-}
-
 
 /* OFFICE + LEGEND NEXT-LEVEL VISUAL UPGRADE */
 .calendar-legend {
@@ -17332,13 +17282,13 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 
 /* DRAG & DROP POLISH */
 .schedule-card[draggable="true"] {
-    cursor: grab;
+    cursor: pointer;
 }
 
 .schedule-card[draggable="true"] .schedule-drag-handle {
     position: absolute;
     top: 5px;
-    right: 34px;
+    right: 6px;
     width: 18px;
     height: 18px;
     border-radius: 999px;
@@ -17355,7 +17305,7 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 }
 
 .schedule-card[draggable="true"]:hover {
-    cursor: grab;
+    cursor: pointer;
 }
 
 .schedule-card[draggable="true"]:hover .schedule-drag-handle {
@@ -17367,7 +17317,7 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     content: "Drag";
     position: absolute;
     top: 5px;
-    right: 56px;
+    right: 28px;
     background: rgba(13, 110, 253, 0.92);
     color: #fff;
     border-radius: 999px;
@@ -17473,17 +17423,6 @@ body.dragging-schedule * {
 body.dragging-schedule .add-hint {
     opacity: 0 !important;
 }
-
-body.dragging-schedule .schedule-overlay {
-    display: none !important;
-}
-
-body.dragging-schedule .schedule-more-btn {
-    display: none !important;
-}
-
-
-
 
 /* TIMELINE INTELLIGENCE - STEP 9 */
 .timeline-intelligence-legend {
