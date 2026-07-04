@@ -8764,6 +8764,7 @@ function shouldUseEngineerMobileView(){
         const categoryLabel = shift?.category || (isInternal ? 'Internal' : 'Work');
         const addressLabel = shift?.client_address || shift?.address || '';
         const files = getShiftFileDetails(shift);
+        const canSendTSR = canSendTSRForSchedule(shift);
 
         const backdrop = ensureMobileFullCalendarLiteDetailSheet();
         const title = document.getElementById('mobile-full-calendar-lite-detail-title');
@@ -8813,10 +8814,10 @@ function shouldUseEngineerMobileView(){
                             <i class="fa-solid fa-pen-to-square"></i>
                             Edit TSR
                         </button>` : ''}
-                        <button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-email" onclick="openMobileFullCalendarLiteEmailAction('${escapeHtml(String(shift?.id || ''))}')">
+                        ${canSendTSR ? `<button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-email" onclick="openMobileFullCalendarLiteEmailAction('${escapeHtml(String(shift?.id || ''))}')">
                             <i class="fa-solid fa-paper-plane"></i>
                             Send TSR Email
-                        </button>
+                        </button>` : ''}
                         <button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-attach" onclick="openMobileFullCalendarLiteAttachAction('${escapeHtml(String(shift?.id || ''))}', '${escapeHtml(String(dayIso || ''))}', '${escapeHtml(String(engineerId || ''))}')">
                             <i class="fa-solid fa-paperclip"></i>
                             Upload Attachment
@@ -10861,6 +10862,8 @@ function collectMobileEngineerSchedules(){
         window.clearTimeout(window.timelineScheduleHoverSummaryTimer);
         const tooltip = document.getElementById('timeline-schedule-hover-summary');
         if(tooltip) tooltip.classList.remove('show');
+        document.querySelectorAll('.schedule-card.schedule-actions-open')
+            .forEach(card => card.classList.remove('schedule-actions-open'));
     }
 
     function showTimelineScheduleHoverSummary(card){
@@ -11002,6 +11005,11 @@ function collectMobileEngineerSchedules(){
 
         if(!context) return;
         window.timelineScheduleSummaryContext = context;
+        document.querySelectorAll('.schedule-card.schedule-actions-open')
+            .forEach(openCard => {
+                if(openCard !== card) openCard.classList.remove('schedule-actions-open');
+            });
+        card.classList.add('schedule-actions-open');
 
         const tooltip = document.getElementById('timeline-schedule-hover-summary') || (() => {
             const node = document.createElement('div');
@@ -11143,6 +11151,12 @@ function collectMobileEngineerSchedules(){
         // because the schedule overlay and small action buttons can cause noisy
         // boundary events. Track the card currently under the pointer instead.
         document.addEventListener('mousemove', function(event){
+            if(window.matchMedia('(max-width: 768px)').matches || window.matchMedia('(pointer: coarse)').matches){
+                return;
+            }
+            if(event.target.closest && event.target.closest('#timeline-schedule-hover-summary')){
+                return;
+            }
             const card = event.target.closest('.schedule-card[data-linked-schedule-key]');
             const key = card ? (card.getAttribute('data-linked-schedule-key') || '') : '';
 
@@ -12427,6 +12441,10 @@ async function loadGrid() {
                             ondragend="handleScheduleDragEnd(event)"
                         >
 
+                            <button type="button" class="schedule-more-btn timeline-summary-details-btn no-print" title="More schedule actions" aria-label="More schedule actions" onclick="showTimelineScheduleDetailsPopover(this, event)">
+                                <i class="fa-solid fa-ellipsis"></i>
+                            </button>
+
                             ${canManageThisSchedule ? `
                             <div class="schedule-drag-handle no-print" title="Drag to move schedule">
                                 <i class="fa-solid fa-grip-vertical"></i>
@@ -12473,17 +12491,12 @@ async function loadGrid() {
 
                             ${canManageThisSchedule ? `
                             <div class="schedule-overlay">
-                                <button class="btn btn-dark btn-sm timeline-summary-details-btn" title="View schedule summary" aria-label="View schedule summary" onclick="showTimelineScheduleDetailsPopover(this, event)"><i class="fa-solid fa-circle-info"></i></button>
                                 <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); openEditModal(${JSON.stringify(s).replace(/"/g, '&quot;')}, ${eng.id}, '${day.iso}')">Edit</button>
                                 ${hasScheduleTSRAttachment(s) ? `<button class="btn btn-warning btn-sm" title="Edit latest TSR / create correction" onclick="event.stopPropagation(); redirectToEditLatestTSRFromSchedule(${JSON.stringify(s).replace(/"/g, '&quot;')}, ${eng.id}, '${day.iso}')"><i class="fa-solid fa-pen-to-square"></i></button>` : ''}
                                 ${canSendTSRForSchedule(s) ? `<button class="btn btn-success btn-sm tsr-send-btn" title="Send TSR to Client" onclick="event.stopPropagation(); openTSRClientEmailModal(${s.id})"><i class="fa-solid fa-paper-plane"></i></button>` : ''}
                                 <button class="btn btn-danger btn-sm delete-btn" data-eid="${eng.id}" data-ename='${JSON.stringify(eng.name)}' data-shiftid="${s.id}" data-shiftdate="${day.iso}">Delete</button>
                             </div>
-                            ` : `
-                            <div class="schedule-overlay">
-                                <button class="btn btn-dark btn-sm timeline-summary-details-btn" title="View schedule summary" aria-label="View schedule summary" onclick="showTimelineScheduleDetailsPopover(this, event)"><i class="fa-solid fa-circle-info"></i></button>
-                            </div>
-                            `}
+                            ` : ''}
 
                         </div>`);
                     });
@@ -16823,12 +16836,12 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 
 <style>
 
-.schedule-item{
+.schedule-item-legacy-disabled{
     position:relative;
     overflow:hidden;
 }
 
-.schedule-overlay{
+.schedule-item-legacy-disabled .schedule-overlay{
     position:absolute;
     top:0;
     left:0;
@@ -16846,12 +16859,12 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     transition:0.2s ease;
 }
 
-.schedule-item:hover .schedule-overlay{
+.schedule-item-legacy-disabled:hover .schedule-overlay{
     opacity:1;
     pointer-events:auto;   /* 🔥 FIX */
 }
 
-.schedule-overlay button{
+.schedule-item-legacy-disabled .schedule-overlay button{
     font-size:0.7rem;
     padding:4px 8px;
 }
@@ -16890,24 +16903,24 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 
 
 
-.schedule-item,
-.schedule-overlay {
+.schedule-item-legacy-disabled,
+.schedule-item-legacy-disabled .schedule-overlay {
     z-index: 1;
 }
 
 /* PREMIUM UI UPGRADE */
-.schedule-item {
+.schedule-item-legacy-disabled {
     position: relative;
     border-radius: 12px;
     overflow: hidden;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-.schedule-item:hover {
+.schedule-item-legacy-disabled:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(0,0,0,0.15);
 }
 
-.schedule-overlay {
+.schedule-item-legacy-disabled .schedule-overlay {
     position:absolute;
     top:0;
     left:0;
@@ -16924,17 +16937,17 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     transition: all 0.25s ease;
 }
 
-.schedule-item:hover .schedule-overlay{
+.schedule-item-legacy-disabled:hover .schedule-overlay{
     opacity:1;
     pointer-events:auto;
 }
 
-.schedule-overlay button{
+.schedule-item-legacy-disabled .schedule-overlay button{
     transform: scale(0.9);
     transition: all 0.2s ease;
 }
 
-.schedule-item:hover .schedule-overlay button{
+.schedule-item-legacy-disabled:hover .schedule-overlay button{
     transform: scale(1);
 }
 
@@ -16945,7 +16958,7 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     border-left-width: 4px !important;
     border-left-style: solid !important;
     border-radius: 10px;
-    padding: 6px 8px;
+    padding: 6px 34px 6px 8px;
     margin-bottom: 6px;
     font-size: 0.72rem;
     position: relative;
@@ -16960,6 +16973,36 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 .schedule-card:hover {
     transform: translateY(-1px);
     box-shadow: 0 6px 14px rgba(0,0,0,0.12);
+}
+
+.schedule-more-btn {
+    position: absolute;
+    top: 5px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.94);
+    color: #334155;
+    font-size: 0.72rem;
+    line-height: 1;
+    opacity: 0.92;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+    transition: all 0.18s ease;
+    z-index: 4;
+}
+
+.schedule-more-btn:hover,
+.schedule-more-btn:focus {
+    opacity: 1;
+    color: #0d6efd;
+    border-color: rgba(13, 110, 253, 0.35);
+    box-shadow: 0 4px 10px rgba(13, 110, 253, 0.18);
+    outline: none;
 }
 
 .schedule-status {
@@ -17041,7 +17084,9 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     z-index: 2;
 }
 
-.schedule-card:hover .schedule-overlay {
+.schedule-card:hover .schedule-overlay,
+.schedule-card:focus-within .schedule-overlay,
+.schedule-card.schedule-actions-open .schedule-overlay {
     opacity:1;
     pointer-events:auto;
 }
@@ -17053,7 +17098,9 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     transition: all 0.18s ease;
 }
 
-.schedule-card:hover .schedule-overlay button {
+.schedule-card:hover .schedule-overlay button,
+.schedule-card:focus-within .schedule-overlay button,
+.schedule-card.schedule-actions-open .schedule-overlay button {
     transform: scale(1);
 }
 
@@ -17291,7 +17338,7 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 .schedule-card[draggable="true"] .schedule-drag-handle {
     position: absolute;
     top: 5px;
-    right: 6px;
+    right: 34px;
     width: 18px;
     height: 18px;
     border-radius: 999px;
@@ -17320,7 +17367,7 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     content: "Drag";
     position: absolute;
     top: 5px;
-    right: 28px;
+    right: 56px;
     background: rgba(13, 110, 253, 0.92);
     color: #fff;
     border-radius: 999px;
@@ -17428,6 +17475,10 @@ body.dragging-schedule .add-hint {
 }
 
 body.dragging-schedule .schedule-overlay {
+    display: none !important;
+}
+
+body.dragging-schedule .schedule-more-btn {
     display: none !important;
 }
 

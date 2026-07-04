@@ -28991,21 +28991,22 @@ def handle_schedule_collision_or_travel_warning(collision, engineer=None, payloa
 
 
 
-def find_add_schedule_collision(engineer_id, iter_date, start_dt, end_dt):
-    """Return a visible same-day collision for add_shift.
+def find_add_schedule_collision(engineer_id, iter_date, start_dt, end_dt, ignore_shift_ids=None):
+    """Return a visible same-day collision for schedule add/update actions.
 
     The calendar stores current multi-day schedules as one Shift row per date.
     Some older live rows may still span multiple calendar dates in a single row.
     Those legacy rows are not displayed on the middle/end dates, but the old raw
     datetime overlap query still treated them as collisions. This helper keeps
     conflict checks aligned with what users see on the calendar: only schedules
-    whose Shift.start_time calendar date is the date being added can block that
+    whose Shift.start_time calendar date is the date being edited can block that
     date.
     """
     if not engineer_id or not iter_date or not start_dt or not end_dt:
         return None
 
-    return (
+    ignore_shift_ids = [sid for sid in (ignore_shift_ids or []) if sid]
+    query = (
         db.session.query(Shift)
         .join(ShiftEngineer, Shift.id == ShiftEngineer.shift_id)
         .filter(
@@ -29014,9 +29015,11 @@ def find_add_schedule_collision(engineer_id, iter_date, start_dt, end_dt):
             Shift.start_time < end_dt,
             Shift.end_time > start_dt
         )
-        .order_by(Shift.start_time.asc(), Shift.id.asc())
-        .first()
     )
+    if ignore_shift_ids:
+        query = query.filter(~Shift.id.in_(ignore_shift_ids))
+
+    return query.order_by(Shift.start_time.asc(), Shift.id.asc()).first()
 
 def get_shift_payload():
     """Return request data from either JSON or multipart/form-data."""
@@ -31464,16 +31467,12 @@ def update_shift(id):
         if existing_override:
             ignore_ids.append(existing_override.id)
 
-        collision = (
-            db.session.query(Shift)
-            .join(ShiftEngineer, Shift.id == ShiftEngineer.shift_id)
-            .filter(
-                ShiftEngineer.engineer_id == override_engineer_id,
-                Shift.start_time < override_end,
-                Shift.end_time > override_start,
-                ~Shift.id.in_(ignore_ids)
-            )
-            .first()
+        collision = find_add_schedule_collision(
+            override_engineer_id,
+            start_d,
+            override_start,
+            override_end,
+            ignore_shift_ids=ignore_ids
         )
         if collision:
             eng = db.session.get(Engineer, override_engineer_id)
@@ -31601,16 +31600,12 @@ def update_shift(id):
         # Check conflict only for engineers who will be assigned to the base day shift.
         # Linked custom-time override engineers keep their own custom time and are ignored here.
         for e_id in base_engineers_for_day:
-            collision = (
-                db.session.query(Shift)
-                .join(ShiftEngineer, Shift.id == ShiftEngineer.shift_id)
-                .filter(
-                    ShiftEngineer.engineer_id == e_id,
-                    Shift.start_time < day_end,
-                    Shift.end_time > day_start,
-                    ~Shift.id.in_(ignore_ids)
-                )
-                .first()
+            collision = find_add_schedule_collision(
+                e_id,
+                start_d,
+                day_start,
+                day_end,
+                ignore_shift_ids=ignore_ids
             )
             if collision:
                 eng = db.session.get(Engineer, e_id)
@@ -31883,16 +31878,12 @@ def update_shift(id):
         ]
 
         for e_id in base_engineers_for_date:
-            collision = (
-                db.session.query(Shift)
-                .join(ShiftEngineer, Shift.id == ShiftEngineer.shift_id)
-                .filter(
-                    ShiftEngineer.engineer_id == e_id,
-                    Shift.start_time < et_obj,
-                    Shift.end_time > st_obj,
-                    ~Shift.id.in_(old_ids_with_overrides)
-                )
-                .first()
+            collision = find_add_schedule_collision(
+                e_id,
+                iter_date,
+                st_obj,
+                et_obj,
+                ignore_shift_ids=old_ids_with_overrides
             )
             if collision:
                 eng = db.session.get(Engineer, e_id)
@@ -32085,16 +32076,12 @@ def move_shift():
             return jsonify({'message': 'Invalid schedule time range.'}), 400
 
         for engineer_id in target_engineer_ids:
-            collision = (
-                db.session.query(Shift)
-                .join(ShiftEngineer, Shift.id == ShiftEngineer.shift_id)
-                .filter(
-                    ShiftEngineer.engineer_id == engineer_id,
-                    Shift.start_time < new_end,
-                    Shift.end_time > new_start,
-                    ~Shift.id.in_(old_ids)
-                )
-                .first()
+            collision = find_add_schedule_collision(
+                engineer_id,
+                new_start.date(),
+                new_start,
+                new_end,
+                ignore_shift_ids=old_ids
             )
             if collision:
                 conflict_engineer = db.session.get(Engineer, engineer_id)
