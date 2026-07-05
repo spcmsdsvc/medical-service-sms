@@ -11072,72 +11072,18 @@ function collectMobileEngineerSchedules(){
         const wrapper = document.getElementById('timeline-scroll-wrapper');
         if(!wrapper) return;
 
-        wrapper.addEventListener('pointerdown', function(event){
-            const card = event.target.closest && event.target.closest('.schedule-card[data-summary-shift-id]');
-            if(!card || event.target.closest('button,a,input,select,textarea')) return;
-
-            window.timelineSchedulePointerDown = {
-                card,
-                x: event.clientX,
-                y: event.clientY,
-                time: Date.now()
-            };
-        }, { passive: true });
-
-        wrapper.addEventListener('pointerup', function(event){
-            const pointerStart = window.timelineSchedulePointerDown;
-            window.timelineSchedulePointerDown = null;
-
-            const card = event.target.closest && event.target.closest('.schedule-card[data-summary-shift-id]');
-            if(!pointerStart || !card || pointerStart.card !== card) return;
-            if(event.target.closest('button,a,input,select,textarea')) return;
-
-            const moved = Math.hypot(event.clientX - pointerStart.x, event.clientY - pointerStart.y);
-            const elapsed = Date.now() - pointerStart.time;
-            if(moved > 8 || elapsed > 1200) return;
-
-            handleTimelineScheduleCardClick(card, event);
-        });
-
-        wrapper.addEventListener('pointercancel', function(){
-            window.timelineSchedulePointerDown = null;
-        }, { passive: true });
-
         wrapper.addEventListener('click', function(event){
             const card = event.target.closest && event.target.closest('.schedule-card[data-summary-shift-id]');
             if(!card) return;
-            event.preventDefault();
-            event.stopPropagation();
+            if(event.target.closest('button,a,input,select,textarea')) return;
+            handleTimelineScheduleCardClick(card, event);
         });
     }
 
     function bindTimelineVerticalScrollBridge(){
-        if(window.timelineVerticalScrollBridgeBound) return;
+        // Keep native browser scrolling. The previous wheel bridge intercepted
+        // calendar scroll events and could block normal click/scroll behavior.
         window.timelineVerticalScrollBridgeBound = true;
-
-        const wrapper = document.getElementById('timeline-scroll-wrapper');
-        if(!wrapper) return;
-
-        wrapper.addEventListener('wheel', function(event){
-            if(event.target.closest && event.target.closest('.modal.show')){
-                return;
-            }
-            if(event.ctrlKey || event.metaKey || event.shiftKey) return;
-            if(Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-
-            const maxTop = wrapper.scrollHeight - wrapper.clientHeight;
-            if(maxTop <= 0) return;
-
-            const goingDown = event.deltaY > 0;
-            const goingUp = event.deltaY < 0;
-            const canScrollDown = wrapper.scrollTop < maxTop - 1;
-            const canScrollUp = wrapper.scrollTop > 1;
-
-            if((goingDown && canScrollDown) || (goingUp && canScrollUp)){
-                wrapper.scrollTop = Math.max(0, Math.min(maxTop, wrapper.scrollTop + event.deltaY));
-                event.preventDefault();
-            }
-        }, { passive: false });
     }
 
     function bindTSRClientEmailModalWheelScroll(){
