@@ -2604,10 +2604,6 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     box-shadow: 0 -8px 18px rgba(15, 23, 42, 0.06);
 }
 
-body.timeline-dialog-over-modal #tsrClientEmailModal .modal-content {
-    pointer-events: none;
-}
-
 body.timeline-dialog-over-modal .timeline-dialog-backdrop,
 body.timeline-dialog-over-modal .timeline-dialog {
     pointer-events: auto;
@@ -6646,12 +6642,13 @@ body.timeline-readonly-approver .header-branding-container h2::after {
 .timeline-dialog-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 4100;
+    z-index: 100000;
     background: rgba(15, 23, 42, 0.55);
     display: none;
     align-items: center;
     justify-content: center;
     padding: 18px;
+    pointer-events: auto;
 }
 
 .timeline-dialog-backdrop.show {
@@ -6659,6 +6656,8 @@ body.timeline-readonly-approver .header-branding-container h2::after {
 }
 
 .timeline-dialog {
+    position: relative;
+    z-index: 100001;
     width: min(480px, 100%);
     background: #ffffff;
     border-radius: 22px;
@@ -6666,6 +6665,7 @@ body.timeline-readonly-approver .header-branding-container h2::after {
     border: 1px solid #dbeafe;
     overflow: hidden;
     animation: timelineDialogIn .18s ease-out;
+    pointer-events: auto;
 }
 
 .timeline-dialog-header {
@@ -6724,6 +6724,12 @@ body.timeline-readonly-approver .header-branding-container h2::after {
     justify-content: flex-end;
     gap: 10px;
     flex-wrap: wrap;
+}
+
+.timeline-dialog-actions .btn {
+    pointer-events: auto;
+    position: relative;
+    z-index: 1;
 }
 
 @keyframes timelineDialogIn {
@@ -11087,32 +11093,9 @@ function collectMobileEngineerSchedules(){
     }
 
     function bindTSRClientEmailModalWheelScroll(){
-        if(window.tsrClientEmailModalWheelBound) return;
+        // Keep modal scrolling native across Chromium browsers. Manual wheel
+        // interception can block scrolling/clicks in Brave.
         window.tsrClientEmailModalWheelBound = true;
-
-        const modalEl = document.getElementById('tsrClientEmailModal');
-        if(!modalEl) return;
-
-        modalEl.addEventListener('wheel', function(event){
-            const bodyEl = modalEl.querySelector('.modal-body');
-            if(!bodyEl || !modalEl.classList.contains('show')) return;
-            if(event.ctrlKey || event.metaKey || event.shiftKey) return;
-            if(Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-
-            const maxTop = bodyEl.scrollHeight - bodyEl.clientHeight;
-            if(maxTop <= 0) return;
-
-            const goingDown = event.deltaY > 0;
-            const goingUp = event.deltaY < 0;
-            const canScrollDown = bodyEl.scrollTop < maxTop - 1;
-            const canScrollUp = bodyEl.scrollTop > 1;
-
-            if((goingDown && canScrollDown) || (goingUp && canScrollUp)){
-                bodyEl.scrollTop = Math.max(0, Math.min(maxTop, bodyEl.scrollTop + event.deltaY));
-                event.preventDefault();
-                event.stopPropagation();
-            }
-        }, { passive: false });
     }
 
     function openTimelineSummaryEdit(event){
