@@ -1493,6 +1493,7 @@
             </div>
 
             <div class="modal-footer border-0 p-4 pt-0 d-flex flex-column flex-sm-row gap-2">
+                <div class="xsmall text-success fw-bold w-100 d-none" id="tsr-send-confirm-note"></div>
                 <button type="button" class="btn btn-outline-secondary btn-sm px-4 w-100" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-success btn-sm px-4 fw-bold w-100" id="tsr-send-client-btn" onclick="sendTSRClientEmail()">
                     <i class="fa-solid fa-paper-plane me-1"></i>
@@ -2590,6 +2591,8 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 #tsrClientEmailModal .modal-body {
     background: #fbfefc;
     overflow-y: auto;
+    max-height: calc(100vh - 14rem);
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
 }
 
@@ -11116,6 +11119,9 @@ function collectMobileEngineerSchedules(){
         if(!wrapper) return;
 
         wrapper.addEventListener('wheel', function(event){
+            if(event.target.closest && event.target.closest('.modal.show')){
+                return;
+            }
             if(event.ctrlKey || event.metaKey || event.shiftKey) return;
             if(Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
 
@@ -11130,6 +11136,35 @@ function collectMobileEngineerSchedules(){
             if((goingDown && canScrollDown) || (goingUp && canScrollUp)){
                 wrapper.scrollTop = Math.max(0, Math.min(maxTop, wrapper.scrollTop + event.deltaY));
                 event.preventDefault();
+            }
+        }, { passive: false });
+    }
+
+    function bindTSRClientEmailModalWheelScroll(){
+        if(window.tsrClientEmailModalWheelBound) return;
+        window.tsrClientEmailModalWheelBound = true;
+
+        const modalEl = document.getElementById('tsrClientEmailModal');
+        if(!modalEl) return;
+
+        modalEl.addEventListener('wheel', function(event){
+            const bodyEl = modalEl.querySelector('.modal-body');
+            if(!bodyEl || !modalEl.classList.contains('show')) return;
+            if(event.ctrlKey || event.metaKey || event.shiftKey) return;
+            if(Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+
+            const maxTop = bodyEl.scrollHeight - bodyEl.clientHeight;
+            if(maxTop <= 0) return;
+
+            const goingDown = event.deltaY > 0;
+            const goingUp = event.deltaY < 0;
+            const canScrollDown = bodyEl.scrollTop < maxTop - 1;
+            const canScrollUp = bodyEl.scrollTop > 1;
+
+            if((goingDown && canScrollDown) || (goingUp && canScrollUp)){
+                bodyEl.scrollTop = Math.max(0, Math.min(maxTop, bodyEl.scrollTop + event.deltaY));
+                event.preventDefault();
+                event.stopPropagation();
             }
         }, { passive: false });
     }
@@ -13409,6 +13444,9 @@ if(shift.engineers){
         });
 
         renderTSRRecipientChips();
+        if(addedCount){
+            resetTSRSendConfirmState();
+        }
 
         if(showWarning && invalidText && !parsedEmails.length){
             timelineAlert("Please enter a valid email address.");
@@ -13435,6 +13473,7 @@ if(shift.engineers){
         const normalized = normalizeTSRRecipientEmail(email);
         tsrRecipientEmails = tsrRecipientEmails.filter(item => item !== normalized);
         renderTSRRecipientChips();
+        resetTSRSendConfirmState();
     }
 
     function clearTSRRecipients(){
@@ -13442,6 +13481,25 @@ if(shift.engineers){
         const input = document.getElementById('tsr-client-email');
         if(input) input.value = "";
         renderTSRRecipientChips();
+        resetTSRSendConfirmState();
+    }
+
+    function resetTSRSendConfirmState(){
+        window.clearTimeout(window.tsrSendConfirmResetTimer);
+        const sendBtn = document.getElementById('tsr-send-client-btn');
+        if(sendBtn && !sendBtn.disabled){
+            sendBtn.dataset.confirmReady = '';
+            sendBtn.dataset.confirmSignature = '';
+            sendBtn.classList.remove('btn-warning');
+            sendBtn.classList.add('btn-success');
+            sendBtn.innerHTML = '<i class="fa-solid fa-paper-plane me-1"></i>Send TSR';
+        }
+
+        const noteEl = document.getElementById('tsr-send-confirm-note');
+        if(noteEl){
+            noteEl.classList.add('d-none');
+            noteEl.innerHTML = '';
+        }
     }
 
     function getTSRRecipientsForSend(){
@@ -13527,6 +13585,7 @@ async function openTSRClientEmailModal(shiftId){
         const subtitleEl = document.getElementById('tsr-email-context-subtitle');
 
 
+        resetTSRSendConfirmState();
         renderTSRSystemCCDisplay([]);
         currentTSRSenderCopyEmail = getCurrentTSRSenderCopyEmail();
         const senderCopyDisplay = document.getElementById('tsr-sender-copy-email');
@@ -13633,6 +13692,8 @@ async function openTSRClientEmailModal(shiftId){
         const shiftId = document.getElementById('tsr-email-shift-id')?.value;
         const sendBtn = document.getElementById('tsr-send-client-btn');
         const recipients = getTSRRecipientsForSend();
+        const recipientLabel = recipients.join(', ');
+        const ccLabel = getDisplayedTSRCCLabel();
 
         if(!shiftId){
             timelineAlert("Schedule ID missing.");
@@ -13645,20 +13706,31 @@ async function openTSRClientEmailModal(shiftId){
             return;
         }
 
-        const recipientLabel = recipients.join(', ');
-        const shouldSendTSR = await timelineConfirmDialog({
-            title: 'Send TSR to Client?',
-            message: `Send attached TSR to ${recipientLabel}?\n\nCC: ${getDisplayedTSRCCLabel()}`,
-            confirmText: 'Send TSR',
-            cancelText: 'Cancel',
-            tone: 'success',
-            icon: 'paper-plane'
-        });
-        if(!shouldSendTSR){
+        const sendSignature = `${recipientLabel}|${ccLabel}`;
+        if(sendBtn && sendBtn.dataset.confirmReady !== '1'){
+            sendBtn.dataset.confirmReady = '1';
+            sendBtn.dataset.confirmSignature = sendSignature;
+            sendBtn.classList.remove('btn-success');
+            sendBtn.classList.add('btn-warning');
+            sendBtn.innerHTML = '<i class="fa-solid fa-check me-1"></i>Confirm Send TSR';
+
+            const noteEl = document.getElementById('tsr-send-confirm-note');
+            if(noteEl){
+                noteEl.innerHTML = `<i class="fa-solid fa-circle-check me-1"></i>Click Confirm Send TSR to email ${escapeHtml(recipientLabel)}. CC: ${escapeHtml(ccLabel)}`;
+                noteEl.classList.remove('d-none');
+            }
+
+            window.clearTimeout(window.tsrSendConfirmResetTimer);
+            window.tsrSendConfirmResetTimer = window.setTimeout(resetTSRSendConfirmState, 8000);
             return;
         }
 
-        const originalHtml = sendBtn ? sendBtn.innerHTML : '';
+        if(sendBtn && sendBtn.dataset.confirmSignature !== sendSignature){
+            resetTSRSendConfirmState();
+            timelineAlert("Recipients changed. Please click Send TSR again to confirm.");
+            return;
+        }
+
         if(sendBtn){
             sendBtn.disabled = true;
             sendBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Sending...';
@@ -13704,7 +13776,7 @@ async function openTSRClientEmailModal(shiftId){
         }finally{
             if(sendBtn){
                 sendBtn.disabled = false;
-                sendBtn.innerHTML = originalHtml || '<i class="fa-solid fa-paper-plane me-1"></i>Send TSR';
+                resetTSRSendConfirmState();
             }
         }
     }
@@ -14947,6 +15019,7 @@ window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true
         // bindTimelineScheduleHoverSummaryHandlers();
         bindTimelineScheduleCardPointerActions();
         bindTimelineVerticalScrollBridge();
+        bindTSRClientEmailModalWheelScroll();
 
         syncMobileRoleBadges();
         shiftModal = new bootstrap.Modal(document.getElementById('shiftModal'));
