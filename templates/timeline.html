@@ -12476,7 +12476,8 @@ async function loadGrid() {
                             bgHex === 'holiday-purple' ? 'schedule-holiday' :
                             `border-${bgHex.split(' ')[0]}`
                         }"
-                            draggable="${canManageThisSchedule ? 'true' : 'false'}"
+                            draggable="false"
+                            data-drag-allowed="${canManageThisSchedule ? '1' : '0'}"
                             data-drag-shift-id="${s.id}"
                             data-drag-source-engineer-id="${eng.id}"
                             data-drag-source-engineer-name="${eng.name}"
@@ -12492,7 +12493,7 @@ async function loadGrid() {
                         >
 
                             ${canManageThisSchedule ? `
-                            <div class="schedule-drag-handle no-print" title="Drag to move schedule">
+                            <div class="schedule-drag-handle no-print" title="Drag to move schedule" draggable="true" ondragstart="handleScheduleDragStart(event)" ondragend="handleScheduleDragEnd(event)">
                                 <i class="fa-solid fa-grip-vertical"></i>
                             </div>
                             ` : ''}
@@ -14573,10 +14574,10 @@ function getDragScheduleSummary(card){
 }
 
 function handleScheduleDragStart(event){
-    const card = event.currentTarget;
-    const shiftId = card.getAttribute('data-drag-shift-id');
+    const card = event.currentTarget?.closest ? event.currentTarget.closest('.schedule-card') : event.currentTarget;
+    const shiftId = card ? card.getAttribute('data-drag-shift-id') : '';
 
-    if(!shiftId || card.getAttribute('draggable') !== 'true'){
+    if(!card || !shiftId || card.getAttribute('data-drag-allowed') !== '1'){
         event.preventDefault();
         return;
     }
@@ -14610,7 +14611,8 @@ function handleScheduleDragStart(event){
 }
 
 function handleScheduleDragEnd(event){
-    event.currentTarget.classList.remove('schedule-dragging');
+    const card = event.currentTarget?.closest ? event.currentTarget.closest('.schedule-card') : event.currentTarget;
+    if(card) card.classList.remove('schedule-dragging');
     document.body.classList.remove('dragging-schedule');
     window.timelineScheduleDragEndedAt = Date.now();
     document.querySelectorAll('.calendar-drop-cell').forEach(cell=>{
@@ -16992,12 +16994,14 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     transform: translateY(-4px);
     box-shadow: 0 13px 28px rgba(15, 23, 42, 0.18);
     filter: saturate(1.06);
+    z-index: 5;
 }
 
 .schedule-card[data-linked-schedule-key] {
     transform: translateY(-2px);
     box-shadow: 0 10px 24px rgba(37, 99, 235, 0.16), 0 2px 7px rgba(15, 23, 42, 0.08);
     border-top: 3px solid rgba(37, 99, 235, 0.9);
+    z-index: 1;
 }
 
 .schedule-card[data-linked-schedule-key]:hover,
@@ -17005,6 +17009,7 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     transform: translateY(-7px);
     box-shadow: 0 18px 36px rgba(37, 99, 235, 0.26), 0 4px 12px rgba(15, 23, 42, 0.12);
     filter: saturate(1.1);
+    z-index: 6;
 }
 
 .schedule-card:active {
@@ -17369,11 +17374,7 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 
 
 /* DRAG & DROP POLISH */
-.schedule-card[draggable="true"] {
-    cursor: grab;
-}
-
-.schedule-card[draggable="true"] .schedule-drag-handle {
+.schedule-card[data-drag-allowed="1"] .schedule-drag-handle {
     position: absolute;
     top: 5px;
     right: 6px;
@@ -17389,36 +17390,12 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     transform: scale(0.9);
     transition: all 0.18s ease;
     z-index: 3;
-    pointer-events: none;
-}
-
-.schedule-card[draggable="true"]:hover {
     cursor: grab;
 }
 
-.schedule-card[draggable="true"]:hover .schedule-drag-handle {
+.schedule-card[data-drag-allowed="1"]:hover .schedule-drag-handle {
     opacity: 1;
     transform: scale(1);
-}
-
-.schedule-card[draggable="true"]:hover::after {
-    content: "Drag";
-    position: absolute;
-    top: 5px;
-    right: 28px;
-    background: rgba(13, 110, 253, 0.92);
-    color: #fff;
-    border-radius: 999px;
-    padding: 2px 6px;
-    font-size: 0.55rem;
-    font-weight: 800;
-    letter-spacing: 0.02em;
-    z-index: 3;
-    pointer-events: none;
-}
-
-.schedule-card[draggable="true"]:active {
-    cursor: grabbing;
 }
 
 .schedule-dragging {
