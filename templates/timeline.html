@@ -616,7 +616,7 @@
     Enforces dynamic field removal based on category selection.
 -->
 <div class="modal fade no-print" id="shiftModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content shadow-lg border-0 rounded-4 overflow-hidden">
 
             <div class="modal-header bg-primary text-white border-0 py-3">
@@ -1624,8 +1624,22 @@ body.timeline-dev-preview-manager .timeline-engineer-focus-strip {
 .timeline-scroll-wrapper {
     max-height: calc(100vh - var(--timeline-grid-maxheight-offset, 190px));
     overflow: auto;
-    overscroll-behavior: auto;
+    overscroll-behavior: contain;
     background: #ffffff;
+}
+
+#shiftModal .modal-dialog {
+    max-height: calc(100vh - 1.75rem);
+}
+
+#shiftModal .modal-content {
+    max-height: calc(100vh - 1.75rem);
+}
+
+#shiftModal .modal-body {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
 .timeline-scroll-wrapper .timeline-grid-table > thead {
@@ -2023,8 +2037,8 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 .schedule-card.timeline-linked-schedule-hover,
 .schedule-card.timeline-linked-schedule-focus {
     border-color: #2563eb !important;
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18), 0 10px 24px rgba(37, 99, 235, 0.18) !important;
-    transform: translateY(-1px);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2), 0 16px 32px rgba(37, 99, 235, 0.24) !important;
+    transform: translateY(-6px);
 }
 
 .schedule-card.timeline-linked-schedule-dim {
@@ -2602,11 +2616,6 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     bottom: 0;
     z-index: 2;
     box-shadow: 0 -8px 18px rgba(15, 23, 42, 0.06);
-}
-
-body.timeline-dialog-over-modal .timeline-dialog-backdrop,
-body.timeline-dialog-over-modal .timeline-dialog {
-    pointer-events: auto;
 }
 
 .tsr-email-context-icon {
@@ -6854,12 +6863,10 @@ function timelineConfirmDialog(options) {
         }
 
         let resolved = false;
-        const hasOpenBootstrapModal = !!document.querySelector('.modal.show');
         const cleanup = function(value) {
             if (resolved) return;
             resolved = true;
             backdrop.classList.remove('show');
-            document.body.classList.remove('timeline-dialog-over-modal');
             confirmBtn.onclick = null;
             cancelBtn.onclick = null;
             backdrop.onclick = null;
@@ -6878,9 +6885,6 @@ function timelineConfirmDialog(options) {
         };
         document.addEventListener('keydown', keyHandler);
 
-        if(hasOpenBootstrapModal){
-            document.body.classList.add('timeline-dialog-over-modal');
-        }
         backdrop.classList.add('show');
         window.setTimeout(function() { confirmBtn.focus(); }, 60);
     });
@@ -10870,8 +10874,6 @@ function collectMobileEngineerSchedules(){
         window.clearTimeout(window.timelineScheduleHoverSummaryTimer);
         const tooltip = document.getElementById('timeline-schedule-hover-summary');
         if(tooltip) tooltip.classList.remove('show');
-        document.querySelectorAll('.schedule-card.schedule-panel-open')
-            .forEach(card => card.classList.remove('schedule-panel-open'));
     }
 
     function showTimelineScheduleHoverSummary(card){
@@ -11019,11 +11021,6 @@ function collectMobileEngineerSchedules(){
 
         if(!context) return;
         window.timelineScheduleSummaryContext = context;
-        document.querySelectorAll('.schedule-card.schedule-panel-open')
-            .forEach(openCard => {
-                if(openCard !== card) openCard.classList.remove('schedule-panel-open');
-            });
-        card.classList.add('schedule-panel-open');
 
         const tooltip = document.getElementById('timeline-schedule-hover-summary') || (() => {
             const node = document.createElement('div');
@@ -11052,50 +11049,6 @@ function collectMobileEngineerSchedules(){
         tooltip.style.display = 'block';
         tooltip.classList.add('show');
         positionTimelineScheduleHoverSummary(card, tooltip);
-    }
-
-    function handleTimelineScheduleCardClick(card, event){
-        if(event){
-            if(event.target.closest && event.target.closest('button,a,input,select,textarea')){
-                return;
-            }
-            event.preventDefault();
-            event.stopPropagation();
-        }
-
-        const justDragged = window.timelineScheduleDragEndedAt && (Date.now() - window.timelineScheduleDragEndedAt < 350);
-        if(document.body.classList.contains('dragging-schedule') || justDragged){
-            return;
-        }
-
-        showTimelineScheduleDetailsPopover(card, event);
-    }
-
-    function bindTimelineScheduleCardPointerActions(){
-        if(window.timelineScheduleCardPointerBound) return;
-        window.timelineScheduleCardPointerBound = true;
-
-        const wrapper = document.getElementById('timeline-scroll-wrapper');
-        if(!wrapper) return;
-
-        wrapper.addEventListener('click', function(event){
-            const card = event.target.closest && event.target.closest('.schedule-card[data-summary-shift-id]');
-            if(!card) return;
-            if(event.target.closest('button,a,input,select,textarea')) return;
-            handleTimelineScheduleCardClick(card, event);
-        });
-    }
-
-    function bindTimelineVerticalScrollBridge(){
-        // Keep native browser scrolling. The previous wheel bridge intercepted
-        // calendar scroll events and could block normal click/scroll behavior.
-        window.timelineVerticalScrollBridgeBound = true;
-    }
-
-    function bindTSRClientEmailModalWheelScroll(){
-        // Keep modal scrolling native across Chromium browsers. Manual wheel
-        // interception can block scrolling/clicks in Brave.
-        window.tsrClientEmailModalWheelBound = true;
     }
 
     function openTimelineSummaryEdit(event){
@@ -12484,6 +12437,35 @@ async function loadGrid() {
                         const linkedScheduleKey = getLinkedScheduleKey(s);
                         const linkedScheduleBadge = getLinkedScheduleBadgeHtml(s, 'desktop');
                         const openTravelRequestButton = getOpenTravelRequestButtonHtml(s, 'desktop');
+                        const shiftActionPayload = JSON.stringify(s).replace(/"/g, '&quot;');
+                        const engineerNamePayload = escapeHtml(JSON.stringify(eng.name || ''));
+                        const scheduleActionButtons = `
+                            <div class="schedule-card-actions no-print">
+                                <button type="button" class="schedule-card-action-btn schedule-card-action-details" draggable="false" title="Details" aria-label="Details" onmousedown="event.stopPropagation()" onclick="showTimelineScheduleDetailsPopover(this, event)">
+                                    <i class="fa-solid fa-circle-info"></i>
+                                </button>
+                                ${canManageThisSchedule ? `
+                                    <button type="button" class="schedule-card-action-btn schedule-card-action-edit" draggable="false" title="Edit schedule" aria-label="Edit schedule" onmousedown="event.stopPropagation()" onclick="event.stopPropagation(); openEditModal(${shiftActionPayload}, ${eng.id}, '${day.iso}')">
+                                        <i class="fa-solid fa-pen-to-square"></i>
+                                    </button>
+                                ` : ''}
+                                ${hasScheduleTSRAttachment(s) ? `
+                                    <button type="button" class="schedule-card-action-btn schedule-card-action-tsr" draggable="false" title="Edit TSR" aria-label="Edit TSR" onmousedown="event.stopPropagation()" onclick="event.stopPropagation(); redirectToEditLatestTSRFromSchedule(${shiftActionPayload}, ${eng.id}, '${day.iso}')">
+                                        <i class="fa-solid fa-file-pen"></i>
+                                    </button>
+                                ` : ''}
+                                ${canSendTSRForSchedule(s) ? `
+                                    <button type="button" class="schedule-card-action-btn schedule-card-action-send" draggable="false" title="Send TSR" aria-label="Send TSR" onmousedown="event.stopPropagation()" onclick="event.stopPropagation(); openTSRClientEmailModal(${s.id})">
+                                        <i class="fa-solid fa-paper-plane"></i>
+                                    </button>
+                                ` : ''}
+                                ${canManageThisSchedule ? `
+                                    <button type="button" class="schedule-card-action-btn schedule-card-action-delete delete-btn" draggable="false" title="Delete schedule" aria-label="Delete schedule" onmousedown="event.stopPropagation()" data-eid="${eng.id}" data-ename='${engineerNamePayload}' data-shiftid="${s.id}" data-shiftdate="${day.iso}">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                    </button>
+                                ` : ''}
+                            </div>
+                        `;
 
                         cellCards.push(`
                         <div class="schedule-card ${
@@ -12552,6 +12534,7 @@ async function loadGrid() {
                                 <span class="schedule-time">${timeRange}</span>
                                 <span class="schedule-files">${paperIcon}${canSendTSRForSchedule(s) ? '<i class="fa-solid fa-paper-plane ms-1 text-success" title="TSR ready to send"></i>' : ''}</span>
                             </div>
+                            ${scheduleActionButtons}
 
                         </div>`);
                     });
@@ -14943,12 +14926,9 @@ window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
-        // Hover-based schedule actions are disabled. Schedule actions now open
-        // from a direct card click so desktop and mobile behavior stays stable.
+        // Schedule actions use explicit card buttons. Avoid whole-card click
+        // handlers so browser scroll and modal clicks remain native.
         // bindTimelineScheduleHoverSummaryHandlers();
-        bindTimelineScheduleCardPointerActions();
-        bindTimelineVerticalScrollBridge();
-        bindTSRClientEmailModalWheelScroll();
 
         syncMobileRoleBadges();
         shiftModal = new bootstrap.Modal(document.getElementById('shiftModal'));
@@ -17004,19 +16984,27 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     box-shadow: 0 2px 6px rgba(0,0,0,0.06);
     transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
     overflow: hidden;
-    cursor: pointer;
+    cursor: default;
 }
 
 .schedule-card:hover,
 .schedule-card:focus-within {
-    transform: translateY(-1px);
-    box-shadow: 0 7px 16px rgba(15, 23, 42, 0.14);
-    filter: saturate(1.04);
+    transform: translateY(-4px);
+    box-shadow: 0 13px 28px rgba(15, 23, 42, 0.18);
+    filter: saturate(1.06);
 }
 
-.schedule-card.schedule-panel-open {
-    box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.22), 0 8px 18px rgba(13, 110, 253, 0.14);
-    filter: saturate(1.06);
+.schedule-card[data-linked-schedule-key] {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(37, 99, 235, 0.16), 0 2px 7px rgba(15, 23, 42, 0.08);
+    border-top: 3px solid rgba(37, 99, 235, 0.9);
+}
+
+.schedule-card[data-linked-schedule-key]:hover,
+.schedule-card[data-linked-schedule-key]:focus-within {
+    transform: translateY(-7px);
+    box-shadow: 0 18px 36px rgba(37, 99, 235, 0.26), 0 4px 12px rgba(15, 23, 42, 0.12);
+    filter: saturate(1.1);
 }
 
 .schedule-card:active {
@@ -17083,6 +17071,76 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 .schedule-files {
     font-size: 0.62rem;
     white-space: nowrap;
+}
+
+.schedule-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.schedule-card-action-btn {
+    width: 1.55rem;
+    height: 1.55rem;
+    min-width: 1.55rem;
+    min-height: 1.55rem;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 0.45rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff;
+    color: #334155;
+    padding: 0;
+    font-size: 0.66rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.14s ease;
+}
+
+.schedule-card-action-btn:hover,
+.schedule-card-action-btn:focus {
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.schedule-card-action-details:hover,
+.schedule-card-action-details:focus {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+    color: #0f172a;
+}
+
+.schedule-card-action-edit:hover,
+.schedule-card-action-edit:focus {
+    background: #e7f1ff;
+    border-color: #0d6efd;
+    color: #0d6efd;
+}
+
+.schedule-card-action-tsr:hover,
+.schedule-card-action-tsr:focus {
+    background: #fff7ed;
+    border-color: #f59e0b;
+    color: #b45309;
+}
+
+.schedule-card-action-send:hover,
+.schedule-card-action-send:focus {
+    background: #ecfdf5;
+    border-color: #198754;
+    color: #198754;
+}
+
+.schedule-card-action-delete:hover,
+.schedule-card-action-delete:focus {
+    background: #fff1f2;
+    border-color: #dc3545;
+    color: #dc3545;
 }
 
 /* OFFICE + LEGEND NEXT-LEVEL VISUAL UPGRADE */
@@ -17312,7 +17370,7 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 
 /* DRAG & DROP POLISH */
 .schedule-card[draggable="true"] {
-    cursor: pointer;
+    cursor: grab;
 }
 
 .schedule-card[draggable="true"] .schedule-drag-handle {
@@ -17335,7 +17393,7 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
 }
 
 .schedule-card[draggable="true"]:hover {
-    cursor: pointer;
+    cursor: grab;
 }
 
 .schedule-card[draggable="true"]:hover .schedule-drag-handle {
