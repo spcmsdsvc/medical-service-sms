@@ -2833,14 +2833,23 @@ function renderReimbursementRows(rows) {
             try {
                 payload = JSON.parse(rawText);
             } catch (jsonError) {
+                const cleanedText = rawText
+                    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+                    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+                    .replace(/<[^>]*>/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
                 payload = {
                     success: false,
-                    error: rawText.slice(0, 500) || fallbackMessage || 'Unexpected server response.'
+                    error: cleanedText.slice(0, 300) || fallbackMessage || 'Unexpected server response.'
                 };
             }
         }
 
         if (!response.ok || payload.success === false || payload.status === 'error') {
+            if (response.redirected || response.status === 401 || /login/i.test(payload.error || '')) {
+                throw new Error('Your session may have expired. Please refresh and log in again, then load schedules.');
+            }
             const message = payload.error || payload.message || fallbackMessage || `Request failed (${response.status}).`;
             throw new Error(message);
         }
@@ -3493,12 +3502,13 @@ async function saveReimbursementDraft(silent) {
 
         try {
             const params = new URLSearchParams({ start, end });
-            const response = await fetch(`/get_reimbursement_schedule_rows?${params.toString()}`);
+            params.set('_', Date.now().toString());
+            const response = await fetch(`/get_reimbursement_schedule_rows?${params.toString()}`, {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Accept': 'application/json' }
+            });
             const payload = await parseReimbursementJsonResponse(response, 'Unable to load reimbursement rows.');
-
-            if (!response.ok || !payload.success) {
-                throw new Error(payload.error || 'Unable to load reimbursement rows.');
-            }
 
             let rows = payload.rows || [];
             let draftMessage = '';
@@ -3524,7 +3534,8 @@ async function saveReimbursementDraft(silent) {
             const excludedMessage = Number(payload.excluded_count || 0) > 0
                 ? ' Previously submitted/approved reimbursement dates were excluded.'
                 : '';
-            status.textContent = `Loaded schedules from ${payload.start} to ${payload.end}.${draftMessage}${excludedMessage}`;
+            const warningMessage = payload.warning_count ? ` ${payload.warning_count} schedule row(s) were skipped due to incomplete data.` : '';
+            status.textContent = `Loaded schedules from ${payload.start} to ${payload.end}.${draftMessage}${excludedMessage}${warningMessage}`;
             applyReimbursementStatusUi();
         } catch (error) {
             console.error(error);

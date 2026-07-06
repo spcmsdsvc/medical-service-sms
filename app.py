@@ -1848,6 +1848,33 @@ def ensure_travel_request_tables():
                 connection.exec_driver_sql("ALTER TABLE travel_request_route_visit ADD COLUMN product_names_json TEXT")
                 print("[DB MIGRATION] Added travel_request_route_visit.product_names_json", flush=True)
 
+            cleanup_result = connection.exec_driver_sql(
+                """
+                UPDATE travel_request_line
+                   SET remarks = NULLIF(trim(replace(coalesce(remarks, ''), ?, '')), '')
+                 WHERE instr(lower(coalesce(remarks, '')), lower(?)) > 0
+                   AND travel_request_id IN (
+                       SELECT tr.id
+                         FROM travel_request tr
+                        WHERE lower(trim(coalesce(tr.status, ''))) IN ('submitted', 'approved')
+                          AND NOT EXISTS (
+                              SELECT 1
+                                FROM travel_request_route route
+                               WHERE route.travel_request_id = tr.id
+                                 AND (
+                                      lower(coalesce(route.travel_type, '')) LIKE '%air%'
+                                   OR lower(coalesce(route.travel_type, '')) LIKE '%plane%'
+                                   OR lower(coalesce(route.travel_type, '')) LIKE '%flight%'
+                                   OR lower(coalesce(route.travel_type, '')) LIKE '%mixed%'
+                                 )
+                          )
+                   )
+                """,
+                (TRAVEL_AIRFARE_C_O_LABEL, TRAVEL_AIRFARE_C_O_LABEL)
+            )
+            if getattr(cleanup_result, 'rowcount', 0):
+                print(f"[DB MIGRATION] Removed non-air Travel Request airfare c/o remarks from {cleanup_result.rowcount} line(s)", flush=True)
+
         index_statements = [
             "CREATE INDEX IF NOT EXISTS idx_travel_request_user_status ON travel_request (user_id, status)",
             "CREATE INDEX IF NOT EXISTS idx_travel_request_status_updated ON travel_request (status, updated_at)",
@@ -4833,10 +4860,13 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
         # Cash advance mapping to official rows.
         airfare = landfare = per_diem = hotel = misc = 0.0
         airfare_note = ''
+        allow_airfare_c_o_note = travel_request_allows_airfare_c_o(request_rec)
         for line in sorted(list(getattr(request_rec, 'lines', None) or []), key=lambda item: clean_int(getattr(item, 'id', None)) or 0):
             line_type = (safe_text(getattr(line, 'line_type', None)) + ' ' + safe_text(getattr(line, 'description', None))).lower()
             amount = money_value_from_line(line)
             line_remarks = safe_text(getattr(line, 'remarks', None))
+            if not allow_airfare_c_o_note:
+                line_remarks = remove_travel_airfare_c_o_label(line_remarks)
             if any(key in line_type for key in ['plane', 'air', 'fare', 'ticket', 'airfare']):
                 airfare += amount
                 if amount == 0 and line_remarks and not airfare_note:
@@ -16711,61 +16741,90 @@ def get_reimbursement_schedule_rows():
     if (end_date - start_date).days > 62:
         return jsonify({'success': False, 'error': 'Date range is limited to 63 days for performance'}), 400
 
-    start_dt = datetime.combine(start_date, datetime.min.time())
-    end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+    try:
+        start_dt = datetime.combine(start_date, datetime.min.time())
+        end_dt = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
-    profile = getattr(current_user, 'engineer_profile', None)
-    # Reimbursement is always personal. Even admins/schedulers must not load other users' schedules here.
-    can_view_all = False
-
-    excluded_dates = reimbursement_claimed_dates_for_user(profile, start_date, end_date)
-
-    shifts = (
-        Shift.query
-        .options(
-            joinedload(Shift.client),
-            joinedload(Shift.product)
-        )
-        .filter(Shift.start_time >= start_dt)
-        .filter(Shift.start_time < end_dt)
-        .order_by(Shift.start_time.asc(), Shift.id.asc())
-        .all()
-    )
-
-    rows = []
-    excluded_dates_seen = set()
-    for shift in shifts:
-        if not reimbursement_is_work_expense_schedule(shift):
-            continue
-
-        assigned_ids = get_shift_assigned_engineer_ids(shift)
-
+        profile = getattr(current_user, 'engineer_profile', None)
         if not profile:
-            continue
+            return jsonify({
+                'success': False,
+                'error': 'Your account is not linked to an engineer profile, so reimbursement schedules cannot be loaded. Please ask a superadmin to link your Personnel record.',
+                'rows': [],
+                'count': 0,
+                'start': start_date.isoformat(),
+                'end': end_date.isoformat(),
+                'scope': 'own',
+                'can_view_all': False
+            }), 400
 
-        if profile.id not in assigned_ids and getattr(shift, 'engineer_id', None) != profile.id:
-            continue
+        excluded_dates = reimbursement_claimed_dates_for_user(profile, start_date, end_date)
 
-        shift_date = shift.start_time.date() if shift.start_time else None
-        if shift_date in excluded_dates:
-            excluded_dates_seen.add(shift_date)
-            continue
+        shifts = (
+            Shift.query
+            .options(
+                joinedload(Shift.client),
+                joinedload(Shift.product)
+            )
+            .filter(Shift.start_time >= start_dt)
+            .filter(Shift.start_time < end_dt)
+            .order_by(Shift.start_time.asc(), Shift.id.asc())
+            .all()
+        )
 
-        row_engineers = [getattr(profile, 'name', '') or getattr(current_user, 'username', '') or '']
-        rows.append(reimbursement_shift_row(shift, display_engineer_names=row_engineers))
+        rows = []
+        excluded_dates_seen = set()
+        row_warnings = []
+        for shift in shifts:
+            try:
+                if not reimbursement_is_work_expense_schedule(shift):
+                    continue
 
-    excluded_date_labels = [item.isoformat() for item in sorted(excluded_dates_seen)]
-    return jsonify({
-        'success': True,
-        'rows': rows,
-        'count': len(rows),
-        'start': start_date.isoformat(),
-        'end': end_date.isoformat(),
-        'excluded_dates': excluded_date_labels,
-        'excluded_count': len(excluded_date_labels),
-        'scope': 'own',
-        'can_view_all': False
-    })
+                assigned_ids = get_shift_assigned_engineer_ids(shift)
+                if profile.id not in assigned_ids and getattr(shift, 'engineer_id', None) != profile.id:
+                    continue
+
+                shift_date = shift.start_time.date() if shift.start_time else None
+                if shift_date in excluded_dates:
+                    excluded_dates_seen.add(shift_date)
+                    continue
+
+                row_engineers = [getattr(profile, 'name', '') or getattr(current_user, 'username', '') or '']
+                rows.append(reimbursement_shift_row(shift, display_engineer_names=row_engineers))
+            except Exception as row_error:
+                row_warnings.append({
+                    'shift_id': getattr(shift, 'id', None),
+                    'message': clean_str(row_error) or 'Unable to build schedule row.'
+                })
+                print(f"[Reimbursement] Skipped schedule row {getattr(shift, 'id', None)}: {row_error}", flush=True)
+
+        excluded_date_labels = [item.isoformat() for item in sorted(excluded_dates_seen)]
+        return jsonify({
+            'success': True,
+            'rows': rows,
+            'count': len(rows),
+            'start': start_date.isoformat(),
+            'end': end_date.isoformat(),
+            'excluded_dates': excluded_date_labels,
+            'excluded_count': len(excluded_date_labels),
+            'warnings': row_warnings,
+            'warning_count': len(row_warnings),
+            'scope': 'own',
+            'can_view_all': False
+        })
+    except Exception as exc:
+        print(f"[Reimbursement] Schedule row load failed: {exc}", flush=True)
+        return jsonify({
+            'success': False,
+            'error': 'Unable to load reimbursement schedules. Please refresh and try again.',
+            'detail': clean_str(exc)[:240],
+            'rows': [],
+            'count': 0,
+            'start': start_date.isoformat(),
+            'end': end_date.isoformat(),
+            'scope': 'own',
+            'can_view_all': False
+        }), 500
 
 
 
@@ -19720,6 +19779,7 @@ def travel_request_to_dict(request_rec, include_lines=False, include_audit=False
     }
 
     if include_lines:
+        allow_airfare_c_o_note = travel_request_allows_airfare_c_o(request_rec)
         data['lines'] = [
             {
                 'id': line.id,
@@ -19734,7 +19794,7 @@ def travel_request_to_dict(request_rec, include_lines=False, include_audit=False
                 'source_currency_code': normalize_travel_currency_code(getattr(line, 'source_currency_code', None) or currency_code, currency_code),
                 'source_amount': travel_request_money(getattr(line, 'source_amount', 0) if travel_request_money(getattr(line, 'source_amount', 0)) > 0 else line.amount),
                 'exchange_rate': travel_exchange_rate(getattr(line, 'exchange_rate', None), getattr(line, 'source_currency_code', None) or currency_code, currency_code),
-                'remarks': line.remarks or ''
+                'remarks': (line.remarks or '') if allow_airfare_c_o_note else remove_travel_airfare_c_o_label(line.remarks)
             }
             for line in sorted(request_rec.lines or [], key=lambda item: (item.line_date or datetime.min.date(), item.id or 0))
         ]
@@ -19788,7 +19848,57 @@ def travel_request_query_for_current_approver(status_filter='Submitted'):
 TRAVEL_AIRFARE_C_O_LABEL = 'c/o Diary Dizon/Mildred Zaide'
 
 
-def normalize_travel_request_line_payload(item):
+def travel_request_travel_type_allows_airfare_c_o(value):
+    travel_type = clean_str(value).lower()
+    if not travel_type:
+        return False
+    return any(keyword in travel_type for keyword in ('air', 'plane', 'flight', 'mixed'))
+
+
+def travel_request_routes_allow_airfare_c_o(routes):
+    for route in routes or []:
+        if isinstance(route, dict):
+            travel_type = route.get('travel_type')
+        else:
+            travel_type = getattr(route, 'travel_type', None)
+        if travel_request_travel_type_allows_airfare_c_o(travel_type):
+            return True
+    return False
+
+
+def travel_request_allows_airfare_c_o(request_rec):
+    return travel_request_routes_allow_airfare_c_o(getattr(request_rec, 'routes', None) or [])
+
+
+def remove_travel_airfare_c_o_label(value):
+    text_value = clean_str(value) or ''
+    if not text_value:
+        return ''
+    pattern = re.compile(re.escape(TRAVEL_AIRFARE_C_O_LABEL), flags=re.I)
+    cleaned = pattern.sub('', text_value)
+    cleaned = re.sub(r'\s*(?:[,;|/\\-]+)\s*$', '', cleaned).strip()
+    cleaned = re.sub(r'^\s*(?:[,;|/\\-]+)\s*', '', cleaned).strip()
+    cleaned = re.sub(r'\s{2,}', ' ', cleaned).strip()
+    return cleaned
+
+
+def clean_travel_request_airfare_c_o_remarks(request_rec):
+    if not request_rec or travel_request_allows_airfare_c_o(request_rec):
+        return 0
+    cleaned_count = 0
+    for line in getattr(request_rec, 'lines', None) or []:
+        original_remarks = clean_str(getattr(line, 'remarks', None)) or ''
+        if not original_remarks or TRAVEL_AIRFARE_C_O_LABEL.lower() not in original_remarks.lower():
+            continue
+        cleaned_remarks = remove_travel_airfare_c_o_label(original_remarks)
+        if cleaned_remarks != original_remarks:
+            line.remarks = cleaned_remarks
+            line.updated_at = get_manila_time()
+            cleaned_count += 1
+    return cleaned_count
+
+
+def normalize_travel_request_line_payload(item, allow_airfare_c_o_note=True):
     """Normalize one travel request cash advance line.
 
     S10B9A: when Air/Plane fare is zero, keep a printable note instead of
@@ -19815,12 +19925,14 @@ def normalize_travel_request_line_payload(item):
         for keyword in ('air', 'plane', 'airfare', 'air tickets')
     )
 
-    if is_airfare and amount == 0:
+    if is_airfare and amount == 0 and allow_airfare_c_o_note:
         remarks = remarks or TRAVEL_AIRFARE_C_O_LABEL
         if not desc:
             desc = 'Plane Fare / Air Tickets'
         if not line_type:
             line_type = 'Plane Fare'
+    elif not allow_airfare_c_o_note and remarks:
+        remarks = remove_travel_airfare_c_o_label(remarks)
 
     return {
         'description': desc,
@@ -19947,6 +20059,7 @@ def save_travel_request_draft():
 
     apply_travel_request_routes(request_rec, payload)
     participants_payload = sync_travel_request_participants(request_rec, payload)
+    allow_airfare_c_o_note = travel_request_routes_allow_airfare_c_o(routes_payload)
 
     TravelRequestLine.query.filter_by(travel_request_id=request_rec.id).delete()
     lines_payload = payload.get('lines') or []
@@ -19956,7 +20069,7 @@ def save_travel_request_draft():
             if not isinstance(item, dict):
                 continue
             item['target_currency_code'] = request_rec.currency_code
-            normalized_line = normalize_travel_request_line_payload(item)
+            normalized_line = normalize_travel_request_line_payload(item, allow_airfare_c_o_note=allow_airfare_c_o_note)
             desc = normalized_line['description']
             amount = normalized_line['amount']
             line_date = normalized_line['line_date']
@@ -20143,6 +20256,8 @@ def submit_travel_request(travel_request_id):
     current_status = travel_request_normalize_status(request_rec.status)
     if current_status not in TRAVEL_REQUEST_EDITABLE_STATUSES:
         return jsonify({'success': False, 'error': f'Travel request is already {current_status}.'}), 409
+
+    clean_travel_request_airfare_c_o_remarks(request_rec)
 
     submit_profile = travel_request_current_profile()
     submit_conflicts = find_travel_request_conflicts_for_user(
@@ -20779,6 +20894,8 @@ def approve_travel_request(travel_request_id):
     signature_required_response = approval_signature_required_response(current_user, 'travel request')
     if signature_required_response:
         return signature_required_response
+
+    clean_travel_request_airfare_c_o_remarks(request_rec)
 
     now = get_manila_time()
     previous_status = request_rec.status or ''
