@@ -494,7 +494,7 @@ else:
     UPLOAD_FOLDER = os.path.join(basedir, 'static/uploads/reports')
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = int(os.environ.get('MAX_UPLOAD_MB', '25')) * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = max(int(os.environ.get('MAX_UPLOAD_MB', '40')), 40) * 1024 * 1024
 
 # SECURITY UPDATE: Allowed file extensions for Technical Service Reports
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'docx', 'xlsx', 'csv'}
@@ -16762,7 +16762,8 @@ def get_reimbursement_schedule_rows():
 
 REIMBURSEMENT_RECEIPT_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
 REIMBURSEMENT_RECEIPT_MAX_BYTES = 2 * 1024 * 1024
-REIMBURSEMENT_RECEIPT_ALLOWED_LABEL = 'PDF, JPG, JPEG, or PNG up to 2MB'
+REIMBURSEMENT_RECEIPT_INTAKE_MAX_BYTES = 35 * 1024 * 1024
+REIMBURSEMENT_RECEIPT_ALLOWED_LABEL = 'PDF, JPG, JPEG, or PNG up to 35MB'
 
 
 def reimbursement_receipt_upload_root():
@@ -16787,6 +16788,112 @@ def reimbursement_receipt_allowed(filename):
 
 def reimbursement_receipt_size_label(max_bytes=REIMBURSEMENT_RECEIPT_MAX_BYTES):
     return f"{max_bytes // (1024 * 1024)}MB"
+
+
+def reimbursement_receipt_intake_size_label():
+    return reimbursement_receipt_size_label(REIMBURSEMENT_RECEIPT_INTAKE_MAX_BYTES)
+
+
+def reimbursement_optimize_image_receipt_bytes(file_bytes, target_bytes=REIMBURSEMENT_RECEIPT_MAX_BYTES):
+    """Compress uploaded receipt photos to fit the stored reimbursement limit."""
+    if not file_bytes or len(file_bytes) <= target_bytes:
+        return file_bytes, None, None
+
+    from PIL import Image, ImageOps
+
+    with Image.open(io.BytesIO(file_bytes)) as source_img:
+        try:
+            img = ImageOps.exif_transpose(source_img)
+        except Exception:
+            img = source_img.copy()
+
+        if img.mode in ('RGBA', 'LA') or ('transparency' in img.info):
+            background = Image.new('RGB', img.size, 'white')
+            background.paste(img.convert('RGBA'), mask=img.convert('RGBA').getchannel('A'))
+            img = background
+        else:
+            img = img.convert('RGB')
+
+        try:
+            resample_filter = Image.Resampling.LANCZOS
+        except AttributeError:
+            resample_filter = Image.LANCZOS
+
+        best_bytes = None
+        best_size = None
+        max_sides = [2200, 1800, 1600, 1400, 1200, 1000, 850]
+        qualities = [86, 80, 74, 68, 62, 56, 50, 44]
+
+        for max_side in max_sides:
+            candidate = img
+            width, height = candidate.size
+            largest_side = max(width, height)
+            if largest_side > max_side:
+                scale = max_side / float(largest_side)
+                new_size = (max(1, int(width * scale)), max(1, int(height * scale)))
+                candidate = img.resize(new_size, resample_filter)
+
+            for quality in qualities:
+                output = io.BytesIO()
+                candidate.save(
+                    output,
+                    format='JPEG',
+                    quality=quality,
+                    optimize=True,
+                    progressive=True
+                )
+                optimized = output.getvalue()
+                optimized_size = len(optimized)
+                if best_size is None or optimized_size < best_size:
+                    best_bytes = optimized
+                    best_size = optimized_size
+                if optimized_size <= target_bytes:
+                    return optimized, 'jpg', 'image/jpeg'
+
+        if best_bytes and best_size and best_size < len(file_bytes):
+            return best_bytes, 'jpg', 'image/jpeg'
+
+    return file_bytes, None, None
+
+
+def reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename):
+    """Validate and optimize one reimbursement receipt upload before persistence."""
+    ext = reimbursement_receipt_extension(original_filename)
+    file_bytes = file_obj.read()
+
+    if not file_bytes:
+        raise ValueError(f'Receipt file is empty: {original_filename}.')
+
+    if len(file_bytes) > REIMBURSEMENT_RECEIPT_INTAKE_MAX_BYTES:
+        raise ValueError(
+            f"Receipt file is too large: {original_filename}. "
+            f"Maximum upload size is {reimbursement_receipt_intake_size_label()} per file."
+        )
+
+    stored_ext = ext
+    content_type = file_obj.mimetype or ''
+
+    if ext in {'jpg', 'jpeg', 'png'}:
+        try:
+            optimized_bytes, optimized_ext, optimized_content_type = reimbursement_optimize_image_receipt_bytes(file_bytes)
+        except Exception:
+            raise ValueError(
+                'Receipt image could not be processed. Please upload a clearer JPG, JPEG, or PNG file.'
+            )
+        if optimized_ext:
+            file_bytes = optimized_bytes
+            stored_ext = optimized_ext
+            content_type = optimized_content_type
+    elif ext == 'pdf' and len(file_bytes) > REIMBURSEMENT_RECEIPT_MAX_BYTES:
+        file_bytes = reimbursement_compress_pdf_bytes_best_effort(file_bytes, REIMBURSEMENT_RECEIPT_MAX_BYTES)
+        content_type = 'application/pdf'
+
+    if len(file_bytes) > REIMBURSEMENT_RECEIPT_MAX_BYTES:
+        raise ValueError(
+            'Receipt could not be reduced below 2MB. Please upload a smaller or clearer file.'
+        )
+
+    return file_bytes, stored_ext, content_type
 
 
 def reimbursement_receipt_path(receipt):
@@ -17532,21 +17639,18 @@ def upload_reimbursement_receipt():
             if not ext:
                 return jsonify({'success': False, 'error': f'Invalid receipt filename: {file_obj.filename}'}), 400
 
+            try:
+                prepared_bytes, stored_ext, content_type = reimbursement_prepare_receipt_upload_bytes(file_obj, original)
+            except ValueError as prep_error:
+                return jsonify({'success': False, 'error': str(prep_error)}), 400
+
             receipt_group_label = 'additional' if receipt_group_id is None else str(receipt_group_id)
-            stored = f"reimb_{header.id}_{receipt_group_label}_{secrets.token_hex(8)}.{ext}"
+            stored = f"reimb_{header.id}_{receipt_group_label}_{secrets.token_hex(8)}.{stored_ext}"
             target_path = os.path.join(root, stored)
 
-            file_obj.save(target_path)
+            with open(target_path, 'wb') as target_file:
+                target_file.write(prepared_bytes)
             size = os.path.getsize(target_path)
-            if size > REIMBURSEMENT_RECEIPT_MAX_BYTES:
-                try:
-                    os.remove(target_path)
-                except Exception:
-                    pass
-                return jsonify({
-                    'success': False,
-                    'error': f"Receipt file is too large: {original}. Maximum size is {reimbursement_receipt_size_label()}."
-                }), 400
 
             receipt = ReimbursementReceipt(
                 reimbursement_id=header.id,
@@ -17554,7 +17658,7 @@ def upload_reimbursement_receipt():
                 uploaded_by_id=current_user.id,
                 stored_filename=stored,
                 original_filename=original,
-                content_type=file_obj.mimetype or '',
+                content_type=content_type or '',
                 file_size=size
             )
             db.session.add(receipt)
@@ -17608,8 +17712,8 @@ def reimbursement_receipt_effective_mimetype(receipt):
     """
     content_type = clean_str(getattr(receipt, 'content_type', None)) or ''
     filename = (
-        clean_str(getattr(receipt, 'original_filename', None)) or
         clean_str(getattr(receipt, 'stored_filename', None)) or
+        clean_str(getattr(receipt, 'original_filename', None)) or
         ''
     ).lower()
 

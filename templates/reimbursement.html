@@ -261,11 +261,29 @@
     }
 
     .reim-remarks {
-        min-width: 210px;
+        min-width: 260px;
+        min-height: 122px;
         border: 1px solid #dbe3ea;
         border-radius: 8px;
-        padding: 7px;
+        padding: 11px 12px;
         width: 100%;
+        resize: vertical;
+        line-height: 1.45;
+    }
+
+    .reim-table th:last-child,
+    .reim-table td:last-child {
+        min-width: 420px;
+        width: 420px;
+    }
+
+    .reim-table .reim-remarks {
+        min-width: 390px;
+    }
+
+    .reim-mobile-card .reim-remarks {
+        min-width: 0;
+        min-height: 132px;
     }
 
     .reim-empty {
@@ -1624,7 +1642,7 @@
                 </div>
             </div>
             <div class="reim-additional-receipts-body">
-                <div class="reim-muted">Allowed: PDF, JPG, JPEG, PNG. Max 2MB each.</div>
+                <div class="reim-muted">Allowed: PDF, JPG, JPEG, PNG. Uploads up to 35MB each; system will optimize to 2MB when possible.</div>
                 <div class="reim-additional-receipts-list" id="reimAdditionalReceiptsList">
                     <span class="reim-muted">No additional receipts uploaded.</span>
                 </div>
@@ -1664,7 +1682,7 @@
                 <div class="reim-field" style="margin-top:12px;">
                     <label for="reimManualReceipt">Attach Receipt</label>
                     <input type="file" id="reimManualReceipt" multiple accept=".pdf,.jpg,.jpeg,.png">
-                    <div class="reim-muted">Optional now, but recommended before submitting. PDF, JPG, JPEG, PNG only. Max 2MB each.</div>
+                    <div class="reim-muted">Optional now, but recommended before submitting. PDF, JPG, JPEG, PNG only. Uploads up to 35MB each; system will optimize to 2MB when possible.</div>
                 </div>
 
                 <div class="reim-manual-actions">
@@ -1804,6 +1822,21 @@
 
     function reimAlert(message, tone) {
         reimToast(message, tone || 'error');
+    }
+
+    async function parseReimbursementJsonResponse(response, fallbackMessage) {
+        const rawText = await response.text();
+        try {
+            return rawText ? JSON.parse(rawText) : {};
+        } catch (error) {
+            const shortText = rawText
+                ? rawText.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220)
+                : '';
+            return {
+                success: false,
+                error: shortText || fallbackMessage || 'Unexpected server response.'
+            };
+        }
     }
 
     function reimConfirmDialog(options) {
@@ -2138,7 +2171,7 @@ function renderReimbursementRows(rows) {
                     ${buildExpenseInputs(row)}
                     <td class="reim-total-cell">₱ <span data-row-total="${reimEscape(rowKey)}">0.00</span></td>
                     <td class="reim-receipt-cell" data-receipt-cell="${reimEscape(receiptKey)}">${renderReimbursementReceiptTools(receiptKey)}</td>
-                    <td><input class="reim-remarks" type="text" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" value="${reimEscape(row.remarks || '')}" oninput="handleReimbursementRemarksInput(this)"></td>
+                    <td><textarea class="reim-remarks" rows="5" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)">${reimEscape(row.remarks || '')}</textarea></td>
                 </tr>
             `;
         }).join('');
@@ -2155,7 +2188,7 @@ function renderReimbursementRows(rows) {
                     <div><strong>Task:</strong> ${reimEscape(row.task)}</div>
                     <div><strong>Product:</strong> ${reimEscape(productLine)}</div>
                     <div style="margin-top:10px;">
-                        <input class="reim-remarks" type="text" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" value="${reimEscape(row.remarks || '')}" oninput="handleReimbursementRemarksInput(this)" placeholder="Purpose / remarks">
+                        <textarea class="reim-remarks" rows="5" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)" placeholder="Purpose / remarks">${reimEscape(row.remarks || '')}</textarea>
                     </div>
                     ${buildMobileExpenseInputs(row)}
                     <div class="reim-mobile-receipts" data-mobile-receipt-cell="${reimEscape(receiptKey)}">${renderReimbursementReceiptTools(receiptKey)}</div>
@@ -2457,7 +2490,7 @@ function renderReimbursementRows(rows) {
     }
 
 
-    const REIMBURSEMENT_RECEIPT_MAX_BYTES = 2 * 1024 * 1024;
+    const REIMBURSEMENT_RECEIPT_MAX_BYTES = 35 * 1024 * 1024;
     const REIMBURSEMENT_RECEIPT_ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png'];
 
     function validateReimbursementReceiptFiles(files) {
@@ -2476,7 +2509,7 @@ function renderReimbursementRows(rows) {
             if (file.size > REIMBURSEMENT_RECEIPT_MAX_BYTES) {
                 return {
                     ok: false,
-                    message: `Receipt file is too large: ${file.name || 'Unknown file'}.\nMaximum size is 2MB per file.`
+                    message: `Receipt file is too large: ${file.name || 'Unknown file'}.\nMaximum upload size is 35MB per file.`
                 };
             }
         }
@@ -2611,7 +2644,7 @@ function renderReimbursementRows(rows) {
     async function fetchReimbursementReceipts(start, end) {
         const params = new URLSearchParams({ start, end });
         const response = await fetch(`/get_reimbursement_receipts?${params.toString()}`);
-        const payload = await response.json();
+        const payload = await parseReimbursementJsonResponse(response, 'Unable to load reimbursement receipts.');
         if (!response.ok || !payload.success) {
             reimbursementReceiptsByShift = {};
             reimbursementAdditionalReceipts = [];
@@ -2867,7 +2900,7 @@ function renderReimbursementRows(rows) {
     async function fetchReimbursementDraft(start, end) {
         const params = new URLSearchParams({ start, end });
         const response = await fetch(`/get_reimbursement_draft?${params.toString()}`);
-        const payload = await response.json();
+        const payload = await parseReimbursementJsonResponse(response, 'Unable to load saved reimbursement draft.');
         if (!response.ok || !payload.success) {
             throw new Error(payload.error || 'Unable to load saved reimbursement draft.');
         }
@@ -3458,7 +3491,7 @@ async function saveReimbursementDraft(silent) {
         try {
             const params = new URLSearchParams({ start, end });
             const response = await fetch(`/get_reimbursement_schedule_rows?${params.toString()}`);
-            const payload = await response.json();
+            const payload = await parseReimbursementJsonResponse(response, 'Unable to load reimbursement rows.');
 
             if (!response.ok || !payload.success) {
                 throw new Error(payload.error || 'Unable to load reimbursement rows.');
