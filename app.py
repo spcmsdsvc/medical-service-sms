@@ -3846,6 +3846,25 @@ def get_users_email_addresses_for_notifications(users):
     return emails
 
 
+def get_requester_accounting_copy_emails(record, primary_emails=None):
+    """Return requester email copies for approved accounting handoff emails."""
+    requester_id = clean_int(getattr(record, 'user_id', None))
+    if not requester_id:
+        return []
+
+    requester = db.session.get(User, requester_id)
+    copy_emails = get_users_email_addresses_for_notifications([requester] if requester else [])
+    primary_keys = {
+        (clean_str(email_addr) or '').strip().lower()
+        for email_addr in normalize_email_list(primary_emails)
+        if clean_str(email_addr)
+    }
+    return [
+        email_addr for email_addr in copy_emails
+        if (clean_str(email_addr) or '').strip().lower() not in primary_keys
+    ]
+
+
 def travel_request_notification_url(request_rec):
     """Frontend target for Travel Request notifications."""
     if not request_rec:
@@ -5066,6 +5085,7 @@ def send_travel_request_accounting_email_async(app_obj, travel_request_id, accou
                     temp_pdf.write(pdf_bytes)
                     temp_pdf_path = temp_pdf.name
 
+                requester_copy_emails = get_requester_accounting_copy_emails(request_rec, recipient_emails)
                 sent, message = send_email_with_attachments(
                     recipient_emails,
                     subject,
@@ -5075,7 +5095,8 @@ def send_travel_request_accounting_email_async(app_obj, travel_request_id, accou
                         'display_name': pdf_filename,
                         'filename': pdf_filename,
                         'path': temp_pdf_path
-                    }]
+                    }],
+                    cc_emails=requester_copy_emails
                 )
                 print(f"[EMAIL] Travel accounting handoff with PDF attachment: sent={sent} | {message}", flush=True)
 
@@ -5453,6 +5474,7 @@ def send_reimbursement_accounting_email_async(app_obj, reimbursement_id, account
                     temp_zip.write(package_bytes)
                     temp_zip_path = temp_zip.name
 
+                requester_copy_emails = get_requester_accounting_copy_emails(header, recipient_emails)
                 sent, message = send_email_with_attachments(
                     recipient_emails,
                     subject,
@@ -5462,7 +5484,8 @@ def send_reimbursement_accounting_email_async(app_obj, reimbursement_id, account
                         'display_name': package_filename,
                         'filename': package_filename,
                         'path': temp_zip_path
-                    }]
+                    }],
+                    cc_emails=requester_copy_emails
                 )
                 print(f"[EMAIL] Reimbursement accounting handoff: sent={sent} | {message}", flush=True)
 
@@ -21231,6 +21254,7 @@ def send_travel_liquidation_accounting_email_async(app_obj, liquidation_id, acco
                     temp_zip.write(package_bytes)
                     temp_zip_path = temp_zip.name
 
+                requester_copy_emails = get_requester_accounting_copy_emails(liquidation, recipient_emails)
                 sent, message = send_email_with_attachments(
                     recipient_emails,
                     subject,
@@ -21240,7 +21264,8 @@ def send_travel_liquidation_accounting_email_async(app_obj, liquidation_id, acco
                         'display_name': package_filename,
                         'filename': package_filename,
                         'path': temp_zip_path
-                    }]
+                    }],
+                    cc_emails=requester_copy_emails
                 )
                 print(f"[EMAIL] Liquidation accounting handoff: sent={sent} | {message}", flush=True)
 
@@ -35262,6 +35287,7 @@ def send_cash_advance_accounting_email_async(app_obj, cash_advance_id, accountin
                     temp_pdf.write(pdf_bytes)
                     temp_pdf_path = temp_pdf.name
 
+                requester_copy_emails = get_requester_accounting_copy_emails(header, recipient_emails)
                 sent, message = send_email_with_attachments(
                     recipient_emails,
                     subject,
@@ -35271,7 +35297,8 @@ def send_cash_advance_accounting_email_async(app_obj, cash_advance_id, accountin
                         'display_name': pdf_filename,
                         'filename': pdf_filename,
                         'path': temp_pdf_path
-                    }]
+                    }],
+                    cc_emails=requester_copy_emails
                 )
                 print(f"[EMAIL] Cash Advance accounting handoff with official form attachment: sent={sent} | {message}", flush=True)
 
@@ -38984,6 +39011,7 @@ def send_cash_advance_liquidation_accounting_email_async(app_obj, liquidation_id
                     temp_zip.write(package_bytes)
                     temp_zip_path = temp_zip.name
 
+                requester_copy_emails = get_requester_accounting_copy_emails(liquidation, recipient_emails)
                 sent, message = send_email_with_attachments(
                     recipient_emails,
                     subject,
@@ -38993,7 +39021,8 @@ def send_cash_advance_liquidation_accounting_email_async(app_obj, liquidation_id
                         'display_name': package_filename,
                         'filename': package_filename,
                         'path': temp_zip_path
-                    }]
+                    }],
+                    cc_emails=requester_copy_emails
                 )
                 print(f"[EMAIL] Cash Advance Liquidation accounting handoff: sent={sent} | {message}", flush=True)
 
