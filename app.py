@@ -2993,7 +2993,7 @@ CLIENT_DUPLICATE_WEAK_TOKENS = {
     # Country/location/common ownership words should not cause duplicates alone.
     # Example: Philippine General Hospital must not match Philippine Heart Center.
     'philippine', 'philippines', 'national', 'regional', 'city', 'province',
-    'municipal', 'community'
+    'municipal', 'community', 'metro', 'metropolitan'
 }
 
 
@@ -16490,6 +16490,26 @@ def reimbursement_shift_allowed_for_current_user(shift, profile, start_date=None
     return profile.id in assigned_ids or getattr(shift, 'engineer_id', None) == profile.id
 
 
+def reimbursement_claimed_dates_for_user(profile, start_date, end_date, exclude_header_id=None):
+    """Return dates already locked by submitted/approved/paid reimbursements."""
+    if not profile or not start_date or not end_date:
+        return set()
+
+    query = (
+        db.session.query(ReimbursementRow.row_date)
+        .join(ReimbursementHeader, ReimbursementRow.reimbursement_id == ReimbursementHeader.id)
+        .filter(ReimbursementHeader.user_id == current_user.id)
+        .filter(ReimbursementHeader.engineer_id == profile.id)
+        .filter(ReimbursementRow.row_date >= start_date)
+        .filter(ReimbursementRow.row_date <= end_date)
+        .filter(func.lower(func.trim(ReimbursementHeader.status)).in_(['submitted', 'approved', 'paid']))
+    )
+    if clean_int(exclude_header_id):
+        query = query.filter(ReimbursementHeader.id != clean_int(exclude_header_id))
+
+    return {row_date for (row_date,) in query.all() if row_date}
+
+
 def reimbursement_row_to_dict(row, receipts_by_shift=None):
     """Serialize a saved reimbursement row for frontend reload."""
     amounts = {field: reimbursement_money_value(getattr(row, field, 0)) for field in REIMBURSEMENT_EXPENSE_FIELDS}
@@ -16661,6 +16681,7 @@ def get_reimbursement_schedule_rows():
     # Reimbursement is always personal. Even admins/schedulers must not load other users' schedules here.
     can_view_all = False
 
+    excluded_dates = reimbursement_claimed_dates_for_user(profile, start_date, end_date)
 
     shifts = (
         Shift.query
@@ -16675,6 +16696,7 @@ def get_reimbursement_schedule_rows():
     )
 
     rows = []
+    excluded_dates_seen = set()
     for shift in shifts:
         if not reimbursement_is_work_expense_schedule(shift):
             continue
@@ -16687,15 +16709,23 @@ def get_reimbursement_schedule_rows():
         if profile.id not in assigned_ids and getattr(shift, 'engineer_id', None) != profile.id:
             continue
 
+        shift_date = shift.start_time.date() if shift.start_time else None
+        if shift_date in excluded_dates:
+            excluded_dates_seen.add(shift_date)
+            continue
+
         row_engineers = [getattr(profile, 'name', '') or getattr(current_user, 'username', '') or '']
         rows.append(reimbursement_shift_row(shift, display_engineer_names=row_engineers))
 
+    excluded_date_labels = [item.isoformat() for item in sorted(excluded_dates_seen)]
     return jsonify({
         'success': True,
         'rows': rows,
         'count': len(rows),
         'start': start_date.isoformat(),
         'end': end_date.isoformat(),
+        'excluded_dates': excluded_date_labels,
+        'excluded_count': len(excluded_date_labels),
         'scope': 'own',
         'can_view_all': False
     })

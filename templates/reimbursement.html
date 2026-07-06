@@ -3485,7 +3485,10 @@ async function saveReimbursementDraft(silent) {
 
             renderReimbursementRows(rows);
             await fetchReimbursementReceipts(start, end);
-            status.textContent = `Loaded schedules from ${payload.start} to ${payload.end}.${draftMessage}`;
+            const excludedMessage = Number(payload.excluded_count || 0) > 0
+                ? ' Previously submitted/approved reimbursement dates were excluded.'
+                : '';
+            status.textContent = `Loaded schedules from ${payload.start} to ${payload.end}.${draftMessage}${excludedMessage}`;
             applyReimbursementStatusUi();
         } catch (error) {
             console.error(error);
