@@ -16856,6 +16856,122 @@ def reimbursement_optimize_image_receipt_bytes(file_bytes, target_bytes=REIMBURS
     return file_bytes, None, None
 
 
+def reimbursement_rasterize_pdf_receipt_bytes(pdf_bytes, target_bytes=REIMBURSEMENT_RECEIPT_MAX_BYTES):
+    """Last-resort compression for scanned receipt PDFs uploaded by engineers."""
+    if not pdf_bytes or len(pdf_bytes) <= target_bytes:
+        return pdf_bytes
+
+    try:
+        import fitz
+        from PIL import Image
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
+        from reportlab.lib.utils import ImageReader
+        from reportlab.pdfgen import canvas
+    except Exception as import_error:
+        print(f"[Reimbursement] PDF raster compression unavailable: {import_error}", flush=True)
+        return pdf_bytes
+
+    try:
+        source_doc = fitz.open(stream=pdf_bytes, filetype='pdf')
+    except Exception as open_error:
+        print(f"[Reimbursement] PDF raster compression skipped: {open_error}", flush=True)
+        return pdf_bytes
+
+    if source_doc.needs_pass:
+        source_doc.close()
+        return pdf_bytes
+
+    page_count = len(source_doc)
+    if page_count <= 0:
+        source_doc.close()
+        return pdf_bytes
+
+    settings = [
+        (1.20, 76),
+        (1.00, 70),
+        (0.85, 64),
+        (0.72, 58),
+        (0.60, 52),
+        (0.50, 46),
+    ]
+    best_bytes = None
+    best_size = None
+
+    try:
+        for zoom, jpeg_quality in settings:
+            output = io.BytesIO()
+            pdf_canvas = canvas.Canvas(output, pagesize=A4, pageCompression=1)
+            page_width, page_height = A4
+            margin = 10 * mm
+            max_width = page_width - (2 * margin)
+            max_height = page_height - (2 * margin)
+
+            for page in source_doc:
+                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+                image = Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
+                image_buffer = io.BytesIO()
+                image.save(
+                    image_buffer,
+                    format='JPEG',
+                    quality=jpeg_quality,
+                    optimize=True,
+                    progressive=True
+                )
+                image_buffer.seek(0)
+
+                image_width, image_height = image.size
+                scale = min(max_width / float(image_width), max_height / float(image_height))
+                draw_width = image_width * scale
+                draw_height = image_height * scale
+                x_pos = (page_width - draw_width) / 2
+                y_pos = (page_height - draw_height) / 2
+
+                pdf_canvas.drawImage(
+                    ImageReader(image_buffer),
+                    x_pos,
+                    y_pos,
+                    width=draw_width,
+                    height=draw_height,
+                    preserveAspectRatio=True,
+                    mask='auto'
+                )
+                pdf_canvas.showPage()
+
+            pdf_canvas.save()
+            optimized = output.getvalue()
+            optimized_size = len(optimized)
+            if optimized and (best_size is None or optimized_size < best_size):
+                best_bytes = optimized
+                best_size = optimized_size
+            if optimized and optimized_size <= target_bytes:
+                print(
+                    f"[Reimbursement] Uploaded receipt PDF raster-optimized: {len(pdf_bytes)} bytes -> {optimized_size} bytes.",
+                    flush=True
+                )
+                return optimized
+    except Exception as raster_error:
+        print(f"[Reimbursement] PDF raster compression failed: {raster_error}", flush=True)
+    finally:
+        source_doc.close()
+
+    if best_bytes and best_size and best_size < len(pdf_bytes):
+        return best_bytes
+    return pdf_bytes
+
+
+def reimbursement_optimize_pdf_receipt_bytes(pdf_bytes, target_bytes=REIMBURSEMENT_RECEIPT_MAX_BYTES):
+    """Compress uploaded reimbursement receipt PDFs, including scanned PDFs."""
+    if not pdf_bytes or len(pdf_bytes) <= target_bytes:
+        return pdf_bytes
+
+    optimized = reimbursement_compress_pdf_bytes_best_effort(pdf_bytes, target_bytes)
+    if optimized and len(optimized) <= target_bytes:
+        return optimized
+
+    return reimbursement_rasterize_pdf_receipt_bytes(optimized or pdf_bytes, target_bytes)
+
+
 def reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename):
     """Validate and optimize one reimbursement receipt upload before persistence."""
     ext = reimbursement_receipt_extension(original_filename)
@@ -16885,7 +17001,7 @@ def reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename):
             stored_ext = optimized_ext
             content_type = optimized_content_type
     elif ext == 'pdf' and len(file_bytes) > REIMBURSEMENT_RECEIPT_MAX_BYTES:
-        file_bytes = reimbursement_compress_pdf_bytes_best_effort(file_bytes, REIMBURSEMENT_RECEIPT_MAX_BYTES)
+        file_bytes = reimbursement_optimize_pdf_receipt_bytes(file_bytes, REIMBURSEMENT_RECEIPT_MAX_BYTES)
         content_type = 'application/pdf'
 
     if len(file_bytes) > REIMBURSEMENT_RECEIPT_MAX_BYTES:
@@ -17540,6 +17656,13 @@ def save_reimbursement_draft():
             saved_row = reimbursement_apply_row_payload(header, row_payload, profile, start_date, end_date)
             if saved_row:
                 saved_count += 1
+
+        if rows_payload and saved_count <= 0:
+            db.session.rollback()
+            return jsonify({
+                'success': False,
+                'error': 'No valid reimbursement rows were saved. Please reload schedules and try again.'
+            }), 400
 
         db.session.commit()
         print(f"[Reimbursement] Draft saved header #{header.id}; status={header.status}; rows={saved_count}", flush=True)

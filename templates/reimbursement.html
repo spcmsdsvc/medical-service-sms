@@ -3193,6 +3193,9 @@ async function saveReimbursementDraft(silent) {
             });
 
             const payload = await parseReimbursementJsonResponse(response, 'Unable to save reimbursement draft.');
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Unable to save reimbursement draft.');
+            }
 
             updateReimbursementLifecycleFromPayload(payload);
             applyReimbursementStatusUi();
