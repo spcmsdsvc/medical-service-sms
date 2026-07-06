@@ -4961,7 +4961,7 @@ Recipient count: ${recipientCount}` : ''),
 
     function renderApprovalReceiptLinks(receipts) {
         const list = Array.isArray(receipts) ? receipts : [];
-        if (!list.length) return '<span class="approval-muted">No receipts</span>';
+        if (!list.length) return '';
         return list.map(receipt => {
             const label = receipt.filename || receipt.original_filename || `Receipt #${receipt.id}`;
             const previewUrl = normalizeApprovalReceiptPreviewUrl(receipt.preview_url || receipt.url || receipt.download_url || '#');
