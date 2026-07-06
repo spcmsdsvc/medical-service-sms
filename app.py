@@ -16558,9 +16558,34 @@ def reimbursement_shift_allowed_for_current_user(shift, profile, start_date=None
 
 
 def reimbursement_claimed_dates_for_user(profile, start_date, end_date, exclude_header_id=None):
-    """Return dates already locked by submitted/approved/paid reimbursements."""
+    """Return dates already claimed by submitted/approved/paid reimbursements.
+
+    A submitted monthly worksheet may contain saved schedule rows with no
+    amount and no receipt. Those blank rows should not block the same date from
+    being loaded later, because nothing was actually claimed for that day.
+    """
     if not profile or not start_date or not end_date:
         return set()
+
+    amount_claim_filters = [
+        func.coalesce(getattr(ReimbursementRow, field), 0) > 0
+        for field in REIMBURSEMENT_EXPENSE_FIELDS
+    ]
+    receipt_claim_exists = (
+        db.session.query(ReimbursementReceipt.id)
+        .filter(ReimbursementReceipt.reimbursement_id == ReimbursementRow.reimbursement_id)
+        .filter(or_(
+            and_(
+                ReimbursementRow.shift_id.isnot(None),
+                ReimbursementReceipt.shift_id == ReimbursementRow.shift_id
+            ),
+            and_(
+                ReimbursementRow.shift_id.is_(None),
+                ReimbursementReceipt.shift_id == -ReimbursementRow.id
+            )
+        ))
+        .exists()
+    )
 
     query = (
         db.session.query(ReimbursementRow.row_date)
@@ -16570,6 +16595,11 @@ def reimbursement_claimed_dates_for_user(profile, start_date, end_date, exclude_
         .filter(ReimbursementRow.row_date >= start_date)
         .filter(ReimbursementRow.row_date <= end_date)
         .filter(func.lower(func.trim(ReimbursementHeader.status)).in_(['submitted', 'approved', 'paid']))
+        .filter(or_(
+            ReimbursementRow.row_total > 0,
+            *amount_claim_filters,
+            receipt_claim_exists
+        ))
     )
     if clean_int(exclude_header_id):
         query = query.filter(ReimbursementHeader.id != clean_int(exclude_header_id))

@@ -3535,7 +3535,13 @@ async function saveReimbursementDraft(silent) {
                 ? ' Previously submitted/approved reimbursement dates were excluded.'
                 : '';
             const warningMessage = payload.warning_count ? ` ${payload.warning_count} schedule row(s) were skipped due to incomplete data.` : '';
-            status.textContent = `Loaded schedules from ${payload.start} to ${payload.end}.${draftMessage}${excludedMessage}${warningMessage}`;
+            if (!rows.length && Number(payload.excluded_count || 0) > 0) {
+                status.textContent = `No unclaimed schedule rows found from ${payload.start} to ${payload.end}. ${payload.excluded_count} previously claimed date(s) were excluded.${warningMessage}`;
+            } else if (!rows.length) {
+                status.textContent = `No reimbursement schedule rows found from ${payload.start} to ${payload.end}.${warningMessage}`;
+            } else {
+                status.textContent = `Loaded schedules from ${payload.start} to ${payload.end}.${draftMessage}${excludedMessage}${warningMessage}`;
+            }
             applyReimbursementStatusUi();
         } catch (error) {
             console.error(error);
