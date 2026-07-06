@@ -1066,32 +1066,24 @@
 
     async function markAllCashAdvanceNotificationsRead() {
         try {
-            if (!cashAdvanceNotificationItems.length) {
-                await loadCashAdvanceNotifications();
-            }
-
-            const ids = cashAdvanceNotificationItems
-                .map(item => Number(item.id || 0))
-                .filter(Boolean);
-
-            if (!ids.length) {
-                cashToast('No unread Cash Advance notifications.', 'ok');
-                return;
-            }
-
-            for (const id of ids) {
-                setCashNotificationBusy(id, true);
-                try {
-                    await postCashNotificationRead(id);
-                    removeCashNotificationFromUi(id);
-                } catch (error) {
-                    console.warn('[CashAdvance] Mark all notification read skipped', id, error);
-                    setCashNotificationBusy(id, false);
-                }
-            }
-
+            const response = await fetch('/mark_scoped_notifications_read', {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRFToken': getCashCsrfToken()
+                },
+                body: JSON.stringify({ scope: 'cash_advance' })
+            });
+            const data = await parseCashJson(response, 'Unable to mark notifications as read.');
             await loadCashAdvanceNotifications();
-            cashToast('Cash Advance notifications marked as read.', 'ok');
+            if (Number(data.updated_count || 0) > 0) {
+                cashToast('Cash Advance notifications marked as read.', 'ok');
+            } else {
+                cashToast('No unread Cash Advance notifications.', 'ok');
+            }
         } catch (error) {
             cashToast(error.message || 'Unable to mark notifications as read.', 'error');
         }

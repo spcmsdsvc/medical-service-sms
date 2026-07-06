@@ -3998,16 +3998,13 @@ async function saveReimbursementDraft(silent) {
         if (list) list.innerHTML = '<div class="reim-empty">Loading reimbursement notifications...</div>';
 
         try {
-            const response = await fetch('/get_my_notifications?limit=50', {
+            const response = await fetch('/get_my_reimbursement_notifications?limit=50&unread_only=true', {
                 credentials: 'same-origin',
                 cache: 'no-store',
                 headers: { 'Accept': 'application/json' }
             });
             const payload = await parseReimbursementJsonResponse(response, 'Unable to load notifications.');
-            const allItems = Array.isArray(payload.items) ? payload.items : [];
-            const items = allItems.filter(function(item) {
-                return String(item.module || '').toLowerCase() === 'reimbursement' && !item.is_read;
-            });
+            const items = Array.isArray(payload.items) ? payload.items : [];
             const unreadCount = items.length;
 
             if (badge) {
@@ -4078,7 +4075,7 @@ async function dismissReimbursementNotification(event, notificationId) {
 
     async function markAllReimbursementNotificationsRead() {
         try {
-            const response = await fetch('/mark_all_notifications_read', {
+            const response = await fetch('/mark_scoped_notifications_read', {
                 method: 'POST',
                 credentials: 'same-origin',
                 cache: 'no-store',
@@ -4087,7 +4084,7 @@ async function dismissReimbursementNotification(event, notificationId) {
                     'Accept': 'application/json',
                     'X-CSRFToken': getReimbursementCsrfToken()
                 },
-                body: JSON.stringify({})
+                body: JSON.stringify({ scope: 'reimbursement' })
             });
             await parseReimbursementJsonResponse(response, 'Unable to mark notifications as read.');
             await loadReimbursementNotifications();
@@ -4102,7 +4099,7 @@ async function dismissReimbursementNotification(event, notificationId) {
         await loadReimbursementNotifications();
 
         try {
-            const response = await fetch('/get_my_notifications?limit=50', {
+            const response = await fetch('/get_my_reimbursement_notifications?limit=50', {
                 credentials: 'same-origin',
                 cache: 'no-store',
                 headers: { 'Accept': 'application/json' }

@@ -5396,7 +5396,7 @@ Recipient count: ${recipientCount}` : ''),
         }
 
         try {
-            const response = await fetch(`/get_my_notifications?limit=20&unread_only=true&_=${Date.now()}`, {
+            const response = await fetch(`/get_my_approval_notifications?limit=20&unread_only=true&_=${Date.now()}`, {
                 credentials: 'same-origin',
                 cache: 'no-store',
                 headers: { 'Accept': 'application/json' }
@@ -5448,7 +5448,7 @@ async function dismissApprovalNotification(event, notificationId) {
 
     async function markAllApprovalNotificationsRead() {
         try {
-            const response = await fetch('/mark_all_notifications_read', {
+            const response = await fetch('/mark_scoped_notifications_read', {
                 method: 'POST',
                 credentials: 'same-origin',
                 cache: 'no-store',
@@ -5457,7 +5457,7 @@ async function dismissApprovalNotification(event, notificationId) {
                     'Accept': 'application/json',
                     'X-CSRFToken': getApprovalCsrfToken()
                 },
-                body: JSON.stringify({})
+                body: JSON.stringify({ scope: 'approval' })
             });
             await parseApprovalJsonResponse(response, 'Unable to mark notifications as read.');
             await loadApprovalNotifications();

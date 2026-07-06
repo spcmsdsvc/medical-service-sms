@@ -1896,7 +1896,7 @@ async function loadTravelNotifications(silent=false){
     }
 
     try{
-        const res = await fetch(`/get_my_notifications?limit=10&_=${Date.now()}`, {
+        const res = await fetch(`/get_my_travel_request_notifications?limit=10&unread_only=true&_=${Date.now()}`, {
             credentials:'same-origin',
             cache:'no-store',
             headers:{ 'Accept':'application/json' }
@@ -1941,12 +1941,12 @@ async function dismissTravelNotification(event, notificationId){
 
 async function markAllTravelNotificationsRead(){
     try{
-        const res = await fetch('/mark_all_notifications_read', {
+        const res = await fetch('/mark_scoped_notifications_read', {
             method:'POST',
             credentials:'same-origin',
             cache:'no-store',
             headers:{ 'Content-Type':'application/json', 'Accept':'application/json', 'X-CSRFToken': travelCsrfToken() },
-            body: JSON.stringify({})
+            body: JSON.stringify({ scope: 'travel_request' })
         });
         await parseTravelJson(res, 'Unable to mark notifications as read.');
         await loadTravelNotifications(true);

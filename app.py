@@ -194,7 +194,11 @@ NEW_WORKFLOW_BLOCKED_EXACT_PATHS = {
     '/approvals',
     '/cash_advance',
     '/cash_advance_liquidation',
+    '/get_my_approval_notifications',
     '/get_my_cash_advance_notifications',
+    '/get_my_reimbursement_notifications',
+    '/get_my_travel_request_notifications',
+    '/mark_scoped_notifications_read',
     '/reimbursement',
     '/travel_liquidation',
     '/travel_request'
@@ -7413,6 +7417,194 @@ def cash_advance_notification_is_for_requester(notification, requester_user_id):
     return False
 
 
+def notification_metadata_dict(notification):
+    metadata = {}
+    if clean_str(getattr(notification, 'metadata_json', None)):
+        try:
+            metadata = json.loads(notification.metadata_json)
+        except Exception:
+            metadata = {}
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def notification_scope_limit():
+    limit = clean_int(request.args.get('limit')) or 20
+    return min(max(limit, 1), 100)
+
+
+def notification_unread_only_requested():
+    return str(request.args.get('unread_only') or '').strip().lower() in {'1', 'true', 'yes'}
+
+
+def notification_base_query(module=None, unread_only=False):
+    query = SystemNotification.query.filter_by(user_id=current_user.id)
+    if module:
+        query = query.filter(SystemNotification.module == module)
+    if unread_only:
+        query = query.filter(SystemNotification.is_read.is_(False))
+    return query.order_by(SystemNotification.created_at.desc(), SystemNotification.id.desc())
+
+
+def travel_request_notification_is_for_requester(notification):
+    if not notification or clean_str(getattr(notification, 'module', None)).lower() != 'travel_request':
+        return False
+    request_id = clean_int(getattr(notification, 'record_id', None)) or clean_int(notification_metadata_dict(notification).get('travel_request_id'))
+    request_rec = db.session.get(TravelRequest, request_id) if request_id else None
+    return bool(request_rec and can_user_access_travel_request(request_rec))
+
+
+def reimbursement_notification_is_for_requester(notification):
+    if not notification or clean_str(getattr(notification, 'module', None)).lower() != 'reimbursement':
+        return False
+    reimbursement_id = clean_int(getattr(notification, 'record_id', None)) or clean_int(notification_metadata_dict(notification).get('reimbursement_id'))
+    header = db.session.get(ReimbursementHeader, reimbursement_id) if reimbursement_id else None
+    if not header:
+        return False
+    profile = reimbursement_get_personal_profile()
+    if not profile:
+        return False
+    return (
+        clean_int(getattr(header, 'user_id', None)) == clean_int(getattr(current_user, 'id', None)) and
+        clean_int(getattr(header, 'engineer_id', None)) == clean_int(getattr(profile, 'id', None))
+    )
+
+
+def approval_notification_is_active_for_current_user(notification):
+    if not notification or getattr(notification, 'is_read', False):
+        return False
+
+    metadata = notification_metadata_dict(notification)
+    module_key = clean_str(getattr(notification, 'module', None)).lower()
+    record_id = clean_int(getattr(notification, 'record_id', None))
+    event_key = clean_str(metadata.get('event')).lower()
+
+    if module_key == 'travel_request':
+        request_rec = db.session.get(TravelRequest, record_id) if record_id else None
+        return bool(
+            request_rec and
+            event_key == 'submitted' and
+            travel_request_normalize_status(getattr(request_rec, 'status', None)) == 'Submitted' and
+            can_user_approve_travel_request(current_user, request_rec)
+        )
+
+    if module_key == 'reimbursement':
+        header = db.session.get(ReimbursementHeader, record_id) if record_id else None
+        return bool(
+            header and
+            event_key == 'submitted' and
+            reimbursement_normalize_status(getattr(header, 'status', None)) == 'Submitted' and
+            can_user_approve_reimbursement_header(current_user, header)
+        )
+
+    if module_key == 'cash_advance':
+        header = db.session.get(CashAdvanceHeader, record_id) if record_id else None
+        return bool(
+            header and
+            event_key == 'submitted' and
+            cash_advance_normalize_status(getattr(header, 'status', None)) == 'Submitted' and
+            can_user_approve_cash_advance(current_user, header)
+        )
+
+    if module_key == 'travel_liquidation':
+        liquidation = db.session.get(TravelLiquidationHeader, record_id) if record_id else None
+        return bool(
+            liquidation and
+            event_key in {'submitted', 'liquidation_submitted'} and
+            travel_liquidation_normalize_status(getattr(liquidation, 'status', None)) == 'Submitted' and
+            can_user_approve_travel_liquidation(current_user, liquidation)
+        )
+
+    if module_key == 'cash_advance_liquidation':
+        liquidation = db.session.get(CashAdvanceLiquidationHeader, record_id) if record_id else None
+        return bool(
+            liquidation and
+            event_key == 'submitted' and
+            cash_advance_liquidation_normalize_status(getattr(liquidation, 'status', None)) == 'Submitted' and
+            can_user_approve_cash_advance_liquidation(current_user, liquidation)
+        )
+
+    return False
+
+
+def notification_matches_scope(notification, scope):
+    scope_key = clean_str(scope).lower()
+    if scope_key == 'approval':
+        return approval_notification_is_active_for_current_user(notification)
+    if scope_key == 'travel_request':
+        return travel_request_notification_is_for_requester(notification)
+    if scope_key == 'reimbursement':
+        return reimbursement_notification_is_for_requester(notification)
+    if scope_key == 'cash_advance':
+        return cash_advance_notification_is_for_requester(notification, current_user.id)
+    return False
+
+
+def scoped_notification_dict(notification, scope):
+    item = system_notification_to_dict(notification)
+    if scope == 'travel_request':
+        request_id = clean_int(item.get('record_id')) or clean_int((item.get('metadata') or {}).get('travel_request_id'))
+        if request_id:
+            item['target_url'] = f'/travel_request?travel_request_id={request_id}'
+    return item
+
+
+def get_scoped_notifications_payload(scope, module=None, unread_only=False, limit=20):
+    query = notification_base_query(module=module, unread_only=unread_only)
+    candidates = query.limit(min(max(limit * 8, 80), 400)).all()
+    items = [item for item in candidates if notification_matches_scope(item, scope)][:limit]
+
+    unread_query = notification_base_query(module=module, unread_only=True)
+    unread_candidates = unread_query.limit(400).all()
+    unread_count = sum(1 for item in unread_candidates if notification_matches_scope(item, scope))
+
+    return {
+        'success': True,
+        'items': [scoped_notification_dict(item, scope) for item in items],
+        'count': len(items),
+        'unread_count': unread_count,
+        'scope': scope
+    }
+
+
+@app.route('/get_my_approval_notifications')
+@login_required
+def get_my_approval_notifications():
+    ensure_system_notification_table()
+    if not is_approval_center_user():
+        return jsonify({'success': False, 'error': 'You are not assigned as an approver.'}), 403
+    return jsonify(get_scoped_notifications_payload(
+        'approval',
+        module=None,
+        unread_only=True,
+        limit=notification_scope_limit()
+    ))
+
+
+@app.route('/get_my_travel_request_notifications')
+@login_required
+def get_my_travel_request_notifications():
+    ensure_system_notification_table()
+    run_travel_request_liquidation_reminder_check_for_current_user(commit=True)
+    return jsonify(get_scoped_notifications_payload(
+        'travel_request',
+        module='travel_request',
+        unread_only=notification_unread_only_requested(),
+        limit=notification_scope_limit()
+    ))
+
+
+@app.route('/get_my_reimbursement_notifications')
+@login_required
+def get_my_reimbursement_notifications():
+    ensure_system_notification_table()
+    return jsonify(get_scoped_notifications_payload(
+        'reimbursement',
+        module='reimbursement',
+        unread_only=notification_unread_only_requested(),
+        limit=notification_scope_limit()
+    ))
+
+
 @app.route('/get_my_cash_advance_notifications')
 @login_required
 def get_my_cash_advance_notifications():
@@ -7420,42 +7612,49 @@ def get_my_cash_advance_notifications():
     ensure_system_notification_table()
     ensure_cash_advance_tables()
 
-    unread_only = str(request.args.get('unread_only') or '').strip().lower() in {'1', 'true', 'yes'}
-    limit = clean_int(request.args.get('limit')) or 20
-    limit = min(max(limit, 1), 100)
+    return jsonify(get_scoped_notifications_payload(
+        'cash_advance',
+        module='cash_advance',
+        unread_only=notification_unread_only_requested(),
+        limit=notification_scope_limit()
+    ))
 
-    query = SystemNotification.query.filter_by(user_id=current_user.id, module='cash_advance')
-    if unread_only:
-        query = query.filter(SystemNotification.is_read.is_(False))
 
-    candidates = (
-        query
-        .order_by(SystemNotification.created_at.desc(), SystemNotification.id.desc())
-        .limit(min(max(limit * 6, 60), 300))
-        .all()
-    )
-    items = [
-        item for item in candidates
-        if cash_advance_notification_is_for_requester(item, current_user.id)
-    ][:limit]
+@app.route('/mark_scoped_notifications_read', methods=['POST'])
+@csrf.exempt
+@login_required
+def mark_scoped_notifications_read():
+    ensure_system_notification_table()
+    payload = request.get_json(silent=True) or {}
+    scope = clean_str(payload.get('scope') or request.args.get('scope')).lower()
+    module_map = {
+        'travel_request': 'travel_request',
+        'reimbursement': 'reimbursement',
+        'cash_advance': 'cash_advance'
+    }
 
-    unread_candidates = (
-        SystemNotification.query
-        .filter_by(user_id=current_user.id, module='cash_advance', is_read=False)
-        .order_by(SystemNotification.created_at.desc(), SystemNotification.id.desc())
-        .limit(300)
-        .all()
-    )
-    unread_count = sum(
-        1 for item in unread_candidates
-        if cash_advance_notification_is_for_requester(item, current_user.id)
-    )
+    if scope == 'approval' and not is_approval_center_user():
+        return jsonify({'success': False, 'error': 'You are not assigned as an approver.'}), 403
+    if scope not in {'approval', 'travel_request', 'reimbursement', 'cash_advance'}:
+        return jsonify({'success': False, 'error': 'Unknown notification scope.'}), 400
 
+    unread_items = notification_base_query(
+        module=module_map.get(scope),
+        unread_only=True
+    ).limit(500).all()
+    now = get_manila_time()
+    updated_count = 0
+    for notification in unread_items:
+        if notification_matches_scope(notification, scope):
+            notification.is_read = True
+            notification.read_at = now
+            updated_count += 1
+
+    db.session.commit()
     return jsonify({
         'success': True,
-        'items': [system_notification_to_dict(item) for item in items],
-        'count': len(items),
-        'unread_count': unread_count
+        'scope': scope,
+        'updated_count': updated_count
     })
 
 
