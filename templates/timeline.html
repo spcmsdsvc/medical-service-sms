@@ -7139,6 +7139,8 @@ async function loadEngineerOptions(){
     let timelineRefreshInFlightPromise = null;
     let timelineRefreshInFlightKey = '';
     let timelineResizeDebounceTimer = null;
+    const TIMELINE_OFFLINE_PRECACHE_RADIUS_WEEKS = 4;
+    let timelineOfflinePrecacheInFlight = false;
 
 function shouldUseTimelineLitePayload(){
     // TSR attachment correctness fix:
@@ -11884,30 +11886,31 @@ if (selectedVal === "Leave") {
         }
     }
 
-    function saveTimelineOfflineSnapshot(data, cacheKey){
+    function saveTimelineOfflineSnapshot(data, cacheKey, options={}){
         try{
             if(!data) return;
 
             const key = cacheKey || mobileLastCacheKey || `${weekOffset}|${document.getElementById('branch-filter')?.value || 'ALL'}`;
+            const parsedKey = parseTimelineCacheKey(key);
             const payload = {
                 savedAt: new Date().toISOString(),
                 cacheKey: key,
-                weekOffset,
-                branch: document.getElementById('branch-filter')?.value || 'ALL',
+                weekOffset: Number.isFinite(Number(options.weekOffset)) ? Number(options.weekOffset) : parsedKey.weekOffset,
+                branch: options.branch || parsedKey.branch || document.getElementById('branch-filter')?.value || 'ALL',
                 data
             };
 
             const snapshotMap = readTimelineOfflineSnapshotMap();
             snapshotMap[key] = payload;
 
-            // Keep the last 12 week/branch snapshots to avoid unlimited localStorage growth.
+            // Keep enough snapshots for the proactive 9-week offline window plus branch changes.
             const sortedKeys = Object.keys(snapshotMap).sort((a, b) => {
                 const aDate = new Date(snapshotMap[a]?.savedAt || 0).getTime();
                 const bDate = new Date(snapshotMap[b]?.savedAt || 0).getTime();
                 return bDate - aDate;
             });
 
-            sortedKeys.slice(12).forEach(oldKey => delete snapshotMap[oldKey]);
+            sortedKeys.slice(24).forEach(oldKey => delete snapshotMap[oldKey]);
 
             writeTimelineOfflineSnapshotMap(snapshotMap);
             localStorage.setItem(TIMELINE_OFFLINE_SNAPSHOT_KEY, JSON.stringify(payload));
@@ -12097,6 +12100,54 @@ if (selectedVal === "Leave") {
         return snapshot.data;
     }
 
+    async function warmTimelineOfflineScheduleWindow(centerOffset, branchFilter){
+        if(!navigator.onLine || timelineOfflinePrecacheInFlight) return;
+        timelineOfflinePrecacheInFlight = true;
+
+        try{
+            const branch = branchFilter || document.getElementById('branch-filter')?.value || 'ALL';
+            const offsets = [];
+            for(let delta = -TIMELINE_OFFLINE_PRECACHE_RADIUS_WEEKS; delta <= TIMELINE_OFFLINE_PRECACHE_RADIUS_WEEKS; delta++){
+                const targetOffset = Number(centerOffset || 0) + delta;
+                if(targetOffset === Number(weekOffset || 0)) continue;
+                offsets.push(targetOffset);
+            }
+
+            for(const offset of offsets){
+                const key = `${offset}|${branch}`;
+                const existing = loadTimelineOfflineSnapshot(key);
+                const savedAt = existing?.savedAt ? new Date(existing.savedAt).getTime() : 0;
+                if(savedAt && (Date.now() - savedAt) < 30 * 60 * 1000) continue;
+
+                try{
+                    const res = await fetch(buildFreshTimelineUrl(offset, branch, shouldUseTimelineLitePayload()), {
+                        cache: 'no-store',
+                        credentials: 'same-origin'
+                    });
+                    if(!res.ok) continue;
+                    const data = await res.json();
+                    if(data && Array.isArray(data.days) && Array.isArray(data.engineers)){
+                        timelineCache[key] = { savedAt: Date.now(), data };
+                        saveTimelineOfflineSnapshot(data, key, { weekOffset: offset, branch });
+                    }
+                }catch(err){
+                    console.warn('[PWA] Offline schedule pre-cache skipped for week', offset, err);
+                }
+            }
+
+            if(shouldUseRoleAwareMobileTimeline()){
+                setMobileCacheStatus('Offline schedule window updated', 'warm');
+                setPWAOfflineReadinessState(
+                    'pwa-offline-ready',
+                    'Offline Ready',
+                    getPWALastTimelineSyncLabel()
+                );
+            }
+        }finally{
+            timelineOfflinePrecacheInFlight = false;
+        }
+    }
+
 
     function applyTimelineSnapshotViewState(snapshot){
         try{
@@ -12218,6 +12269,7 @@ async function loadGrid() {
 
                 timelineCache[cacheKey] = { savedAt: Date.now(), data };
                 saveTimelineOfflineSnapshot(data, cacheKey);
+                setTimeout(() => warmTimelineOfflineScheduleWindow(weekOffset, branchFilter), 300);
 
                 if(shouldUseRoleAwareMobileTimeline()){
                     setMobileCacheStatus('Offline copy updated', 'warm');

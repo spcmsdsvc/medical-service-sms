@@ -454,8 +454,10 @@
 <script>
 const STANDALONE_TSR_KEY = 'medicalServiceStandaloneTSRDraftV1';
 const STANDALONE_TSR_SCHEDULES_KEY = 'medicalServiceStandaloneTSRScheduleOptionsV1';
-const TIMELINE_OFFLINE_SNAPSHOT_KEY = 'medicalServiceTimelineOfflineSnapshotV1';
-const TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY = 'medicalServiceTimelineOfflineSnapshotMapV1';
+const TIMELINE_OFFLINE_SNAPSHOT_KEY = 'timelineOfflineSnapshot';
+const TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY = 'timelineOfflineSnapshots';
+const LEGACY_TIMELINE_OFFLINE_SNAPSHOT_KEY = 'medicalServiceTimelineOfflineSnapshotV1';
+const LEGACY_TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY = 'medicalServiceTimelineOfflineSnapshotMapV1';
 const LOGGED_IN_ENGINEER_NAME = "{{ (current_user.engineer_profile.name if current_user.engineer_profile else current_user.username)|e }}";
 const LOGGED_IN_ENGINEER_INITIALS = "{{ (current_user.engineer_profile.initials if current_user.engineer_profile and current_user.engineer_profile.initials else '')|e }}";
 const OFFLINE_TSR_STORAGE_HEALTH_ADMIN = String("{{ 'true' if offline_storage_health_admin else 'false' }}").toLowerCase() === 'true';
@@ -1150,14 +1152,18 @@ function readTimelineSnapshotSchedules(){
       });
     });
   }
-  try{
-    const map = JSON.parse(localStorage.getItem(TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY) || '{}') || {};
-    Object.values(map).forEach(consumeSnapshot);
-  }catch(err){}
-  try{
-    const latest = JSON.parse(localStorage.getItem(TIMELINE_OFFLINE_SNAPSHOT_KEY) || 'null');
-    consumeSnapshot(latest);
-  }catch(err){}
+  [TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY, LEGACY_TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY].forEach(key => {
+    try{
+      const map = JSON.parse(localStorage.getItem(key) || '{}') || {};
+      Object.values(map).forEach(consumeSnapshot);
+    }catch(err){}
+  });
+  [TIMELINE_OFFLINE_SNAPSHOT_KEY, LEGACY_TIMELINE_OFFLINE_SNAPSHOT_KEY].forEach(key => {
+    try{
+      const latest = JSON.parse(localStorage.getItem(key) || 'null');
+      consumeSnapshot(latest);
+    }catch(err){}
+  });
   return schedules.sort((a,b)=>String(a.date_iso||'').localeCompare(String(b.date_iso||'')));
 }
 function cacheStandaloneScheduleOptions(schedules){
@@ -1292,7 +1298,7 @@ async function refreshStandaloneScheduleOptions(manual=false){
   renderStandaloneScheduleOptions(schedules, source);
   updateCreateTSRScheduleGate({ showMessage: manual && !hasStandaloneScheduleSelection() });
   if(manual){
-    showTSRStatus(schedules.length ? 'Schedule picker refreshed.' : 'No schedule cache available yet. Select a schedule first to start creating a TSR.', schedules.length ? 'success' : 'info');
+    showTSRStatus(schedules.length ? 'Offline schedules loaded from saved cache.' : 'No saved schedules found. Open Calendar once while online to prepare offline mode.', schedules.length ? 'success' : 'info');
   }
 }
 function clearStandaloneTSRWorkFieldsForScheduleChange(){
