@@ -16557,15 +16557,15 @@ def reimbursement_shift_allowed_for_current_user(shift, profile, start_date=None
     return profile.id in assigned_ids or getattr(shift, 'engineer_id', None) == profile.id
 
 
-def reimbursement_claimed_dates_for_user(profile, start_date, end_date, exclude_header_id=None):
-    """Return dates already claimed by submitted/approved/paid reimbursements.
+def reimbursement_claimed_schedule_scope_for_user(profile, start_date, end_date, exclude_header_id=None):
+    """Return exact schedule rows already claimed by submitted/approved/paid reimbursements.
 
     A submitted monthly worksheet may contain saved schedule rows with no
-    amount and no receipt. Those blank rows should not block the same date from
-    being loaded later, because nothing was actually claimed for that day.
+    amount and no receipt. Date-level blocking is also too broad because one
+    claimed item on a day should not hide every other valid schedule on that day.
     """
     if not profile or not start_date or not end_date:
-        return set()
+        return {'shift_ids': set(), 'dates': set()}
 
     amount_claim_filters = [
         func.coalesce(getattr(ReimbursementRow, field), 0) > 0
@@ -16588,7 +16588,7 @@ def reimbursement_claimed_dates_for_user(profile, start_date, end_date, exclude_
     )
 
     query = (
-        db.session.query(ReimbursementRow.row_date)
+        db.session.query(ReimbursementRow.shift_id, ReimbursementRow.row_date)
         .join(ReimbursementHeader, ReimbursementRow.reimbursement_id == ReimbursementHeader.id)
         .filter(ReimbursementHeader.user_id == current_user.id)
         .filter(ReimbursementHeader.engineer_id == profile.id)
@@ -16604,7 +16604,14 @@ def reimbursement_claimed_dates_for_user(profile, start_date, end_date, exclude_
     if clean_int(exclude_header_id):
         query = query.filter(ReimbursementHeader.id != clean_int(exclude_header_id))
 
-    return {row_date for (row_date,) in query.all() if row_date}
+    claimed_shift_ids = set()
+    claimed_dates = set()
+    for shift_id, row_date in query.all():
+        if clean_int(shift_id):
+            claimed_shift_ids.add(clean_int(shift_id))
+        if row_date:
+            claimed_dates.add(row_date)
+    return {'shift_ids': claimed_shift_ids, 'dates': claimed_dates}
 
 
 def reimbursement_row_to_dict(row, receipts_by_shift=None):
@@ -16788,7 +16795,9 @@ def get_reimbursement_schedule_rows():
                 'can_view_all': False
             }), 400
 
-        excluded_dates = reimbursement_claimed_dates_for_user(profile, start_date, end_date)
+        claimed_scope = reimbursement_claimed_schedule_scope_for_user(profile, start_date, end_date)
+        claimed_shift_ids = claimed_scope.get('shift_ids') or set()
+        claimed_dates = claimed_scope.get('dates') or set()
 
         shifts = (
             Shift.query
@@ -16815,7 +16824,7 @@ def get_reimbursement_schedule_rows():
                     continue
 
                 shift_date = shift.start_time.date() if shift.start_time else None
-                if shift_date in excluded_dates:
+                if clean_int(getattr(shift, 'id', None)) in claimed_shift_ids:
                     excluded_dates_seen.add(shift_date)
                     continue
 
@@ -16828,7 +16837,8 @@ def get_reimbursement_schedule_rows():
                 })
                 print(f"[Reimbursement] Skipped schedule row {getattr(shift, 'id', None)}: {row_error}", flush=True)
 
-        excluded_date_labels = [item.isoformat() for item in sorted(excluded_dates_seen)]
+        excluded_date_labels = [item.isoformat() for item in sorted(item for item in excluded_dates_seen if item)]
+        claimed_date_labels = [item.isoformat() for item in sorted(item for item in claimed_dates if item)]
         return jsonify({
             'success': True,
             'rows': rows,
@@ -16837,6 +16847,9 @@ def get_reimbursement_schedule_rows():
             'end': end_date.isoformat(),
             'excluded_dates': excluded_date_labels,
             'excluded_count': len(excluded_date_labels),
+            'claimed_dates': claimed_date_labels,
+            'claimed_date_count': len(claimed_date_labels),
+            'excluded_shift_ids': sorted(claimed_shift_ids),
             'warnings': row_warnings,
             'warning_count': len(row_warnings),
             'scope': 'own',
