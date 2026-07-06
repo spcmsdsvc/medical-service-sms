@@ -1645,7 +1645,7 @@
             <div class="reim-manual-body">
                 <div class="reim-field">
                     <label>Special Date Selector</label>
-                    <div class="reim-muted">Dates already loaded in the worksheet are greyed out.</div>
+                    <div class="reim-muted">Select any date in the loaded range. Manual items will be added under Others.</div>
                     <input type="hidden" id="reimManualDate">
                     <div class="reim-manual-date-grid" id="reimManualDateGrid"></div>
                 </div>
@@ -3296,20 +3296,17 @@ async function saveReimbursementDraft(silent) {
             return;
         }
 
-        const loadedDates = getLoadedReimbursementDates();
         const startDate = new Date(range.start + 'T00:00:00');
         const endDate = new Date(range.end + 'T00:00:00');
         const cursor = new Date(startDate);
 
         while (cursor <= endDate) {
             const iso = toDateInputValue(cursor);
-            const disabled = loadedDates.has(iso);
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'reim-manual-date-btn';
             btn.textContent = formatExpenseDate(iso);
-            btn.disabled = disabled;
-            btn.title = disabled ? 'Already loaded in the worksheet' : 'Select this date';
+            btn.title = 'Select this date';
             btn.onclick = function() {
                 document.querySelectorAll('.reim-manual-date-btn').forEach(function(el) {
                     el.classList.remove('selected');
