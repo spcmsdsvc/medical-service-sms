@@ -310,6 +310,10 @@ EMAIL_RECIPIENT_GROUPS = {
         'label': 'Cash Advance Accounting',
         'description': 'Accounting recipients for approved standalone Cash Advance handoff.'
     },
+    'cash_advance_release': {
+        'label': 'Cash Advance Release',
+        'description': 'Recipients for approved standalone Cash Advances of PHP 10,000.00 or below.'
+    },
     'reimbursement_accounting': {
         'label': 'Reimbursement Accounting',
         'description': 'Future accounting recipients for reimbursement handoff.'
@@ -320,6 +324,7 @@ EMAIL_RECIPIENT_GROUP_ORDER = [
     'tsr_client_cc',
     'travel_accounting',
     'cash_advance_accounting',
+    'cash_advance_release',
     'reimbursement_accounting'
 ]
 
@@ -21839,6 +21844,10 @@ def approve_reimbursement(reimbursement_id):
     if header.status != 'Submitted':
         return jsonify({'success': False, 'error': f'Reimbursement is already {header.status}.'}), 409
 
+    signature_required_response = approval_signature_required_response(current_user, module_label='reimbursement')
+    if signature_required_response:
+        return signature_required_response
+
     accounting_emails = get_reimbursement_accounting_recipient_emails()
     accounting_warning = None if accounting_emails else reimbursement_accounting_settings_warning_payload()
 
@@ -34642,6 +34651,7 @@ def cash_advance_accounting_recipient_debug_counts():
     output = {}
     group_keys = [
         'cash_advance_accounting',
+        'cash_advance_release',
         'cash_advance',
         'cash_advance_email',
         'cash_advance_accounting_email',
@@ -34659,17 +34669,40 @@ def cash_advance_accounting_recipient_debug_counts():
     return output
 
 
-def cash_advance_accounting_settings_warning_payload():
-    """Warning payload used when no Cash Advance Accounting recipients are configured."""
+def cash_advance_email_route_for_header(header):
+    """Return the Settings recipient group for approved Cash Advance handoff."""
+    amount = cash_advance_money(getattr(header, 'approved_amount', 0) or getattr(header, 'amount_requested', 0))
+    if amount > 10000:
+        group_key = 'cash_advance_accounting'
+    else:
+        group_key = 'cash_advance_release'
+    group_meta = EMAIL_RECIPIENT_GROUPS.get(group_key, {})
+    return {
+        'group_key': group_key,
+        'group_label': group_meta.get('label', group_key),
+        'amount': amount,
+        'threshold': 10000,
+        'package_label': f"{group_meta.get('label', 'Cash Advance')} form handoff",
+        'attachment_label': 'Request for Cash Advance Form PDF'
+    }
+
+
+def get_cash_advance_handoff_recipient_emails(header):
+    route = cash_advance_email_route_for_header(header)
+    return get_active_email_recipients_by_group(route['group_key']), route
+
+
+def cash_advance_accounting_settings_warning_payload(route=None):
+    """Warning payload used when no Cash Advance handoff recipients are configured."""
     can_manage = bool(is_superadmin_user())
+    route = route or cash_advance_email_route_for_header(None)
+    group_label = route.get('group_label') or 'Cash Advance recipients'
+    message = f'Cash Advance was approved, but no handoff email was sent because Settings -> Email Recipients -> {group_label} has no active email address.'
     return {
         'enabled': True,
-        'type': 'missing_cash_advance_accounting_recipients',
-        'title': 'Cash Advance Accounting Email Recipients Missing',
-        'message': (
-            'Cash Advance was approved, but no Accounting email was sent because '
-            'Settings → Email Recipients → Cash Advance Accounting has no active email address.'
-        ),
+        'type': f"missing_{route.get('group_key') or 'cash_advance'}_recipients",
+        'title': f'{group_label} Email Recipients Missing',
+        'message': message,
         'settings_url': '/settings?section=email-recipients' if can_manage else '',
         'can_open_settings': can_manage
     }
@@ -35891,10 +35924,11 @@ def approve_cash_advance(cash_advance_id):
                 'remarks': remarks
             }
         )
-        accounting_emails = get_cash_advance_accounting_recipient_emails()
+        accounting_emails, cash_advance_email_route = get_cash_advance_handoff_recipient_emails(header)
         accounting_recipient_diagnostics = cash_advance_accounting_recipient_debug_counts()
         print(
-            f"[EMAIL] Cash Advance accounting recipient check: group=cash_advance_accounting count={len(accounting_emails)} "
+            f"[EMAIL] Cash Advance handoff recipient check: group={cash_advance_email_route.get('group_key')} "
+            f"amount={cash_advance_email_route.get('amount')} count={len(accounting_emails)} "
             f"masked={', '.join([mask_email_for_log(email_addr) for email_addr in accounting_emails if mask_email_for_log(email_addr)])}",
             flush=True
         )
@@ -35902,8 +35936,10 @@ def approve_cash_advance(cash_advance_id):
         accounting_email_payload = {
             'queued': False,
             'recipient_count': 0,
-            'package_label': 'Cash Advance Accounting form handoff',
-            'attachment_label': 'Request for Cash Advance Form PDF'
+            'package_label': cash_advance_email_route.get('package_label') or 'Cash Advance form handoff',
+            'attachment_label': cash_advance_email_route.get('attachment_label') or 'Request for Cash Advance Form PDF',
+            'recipient_group': cash_advance_email_route.get('group_key'),
+            'recipient_group_label': cash_advance_email_route.get('group_label')
         }
         if accounting_emails:
             header.accounting_status = 'Accounting Email Queued'
@@ -35911,15 +35947,17 @@ def approve_cash_advance(cash_advance_id):
             accounting_email_payload = {
                 'queued': True,
                 'recipient_count': len(accounting_emails),
-                'package_label': 'Cash Advance Accounting form handoff',
-                'attachment_label': 'Request for Cash Advance Form PDF'
+                'package_label': cash_advance_email_route.get('package_label') or 'Cash Advance form handoff',
+                'attachment_label': cash_advance_email_route.get('attachment_label') or 'Request for Cash Advance Form PDF',
+                'recipient_group': cash_advance_email_route.get('group_key'),
+                'recipient_group_label': cash_advance_email_route.get('group_label')
             }
         else:
             header.accounting_status = 'Accounting Email Missing Recipients'
-            header.accounting_remarks = 'No active Cash Advance Accounting email recipient is configured.'
-            accounting_warning = cash_advance_accounting_settings_warning_payload()
+            header.accounting_remarks = f"No active {cash_advance_email_route.get('group_label') or 'Cash Advance'} email recipient is configured."
+            accounting_warning = cash_advance_accounting_settings_warning_payload(cash_advance_email_route)
             print(
-                f"[EMAIL] Cash Advance accounting handoff skipped: no active Cash Advance Accounting recipients. "
+                f"[EMAIL] Cash Advance handoff skipped: no active {cash_advance_email_route.get('group_label')} recipients. "
                 f"diagnostics={accounting_recipient_diagnostics}",
                 flush=True
             )
@@ -35995,24 +36033,25 @@ def resend_cash_advance_accounting_email(cash_advance_id):
     if str(header.status or '').strip().lower() != 'approved':
         return jsonify({'success': False, 'error': 'Only approved Cash Advance requests can be sent to Accounting.'}), 409
 
-    accounting_emails = get_cash_advance_accounting_recipient_emails()
+    accounting_emails, cash_advance_email_route = get_cash_advance_handoff_recipient_emails(header)
     diagnostics = cash_advance_accounting_recipient_debug_counts()
     print(
-        f"[EMAIL] Cash Advance accounting resend recipient check: record={cash_advance_id} count={len(accounting_emails)} "
+        f"[EMAIL] Cash Advance handoff resend recipient check: record={cash_advance_id} "
+        f"group={cash_advance_email_route.get('group_key')} amount={cash_advance_email_route.get('amount')} count={len(accounting_emails)} "
         f"masked={', '.join([mask_email_for_log(email_addr) for email_addr in accounting_emails if mask_email_for_log(email_addr)])}",
         flush=True
     )
 
     if not accounting_emails:
         header.accounting_status = 'Accounting Email Missing Recipients'
-        header.accounting_remarks = 'No active Cash Advance Accounting email recipient is configured.'
+        header.accounting_remarks = f"No active {cash_advance_email_route.get('group_label') or 'Cash Advance'} email recipient is configured."
         header.updated_at = get_manila_time()
         db.session.add(header)
         db.session.commit()
         return jsonify({
             'success': False,
-            'error': 'No active Cash Advance Accounting recipient is configured.',
-            'accounting_warning': cash_advance_accounting_settings_warning_payload(),
+            'error': f"No active {cash_advance_email_route.get('group_label') or 'Cash Advance'} recipient is configured.",
+            'accounting_warning': cash_advance_accounting_settings_warning_payload(cash_advance_email_route),
             'accounting_recipient_diagnostics': diagnostics
         }), 400
 
@@ -36032,12 +36071,14 @@ def resend_cash_advance_accounting_email(cash_advance_id):
 
     return jsonify({
         'success': True,
-        'message': 'Cash Advance Accounting handoff email queued.',
+        'message': f"{cash_advance_email_route.get('group_label') or 'Cash Advance'} handoff email queued.",
         'accounting_email': {
             'queued': True,
             'recipient_count': len(accounting_emails),
-            'package_label': 'Cash Advance Accounting form handoff',
-            'attachment_label': 'Request for Cash Advance Form PDF'
+            'package_label': cash_advance_email_route.get('package_label') or 'Cash Advance form handoff',
+            'attachment_label': cash_advance_email_route.get('attachment_label') or 'Request for Cash Advance Form PDF',
+            'recipient_group': cash_advance_email_route.get('group_key'),
+            'recipient_group_label': cash_advance_email_route.get('group_label')
         },
         'accounting_recipient_diagnostics': diagnostics,
         'item': cash_advance_to_dict(header, include_audit=True),
@@ -40112,9 +40153,13 @@ def resend_approved_request_email():
             if str(getattr(header, 'status', '') or '').strip().lower() != 'approved':
                 return jsonify({'success': False, 'error': 'Only approved Cash Advance requests can be resent.'}), 409
 
-            recipient_emails = get_cash_advance_accounting_recipient_emails()
+            recipient_emails, cash_advance_email_route = get_cash_advance_handoff_recipient_emails(header)
             if not recipient_emails:
-                return _fail_missing_recipients(header, cash_advance_accounting_settings_warning_payload(), 'Cash Advance Accounting')
+                return _fail_missing_recipients(
+                    header,
+                    cash_advance_accounting_settings_warning_payload(cash_advance_email_route),
+                    cash_advance_email_route.get('group_label') or 'Cash Advance'
+                )
 
             previous_accounting_status = getattr(header, 'accounting_status', None) or ''
             header.accounting_status = 'Accounting Email Queued'
@@ -40126,7 +40171,13 @@ def resend_approved_request_email():
                 status_from=previous_accounting_status,
                 status_to='Accounting Email Queued',
                 remarks=remarks,
-                metadata={'resend': True, 'recipient_count': len(recipient_emails), 'cash_advance_id': header.id}
+                metadata={
+                    'resend': True,
+                    'recipient_count': len(recipient_emails),
+                    'cash_advance_id': header.id,
+                    'recipient_group': cash_advance_email_route.get('group_key'),
+                    'recipient_group_label': cash_advance_email_route.get('group_label')
+                }
             )
             db.session.add(header)
             db.session.commit()
@@ -40135,7 +40186,14 @@ def resend_approved_request_email():
                 approved_by_user_id=clean_int(getattr(header, 'approved_by_id', None)) or current_user.id,
                 remarks=clean_str(getattr(header, 'approval_remarks', None)) or remarks
             )
-            return _queue_result(header, recipient_emails, queued, 'Cash Advance Accounting handoff', 'Request for Cash Advance Form PDF', cash_advance_to_dict(header, include_audit=True))
+            return _queue_result(
+                header,
+                recipient_emails,
+                queued,
+                cash_advance_email_route.get('package_label') or 'Cash Advance form handoff',
+                cash_advance_email_route.get('attachment_label') or 'Request for Cash Advance Form PDF',
+                cash_advance_to_dict(header, include_audit=True)
+            )
 
         if module == 'travel_liquidation':
             liquidation = db.session.get(TravelLiquidationHeader, record_id)
