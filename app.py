@@ -194,6 +194,7 @@ NEW_WORKFLOW_BLOCKED_EXACT_PATHS = {
     '/approvals',
     '/cash_advance',
     '/cash_advance_liquidation',
+    '/get_my_cash_advance_notifications',
     '/reimbursement',
     '/travel_liquidation',
     '/travel_request'
@@ -7372,6 +7373,82 @@ def get_my_notifications():
         SystemNotification.query
         .filter_by(user_id=current_user.id, is_read=False)
         .count()
+    )
+
+    return jsonify({
+        'success': True,
+        'items': [system_notification_to_dict(item) for item in items],
+        'count': len(items),
+        'unread_count': unread_count
+    })
+
+
+def cash_advance_notification_is_for_requester(notification, requester_user_id):
+    """Return True when a cash advance notification belongs on the requester's page."""
+    requester_id = clean_int(requester_user_id)
+    if not notification or not requester_id:
+        return False
+
+    record_id = clean_int(getattr(notification, 'record_id', None))
+    if record_id:
+        header = db.session.get(CashAdvanceHeader, record_id)
+        if header:
+            return clean_int(getattr(header, 'user_id', None)) == requester_id
+
+    metadata = {}
+    if clean_str(getattr(notification, 'metadata_json', None)):
+        try:
+            metadata = json.loads(notification.metadata_json)
+        except Exception:
+            metadata = {}
+
+    metadata_requester_id = clean_int(metadata.get('requester_user_id'))
+    if metadata_requester_id:
+        return metadata_requester_id == requester_id
+
+    target_url = clean_str(getattr(notification, 'target_url', None)).lower()
+    if target_url.startswith('/approvals') or '/approvals?' in target_url:
+        return False
+
+    return False
+
+
+@app.route('/get_my_cash_advance_notifications')
+@login_required
+def get_my_cash_advance_notifications():
+    """Return only Cash Advance notifications for requests owned by the current user."""
+    ensure_system_notification_table()
+    ensure_cash_advance_tables()
+
+    unread_only = str(request.args.get('unread_only') or '').strip().lower() in {'1', 'true', 'yes'}
+    limit = clean_int(request.args.get('limit')) or 20
+    limit = min(max(limit, 1), 100)
+
+    query = SystemNotification.query.filter_by(user_id=current_user.id, module='cash_advance')
+    if unread_only:
+        query = query.filter(SystemNotification.is_read.is_(False))
+
+    candidates = (
+        query
+        .order_by(SystemNotification.created_at.desc(), SystemNotification.id.desc())
+        .limit(min(max(limit * 6, 60), 300))
+        .all()
+    )
+    items = [
+        item for item in candidates
+        if cash_advance_notification_is_for_requester(item, current_user.id)
+    ][:limit]
+
+    unread_candidates = (
+        SystemNotification.query
+        .filter_by(user_id=current_user.id, module='cash_advance', is_read=False)
+        .order_by(SystemNotification.created_at.desc(), SystemNotification.id.desc())
+        .limit(300)
+        .all()
+    )
+    unread_count = sum(
+        1 for item in unread_candidates
+        if cash_advance_notification_is_for_requester(item, current_user.id)
     )
 
     return jsonify({
@@ -35077,6 +35154,14 @@ def can_user_access_cash_advance(header, user_obj=None):
     return int(getattr(header, 'user_id', 0) or 0) == int(getattr(user_obj, 'id', 0) or 0)
 
 
+def can_user_manage_own_cash_advance(header, user_obj=None):
+    """Return True only for the requester-owned Cash Advance page workflow."""
+    user_obj = user_obj or current_user
+    if not header or not user_obj or not getattr(user_obj, 'is_authenticated', False):
+        return False
+    return int(getattr(header, 'user_id', 0) or 0) == int(getattr(user_obj, 'id', 0) or 0)
+
+
 def cash_advance_add_audit(header, action, remarks=''):
     try:
         db.session.add(CashAdvanceAudit(
@@ -35110,9 +35195,7 @@ def get_cash_advance_list():
     ensure_cash_advance_tables()
 
     try:
-        query = CashAdvanceHeader.query
-        if getattr(current_user, 'role', '') not in ['superadmin', 'regional_admin']:
-            query = query.filter(CashAdvanceHeader.user_id == current_user.id)
+        query = CashAdvanceHeader.query.filter(CashAdvanceHeader.user_id == current_user.id)
 
         records = (
             query
@@ -35139,7 +35222,7 @@ def get_cash_advance(cash_advance_id):
     ensure_cash_advance_tables()
 
     header = CashAdvanceHeader.query.get(cash_advance_id)
-    if not can_user_access_cash_advance(header):
+    if not can_user_manage_own_cash_advance(header):
         return jsonify({'success': False, 'error': 'Cash advance request not found or access denied.'}), 404
 
     return jsonify({
@@ -35176,7 +35259,7 @@ def save_cash_advance():
 
         if cash_advance_id:
             header = CashAdvanceHeader.query.get(cash_advance_id)
-            if not can_user_access_cash_advance(header):
+            if not can_user_manage_own_cash_advance(header):
                 return jsonify({'success': False, 'error': 'Cash advance request not found or access denied.'}), 404
             if str(header.status or 'Draft').strip().lower() not in ['draft', 'returned', 'rejected']:
                 return jsonify({'success': False, 'error': 'Only Draft or Returned cash advances can be edited.'}), 409
@@ -35226,7 +35309,7 @@ def submit_cash_advance(cash_advance_id):
     ensure_cash_advance_tables()
 
     header = CashAdvanceHeader.query.get(cash_advance_id)
-    if not can_user_access_cash_advance(header):
+    if not can_user_manage_own_cash_advance(header):
         return jsonify({'success': False, 'error': 'Cash advance request not found or access denied.'}), 404
 
     if str(header.status or 'Draft').strip().lower() not in ['draft', 'returned', 'rejected']:

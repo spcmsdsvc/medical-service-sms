@@ -967,7 +967,7 @@
         if (!list) return;
         list.textContent = 'Loading notifications...';
         try {
-            const response = await fetch('/get_my_notifications?limit=50&unread_only=true', {
+            const response = await fetch('/get_my_cash_advance_notifications?limit=50&unread_only=true', {
                 credentials: 'same-origin',
                 cache: 'no-store',
                 headers: { 'Accept': 'application/json' }
