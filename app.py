@@ -17795,7 +17795,7 @@ def clear_travel_liquidation(liquidation_id):
         return denial
 
     ensure_travel_liquidation_tables()
-    liquidation = get_travel_liquidation_for_current_user(liquidation_id=liquidation_id)
+    liquidation = get_travel_liquidation_for_requester_page(liquidation_id=liquidation_id)
     if not liquidation:
         return jsonify({'success': False, 'error': 'Travel Liquidation draft not found or not accessible.'}), 404
 
@@ -17898,7 +17898,7 @@ def submit_travel_liquidation(liquidation_id):
     ensure_travel_liquidation_tables()
     ensure_system_notification_table()
 
-    liquidation = get_travel_liquidation_for_current_user(liquidation_id=liquidation_id)
+    liquidation = get_travel_liquidation_for_requester_page(liquidation_id=liquidation_id)
     if not liquidation:
         return jsonify({'success': False, 'error': 'Travel Liquidation draft not found or not accessible.'}), 404
 
@@ -22072,7 +22072,7 @@ def travel_liquidation_page():
         flash('Open liquidation records from My Requests.')
         return redirect(url_for('accounting_center_page'))
 
-    liquidation = get_travel_liquidation_for_current_user(liquidation_id=liquidation_id)
+    liquidation = get_travel_liquidation_for_requester_page(liquidation_id=liquidation_id)
     if not liquidation:
         flash('Liquidation record not found or not accessible.')
         return redirect(url_for('accounting_center_page'))
@@ -23803,6 +23803,28 @@ def get_travel_liquidation_for_current_user(liquidation_id=None, travel_request_
 
     return None
 
+
+def get_travel_liquidation_for_requester_page(liquidation_id=None, travel_request_id=None):
+    """Return Travel Liquidation only for the requester/participant My Requests page."""
+    ensure_travel_liquidation_tables()
+    query = TravelLiquidationHeader.query
+    if clean_int(liquidation_id):
+        query = query.filter(TravelLiquidationHeader.id == clean_int(liquidation_id))
+    if clean_int(travel_request_id):
+        query = query.filter(TravelLiquidationHeader.travel_request_id == clean_int(travel_request_id))
+
+    liquidation = query.first()
+    if not liquidation:
+        return None
+
+    request_rec = getattr(liquidation, 'travel_request', None)
+    if request_rec and can_current_user_manage_my_accounting_record(request_rec):
+        travel_liquidation_seed_per_diem_airfare_rows(liquidation, commit=False)
+        return liquidation
+
+    return None
+
+
 def clear_travel_request_liquidation_reminder_notifications(request_rec):
     """Remove outstanding return-date liquidation reminders after status is updated."""
     if not request_rec:
@@ -24045,7 +24067,7 @@ def get_travel_liquidation_draft_by_request(travel_request_id):
     if not request_rec:
         return jsonify({'success': False, 'error': 'Travel Request not found.'}), 404
 
-    if not can_current_user_manage_my_accounting_record(request_rec) and not is_admin_authorized() and not is_approval_center_user():
+    if not can_current_user_manage_my_accounting_record(request_rec):
         return jsonify({'success': False, 'error': 'You are not allowed to view this liquidation draft.'}), 403
 
     liquidation = TravelLiquidationHeader.query.filter_by(travel_request_id=request_rec.id).first()
@@ -24077,7 +24099,7 @@ def get_travel_liquidation(liquidation_id):
     if denial:
         return denial
 
-    liquidation = get_travel_liquidation_for_current_user(liquidation_id=liquidation_id)
+    liquidation = get_travel_liquidation_for_requester_page(liquidation_id=liquidation_id)
     if not liquidation:
         return jsonify({'success': False, 'error': 'Travel Liquidation draft not found or not accessible.'}), 404
 
@@ -25597,7 +25619,7 @@ def add_travel_liquidation_row(liquidation_id):
         return denial
 
     ensure_travel_liquidation_tables()
-    liquidation = get_travel_liquidation_for_current_user(liquidation_id=liquidation_id)
+    liquidation = get_travel_liquidation_for_requester_page(liquidation_id=liquidation_id)
     if not liquidation:
         return jsonify({'success': False, 'error': 'Travel Liquidation draft not found or not accessible.'}), 404
 
@@ -25687,7 +25709,7 @@ def save_travel_liquidation_currency_rate(liquidation_id):
         return denial
 
     ensure_travel_liquidation_tables()
-    liquidation = get_travel_liquidation_for_current_user(liquidation_id=liquidation_id)
+    liquidation = get_travel_liquidation_for_requester_page(liquidation_id=liquidation_id)
     if not liquidation:
         return jsonify({'success': False, 'error': 'Travel Liquidation draft not found or not accessible.'}), 404
 
@@ -36222,6 +36244,26 @@ def cash_advance_liquidation_get_for_current_user(liquidation_id=None, cash_adva
     return None
 
 
+def cash_advance_liquidation_get_for_requester_page(liquidation_id=None, cash_advance_id=None):
+    """Return Cash Advance Liquidation only for the requester My Requests page."""
+    ensure_cash_advance_tables()
+    ensure_cash_advance_liquidation_tables()
+    query = CashAdvanceLiquidationHeader.query
+    if clean_int(liquidation_id):
+        query = query.filter(CashAdvanceLiquidationHeader.id == clean_int(liquidation_id))
+    if clean_int(cash_advance_id):
+        query = query.filter(CashAdvanceLiquidationHeader.cash_advance_id == clean_int(cash_advance_id))
+    liquidation = query.first()
+    if not liquidation:
+        return None
+    header = getattr(liquidation, 'cash_advance', None)
+    if header and can_current_user_manage_my_accounting_record(header):
+        return liquidation
+    if clean_int(getattr(liquidation, 'user_id', None)) == clean_int(getattr(current_user, 'id', None)):
+        return liquidation
+    return None
+
+
 def cash_advance_liquidation_recalculate_totals(liquidation):
     if not liquidation:
         return None
@@ -36529,7 +36571,7 @@ def cash_advance_liquidation_page():
         flash('Open Cash Advance Liquidation records from My Requests.')
         return redirect(url_for('accounting_center_page'))
 
-    liquidation = cash_advance_liquidation_get_for_current_user(liquidation_id=liquidation_id)
+    liquidation = cash_advance_liquidation_get_for_requester_page(liquidation_id=liquidation_id)
     if not liquidation:
         flash('Cash Advance Liquidation record not found or not accessible.')
         return redirect(url_for('accounting_center_page'))
@@ -36597,7 +36639,7 @@ def get_cash_advance_liquidation_draft_by_cash_advance(cash_advance_id):
     header = db.session.get(CashAdvanceHeader, clean_int(cash_advance_id))
     if not header:
         return jsonify({'success': False, 'error': 'Cash Advance request not found.'}), 404
-    if not can_current_user_manage_my_accounting_record(header) and not is_admin_authorized() and not is_approval_center_user():
+    if not can_current_user_manage_my_accounting_record(header):
         return jsonify({'success': False, 'error': 'You are not allowed to view this Cash Advance Liquidation draft.'}), 403
 
     liquidation = CashAdvanceLiquidationHeader.query.filter_by(cash_advance_id=header.id).first()
@@ -36628,7 +36670,7 @@ def get_cash_advance_liquidation(liquidation_id):
     if denial:
         return denial
 
-    liquidation = cash_advance_liquidation_get_for_current_user(liquidation_id=liquidation_id)
+    liquidation = cash_advance_liquidation_get_for_requester_page(liquidation_id=liquidation_id)
     if not liquidation:
         return jsonify({'success': False, 'error': 'Cash Advance Liquidation draft not found or not accessible.'}), 404
 
@@ -36650,7 +36692,7 @@ def add_cash_advance_liquidation_row(liquidation_id):
         return denial
 
     ensure_cash_advance_liquidation_tables()
-    liquidation = cash_advance_liquidation_get_for_current_user(liquidation_id=liquidation_id)
+    liquidation = cash_advance_liquidation_get_for_requester_page(liquidation_id=liquidation_id)
     if not liquidation:
         return jsonify({'success': False, 'error': 'Cash Advance Liquidation draft not found or not accessible.'}), 404
 
@@ -36994,7 +37036,7 @@ def submit_cash_advance_liquidation(liquidation_id):
     ensure_cash_advance_liquidation_tables()
     ensure_system_notification_table()
 
-    liquidation = cash_advance_liquidation_get_for_current_user(liquidation_id=liquidation_id)
+    liquidation = cash_advance_liquidation_get_for_requester_page(liquidation_id=liquidation_id)
     if not liquidation:
         return jsonify({'success': False, 'error': 'Cash Advance Liquidation draft not found or not accessible.'}), 404
     allowed, message = can_edit_cash_advance_liquidation(liquidation)
