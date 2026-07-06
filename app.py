@@ -9649,6 +9649,14 @@ def save_offline_tsr_online():
         else:
             payload = dict(request.form.items())
 
+    payload_fields = payload.get('fields')
+    if isinstance(payload_fields, dict):
+        flattened_payload = dict(payload_fields)
+        for key, value in payload.items():
+            if key != 'fields':
+                flattened_payload[key] = value
+        payload = flattened_payload
+
     for filename_key in ('pdf_filename', 'download_filename', 'tsr_pdf_filename'):
         if request.form.get(filename_key) and not payload.get(filename_key):
             payload[filename_key] = request.form.get(filename_key)
@@ -9671,6 +9679,7 @@ def save_offline_tsr_online():
         return denied('You are not allowed to save a TSR for this schedule.')
 
     submitted_tsr_number = (clean_str(payload.get('tsr-number')) or clean_str(payload.get('tsr_number')) or '')[:120]
+    preserve_uploaded_pdf = str(payload.get('_offline_queue_preserve_pdf') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
     sequence_date = (
         parse_online_tsr_sequence_date(payload.get('tsr-service-date')) or
         parse_online_tsr_sequence_date(payload.get('service_date')) or
@@ -9721,7 +9730,7 @@ def save_offline_tsr_online():
                 request.files.get('report_file')
             )
 
-        if uploaded_pdf and getattr(uploaded_pdf, 'filename', '') and (not submitted_tsr_number or submitted_tsr_number == tsr_number):
+        if uploaded_pdf and getattr(uploaded_pdf, 'filename', '') and (preserve_uploaded_pdf or not submitted_tsr_number or submitted_tsr_number == tsr_number):
             pdf_filename = build_online_tsr_pdf_filename(submission, shift, tsr_number, payload=payload)
             attached_file = attach_uploaded_online_tsr_pdf_to_shift(shift, uploaded_pdf, display_filename=pdf_filename)
             pdf_source = 'frontend_blob'

@@ -668,7 +668,7 @@ async function chooseTSRCompletionScope(schedule){
 }
 
 async function prepareTSRForFinalSave(data, { assignNumber=true, completionScope=null } = {}){
-  const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule();
+  const selectedSchedule = data?.selectedSchedule || (data?.schedule_id || data?.selectedScheduleId ? null : getSelectedStandaloneSchedule());
   const payload = Object.assign({}, data || {}, {
     schedule_id: selectedSchedule?.id || data?.schedule_id || '',
     selectedSchedule: selectedSchedule || data?.selectedSchedule || null
@@ -3432,20 +3432,17 @@ function markOfflineTSRQueueItemConflict(item, result){
 }
 
 async function uploadQueuedOfflineTSR(item){
-  let payload = item?.payload || {};
-  let refreshedPdfPackage = null;
-  try{
-    payload = await prepareTSRForFinalSave(payload, {
-      assignNumber:true,
-      completionScope: payload.completion_scope || 'linked_all'
-    });
-    refreshedPdfPackage = await buildStandaloneTSRPDFBlobForUpload(payload);
-  }catch(finalizeErr){
-    console.warn('[Offline TSR] Unable to refresh queued TSR number/PDF before sync. Using stored queued PDF.', finalizeErr);
-  }
+  const payload = Object.assign({}, item?.payload || {});
+  const finalizedPayload = Object.assign({}, payload, {
+    schedule_id: payload.schedule_id || item?.schedule_id || payload.selectedScheduleId || payload.selectedSchedule?.id || '',
+    completion_scope: payload.completion_scope || item?.completion_scope || 'linked_all',
+    _offline_queue_preserve_pdf: true
+  });
+  delete finalizedPayload['tsr-number'];
+  delete finalizedPayload.tsr_number;
   const formData = new FormData();
-  const filename = refreshedPdfPackage?.filename || item?.pdf_filename || payload?.pdf_filename || payload?.download_filename || 'Online_TSR.pdf';
-  const pdfBlob = refreshedPdfPackage?.blob || await resolveQueuedPDFBlob(item);
+  const filename = item?.pdf_filename || payload?.pdf_filename || payload?.download_filename || 'Online_TSR.pdf';
+  const pdfBlob = await resolveQueuedPDFBlob(item);
 
   if(!pdfBlob || !Number(pdfBlob.size || 0)){
     const blobError = new Error('Queued TSR PDF is missing on this device. Please remove this queue item and recreate the TSR if needed.');
@@ -3453,10 +3450,10 @@ async function uploadQueuedOfflineTSR(item){
     throw blobError;
   }
 
-  formData.append('payload_json', JSON.stringify(payload));
+  formData.append('payload_json', JSON.stringify(finalizedPayload));
   formData.append('pdf_filename', filename);
   formData.append('tsr_pdf', pdfBlob, filename);
-  await appendQueuedAttachmentsToFormDataAsync(formData, item?.attachments || payload?.attachments || []);
+  await appendQueuedAttachmentsToFormDataAsync(formData, item?.attachments || finalizedPayload?.attachments || []);
 
   const headers = { 'Accept': 'application/json' };
   try{
