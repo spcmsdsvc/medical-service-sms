@@ -16794,6 +16794,43 @@ def reimbursement_apply_row_payload(header, row_payload, profile, start_date, en
     return row
 
 
+def reimbursement_manual_receipt_match_key_from_values(row_date, item_name, amount):
+    """Stable key used to keep manual-item receipts attached across draft saves."""
+    date_text = row_date.isoformat() if hasattr(row_date, 'isoformat') else str(row_date or '')
+    item_text = clean_str(item_name).strip().lower()
+    return (date_text, item_text, round(reimbursement_money_value(amount), 2))
+
+
+def reimbursement_manual_receipt_match_key_from_row(row):
+    if not row:
+        return None
+    return reimbursement_manual_receipt_match_key_from_values(
+        getattr(row, 'row_date', None),
+        getattr(row, 'task_name', None) or getattr(row, 'remarks', None) or '',
+        getattr(row, 'others_misc', None) or getattr(row, 'row_total', None) or 0
+    )
+
+
+def reimbursement_manual_receipt_match_key_from_payload(row_payload):
+    if not isinstance(row_payload, dict):
+        return None
+    amounts_payload = row_payload.get('amounts') if isinstance(row_payload.get('amounts'), dict) else {}
+    amount = (
+        row_payload.get('amount') or
+        row_payload.get('price') or
+        amounts_payload.get('others') or
+        amounts_payload.get('others_misc') or
+        row_payload.get('others') or
+        row_payload.get('others_misc') or
+        0
+    )
+    return reimbursement_manual_receipt_match_key_from_values(
+        row_payload.get('date') or row_payload.get('row_date'),
+        row_payload.get('item_name') or row_payload.get('description') or row_payload.get('task') or row_payload.get('remarks') or '',
+        amount
+    )
+
+
 @app.route('/get_reimbursement_schedule_rows')
 @login_required
 def get_reimbursement_schedule_rows():
@@ -17774,6 +17811,18 @@ def save_reimbursement_draft():
             header.status = 'Draft'
         header.updated_at = get_manila_time()
 
+        manual_receipts_by_key = {}
+        for existing_row in ReimbursementRow.query.filter_by(reimbursement_id=header.id, shift_id=None).all():
+            manual_key = reimbursement_manual_receipt_match_key_from_row(existing_row)
+            if not manual_key:
+                continue
+            manual_receipts = ReimbursementReceipt.query.filter_by(
+                reimbursement_id=header.id,
+                shift_id=-existing_row.id
+            ).all()
+            if manual_receipts:
+                manual_receipts_by_key.setdefault(manual_key, []).extend(manual_receipts)
+
         # Replace draft rows with the latest worksheet state.
         ReimbursementRow.query.filter_by(reimbursement_id=header.id).delete()
 
@@ -17815,6 +17864,11 @@ def save_reimbursement_draft():
 
             saved_row = reimbursement_apply_row_payload(header, row_payload, profile, start_date, end_date)
             if saved_row:
+                db.session.flush()
+                if reimbursement_is_manual_row_payload(row_payload) and not saved_row.shift_id:
+                    manual_key = reimbursement_manual_receipt_match_key_from_payload(row_payload)
+                    for receipt in manual_receipts_by_key.pop(manual_key, []):
+                        receipt.shift_id = -saved_row.id
                 saved_count += 1
 
         if rows_payload and saved_count <= 0:

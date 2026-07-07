@@ -2134,6 +2134,12 @@ function formatExpenseDate(value) {
 function renderReimbursementRows(rows) {
         currentReimbursementRows = sortReimbursementRows(Array.isArray(rows) ? rows : []);
         rows = currentReimbursementRows;
+        rows.forEach(function(row) {
+            const rowKey = getReimbursementReceiptKey(row);
+            if (rowKey && Array.isArray(row.receipts) && row.receipts.length && !reimbursementReceiptsByShift[String(rowKey)]) {
+                reimbursementReceiptsByShift[String(rowKey)] = row.receipts;
+            }
+        });
         const body = document.getElementById('reimTableBody');
         const mobile = document.getElementById('reimMobileList');
         const countLabel = document.getElementById('reimRowCount');
@@ -2880,6 +2886,7 @@ function renderReimbursementRows(rows) {
     function mergeReimbursementDraftRows(scheduleRows, draftRows) {
         const draftByShift = new Map();
         const manualRows = [];
+        const matchedDraftShiftKeys = new Set();
 
         (draftRows || []).forEach(function(row) {
             if (!row) return;
@@ -2902,6 +2909,7 @@ function renderReimbursementRows(rows) {
                 row.remarks = row.manual ? (row.remarks || '') : '';
                 return row;
             }
+            matchedDraftShiftKeys.add(String(row.shift_id));
             return Object.assign({}, row, {
                 amounts: normalizeReimbursementAmounts(saved.amounts || {}),
                 remarks: saved.remarks || '',
@@ -2910,7 +2918,14 @@ function renderReimbursementRows(rows) {
             });
         });
 
-        return sortReimbursementRows(merged.concat(manualRows));
+        const unmatchedSavedRows = [];
+        draftByShift.forEach(function(row, shiftKey) {
+            if (!matchedDraftShiftKeys.has(String(shiftKey))) {
+                unmatchedSavedRows.push(row);
+            }
+        });
+
+        return sortReimbursementRows(merged.concat(unmatchedSavedRows, manualRows));
     }
 
     async function fetchReimbursementDraft(start, end) {
