@@ -4714,6 +4714,22 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
             for idx, line in enumerate(lines):
                 c.drawString(x, y - (idx * line_height), line)
 
+        def compact_join_for_pdf(items, max_items=3):
+            return ', '.join(compact_list_for_pdf(items, max_items=max_items))
+
+        def compact_list_for_pdf(items, max_items=3):
+            clean_items = []
+            for item in items or []:
+                item_text = safe_text(item)
+                if item_text and item_text not in clean_items:
+                    clean_items.append(item_text)
+            if len(clean_items) > max_items and max_items > 1:
+                visible_items = clean_items[:max_items - 1]
+                visible_items.append(f"+{len(clean_items) - max_items} more")
+            else:
+                visible_items = clean_items[:max_items]
+            return visible_items
+
         def draw_check(x, y):
             c.setFont('Helvetica-Bold', 10)
             c.setFillColorRGB(0, 0, 0)
@@ -4862,8 +4878,10 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
         if not route_labels and destination_text:
             route_labels.append(destination_text)
 
-        customer_text = ', '.join(customers) if customers else ('N/A' if 'client' in request_type_lower or 'service' in request_type_lower else purpose_text)
-        equipment_text = ', '.join(equipment) if equipment else 'N/A'
+        customer_lines = compact_list_for_pdf(customers, max_items=5) if customers else []
+        equipment_lines = compact_list_for_pdf(equipment, max_items=5) if equipment else []
+        customer_text = ', '.join(customer_lines) if customer_lines else ('N/A' if 'client' in request_type_lower or 'service' in request_type_lower else purpose_text)
+        equipment_text = ', '.join(equipment_lines) if equipment_lines else 'N/A'
         route_text = ' | '.join(route_labels) if route_labels else destination_text
 
         # Cash advance mapping to official rows.
@@ -4906,8 +4924,11 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
 
         if is_client_service:
             # Service Dept / CSC section.
-            draw_wrapped_text(130, 798, customer_text, max_width=135, max_lines=1, size=7.5)
-            draw_wrapped_text(331, 798, equipment_text, max_width=168, max_lines=1, size=7.5)
+            service_row_y_positions = [798, 781, 764, 747, 730]
+            for idx, customer_line in enumerate((customer_lines or [customer_text])[:len(service_row_y_positions)]):
+                draw_wrapped_text(130, service_row_y_positions[idx], customer_line, max_width=176, max_lines=1, size=6.6)
+            for idx, equipment_line in enumerate((equipment_lines or [equipment_text])[:len(service_row_y_positions)]):
+                draw_wrapped_text(331, service_row_y_positions[idx], equipment_line, max_width=168, max_lines=1, size=6.6)
             purpose_lower = purpose_text.lower()
             purpose_raw = safe_text(purpose_text)
             is_pm_purpose = bool(re.search(r'\bPM\b|preventive\s+maintenance|preventive', purpose_raw, flags=re.I))
@@ -4921,8 +4942,8 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
                 draw_check(37, 747)
             if not any(key in purpose_lower for key in ['warranty', 'repair', 'preventive', 'install']) and not is_pm_purpose:
                 draw_check(37, 730)
-                draw_wrapped_text(130, 714, purpose_text, max_width=135, max_lines=1, size=7.5)
-                draw_wrapped_text(331, 714, equipment_text, max_width=168, max_lines=1, size=7.5)
+                draw_wrapped_text(130, 714, purpose_text, max_width=176, max_lines=2, size=6.6, line_height=7.8)
+                draw_wrapped_text(331, 714, equipment_text, max_width=168, max_lines=2, size=6.6, line_height=7.8)
         else:
             # Training, seminar, meeting, and similar Medical Service travel
             # should stay under the Service Dept/CSC purpose area, not Sales/Others.
