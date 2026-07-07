@@ -181,7 +181,7 @@
                 <div class="fw-bold mb-1" id="receiptRowLabel">Expense Row</div>
                 <div class="text-muted small mb-3">Upload receipt, invoice, or proof related to this row.</div>
                 <input type="file" id="receiptFile" class="form-control" accept=".pdf,.png,.jpg,.jpeg">
-                <div class="mini-help mt-2">Allowed files: PDF, JPG, JPEG, PNG.</div>
+                <div class="mini-help mt-2">Allowed files: PDF, JPG, JPEG, PNG. Uploads up to 35MB; system will optimize to 2MB when possible.</div>
             </div>
             <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-primary fw-bold" id="uploadReceiptBtn" onclick="uploadReceipt()"><i class="fa-solid fa-paperclip me-1"></i>Upload Receipt</button></div>
         </div>
@@ -410,8 +410,20 @@ async function uploadReceipt(){
     const rowId=document.getElementById('receiptRowId').value;
     const fileInput=document.getElementById('receiptFile');
     if(!fileInput.files.length){showLiqAlert('Please select a receipt file first.', 'warning');fileInput.focus();return;}
+    const file=fileInput.files[0];
+    const allowedReceiptTypes=['application/pdf','image/png','image/jpeg'];
+    const allowedReceiptExts=['pdf','png','jpg','jpeg'];
+    const fileExt=String(file.name || '').split('.').pop().toLowerCase();
+    if(!allowedReceiptExts.includes(fileExt) || (file.type && !allowedReceiptTypes.includes(file.type))){
+        showLiqAlert('Invalid receipt file. Please upload PDF, JPG, JPEG, or PNG only.', 'warning');
+        return;
+    }
+    if(file.size > 35 * 1024 * 1024){
+        showLiqAlert('Receipt file is too large. Maximum allowed size is 35 MB.', 'warning');
+        return;
+    }
     const formData=new FormData();
-    formData.append('receipt', fileInput.files[0]);
+    formData.append('receipt', file);
     setButtonBusy('uploadReceiptBtn',true,'Uploading...');
     try{
         const res=await fetch(`/upload_cash_advance_liquidation_receipt/${rowId}`,{method:'POST',headers:{'X-CSRFToken':getCSRFToken()},body:formData});

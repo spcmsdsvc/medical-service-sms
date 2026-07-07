@@ -283,7 +283,7 @@
                 <div class="fw-bold mb-1" id="receiptRowLabel">Expense Row</div>
                 <div class="text-muted small mb-3">Upload receipt, invoice, boarding pass, or proof related to this row.</div>
                 <input type="file" id="receiptFile" class="form-control" accept=".pdf,.png,.jpg,.jpeg">
-                <div class="mini-help mt-2">Allowed files only: PDF, JPG, JPEG, PNG. Maximum 10 MB per receipt.</div>
+                <div class="mini-help mt-2">Allowed files only: PDF, JPG, JPEG, PNG. Uploads up to 35MB; system will optimize to 2MB when possible.</div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -856,8 +856,8 @@ async function uploadReceipt(){
         showLiqAlert('Invalid receipt file. Please upload PDF, JPG, JPEG, or PNG only.','warning');
         return;
     }
-    if(file.size > 10 * 1024 * 1024){
-        showLiqAlert('Receipt file is too large. Maximum allowed size is 10 MB.','warning');
+    if(file.size > 35 * 1024 * 1024){
+        showLiqAlert('Receipt file is too large. Maximum allowed size is 35 MB.','warning');
         return;
     }
     const formData=new FormData();

@@ -14856,7 +14856,10 @@ def reimbursement_receipts_for_header_all(header_id):
             group_key = 'additional'
         elif isinstance(group_key, int) and group_key < 0:
             group_key = f"manual_{abs(group_key)}"
-        grouped.setdefault(group_key, []).append(reimbursement_receipt_to_dict(receipt))
+        try:
+            grouped.setdefault(group_key, []).append(reimbursement_receipt_to_dict(receipt))
+        except Exception as exc:
+            print(f"[Reimbursement] Skipping unreadable receipt {getattr(receipt, 'id', '')}: {exc}")
     return grouped
 
 
@@ -16650,6 +16653,10 @@ def reimbursement_row_to_dict(row, receipts_by_shift=None):
     receipts_by_shift = receipts_by_shift or {}
     is_manual = not bool(row.shift_id)
     manual_key = f"manual_{row.id}" if is_manual and row.id else ''
+    receipt_key = manual_key if is_manual else row.shift_id
+    receipts = receipts_by_shift.get(receipt_key)
+    if receipts is None:
+        receipts = receipts_by_shift.get(str(receipt_key), [])
     return {
         'id': row.id,
         'shift_id': row.shift_id,
@@ -16666,7 +16673,7 @@ def reimbursement_row_to_dict(row, receipts_by_shift=None):
         'remarks': row.remarks or '',
         'amounts': amounts,
         'row_total': reimbursement_money_value(row.row_total),
-        'receipts': receipts_by_shift.get(manual_key if is_manual else row.shift_id, [])
+        'receipts': receipts
     }
 
 
@@ -17189,7 +17196,10 @@ def reimbursement_get_receipts_for_header(header_id):
             group_key = 'additional'
         elif isinstance(group_key, int) and group_key < 0:
             group_key = f"manual_{abs(group_key)}"
-        grouped.setdefault(group_key, []).append(reimbursement_receipt_to_dict(receipt))
+        try:
+            grouped.setdefault(group_key, []).append(reimbursement_receipt_to_dict(receipt))
+        except Exception as exc:
+            print(f"[Reimbursement] Skipping unreadable receipt {getattr(receipt, 'id', '')}: {exc}")
     return grouped
 
 
@@ -17580,9 +17590,15 @@ def get_reimbursement_draft():
             'end': end_date.isoformat()
         })
 
-    receipts_by_shift = reimbursement_get_receipts_for_header(header.id)
+    receipt_warning = ''
+    try:
+        receipts_by_shift = reimbursement_get_receipts_for_header(header.id)
+    except Exception as exc:
+        print(f"[Reimbursement] Draft receipt load failed for header {header.id}: {exc}")
+        receipts_by_shift = {}
+        receipt_warning = 'Saved reimbursement rows loaded, but receipt attachments could not be loaded.'
     rows = [reimbursement_row_to_dict(row, receipts_by_shift) for row in sorted(header.rows, key=lambda r: (r.row_date or start_date, r.id))]
-    return jsonify({
+    payload = {
         'success': True,
         'exists': True,
         'id': header.id,
@@ -17596,7 +17612,10 @@ def get_reimbursement_draft():
         **reimbursement_header_approval_meta(header),
         'rows': rows,
         'grand_total': round(sum(reimbursement_money_value(row.row_total) for row in header.rows), 2)
-    })
+    }
+    if receipt_warning:
+        payload['receipt_warning'] = receipt_warning
+    return jsonify(payload)
 
 
 
@@ -23190,7 +23209,8 @@ TRAVEL_LIQUIDATION_DEFAULT_PRODUCT_CODE = 'PC18/PC22'
 # Receipts must be non-editable proof files only. Do not allow Office files, CSV, ZIP, etc.
 TRAVEL_LIQUIDATION_ALLOWED_RECEIPT_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
 TRAVEL_LIQUIDATION_ALLOWED_RECEIPT_MIME_TYPES = {'application/pdf', 'image/png', 'image/jpeg'}
-TRAVEL_LIQUIDATION_RECEIPT_MAX_BYTES = int(os.environ.get('TRAVEL_LIQUIDATION_RECEIPT_MAX_MB', '10')) * 1024 * 1024
+TRAVEL_LIQUIDATION_RECEIPT_MAX_BYTES = 2 * 1024 * 1024
+TRAVEL_LIQUIDATION_RECEIPT_INTAKE_MAX_BYTES = int(os.environ.get('TRAVEL_LIQUIDATION_RECEIPT_INTAKE_MAX_MB', '35')) * 1024 * 1024
 
 # F4A5J: Per Diem / Travel Allowance and Airfare are now included in
 # Travel Liquidation again. Keep this legacy tuple empty so older helper calls
@@ -26045,8 +26065,8 @@ def validate_travel_liquidation_receipt_upload(file_obj):
             current_pos = 0
             file_size = clean_int(getattr(file_obj, 'content_length', None)) or 0
 
-        if file_size and file_size > TRAVEL_LIQUIDATION_RECEIPT_MAX_BYTES:
-            max_mb = max(int(TRAVEL_LIQUIDATION_RECEIPT_MAX_BYTES / (1024 * 1024)), 1)
+        if file_size and file_size > TRAVEL_LIQUIDATION_RECEIPT_INTAKE_MAX_BYTES:
+            max_mb = max(int(TRAVEL_LIQUIDATION_RECEIPT_INTAKE_MAX_BYTES / (1024 * 1024)), 1)
             if stream and hasattr(stream, 'seek'):
                 stream.seek(current_pos)
             return False, f'Receipt file is too large. Maximum allowed size is {max_mb} MB.'
@@ -26386,9 +26406,12 @@ def upload_travel_liquidation_receipt(row_id):
 
     try:
         stored_filename, original_filename = travel_liquidation_secure_receipt_filename(file_obj, row.id)
+        prepared_bytes, stored_ext, content_type = reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename)
+        stored_filename = os.path.splitext(stored_filename)[0] + f'.{stored_ext}'
         folder = travel_liquidation_receipt_folder()
         file_path = os.path.join(folder, stored_filename)
-        file_obj.save(file_path)
+        with open(file_path, 'wb') as target_file:
+            target_file.write(prepared_bytes)
 
         receipt = TravelLiquidationReceipt(
             liquidation_id=liquidation.id,
@@ -26396,7 +26419,7 @@ def upload_travel_liquidation_receipt(row_id):
             uploaded_by_id=current_user.id,
             stored_filename=stored_filename,
             original_filename=original_filename,
-            content_type=clean_str(getattr(file_obj, 'mimetype', None)) or '',
+            content_type=content_type or clean_str(getattr(file_obj, 'mimetype', None)) or '',
             file_size=os.path.getsize(file_path) if os.path.exists(file_path) else 0,
             created_at=get_manila_time()
         )
@@ -37473,16 +37496,19 @@ def upload_cash_advance_liquidation_receipt(row_id):
 
     try:
         stored_filename, original_filename = cash_advance_liquidation_secure_receipt_filename(file_obj, row.id)
+        prepared_bytes, stored_ext, content_type = reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename)
+        stored_filename = os.path.splitext(stored_filename)[0] + f'.{stored_ext}'
         folder = cash_advance_liquidation_receipt_folder()
         file_path = os.path.join(folder, stored_filename)
-        file_obj.save(file_path)
+        with open(file_path, 'wb') as target_file:
+            target_file.write(prepared_bytes)
         receipt = CashAdvanceLiquidationReceipt(
             liquidation_id=liquidation.id,
             row_id=row.id,
             uploaded_by_id=current_user.id,
             stored_filename=stored_filename,
             original_filename=original_filename,
-            content_type=clean_str(getattr(file_obj, 'mimetype', None)) or '',
+            content_type=content_type or clean_str(getattr(file_obj, 'mimetype', None)) or '',
             file_size=os.path.getsize(file_path) if os.path.exists(file_path) else 0,
             created_at=get_manila_time()
         )

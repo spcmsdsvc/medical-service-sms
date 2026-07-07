@@ -4082,7 +4082,6 @@ function buildTSRPrintHTML(data){
         <div class="tsr-print-sign-column tsr-print-ack-column"><div class="tsr-print-sign-title">Acknowledged By:</div><div class="tsr-print-sign-box">${tsrSignatureHtml(data,'acknowledged')}</div><div class="tsr-print-sign-caption">${tsrUpperValue(data,'tsr-acknowledged-by','NAME & SIGNATURE')}</div></div>
       </div>
       <div class="tsr-print-contact-lines"><div></div><div class="tsr-print-contact-client"><div><strong>Contact No:</strong> <span class="tsr-print-contact-value">${tsrValue(data,'tsr-contact-no')}</span></div><div><strong>Email Add:</strong> <span class="tsr-print-contact-value">${tsrValue(data,'tsr-email-add')}</span></div></div></div>
-      <div class="tsr-print-footer"><div>WHITE: Customer Accounting</div><div>PINK: SPC Service Dept</div><div>GREEN: Customer End User</div><div>YELLOW: SPC Accounting</div></div>
     </div>
     <div class="tsr-print-code">SPC Service TSR 004-2020</div>
   </div>`;
@@ -4447,13 +4446,7 @@ async function renderTSRPrintSheetToCanvas(){
   ctx.textAlign = 'left';
   y += 28;
   ctx.beginPath(); ctx.moveTo(margin, y); ctx.lineTo(margin + pageW, y); ctx.stroke();
-  y += 20;
-  ctx.font = '11px Arial';
-  ctx.fillText('WHITE: Customer Accounting', margin + 15, y);
-  ctx.fillText('PINK: SPC Service Dept', margin + 315, y);
-  ctx.fillText('GREEN: Customer End User', margin + 585, y);
-  ctx.fillText('YELLOW: SPC Accounting', margin + 875, y);
-  y += 24;
+  y += 18;
   ctx.font = 'bold 11px Arial';
   ctx.fillText('SPC Service TSR 004-2020', margin, y);
 
