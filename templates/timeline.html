@@ -7325,7 +7325,11 @@ async function fetchTimelineDataWithOfflineTimeout(url){
     function getTimelineClientDuplicateByName(clientName){
         const normalized = normalizeTimelineClientName(clientName).toLowerCase();
         if(!normalized) return null;
-        return (masterClients || []).find(client => normalizeTimelineClientName(client.name).toLowerCase() === normalized) || null;
+        return (masterClients || []).find(client => {
+            const existingName = normalizeTimelineClientName(client.name || client.client_name || '').toLowerCase();
+            const existingAddress = normalizeTimelineClientName(client.address || client.client_address || '').toLowerCase();
+            return existingName === normalized && existingAddress === '';
+        }) || null;
     }
 
     function setTimelineClientQuickAddState(){

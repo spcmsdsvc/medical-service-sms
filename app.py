@@ -2958,41 +2958,30 @@ def client_duplicate_match_score(new_name, existing_name, new_addr=None, existin
     return min(score, 1.0), reasons
 
 
-def check_for_duplicate_client(new_name, new_addr, exclude_id=None):
-    """Return the best true duplicate Client, or None.
+def normalize_client_exact_duplicate_value(value):
+    return re.sub(r'\s+', ' ', (clean_str(value) or '').strip().lower())
 
-    Uses the safer S12B2D scorer so Baguio General Hospital and Bataan General
-    Hospital are no longer treated as duplicates just because they share generic
-    hospital wording or an acronym collision.
-    """
+
+def check_for_duplicate_client(new_name, new_addr, exclude_id=None):
+    """Return duplicate Client only when normalized name and address both match."""
     excluded_client_id = clean_int(exclude_id)
-    best_client = None
-    best_score = 0.0
-    best_reasons = []
+    new_name_key = normalize_client_exact_duplicate_value(new_name)
+    new_addr_key = normalize_client_exact_duplicate_value(new_addr)
+    if not new_name_key:
+        return None
 
     for c in Client.query.order_by(Client.id.asc()).all():
         if excluded_client_id and c.id == excluded_client_id:
             continue
 
-        score, reasons = client_duplicate_match_score(
-            new_name,
-            getattr(c, 'name', ''),
-            new_addr,
-            getattr(c, 'address', '')
-        )
-
-        if score > best_score:
-            best_client = c
-            best_score = score
-            best_reasons = reasons
-
-    if best_client and best_score >= 0.82:
-        print(
-            f"[CLIENT-DUPLICATE] Matched '{clean_str(new_name)}' -> #{best_client.id}: "
-            f"{best_client.name} score={best_score:.2f} reasons={','.join(best_reasons)}",
-            flush=True
-        )
-        return best_client
+        existing_name_key = normalize_client_exact_duplicate_value(getattr(c, 'name', ''))
+        existing_addr_key = normalize_client_exact_duplicate_value(getattr(c, 'address', ''))
+        if new_name_key == existing_name_key and new_addr_key == existing_addr_key:
+            print(
+                f"[CLIENT-DUPLICATE] Exact name/address match '{clean_str(new_name)}' -> #{c.id}: {c.name}",
+                flush=True
+            )
+            return c
 
     return None
 
@@ -3103,170 +3092,12 @@ def client_names_have_required_strong_overlap(name_a, name_b):
 
 
 def check_for_timeline_quick_add_duplicate_client(new_name):
-    """Timeline quick-add duplicate check with best-match ranking.
+    """Timeline quick-add duplicate check.
 
-    This version balances both problems:
-    - catches short safe prefixes like "accura" -> Accura-Tech Diagnostic Laboratory
-    - blocks generic false matches like Philippine General Hospital -> Chinese General Hospital
-    - blocks country-word false matches like Philippine General Hospital -> Philippine Heart Center
+    Quick-add creates a blank-address client, so only an existing client with
+    the exact same normalized name and blank normalized address is a duplicate.
     """
-    clean_name = clean_str(new_name) or ''
-    normalized_new = normalize_client_name_for_matching(clean_name)
-    acronym_new = generate_acronym(clean_name)
-    new_tokens = set(client_name_tokens(clean_name))
-    new_strong_tokens = set(client_name_strong_tokens(clean_name))
-
-    if not normalized_new:
-        return None
-
-    candidates = []
-
-    for client in Client.query.order_by(Client.id.asc()).all():
-        existing_name = clean_str(client.name) or ''
-        normalized_existing = normalize_client_name_for_matching(existing_name)
-        acronym_existing = generate_acronym(existing_name)
-        existing_tokens = set(client_name_tokens(existing_name))
-        existing_strong_tokens = set(client_name_strong_tokens(existing_name))
-        has_strong_overlap = bool(new_strong_tokens & existing_strong_tokens)
-        has_critical_overlap = client_names_have_critical_overlap(clean_name, existing_name)
-
-        if not normalized_existing:
-            continue
-
-        # S12B2F surgical guard:
-        # Timeline Quick Add must use the same stricter identity matcher as the
-        # Clients page before any legacy quick-add scoring is allowed. This
-        # prevents generic-name false positives such as:
-        #   Baguio General Hospital and Medical Center
-        #   Bataan General Hospital and Medical Center
-        # where most words are shared but the identity word is different.
-        shared_match_score, shared_match_reasons = client_duplicate_match_score(
-            clean_name,
-            existing_name,
-            '',
-            getattr(client, 'address', '')
-        )
-
-        if shared_match_score < 0.82:
-            continue
-
-        score = int(shared_match_score * 100)
-        reasons = list(shared_match_reasons or ['shared-client-matcher'])
-
-        # Exact normalized full-name match is always a duplicate.
-        if normalized_new == normalized_existing:
-            score += 140
-            reasons.append('exact-normalized')
-
-        # Acronym match is allowed, but only for meaningful acronyms.
-        # PGH and CGH will not match because acronyms differ.
-        if acronym_new and acronym_existing and len(acronym_new) >= 3 and acronym_new == acronym_existing:
-            score += 110
-            reasons.append('acronym')
-
-        # Long contains match requires at least one strong/non-generic shared token.
-        if has_critical_overlap and len(normalized_new) >= 8 and len(normalized_existing) >= 8:
-            if normalized_new in normalized_existing or normalized_existing in normalized_new:
-                score += 95
-                reasons.append('contains')
-
-        # Short safe prefix: catches accura -> Accura-Tech Diagnostic Laboratory.
-        # It only checks strong existing tokens, not generic words like hospital/general.
-        if len(normalized_new) >= 5 and existing_strong_tokens:
-            if any(token.startswith(normalized_new) or normalized_new.startswith(token) for token in existing_strong_tokens if len(token) >= 5):
-                score += 115
-                reasons.append('short-prefix')
-
-        ordered_new_tokens = client_name_tokens(clean_name)
-        ordered_existing_tokens = client_name_tokens(existing_name)
-        first_new_token = ordered_new_tokens[0] if ordered_new_tokens else ''
-        first_existing_token = ordered_existing_tokens[0] if ordered_existing_tokens else ''
-        if (
-            first_new_token and first_existing_token and
-            first_new_token not in CLIENT_DUPLICATE_WEAK_TOKENS and
-            first_existing_token not in CLIENT_DUPLICATE_WEAK_TOKENS and
-            len(first_new_token) >= 5 and
-            first_existing_token.startswith(first_new_token)
-        ):
-            score += 105
-            reasons.append('first-token-prefix')
-
-        fuzzy_score = similarity(normalized_new, normalized_existing)
-        if has_critical_overlap and fuzzy_score >= 0.88:
-            score += int(fuzzy_score * 85)
-            reasons.append(f'fuzzy-{fuzzy_score:.2f}')
-        elif has_critical_overlap and fuzzy_score >= 0.82 and len(normalized_new) >= 10 and len(normalized_existing) >= 10:
-            score += int(fuzzy_score * 55)
-            reasons.append(f'soft-fuzzy-{fuzzy_score:.2f}')
-
-        token_score = client_name_token_similarity(clean_name, existing_name)
-        strong_token_score = client_name_strong_token_similarity(clean_name, existing_name)
-
-        if has_critical_overlap and token_score >= 0.75 and len(new_tokens) >= 3 and len(existing_tokens) >= 3:
-            score += int(token_score * 80)
-            reasons.append(f'token-{token_score:.2f}')
-
-        if strong_token_score >= 0.50:
-            score += int(strong_token_score * 100)
-            reasons.append(f'strong-token-{strong_token_score:.2f}')
-
-        # Subset overlap requires at least one strong shared token.
-        if has_critical_overlap and len(new_tokens) >= 3 and len(existing_tokens) >= 3:
-            common_tokens = new_tokens & existing_tokens
-            common_strong_tokens = new_strong_tokens & existing_strong_tokens
-            if len(common_tokens) >= 3 and common_strong_tokens:
-                subset_score = len(common_tokens) / max(min(len(new_tokens), len(existing_tokens)), 1)
-                if subset_score >= 0.75:
-                    score += int(subset_score * 70)
-                    reasons.append(f'subset-{subset_score:.2f}')
-
-        if score <= 0:
-            continue
-
-        # Prefer complete/real client records over blank quick-add duplicates.
-        address_bonus = 25 if clean_str(client.address) else 0
-        product_bonus = 15 if Product.query.filter_by(client_id=client.id).first() else 0
-        contact_bonus = 8 if Contact.query.filter_by(client_id=client.id).first() else 0
-
-        final_score = score + address_bonus + product_bonus + contact_bonus
-
-        candidates.append({
-            'client': client,
-            'score': final_score,
-            'base_score': score,
-            'has_address': bool(clean_str(client.address)),
-            'has_product': bool(product_bonus),
-            'has_contact': bool(contact_bonus),
-            'reasons': reasons
-        })
-
-    if not candidates:
-        return None
-
-    candidates = [item for item in candidates if item['score'] >= 75]
-    if not candidates:
-        return None
-
-    candidates.sort(
-        key=lambda item: (
-            item['score'],
-            item['has_address'],
-            item['has_product'],
-            item['has_contact'],
-            -item['client'].id
-        ),
-        reverse=True
-    )
-
-    best = candidates[0]
-    print(
-        "[TIMELINE-CLIENT] Best duplicate match for "
-        f"'{clean_name}' -> #{best['client'].id}: {best['client'].name} "
-        f"score={best['score']} reasons={','.join(best['reasons'])}",
-        flush=True
-    )
-
-    return best['client']
+    return check_for_duplicate_client(new_name, '')
 
 
 
@@ -17240,6 +17071,23 @@ def reimbursement_get_receipts_for_header(header_id):
     return grouped
 
 
+def reimbursement_flatten_receipt_groups(receipts_by_shift):
+    seen = set()
+    flat = []
+    for receipt_list in (receipts_by_shift or {}).values():
+        for receipt in receipt_list or []:
+            receipt_id = receipt.get('id') if isinstance(receipt, dict) else None
+            dedupe_key = receipt_id or (
+                receipt.get('filename', '') if isinstance(receipt, dict) else '',
+                receipt.get('created_at', '') if isinstance(receipt, dict) else ''
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            flat.append(receipt)
+    return flat
+
+
 def reimbursement_get_receipt_records_for_header(header_id):
     """Load all physical receipt records for a reimbursement package.
 
@@ -18033,7 +17881,8 @@ def get_reimbursement_receipts():
         return jsonify({
             'success': True,
             'receipts_by_shift': {},
-            'additional_receipts': []
+            'additional_receipts': [],
+            'all_receipts': []
         })
 
     header = reimbursement_find_header(start_date, end_date, create=False)
@@ -18041,7 +17890,8 @@ def get_reimbursement_receipts():
         return jsonify({
             'success': True,
             'receipts_by_shift': {},
-            'additional_receipts': []
+            'additional_receipts': [],
+            'all_receipts': []
         })
     if header.user_id != current_user.id or header.engineer_id != profile.id:
         return jsonify({'success': False, 'error': 'Not allowed.'}), 403
@@ -18050,7 +17900,8 @@ def get_reimbursement_receipts():
     return jsonify({
         'success': True,
         'receipts_by_shift': receipts_by_shift,
-        'additional_receipts': receipts_by_shift.get('additional', [])
+        'additional_receipts': receipts_by_shift.get('additional', []),
+        'all_receipts': reimbursement_flatten_receipt_groups(receipts_by_shift)
     })
 
 
@@ -29475,17 +29326,16 @@ def search_clients():
         if exclude_id and c.id == exclude_id:
             continue
 
-        duplicate_score, reasons = client_duplicate_match_score(q, c.name, addr, c.address)
-
-        # Autocomplete can be a little softer than hard duplicate blocking,
-        # but it must still avoid generic hospital/acronym collisions.
-        if duplicate_score >= 0.58:
+        if (
+            normalize_client_exact_duplicate_value(q) == normalize_client_exact_duplicate_value(c.name) and
+            normalize_client_exact_duplicate_value(addr) == normalize_client_exact_duplicate_value(c.address)
+        ):
             results.append({
                 'id': c.id,
                 'name': c.name,
                 'address': c.address,
-                'score': round(duplicate_score, 2),
-                'reasons': reasons
+                'score': 1.0,
+                'reasons': ['exact-name-address']
             })
 
     results = sorted(results, key=lambda x: x['score'], reverse=True)[:5]

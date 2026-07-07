@@ -1593,13 +1593,12 @@
                         <th>Coding</th>
                         <th>Others</th>
                         <th>Row Total</th>
-                        <th class="reim-receipt-cell">Receipts</th>
                         <th>Remarks / Purpose</th>
                     </tr>
                 </thead>
                 <tbody id="reimTableBody">
                     <tr>
-                        <td colspan="16" class="reim-empty">No rows loaded yet.</td>
+                        <td colspan="15" class="reim-empty">No rows loaded yet.</td>
                     </tr>
                 </tbody>
                 <tfoot id="reimTotalsFoot">
@@ -1616,7 +1615,6 @@
                         <td class="reim-category-total" data-total-expense="coding">0.00</td>
                         <td class="reim-category-total" data-total-expense="others">0.00</td>
                         <td class="reim-total-cell reim-grand-total-cell" id="reimGrandTotal">0.00</td>
-                        <td class="reim-receipt-cell"></td>
                         <td></td>
                     </tr>
                 </tfoot>
@@ -1632,18 +1630,18 @@
         <div class="reim-additional-receipts-card" id="reimAdditionalReceiptsCard">
             <div class="reim-additional-receipts-head">
                 <div>
-                    <h3>Additional Receipts</h3>
-                    <div class="reim-muted">Attach reimbursement-level receipts not tied to a specific schedule row.</div>
+                    <h3>Uploaded Receipts</h3>
+                    <div class="reim-muted">Attach receipts for this reimbursement package here.</div>
                 </div>
                 <div>
                     <input type="file" id="reimAdditionalReceiptInput" multiple accept=".pdf,.jpg,.jpeg,.png" style="display:none" onchange="uploadAdditionalReimbursementReceipts(this.files)">
-                    <button type="button" class="reim-btn reim-btn-secondary" id="reimAdditionalReceiptBtn" onclick="document.getElementById('reimAdditionalReceiptInput').click()">Add Additional Receipts</button>
+                    <button type="button" class="reim-btn reim-btn-secondary" id="reimAdditionalReceiptBtn" onclick="document.getElementById('reimAdditionalReceiptInput').click()">Upload Receipts</button>
                 </div>
             </div>
             <div class="reim-additional-receipts-body">
                 <div class="reim-muted">Allowed: PDF, JPG, JPEG, PNG. Uploads up to 35MB each; system will optimize to 2MB when possible.</div>
                 <div class="reim-additional-receipts-list" id="reimAdditionalReceiptsList">
-                    <span class="reim-muted">No additional receipts uploaded.</span>
+                    <span class="reim-muted">No receipts uploaded.</span>
                 </div>
             </div>
         </div>
@@ -2147,7 +2145,7 @@ function renderReimbursementRows(rows) {
         countLabel.textContent = `${rows.length} row${rows.length === 1 ? '' : 's'}`;
 
         if (!rows.length) {
-            body.innerHTML = '<tr><td colspan="16" class="reim-empty">No schedules found for this date range.</td></tr>';
+            body.innerHTML = '<tr><td colspan="15" class="reim-empty">No schedules found for this date range.</td></tr>';
             mobile.innerHTML = '<div class="reim-empty">No schedules found for this date range.</div>';
             recalculateReimbursementTotals();
             syncReimbursementHorizontalScroll();
@@ -2156,7 +2154,6 @@ function renderReimbursementRows(rows) {
 
         body.innerHTML = rows.map(function(row) {
             const rowKey = getReimbursementRowKey(row);
-            const receiptKey = getReimbursementReceiptKey(row);
             const productLine = [row.product, row.serial_number].filter(Boolean).join(' / ');
             const scheduleLine = row.manual ? 'Manual reimbursement item' : [row.start_time, row.end_time].filter(Boolean).join(' - ');
             const manualBadge = row.manual ? '<span class="reim-manual-badge">Manual</span>' : '';
@@ -2175,7 +2172,6 @@ function renderReimbursementRows(rows) {
                     </td>
                     ${buildExpenseInputs(row)}
                     <td class="reim-total-cell">₱ <span data-row-total="${reimEscape(rowKey)}">0.00</span></td>
-                    <td class="reim-receipt-cell" data-receipt-cell="${reimEscape(receiptKey)}">${renderReimbursementReceiptTools(receiptKey)}</td>
                     <td><textarea class="reim-remarks" rows="5" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)">${reimEscape(row.remarks || '')}</textarea></td>
                 </tr>
             `;
@@ -2183,7 +2179,6 @@ function renderReimbursementRows(rows) {
 
         mobile.innerHTML = rows.map(function(row) {
             const rowKey = getReimbursementRowKey(row);
-            const receiptKey = getReimbursementReceiptKey(row);
             const productLine = [row.product, row.serial_number].filter(Boolean).join(' / ');
             const manualBadge = row.manual ? '<span class="reim-manual-badge">Manual</span>' : '';
             return `
@@ -2196,7 +2191,6 @@ function renderReimbursementRows(rows) {
                         <textarea class="reim-remarks" rows="5" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)" placeholder="Purpose / remarks">${reimEscape(row.remarks || '')}</textarea>
                     </div>
                     ${buildMobileExpenseInputs(row)}
-                    <div class="reim-mobile-receipts" data-mobile-receipt-cell="${reimEscape(receiptKey)}">${renderReimbursementReceiptTools(receiptKey)}</div>
                 </div>
             `;
         }).join('');
@@ -2538,14 +2532,7 @@ function renderReimbursementRows(rows) {
             }).join('')}</div>`
             : `<span class="reim-muted">${isUnsavedManual ? 'Save draft before attaching' : 'No receipt'}</span>`;
 
-        const upload = editable && !isUnsavedManual
-            ? `<div class="reim-receipt-tools">
-                <input type="file" id="reimReceiptInput-${safeId}" accept=".pdf,.jpg,.jpeg,.png" multiple style="display:none" onchange="uploadReimbursementReceipt('${reimEscape(rowKey)}', this.files)">
-                <button type="button" class="reim-receipt-btn" onclick="document.getElementById('reimReceiptInput-${safeId}').click()">+ Receipt</button>
-            </div>`
-            : '';
-
-        return `${upload}${receiptItems}`;
+        return receiptItems;
     }
 
 
@@ -2562,7 +2549,7 @@ function renderReimbursementRows(rows) {
 
         const receipts = reimbursementAdditionalReceipts || [];
         if (!receipts.length) {
-            list.innerHTML = '<span class="reim-muted">No additional receipts uploaded.</span>';
+            list.innerHTML = '<span class="reim-muted">No receipts uploaded.</span>';
             return;
         }
 
@@ -2575,6 +2562,21 @@ function renderReimbursementRows(rows) {
         }).join('');
     }
 
+    function flattenReimbursementReceiptMap(receiptsByShift) {
+        const seen = new Set();
+        const flat = [];
+        Object.keys(receiptsByShift || {}).forEach(function(key) {
+            (receiptsByShift[key] || []).forEach(function(receipt) {
+                const receiptId = String(receipt.id || '');
+                const dedupeKey = receiptId || `${key}:${receipt.original_filename || receipt.filename || ''}:${receipt.created_at || ''}`;
+                if (seen.has(dedupeKey)) return;
+                seen.add(dedupeKey);
+                flat.push(receipt);
+            });
+        });
+        return flat;
+    }
+
     async function uploadAdditionalReimbursementReceipts(files) {
         const input = document.getElementById('reimAdditionalReceiptInput');
         const start = document.getElementById('reimStartDate').value;
@@ -2583,21 +2585,21 @@ function renderReimbursementRows(rows) {
         if (!start || !end) {
             reimAlert('Please load a date range first.');
             if (input) input.value = '';
-            return;
+            return false;
         }
-        if (!files || !files.length) return;
+        if (!files || !files.length) return true;
 
         if (!reimbursementIsEditable()) {
             reimAlert('Receipts are locked after submission.');
             if (input) input.value = '';
-            return;
+            return false;
         }
 
         const validation = validateReimbursementReceiptFiles(files);
         if (!validation.ok) {
             reimAlert(validation.message);
             if (input) input.value = '';
-            return;
+            return false;
         }
 
         const formData = new FormData();
@@ -2609,7 +2611,7 @@ function renderReimbursementRows(rows) {
             formData.append('receipt_files', file);
         });
 
-        setReimbursementDraftStatus('Uploading additional receipt...', '');
+        setReimbursementDraftStatus('Uploading receipt...', '');
 
         try {
             const response = await fetch('/upload_reimbursement_receipt', {
@@ -2620,29 +2622,23 @@ function renderReimbursementRows(rows) {
 
             const payload = await response.json().catch(() => ({}));
             if (!response.ok || !payload.success) {
-                throw new Error(payload.error || 'Unable to upload additional receipt.');
+                throw new Error(payload.error || 'Unable to upload receipt.');
             }
 
             await fetchReimbursementReceipts(start, end);
-            setReimbursementDraftStatus('Additional receipt uploaded.', 'ok');
+            setReimbursementDraftStatus('Receipt uploaded.', 'ok');
+            return true;
         } catch (error) {
             console.error(error);
-            setReimbursementDraftStatus(error.message || 'Unable to upload additional receipt.', 'err');
-            reimAlert(error.message || 'Unable to upload additional receipt.');
+            setReimbursementDraftStatus(error.message || 'Unable to upload receipt.', 'err');
+            reimAlert(error.message || 'Unable to upload receipt.');
+            return false;
         } finally {
             if (input) input.value = '';
         }
     }
 
     function refreshReimbursementReceiptCells() {
-        document.querySelectorAll('[data-receipt-cell]').forEach(function(cell) {
-            const rowKey = cell.dataset.receiptCell;
-            cell.innerHTML = renderReimbursementReceiptTools(rowKey);
-        });
-        document.querySelectorAll('[data-mobile-receipt-cell]').forEach(function(cell) {
-            const rowKey = cell.dataset.mobileReceiptCell;
-            cell.innerHTML = renderReimbursementReceiptTools(rowKey);
-        });
         renderAdditionalReimbursementReceipts();
     }
 
@@ -2664,7 +2660,7 @@ function renderReimbursementRows(rows) {
             return;
         }
         reimbursementReceiptsByShift = payload.receipts_by_shift || {};
-        reimbursementAdditionalReceipts = payload.additional_receipts || reimbursementReceiptsByShift.additional || [];
+        reimbursementAdditionalReceipts = payload.all_receipts || flattenReimbursementReceiptMap(reimbursementReceiptsByShift);
         refreshReimbursementReceiptCells();
     }
 
@@ -3502,13 +3498,14 @@ async function saveReimbursementDraft(silent) {
                 reimAlert('Manual item was added locally, but receipt upload needs a saved draft first.');
                 return;
             }
-            await reloadCurrentReimbursementDraftOnly();
-            const savedManual = findSavedManualRow(dateValue, itemName, amount);
-            if (savedManual) {
-                await uploadReimbursementReceipt(getReimbursementRowKey(savedManual), receiptValidation.files);
+            const receiptUploaded = await uploadAdditionalReimbursementReceipts(receiptValidation.files);
+            if (receiptUploaded) {
+                setReimbursementDraftStatus('Manual item saved and receipt uploaded.', 'ok');
             } else {
-                setReimbursementDraftStatus('Manual item saved. Please attach receipt from the row.', 'ok');
+                setReimbursementDraftStatus('Manual item saved. Receipt upload failed.', 'error');
             }
+        } else {
+            setReimbursementDraftStatus('Manual item added.', 'ok');
         }
     }
 
