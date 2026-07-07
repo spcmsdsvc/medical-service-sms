@@ -4862,16 +4862,16 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
         airfare_note = ''
         allow_airfare_c_o_note = travel_request_allows_airfare_c_o(request_rec)
         for line in sorted(list(getattr(request_rec, 'lines', None) or []), key=lambda item: clean_int(getattr(item, 'id', None)) or 0):
-            line_type = (safe_text(getattr(line, 'line_type', None)) + ' ' + safe_text(getattr(line, 'description', None))).lower()
+            line_type = travel_request_line_text(line)
             amount = money_value_from_line(line)
             line_remarks = safe_text(getattr(line, 'remarks', None))
             if not allow_airfare_c_o_note:
                 line_remarks = remove_travel_airfare_c_o_label(line_remarks)
-            if any(key in line_type for key in ['plane', 'air', 'fare', 'ticket', 'airfare']):
+            if travel_request_line_is_airfare_text(line_type):
                 airfare += amount
                 if amount == 0 and line_remarks and not airfare_note:
                     airfare_note = line_remarks
-            elif any(key in line_type for key in ['bus', 'land', 'transport', 'transpo', 'taxi', 'grab', 'fare']):
+            elif travel_request_line_is_landfare_text(line_type):
                 landfare += amount
             elif any(key in line_type for key in ['per diem', 'allowance', 'meal']):
                 per_diem += amount
@@ -19937,6 +19937,55 @@ def remove_travel_airfare_c_o_label(value):
     cleaned = re.sub(r'^\s*(?:[,;|/\\-]+)\s*', '', cleaned).strip()
     cleaned = re.sub(r'\s{2,}', ' ', cleaned).strip()
     return cleaned
+
+
+def travel_request_line_text(line):
+    return (
+        clean_str(getattr(line, 'line_type', None)) + ' ' +
+        clean_str(getattr(line, 'description', None))
+    ).strip().lower()
+
+
+def travel_request_line_is_airfare_text(text_value):
+    text_value = clean_str(text_value).lower()
+    if not text_value:
+        return False
+    air_keywords = (
+        'plane fare',
+        'air fare',
+        'airfare',
+        'air ticket',
+        'air tickets',
+        'airline',
+        'flight'
+    )
+    return any(keyword in text_value for keyword in air_keywords)
+
+
+def travel_request_line_is_landfare_text(text_value):
+    text_value = clean_str(text_value).lower()
+    if not text_value:
+        return False
+    land_keywords = (
+        'bus',
+        'land',
+        'land fare',
+        'transport',
+        'transportation',
+        'transpo',
+        'taxi',
+        'grab',
+        'car',
+        'van',
+        'jeep',
+        'tricycle',
+        'toll',
+        'parking',
+        'gas',
+        'fuel',
+        'fare'
+    )
+    return any(keyword in text_value for keyword in land_keywords)
 
 
 def clean_travel_request_airfare_c_o_remarks(request_rec):
