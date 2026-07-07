@@ -2643,12 +2643,19 @@ function renderReimbursementRows(rows) {
 
     async function fetchReimbursementReceipts(start, end) {
         const params = new URLSearchParams({ start, end });
-        const response = await fetch(`/get_reimbursement_receipts?${params.toString()}`);
-        const payload = await parseReimbursementJsonResponse(response, 'Unable to load reimbursement receipts.');
-        if (!response.ok || !payload.success) {
+        const response = await fetch(`/get_reimbursement_receipts?${params.toString()}`, {
+            credentials: 'same-origin',
+            cache: 'no-store',
+            headers: { 'Accept': 'application/json' }
+        });
+        let payload = {};
+        try {
+            payload = await parseReimbursementJsonResponse(response, 'Unable to load reimbursement receipts.');
+        } catch (error) {
+            if (response.status !== 404) throw error;
             reimbursementReceiptsByShift = {};
             reimbursementAdditionalReceipts = [];
-            renderAdditionalReimbursementReceipts();
+            refreshReimbursementReceiptCells();
             return;
         }
         reimbursementReceiptsByShift = payload.receipts_by_shift || {};

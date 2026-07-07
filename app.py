@@ -17925,9 +17925,23 @@ def get_reimbursement_receipts():
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
-    header, err_resp, err_code = reimbursement_find_owned_header_or_404(start_date, end_date, create=False)
-    if err_resp:
-        return err_resp, err_code
+    profile = reimbursement_get_personal_profile()
+    if not profile:
+        return jsonify({
+            'success': True,
+            'receipts_by_shift': {},
+            'additional_receipts': []
+        })
+
+    header = reimbursement_find_header(start_date, end_date, create=False)
+    if not header:
+        return jsonify({
+            'success': True,
+            'receipts_by_shift': {},
+            'additional_receipts': []
+        })
+    if header.user_id != current_user.id or header.engineer_id != profile.id:
+        return jsonify({'success': False, 'error': 'Not allowed.'}), 403
 
     receipts_by_shift = reimbursement_get_receipts_for_header(header.id)
     return jsonify({
