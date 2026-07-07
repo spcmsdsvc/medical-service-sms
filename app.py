@@ -302,6 +302,10 @@ EMAIL_RECIPIENT_GROUPS = {
         'label': 'TSR Client Email CC',
         'description': 'Internal recipients automatically copied when TSR files are emailed to clients.'
     },
+    'accounting_handoff_cc': {
+        'label': 'Accounting Handoff CC',
+        'description': 'Extra internal recipients automatically copied on approved accounting handoff emails.'
+    },
     'travel_accounting': {
         'label': 'Travel Request Accounting',
         'description': 'Accounting recipients for approved Travel Request / cash advance email handoff.'
@@ -322,6 +326,7 @@ EMAIL_RECIPIENT_GROUPS = {
 
 EMAIL_RECIPIENT_GROUP_ORDER = [
     'tsr_client_cc',
+    'accounting_handoff_cc',
     'travel_accounting',
     'cash_advance_accounting',
     'cash_advance_release',
@@ -3874,22 +3879,26 @@ def get_users_email_addresses_for_notifications(users):
 
 
 def get_requester_accounting_copy_emails(record, primary_emails=None):
-    """Return requester email copies for approved accounting handoff emails."""
+    """Return requester and Settings-managed CC copies for accounting handoffs."""
     requester_id = clean_int(getattr(record, 'user_id', None))
-    if not requester_id:
-        return []
-
-    requester = db.session.get(User, requester_id)
-    copy_emails = get_users_email_addresses_for_notifications([requester] if requester else [])
+    requester = db.session.get(User, requester_id) if requester_id else None
+    copy_emails = []
+    copy_emails.extend(get_users_email_addresses_for_notifications([requester] if requester else []))
+    copy_emails.extend(get_active_email_recipients_by_group('accounting_handoff_cc'))
     primary_keys = {
         (clean_str(email_addr) or '').strip().lower()
         for email_addr in normalize_email_list(primary_emails)
         if clean_str(email_addr)
     }
-    return [
-        email_addr for email_addr in copy_emails
-        if (clean_str(email_addr) or '').strip().lower() not in primary_keys
-    ]
+    unique_copy_emails = []
+    seen = set(primary_keys)
+    for email_addr in normalize_email_list(copy_emails):
+        email_key = (clean_str(email_addr) or '').strip().lower()
+        if not email_key or email_key in seen:
+            continue
+        seen.add(email_key)
+        unique_copy_emails.append(email_addr)
+    return unique_copy_emails
 
 
 def travel_request_notification_url(request_rec):

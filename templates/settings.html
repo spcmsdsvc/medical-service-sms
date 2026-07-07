@@ -2097,6 +2097,11 @@
             description: 'Reusable CC recipients when TSR files are emailed to clients.'
         },
         {
+            key: 'accounting_handoff_cc',
+            label: 'Accounting Handoff CC',
+            description: 'Extra internal CC recipients for approved accounting handoff emails.'
+        },
+        {
             key: 'travel_accounting',
             label: 'Travel Request Accounting',
             description: 'Accounting recipients for approved Travel Request handoff and cash advance processing.'
@@ -2157,6 +2162,7 @@
     function emailRecipientUsageLabel(groupKey) {
         const map = {
             tsr_client_cc: 'Used by Send TSR',
+            accounting_handoff_cc: 'Used by all Accounting handoffs',
             travel_accounting: 'Used by Travel Request',
             reimbursement_accounting: 'Used by Reimbursement',
             cash_advance_accounting: 'Used by Cash Advance > PHP 10,000',
