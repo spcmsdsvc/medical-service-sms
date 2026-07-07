@@ -105,6 +105,7 @@ import zipfile
 import zlib
 import tempfile
 import time
+import traceback
 from email.message import EmailMessage
 from email.utils import formataddr
 
@@ -2273,6 +2274,39 @@ def ensure_reimbursement_payment_columns():
         raise
 
 
+def ensure_reimbursement_receipt_columns():
+    """Keep older live reimbursement receipt tables compatible with upload code."""
+    try:
+        with db.engine.begin() as connection:
+            table_exists = connection.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='reimbursement_receipt'"
+            ).fetchone()
+            if not table_exists:
+                return
+
+            columns = {
+                row[1]
+                for row in connection.exec_driver_sql("PRAGMA table_info(reimbursement_receipt)").fetchall()
+            }
+
+            required_columns = {
+                'uploaded_by_id': 'ALTER TABLE reimbursement_receipt ADD COLUMN uploaded_by_id INTEGER',
+                'stored_filename': "ALTER TABLE reimbursement_receipt ADD COLUMN stored_filename VARCHAR(255) DEFAULT ''",
+                'original_filename': 'ALTER TABLE reimbursement_receipt ADD COLUMN original_filename VARCHAR(255)',
+                'content_type': 'ALTER TABLE reimbursement_receipt ADD COLUMN content_type VARCHAR(120)',
+                'file_size': 'ALTER TABLE reimbursement_receipt ADD COLUMN file_size INTEGER DEFAULT 0',
+                'created_at': 'ALTER TABLE reimbursement_receipt ADD COLUMN created_at DATETIME',
+            }
+
+            for column_name, alter_sql in required_columns.items():
+                if column_name not in columns:
+                    connection.exec_driver_sql(alter_sql)
+                    print(f"[ReimbursementReceipt] Added missing column: {column_name}", flush=True)
+    except Exception as receipt_column_error:
+        print(f"[ReimbursementReceipt] Unable to ensure receipt columns: {receipt_column_error}", flush=True)
+        raise
+
+
 def ensure_shift_travel_block_columns():
     """S11H1A safe live SQLite migration for Travel Block schedule fields.
 
@@ -2443,6 +2477,7 @@ def ensure_live_engineer_signature_schema_before_routes():
         ensure_travel_request_tables()
         ensure_reimbursement_accounting_columns()
         ensure_reimbursement_payment_columns()
+        ensure_reimbursement_receipt_columns()
         ensure_travel_liquidation_tables()
 
 
@@ -17862,7 +17897,8 @@ def upload_reimbursement_receipt():
 
     except Exception as exc:
         db.session.rollback()
-        print(f"[Reimbursement] Receipt upload failed: {exc}")
+        print(f"[Reimbursement] Receipt upload failed: {exc}", flush=True)
+        print(traceback.format_exc(), flush=True)
         return jsonify({'success': False, 'error': 'Unable to upload receipt.'}), 500
 
 
@@ -34125,6 +34161,7 @@ def ensure_runtime_sqlite_migrations_before_request():
     ensure_approval_routing_schema()
     ensure_default_approval_routes()
     ensure_reimbursement_approval_columns()
+    ensure_reimbursement_receipt_columns()
 
 
 @app.before_request
@@ -34297,6 +34334,7 @@ def initialize_database():
         bootstrap_credentials = bootstrap_static_accounts()
         migrate_hierarchy_accounts()
         ensure_default_approval_routes()
+        ensure_reimbursement_receipt_columns()
         repair_shift_engineer_links()
 
         # F4A3B: Prepare standalone Cash Advance tables during app startup.
