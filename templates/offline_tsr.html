@@ -94,6 +94,22 @@
   </details>
   {% endif %}
 
+  <div class="card p-3 p-md-4 mb-3 no-print offline-tsr-drafts-card">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+      <div>
+        <div class="small fw-bold text-primary text-uppercase">Drafted TSRs</div>
+        <h5 class="fw-bold mb-1">Continue Saved Work</h5>
+        <div class="small text-muted">Drafts are saved on this device so interrupted TSRs can be opened again.</div>
+      </div>
+      <button class="btn btn-outline-primary btn-sm fw-bold" type="button" onclick="renderStandaloneTSRDraftPanel()">
+        <i class="fa-solid fa-rotate-right me-1"></i>Refresh Drafts
+      </button>
+    </div>
+    <div id="standalone-tsr-drafts-list" class="standalone-tsr-drafts-list">
+      <div class="standalone-tsr-draft-empty">Checking saved drafts on this device...</div>
+    </div>
+  </div>
+
 
   <div class="card p-3 p-md-4 mb-3 no-print offline-tsr-schedule-picker-card">
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
@@ -392,6 +408,7 @@
 <style>
 .offline-tsr-dialog-backdrop{position:fixed;inset:0;z-index:4100;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px}.offline-tsr-dialog-backdrop.show{display:flex}.offline-tsr-dialog-box{width:min(470px,100%);background:#fff;border-radius:22px;box-shadow:0 28px 90px rgba(15,23,42,.38);border:1px solid #dbeafe;overflow:hidden;animation:offlineTSRDialogIn .18s ease-out}.offline-tsr-dialog-header{padding:18px 18px 10px;display:flex;gap:12px;align-items:flex-start}.offline-tsr-dialog-icon{width:42px;height:42px;border-radius:16px;background:#eff6ff;color:#0d6efd;display:inline-flex;align-items:center;justify-content:center;font-size:1.05rem;flex:0 0 auto}.offline-tsr-dialog-box.danger .offline-tsr-dialog-icon{background:#fee2e2;color:#b91c1c}.offline-tsr-dialog-box.warning .offline-tsr-dialog-icon{background:#fffbeb;color:#b45309}.offline-tsr-dialog-box.success .offline-tsr-dialog-icon{background:#dcfce7;color:#166534}.offline-tsr-dialog-text{min-width:0;flex:1}.offline-tsr-dialog-title{margin:0;color:#0f172a;font-weight:950;font-size:1.08rem}.offline-tsr-dialog-message{margin-top:5px;color:#475569;font-weight:800;line-height:1.45;white-space:pre-wrap}.offline-tsr-dialog-actions{padding:12px 18px 18px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}.tsr-recommended-highlight{outline:3px solid rgba(245,158,11,.8)!important;box-shadow:0 0 0 6px rgba(245,158,11,.18)!important;border-radius:12px;transition:outline .18s ease,box-shadow .18s ease}@keyframes offlineTSRDialogIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}@media(max-width:768px){.offline-tsr-dialog-backdrop{align-items:flex-end;padding:12px}.offline-tsr-dialog-box{width:100%;border-radius:20px}}
 .offline-tsr-page{max-width:1180px;margin:0 auto}.offline-tsr-hero{display:flex;justify-content:space-between;gap:16px;align-items:center;background:#fff;border-radius:22px;padding:18px 20px;margin-bottom:16px;box-shadow:0 8px 28px rgba(15,23,42,.07)}.offline-tsr-eyebrow{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.08em}.offline-tsr-hero-actions{display:flex;gap:8px;flex-wrap:wrap}.offline-tsr-schedule-picker-card{border-left:5px solid #0d6efd}.schedule-picker-selected{border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.schedule-picker-title{font-weight:900;color:#0f172a}.schedule-picker-meta{font-size:.82rem;color:#475569}.standalone-pill{display:inline-flex;align-items:center;background:#e7f5ff;color:#0d6efd;border:1px solid #bfdbfe;border-radius:999px;padding:10px 14px;font-weight:900}.tsr-list-box{border:1px solid #e5e7eb;border-radius:14px;min-height:46px;padding:8px;background:#f8fafc}.tsr-list-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 10px;margin-bottom:6px}.tsr-action-text{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}.tsr-action-controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}.tsr-action-controls .btn{font-weight:800}.tsr-chip-box{display:flex;gap:6px;flex-wrap:wrap}.tsr-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#e7f1ff;border:1px solid #bfdbfe;color:#0d6efd;padding:6px 10px;font-size:.82rem;font-weight:800}.tsr-chip button{border:0;background:transparent;color:#0d6efd;font-weight:900}.tsr-parts-grid{display:grid;grid-template-columns:80px 1fr 1.5fr 70px 1fr;gap:6px;align-items:center}.tsr-parts-header{font-size:.72rem;text-transform:uppercase;font-weight:900;color:#64748b;margin-bottom:6px}.tsr-part-row{margin-bottom:6px}.signature-canvas{display:block;width:100%;height:min(48vh,430px);min-height:340px;border:2px dashed #94a3b8;border-radius:18px;background:#fff;touch-action:none}.schedule-picker-open-btn{text-align:left;justify-content:flex-start;display:flex;align-items:center}.standalone-schedule-card-list{display:grid;gap:10px}.standalone-schedule-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:12px;box-shadow:0 6px 18px rgba(15,23,42,.05);cursor:pointer;transition:.15s ease}.standalone-schedule-card:hover{border-color:#0d6efd;transform:translateY(-1px);box-shadow:0 10px 24px rgba(13,110,253,.12)}.standalone-schedule-card.active{border:2px solid #0d6efd;background:#eff6ff}.standalone-schedule-card-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.standalone-schedule-client{font-weight:900;color:#0f172a}.standalone-schedule-date{font-size:.76rem;font-weight:900;color:#0d6efd;background:#e7f1ff;border:1px solid #bfdbfe;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-date-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.standalone-schedule-date-chip{border:1px solid #bfdbfe;background:#fff;color:#0d6efd;border-radius:999px;padding:6px 10px;font-size:.78rem;font-weight:900;cursor:pointer}.standalone-schedule-date-chip.active,.standalone-schedule-date-chip:hover{background:#0d6efd;color:#fff}.standalone-schedule-count-badge{font-size:.72rem;font-weight:900;color:#475569;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-product{font-size:.88rem;font-weight:800;color:#334155;margin-top:4px}.standalone-schedule-serial{font-size:.8rem;color:#64748b;margin-top:2px}.standalone-schedule-meta{font-size:.78rem;color:#64748b;margin-top:6px}.standalone-schedule-empty{background:#fff;border:1px dashed #cbd5e1;border-radius:16px;padding:22px;text-align:center;color:#64748b;font-weight:800}.tsr-inline-suggestions{border:1px dashed #bfdbfe;background:#f8fbff;border-radius:14px;padding:8px;display:grid;gap:8px;max-height:260px;overflow:auto}.tsr-schedule-locked{background:#f1f5f9!important;color:#475569!important;border-color:#cbd5e1!important;cursor:not-allowed}.tsr-schedule-locked-note{font-size:.76rem;color:#64748b;font-weight:800;margin-top:4px}.tsr-knowledge-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.tsr-knowledge-meta{font-size:.76rem;color:#64748b;font-weight:800;margin-bottom:5px}.tsr-knowledge-text{font-size:.86rem;color:#0f172a;white-space:pre-wrap}.tsr-knowledge-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tsr-knowledge-section-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.04em;margin:2px 0 4px}.tsr-knowledge-quick-header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.76rem;font-weight:900;color:#334155}.tsr-knowledge-quick-context{font-size:.72rem;color:#64748b;font-weight:800}.tsr-knowledge-badges{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}.tsr-knowledge-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:.68rem;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#334155}.tsr-knowledge-badge.primary{border-color:#bfdbfe;background:#e7f1ff;color:#0d6efd}.tsr-knowledge-badge.success{border-color:#bbf7d0;background:#ecfdf5;color:#15803d}.tsr-knowledge-badge.warning{border-color:#fde68a;background:#fffbeb;color:#92400e}.tsr-knowledge-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:12px;text-align:center;color:#64748b;font-weight:800;background:#fff}@media(max-width:768px){.offline-tsr-hero{align-items:stretch;flex-direction:column}.offline-tsr-hero-actions .btn{width:100%}.tsr-list-item{align-items:stretch;flex-direction:column}.tsr-action-controls{justify-content:flex-start}.tsr-action-controls .btn{flex:1 1 auto}.tsr-parts-grid{grid-template-columns:1fr}.tsr-parts-header{display:none}.signature-canvas{height:360px;min-height:320px}}
+.offline-tsr-drafts-card{border-left:5px solid #f59e0b}.standalone-tsr-drafts-list{display:grid;gap:10px}.standalone-tsr-draft-card{border:1px solid #e5e7eb;background:#fff;border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 6px 18px rgba(15,23,42,.05)}.standalone-tsr-draft-card.active{border-color:#0d6efd;background:#eff6ff}.standalone-tsr-draft-title{font-weight:950;color:#0f172a}.standalone-tsr-draft-meta{font-size:.82rem;color:#64748b;font-weight:800;margin-top:3px}.standalone-tsr-draft-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.standalone-tsr-draft-empty{border:1px dashed #cbd5e1;border-radius:16px;padding:16px;text-align:center;color:#64748b;font-weight:800;background:#f8fafc}@media(max-width:768px){.standalone-tsr-draft-card{align-items:stretch;flex-direction:column}.standalone-tsr-draft-actions .btn{flex:1 1 auto}}
 .offline-tsr-connection-banner{border-radius:16px;padding:10px 12px;margin-bottom:12px;font-weight:800;display:flex;align-items:center;gap:8px}.offline-tsr-connection-banner.online{background:#ecfdf5;color:#15803d;border:1px solid #bbf7d0}.offline-tsr-connection-banner.offline{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}.offline-tsr-connection-banner.syncing{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}.offline-tsr-connection-banner.failed{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}.offline-tsr-queue-panel-syncing{border-left:5px solid #0d6efd!important}.offline-tsr-queue-panel-failed{border-left:5px solid #dc3545!important}.offline-tsr-queue-panel-success{border-left:5px solid #198754!important}
 
 /* Offline TSR cleanup helpers */
@@ -561,6 +578,8 @@ let standaloneScheduleQuickFilter = 'week';
 let signatureData = { serviced: '', acknowledged: '' };
 let offlineTSRAttachments = [];
 let onlineTSRRevisionContext = null;
+let standaloneCurrentDraftId = '';
+let standaloneTSRAutosavePaused = false;
 let signatureDrawing = false;
 let signatureCanvas, signatureCtx;
 
@@ -814,36 +833,42 @@ function setStandaloneScheduleLockedFields(locked){
   });
 }
 function initializeBlankStandaloneTSR(){
-  document.querySelectorAll('.tsr-field').forEach(el => {
-    if(el.type === 'hidden') return;
-    el.value = '';
-  });
-  selectedStandaloneScheduleId = '';
-  standaloneDocuments = [];
-  signatureData = { serviced: '', acknowledged: '' };
-  offlineTSRAttachments = [];
-  const attachmentInput = document.getElementById('tsr-attachment-input');
-  if(attachmentInput) attachmentInput.value = '';
-  const actionsList = document.getElementById('tsr-actions-list');
-  if(actionsList) actionsList.innerHTML = '';
-  const partsRows = document.getElementById('tsr-parts-rows');
-  if(partsRows) partsRows.innerHTML = '';
-  const selectedCard = document.getElementById('tsr-selected-schedule-card');
-  if(selectedCard){ selectedCard.classList.add('d-none'); selectedCard.innerHTML = ''; }
-  const select = document.getElementById('tsr-schedule-select');
-  if(select) select.value = '';
-  setStandaloneScheduleLockedFields(false);
-  setFieldValue('tsr-service-date', todayISO(), true);
-  setFieldValue('tsr-department', 'Radiology', true);
-  setFieldValue('tsr-machine-type', 'Medical', true);
-  setFieldValue('tsr-serviced-by', LOGGED_IN_ENGINEER_NAME, true);
-  generateTSRNumber();
-  addTSRPartRow();
-  renderDocs();
-  renderTSRAttachments();
-  updateSignatureStatuses();
-  toggleTSROtherCategory();
-  updateCreateTSRScheduleGate();
+  standaloneTSRAutosavePaused = true;
+  try{
+    standaloneCurrentDraftId = '';
+    document.querySelectorAll('.tsr-field').forEach(el => {
+      if(el.type === 'hidden') return;
+      el.value = '';
+    });
+    selectedStandaloneScheduleId = '';
+    standaloneDocuments = [];
+    signatureData = { serviced: '', acknowledged: '' };
+    offlineTSRAttachments = [];
+    const attachmentInput = document.getElementById('tsr-attachment-input');
+    if(attachmentInput) attachmentInput.value = '';
+    const actionsList = document.getElementById('tsr-actions-list');
+    if(actionsList) actionsList.innerHTML = '';
+    const partsRows = document.getElementById('tsr-parts-rows');
+    if(partsRows) partsRows.innerHTML = '';
+    const selectedCard = document.getElementById('tsr-selected-schedule-card');
+    if(selectedCard){ selectedCard.classList.add('d-none'); selectedCard.innerHTML = ''; }
+    const select = document.getElementById('tsr-schedule-select');
+    if(select) select.value = '';
+    setStandaloneScheduleLockedFields(false);
+    setFieldValue('tsr-service-date', todayISO(), true);
+    setFieldValue('tsr-department', 'Radiology', true);
+    setFieldValue('tsr-machine-type', 'Medical', true);
+    setFieldValue('tsr-serviced-by', LOGGED_IN_ENGINEER_NAME, true);
+    generateTSRNumber();
+    addTSRPartRow();
+    renderDocs();
+    renderTSRAttachments();
+    updateSignatureStatuses();
+    toggleTSROtherCategory();
+    updateCreateTSRScheduleGate();
+  }finally{
+    standaloneTSRAutosavePaused = false;
+  }
 }
 async function clearStandaloneTSRPage(skipConfirm=false){
   if(!skipConfirm){
@@ -860,7 +885,8 @@ async function clearStandaloneTSRPage(skipConfirm=false){
   await clearStandaloneTSRDraftLocally();
   initializeBlankStandaloneTSR();
   resetAllInlineTSRKnowledgeSuggestions();
-  showTSRStatus('TSR page cleared. Saved draft removed from this device.', 'info');
+  renderStandaloneTSRDraftPanel();
+  showTSRStatus('TSR page cleared. Current saved draft removed from this device.', 'info');
 }
 function getScheduleProductLabel(schedule){
   const serial = schedule?.product_id || '';
@@ -1365,7 +1391,10 @@ function applyScheduleComplaintDefault(schedule, overwrite=true){
 function applyScheduleToStandaloneTSR(schedule, overwrite=true){
   if(!schedule) return;
   const nextScheduleId = String(getStandaloneScheduleRuntimeId(schedule));
-  if(String(selectedStandaloneScheduleId || '') !== nextScheduleId) clearStandaloneTSRWorkFieldsForScheduleChange();
+  if(String(selectedStandaloneScheduleId || '') !== nextScheduleId){
+    clearStandaloneTSRWorkFieldsForScheduleChange();
+    standaloneCurrentDraftId = '';
+  }
   selectedStandaloneScheduleId = nextScheduleId;
   setFieldValue('tsr-customer-name', schedule.client_name, overwrite);
   setFieldValue('tsr-address', schedule.client_address, overwrite);
@@ -1395,7 +1424,7 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
   }
   setStandaloneScheduleLockedFields(true);
   updateCreateTSRScheduleGate();
-  saveStandaloneTSRDraft(true);
+  saveStandaloneTSRDraft(true).then(()=>renderStandaloneTSRDraftPanel()).catch(err => console.warn('[Offline TSR] Schedule draft save skipped', err));
   resetAllTSRKnowledgeQuickPicks();
   showTSRStatus('TSR fields auto-filled from selected schedule. Client/equipment fields are locked; start and finish time can be adjusted before saving.');
 }
@@ -2000,9 +2029,11 @@ function collectTSRData(){
     attachments:offlineTSRAttachments,
     parts:getParts(),
     selectedScheduleId:selectedStandaloneScheduleId,
+    schedule_id:selectedSchedule?.id || selectedStandaloneScheduleId || '',
     selectedSchedule:selectedSchedule || null,
     original_schedule_time_start:selectedSchedule?.time_start || '',
     original_schedule_time_end:selectedSchedule?.time_end || '',
+    _draft_id:standaloneCurrentDraftId,
     savedAt:new Date().toISOString()
   };
   document.querySelectorAll('.tsr-field').forEach(el=>data[el.id]=el.value);
@@ -2172,38 +2203,118 @@ async function initializeOfflineTSRDatabaseFoundation(){
    Draft save/load now prefers IndexedDB and keeps localStorage fallback.
    ========================================================= */
 const OFFLINE_TSR_ACTIVE_DRAFT_ID = 'active_standalone_tsr_draft';
+const OFFLINE_TSR_DRAFT_PREFIX = 'standalone_tsr_draft_';
+
+function normalizeStandaloneTSRDraftKey(value){
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || `unscheduled-${Date.now()}`;
+}
+
+function resolveStandaloneTSRDraftId(data){
+  const existing = String(data?._draft_id || data?.draft_id || standaloneCurrentDraftId || '').trim();
+  if(existing) return existing;
+  const scheduleId = data?.schedule_id || data?.selectedSchedule?.id || data?.selectedScheduleId || '';
+  const serviceDate = data?.['tsr-service-date'] || data?.selectedSchedule?.date_iso || todayISO();
+  const tsrNumber = data?.['tsr-number'] || '';
+  const source = [scheduleId || tsrNumber || 'unscheduled', serviceDate].filter(Boolean).join('-');
+  return `${OFFLINE_TSR_DRAFT_PREFIX}${normalizeStandaloneTSRDraftKey(source)}`;
+}
+
+function getStandaloneTSRDraftTitle(data){
+  const client = String(data?.['tsr-customer-name'] || data?.selectedSchedule?.client_name || '').trim();
+  const date = String(data?.['tsr-service-date'] || data?.selectedSchedule?.date_label || data?.selectedSchedule?.date_iso || '').trim();
+  return [client || 'Untitled TSR draft', date].filter(Boolean).join(' - ');
+}
+
+function getStandaloneTSRDraftSubtitle(data){
+  return [
+    data?.['tsr-number'] || '',
+    data?.['tsr-equipment-model'] || data?.selectedSchedule?.product_name || '',
+    data?.['tsr-serial-no'] || data?.selectedSchedule?.product_id || ''
+  ].filter(Boolean).join(' | ') || 'No equipment details yet';
+}
+
+function formatStandaloneTSRDraftTime(value){
+  if(!value) return 'Not saved yet';
+  const date = new Date(value);
+  if(Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString([], { year:'numeric', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
 
 function buildOfflineTSRDraftRecord(data){
   const now = new Date().toISOString();
+  const payload = Object.assign({}, data || {});
+  const id = resolveStandaloneTSRDraftId(payload);
+  payload._draft_id = id;
   return {
-    id: OFFLINE_TSR_ACTIVE_DRAFT_ID,
-    schedule_id: data?.schedule_id || data?.selectedScheduleId || data?.selectedSchedule?.id || '',
-    selected_schedule_id: data?.selectedScheduleId || data?.selectedSchedule?.id || '',
-    payload: data || {},
+    id,
+    schedule_id: payload?.schedule_id || payload?.selectedScheduleId || payload?.selectedSchedule?.id || '',
+    selected_schedule_id: payload?.selectedScheduleId || payload?.selectedSchedule?.id || '',
+    title: getStandaloneTSRDraftTitle(payload),
+    subtitle: getStandaloneTSRDraftSubtitle(payload),
+    service_date: payload?.['tsr-service-date'] || payload?.selectedSchedule?.date_iso || '',
+    client_name: payload?.['tsr-customer-name'] || payload?.selectedSchedule?.client_name || '',
+    tsr_number: payload?.['tsr-number'] || '',
+    payload,
     updated_at: now,
+    created_at: data?.created_at || data?.savedAt || now,
     source: 'offline_tsr_page',
-    phase: '5-step-2-indexeddb-draft-store'
+    phase: 'multi-draft-indexeddb-draft-store'
   };
 }
 
 async function saveStandaloneTSRDraftToIndexedDB(data){
   const record = buildOfflineTSRDraftRecord(data);
   await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, record);
+  standaloneCurrentDraftId = record.id;
   return record;
 }
 
 async function loadStandaloneTSRDraftFromIndexedDB(){
-  const record = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, OFFLINE_TSR_ACTIVE_DRAFT_ID);
-  return record?.payload || null;
+  const record = standaloneCurrentDraftId
+    ? await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, standaloneCurrentDraftId)
+    : await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, OFFLINE_TSR_ACTIVE_DRAFT_ID);
+  if(record?.payload) return Object.assign({}, record.payload, { _draft_id: record.id });
+  const records = await loadStandaloneTSRDraftRecordsFromIndexedDB();
+  const latest = records[0] || null;
+  return latest?.payload ? Object.assign({}, latest.payload, { _draft_id: latest.id }) : null;
 }
 
-async function clearStandaloneTSRDraftFromIndexedDB(){
+async function loadStandaloneTSRDraftRecordsFromIndexedDB(){
+  const records = await offlineTSRDBGetAll(OFFLINE_TSR_DB_STORES.drafts);
+  return records
+    .filter(record => record?.payload)
+    .map(record => {
+      const payload = Object.assign({}, record.payload || {});
+      payload._draft_id = payload._draft_id || record.id;
+      return Object.assign({}, record, { payload });
+    })
+    .sort((a,b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+}
+
+async function loadStandaloneTSRDraftRecordById(id){
+  const record = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, id);
+  if(!record?.payload) return null;
+  const payload = Object.assign({}, record.payload || {}, { _draft_id: record.id });
+  return Object.assign({}, record, { payload });
+}
+
+async function clearStandaloneTSRDraftFromIndexedDB(id=null){
+  const targetId = id || standaloneCurrentDraftId || OFFLINE_TSR_ACTIVE_DRAFT_ID;
   try{
-    await offlineTSRDBDelete(OFFLINE_TSR_DB_STORES.drafts, OFFLINE_TSR_ACTIVE_DRAFT_ID);
+    await offlineTSRDBDelete(OFFLINE_TSR_DB_STORES.drafts, targetId);
   }catch(err){
     console.warn('[Offline TSR DB] Unable to clear IndexedDB TSR draft', err);
   }
-  localStorage.removeItem(STANDALONE_TSR_KEY);
+  const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
+  if(targetId === OFFLINE_TSR_ACTIVE_DRAFT_ID || targetId === standaloneCurrentDraftId || fallback?._draft_id === targetId){
+    localStorage.removeItem(STANDALONE_TSR_KEY);
+  }
+  if(standaloneCurrentDraftId === targetId) standaloneCurrentDraftId = '';
 }
 
 function saveStandaloneTSRDraftToLocalStorageFallback(data){
@@ -2230,29 +2341,35 @@ function applyStandaloneTSRDraftData(data){
     return false;
   }
 
-  document.querySelectorAll('.tsr-field').forEach(el=>{ if(data[el.id]!==undefined) el.value=data[el.id]; });
-  selectedStandaloneScheduleId=data.selectedScheduleId||'';
-  standaloneDocuments=data.documents||[];
-  offlineTSRAttachments=normalizeQueuedAttachments(data.attachments||[]);
-  signatureData=data.signatures||{serviced:'',acknowledged:''};
+  standaloneTSRAutosavePaused = true;
+  try{
+    standaloneCurrentDraftId = String(data._draft_id || data.draft_id || standaloneCurrentDraftId || '').trim();
+    document.querySelectorAll('.tsr-field').forEach(el=>{ if(data[el.id]!==undefined) el.value=data[el.id]; });
+    selectedStandaloneScheduleId=data.selectedScheduleId || data.schedule_id || data.selectedSchedule?.id || '';
+    standaloneDocuments=data.documents||[];
+    offlineTSRAttachments=normalizeQueuedAttachments(data.attachments||[]);
+    signatureData=data.signatures||{serviced:'',acknowledged:''};
 
-  const partsRows = document.getElementById('tsr-parts-rows');
-  if(partsRows) partsRows.innerHTML = '';
-  (data.parts&&data.parts.length?data.parts:[{}]).forEach(addTSRPartRow);
+    const partsRows = document.getElementById('tsr-parts-rows');
+    if(partsRows) partsRows.innerHTML = '';
+    (data.parts&&data.parts.length?data.parts:[{}]).forEach(addTSRPartRow);
 
-  const actionsList = document.getElementById('tsr-actions-list');
-  if(actionsList) actionsList.innerHTML = '';
-  (data['tsr-actions-taken']||'').split('\n').filter(Boolean).forEach(v=>addTSRActionItem(v));
+    const actionsList = document.getElementById('tsr-actions-list');
+    if(actionsList) actionsList.innerHTML = '';
+    (data['tsr-actions-taken']||'').split('\n').filter(Boolean).forEach(v=>addTSRActionItem(v));
 
-  setFieldValue('tsr-department','Radiology',false);
-  setFieldValue('tsr-machine-type','Medical',true);
-  setFieldValue('tsr-serviced-by',LOGGED_IN_ENGINEER_NAME,false);
-  renderDocs();
-  renderTSRAttachments();
-  updateSignatureStatuses();
-  toggleTSROtherCategory();
-  setStandaloneScheduleLockedFields(!!selectedStandaloneScheduleId);
-  updateCreateTSRScheduleGate({ showMessage: !hasStandaloneScheduleSelection() });
+    setFieldValue('tsr-department','Radiology',false);
+    setFieldValue('tsr-machine-type','Medical',true);
+    setFieldValue('tsr-serviced-by',LOGGED_IN_ENGINEER_NAME,false);
+    renderDocs();
+    renderTSRAttachments();
+    updateSignatureStatuses();
+    toggleTSROtherCategory();
+    setStandaloneScheduleLockedFields(!!selectedStandaloneScheduleId);
+    updateCreateTSRScheduleGate({ showMessage: !hasStandaloneScheduleSelection() });
+  }finally{
+    standaloneTSRAutosavePaused = false;
+  }
   return true;
 }
 
@@ -2341,18 +2458,125 @@ async function loadOnlineTSRRevisionFromUrl(){
 
 async function saveStandaloneTSRDraftLocally(data){
   try{
-    await saveStandaloneTSRDraftToIndexedDB(data);
-    saveStandaloneTSRDraftToLocalStorageFallback(data);
-    return 'indexeddb';
+    const record = await saveStandaloneTSRDraftToIndexedDB(data);
+    saveStandaloneTSRDraftToLocalStorageFallback(record.payload || data);
+    return record;
   }catch(err){
     console.warn('[Offline TSR DB] IndexedDB draft save failed. Falling back to localStorage.', err);
-    saveStandaloneTSRDraftToLocalStorageFallback(data);
-    return 'localstorage';
+    const fallbackId = resolveStandaloneTSRDraftId(data);
+    standaloneCurrentDraftId = fallbackId;
+    const payload = Object.assign({}, data || {}, { _draft_id:fallbackId });
+    saveStandaloneTSRDraftToLocalStorageFallback(payload);
+    return { id:fallbackId, payload, source:'localstorage', updated_at:new Date().toISOString() };
   }
 }
 
-async function clearStandaloneTSRDraftLocally(){
-  await clearStandaloneTSRDraftFromIndexedDB();
+async function clearStandaloneTSRDraftLocally(id=null){
+  await clearStandaloneTSRDraftFromIndexedDB(id);
+}
+
+async function getStandaloneTSRDraftRecords(){
+  const records = [];
+  try{
+    records.push(...await loadStandaloneTSRDraftRecordsFromIndexedDB());
+  }catch(err){
+    console.warn('[Offline TSR DB] Unable to read TSR draft list', err);
+  }
+  const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
+  if(fallback && !records.some(record => record.id === OFFLINE_TSR_ACTIVE_DRAFT_ID || record.id === fallback._draft_id)){
+    records.push({
+      id: fallback._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID,
+      payload: Object.assign({}, fallback, { _draft_id: fallback._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID }),
+      title: getStandaloneTSRDraftTitle(fallback),
+      subtitle: getStandaloneTSRDraftSubtitle(fallback),
+      updated_at: fallback.savedAt || '',
+      source: 'localstorage'
+    });
+  }
+  return records.sort((a,b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+}
+
+async function renderStandaloneTSRDraftPanel(){
+  const list = document.getElementById('standalone-tsr-drafts-list');
+  if(!list) return;
+  let records = [];
+  try{
+    records = await getStandaloneTSRDraftRecords();
+  }catch(err){
+    console.warn('[Offline TSR] Unable to render draft panel', err);
+  }
+  if(!records.length){
+    list.innerHTML = '<div class="standalone-tsr-draft-empty">No saved TSR drafts on this device.</div>';
+    return;
+  }
+  list.innerHTML = records.map(record => {
+    const payload = record.payload || {};
+    const title = record.title || getStandaloneTSRDraftTitle(payload);
+    const subtitle = record.subtitle || getStandaloneTSRDraftSubtitle(payload);
+    const updated = formatStandaloneTSRDraftTime(record.updated_at || payload.savedAt);
+    const active = record.id && record.id === standaloneCurrentDraftId;
+    return `<div class="standalone-tsr-draft-card ${active ? 'active' : ''}">
+      <div class="min-w-0">
+        <div class="standalone-tsr-draft-title"><i class="fa-solid fa-file-lines text-warning me-1"></i>${escapeHTML(title)}</div>
+        <div class="standalone-tsr-draft-meta">${escapeHTML(subtitle)}</div>
+        <div class="standalone-tsr-draft-meta">Last saved: ${escapeHTML(updated)}</div>
+      </div>
+      <div class="standalone-tsr-draft-actions">
+        <button class="btn btn-primary btn-sm fw-bold" type="button" onclick="openStandaloneTSRDraft('${escapeAttr(record.id)}')"><i class="fa-solid fa-folder-open me-1"></i>Open</button>
+        <button class="btn btn-outline-danger btn-sm fw-bold" type="button" onclick="deleteStandaloneTSRDraft('${escapeAttr(record.id)}')"><i class="fa-solid fa-trash me-1"></i>Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function openStandaloneTSRDraft(id){
+  let record = null;
+  try{
+    record = await loadStandaloneTSRDraftRecordById(id);
+  }catch(err){
+    console.warn('[Offline TSR] IndexedDB draft open failed', err);
+  }
+  if(!record){
+    const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
+    if(fallback && (id === OFFLINE_TSR_ACTIVE_DRAFT_ID || id === fallback._draft_id)){
+      record = { id, payload: Object.assign({}, fallback, { _draft_id:id }), source:'localstorage' };
+    }
+  }
+  if(!record?.payload){
+    showTSRStatus('This TSR draft could not be found on this device.', 'danger');
+    await renderStandaloneTSRDraftPanel();
+    return;
+  }
+  try{
+    applyStandaloneTSRDraftData(Object.assign({}, record.payload, { _draft_id: record.id }));
+    const draftMessage = hasStandaloneScheduleSelection()
+      ? 'Loaded saved TSR draft from this device.'
+      : 'Loaded saved TSR draft for visibility. Select a schedule first to continue editing or saving.';
+    showTSRStatus(draftMessage, hasStandaloneScheduleSelection() ? 'warning' : 'info');
+    renderStandaloneTSRDraftPanel();
+  }catch(err){
+    console.warn('[Offline TSR] Unable to apply selected TSR draft', err);
+    showTSRStatus('Unable to open this TSR draft. Please try another draft or start a new TSR.', 'danger');
+  }
+}
+
+async function deleteStandaloneTSRDraft(id){
+  const shouldDelete = await offlineTSRConfirm({
+    title: 'Delete TSR Draft?',
+    message: 'Remove this saved TSR draft from this device?',
+    confirmText: 'Delete Draft',
+    cancelText: 'Cancel',
+    tone: 'danger',
+    icon: 'trash'
+  });
+  if(!shouldDelete) return;
+  const deletingCurrent = id === standaloneCurrentDraftId;
+  await clearStandaloneTSRDraftLocally(id);
+  if(deletingCurrent){
+    initializeBlankStandaloneTSR();
+  }
+  await renderStandaloneTSRDraftPanel();
+  showTSRStatus('Saved TSR draft deleted from this device.', 'info');
 }
 
 /* =========================================================
@@ -3855,6 +4079,7 @@ async function submitStandaloneTSRRevisionOnline(data){
 }
 
 async function saveStandaloneTSRDraft(silent=false){
+  if(silent && standaloneTSRAutosavePaused) return;
   if(!hasStandaloneScheduleSelection()){
     if(!silent) updateCreateTSRScheduleGate({ showMessage:true });
     return;
@@ -3886,6 +4111,7 @@ async function saveStandaloneTSRDraft(silent=false){
       showTSRStatus(`Corrected TSR saved as ${revLabel}.${pdfNote}${equipmentNote} Calendar Send Email will use the latest corrected TSR by default.`, 'success');
       setOnlineTSRRevisionContext(null);
       await clearStandaloneTSRDraftLocally();
+      await renderStandaloneTSRDraftPanel();
       return;
     }catch(err){
       if(err?.cancelled){
@@ -3900,11 +4126,11 @@ async function saveStandaloneTSRDraft(silent=false){
   }
 
   if(navigator.onLine){
-    await clearStandaloneTSRDraftLocally();
     if(silent) return;
     try{
       const onlineResult = await submitStandaloneTSROnline(data);
       await saveCurrentTSRKnowledge(true);
+      await clearStandaloneTSRDraftLocally();
       initializeBlankStandaloneTSR();
       resetAllInlineTSRKnowledgeSuggestions();
       const attachedPdfName = onlineResult?.attached_filename || onlineResult?.attached_pdf_name || onlineResult?.original_filename || onlineResult?.pdf_filename || '';
@@ -3923,9 +4149,11 @@ async function saveStandaloneTSRDraft(silent=false){
       }else{
         showTSRStatus(`TSR saved online.${pdfNote}${completedNote}${attachmentNote}${contactNote} Page cleared for the next TSR.`);
       }
+      await renderStandaloneTSRDraftPanel();
     }catch(err){
       console.warn('[Offline TSR] Online TSR save failed', err);
       if(err?.queued){
+        await clearStandaloneTSRDraftLocally();
         initializeBlankStandaloneTSR();
         resetAllInlineTSRKnowledgeSuggestions();
         const queue = readOfflineTSRQueue();
@@ -3935,6 +4163,7 @@ async function saveStandaloneTSRDraft(silent=false){
         showTSRStatus('Unable to save TSR online right now. Draft was kept locally on this device.', 'danger');
       }
       renderOfflineTSRQueuePanel();
+      await renderStandaloneTSRDraftPanel();
     }
     return;
   }
@@ -3954,6 +4183,7 @@ async function saveStandaloneTSRDraft(silent=false){
     showTSRStatus(`Offline TSR queued locally for later sync. Pending offline TSRs: ${queue.length}. Page cleared for the next TSR.`, 'warning');
   }
   renderOfflineTSRQueuePanel();
+  await renderStandaloneTSRDraftPanel();
 }
 async function loadStandaloneTSRDraft(){
   let data = null;
@@ -3998,6 +4228,7 @@ async function saveStandaloneTSRLocalDraft(){
   try{
     const data=collectTSRData();
     await saveStandaloneTSRDraftLocally(data);
+    await renderStandaloneTSRDraftPanel();
     showTSRStatus('Draft saved on this device. You can leave this page and continue later.', 'success');
     if(isOfflineTSRStorageHealthAdmin()) renderOfflineTSRStorageHealth();
   }catch(err){
@@ -4010,7 +4241,12 @@ async function saveStandaloneTSRLocalDraft(){
     }
   }
 }
-async function resetStandaloneTSRForm(){ await clearStandaloneTSRPage(false); }
+async function resetStandaloneTSRForm(){
+  initializeBlankStandaloneTSR();
+  resetAllInlineTSRKnowledgeSuggestions();
+  await renderStandaloneTSRDraftPanel();
+  showTSRStatus('Started a new TSR. Saved drafts remain available below.', 'info');
+}
 function showTSRStatus(msg, variant='success', options={}){
   const el=document.getElementById('standalone-tsr-status');
   if(!el) return;
@@ -4713,9 +4949,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   window.tsrInlineKnowledgeEntries={complaint:[],action:[]};
   resetAllInlineTSRKnowledgeSuggestions();
   runOfflineTSRPhase5MigrationLayer().then(()=>{
-    return clearStandaloneTSRDraftLocally();
-  }).then(()=>{
     initializeBlankStandaloneTSR();
+    return renderStandaloneTSRDraftPanel();
   }).then(()=>{
     return loadOfflineTSRQueueStore();
   }).then(()=>{
