@@ -1735,6 +1735,22 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 
 .timeline-grid-table {
     min-width: 1180px;
+    table-layout: fixed;
+    width: max-content;
+}
+
+.timeline-grid-table th:first-child,
+.timeline-grid-table td:first-child {
+    width: 220px;
+    min-width: 220px;
+    max-width: 220px;
+}
+
+.timeline-grid-table th:not(:first-child),
+.timeline-grid-table td:not(:first-child) {
+    width: 170px;
+    min-width: 170px;
+    max-width: 170px;
 }
 
 .timeline-scroll-hint {
@@ -1814,26 +1830,35 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 
 /* S11H1C polish — cleaner Travel Block display + conflict warning */
 .schedule-travel-destination {
-    display: block;
+    display: -webkit-box;
     color: #5b21b6;
     font-size: 0.78rem;
     font-weight: 950;
     line-height: 1.18;
     margin-bottom: 0.16rem;
-    white-space: nowrap;
+    white-space: normal;
     overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
 }
 
 .schedule-travel-reference {
+    display: -webkit-box;
     color: #6d28d9;
     font-size: 0.6rem;
     font-weight: 750;
     line-height: 1.15;
     opacity: 0.86;
-    white-space: nowrap;
+    white-space: normal;
     overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
 }
 
 .schedule-travel-conflict-warning {
@@ -12335,15 +12360,21 @@ async function loadGrid() {
 
         const headerRow = document.getElementById('grid-header');
         const gridBody = document.getElementById('grid-body');
+        const mainGridTable = document.getElementById('main-grid-table');
+        if(mainGridTable){
+            const timelineTableWidth = 220 + ((data.days || []).length * 170);
+            mainGridTable.style.width = `${timelineTableWidth}px`;
+            mainGridTable.style.minWidth = `${timelineTableWidth}px`;
+        }
 
         // Reset and generate date slot headers with a single DOM write.
         const headerCells = [
-            '<th style="min-width: 200px; position: sticky; left: 0; z-index: 12; background: #212529; color: white; border-right: 2px solid #444;">Engineer Name</th>'
+            '<th style="width: 220px; min-width: 220px; max-width: 220px; position: sticky; left: 0; z-index: 12; background: #212529; color: white; border-right: 2px solid #444;">Engineer Name</th>'
         ];
 
         data.days.forEach(function(day) {
             headerCells.push(`
-                <th class="text-center" style="min-width: 140px;">
+                <th class="text-center" style="width: 170px; min-width: 170px; max-width: 170px;">
                     <span class="d-block text-uppercase small">${day.display_day}</span>
                     <small class="text-info">${day.display_date}</small>
                 </th>`);
@@ -12604,7 +12635,7 @@ async function loadGrid() {
 
                     rowHtml += `
                         <td class="p-1 calendar-drop-cell ${canStartInThisCell ? '' : 'auth-readonly-cell'} ${workloadCellClass}"
-                            style="min-height: 100px; cursor:${canStartInThisCell ? 'cell' : 'not-allowed'};"
+                            style="width:170px; min-width:170px; max-width:170px; min-height: 100px; cursor:${canStartInThisCell ? 'cell' : 'not-allowed'};"
                             data-cell-click="${canStartInThisCell ? '1' : '0'}"
                             data-args="${eng.id}, '${day.iso}', '${eng.name}'"
                             data-drop-engineer-id="${eng.id}"
@@ -17043,6 +17074,8 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
     overflow: hidden;
     cursor: default;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .schedule-card:hover,
@@ -17089,6 +17122,8 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    overflow-wrap: anywhere;
+    word-break: normal;
 }
 
 .schedule-client {
@@ -17100,6 +17135,8 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    overflow-wrap: anywhere;
+    word-break: normal;
 }
 
 .schedule-product {
@@ -17110,6 +17147,7 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
 }
 
 .schedule-footer {
