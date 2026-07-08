@@ -50,11 +50,11 @@
             <table class="table table-hover align-middle">
                 <thead class="table-dark">
                     <tr>
-                        <th>Name</th>
-                        <th>Address</th>
-                        <th>Main Contact</th>
-                        <th>Designation</th>
-                        <th>Phone</th>
+                        <th><button type="button" class="client-sort-btn" data-sort-key="name" onclick="setClientSort('name')">Name <span class="client-sort-indicator" data-sort-indicator="name">↕</span></button></th>
+                        <th><button type="button" class="client-sort-btn" data-sort-key="address" onclick="setClientSort('address')">Address <span class="client-sort-indicator" data-sort-indicator="address">↕</span></button></th>
+                        <th><button type="button" class="client-sort-btn" data-sort-key="contact" onclick="setClientSort('contact')">Main Contact <span class="client-sort-indicator" data-sort-indicator="contact">↕</span></button></th>
+                        <th><button type="button" class="client-sort-btn" data-sort-key="designation" onclick="setClientSort('designation')">Designation <span class="client-sort-indicator" data-sort-indicator="designation">↕</span></button></th>
+                        <th><button type="button" class="client-sort-btn" data-sort-key="phone" onclick="setClientSort('phone')">Phone <span class="client-sort-indicator" data-sort-indicator="phone">↕</span></button></th>
                         <th class="no-print text-end">Actions</th>
                     </tr>
                 </thead>
@@ -255,6 +255,9 @@ function clientConfirmDialog(options={}){
 }
 
 let clientModalInstance, viewModalInstance, clientsData = [], clientSummary = { total_clients: 0, total_contacts: 0, clients_with_contacts: 0 };
+let clientSortState = { key: '', direction: 'asc' };
+const CLIENT_SORT_STORAGE_KEY = 'medicalServiceClientSortV1';
+const CLIENT_SORT_KEYS = ['name', 'address', 'contact', 'designation', 'phone'];
 
 let autoTimer;
 
@@ -505,6 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clientModalInstance = new bootstrap.Modal(document.getElementById('clientModal')); 
     viewModalInstance = new bootstrap.Modal(document.getElementById('viewModal')); 
     productViewModal = new bootstrap.Modal(document.getElementById('productViewModal'));
+    restoreClientSortPreference();
     loadClients(); 
 });
 
@@ -787,7 +791,7 @@ async function loadClients(options = {}) {
         restoreClientFilters(filters);
         applyFilters();
     }else{
-        renderTable(clientsData);
+        renderTable(sortClientRows(clientsData));
     }
 }
 
@@ -814,6 +818,97 @@ function getPrimaryClientContact(c){
         i++;
     }
     return { name: '', designation: '', phone: '', email: '' };
+}
+
+function getClientSortValue(client, key){
+    const contact = getPrimaryClientContact(client);
+    const values = {
+        name: client.name || '',
+        address: client.address || '',
+        contact: contact.name || '',
+        designation: contact.designation || '',
+        phone: contact.phone || ''
+    };
+    return values[key] || '';
+}
+
+function compareClientValues(a, b, key, direction){
+    const dir = direction === 'desc' ? -1 : 1;
+    const aValue = getClientSortValue(a, key);
+    const bValue = getClientSortValue(b, key);
+    const aEmpty = !String(aValue || '').trim();
+    const bEmpty = !String(bValue || '').trim();
+
+    if(aEmpty && bEmpty) return 0;
+    if(aEmpty) return 1;
+    if(bEmpty) return -1;
+
+    return String(aValue).localeCompare(String(bValue), undefined, {
+        sensitivity: 'base',
+        numeric: true
+    }) * dir;
+}
+
+function sortClientRows(data){
+    if(!clientSortState.key) return [...data];
+    return [...data].sort((a, b) => compareClientValues(a, b, clientSortState.key, clientSortState.direction));
+}
+
+function restoreClientSortPreference(){
+    try{
+        const saved = JSON.parse(localStorage.getItem(CLIENT_SORT_STORAGE_KEY) || '{}');
+        const key = String(saved.key || '');
+        const direction = saved.direction === 'desc' ? 'desc' : 'asc';
+        if(CLIENT_SORT_KEYS.includes(key)){
+            clientSortState = { key, direction };
+        }
+    }catch(err){
+        clientSortState = { key: '', direction: 'asc' };
+    }
+}
+
+function saveClientSortPreference(){
+    try{
+        if(!clientSortState.key){
+            localStorage.removeItem(CLIENT_SORT_STORAGE_KEY);
+            return;
+        }
+        localStorage.setItem(CLIENT_SORT_STORAGE_KEY, JSON.stringify(clientSortState));
+    }catch(err){
+        console.warn('[Clients] Unable to save sort preference', err);
+    }
+}
+
+function updateClientSortIndicators(){
+    document.querySelectorAll('.client-sort-btn').forEach(btn => {
+        const key = btn.dataset.sortKey || '';
+        const active = key && key === clientSortState.key;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-sort', active ? (clientSortState.direction === 'desc' ? 'descending' : 'ascending') : 'none');
+    });
+
+    document.querySelectorAll('[data-sort-indicator]').forEach(indicator => {
+        const key = indicator.dataset.sortIndicator || '';
+        if(key !== clientSortState.key){
+            indicator.textContent = '↕';
+            indicator.setAttribute('aria-label', 'Not sorted');
+            return;
+        }
+        const descending = clientSortState.direction === 'desc';
+        indicator.textContent = descending ? 'Z-A' : 'A-Z';
+        indicator.setAttribute('aria-label', descending ? 'Sorted descending' : 'Sorted ascending');
+    });
+}
+
+function setClientSort(key){
+    if(!CLIENT_SORT_KEYS.includes(key)) return;
+    if(clientSortState.key === key){
+        clientSortState.direction = clientSortState.direction === 'asc' ? 'desc' : 'asc';
+    }else{
+        clientSortState = { key, direction: 'asc' };
+    }
+    saveClientSortPreference();
+    applyFilters();
 }
 
 function getClientContactSummary(c){
@@ -937,6 +1032,7 @@ function updateClientCountFooter(filteredData){
 function renderTable(data) {
     const body = document.getElementById('client-table-body'); 
     body.innerHTML = "";
+    updateClientSortIndicators();
     updateClientCountFooter(data);
     renderClientMobileCards(data);
 
@@ -1158,7 +1254,7 @@ function applyFilters(){
         return nameMatch && addrMatch && designationMatch;
     });
 
-    renderTable(filtered);
+    renderTable(sortClientRows(filtered));
 }
 </script>
 
@@ -1337,6 +1433,49 @@ function applyFilters(){
         padding: 6px 10px;
         font-size: 0.78rem;
         font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .client-sort-btn {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 800;
+        text-align: left;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .client-sort-btn:hover,
+    .client-sort-btn:focus {
+        color: #bbf7d0;
+        outline: none;
+    }
+
+    .client-sort-btn:focus-visible {
+        outline: 2px solid rgba(187, 247, 208, 0.85);
+        outline-offset: 3px;
+        border-radius: 4px;
+    }
+
+    .client-sort-btn.active {
+        color: #86efac;
+    }
+
+    .client-sort-indicator {
+        min-width: 2.8rem;
+        border-radius: 999px;
+        padding: 0.1rem 0.35rem;
+        background: rgba(255, 255, 255, 0.12);
+        color: inherit;
+        font-size: 0.64rem;
+        font-weight: 900;
+        line-height: 1.25;
+        text-align: center;
         white-space: nowrap;
     }
 
