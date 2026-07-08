@@ -9541,6 +9541,17 @@ def mark_existing_online_tsr_submissions_superseded(shift_id, exclude_submission
     return count
 
 
+def online_tsr_has_serviced_signature(payload):
+    """Return True when a Create TSR payload includes the engineer signature."""
+    if not isinstance(payload, dict):
+        return False
+    signatures = payload.get('signatures')
+    if not isinstance(signatures, dict):
+        return False
+    signature_value = clean_str(signatures.get('serviced')) or ''
+    return signature_value.startswith('data:image/') and ',' in signature_value
+
+
 @app.route('/save_offline_tsr_online', methods=['POST'])
 @csrf.exempt
 @login_required
@@ -9603,6 +9614,12 @@ def save_offline_tsr_online():
 
     if not can_work_on_existing_schedule_shift(shift):
         return denied('You are not allowed to save a TSR for this schedule.')
+
+    if not online_tsr_has_serviced_signature(payload):
+        return jsonify({
+            'status': 'error',
+            'message': 'Serviced By signature is required before saving the TSR.'
+        }), 400
 
     submitted_tsr_number = (clean_str(payload.get('tsr-number')) or clean_str(payload.get('tsr_number')) or '')[:120]
     preserve_uploaded_pdf = str(payload.get('_offline_queue_preserve_pdf') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
@@ -9850,6 +9867,12 @@ def revise_online_tsr_submission(submission_id):
     for filename_key in ('pdf_filename', 'download_filename', 'tsr_pdf_filename'):
         if request.form.get(filename_key) and not payload.get(filename_key):
             payload[filename_key] = request.form.get(filename_key)
+
+    if not online_tsr_has_serviced_signature(payload):
+        return jsonify({
+            'status': 'error',
+            'message': 'Serviced By signature is required before saving the corrected TSR.'
+        }), 400
 
     revision_reason = (
         clean_str(payload.get('revision_reason')) or
