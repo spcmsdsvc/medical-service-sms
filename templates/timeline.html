@@ -16810,49 +16810,7 @@ function openOfflineTSRDraftFromShiftModal(){
 }
 
 function openOfflineTSRDraftModal(shiftPayload, engineerId, dayIso){
-    const shift = normalizeOfflineTSRShiftPayload(shiftPayload);
-    if(!shift || !shift.id){
-        timelineAlert('Offline TSR form is only available for saved schedule cards.');
-        return;
-    }
-
-    currentOfflineTSRDraftShift = shift;
-
-    setOfflineTSRValue('offline-tsr-shift-id', shift.id);
-    setOfflineTSRValue('offline-tsr-engineer-id', engineerId || '');
-    setOfflineTSRValue('offline-tsr-day-iso', dayIso || shift.start_date || '');
-
-    const titleEl = document.getElementById('offline-tsr-context-title');
-    const subtitleEl = document.getElementById('offline-tsr-context-subtitle');
-    if(titleEl){
-        titleEl.innerText = shift.task || shift.title || 'Service Schedule';
-    }
-    if(subtitleEl){
-        subtitleEl.innerText = getOfflineTSRContextLabel(shift, dayIso);
-    }
-
-    const draft = getOfflineTSRDraft(shift.id);
-    const legacy = getOfflineTSRLegacyDraft(shift.id);
-    const fields = draft?.fields || migrateLegacyOfflineTSRDraft(legacy, shift, engineerId, dayIso);
-
-    OFFLINE_TSR_FIELD_IDS.forEach(id => setOfflineTSRFieldValue(id, fields[id]));
-    applyOfflineTSRServiceCategory(fields['offline-tsr-service-category-select'] || '');
-    renderOfflineTSRSelectedDocuments();
-    if(!fields['offline-tsr-draft-status']) setOfflineTSRFieldValue('offline-tsr-draft-status', 'Draft');
-    renderOfflineTSRActionsList(fields['offline-tsr-actions-taken'] || '');
-    bindOfflineTSRSignaturePad('serviced');
-    bindOfflineTSRSignaturePad('ack');
-    setTimeout(() => {
-        restoreOfflineTSRSignature('serviced', fields['offline-tsr-serviced-signature'] || '');
-        restoreOfflineTSRSignature('ack', fields['offline-tsr-ack-signature'] || '');
-    }, 150);
-
-    updateOfflineTSRSaveNote(draft || legacy);
-    bindOfflineTSRAutosaveFields();
-
-    const modalEl = document.getElementById('offlineTSRDraftModal');
-    if(!modalEl) return;
-    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    redirectToCreateTSRPageFromSchedule(shiftPayload, engineerId, dayIso);
 }
 
 function buildOfflineTSRDraftPayload(){

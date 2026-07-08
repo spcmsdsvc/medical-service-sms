@@ -1302,12 +1302,39 @@ async function refreshStandaloneScheduleOptions(manual=false){
   }
 }
 function clearStandaloneTSRWorkFieldsForScheduleChange(){
-  ['tsr-complaint','tsr-action-input','tsr-actions-taken','tsr-remarks'].forEach(id => {
+  [
+    'tsr-requested-by',
+    'tsr-service-category',
+    'tsr-service-category-other',
+    'tsr-complaint',
+    'tsr-action-input',
+    'tsr-actions-taken',
+    'tsr-remarks',
+    'tsr-acknowledged-by',
+    'tsr-contact-no',
+    'tsr-email-add',
+    'tsr-billing-statement',
+    'tsr-sales-invoice',
+    'tsr-purchase-order',
+    'tsr-parts-table'
+  ].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.value = '';
   });
+  standaloneDocuments = [];
+  signatureData = { serviced: '', acknowledged: '' };
+  offlineTSRAttachments = [];
   const actionsList = document.getElementById('tsr-actions-list');
   if(actionsList) actionsList.innerHTML = '';
+  const partsRows = document.getElementById('tsr-parts-rows');
+  if(partsRows) partsRows.innerHTML = '';
+  const attachmentInput = document.getElementById('tsr-attachment-input');
+  if(attachmentInput) attachmentInput.value = '';
+  addTSRPartRow();
+  renderDocs();
+  renderTSRAttachments();
+  renderTSRServiceCategoryPicker();
+  updateSignatureStatuses();
   resetAllInlineTSRKnowledgeSuggestions();
 }
 function buildComplaintFromSelectedSchedule(schedule){
@@ -4686,7 +4713,9 @@ document.addEventListener('DOMContentLoaded',()=>{
   window.tsrInlineKnowledgeEntries={complaint:[],action:[]};
   resetAllInlineTSRKnowledgeSuggestions();
   runOfflineTSRPhase5MigrationLayer().then(()=>{
-    return loadStandaloneTSRDraft();
+    return clearStandaloneTSRDraftLocally();
+  }).then(()=>{
+    initializeBlankStandaloneTSR();
   }).then(()=>{
     return loadOfflineTSRQueueStore();
   }).then(()=>{
