@@ -792,12 +792,24 @@ function setScheduleGateDisabled(el, disabled){
   el.classList.remove('tsr-schedule-required-disabled');
   el.removeAttribute('aria-disabled');
 }
+function ensureTSRDepartmentEditable(){
+  const el = document.getElementById('tsr-department');
+  if(!el) return;
+  if(!String(el.value || '').trim()) el.value = 'Radiology';
+  el.disabled = false;
+  el.readOnly = false;
+  el.removeAttribute('aria-disabled');
+  el.removeAttribute('aria-readonly');
+  el.classList.remove('tsr-schedule-required-disabled', 'tsr-schedule-locked');
+  el.title = 'Default is Radiology, but this can be edited when needed.';
+}
 function updateCreateTSRScheduleGate(options={}){
   const hasSchedule = hasStandaloneScheduleSelection();
   const controls = getCreateTSRGatedControls();
   if(hasSchedule){
     controls.forEach(el => setScheduleGateDisabled(el, false));
     setStandaloneScheduleLockedFields(true);
+    ensureTSRDepartmentEditable();
   }else{
     setStandaloneScheduleLockedFields(false);
     controls.forEach(el => setScheduleGateDisabled(el, true));
