@@ -3616,12 +3616,12 @@ function dataURLToBlob(dataUrl){
 
 async function buildStandaloneTSRPDFBlobForUpload(data){
   const target = document.getElementById('tsr-print-preview-content');
-  if(target) target.innerHTML = buildTSRPrintHTML(data || collectTSRData());
-  const canvas = await renderTSRPrintSheetToCanvas();
-  const jpegDataURL = canvas.toDataURL('image/jpeg', 0.99);
-  const filename = buildTSRPDFFilename(data || collectTSRData());
-  const blob = makeSingleImagePDFBlob(jpegDataURL, canvas.width, canvas.height, filename.replace(/\.pdf$/i,''));
-  return { blob, filename };
+  const payload = data || collectTSRData();
+  if(target) target.innerHTML = buildTSRPrintHTML(payload);
+  const canvases = await renderTSRPrintSheetCanvases(payload);
+  const filename = buildTSRPDFFilename(payload);
+  const blob = makeImagePDFBlob(canvases, filename.replace(/\.pdf$/i,''));
+  return { blob, filename, page_count: canvases.length };
 }
 
 async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline'){
@@ -4595,9 +4595,13 @@ function drawActionsTakenBox(ctx, value, x, y, w, h, fontSize=18){
 
   ctx.font = `bold ${fontSize}px Arial`;
   const wrappedLines = wrapCanvasTextLines(ctx, value, colW);
-  const firstColumn = wrappedLines.slice(0, maxLinesPerColumn);
-  const secondColumn = wrappedLines.slice(maxLinesPerColumn, maxLinesPerColumn * 2);
-  const overflowCount = Math.max(0, wrappedLines.length - (maxLinesPerColumn * 2));
+  const fullCapacity = maxLinesPerColumn * 2;
+  const hasOverflow = wrappedLines.length > fullCapacity;
+  const visibleCapacity = hasOverflow ? Math.max(1, fullCapacity - 1) : fullCapacity;
+  const visibleLines = wrappedLines.slice(0, visibleCapacity);
+  const overflowLines = wrappedLines.slice(visibleCapacity);
+  const firstColumn = visibleLines.slice(0, maxLinesPerColumn);
+  const secondColumn = visibleLines.slice(maxLinesPerColumn, visibleCapacity);
 
   firstColumn.forEach((line, idx) => ctx.fillText(line, x + padding, contentY + (idx * lineHeight)));
 
@@ -4613,13 +4617,13 @@ function drawActionsTakenBox(ctx, value, x, y, w, h, fontSize=18){
 
   secondColumn.forEach((line, idx) => ctx.fillText(line, x + padding + colW + gutter, contentY + (idx * lineHeight)));
 
-  if(overflowCount){
+  if(overflowLines.length){
     ctx.font = `bold ${Math.max(13, fontSize - 3)}px Arial`;
-    ctx.fillText(`Continued in notes / additional attachment (${overflowCount} more line${overflowCount === 1 ? '' : 's'})`, x + padding + colW + gutter, y + h - 12);
+    ctx.fillText(`Actions Taken continued on next page (${overflowLines.length} more line${overflowLines.length === 1 ? '' : 's'})`, x + padding + colW + gutter, y + h - 12);
   }
+  return { wrappedLines, overflowLines, visibleLines, maxLinesPerColumn, lineHeight, colW };
 }
-async function renderTSRPrintSheetToCanvas(){
-  const data = collectTSRData();
+function createTSRCanvas(){
   const canvas = document.createElement('canvas');
   canvas.width = 1488;
   canvas.height = 2105;
@@ -4630,11 +4634,9 @@ async function renderTSRPrintSheetToCanvas(){
   ctx.strokeStyle = '#111111';
   ctx.lineWidth = 1.4;
   ctx.textBaseline = 'alphabetic';
-
-  const margin = 60;
-  const pageW = canvas.width - margin * 2;
-  let y = 58;
-
+  return { canvas, ctx };
+}
+async function drawTSRCanvasHeader(ctx, data, margin, pageW, y=58){
   const logo = await loadImageForCanvas(TSR_PRINT_LOGO_DATA_URI);
   if(logo){
     const logoW = 470;
@@ -4648,13 +4650,11 @@ async function renderTSRPrintSheetToCanvas(){
   }
 
   ctx.font = '16px Arial';
-  // STEP 6B6: push address/contact below the full logo block so it never overlaps the header image.
   ctx.fillText('19F Marajo Tower, 26th St. cor. 4th Ave., BGC, Taguig City 1634 Metro Manila', margin, y + 126);
   ctx.fillText('(632) 8 869-9563 / (0917) 897-2057     (632) 8 519-9285     spcmanila@shimadzu.com.ph', margin, y + 148);
 
   ctx.font = 'bold 18px Arial';
   ctx.fillText('No.', margin + pageW - 300, y + 22);
-  ctx.font = 'bold 18px Arial';
   ctx.fillText(String(data['tsr-number'] || ''), margin + pageW - 250, y + 22);
   ctx.beginPath();
   ctx.moveTo(margin + pageW - 255, y + 29);
@@ -4665,8 +4665,52 @@ async function renderTSRPrintSheetToCanvas(){
   canvasCheckbox(ctx, margin + pageW - 300, y + 78, 'Medical', true, {fontSize:15, box:15});
   canvasCheckbox(ctx, margin + pageW - 300, y + 101, 'Testing Machine/Big Range', false, {fontSize:15, box:15});
   canvasCheckbox(ctx, margin + pageW - 300, y + 124, 'Balance', false, {fontSize:15, box:15});
+  return y + 188;
+}
+async function drawTSRSignatureFooter(ctx, data, margin, pageW, y){
+  y += 20;
+  ctx.beginPath(); ctx.moveTo(margin, y); ctx.lineTo(margin + pageW, y); ctx.stroke();
+  y += 27;
+  ctx.font = 'bold 16px Arial';
+  ctx.fillText('SERVICED BY:', margin + 65, y);
+  ctx.fillText('ACKNOWLEDGED BY:', margin + pageW/2 + 65, y);
+  const sigY = y + 12;
+  const sigW = 360;
+  const sigH = 68;
+  const servicedSig = data.signatures && data.signatures.serviced ? await loadImageForCanvas(data.signatures.serviced) : null;
+  const ackSig = data.signatures && data.signatures.acknowledged ? await loadImageForCanvas(data.signatures.acknowledged) : null;
+  if(servicedSig) ctx.drawImage(servicedSig, margin + 105, sigY, 250, sigH);
+  if(ackSig) ctx.drawImage(ackSig, margin + pageW/2 + 105, sigY, 250, sigH);
+  ctx.beginPath();
+  ctx.moveTo(margin + 60, sigY + sigH); ctx.lineTo(margin + 60 + sigW, sigY + sigH);
+  ctx.moveTo(margin + pageW/2 + 60, sigY + sigH); ctx.lineTo(margin + pageW/2 + 60 + sigW, sigY + sigH);
+  ctx.stroke();
+  ctx.font = 'bold 18px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText((data['tsr-serviced-by'] || 'NAME & SIGNATURE').toUpperCase(), margin + 60 + sigW/2, sigY + sigH + 22);
+  ctx.fillText((data['tsr-acknowledged-by'] || 'NAME & SIGNATURE').toUpperCase(), margin + pageW/2 + 60 + sigW/2, sigY + sigH + 22);
+  ctx.textAlign = 'left';
+  y = sigY + sigH + 52;
 
-  y += 188;
+  ctx.font = 'bold 15px Arial';
+  const acknowledgedContactX = margin + pageW/2 + 60;
+  ctx.fillText(`CONTACT NO: ${data['tsr-contact-no'] || ''}`, acknowledgedContactX, y);
+  y += 22;
+  ctx.fillText(`EMAIL ADD: ${data['tsr-email-add'] || ''}`, acknowledgedContactX, y);
+  y += 28;
+  ctx.beginPath(); ctx.moveTo(margin, y); ctx.lineTo(margin + pageW, y); ctx.stroke();
+  y += 18;
+  ctx.font = 'bold 11px Arial';
+  ctx.fillText('SPC Service TSR 004-2020', margin, y);
+  return y;
+}
+async function renderTSRPrintSheetCanvases(dataOverride=null){
+  const data = dataOverride || collectTSRData();
+  const { canvas, ctx } = createTSRCanvas();
+  const margin = 60;
+  const pageW = canvas.width - margin * 2;
+  let y = await drawTSRCanvasHeader(ctx, data, margin, pageW, 58);
+
   ctx.beginPath(); ctx.moveTo(margin, y); ctx.lineTo(margin + pageW, y); ctx.stroke();
   y += 32;
   ctx.font = 'bold 28px Arial';
@@ -4703,8 +4747,14 @@ async function renderTSRPrintSheetToCanvas(){
 
   drawMultilineBox(ctx, 'COMPLAINT', data['tsr-complaint'], margin, y, pageW, 88, 19);
   y += 88;
-  drawActionsTakenBox(ctx, data['tsr-actions-taken'], margin, y, pageW, 320, 18);
-  y += 320;
+
+  const parts = (Array.isArray(data.parts) ? data.parts : []).filter(p => p && Object.values(p).some(Boolean));
+  const visiblePartRows = Math.max(2, Math.min(5, parts.length || 2));
+  const reserveAfterActions = 88 + 140 + (64 + visiblePartRows * 38) + 80 + 247;
+  const actionsHeight = Math.max(420, Math.min(700, canvas.height - y - reserveAfterActions - 40));
+  const actionsResult = drawActionsTakenBox(ctx, data['tsr-actions-taken'], margin, y, pageW, actionsHeight, 18);
+  y += actionsHeight;
+
   drawMultilineBox(ctx, 'REMARKS/RECOMMENDATIONS', data['tsr-remarks'], margin, y, pageW, 88, 19);
   y += 88;
 
@@ -4728,8 +4778,7 @@ async function renderTSRPrintSheetToCanvas(){
   ctx.font = 'bold 15px Arial';
   headers.forEach((h, i) => { ctx.strokeRect(x, y, cols[i], 32); ctx.fillText(h, x + 9, y + 22); x += cols[i]; });
   y += 32;
-  const parts = (Array.isArray(data.parts) ? data.parts : []).filter(p => p && Object.values(p).some(Boolean));
-  for(let r=0; r<5; r++){
+  for(let r=0; r<visiblePartRows; r++){
     const p = parts[r] || {};
     const vals = [p.item || '', p.number || '', p.description || '', p.qty || '', p.dr || ''];
     x = margin;
@@ -4738,8 +4787,6 @@ async function renderTSRPrintSheetToCanvas(){
     y += 38;
   }
 
-  // STEP 6B5: service and billing information are now one clean table.
-  // Purchase Order stays inside the table and no longer floats outside.
   const serviceCols = [220, 190, 190, 390, pageW - 220 - 190 - 190 - 390];
   const serviceHeaders = ['DATE OF SERVICE','TIME STARTED','TIME FINISHED','BILLING STATEMENT / SALES INVOICE','PURCHASE ORDER (P.O.)'];
   const billingValue = [data['tsr-billing-statement'], data['tsr-sales-invoice']].filter(Boolean).join(' / ');
@@ -4761,44 +4808,76 @@ async function renderTSRPrintSheetToCanvas(){
   });
   y += 46;
 
-  y += 20;
-  ctx.beginPath(); ctx.moveTo(margin, y); ctx.lineTo(margin + pageW, y); ctx.stroke();
-  y += 27;
-  ctx.font = 'bold 16px Arial';
-  ctx.fillText('SERVICED BY:', margin + 65, y);
-  ctx.fillText('ACKNOWLEDGED BY:', margin + pageW/2 + 65, y);
-  const sigY = y + 12;
-  const sigW = 360;
-  const sigH = 68;
-  const servicedSig = data.signatures && data.signatures.serviced ? await loadImageForCanvas(data.signatures.serviced) : null;
-  const ackSig = data.signatures && data.signatures.acknowledged ? await loadImageForCanvas(data.signatures.acknowledged) : null;
-  if(servicedSig) ctx.drawImage(servicedSig, margin + 105, sigY, 250, sigH);
-  if(ackSig) ctx.drawImage(ackSig, margin + pageW/2 + 105, sigY, 250, sigH);
-  ctx.beginPath();
-  ctx.moveTo(margin + 60, sigY + sigH); ctx.lineTo(margin + 60 + sigW, sigY + sigH);
-  ctx.moveTo(margin + pageW/2 + 60, sigY + sigH); ctx.lineTo(margin + pageW/2 + 60 + sigW, sigY + sigH);
-  ctx.stroke();
-  ctx.font = 'bold 18px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText((data['tsr-serviced-by'] || 'NAME & SIGNATURE').toUpperCase(), margin + 60 + sigW/2, sigY + sigH + 22);
-  ctx.fillText((data['tsr-acknowledged-by'] || 'NAME & SIGNATURE').toUpperCase(), margin + pageW/2 + 60 + sigW/2, sigY + sigH + 22);
-  ctx.textAlign = 'left';
-  y = sigY + sigH + 52;
+  await drawTSRSignatureFooter(ctx, data, margin, pageW, y);
+  const continuationCanvases = await renderTSRContinuationCanvases(data, actionsResult.overflowLines || []);
+  return [canvas, ...continuationCanvases];
+}
+async function renderTSRPrintSheetToCanvas(){
+  const canvases = await renderTSRPrintSheetCanvases();
+  return canvases[0];
+}
+async function renderTSRContinuationCanvases(data, lines){
+  const remaining = Array.isArray(lines) ? lines.slice() : [];
+  const pages = [];
+  let pageNo = 2;
+  while(remaining.length){
+    const { canvas, ctx } = createTSRCanvas();
+    const margin = 60;
+    const pageW = canvas.width - margin * 2;
+    let y = await drawTSRCanvasHeader(ctx, data, margin, pageW, 58);
+    ctx.beginPath(); ctx.moveTo(margin, y); ctx.lineTo(margin + pageW, y); ctx.stroke();
+    y += 32;
+    ctx.font = 'bold 28px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('TSR CONTINUATION PAGE', margin + pageW/2, y);
+    y += 30;
+    ctx.font = 'bold 18px Arial';
+    ctx.fillText(`Actions Taken Continued - Page ${pageNo}`, margin + pageW/2, y);
+    ctx.textAlign = 'left';
+    y += 24;
 
-  ctx.font = 'bold 15px Arial';
-  ctx.textAlign = 'left';
-  const acknowledgedContactX = margin + pageW/2 + 60;
-  ctx.fillText(`CONTACT NO: ${data['tsr-contact-no'] || ''}`, acknowledgedContactX, y);
-  y += 22;
-  ctx.fillText(`EMAIL ADD: ${data['tsr-email-add'] || ''}`, acknowledgedContactX, y);
-  ctx.textAlign = 'left';
-  y += 28;
-  ctx.beginPath(); ctx.moveTo(margin, y); ctx.lineTo(margin + pageW, y); ctx.stroke();
-  y += 18;
-  ctx.font = 'bold 11px Arial';
-  ctx.fillText('SPC Service TSR 004-2020', margin, y);
+    const summaryCols = [150, 360, 150, pageW - 660];
+    const summaryRows = [
+      ['TSR NO.', data['tsr-number'] || '', 'CUSTOMER', data['tsr-customer-name'] || ''],
+      ['SERVICE DATE', data['tsr-service-date'] || '', 'EQUIPMENT', [data['tsr-equipment-model'], data['tsr-serial-no']].filter(Boolean).join(' / ')]
+    ];
+    summaryRows.forEach(row => {
+      let x = margin;
+      ctx.font = 'bold 16px Arial';
+      row.forEach((value, idx) => {
+        ctx.strokeRect(x, y, summaryCols[idx], 34);
+        if(idx % 2 === 0){
+          ctx.fillStyle = '#e2e8f0';
+          ctx.fillRect(x + 1, y + 1, summaryCols[idx] - 2, 32);
+          ctx.fillStyle = '#111111';
+        }
+        canvasText(ctx, value, x + 8, y + 23, summaryCols[idx] - 16, 17, {maxLines:1});
+        x += summaryCols[idx];
+      });
+      y += 34;
+    });
+    y += 28;
 
-  return canvas;
+    drawSectionTitle(ctx, 'ACTIONS TAKEN - CONTINUED', margin, y, pageW, 32);
+    y += 32;
+    const boxH = 1180;
+    ctx.strokeRect(margin, y, pageW, boxH);
+    ctx.font = 'bold 18px Arial';
+    const lineHeight = 24;
+    const maxLines = Math.max(1, Math.floor((boxH - 28) / lineHeight));
+    const pageLines = remaining.splice(0, maxLines);
+    pageLines.forEach((line, idx) => ctx.fillText(line, margin + 14, y + 26 + idx * lineHeight));
+    y += boxH + 28;
+
+    ctx.font = 'bold 16px Arial';
+    ctx.fillStyle = '#334155';
+    ctx.fillText('Continuation page automatically added because Actions Taken exceeded the main TSR page.', margin + 12, y);
+    ctx.fillStyle = '#111111';
+    await drawTSRSignatureFooter(ctx, data, margin, pageW, y + 8);
+    pages.push(canvas);
+    pageNo += 1;
+  }
+  return pages;
 }
 function pdfEscape(str){ return String(str || '').replace(/[\\()]/g, '\\$&'); }
 function dataURLToBinaryString(dataURL){
@@ -4809,6 +4888,50 @@ function stringToUint8Array(binaryString){
   const bytes = new Uint8Array(binaryString.length);
   for(let i=0;i<binaryString.length;i++) bytes[i] = binaryString.charCodeAt(i) & 255;
   return bytes;
+}
+function makeImagePDFBlob(canvases, title){
+  const pageW = 595.28;
+  const pageH = 841.89;
+  const pageCanvases = Array.isArray(canvases) && canvases.length ? canvases : [];
+  const imageData = pageCanvases.map(canvas => ({
+    width: canvas.width,
+    height: canvas.height,
+    binary: dataURLToBinaryString(canvas.toDataURL('image/jpeg', 0.99))
+  }));
+  const pageCount = imageData.length || 1;
+  const pageObjectsStart = 3;
+  const imageObjectsStart = pageObjectsStart + pageCount;
+  const contentObjectsStart = imageObjectsStart + pageCount;
+  const infoObjectNo = contentObjectsStart + pageCount;
+  const kids = Array.from({length: pageCount}, (_, idx) => `${pageObjectsStart + idx} 0 R`).join(' ');
+  const objects = [
+    `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`,
+    `2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${pageCount} >>\nendobj\n`
+  ];
+  imageData.forEach((item, idx) => {
+    const pageObjNo = pageObjectsStart + idx;
+    const imageObjNo = imageObjectsStart + idx;
+    const contentObjNo = contentObjectsStart + idx;
+    objects.push(`${pageObjNo} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW.toFixed(2)} ${pageH.toFixed(2)}] /Resources << /XObject << /Im${idx} ${imageObjNo} 0 R >> >> /Contents ${contentObjNo} 0 R >>\nendobj\n`);
+  });
+  imageData.forEach((item, idx) => {
+    const imageObjNo = imageObjectsStart + idx;
+    objects.push(`${imageObjNo} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${item.width} /Height ${item.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${item.binary.length} >>\nstream\n${item.binary}\nendstream\nendobj\n`);
+  });
+  imageData.forEach((_item, idx) => {
+    const contentObjNo = contentObjectsStart + idx;
+    const content = `q ${pageW.toFixed(2)} 0 0 ${pageH.toFixed(2)} 0 0 cm /Im${idx} Do Q`;
+    objects.push(`${contentObjNo} 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`);
+  });
+  objects.push(`${infoObjectNo} 0 obj\n<< /Title (${pdfEscape(title)}) /Producer (Medical Service Offline TSR) /CreationDate (D:${new Date().toISOString().replace(/[-:TZ.]/g,'').slice(0,14)}) >>\nendobj\n`);
+  let pdf = '%PDF-1.3\n';
+  const offsets = [0];
+  objects.forEach(obj => { offsets.push(pdf.length); pdf += obj; });
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for(let i=1;i<=objects.length;i++) pdf += String(offsets[i]).padStart(10,'0') + ' 00000 n \n';
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info ${infoObjectNo} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return new Blob([stringToUint8Array(pdf)], { type: 'application/pdf' });
 }
 function makeSingleImagePDFBlob(jpegDataURL, imageWidth, imageHeight, title){
   const pageW = 595.28;
@@ -4863,9 +4986,8 @@ async function downloadTSRPDF(){
     const filename = buildTSRPDFFilename(data);
     const target = document.getElementById('tsr-print-preview-content');
     if(target) target.innerHTML = buildTSRPrintHTML(data);
-    const canvas = await renderTSRPrintSheetToCanvas();
-    const jpegDataURL = canvas.toDataURL('image/jpeg', 0.99);
-    const blob = makeSingleImagePDFBlob(jpegDataURL, canvas.width, canvas.height, filename.replace(/\.pdf$/i,''));
+    const canvases = await renderTSRPrintSheetCanvases(data);
+    const blob = makeImagePDFBlob(canvases, filename.replace(/\.pdf$/i,''));
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -4901,9 +5023,8 @@ async function openTSRPrintPreview(){
   try{
     const data = collectTSRData();
     const filename = buildTSRPDFFilename(data);
-    const canvas = await renderTSRPrintSheetToCanvas();
-    const jpegDataURL = canvas.toDataURL('image/jpeg', 0.99);
-    const blob = makeSingleImagePDFBlob(jpegDataURL, canvas.width, canvas.height, filename.replace(/\.pdf$/i,''));
+    const canvases = await renderTSRPrintSheetCanvases(data);
+    const blob = makeImagePDFBlob(canvases, filename.replace(/\.pdf$/i,''));
     clearCurrentTSRPreviewPDFUrl();
     currentTSRPreviewPDFUrl = URL.createObjectURL(blob);
     if(target){
