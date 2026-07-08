@@ -304,6 +304,8 @@
     let nameCounts = {}; // Detects duplicate names in the medical database
     let productSummary = { total_products: 0, active_warranty: 0, expired_warranty: 0, na_warranty: 0, linked_products: 0 };
     let productSortState = { key: '', direction: 'asc' };
+    const PRODUCT_SORT_STORAGE_KEY = 'medicalServiceProductSortV1';
+    const PRODUCT_SORT_KEYS = ['serial', 'name', 'owner', 'start', 'end', 'status'];
 
     function freshUrl(url){
         const joiner = url.includes('?') ? '&' : '?';
@@ -367,6 +369,7 @@ function highlightAndScroll(serial){
 
     document.addEventListener('DOMContentLoaded', async () => { 
         prodModal = new bootstrap.Modal(document.getElementById('prodModal')); 
+        restoreProductSortPreference();
         await loadData(); 
         setupAutocomplete();
 
@@ -680,6 +683,31 @@ function sortProductRows(data){
     return [...data].sort((a, b) => compareProductValues(a, b, productSortState.key, productSortState.direction));
 }
 
+function restoreProductSortPreference(){
+    try{
+        const saved = JSON.parse(localStorage.getItem(PRODUCT_SORT_STORAGE_KEY) || '{}');
+        const key = String(saved.key || '');
+        const direction = saved.direction === 'desc' ? 'desc' : 'asc';
+        if(PRODUCT_SORT_KEYS.includes(key)){
+            productSortState = { key, direction };
+        }
+    }catch(err){
+        productSortState = { key: '', direction: 'asc' };
+    }
+}
+
+function saveProductSortPreference(){
+    try{
+        if(!productSortState.key){
+            localStorage.removeItem(PRODUCT_SORT_STORAGE_KEY);
+            return;
+        }
+        localStorage.setItem(PRODUCT_SORT_STORAGE_KEY, JSON.stringify(productSortState));
+    }catch(err){
+        console.warn('[Products] Unable to save sort preference', err);
+    }
+}
+
 function updateProductSortIndicators(){
     document.querySelectorAll('.product-sort-btn').forEach(btn => {
         const key = btn.dataset.sortKey || '';
@@ -703,11 +731,13 @@ function updateProductSortIndicators(){
 }
 
 function setProductSort(key){
+    if(!PRODUCT_SORT_KEYS.includes(key)) return;
     if(productSortState.key === key){
         productSortState.direction = productSortState.direction === 'asc' ? 'desc' : 'asc';
     }else{
         productSortState = { key, direction: 'asc' };
     }
+    saveProductSortPreference();
     applyFilters();
 }
 
