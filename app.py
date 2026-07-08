@@ -31903,6 +31903,20 @@ def build_tsr_client_email_bodies(shift, sender_name, font_key=None):
     return "\n".join(text_lines), html_body
 
 
+def filter_tsr_client_suggestion_emails(candidates):
+    """Hide internal Shimadzu addresses from Send TSR client suggestions."""
+    filtered = []
+    for candidate in candidates or []:
+        if isinstance(candidate, dict):
+            email_addr = clean_str(candidate.get('email')) or ''
+        else:
+            email_addr = clean_str(candidate) or ''
+        if email_addr.lower().endswith('@shimadzu.com.ph'):
+            continue
+        filtered.append(candidate)
+    return filtered
+
+
 @app.route('/preview_tsr_client_email/<int:shift_id>', methods=['GET'])
 @login_required
 def preview_tsr_client_email(shift_id):
@@ -31942,6 +31956,9 @@ def preview_tsr_client_email(shift_id):
             flush=True
         )
     fallback_emails = get_shift_client_email_fallbacks(shift)
+    detected_emails = filter_tsr_client_suggestion_emails(detected_emails)
+    saved_email_candidates = filter_tsr_client_suggestion_emails(saved_email_candidates)
+    fallback_emails = filter_tsr_client_suggestion_emails(fallback_emails)
     preview_note = ''
     if tsr_files and not detected_emails and fallback_emails:
         preview_note = 'No readable email found in the TSR file. Showing Medical Center contact suggestions.'

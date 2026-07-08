@@ -1412,10 +1412,27 @@
                     </div>
                 </div>
 
-                <div class="mb-3">
-                    <label class="small fw-bold text-muted text-uppercase mb-2 d-block">Detected / Suggested Emails</label>
-                    <div id="tsr-detected-emails" class="tsr-email-chip-container">
-                        <div class="text-muted small">Loading email candidates...</div>
+                <div class="mb-3 tsr-email-suggestion-panel">
+                    <button
+                        class="tsr-email-suggestion-toggle collapsed"
+                        type="button"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#tsr-detected-email-collapse"
+                        aria-expanded="false"
+                        aria-controls="tsr-detected-email-collapse"
+                    >
+                        <span class="tsr-email-suggestion-toggle-main">
+                            <span class="tsr-email-suggestion-title">
+                                <i class="fa-solid fa-address-book me-1"></i>Client Email Suggestions
+                            </span>
+                            <span class="tsr-email-suggestion-sub" id="tsr-email-suggestion-sub">Hidden by default. Open only if you need to pick from detected client emails.</span>
+                        </span>
+                        <span class="tsr-email-suggestion-count" id="tsr-email-suggestion-count">0</span>
+                    </button>
+                    <div class="collapse" id="tsr-detected-email-collapse">
+                        <div id="tsr-detected-emails" class="tsr-email-chip-container">
+                            <div class="text-muted small">Loading email candidates...</div>
+                        </div>
                     </div>
                 </div>
 
@@ -2655,8 +2672,73 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     flex-shrink: 0;
 }
 
+.tsr-email-suggestion-panel {
+    border: 1px solid #e5e7eb;
+    border-radius: 0.95rem;
+    background: #ffffff;
+    overflow: hidden;
+}
+
+.tsr-email-suggestion-toggle {
+    width: 100%;
+    border: 0;
+    background: #f8fafc;
+    color: #334155;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.85rem;
+    padding: 0.75rem 0.9rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.tsr-email-suggestion-toggle:hover,
+.tsr-email-suggestion-toggle:focus {
+    background: #f1f5f9;
+    outline: none;
+}
+
+.tsr-email-suggestion-toggle-main {
+    min-width: 0;
+    display: grid;
+    gap: 0.12rem;
+}
+
+.tsr-email-suggestion-title {
+    font-size: 0.78rem;
+    font-weight: 950;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.tsr-email-suggestion-sub {
+    font-size: 0.72rem;
+    font-weight: 750;
+    color: #64748b;
+    line-height: 1.25;
+}
+
+.tsr-email-suggestion-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    height: 1.6rem;
+    border-radius: 999px;
+    border: 1px solid #bfdbfe;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.75rem;
+    font-weight: 950;
+    flex: 0 0 auto;
+}
+
 .tsr-email-chip-container {
     min-height: 38px;
+    padding: 0.8rem 0.9rem 0.55rem;
+    border-top: 1px solid #e5e7eb;
 }
 
 .tsr-email-chip {
@@ -13408,6 +13490,17 @@ if(shift.engineers){
         return String(emailValue || '').trim().replace(/^<|>$/g, '').replace(/[;,]+$/g, '').toLowerCase();
     }
 
+    function isShimadzuInternalEmail(emailValue){
+        return normalizeTSRRecipientEmail(emailValue).endsWith('@shimadzu.com.ph');
+    }
+
+    function filterTSRClientSuggestionItems(items){
+        return (items || []).filter(item => {
+            const email = typeof item === 'string' ? item : (item?.email || '');
+            return email && !isShimadzuInternalEmail(email);
+        });
+    }
+
     function parseTSRRecipientText(rawValue){
         const raw = String(rawValue || '').replace(/[;\n\r]+/g, ',');
         const matches = raw.match(/[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/gi) || [];
@@ -13540,9 +13633,39 @@ if(shift.engineers){
         });
     }
 
+    function resetTSREmailSuggestionsPanel(message='Scanning attached TSR for client email suggestions...', count='0'){
+        const detectedContainer = document.getElementById('tsr-detected-emails');
+        const suggestionCount = document.getElementById('tsr-email-suggestion-count');
+        const suggestionSub = document.getElementById('tsr-email-suggestion-sub');
+        const collapseEl = document.getElementById('tsr-detected-email-collapse');
+
+        if(detectedContainer){
+            detectedContainer.innerHTML = `<div class="text-muted small"><i class="fa-solid fa-spinner fa-spin me-1"></i>${escapeHtml(message)}</div>`;
+        }
+        if(suggestionCount) suggestionCount.textContent = String(count);
+        if(suggestionSub) suggestionSub.textContent = message;
+        if(collapseEl){
+            const collapse = bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle:false });
+            collapse.hide();
+        }
+    }
+
+    function updateTSREmailSuggestionsSummary(count, message){
+        const suggestionCount = document.getElementById('tsr-email-suggestion-count');
+        const suggestionSub = document.getElementById('tsr-email-suggestion-sub');
+        if(suggestionCount) suggestionCount.textContent = String(count || 0);
+        if(suggestionSub){
+            suggestionSub.textContent = message || (
+                count
+                    ? 'Optional client email suggestions are available. Open this section if needed.'
+                    : 'No client email suggestions found. Type the recipient manually.'
+            );
+        }
+    }
+
     function renderTSREmailChips(container, items, isFallback=false){
-        (items || []).forEach(item => {
-            const email = item.email || '';
+        filterTSRClientSuggestionItems(items).forEach(item => {
+            const email = typeof item === 'string' ? normalizeTSRRecipientEmail(item) : (item.email || '');
             if(!email) return;
 
             const chip = document.createElement('button');
@@ -13597,7 +13720,7 @@ async function openTSRClientEmailModal(shiftId){
         clearTSRRecipients();
         initTSRRecipientInputBehavior();
         emailInput.value = "";
-        detectedContainer.innerHTML = '<div class="text-muted small"><i class="fa-solid fa-spinner fa-spin me-1"></i>Scanning attached TSR...</div>';
+        resetTSREmailSuggestionsPanel('Scanning attached TSR for client email suggestions...', '0');
         titleEl.innerText = "Technical Service Report";
         subtitleEl.innerText = "Scanning attached TSR for client email addresses.";
 
@@ -13617,6 +13740,7 @@ async function openTSRClientEmailModal(shiftId){
 
             if(!response.ok){
                 detectedContainer.innerHTML = `<div class="alert alert-warning small mb-0">${escapeHtml(payload.message || 'Unable to scan TSR file.')}</div>`;
+                updateTSREmailSuggestionsSummary(0, 'Unable to load suggestions. Type the recipient manually.');
                 return;
             }
 
@@ -13634,8 +13758,15 @@ async function openTSRClientEmailModal(shiftId){
             }
 
             detectedContainer.innerHTML = "";
-            const detectedEmails = payload.detected_emails || [];
-            const fallbackEmails = payload.fallback_emails || [];
+            const detectedEmails = filterTSRClientSuggestionItems(payload.detected_emails || []);
+            const fallbackEmails = filterTSRClientSuggestionItems(payload.fallback_emails || []);
+            const suggestionCount = detectedEmails.length + fallbackEmails.length;
+            updateTSREmailSuggestionsSummary(
+                suggestionCount,
+                suggestionCount
+                    ? `${suggestionCount} client email suggestion${suggestionCount === 1 ? '' : 's'} found. Open this optional section if needed.`
+                    : 'No client email suggestions found. Type the recipient manually.'
+            );
 
             if(detectedEmails.length){
                 const detectedLabel = document.createElement('div');
@@ -13673,18 +13804,13 @@ async function openTSRClientEmailModal(shiftId){
 
             if(!payload.can_send){
                 detectedContainer.innerHTML = '<div class="alert alert-warning small mb-0">No attached TSR file found for this schedule.</div>';
+                updateTSREmailSuggestionsSummary(0, 'No attached TSR file found for this schedule.');
             }
-
-            setTimeout(() => {
-                document.getElementById('tsr-recipient-composer')?.scrollIntoView({
-                    behavior: 'smooth',
-                    block: 'center'
-                });
-            }, 80);
 
         }catch(err){
             console.error(err);
             detectedContainer.innerHTML = '<div class="alert alert-danger small mb-0">Unable to open TSR email preview.</div>';
+            updateTSREmailSuggestionsSummary(0, 'Unable to load suggestions. Type the recipient manually.');
         }
     }
 
