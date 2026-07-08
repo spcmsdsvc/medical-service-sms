@@ -85,12 +85,12 @@
             <table class="table table-hover align-middle">
                 <thead class="table-dark">
                     <tr>
-                        <th>S/N</th>
-                        <th>Product Name</th>
-                        <th>Owner (Medical Center)</th>
-                        <th>Start Date</th>
-                        <th>End Date</th>
-                        <th>Status</th>
+                        <th><button type="button" class="product-sort-btn" data-sort-key="serial" onclick="setProductSort('serial')">S/N <span class="product-sort-indicator" data-sort-indicator="serial">↕</span></button></th>
+                        <th><button type="button" class="product-sort-btn" data-sort-key="name" onclick="setProductSort('name')">Product Name <span class="product-sort-indicator" data-sort-indicator="name">↕</span></button></th>
+                        <th><button type="button" class="product-sort-btn" data-sort-key="owner" onclick="setProductSort('owner')">Owner (Medical Center) <span class="product-sort-indicator" data-sort-indicator="owner">↕</span></button></th>
+                        <th><button type="button" class="product-sort-btn" data-sort-key="start" onclick="setProductSort('start')">Start Date <span class="product-sort-indicator" data-sort-indicator="start">↕</span></button></th>
+                        <th><button type="button" class="product-sort-btn" data-sort-key="end" onclick="setProductSort('end')">End Date <span class="product-sort-indicator" data-sort-indicator="end">↕</span></button></th>
+                        <th><button type="button" class="product-sort-btn" data-sort-key="status" onclick="setProductSort('status')">Status <span class="product-sort-indicator" data-sort-indicator="status">↕</span></button></th>
                         <th class="no-print text-end">Actions</th>
                     </tr>
                 </thead>
@@ -303,6 +303,7 @@
     let masterClients = [];
     let nameCounts = {}; // Detects duplicate names in the medical database
     let productSummary = { total_products: 0, active_warranty: 0, expired_warranty: 0, na_warranty: 0, linked_products: 0 };
+    let productSortState = { key: '', direction: 'asc' };
 
     function freshUrl(url){
         const joiner = url.includes('?') ? '&' : '?';
@@ -399,7 +400,7 @@ function highlightAndScroll(serial){
             nameCounts[c.name] = (nameCounts[c.name] || 0) + 1;
         });
 
-        renderTable(productsData);
+        renderTable(sortProductRows(productsData));
     }
 
     /**
@@ -631,9 +632,89 @@ function renderProductMobileCards(data){
     }).join('');
 }
 
+function getProductSortValue(product, key){
+    const status = product.computed_status || getProductWarrantyStatus(product);
+    const values = {
+        serial: product.serial_number || '',
+        name: product.name || '',
+        owner: product.client_name || '',
+        start: product.start_warranty || '',
+        end: product.end_warranty || '',
+        status
+    };
+    return values[key] ?? '';
+}
+
+function productDateSortValue(value){
+    const raw = String(value || '').trim();
+    if(!raw) return null;
+    const timestamp = Date.parse(raw);
+    return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function compareProductValues(a, b, key, direction){
+    const dir = direction === 'desc' ? -1 : 1;
+    const aValue = getProductSortValue(a, key);
+    const bValue = getProductSortValue(b, key);
+    const aEmpty = !String(aValue || '').trim();
+    const bEmpty = !String(bValue || '').trim();
+
+    if(aEmpty && bEmpty) return 0;
+    if(aEmpty) return 1;
+    if(bEmpty) return -1;
+
+    if(key === 'start' || key === 'end'){
+        const aDate = productDateSortValue(aValue);
+        const bDate = productDateSortValue(bValue);
+        if(aDate !== null && bDate !== null && aDate !== bDate) return (aDate - bDate) * dir;
+    }
+
+    return String(aValue).localeCompare(String(bValue), undefined, {
+        sensitivity: 'base',
+        numeric: true
+    }) * dir;
+}
+
+function sortProductRows(data){
+    if(!productSortState.key) return [...data];
+    return [...data].sort((a, b) => compareProductValues(a, b, productSortState.key, productSortState.direction));
+}
+
+function updateProductSortIndicators(){
+    document.querySelectorAll('.product-sort-btn').forEach(btn => {
+        const key = btn.dataset.sortKey || '';
+        const active = key && key === productSortState.key;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-sort', active ? (productSortState.direction === 'desc' ? 'descending' : 'ascending') : 'none');
+    });
+
+    document.querySelectorAll('[data-sort-indicator]').forEach(indicator => {
+        const key = indicator.dataset.sortIndicator || '';
+        if(key !== productSortState.key){
+            indicator.textContent = '↕';
+            indicator.setAttribute('aria-label', 'Not sorted');
+            return;
+        }
+        const descending = productSortState.direction === 'desc';
+        indicator.textContent = descending ? 'Z-A' : 'A-Z';
+        if(key === 'start' || key === 'end') indicator.textContent = descending ? 'Newest' : 'Oldest';
+        indicator.setAttribute('aria-label', descending ? 'Sorted descending' : 'Sorted ascending');
+    });
+}
+
+function setProductSort(key){
+    if(productSortState.key === key){
+        productSortState.direction = productSortState.direction === 'asc' ? 'desc' : 'asc';
+    }else{
+        productSortState = { key, direction: 'asc' };
+    }
+    applyFilters();
+}
+
 function renderTable(data) {
         const body = document.getElementById('prod-table-body');
         body.innerHTML = "";
+        updateProductSortIndicators();
 
         renderProductMobileCards(data);
 
@@ -691,7 +772,7 @@ function renderTable(data) {
             (sFilt === "" || (p.computed_status || getProductWarrantyStatus(p)) === sFilt)
         );
         
-        renderTable(filtered); 
+        renderTable(sortProductRows(filtered));
     }
 
     // --- MODAL CONTROL LOGIC ---
@@ -1023,6 +1104,50 @@ function renderTable(data) {
     /* TABLE HOVER EFFECTS */
     .table-hover tbody tr:hover {
         background-color: rgba(13, 110, 253, 0.03);
+    }
+
+    .product-sort-btn {
+        width: 100%;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-weight: 800;
+        text-align: left;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        cursor: pointer;
+    }
+
+    .product-sort-btn:hover,
+    .product-sort-btn:focus {
+        color: #bfdbfe;
+        outline: none;
+    }
+
+    .product-sort-btn:focus-visible {
+        outline: 2px solid rgba(191, 219, 254, 0.85);
+        outline-offset: 3px;
+        border-radius: 4px;
+    }
+
+    .product-sort-btn.active {
+        color: #93c5fd;
+    }
+
+    .product-sort-indicator {
+        min-width: 2.8rem;
+        border-radius: 999px;
+        padding: 0.1rem 0.35rem;
+        background: rgba(255, 255, 255, 0.12);
+        color: inherit;
+        font-size: 0.64rem;
+        font-weight: 900;
+        line-height: 1.25;
+        text-align: center;
+        white-space: nowrap;
     }
 
 
