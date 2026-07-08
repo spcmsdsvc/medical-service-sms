@@ -3984,13 +3984,18 @@ async function saveStandaloneTSRLocalDraft(){
   }
 }
 async function resetStandaloneTSRForm(){ await clearStandaloneTSRPage(false); }
-function showTSRStatus(msg, variant='success'){
+function showTSRStatus(msg, variant='success', options={}){
   const el=document.getElementById('standalone-tsr-status');
   if(!el) return;
   const normalized = ['success','info','warning','danger'].includes(variant) ? variant : 'success';
   const icon = normalized === 'danger' ? 'fa-triangle-exclamation' : normalized === 'warning' ? 'fa-circle-exclamation' : normalized === 'info' ? 'fa-circle-info' : 'fa-circle-check';
   el.className=`alert alert-${normalized} border-0 shadow-sm no-print`;
   el.innerHTML=`<i class="fa-solid ${icon} me-1"></i>${escapeHTML(msg)}`;
+  if(options.scroll !== false){
+    requestAnimationFrame(() => {
+      el.scrollIntoView({ behavior:'smooth', block:'start' });
+    });
+  }
 }
 function copyStandaloneTSRText(){ if(!requireStandaloneScheduleForTSRAction()) return; const d=collectTSRData(); const text=`TSR No.: ${d['tsr-number']||''}\nCustomer: ${d['tsr-customer-name']||''}\nAddress: ${d['tsr-address']||''}\nEquipment/Model: ${d['tsr-equipment-model']||''}\nSerial No.: ${d['tsr-serial-no']||''}\nService Category: ${getTSRServiceCategoryText(d)}\nComplaint:\n${d['tsr-complaint']||''}\nActions Taken:\n${d['tsr-actions-taken']||''}\nRemarks:\n${d['tsr-remarks']||''}`; navigator.clipboard?.writeText(text); showTSRStatus('Draft text copied.'); }
 function openSignatureModal(target){ document.getElementById('signature-target').value=target; const modal=new bootstrap.Modal(document.getElementById('standaloneSignatureModal')); modal.show(); setTimeout(initSignatureCanvas,250); }
@@ -4006,7 +4011,8 @@ function validateTSRFinalSaveRequirements(data){
     showTSRStatus('Serviced By signature is required before saving the TSR. Please tap Add Serviced By Signature, draw or upload your signature, then save again.', 'danger');
     document.getElementById('serviced-signature-status')?.classList.add('text-danger','fw-bold');
     const signatureButton = Array.from(document.querySelectorAll('button')).find(btn => (btn.getAttribute('onclick') || '').includes("openSignatureModal('serviced')"));
-    signatureButton?.focus();
+    try{ signatureButton?.focus({ preventScroll:true }); }
+    catch(err){ signatureButton?.focus(); }
     return false;
   }
   return true;
@@ -4068,7 +4074,7 @@ async function confirmTSRRecommendedDetailsBeforeSave(data){
 
   if(result === 'save_anyway') return true;
   focusTSRRecommendedDetail(missing[0]);
-  showTSRStatus(`Please review: ${missing.map(item => item.label).join(', ')}. You can still Save TSR again and choose Save Anyway if not applicable.`, 'warning');
+  showTSRStatus(`Please review: ${missing.map(item => item.label).join(', ')}. You can still Save TSR again and choose Save Anyway if not applicable.`, 'warning', { scroll:false });
   return false;
 }
 function saveSignatureFromModal(){ const target=document.getElementById('signature-target').value; if(!signaturePadHasInk()){ showTSRStatus('Please draw or upload a signature before saving it.', 'danger'); return; } signatureData[target]=signatureCanvas.toDataURL('image/png', 1.0); updateSignatureStatuses(); saveStandaloneTSRDraft(true); bootstrap.Modal.getInstance(document.getElementById('standaloneSignatureModal')).hide(); }
