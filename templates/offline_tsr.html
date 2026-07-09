@@ -4219,7 +4219,7 @@ async function showFinalTSRPreview(payload, pdfPackage, options={}){
   clearCurrentTSRPreviewPDFUrl();
   currentTSRPreviewPDFUrl = URL.createObjectURL(pdfPackage.blob);
   if(target){
-    target.innerHTML = `<iframe class="tsr-pdf-preview-frame" title="Final TSR PDF Preview" src="${currentTSRPreviewPDFUrl}#toolbar=1&navpanes=0&view=Fit"></iframe>`;
+    target.innerHTML = `<iframe class="tsr-pdf-preview-frame" title="Final TSR PDF Preview" src="${currentTSRPreviewPDFUrl}#toolbar=1&navpanes=0&zoom=100"></iframe>`;
   }
   finalTSRPreviewState = {
     payload,
@@ -5308,7 +5308,7 @@ async function openTSRPrintPreview(){
     clearCurrentTSRPreviewPDFUrl();
     currentTSRPreviewPDFUrl = URL.createObjectURL(blob);
     if(target){
-      target.innerHTML = `<iframe class="tsr-pdf-preview-frame" title="TSR PDF Preview" src="${currentTSRPreviewPDFUrl}#toolbar=1&navpanes=0&view=Fit"></iframe>`;
+      target.innerHTML = `<iframe class="tsr-pdf-preview-frame" title="TSR PDF Preview" src="${currentTSRPreviewPDFUrl}#toolbar=1&navpanes=0&zoom=100"></iframe>`;
     }
     if(modalEl && !modalEl.dataset.pdfPreviewCleanupBound){
       modalEl.addEventListener('hidden.bs.modal', clearCurrentTSRPreviewPDFUrl);
