@@ -14617,6 +14617,20 @@ def reimbursement_money_value(value):
         return 0.0
 
 
+def reimbursement_row_has_claim_amount(row):
+    """Return True when a reimbursement row has any positive claim amount."""
+    if not row:
+        return False
+
+    if reimbursement_money_value(getattr(row, 'row_total', 0)) > 0:
+        return True
+
+    return any(
+        reimbursement_money_value(getattr(row, field, 0)) > 0
+        for field in REIMBURSEMENT_EXPENSE_FIELDS
+    )
+
+
 def reimbursement_get_personal_profile():
     """Return the logged-in engineer profile required for personal reimbursement."""
     profile = getattr(current_user, 'engineer_profile', None)
@@ -27527,7 +27541,8 @@ def submit_reimbursement():
         if current_status not in REIMBURSEMENT_EDITABLE_STATUSES:
             return reimbursement_edit_lock_response(header, 'submitted again')
 
-        row_count = ReimbursementRow.query.filter_by(reimbursement_id=header.id).count()
+        saved_rows = ReimbursementRow.query.filter_by(reimbursement_id=header.id).all()
+        row_count = len(saved_rows)
         if row_count <= 0:
             return jsonify({'success': False, 'error': 'No reimbursement rows to submit.'}), 400
 
@@ -27544,6 +27559,24 @@ def submit_reimbursement():
                 'status': current_status,
                 'draft_saved': True
             }), 428
+
+        claim_rows = [row for row in saved_rows if reimbursement_row_has_claim_amount(row)]
+        zero_rows = [row for row in saved_rows if row not in claim_rows]
+        excluded_zero_rows = len(zero_rows)
+
+        if not claim_rows:
+            return jsonify({
+                'success': False,
+                'error': 'No reimbursement amount to submit. Please enter at least one reimbursement amount.',
+                'excluded_zero_rows': 0,
+                'rows_submitted': 0
+            }), 400
+
+        for row in zero_rows:
+            db.session.delete(row)
+        if zero_rows:
+            db.session.flush()
+        row_count = len(claim_rows)
 
         now = get_manila_time()
         previous_status = header.status or 'Draft'
@@ -27568,6 +27601,7 @@ def submit_reimbursement():
                 'start_date': start_date.isoformat(),
                 'end_date': end_date.isoformat(),
                 'row_count': row_count,
+                'excluded_zero_rows': excluded_zero_rows,
                 'engineer_id': profile.id,
                 'engineer_name': getattr(profile, 'name', '')
             }
@@ -27600,7 +27634,8 @@ def submit_reimbursement():
                 'requester_name': requester_name,
                 'start_date': start_date.isoformat(),
                 'end_date': end_date.isoformat(),
-                'row_count': row_count
+                'row_count': row_count,
+                'excluded_zero_rows': excluded_zero_rows
             },
             exclude_user_ids=[current_user.id]
         )
@@ -27626,6 +27661,7 @@ def submit_reimbursement():
             'reimbursement_id': header.id,
             'status': 'Submitted',
             'rows_submitted': row_count,
+            'excluded_zero_rows': excluded_zero_rows,
             'submitted_at': header.submitted_at.isoformat() if header.submitted_at else None,
             'manager_queue_status': 'Submitted',
             'message': 'Reimbursement submitted for manager review.',

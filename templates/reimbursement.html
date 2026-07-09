@@ -2978,6 +2978,25 @@ function renderReimbursementRows(rows) {
         return rows;
     }
 
+    function getReimbursementPayloadRowTotal(row) {
+        if (!row || typeof row !== 'object') return 0;
+        const amounts = row.amounts && typeof row.amounts === 'object' ? row.amounts : {};
+        let total = 0;
+        reimbursementExpenseKeys.forEach(function(key) {
+            total += Number(amounts[key] || 0);
+        });
+        if (!total && row.manual) {
+            total = Number(row.amount || row.row_total || 0);
+        }
+        return Number.isFinite(total) ? total : 0;
+    }
+
+    function countZeroTotalReimbursementRows(rows) {
+        return (rows || []).filter(function(row) {
+            return getReimbursementPayloadRowTotal(row) <= 0;
+        }).length;
+    }
+
     function setReimbursementButtonsBusy(isBusy) {
         ['reimSaveDraftBtn', 'reimDownloadExcelBtn', 'reimClearBtn', 'reimSubmitBtn', 'reimAddManualBtn', 'reimDeleteDraftBtn'].forEach(function(id) {
             const btn = document.getElementById(id);
@@ -3271,15 +3290,28 @@ async function saveReimbursementDraft(silent) {
             return;
         }
 
+        const rowsForSubmit = collectReimbursementRowsForSave();
+        const zeroRowCount = countZeroTotalReimbursementRows(rowsForSubmit);
+        const claimRowCount = rowsForSubmit.length - zeroRowCount;
+        if (claimRowCount <= 0) {
+            const msg = 'No reimbursement amount to submit. Please enter at least one reimbursement amount.';
+            setReimbursementSubmitNotice(msg, 'warn');
+            reimAlert(msg);
+            return;
+        }
+
         const signatureReady = await ensureReimbursementSignatureBeforeSubmit();
         if (!signatureReady) {
             setReimbursementSubmitNotice('Draft saved. Signature is required before submission. Open Settings in a new tab, add your signature, then continue here.', 'warn');
             return;
         }
 
+        const zeroRowMessage = zeroRowCount > 0
+            ? `\n\n${zeroRowCount} zero-total row${zeroRowCount === 1 ? '' : 's'} will be excluded from the submitted reimbursement.`
+            : '';
         const shouldSubmit = await reimConfirmDialog({
             title: 'Submit Reimbursement?',
-            message: 'This will submit your reimbursement for review. You cannot edit it as draft after submission unless it is returned/rejected.',
+            message: `This will submit your reimbursement for review. You cannot edit it as draft after submission unless it is returned/rejected.${zeroRowMessage}`,
             confirmText: 'Submit for Review',
             cancelText: 'Review Again',
             tone: 'warning',
@@ -3314,11 +3346,15 @@ async function saveReimbursementDraft(silent) {
 
             const message = payload.message || 'Reimbursement submitted for manager review.';
             setReimbursementDraftStatus(message, 'ok');
-            setReimbursementSubmitNotice(`${message} Reimbursement #${payload.reimbursement_id || payload.id || ''} is now visible in Rodito's Submitted queue.`, 'ok');
+            const excludedCount = Number(payload.excluded_zero_rows || 0);
+            const excludedNote = excludedCount > 0
+                ? ` ${excludedCount} zero-total row${excludedCount === 1 ? '' : 's'} excluded.`
+                : '';
+            setReimbursementSubmitNotice(`${message} Reimbursement #${payload.reimbursement_id || payload.id || ''} is now visible in Rodito's Submitted queue.${excludedNote}`, 'ok');
 
             const statusText = document.getElementById('reimStatusText');
             if (statusText) {
-                statusText.textContent = 'Submitted for review. This reimbursement is now locked until manager action.';
+                statusText.textContent = `Submitted for review. This reimbursement is now locked until manager action.${excludedNote}`;
             }
 
             await loadReimbursementNotifications();
