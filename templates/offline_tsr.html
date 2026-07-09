@@ -395,7 +395,19 @@
       </div>
       <div class="modal-body">
         <input type="hidden" id="signature-target">
-        <div class="small text-muted fw-bold mb-2">Draw in the larger box or upload a signature image.</div>
+        <div class="small text-muted fw-bold mb-2" id="signature-modal-helper">Draw in the larger box or upload a signature image.</div>
+        <div class="tsr-saved-signature-panel d-none mb-3" id="tsr-saved-signature-panel">
+          <div class="tsr-saved-signature-copy">
+            <div class="fw-bold text-primary"><i class="fa-solid fa-user-check me-1"></i>Saved signature available</div>
+            <div class="small text-muted fw-bold">Use the signature saved in Settings for this TSR.</div>
+          </div>
+          <button class="btn btn-primary fw-bold" type="button" onclick="applyMySavedSignatureToTSR()">
+            <i class="fa-solid fa-bolt me-1"></i>Use My Saved Signature
+          </button>
+        </div>
+        <div class="alert alert-warning fw-bold py-2 d-none" id="tsr-saved-signature-missing-note">
+          No saved signature found in Settings. You can draw or upload a signature here.
+        </div>
         <canvas id="signature-pad" class="signature-canvas"></canvas>
         <div class="d-flex flex-wrap gap-2 mt-3">
           <button class="btn btn-outline-secondary" type="button" onclick="clearSignaturePad()">Clear Drawing</button>
@@ -409,7 +421,7 @@
 
 <style>
 .offline-tsr-dialog-backdrop{position:fixed;inset:0;z-index:4100;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px}.offline-tsr-dialog-backdrop.show{display:flex}.offline-tsr-dialog-box{width:min(470px,100%);background:#fff;border-radius:22px;box-shadow:0 28px 90px rgba(15,23,42,.38);border:1px solid #dbeafe;overflow:hidden;animation:offlineTSRDialogIn .18s ease-out}.offline-tsr-dialog-header{padding:18px 18px 10px;display:flex;gap:12px;align-items:flex-start}.offline-tsr-dialog-icon{width:42px;height:42px;border-radius:16px;background:#eff6ff;color:#0d6efd;display:inline-flex;align-items:center;justify-content:center;font-size:1.05rem;flex:0 0 auto}.offline-tsr-dialog-box.danger .offline-tsr-dialog-icon{background:#fee2e2;color:#b91c1c}.offline-tsr-dialog-box.warning .offline-tsr-dialog-icon{background:#fffbeb;color:#b45309}.offline-tsr-dialog-box.success .offline-tsr-dialog-icon{background:#dcfce7;color:#166534}.offline-tsr-dialog-text{min-width:0;flex:1}.offline-tsr-dialog-title{margin:0;color:#0f172a;font-weight:950;font-size:1.08rem}.offline-tsr-dialog-message{margin-top:5px;color:#475569;font-weight:800;line-height:1.45;white-space:pre-wrap}.offline-tsr-dialog-actions{padding:12px 18px 18px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}.tsr-recommended-highlight{outline:3px solid rgba(245,158,11,.8)!important;box-shadow:0 0 0 6px rgba(245,158,11,.18)!important;border-radius:12px;transition:outline .18s ease,box-shadow .18s ease}@keyframes offlineTSRDialogIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}@media(max-width:768px){.offline-tsr-dialog-backdrop{align-items:flex-end;padding:12px}.offline-tsr-dialog-box{width:100%;border-radius:20px}}
-.offline-tsr-page{max-width:1180px;margin:0 auto}.offline-tsr-hero{display:flex;justify-content:space-between;gap:16px;align-items:center;background:#fff;border-radius:22px;padding:18px 20px;margin-bottom:16px;box-shadow:0 8px 28px rgba(15,23,42,.07)}.offline-tsr-eyebrow{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.08em}.offline-tsr-hero-actions{display:flex;gap:8px;flex-wrap:wrap}.offline-tsr-schedule-picker-card{border-left:5px solid #0d6efd}.schedule-picker-selected{border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.schedule-picker-title{font-weight:900;color:#0f172a}.schedule-picker-meta{font-size:.82rem;color:#475569}.standalone-pill{display:inline-flex;align-items:center;background:#e7f5ff;color:#0d6efd;border:1px solid #bfdbfe;border-radius:999px;padding:10px 14px;font-weight:900}.tsr-list-box{border:1px solid #e5e7eb;border-radius:14px;min-height:46px;padding:8px;background:#f8fafc}.tsr-list-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 10px;margin-bottom:6px}.tsr-action-text{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}.tsr-action-controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}.tsr-action-controls .btn{font-weight:800}.tsr-chip-box{display:flex;gap:6px;flex-wrap:wrap}.tsr-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#e7f1ff;border:1px solid #bfdbfe;color:#0d6efd;padding:6px 10px;font-size:.82rem;font-weight:800}.tsr-chip button{border:0;background:transparent;color:#0d6efd;font-weight:900}.tsr-parts-grid{display:grid;grid-template-columns:80px 1fr 1.5fr 70px 1fr;gap:6px;align-items:center}.tsr-parts-header{font-size:.72rem;text-transform:uppercase;font-weight:900;color:#64748b;margin-bottom:6px}.tsr-part-row{margin-bottom:6px}.signature-canvas{display:block;width:100%;height:min(48vh,430px);min-height:340px;border:2px dashed #94a3b8;border-radius:18px;background:#fff;touch-action:none}.schedule-picker-open-btn{text-align:left;justify-content:flex-start;display:flex;align-items:center}.standalone-schedule-card-list{display:grid;gap:10px}.standalone-schedule-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:12px;box-shadow:0 6px 18px rgba(15,23,42,.05);cursor:pointer;transition:.15s ease}.standalone-schedule-card:hover{border-color:#0d6efd;transform:translateY(-1px);box-shadow:0 10px 24px rgba(13,110,253,.12)}.standalone-schedule-card.active{border:2px solid #0d6efd;background:#eff6ff}.standalone-schedule-card-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.standalone-schedule-client{font-weight:900;color:#0f172a}.standalone-schedule-date{font-size:.76rem;font-weight:900;color:#0d6efd;background:#e7f1ff;border:1px solid #bfdbfe;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-date-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.standalone-schedule-date-chip{border:1px solid #bfdbfe;background:#fff;color:#0d6efd;border-radius:999px;padding:6px 10px;font-size:.78rem;font-weight:900;cursor:pointer}.standalone-schedule-date-chip.active,.standalone-schedule-date-chip:hover{background:#0d6efd;color:#fff}.standalone-schedule-count-badge{font-size:.72rem;font-weight:900;color:#475569;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-product{font-size:.88rem;font-weight:800;color:#334155;margin-top:4px}.standalone-schedule-serial{font-size:.8rem;color:#64748b;margin-top:2px}.standalone-schedule-meta{font-size:.78rem;color:#64748b;margin-top:6px}.standalone-schedule-empty{background:#fff;border:1px dashed #cbd5e1;border-radius:16px;padding:22px;text-align:center;color:#64748b;font-weight:800}.tsr-inline-suggestions{border:1px dashed #bfdbfe;background:#f8fbff;border-radius:14px;padding:8px;display:grid;gap:8px;max-height:260px;overflow:auto}.tsr-schedule-locked{background:#f1f5f9!important;color:#475569!important;border-color:#cbd5e1!important;cursor:not-allowed}.tsr-schedule-locked-note{font-size:.76rem;color:#64748b;font-weight:800;margin-top:4px}.tsr-knowledge-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.tsr-knowledge-meta{font-size:.76rem;color:#64748b;font-weight:800;margin-bottom:5px}.tsr-knowledge-text{font-size:.86rem;color:#0f172a;white-space:pre-wrap}.tsr-knowledge-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tsr-knowledge-section-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.04em;margin:2px 0 4px}.tsr-knowledge-quick-header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.76rem;font-weight:900;color:#334155}.tsr-knowledge-quick-context{font-size:.72rem;color:#64748b;font-weight:800}.tsr-knowledge-badges{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}.tsr-knowledge-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:.68rem;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#334155}.tsr-knowledge-badge.primary{border-color:#bfdbfe;background:#e7f1ff;color:#0d6efd}.tsr-knowledge-badge.success{border-color:#bbf7d0;background:#ecfdf5;color:#15803d}.tsr-knowledge-badge.warning{border-color:#fde68a;background:#fffbeb;color:#92400e}.tsr-knowledge-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:12px;text-align:center;color:#64748b;font-weight:800;background:#fff}@media(max-width:768px){.offline-tsr-hero{align-items:stretch;flex-direction:column}.offline-tsr-hero-actions .btn{width:100%}.tsr-list-item{align-items:stretch;flex-direction:column}.tsr-action-controls{justify-content:flex-start}.tsr-action-controls .btn{flex:1 1 auto}.tsr-parts-grid{grid-template-columns:1fr}.tsr-parts-header{display:none}.signature-canvas{height:360px;min-height:320px}}
+.offline-tsr-page{max-width:1180px;margin:0 auto}.offline-tsr-hero{display:flex;justify-content:space-between;gap:16px;align-items:center;background:#fff;border-radius:22px;padding:18px 20px;margin-bottom:16px;box-shadow:0 8px 28px rgba(15,23,42,.07)}.offline-tsr-eyebrow{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.08em}.offline-tsr-hero-actions{display:flex;gap:8px;flex-wrap:wrap}.offline-tsr-schedule-picker-card{border-left:5px solid #0d6efd}.schedule-picker-selected{border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.schedule-picker-title{font-weight:900;color:#0f172a}.schedule-picker-meta{font-size:.82rem;color:#475569}.standalone-pill{display:inline-flex;align-items:center;background:#e7f5ff;color:#0d6efd;border:1px solid #bfdbfe;border-radius:999px;padding:10px 14px;font-weight:900}.tsr-list-box{border:1px solid #e5e7eb;border-radius:14px;min-height:46px;padding:8px;background:#f8fafc}.tsr-list-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 10px;margin-bottom:6px}.tsr-action-text{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}.tsr-action-controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}.tsr-action-controls .btn{font-weight:800}.tsr-chip-box{display:flex;gap:6px;flex-wrap:wrap}.tsr-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#e7f1ff;border:1px solid #bfdbfe;color:#0d6efd;padding:6px 10px;font-size:.82rem;font-weight:800}.tsr-chip button{border:0;background:transparent;color:#0d6efd;font-weight:900}.tsr-parts-grid{display:grid;grid-template-columns:80px 1fr 1.5fr 70px 1fr;gap:6px;align-items:center}.tsr-parts-header{font-size:.72rem;text-transform:uppercase;font-weight:900;color:#64748b;margin-bottom:6px}.tsr-part-row{margin-bottom:6px}.signature-canvas{display:block;width:100%;height:min(48vh,430px);min-height:340px;border:2px dashed #94a3b8;border-radius:18px;background:#fff;touch-action:none}.tsr-saved-signature-panel{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.tsr-saved-signature-copy{min-width:0}.schedule-picker-open-btn{text-align:left;justify-content:flex-start;display:flex;align-items:center}.standalone-schedule-card-list{display:grid;gap:10px}.standalone-schedule-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:12px;box-shadow:0 6px 18px rgba(15,23,42,.05);cursor:pointer;transition:.15s ease}.standalone-schedule-card:hover{border-color:#0d6efd;transform:translateY(-1px);box-shadow:0 10px 24px rgba(13,110,253,.12)}.standalone-schedule-card.active{border:2px solid #0d6efd;background:#eff6ff}.standalone-schedule-card-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.standalone-schedule-client{font-weight:900;color:#0f172a}.standalone-schedule-date{font-size:.76rem;font-weight:900;color:#0d6efd;background:#e7f1ff;border:1px solid #bfdbfe;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-date-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.standalone-schedule-date-chip{border:1px solid #bfdbfe;background:#fff;color:#0d6efd;border-radius:999px;padding:6px 10px;font-size:.78rem;font-weight:900;cursor:pointer}.standalone-schedule-date-chip.active,.standalone-schedule-date-chip:hover{background:#0d6efd;color:#fff}.standalone-schedule-count-badge{font-size:.72rem;font-weight:900;color:#475569;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-product{font-size:.88rem;font-weight:800;color:#334155;margin-top:4px}.standalone-schedule-serial{font-size:.8rem;color:#64748b;margin-top:2px}.standalone-schedule-meta{font-size:.78rem;color:#64748b;margin-top:6px}.standalone-schedule-empty{background:#fff;border:1px dashed #cbd5e1;border-radius:16px;padding:22px;text-align:center;color:#64748b;font-weight:800}.tsr-inline-suggestions{border:1px dashed #bfdbfe;background:#f8fbff;border-radius:14px;padding:8px;display:grid;gap:8px;max-height:260px;overflow:auto}.tsr-schedule-locked{background:#f1f5f9!important;color:#475569!important;border-color:#cbd5e1!important;cursor:not-allowed}.tsr-schedule-locked-note{font-size:.76rem;color:#64748b;font-weight:800;margin-top:4px}.tsr-knowledge-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.tsr-knowledge-meta{font-size:.76rem;color:#64748b;font-weight:800;margin-bottom:5px}.tsr-knowledge-text{font-size:.86rem;color:#0f172a;white-space:pre-wrap}.tsr-knowledge-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tsr-knowledge-section-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.04em;margin:2px 0 4px}.tsr-knowledge-quick-header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.76rem;font-weight:900;color:#334155}.tsr-knowledge-quick-context{font-size:.72rem;color:#64748b;font-weight:800}.tsr-knowledge-badges{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}.tsr-knowledge-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:.68rem;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#334155}.tsr-knowledge-badge.primary{border-color:#bfdbfe;background:#e7f1ff;color:#0d6efd}.tsr-knowledge-badge.success{border-color:#bbf7d0;background:#ecfdf5;color:#15803d}.tsr-knowledge-badge.warning{border-color:#fde68a;background:#fffbeb;color:#92400e}.tsr-knowledge-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:12px;text-align:center;color:#64748b;font-weight:800;background:#fff}@media(max-width:768px){.offline-tsr-hero{align-items:stretch;flex-direction:column}.offline-tsr-hero-actions .btn{width:100%}.tsr-list-item{align-items:stretch;flex-direction:column}.tsr-action-controls{justify-content:flex-start}.tsr-action-controls .btn{flex:1 1 auto}.tsr-parts-grid{grid-template-columns:1fr}.tsr-parts-header{display:none}.signature-canvas{height:360px;min-height:320px}.tsr-saved-signature-panel{align-items:stretch;flex-direction:column}.tsr-saved-signature-panel .btn{width:100%}}
 .offline-tsr-drafts-card{border-left:5px solid #f59e0b}.standalone-tsr-drafts-list{display:grid;gap:10px}.standalone-tsr-draft-card{border:1px solid #e5e7eb;background:#fff;border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 6px 18px rgba(15,23,42,.05)}.standalone-tsr-draft-card.active{border-color:#0d6efd;background:#eff6ff}.standalone-tsr-draft-title{font-weight:950;color:#0f172a}.standalone-tsr-draft-meta{font-size:.82rem;color:#64748b;font-weight:800;margin-top:3px}.standalone-tsr-draft-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.standalone-tsr-draft-empty{border:1px dashed #cbd5e1;border-radius:16px;padding:16px;text-align:center;color:#64748b;font-weight:800;background:#f8fafc}@media(max-width:768px){.standalone-tsr-draft-card{align-items:stretch;flex-direction:column}.standalone-tsr-draft-actions .btn{flex:1 1 auto}}
 .offline-tsr-connection-banner{border-radius:16px;padding:10px 12px;margin-bottom:12px;font-weight:800;display:flex;align-items:center;gap:8px}.offline-tsr-connection-banner.online{background:#ecfdf5;color:#15803d;border:1px solid #bbf7d0}.offline-tsr-connection-banner.offline{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}.offline-tsr-connection-banner.syncing{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}.offline-tsr-connection-banner.failed{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}.offline-tsr-queue-panel-syncing{border-left:5px solid #0d6efd!important}.offline-tsr-queue-panel-failed{border-left:5px solid #dc3545!important}.offline-tsr-queue-panel-success{border-left:5px solid #198754!important}
 
@@ -582,6 +594,9 @@ let standaloneScheduleOptions = [];
 let selectedStandaloneScheduleId = '';
 let standaloneScheduleQuickFilter = 'week';
 let signatureData = { serviced: '', acknowledged: '' };
+let mySavedSignatureData = '';
+let mySavedSignatureLoaded = false;
+let mySavedSignatureLoadingPromise = null;
 let offlineTSRAttachments = [];
 let onlineTSRRevisionContext = null;
 let standaloneCurrentDraftId = '';
@@ -4248,7 +4263,7 @@ async function beginStandaloneTSRFinalPreview(data){
     showTSRStatus('TSR preview or save is already running. Please wait.', 'info');
     return;
   }
-  if(!validateTSRFinalSaveRequirements(data)){
+  if(!await validateTSRFinalSaveRequirements(data)){
     await saveStandaloneTSRDraftLocally(data).catch(err => console.warn('[Offline TSR] Required-signature draft preservation failed', err));
     return;
   }
@@ -4502,16 +4517,112 @@ function showTSRStatus(msg, variant='success', options={}){
   }
 }
 function copyStandaloneTSRText(){ if(!requireStandaloneScheduleForTSRAction()) return; const d=collectTSRData(); const text=`TSR No.: ${d['tsr-number']||''}\nCustomer: ${d['tsr-customer-name']||''}\nAddress: ${d['tsr-address']||''}\nEquipment/Model: ${d['tsr-equipment-model']||''}\nSerial No.: ${d['tsr-serial-no']||''}\nService Category: ${getTSRServiceCategoryText(d)}\nComplaint:\n${d['tsr-complaint']||''}\nActions Taken:\n${d['tsr-actions-taken']||''}\nRemarks:\n${d['tsr-remarks']||''}`; navigator.clipboard?.writeText(text); showTSRStatus('Draft text copied.'); }
-function openSignatureModal(target){ document.getElementById('signature-target').value=target; const modal=new bootstrap.Modal(document.getElementById('standaloneSignatureModal')); modal.show(); setTimeout(initSignatureCanvas,250); }
+async function loadMySavedSignatureForTSR(force=false){
+  if(mySavedSignatureLoaded && !force) return mySavedSignatureData;
+  if(mySavedSignatureLoadingPromise && !force) return mySavedSignatureLoadingPromise;
+  mySavedSignatureLoadingPromise = fetch('/get_my_signature', {
+    credentials:'same-origin',
+    cache:'no-store'
+  })
+    .then(res => res.json().then(data => ({ ok:res.ok, data })))
+    .then(({ ok, data }) => {
+      mySavedSignatureData = ok && data?.status === 'success' && data?.has_signature && data?.signature_data
+        ? String(data.signature_data || '')
+        : '';
+      mySavedSignatureLoaded = true;
+      return mySavedSignatureData;
+    })
+    .catch(err => {
+      console.warn('[Offline TSR] Saved Settings signature lookup failed', err);
+      mySavedSignatureData = '';
+      mySavedSignatureLoaded = true;
+      return '';
+    })
+    .finally(() => {
+      mySavedSignatureLoadingPromise = null;
+    });
+  return mySavedSignatureLoadingPromise;
+}
+
+function updateTSRSavedSignatureModalUi(target){
+  const panel = document.getElementById('tsr-saved-signature-panel');
+  const missing = document.getElementById('tsr-saved-signature-missing-note');
+  const helper = document.getElementById('signature-modal-helper');
+  const isServiced = target === 'serviced';
+  const hasSaved = Boolean(mySavedSignatureData);
+  panel?.classList.toggle('d-none', !(isServiced && hasSaved));
+  missing?.classList.toggle('d-none', !(isServiced && mySavedSignatureLoaded && !hasSaved));
+  if(helper){
+    helper.textContent = isServiced
+      ? 'Use your saved Settings signature, draw in the larger box, or upload a signature image.'
+      : 'Draw in the larger box or upload a customer acknowledged signature image.';
+  }
+}
+
+async function openSignatureModal(target){
+  document.getElementById('signature-target').value=target;
+  updateTSRSavedSignatureModalUi(target);
+  const modal=new bootstrap.Modal(document.getElementById('standaloneSignatureModal'));
+  modal.show();
+  if(target === 'serviced'){
+    loadMySavedSignatureForTSR().then(() => updateTSRSavedSignatureModalUi(target));
+  }
+  setTimeout(initSignatureCanvas,250);
+}
 function initSignatureCanvas(){ signatureCanvas=document.getElementById('signature-pad'); const ratio=Math.max(window.devicePixelRatio||1,2); const rect=signatureCanvas.getBoundingClientRect(); signatureCanvas.width=rect.width*ratio; signatureCanvas.height=rect.height*ratio; signatureCtx=signatureCanvas.getContext('2d'); signatureCtx.scale(ratio,ratio); signatureCtx.imageSmoothingEnabled=true; signatureCtx.imageSmoothingQuality='high'; signatureCtx.lineWidth=3.4; signatureCtx.lineCap='round'; signatureCtx.lineJoin='round'; signatureCtx.strokeStyle='#050505'; clearSignaturePad(); }
 function sigPos(e){ const r=signatureCanvas.getBoundingClientRect(); const p=e.touches?e.touches[0]:e; return {x:p.clientX-r.left,y:p.clientY-r.top}; }
 function bindSignature(){ const start=e=>{e.preventDefault();signatureDrawing=true; const p=sigPos(e); signatureCtx.beginPath(); signatureCtx.moveTo(p.x,p.y);}; const move=e=>{ if(!signatureDrawing) return; e.preventDefault(); const p=sigPos(e); signatureCtx.lineTo(p.x,p.y); signatureCtx.stroke();}; const end=()=>signatureDrawing=false; ['mousedown','touchstart'].forEach(x=>signatureCanvas.addEventListener(x,start,{passive:false})); ['mousemove','touchmove'].forEach(x=>signatureCanvas.addEventListener(x,move,{passive:false})); ['mouseup','mouseleave','touchend'].forEach(x=>signatureCanvas.addEventListener(x,end)); }
 function clearSignaturePad(){ if(!signatureCtx)return; signatureCtx.clearRect(0,0,signatureCanvas.width,signatureCanvas.height); }
 function importSignatureImage(event){ const file=event.target.files[0]; if(!file)return; const reader=new FileReader(); reader.onload=()=>{ const img=new Image(); img.onload=()=>{ clearSignaturePad(); const rect=signatureCanvas.getBoundingClientRect(); signatureCtx.drawImage(img,0,0,rect.width,rect.height); }; img.src=reader.result; }; reader.readAsDataURL(file); }
 function signaturePadHasInk(){ if(!signatureCanvas || !signatureCtx) return false; const width=signatureCanvas.width; const height=signatureCanvas.height; if(!width || !height) return false; const pixels=signatureCtx.getImageData(0,0,width,height).data; for(let i=3;i<pixels.length;i+=4){ if(pixels[i] > 8) return true; } return false; }
+function applyMySavedSignatureToTSR(){
+  const target = document.getElementById('signature-target')?.value || 'serviced';
+  if(target !== 'serviced'){
+    showTSRStatus('Saved Settings signature is only for Serviced By.', 'warning');
+    return false;
+  }
+  if(!mySavedSignatureData){
+    showTSRStatus('No saved signature found in Settings. Draw or upload your signature here, or save one in Settings first.', 'warning');
+    return false;
+  }
+  signatureData.serviced = mySavedSignatureData;
+  updateSignatureStatuses();
+  saveStandaloneTSRDraft(true);
+  bootstrap.Modal.getInstance(document.getElementById('standaloneSignatureModal'))?.hide();
+  showTSRStatus('Saved Settings signature applied to Serviced By. Please continue reviewing the TSR.', 'success');
+  return true;
+}
+
 function hasRequiredServicedSignature(data){ const signatures=data?.signatures || signatureData || {}; return Boolean(String(signatures.serviced || '').trim()); }
-function validateTSRFinalSaveRequirements(data){
+async function validateTSRFinalSaveRequirements(data){
   if(!hasRequiredServicedSignature(data)){
+    const savedSignature = await loadMySavedSignatureForTSR();
+    if(savedSignature){
+      const choice = await offlineTSRConfirm({
+        title:'Serviced By signature is required',
+        message:'You have a saved signature in Settings. Use it for this TSR, or draw/upload a different one.',
+        confirmText:'Use My Saved Signature',
+        cancelText:'Draw Signature',
+        tone:'warning',
+        icon:'signature',
+        confirmValue:'use_saved',
+        cancelValue:'draw',
+        escapeValue:'cancel',
+        backdropValue:'cancel'
+      });
+      if(choice === 'use_saved'){
+        signatureData.serviced = savedSignature;
+        data.signatures = signatureData;
+        updateSignatureStatuses();
+        await saveStandaloneTSRDraft(true);
+        showTSRStatus('Saved Settings signature applied to Serviced By. Preparing final TSR preview...', 'success');
+        return true;
+      }
+      if(choice === 'draw'){
+        openSignatureModal('serviced');
+      }
+      return false;
+    }
     showTSRStatus('Serviced By signature is required before saving the TSR. Please tap Add Serviced By Signature, draw or upload your signature, then save again.', 'danger');
     document.getElementById('serviced-signature-status')?.classList.add('text-danger','fw-bold');
     const signatureButton = Array.from(document.querySelectorAll('button')).find(btn => (btn.getAttribute('onclick') || '').includes("openSignatureModal('serviced')"));
