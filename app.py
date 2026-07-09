@@ -8596,6 +8596,25 @@ def online_tsr_next_number_for_date(sequence_date=None, initials=None):
     return f"{prefix}-{highest + 1:02d}-{initials}"
 
 
+def online_tsr_submitted_number_is_available(tsr_number, sequence_date=None, initials=None):
+    ensure_online_tsr_submission_table()
+    tsr_number = clean_str(tsr_number).upper()
+    if not tsr_number:
+        return False
+    sequence_date = sequence_date or online_tsr_daily_sequence_date()
+    initials = (clean_str(initials) or online_tsr_engineer_initials()).upper()
+    prefix = sequence_date.strftime('%Y%m%d')
+    pattern = re.compile(rf'^{re.escape(prefix)}-(\d{{1,4}})-{re.escape(initials)}$', re.IGNORECASE)
+    if not pattern.match(tsr_number):
+        return False
+    existing = (
+        OnlineTsrSubmission.query
+        .filter(db.func.upper(OnlineTsrSubmission.tsr_number) == tsr_number)
+        .first()
+    )
+    return existing is None
+
+
 @app.route('/get_next_online_tsr_number')
 @login_required
 def get_next_online_tsr_number():
@@ -9643,7 +9662,15 @@ def save_offline_tsr_online():
         parse_online_tsr_sequence_date(selected_schedule.get('date_label')) or
         online_tsr_daily_sequence_date()
     )
-    tsr_number = online_tsr_next_number_for_date(sequence_date)
+    if submitted_tsr_number and online_tsr_submitted_number_is_available(submitted_tsr_number, sequence_date):
+        tsr_number = submitted_tsr_number.upper()
+    elif submitted_tsr_number and not preserve_uploaded_pdf:
+        return jsonify({
+            'status': 'error',
+            'message': 'The previewed TSR number is no longer available. Please preview the TSR again before saving.'
+        }), 409
+    else:
+        tsr_number = online_tsr_next_number_for_date(sequence_date)
     payload['tsr-number'] = tsr_number
     payload['tsr_number'] = tsr_number
     completion_scope = normalize_online_tsr_completion_scope(payload.get('completion_scope') or payload.get('_completion_scope') or 'linked_all')

@@ -367,17 +367,19 @@
     <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
       <div class="modal-header bg-dark text-white no-print">
         <div>
-          <h5 class="modal-title fw-bold mb-0"><i class="fa-solid fa-file-pdf me-2"></i>TSR Print / PDF Preview</h5>
-          <div class="small opacity-75">Preview uses the same generated PDF as Download.</div>
+          <h5 class="modal-title fw-bold mb-0" id="tsr-preview-modal-title"><i class="fa-solid fa-file-pdf me-2"></i>TSR Print / PDF Preview</h5>
+          <div class="small opacity-75" id="tsr-preview-modal-subtitle">Preview uses the same generated PDF as Download.</div>
         </div>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body bg-secondary-subtle p-3 p-md-4">
         <div class="d-flex flex-wrap gap-2 justify-content-end mb-3 no-print">
-          <button class="btn btn-outline-secondary fw-bold" type="button" data-bs-dismiss="modal">Back to Form</button>
-          <button class="btn btn-success fw-bold offline-tsr-pdf-action" type="button" onclick="downloadTSRPDF()"><i class="fa-solid fa-file-arrow-down me-1"></i>Download PDF</button>
-          <button class="btn btn-primary fw-bold" type="button" onclick="printTSRPreview()"><i class="fa-solid fa-print me-1"></i>Print / Save as PDF</button>
+          <button class="btn btn-outline-secondary fw-bold" type="button" data-bs-dismiss="modal" id="tsr-preview-back-btn">Back to Form</button>
+          <button class="btn btn-success fw-bold offline-tsr-pdf-action" type="button" onclick="downloadTSRPDF()" id="tsr-preview-download-btn"><i class="fa-solid fa-file-arrow-down me-1"></i>Download PDF</button>
+          <button class="btn btn-primary fw-bold" type="button" onclick="printTSRPreview()" id="tsr-preview-print-btn"><i class="fa-solid fa-print me-1"></i>Print / Save as PDF</button>
+          <button class="btn btn-primary fw-bold d-none" type="button" onclick="confirmStandaloneTSRFinalSave()" id="tsr-preview-confirm-save-btn"><i class="fa-solid fa-check me-1"></i>Confirm Save TSR</button>
         </div>
+        <div id="tsr-preview-final-note" class="alert alert-info fw-bold d-none no-print mb-3"></div>
         <div id="tsr-print-preview-content"></div>
       </div>
     </div>
@@ -3969,9 +3971,9 @@ function scheduleOfflineTSRAutoSync(){
   }, 1500);
 }
 
-async function submitStandaloneTSROnline(data){
-  const payload = await prepareTSRForFinalSave(data, { assignNumber:true });
-  const pdfPackage = await buildStandaloneTSRPDFBlobForUpload(payload);
+async function submitStandaloneTSROnline(data, options={}){
+  const payload = options.payload || await prepareTSRForFinalSave(data, { assignNumber:true });
+  const pdfPackage = options.pdfPackage || await buildStandaloneTSRPDFBlobForUpload(payload);
   const formData = new FormData();
   const currentAttachments = getCurrentTSRQueuedAttachments(payload);
   const payloadWithAttachments = Object.assign({}, payload, { attachments: currentAttachments });
@@ -4021,12 +4023,12 @@ async function submitStandaloneTSROnline(data){
   }
 }
 
-async function submitStandaloneTSRRevisionOnline(data){
+async function submitStandaloneTSRRevisionOnline(data, options={}){
   if(!onlineTSRRevisionContext?.submission_id){
     throw new Error('Original TSR revision context is missing.');
   }
 
-  const revisionReason = await offlineTSRPrompt({
+  const revisionReason = options.revisionReason || await offlineTSRPrompt({
     title: 'Correction Reason',
     message: 'Enter the reason for this corrected TSR. This will be kept in the revision history.',
     defaultValue: 'Corrected TSR details',
@@ -4043,13 +4045,13 @@ async function submitStandaloneTSRRevisionOnline(data){
   }
 
   const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule();
-  const payload = Object.assign({}, data || {}, {
+  const payload = options.payload || Object.assign({}, data || {}, {
     schedule_id: onlineTSRRevisionContext.shift_id || selectedSchedule?.id || data?.schedule_id || '',
     selectedSchedule: selectedSchedule || data?.selectedSchedule || null,
     revision_reason: revisionReason,
     parent_submission_id: onlineTSRRevisionContext.submission_id
   });
-  const pdfPackage = await buildStandaloneTSRPDFBlobForUpload(payload);
+  const pdfPackage = options.pdfPackage || await buildStandaloneTSRPDFBlobForUpload(payload);
   const formData = new FormData();
   const currentAttachments = getCurrentTSRQueuedAttachments(payload);
   const payloadWithAttachments = Object.assign({}, payload, { attachments: currentAttachments });
@@ -4090,15 +4092,81 @@ async function submitStandaloneTSRRevisionOnline(data){
   return result;
 }
 
-async function saveStandaloneTSRDraft(silent=false){
-  if(silent && standaloneTSRAutosavePaused) return;
-  if(!hasStandaloneScheduleSelection()){
-    if(!silent) updateCreateTSRScheduleGate({ showMessage:true });
-    return;
+let finalTSRPreviewState = null;
+let finalTSRPreviewBusy = false;
+let finalTSRConfirmBusy = false;
+
+function setFinalTSRPreviewMode(enabled, options={}){
+  const title = document.getElementById('tsr-preview-modal-title');
+  const subtitle = document.getElementById('tsr-preview-modal-subtitle');
+  const backBtn = document.getElementById('tsr-preview-back-btn');
+  const downloadBtn = document.getElementById('tsr-preview-download-btn');
+  const printBtn = document.getElementById('tsr-preview-print-btn');
+  const confirmBtn = document.getElementById('tsr-preview-confirm-save-btn');
+  const note = document.getElementById('tsr-preview-final-note');
+  if(title) title.innerHTML = enabled
+    ? '<i class="fa-solid fa-file-circle-check me-2"></i>Review TSR Before Saving'
+    : '<i class="fa-solid fa-file-pdf me-2"></i>TSR Print / PDF Preview';
+  if(subtitle) subtitle.textContent = enabled
+    ? 'Please review the final output. The TSR will save only after you confirm.'
+    : 'Preview uses the same generated PDF as Download.';
+  if(backBtn) backBtn.textContent = enabled ? 'Back to Edit' : 'Back to Form';
+  downloadBtn?.classList.toggle('d-none', !!enabled);
+  printBtn?.classList.toggle('d-none', !!enabled);
+  confirmBtn?.classList.toggle('d-none', !enabled);
+  if(confirmBtn){
+    confirmBtn.disabled = !!options.busy;
+    confirmBtn.innerHTML = options.busy
+      ? '<i class="fa-solid fa-spinner fa-spin me-1"></i>Saving...'
+      : '<i class="fa-solid fa-check me-1"></i>Confirm Save TSR';
   }
-  const data=collectTSRData();
-  if(silent){
-    await saveStandaloneTSRDraftLocally(data);
+  if(note){
+    const noteText = enabled ? String(options.note || '').trim() : '';
+    note.classList.toggle('d-none', !noteText);
+    note.innerHTML = noteText ? `<i class="fa-solid fa-circle-info me-1"></i>${escapeHTML(noteText)}` : '';
+  }
+}
+
+function resetFinalTSRPreviewState(){
+  finalTSRPreviewState = null;
+  finalTSRConfirmBusy = false;
+  setFinalTSRPreviewMode(false);
+}
+
+async function showFinalTSRPreview(payload, pdfPackage, options={}){
+  const target = document.getElementById('tsr-print-preview-content');
+  const modalEl = document.getElementById('tsrPrintPreviewModal');
+  const modal = new bootstrap.Modal(modalEl);
+  clearCurrentTSRPreviewPDFUrl();
+  currentTSRPreviewPDFUrl = URL.createObjectURL(pdfPackage.blob);
+  if(target){
+    target.innerHTML = `<iframe class="tsr-pdf-preview-frame" title="Final TSR PDF Preview" src="${currentTSRPreviewPDFUrl}#toolbar=1&navpanes=0&view=FitH"></iframe>`;
+  }
+  finalTSRPreviewState = {
+    payload,
+    pdfPackage,
+    revisionReason: options.revisionReason || '',
+    isRevision: !!options.isRevision
+  };
+  setFinalTSRPreviewMode(true, {
+    note: options.note || ''
+  });
+  if(modalEl && !modalEl.dataset.pdfPreviewCleanupBound){
+    modalEl.addEventListener('hidden.bs.modal', clearCurrentTSRPreviewPDFUrl);
+    modalEl.dataset.pdfPreviewCleanupBound = '1';
+  }
+  if(modalEl && !modalEl.dataset.finalPreviewResetBound){
+    modalEl.addEventListener('hidden.bs.modal', () => {
+      if(!finalTSRConfirmBusy) resetFinalTSRPreviewState();
+    });
+    modalEl.dataset.finalPreviewResetBound = '1';
+  }
+  modal.show();
+}
+
+async function beginStandaloneTSRFinalPreview(data){
+  if(finalTSRPreviewBusy || finalTSRConfirmBusy){
+    showTSRStatus('TSR preview or save is already running. Please wait.', 'info');
     return;
   }
   if(!validateTSRFinalSaveRequirements(data)){
@@ -4108,46 +4176,99 @@ async function saveStandaloneTSRDraft(silent=false){
   if(!await confirmTSRRecommendedDetailsBeforeSave(data)){
     return;
   }
-  if(onlineTSRRevisionContext && !silent){
-    try{
-      const revisionResult = await submitStandaloneTSRRevisionOnline(data);
-      await saveCurrentTSRKnowledge(true);
-      const revNo = revisionResult?.revision_no || '';
-      const revLabel = revNo ? `REV${revNo}` : 'new revision';
-      const attachedPdfName = revisionResult?.attached_filename || revisionResult?.pdf_filename || '';
-      const pdfNote = attachedPdfName ? ` PDF attached: ${attachedPdfName}.` : '';
-      const equipmentCorrection = revisionResult?.equipment_correction || null;
-      const equipmentNote = equipmentCorrection?.status === 'updated'
-        ? ` Equipment database updated: ${equipmentCorrection.old_serial || ''} -> ${equipmentCorrection.new_serial || ''}.`
-        : '';
-      showTSRStatus(`Corrected TSR saved as ${revLabel}.${pdfNote}${equipmentNote} Calendar Send Email will use the latest corrected TSR by default.`, 'success');
-      setOnlineTSRRevisionContext(null);
-      await clearStandaloneTSRDraftLocally();
-      await renderStandaloneTSRDraftPanel();
-      return;
-    }catch(err){
-      if(err?.cancelled){
+
+  finalTSRPreviewBusy = true;
+  setOfflineTSRPDFBusy(true);
+  showTSRStatus('Preparing final TSR preview...', 'info');
+  try{
+    let revisionReason = '';
+    let payload = null;
+    const isRevision = Boolean(onlineTSRRevisionContext);
+    if(isRevision){
+      revisionReason = await offlineTSRPrompt({
+        title: 'Correction Reason',
+        message: 'Enter the reason for this corrected TSR. This will be kept in the revision history.',
+        defaultValue: 'Corrected TSR details',
+        confirmText: 'Preview Corrected TSR',
+        cancelText: 'Cancel',
+        tone: 'warning',
+        icon: 'pen-to-square'
+      });
+      if(!revisionReason){
         showTSRStatus('Corrected TSR save cancelled.', 'info');
         return;
       }
-      console.warn('[Offline TSR] Corrected TSR save failed', err);
-      await saveStandaloneTSRDraftLocally(data);
-      showTSRStatus(err?.message || 'Unable to save corrected TSR. Draft was kept locally on this device.', 'danger');
-      return;
+      const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule();
+      payload = Object.assign({}, data || {}, {
+        schedule_id: onlineTSRRevisionContext.shift_id || selectedSchedule?.id || data?.schedule_id || '',
+        selectedSchedule: selectedSchedule || data?.selectedSchedule || null,
+        revision_reason: revisionReason,
+        parent_submission_id: onlineTSRRevisionContext.submission_id
+      });
+    }else if(navigator.onLine){
+      payload = await prepareTSRForFinalSave(data, { assignNumber:true });
+    }else{
+      const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule();
+      payload = Object.assign({}, data || {}, {
+        schedule_id: selectedSchedule?.id || data?.schedule_id || '',
+        selectedSchedule: selectedSchedule || data?.selectedSchedule || null,
+        completion_scope: data?.completion_scope || await chooseTSRCompletionScope(selectedSchedule)
+      });
     }
+    const pdfPackage = await buildStandaloneTSRPDFBlobForUpload(payload);
+    const offlineNote = !navigator.onLine && !isRevision
+      ? 'Offline mode: this exact PDF will be queued now. The TSR number may be reconfirmed during sync.'
+      : '';
+    await showFinalTSRPreview(payload, pdfPackage, { isRevision, revisionReason, note: offlineNote });
+  }catch(err){
+    console.error('[Offline TSR] Final TSR preview failed', err);
+    showTSRStatus(err?.message || 'Unable to prepare final TSR preview. Draft was kept locally on this device.', 'danger');
+    await saveStandaloneTSRDraftLocally(data).catch(draftErr => console.warn('[Offline TSR] Final preview draft preservation failed', draftErr));
+  }finally{
+    finalTSRPreviewBusy = false;
+    setOfflineTSRPDFBusy(false);
+  }
+}
+
+async function finishStandaloneTSRFinalSave(state){
+  const payload = state?.payload || {};
+  const pdfPackage = state?.pdfPackage || null;
+  if(!payload || !pdfPackage?.blob){
+    throw new Error('Final TSR preview data is missing. Please preview the TSR again.');
+  }
+
+  if(state.isRevision){
+    const revisionResult = await submitStandaloneTSRRevisionOnline(payload, {
+      payload,
+      pdfPackage,
+      revisionReason: state.revisionReason
+    });
+    await saveCurrentTSRKnowledge(true);
+    const revNo = revisionResult?.revision_no || '';
+    const revLabel = revNo ? `REV${revNo}` : 'new revision';
+    const attachedPdfName = revisionResult?.attached_filename || revisionResult?.pdf_filename || '';
+    const pdfNote = attachedPdfName ? ` PDF attached: ${attachedPdfName}.` : '';
+    const equipmentCorrection = revisionResult?.equipment_correction || null;
+    const equipmentNote = equipmentCorrection?.status === 'updated'
+      ? ` Equipment database updated: ${equipmentCorrection.old_serial || ''} -> ${equipmentCorrection.new_serial || ''}.`
+      : '';
+    showTSRStatus(`Corrected TSR saved as ${revLabel}.${pdfNote}${equipmentNote} Calendar Send Email will use the latest corrected TSR by default.`, 'success');
+    setOnlineTSRRevisionContext(null);
+    await clearStandaloneTSRDraftLocally();
+    await renderStandaloneTSRDraftPanel();
+    return;
   }
 
   if(navigator.onLine){
-    if(silent) return;
     try{
-      const onlineResult = await submitStandaloneTSROnline(data);
+      const onlineResult = await submitStandaloneTSROnline(payload, { payload, pdfPackage });
       await saveCurrentTSRKnowledge(true);
       await clearStandaloneTSRDraftLocally();
       initializeBlankStandaloneTSR();
       resetAllInlineTSRKnowledgeSuggestions();
       const attachedPdfName = onlineResult?.attached_filename || onlineResult?.attached_pdf_name || onlineResult?.original_filename || onlineResult?.pdf_filename || '';
       const completedCount = Array.isArray(onlineResult?.completed_shift_ids) ? onlineResult.completed_shift_ids.length : 0;
-      const completedScope = onlineResult?.completion_scope || data?.completion_scope || 'linked_all';
+      const completedScope = onlineResult?.completion_scope || payload?.completion_scope || 'linked_all';
       const extraAttachmentCount = Number(onlineResult?.extra_attachment_count || 0);
       const capturedContacts = Array.isArray(onlineResult?.auto_captured_contact_emails) ? onlineResult.auto_captured_contact_emails : [];
       const pdfNote = attachedPdfName ? ` PDF attached to schedule/archive: ${attachedPdfName}` : '';
@@ -4171,7 +4292,7 @@ async function saveStandaloneTSRDraft(silent=false){
         const queue = readOfflineTSRQueue();
         showTSRStatus(`TSR queued locally for later sync. Pending offline TSRs: ${queue.length}. Page cleared for the next TSR.`, 'warning');
       }else{
-        await saveStandaloneTSRDraftLocally(data);
+        await saveStandaloneTSRDraftLocally(payload);
         showTSRStatus('Unable to save TSR online right now. Draft was kept locally on this device.', 'danger');
       }
       renderOfflineTSRQueuePanel();
@@ -4180,22 +4301,52 @@ async function saveStandaloneTSRDraft(silent=false){
     return;
   }
 
-  const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule();
-  const payload = Object.assign({}, data || {}, {
-    schedule_id: selectedSchedule?.id || data?.schedule_id || '',
-    selectedSchedule: selectedSchedule || data?.selectedSchedule || null
-  });
-  const pdfPackage = await buildStandaloneTSRPDFBlobForUpload(payload);
   await queueStandaloneTSROffline(payload, pdfPackage, 'offline');
   await clearStandaloneTSRDraftLocally();
-  if(!silent){
-    initializeBlankStandaloneTSR();
-    resetAllInlineTSRKnowledgeSuggestions();
-    const queue = readOfflineTSRQueue();
-    showTSRStatus(`Offline TSR queued locally for later sync. Pending offline TSRs: ${queue.length}. Page cleared for the next TSR.`, 'warning');
-  }
+  initializeBlankStandaloneTSR();
+  resetAllInlineTSRKnowledgeSuggestions();
+  const queue = readOfflineTSRQueue();
+  showTSRStatus(`Offline TSR queued locally for later sync. Pending offline TSRs: ${queue.length}. Page cleared for the next TSR.`, 'warning');
   renderOfflineTSRQueuePanel();
   await renderStandaloneTSRDraftPanel();
+}
+
+async function confirmStandaloneTSRFinalSave(){
+  if(finalTSRConfirmBusy) return;
+  const state = finalTSRPreviewState;
+  if(!state){
+    showTSRStatus('Final TSR preview expired. Please click Save TSR again.', 'warning');
+    return;
+  }
+  finalTSRConfirmBusy = true;
+  setFinalTSRPreviewMode(true, { busy:true });
+  try{
+    await finishStandaloneTSRFinalSave(state);
+    const modalEl = document.getElementById('tsrPrintPreviewModal');
+    bootstrap.Modal.getInstance(modalEl)?.hide();
+    resetFinalTSRPreviewState();
+  }catch(err){
+    console.warn('[Offline TSR] Final TSR save failed', err);
+    await saveStandaloneTSRDraftLocally(state.payload || collectTSRData()).catch(draftErr => console.warn('[Offline TSR] Confirm-save draft preservation failed', draftErr));
+    showTSRStatus(err?.message || 'Unable to save TSR. Draft was kept locally on this device.', 'danger');
+    setFinalTSRPreviewMode(true, { busy:false });
+  }finally{
+    finalTSRConfirmBusy = false;
+  }
+}
+
+async function saveStandaloneTSRDraft(silent=false){
+  if(silent && standaloneTSRAutosavePaused) return;
+  if(!hasStandaloneScheduleSelection()){
+    if(!silent) updateCreateTSRScheduleGate({ showMessage:true });
+    return;
+  }
+  const data=collectTSRData();
+  if(silent){
+    await saveStandaloneTSRDraftLocally(data);
+    return;
+  }
+  await beginStandaloneTSRFinalPreview(data);
 }
 async function loadStandaloneTSRDraft(){
   let data = null;
@@ -5061,6 +5212,7 @@ async function openTSRPrintPreview(){
     showTSRStatus('PDF is already being generated. Please wait.', 'info');
     return;
   }
+  resetFinalTSRPreviewState();
   setOfflineTSRPDFBusy(true);
   saveStandaloneTSRDraft(true);
   const target = document.getElementById('tsr-print-preview-content');
