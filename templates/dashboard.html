@@ -2615,8 +2615,8 @@
         }
 
         container.innerHTML = logs.map((log, index) => {
-            const meta = getActivityMeta(log.action);
-            const readableAction = formatActivityText(log.action);
+            const meta = getActivityMeta(log);
+            const readableAction = formatActivityText(log.display_action || log.action);
             const highlightClass = shouldHighlight && index === 0 ? 'dashboard-mobile-activity-new' : '';
 
             return `
@@ -2636,7 +2636,30 @@
         }).join('');
     }
 
-    function getActivityMeta(actionText) {
+    function getActivityMeta(logOrAction) {
+        if (logOrAction && typeof logOrAction === 'object' && logOrAction.type) {
+            const typeMeta = {
+                Schedule: { label: 'Schedule', icon: 'fa-calendar-check', badge: 'activity-schedule' },
+                TSR: { label: 'TSR', icon: 'fa-file-signature', badge: 'activity-tsr' },
+                Reimbursement: { label: 'Reimbursement', icon: 'fa-receipt', badge: 'activity-reimbursement' },
+                'Travel Request': { label: 'Travel Request', icon: 'fa-plane-departure', badge: 'activity-travel-request' },
+                'Travel Liquidation': { label: 'Travel Liquidation', icon: 'fa-file-invoice-dollar', badge: 'activity-travel-liquidation' },
+                'Cash Advance': { label: 'Cash Advance', icon: 'fa-money-check-dollar', badge: 'activity-cash-advance' },
+                'Cash Advance Liquidation': { label: 'Cash Advance Liquidation', icon: 'fa-file-circle-check', badge: 'activity-cash-liquidation' },
+                Approval: { label: 'Approval', icon: 'fa-route', badge: 'activity-approval' },
+                Accounting: { label: 'Accounting', icon: 'fa-calculator', badge: 'activity-accounting' },
+                Email: { label: 'Email', icon: 'fa-envelope', badge: 'activity-email' },
+                Client: { label: 'Client', icon: 'fa-hospital', badge: 'activity-client' },
+                Product: { label: 'Product', icon: 'fa-boxes-stacked', badge: 'activity-product' },
+                Personnel: { label: 'Personnel', icon: 'fa-user-gear', badge: 'activity-personnel' },
+                Export: { label: 'Export', icon: 'fa-file-export', badge: 'activity-export' },
+                Security: { label: 'Security', icon: 'fa-shield-halved', badge: 'activity-security' },
+                System: { label: 'System', icon: 'fa-circle-info', badge: 'activity-system' }
+            };
+            if (typeMeta[logOrAction.type]) return typeMeta[logOrAction.type];
+        }
+
+        const actionText = typeof logOrAction === 'object' ? logOrAction.action : logOrAction;
         const text = String(actionText || '').toLowerCase();
 
         if (text.includes('password') || text.includes('unauthorized') || text.includes('denied')) {
@@ -2652,7 +2675,7 @@
             return { label: 'Product', icon: 'fa-boxes-stacked', badge: 'activity-product' };
         }
         if (text.includes('engineer') || text.includes('technical staff') || text.includes('personnel') || text.includes('profile')) {
-            return { label: 'Engineer', icon: 'fa-user-gear', badge: 'activity-engineer' };
+            return { label: 'Personnel', icon: 'fa-user-gear', badge: 'activity-personnel' };
         }
         if (text.includes('schedule') || text.includes('calendar') || text.includes('record') || text.includes('bulk-purged')) {
             return { label: 'Schedule', icon: 'fa-calendar-check', badge: 'activity-schedule' };
@@ -2732,8 +2755,8 @@
         renderMobileActivityList(logs, shouldHighlight);
 
         target.innerHTML = logs.map((l, index) => {
-            const meta = getActivityMeta(l.action);
-            const readableAction = formatActivityText(l.action);
+            const meta = getActivityMeta(l);
+            const readableAction = formatActivityText(l.display_action || l.action);
             const highlightClass = shouldHighlight && index === 0 ? 'activity-new-row' : '';
 
             return `
@@ -3878,8 +3901,17 @@
     }
 
     .activity-schedule { background: #e7f1ff; color: #0d6efd; }
+    .activity-tsr { background: #e0f2fe; color: #0369a1; }
+    .activity-reimbursement { background: #dcfce7; color: #166534; }
+    .activity-travel-request { background: #ede9fe; color: #6d28d9; }
+    .activity-travel-liquidation { background: #fef3c7; color: #92400e; }
+    .activity-cash-advance { background: #ccfbf1; color: #0f766e; }
+    .activity-cash-liquidation { background: #fae8ff; color: #a21caf; }
+    .activity-approval { background: #fce7f3; color: #be185d; }
+    .activity-accounting { background: #e2e8f0; color: #334155; }
     .activity-client { background: #e9f8ef; color: #198754; }
     .activity-product { background: #fff6db; color: #946200; }
+    .activity-personnel { background: #f1f3f5; color: #343a40; }
     .activity-engineer { background: #f1f3f5; color: #343a40; }
     .activity-export { background: #f3e8ff; color: #7e22ce; }
     .activity-security { background: #ffe8e8; color: #dc3545; }

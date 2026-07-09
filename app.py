@@ -11708,12 +11708,20 @@ def download_system_backup():
 
 ACTIVITY_CATEGORY_META = {
     'Schedule': {'icon': 'fa-calendar-check', 'label': 'Schedule'},
+    'TSR': {'icon': 'fa-file-signature', 'label': 'TSR'},
+    'Reimbursement': {'icon': 'fa-receipt', 'label': 'Reimbursement'},
+    'Travel Request': {'icon': 'fa-plane-departure', 'label': 'Travel Request'},
+    'Travel Liquidation': {'icon': 'fa-file-invoice-dollar', 'label': 'Travel Liquidation'},
+    'Cash Advance': {'icon': 'fa-money-check-dollar', 'label': 'Cash Advance'},
+    'Cash Advance Liquidation': {'icon': 'fa-file-circle-check', 'label': 'Cash Advance Liquidation'},
+    'Approval': {'icon': 'fa-route', 'label': 'Approval'},
+    'Accounting': {'icon': 'fa-calculator', 'label': 'Accounting'},
+    'Email': {'icon': 'fa-envelope', 'label': 'Email'},
     'Client': {'icon': 'fa-hospital', 'label': 'Client'},
     'Product': {'icon': 'fa-boxes-stacked', 'label': 'Product'},
-    'Engineer': {'icon': 'fa-user-gear', 'label': 'Engineer'},
+    'Personnel': {'icon': 'fa-user-gear', 'label': 'Personnel'},
     'Export': {'icon': 'fa-file-export', 'label': 'Export'},
     'Security': {'icon': 'fa-shield-halved', 'label': 'Security'},
-    'Email': {'icon': 'fa-envelope', 'label': 'Email'},
     'System': {'icon': 'fa-circle-info', 'label': 'System'}
 }
 
@@ -11722,6 +11730,13 @@ ACTIVITY_ACTION_META = {
     'Update': {'icon': 'fa-pen-to-square', 'label': 'Update'},
     'Move': {'icon': 'fa-arrows-up-down-left-right', 'label': 'Move'},
     'Delete': {'icon': 'fa-trash-can', 'label': 'Delete'},
+    'Submit': {'icon': 'fa-paper-plane', 'label': 'Submit'},
+    'Approve': {'icon': 'fa-circle-check', 'label': 'Approve'},
+    'Reject': {'icon': 'fa-circle-xmark', 'label': 'Reject'},
+    'Return': {'icon': 'fa-reply', 'label': 'Return'},
+    'Complete': {'icon': 'fa-clipboard-check', 'label': 'Complete'},
+    'Upload': {'icon': 'fa-upload', 'label': 'Upload'},
+    'Download': {'icon': 'fa-download', 'label': 'Download'},
     'Export': {'icon': 'fa-file-export', 'label': 'Export'},
     'Import': {'icon': 'fa-file-import', 'label': 'Import'},
     'Email': {'icon': 'fa-envelope', 'label': 'Email'},
@@ -11734,10 +11749,26 @@ def classify_activity_action(action):
     """Return a normalized audit category for dashboard badges and filters."""
     text = (action or '').lower()
 
-    if 'email notification' in text or 'sent schedule' in text and 'email' in text:
-        return 'Email'
     if 'password' in text or 'unauthorized' in text or 'denied' in text:
         return 'Security'
+    if 'accounting' in text or 'cash advance release' in text or 'marked reimbursement' in text and ('paid' in text or 'processing' in text):
+        return 'Accounting'
+    if 'cash advance liquidation' in text or 'cal-' in text:
+        return 'Cash Advance Liquidation'
+    if 'travel liquidation' in text or 'tl-' in text:
+        return 'Travel Liquidation'
+    if 'cash advance' in text or 'request for cash advance' in text or 'ca-' in text:
+        return 'Cash Advance'
+    if 'travel request' in text or 'travel block' in text or 'tr-' in text:
+        return 'Travel Request'
+    if 'reimbursement' in text or 'pcv' in text or 'rfp' in text:
+        return 'Reimbursement'
+    if 'tsr' in text or 'service report' in text or 'online tsr' in text:
+        return 'TSR'
+    if 'approval route' in text or 'approval user' in text or 'approver' in text:
+        return 'Approval'
+    if 'email notification' in text or ('sent schedule' in text and 'email' in text) or 'sent ' in text and 'email' in text:
+        return 'Email'
     if 'export' in text:
         return 'Export'
     if 'client' in text or 'medical center' in text:
@@ -11745,7 +11776,7 @@ def classify_activity_action(action):
     if 'product' in text or 'equipment' in text or 'inventory' in text:
         return 'Product'
     if 'engineer' in text or 'technical staff' in text or 'personnel' in text or 'profile' in text:
-        return 'Engineer'
+        return 'Personnel'
     if 'schedule' in text or 'calendar' in text or 'record' in text or 'bulk-purged' in text or 'wiped technical' in text:
         return 'Schedule'
 
@@ -11756,10 +11787,24 @@ def classify_activity_verb(action):
     """Return the action subtype used by the advanced activity log UI."""
     text = (action or '').lower()
 
-    if 'sent schedule' in text and 'email' in text:
-        return 'Email'
     if 'password' in text or 'unauthorized' in text or 'denied' in text:
         return 'Security'
+    if any(token in text for token in ['rejected ', ' rejected', 'rejection']):
+        return 'Reject'
+    if any(token in text for token in ['returned ', ' returned', 'return ']):
+        return 'Return'
+    if any(token in text for token in ['approved ', ' approved', 'approval stamp']):
+        return 'Approve'
+    if any(token in text for token in ['submitted ', ' submitted', 'submit ']):
+        return 'Submit'
+    if any(token in text for token in ['completed ', ' completed', 'confirmed ', 'ready for liquidation', 'marked travel request ready']):
+        return 'Complete'
+    if any(token in text for token in ['uploaded ', ' upload']):
+        return 'Upload'
+    if any(token in text for token in ['downloaded ', ' download']):
+        return 'Download'
+    if 'sent ' in text and ('email' in text or 'accounting' in text or 'client' in text) or 'email notification' in text:
+        return 'Email'
     if 'export' in text:
         return 'Export'
     if 'import' in text:
@@ -11774,6 +11819,57 @@ def classify_activity_verb(action):
         return 'Delete'
 
     return 'Other'
+
+
+def classify_activity_severity(action):
+    """Return display-only severity for highlighting audit outcomes."""
+    text = (action or '').lower()
+
+    danger_tokens = [
+        'failed',
+        'error',
+        'unable',
+        'unauthorized',
+        'denied',
+        'deleted',
+        'removed',
+        'purged',
+        'wiped',
+        'rejected'
+    ]
+    warning_tokens = [
+        'skipped',
+        'not sent',
+        'no recipients',
+        'missing',
+        'blocked',
+        'returned',
+        'warning'
+    ]
+    success_tokens = [
+        'sent',
+        'submitted',
+        'approved',
+        'completed',
+        'confirmed',
+        'paid',
+        'uploaded',
+        'downloaded',
+        'created',
+        'saved',
+        'imported',
+        'exported',
+        'updated',
+        'marked'
+    ]
+
+    if any(token in text for token in danger_tokens):
+        return 'danger'
+    if any(token in text for token in warning_tokens):
+        return 'warning'
+    if any(token in text for token in success_tokens):
+        return 'success'
+    return 'normal'
 
 
 def infer_activity_branch(action):
@@ -11798,18 +11894,43 @@ def extract_activity_label(action, label):
     return match.group(1).strip() if match else ''
 
 
+def clean_activity_display_action(action):
+    """Return a concise display string while keeping the original action available."""
+    text_value = clean_str(action) or ''
+    replacements = [
+        ('Generated online TSR PDF and completed schedule scope', 'Saved TSR and completed schedule scope'),
+        ('Sent completed Request for Cash Advance form to Accounting', 'Sent Cash Advance form to Accounting'),
+        ('Sent approved Cash Advance Liquidation to Accounting', 'Sent Cash Advance Liquidation to Accounting'),
+        ('Sent approved Travel Liquidation to Accounting', 'Sent Travel Liquidation to Accounting'),
+        ('Sent approved Travel Request PDF to Accounting', 'Sent Travel Request to Accounting'),
+        ('Sent approved Reimbursement to Accounting', 'Sent Reimbursement to Accounting'),
+        ('Failed to send Request for Cash Advance form to Accounting', 'Failed to send Cash Advance form to Accounting'),
+        ('Failed to send Cash Advance Liquidation to Accounting', 'Failed to send Cash Advance Liquidation to Accounting'),
+        ('Failed to send Travel Liquidation to Accounting', 'Failed to send Travel Liquidation to Accounting'),
+        ('Failed to send Travel Request PDF to Accounting', 'Failed to send Travel Request to Accounting'),
+        ('Failed to send Reimbursement to Accounting', 'Failed to send Reimbursement to Accounting'),
+    ]
+    for old, new in replacements:
+        text_value = text_value.replace(old, new)
+    return re.sub(r'\s+', ' ', text_value).strip()
+
+
 def activity_log_to_dict(log):
     """Serialize an ActivityLog row for API responses."""
     category = classify_activity_action(log.action)
     action_type = classify_activity_verb(log.action)
+    severity = classify_activity_severity(log.action)
     client_name = extract_activity_label(log.action, 'Client')
     product_name = extract_activity_label(log.action, 'Product')
     return {
         'id': log.id,
         'user': log.user,
         'action': log.action,
+        'display_action': clean_activity_display_action(log.action),
         'type': category,
+        'module': category,
         'action_type': action_type,
+        'severity': severity,
         'branch': infer_activity_branch(log.action),
         'client_name': client_name,
         'product_name': product_name,
@@ -11884,6 +12005,7 @@ def build_activity_query():
     user_filter = clean_str(request.args.get('user'))
     type_filter = clean_str(request.args.get('type'))
     action_filter = clean_str(request.args.get('action_type'))
+    severity_filter = clean_str(request.args.get('severity'))
     branch_filter = clean_str(request.args.get('branch'))
     start_date, end_date = parse_activity_date_bounds()
 
@@ -11901,7 +12023,30 @@ def build_activity_query():
         query = query.filter(func.date(ActivityLog.timestamp) <= end_date)
 
     # Derived filters are applied after query because category/action type/branch are inferred from action text.
-    return query, type_filter, action_filter, branch_filter
+    return query, type_filter, action_filter, severity_filter, branch_filter
+
+
+def filter_activity_logs_by_derived_fields(logs, type_filter='', action_filter='', severity_filter='', branch_filter=''):
+    """Apply filters derived from ActivityLog.action text."""
+    filtered = list(logs or [])
+    type_filter = 'Personnel' if type_filter == 'Engineer' else type_filter
+
+    if type_filter:
+        filtered = [log for log in filtered if classify_activity_action(log.action) == type_filter]
+
+    if action_filter:
+        filtered = [log for log in filtered if classify_activity_verb(log.action) == action_filter]
+
+    if severity_filter:
+        if severity_filter == 'warning_or_danger':
+            filtered = [log for log in filtered if classify_activity_severity(log.action) in {'warning', 'danger'}]
+        else:
+            filtered = [log for log in filtered if classify_activity_severity(log.action) == severity_filter]
+
+    if branch_filter:
+        filtered = [log for log in filtered if branch_filter.lower() in (log.action or '').lower()]
+
+    return filtered
 
 
 @app.route('/get_activity_filter_options')
@@ -11915,6 +12060,7 @@ def get_activity_filter_options():
         'users': get_activity_users(),
         'categories': list(ACTIVITY_CATEGORY_META.keys()),
         'action_types': list(ACTIVITY_ACTION_META.keys()),
+        'severities': ['normal', 'success', 'warning', 'danger', 'warning_or_danger'],
         'branches': ['Manila', 'Cebu', 'Davao']
     })
 
@@ -11931,17 +12077,9 @@ def get_activity_logs():
     page = max(page, 1)
     per_page = min(max(per_page, 10), 100)
 
-    query, type_filter, action_filter, branch_filter = build_activity_query()
+    query, type_filter, action_filter, severity_filter, branch_filter = build_activity_query()
     logs = query.order_by(ActivityLog.timestamp.desc()).all()
-
-    if type_filter:
-        logs = [log for log in logs if classify_activity_action(log.action) == type_filter]
-
-    if action_filter:
-        logs = [log for log in logs if classify_activity_verb(log.action) == action_filter]
-
-    if branch_filter:
-        logs = [log for log in logs if branch_filter.lower() in (log.action or '').lower()]
+    logs = filter_activity_logs_by_derived_fields(logs, type_filter, action_filter, severity_filter, branch_filter)
 
     total = len(logs)
     start_idx = (page - 1) * per_page
@@ -11950,11 +12088,14 @@ def get_activity_logs():
 
     category_counts = {}
     action_counts = {}
+    severity_counts = {}
     for log in logs:
         category = classify_activity_action(log.action)
         action_type = classify_activity_verb(log.action)
+        severity = classify_activity_severity(log.action)
         category_counts[category] = category_counts.get(category, 0) + 1
         action_counts[action_type] = action_counts.get(action_type, 0) + 1
+        severity_counts[severity] = severity_counts.get(severity, 0) + 1
 
     return jsonify({
         'page': page,
@@ -11963,6 +12104,7 @@ def get_activity_logs():
         'pages': (total + per_page - 1) // per_page,
         'category_counts': dict(sorted(category_counts.items())),
         'action_counts': dict(sorted(action_counts.items())),
+        'severity_counts': dict(sorted(severity_counts.items())),
         'logs': [activity_log_to_dict(log) for log in page_logs]
     })
 
@@ -11974,21 +12116,13 @@ def export_activity_logs():
     if not is_admin_authorized():
         return denied()
 
-    query, type_filter, action_filter, branch_filter = build_activity_query()
+    query, type_filter, action_filter, severity_filter, branch_filter = build_activity_query()
     logs = query.order_by(ActivityLog.timestamp.desc()).all()
-
-    if type_filter:
-        logs = [log for log in logs if classify_activity_action(log.action) == type_filter]
-
-    if action_filter:
-        logs = [log for log in logs if classify_activity_verb(log.action) == action_filter]
-
-    if branch_filter:
-        logs = [log for log in logs if branch_filter.lower() in (log.action or '').lower()]
+    logs = filter_activity_logs_by_derived_fields(logs, type_filter, action_filter, severity_filter, branch_filter)
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Timestamp', 'User', 'Category', 'Action Type', 'Branch Hint', 'Action'])
+    writer.writerow(['Timestamp', 'User', 'Category', 'Action Type', 'Severity', 'Branch Hint', 'Display Action', 'Original Action'])
 
     for log in logs:
         writer.writerow([
@@ -11996,7 +12130,9 @@ def export_activity_logs():
             log.user,
             classify_activity_action(log.action),
             classify_activity_verb(log.action),
+            classify_activity_severity(log.action),
             infer_activity_branch(log.action),
+            clean_activity_display_action(log.action),
             log.action
         ])
 

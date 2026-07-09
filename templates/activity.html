@@ -10,7 +10,7 @@
                 Advanced Activity Logs
             </h2>
             <p class="text-muted small mb-0">
-                Enterprise audit trail with search, category filters, action badges, pagination, and CSV export.
+                Workflow-focused audit trail with smarter categories, severity badges, filters, pagination, and CSV export.
             </p>
         </div>
 
@@ -34,8 +34,8 @@
                     <i class="fa-solid fa-list-check"></i>
                 </div>
                 <div>
-                    <div class="xsmall text-muted text-uppercase fw-bold">Matching Logs</div>
-                    <div class="h5 fw-bold mb-0" id="summary-total">—</div>
+                    <div class="xsmall text-muted text-uppercase fw-bold">Total Logs</div>
+                    <div class="h5 fw-bold mb-0" id="summary-total">-</div>
                 </div>
             </div>
         </div>
@@ -45,8 +45,8 @@
                     <i class="fa-solid fa-calendar-check"></i>
                 </div>
                 <div>
-                    <div class="xsmall text-muted text-uppercase fw-bold">Schedule Logs</div>
-                    <div class="h5 fw-bold mb-0" id="summary-schedule">—</div>
+                    <div class="xsmall text-muted text-uppercase fw-bold">Workflow Logs</div>
+                    <div class="h5 fw-bold mb-0" id="summary-workflow">-</div>
                 </div>
             </div>
         </div>
@@ -56,8 +56,8 @@
                     <i class="fa-solid fa-shield-halved"></i>
                 </div>
                 <div>
-                    <div class="xsmall text-muted text-uppercase fw-bold">Security Logs</div>
-                    <div class="h5 fw-bold mb-0" id="summary-security">—</div>
+                    <div class="xsmall text-muted text-uppercase fw-bold">Approval / Accounting</div>
+                    <div class="h5 fw-bold mb-0" id="summary-approval-accounting">-</div>
                 </div>
             </div>
         </div>
@@ -67,8 +67,8 @@
                     <i class="fa-solid fa-envelope"></i>
                 </div>
                 <div>
-                    <div class="xsmall text-muted text-uppercase fw-bold">Email Logs</div>
-                    <div class="h5 fw-bold mb-0" id="summary-email">—</div>
+                    <div class="xsmall text-muted text-uppercase fw-bold">Warnings / Failures</div>
+                    <div class="h5 fw-bold mb-0" id="summary-warning">-</div>
                 </div>
             </div>
         </div>
@@ -86,14 +86,6 @@
                     <label class="small fw-bold text-muted text-uppercase mb-1">Category</label>
                     <select id="filter-type" class="form-select form-select-sm" onchange="loadLogs(1)">
                         <option value="">All Categories</option>
-                        <option value="Schedule">Schedule</option>
-                        <option value="Email">Email</option>
-                        <option value="Client">Client</option>
-                        <option value="Product">Product</option>
-                        <option value="Engineer">Engineer</option>
-                        <option value="Export">Export</option>
-                        <option value="Security">Security</option>
-                        <option value="System">System</option>
                     </select>
                 </div>
 
@@ -101,15 +93,6 @@
                     <label class="small fw-bold text-muted text-uppercase mb-1">Action</label>
                     <select id="filter-action-type" class="form-select form-select-sm" onchange="loadLogs(1)">
                         <option value="">All Actions</option>
-                        <option value="Create">Create</option>
-                        <option value="Update">Update</option>
-                        <option value="Move">Move</option>
-                        <option value="Delete">Delete</option>
-                        <option value="Email">Email</option>
-                        <option value="Import">Import</option>
-                        <option value="Export">Export</option>
-                        <option value="Security">Security</option>
-                        <option value="Other">Other</option>
                     </select>
                 </div>
 
@@ -130,6 +113,17 @@
                 </div>
 
                 <div class="col-lg-1 col-md-4">
+                    <label class="small fw-bold text-muted text-uppercase mb-1">Severity</label>
+                    <select id="filter-severity" class="form-select form-select-sm" onchange="loadLogs(1)">
+                        <option value="">All</option>
+                        <option value="warning_or_danger">Warnings / Failures</option>
+                        <option value="success">Success</option>
+                        <option value="warning">Warning</option>
+                        <option value="danger">Failure</option>
+                    </select>
+                </div>
+
+                <div class="col-lg-1 col-md-4">
                     <label class="small fw-bold text-muted text-uppercase mb-1">From</label>
                     <input type="date" id="filter-start" class="form-control form-control-sm" onchange="loadLogs(1)">
                 </div>
@@ -144,9 +138,13 @@
                 <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setQuickRange('today')">Today</button>
                 <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setQuickRange('7d')">Last 7 Days</button>
                 <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setQuickRange('30d')">Last 30 Days</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setCategoryQuick('Schedule')">Schedules</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setActionQuick('Delete')">Deletes</button>
-                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setCategoryQuick('Email')">Emails</button>
+                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setCategoryQuick('TSR')">TSR</button>
+                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setCategoryQuick('Reimbursement')">Reimbursement</button>
+                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setSearchQuick('Travel')">Travel</button>
+                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setSearchQuick('Cash Advance')">Cash Advance</button>
+                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setActionQuick('Approve')">Approvals</button>
+                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setCategoryQuick('Accounting')">Accounting</button>
+                <button type="button" class="btn btn-light btn-sm fw-bold quick-filter" onclick="setSeverityQuick('warning_or_danger')">Warnings / Failures</button>
             </div>
         </div>
     </div>
@@ -179,12 +177,13 @@
                         <th style="width: 12%;">User</th>
                         <th style="width: 12%;">Category</th>
                         <th style="width: 12%;">Action</th>
+                        <th style="width: 10%;">Severity</th>
                         <th>Details</th>
                     </tr>
                 </thead>
                 <tbody id="activity-table-body">
                     <tr>
-                        <td colspan="5" class="text-center text-muted py-5">
+                        <td colspan="6" class="text-center text-muted py-5">
                             <i class="fa-solid fa-spinner fa-spin me-1"></i>Loading activity logs...
                         </td>
                     </tr>
@@ -268,7 +267,7 @@ function getActivityClientName(log) {
 }
 
 function getActivityDisplayAction(log) {
-    const actionText = String((log && log.action) || '');
+    const actionText = String((log && (log.display_action || log.action)) || '');
     const clientName = getActivityClientName(log);
 
     if(!clientName) return actionText;
@@ -280,16 +279,24 @@ function getActivityDisplayAction(log) {
 
     if(actionText.toLowerCase().includes(clientName.toLowerCase())) return actionText;
 
-    return `${actionText} — Client: ${clientName}`;
+    return `${actionText} - Client: ${clientName}`;
 }
 
 function getCategoryMeta(type) {
     const meta = {
         Schedule: ['fa-calendar-check', 'activity-schedule'],
+        TSR: ['fa-file-signature', 'activity-tsr'],
+        Reimbursement: ['fa-receipt', 'activity-reimbursement'],
+        'Travel Request': ['fa-plane-departure', 'activity-travel-request'],
+        'Travel Liquidation': ['fa-file-invoice-dollar', 'activity-travel-liquidation'],
+        'Cash Advance': ['fa-money-check-dollar', 'activity-cash-advance'],
+        'Cash Advance Liquidation': ['fa-file-circle-check', 'activity-cash-liquidation'],
+        Approval: ['fa-route', 'activity-approval'],
+        Accounting: ['fa-calculator', 'activity-accounting'],
         Email: ['fa-envelope', 'activity-email'],
         Client: ['fa-hospital', 'activity-client'],
         Product: ['fa-boxes-stacked', 'activity-product'],
-        Engineer: ['fa-user-gear', 'activity-engineer'],
+        Personnel: ['fa-user-gear', 'activity-personnel'],
         Export: ['fa-file-export', 'activity-export'],
         Security: ['fa-shield-halved', 'activity-security'],
         System: ['fa-circle-info', 'activity-system']
@@ -303,6 +310,13 @@ function getActionMeta(actionType) {
         Update: ['fa-pen-to-square', 'action-update'],
         Move: ['fa-arrows-up-down-left-right', 'action-move'],
         Delete: ['fa-trash-can', 'action-delete'],
+        Submit: ['fa-paper-plane', 'action-submit'],
+        Approve: ['fa-circle-check', 'action-approve'],
+        Reject: ['fa-circle-xmark', 'action-reject'],
+        Return: ['fa-reply', 'action-return'],
+        Complete: ['fa-clipboard-check', 'action-complete'],
+        Upload: ['fa-upload', 'action-upload'],
+        Download: ['fa-download', 'action-download'],
         Export: ['fa-file-export', 'action-export'],
         Import: ['fa-file-import', 'action-import'],
         Email: ['fa-envelope', 'action-email'],
@@ -310,6 +324,16 @@ function getActionMeta(actionType) {
         Other: ['fa-circle-info', 'action-other']
     };
     return meta[actionType] || meta.Other;
+}
+
+function getSeverityMeta(severity) {
+    const meta = {
+        success: ['fa-circle-check', 'severity-success', 'Success'],
+        warning: ['fa-triangle-exclamation', 'severity-warning', 'Warning'],
+        danger: ['fa-circle-exclamation', 'severity-danger', 'Failure'],
+        normal: ['fa-circle-info', 'severity-normal', 'Normal']
+    };
+    return meta[severity] || meta.normal;
 }
 
 function renderActivityMobileCards(logs){
@@ -328,9 +352,10 @@ function renderActivityMobileCards(logs){
     container.innerHTML = logs.map(log => {
         const [categoryIcon, categoryClass] = getCategoryMeta(log.type);
         const [actionIcon, actionClass] = getActionMeta(log.action_type);
+        const [severityIcon, severityClass, severityLabel] = getSeverityMeta(log.severity);
 
         return `
-            <div class="activity-mobile-card">
+            <div class="activity-mobile-card activity-severity-card-${escapeHtml(log.severity || 'normal')}">
                 <div class="activity-mobile-top">
                     <div>
                         <div class="activity-mobile-date">${escapeHtml(log.date)}</div>
@@ -344,6 +369,9 @@ function renderActivityMobileCards(logs){
 
                         <span class="activity-action ${actionClass}">
                             <i class="fa-solid ${actionIcon} me-1"></i>${escapeHtml(log.action_type || 'Other')}
+                        </span>
+                        <span class="activity-severity ${severityClass}">
+                            <i class="fa-solid ${severityIcon} me-1"></i>${escapeHtml(severityLabel)}
                         </span>
                     </div>
                 </div>
@@ -376,6 +404,7 @@ function buildQueryParams(page = 1) {
     const actionType = document.getElementById('filter-action-type').value;
     const user = document.getElementById('filter-user').value.trim();
     const branch = document.getElementById('filter-branch').value;
+    const severity = document.getElementById('filter-severity').value;
     const start = document.getElementById('filter-start').value;
     const end = document.getElementById('filter-end').value;
 
@@ -384,6 +413,7 @@ function buildQueryParams(page = 1) {
     if (actionType) params.set('action_type', actionType);
     if (user) params.set('user', user);
     if (branch) params.set('branch', branch);
+    if (severity) params.set('severity', severity);
     if (start) params.set('start_date', start);
     if (end) params.set('end_date', end);
 
@@ -407,24 +437,55 @@ async function loadFilterOptions() {
             option.value = user;
             userList.appendChild(option);
         });
+
+        populateActivitySelect('filter-type', data.categories || [], 'All Categories');
+        populateActivitySelect('filter-action-type', data.action_types || [], 'All Actions');
     } catch (error) {
         console.warn('Unable to load activity filter options', error);
     }
 }
 
+function populateActivitySelect(id, values, defaultLabel) {
+    const select = document.getElementById(id);
+    if (!select) return;
+    const currentValue = select.value || '';
+    select.innerHTML = `<option value="">${escapeHtml(defaultLabel)}</option>`;
+    (values || []).forEach(value => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        select.appendChild(option);
+    });
+    if (currentValue && Array.from(select.options).some(option => option.value === currentValue)) {
+        select.value = currentValue;
+    }
+}
+
 function updateSummaryCards(data) {
     const categoryCounts = data.category_counts || {};
+    const severityCounts = data.severity_counts || {};
+    const workflowCategories = [
+        'TSR',
+        'Reimbursement',
+        'Travel Request',
+        'Travel Liquidation',
+        'Cash Advance',
+        'Cash Advance Liquidation'
+    ];
+    const workflowTotal = workflowCategories.reduce((sum, key) => sum + Number(categoryCounts[key] || 0), 0);
+    const approvalAccountingTotal = Number(categoryCounts.Approval || 0) + Number(categoryCounts.Accounting || 0);
+    const warningTotal = Number(severityCounts.warning || 0) + Number(severityCounts.danger || 0);
     document.getElementById('summary-total').innerText = data.total ?? 0;
-    document.getElementById('summary-schedule').innerText = categoryCounts.Schedule || 0;
-    document.getElementById('summary-security').innerText = categoryCounts.Security || 0;
-    document.getElementById('summary-email').innerText = categoryCounts.Email || 0;
+    document.getElementById('summary-workflow').innerText = workflowTotal;
+    document.getElementById('summary-approval-accounting').innerText = approvalAccountingTotal;
+    document.getElementById('summary-warning').innerText = warningTotal;
 }
 
 async function loadLogs(page = 1) {
     const tbody = document.getElementById('activity-table-body');
     tbody.innerHTML = `
         <tr>
-            <td colspan="5" class="text-center text-muted py-5">
+            <td colspan="6" class="text-center text-muted py-5">
                 <i class="fa-solid fa-spinner fa-spin me-1"></i>Loading activity logs...
             </td>
         </tr>`;
@@ -435,7 +496,7 @@ async function loadLogs(page = 1) {
     if (!res.ok) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="5" class="text-center text-danger py-5">
+                <td colspan="6" class="text-center text-danger py-5">
                     Unable to load activity logs.
                 </td>
             </tr>`;
@@ -460,7 +521,7 @@ async function loadLogs(page = 1) {
     if (!data.logs.length) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="5" class="text-center text-muted py-5">
+                <td colspan="6" class="text-center text-muted py-5">
                     <i class="fa-solid fa-magnifying-glass me-1"></i>No activity logs match your filters.
                 </td>
             </tr>`;
@@ -471,8 +532,9 @@ async function loadLogs(page = 1) {
     data.logs.forEach(log => {
         const [categoryIcon, categoryClass] = getCategoryMeta(log.type);
         const [actionIcon, actionClass] = getActionMeta(log.action_type);
+        const [severityIcon, severityClass, severityLabel] = getSeverityMeta(log.severity);
         tbody.innerHTML += `
-            <tr class="small">
+            <tr class="small activity-log-row activity-severity-row-${escapeHtml(log.severity || 'normal')}">
                 <td class="ps-4 font-monospace text-muted">
                     ${escapeHtml(log.date)}
                     <span class="fw-bold text-dark d-block">${escapeHtml(log.time)}</span>
@@ -488,6 +550,11 @@ async function loadLogs(page = 1) {
                 <td>
                     <span class="activity-action ${actionClass}">
                         <i class="fa-solid ${actionIcon} me-1"></i>${escapeHtml(log.action_type || 'Other')}
+                    </span>
+                </td>
+                <td>
+                    <span class="activity-severity ${severityClass}">
+                        <i class="fa-solid ${severityIcon} me-1"></i>${escapeHtml(severityLabel)}
                     </span>
                 </td>
                 <td class="text-muted activity-action-cell" title="${escapeHtml(getActivityDisplayAction(log))}">
@@ -510,6 +577,7 @@ function resetFilters() {
     document.getElementById('filter-action-type').value = "";
     document.getElementById('filter-user').value = "";
     document.getElementById('filter-branch').value = "";
+    document.getElementById('filter-severity').value = "";
     document.getElementById('filter-start').value = "";
     document.getElementById('filter-end').value = "";
     document.getElementById('per-page').value = "25";
@@ -538,13 +606,34 @@ function setQuickRange(mode) {
     loadLogs(1);
 }
 
+function clearActivityWorkflowFilters() {
+    document.getElementById('filter-q').value = "";
+    document.getElementById('filter-type').value = "";
+    document.getElementById('filter-action-type').value = "";
+    document.getElementById('filter-severity').value = "";
+}
+
 function setCategoryQuick(category) {
+    clearActivityWorkflowFilters();
     document.getElementById('filter-type').value = category;
     loadLogs(1);
 }
 
 function setActionQuick(actionType) {
+    clearActivityWorkflowFilters();
     document.getElementById('filter-action-type').value = actionType;
+    loadLogs(1);
+}
+
+function setSearchQuick(searchText) {
+    clearActivityWorkflowFilters();
+    document.getElementById('filter-q').value = searchText;
+    loadLogs(1);
+}
+
+function setSeverityQuick(severity) {
+    clearActivityWorkflowFilters();
+    document.getElementById('filter-severity').value = severity;
     loadLogs(1);
 }
 
@@ -596,7 +685,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 }
 
 .activity-type,
-.activity-action {
+.activity-action,
+.activity-severity {
     display: inline-flex;
     align-items: center;
     border-radius: 999px;
@@ -608,10 +698,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 }
 
 .activity-schedule { background: #e7f1ff; color: #0d6efd; }
+.activity-tsr { background: #e0f2fe; color: #0369a1; }
+.activity-reimbursement { background: #dcfce7; color: #166534; }
+.activity-travel-request { background: #ede9fe; color: #6d28d9; }
+.activity-travel-liquidation { background: #fef3c7; color: #92400e; }
+.activity-cash-advance { background: #ccfbf1; color: #0f766e; }
+.activity-cash-liquidation { background: #fae8ff; color: #a21caf; }
+.activity-approval { background: #fce7f3; color: #be185d; }
+.activity-accounting { background: #e2e8f0; color: #334155; }
 .activity-email { background: #e0f7fa; color: #087990; }
 .activity-client { background: #e9f8ef; color: #198754; }
 .activity-product { background: #fff6db; color: #946200; }
-.activity-engineer { background: #f1f3f5; color: #343a40; }
+.activity-personnel { background: #f1f3f5; color: #343a40; }
 .activity-export { background: #f3e8ff; color: #7e22ce; }
 .activity-security { background: #ffe8e8; color: #dc3545; }
 .activity-system { background: #eef2ff; color: #4f46e5; }
@@ -620,11 +718,33 @@ document.addEventListener('DOMContentLoaded', async () => {
 .action-update { background: #dbeafe; color: #1d4ed8; }
 .action-move { background: #ede9fe; color: #6d28d9; }
 .action-delete { background: #fee2e2; color: #991b1b; }
+.action-submit { background: #e0f2fe; color: #0369a1; }
+.action-approve { background: #dcfce7; color: #166534; }
+.action-reject { background: #fee2e2; color: #991b1b; }
+.action-return { background: #fef3c7; color: #92400e; }
+.action-complete { background: #d1fae5; color: #047857; }
+.action-upload { background: #cffafe; color: #0e7490; }
+.action-download { background: #e0e7ff; color: #4338ca; }
 .action-export { background: #f3e8ff; color: #7e22ce; }
 .action-import { background: #ffedd5; color: #9a3412; }
 .action-email { background: #cffafe; color: #0e7490; }
 .action-security { background: #ffe8e8; color: #dc3545; }
 .action-other { background: #f1f3f5; color: #343a40; }
+
+.severity-success { background: #dcfce7; color: #166534; }
+.severity-warning { background: #fef3c7; color: #92400e; }
+.severity-danger { background: #fee2e2; color: #991b1b; }
+.severity-normal { background: #f1f5f9; color: #475569; }
+
+.activity-log-row.activity-severity-row-warning,
+.activity-mobile-card.activity-severity-card-warning {
+    box-shadow: inset 4px 0 0 #f59e0b;
+}
+
+.activity-log-row.activity-severity-row-danger,
+.activity-mobile-card.activity-severity-card-danger {
+    box-shadow: inset 4px 0 0 #dc2626;
+}
 
 .branch-chip {
     display: inline-flex;
@@ -641,9 +761,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 .activity-action-cell {
     max-width: 620px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
 }
 
 .table-hover tbody tr:hover {
