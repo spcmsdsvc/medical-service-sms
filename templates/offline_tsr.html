@@ -1408,23 +1408,29 @@ function applyScheduleComplaintDefault(schedule, overwrite=true){
 
 function applyScheduleToStandaloneTSR(schedule, overwrite=true){
   if(!schedule) return;
-  const nextScheduleId = String(getStandaloneScheduleRuntimeId(schedule));
-  if(String(selectedStandaloneScheduleId || '') !== nextScheduleId){
-    clearStandaloneTSRWorkFieldsForScheduleChange();
-    standaloneCurrentDraftId = '';
+  const wasPaused = standaloneTSRAutosavePaused;
+  standaloneTSRAutosavePaused = true;
+  try{
+    const nextScheduleId = String(getStandaloneScheduleRuntimeId(schedule));
+    if(String(selectedStandaloneScheduleId || '') !== nextScheduleId){
+      clearStandaloneTSRWorkFieldsForScheduleChange();
+      standaloneCurrentDraftId = '';
+    }
+    selectedStandaloneScheduleId = nextScheduleId;
+    setFieldValue('tsr-customer-name', schedule.client_name, overwrite);
+    setFieldValue('tsr-address', schedule.client_address, overwrite);
+    setFieldValue('tsr-equipment-model', schedule.product_name, overwrite);
+    setFieldValue('tsr-serial-no', schedule.product_id, overwrite);
+    applyScheduleComplaintDefault(schedule, overwrite);
+    setFieldValue('tsr-service-date', schedule.date_iso, overwrite);
+    setFieldValue('tsr-time-started', schedule.time_start, overwrite);
+    setFieldValue('tsr-time-finished', schedule.time_end, overwrite);
+    setFieldValue('tsr-serviced-by', schedule.serviced_by || LOGGED_IN_ENGINEER_NAME, overwrite);
+    setFieldValue('tsr-department', 'Radiology', false);
+    setFieldValue('tsr-machine-type', 'Medical', true);
+  }finally{
+    standaloneTSRAutosavePaused = wasPaused;
   }
-  selectedStandaloneScheduleId = nextScheduleId;
-  setFieldValue('tsr-customer-name', schedule.client_name, overwrite);
-  setFieldValue('tsr-address', schedule.client_address, overwrite);
-  setFieldValue('tsr-equipment-model', schedule.product_name, overwrite);
-  setFieldValue('tsr-serial-no', schedule.product_id, overwrite);
-  applyScheduleComplaintDefault(schedule, overwrite);
-  setFieldValue('tsr-service-date', schedule.date_iso, overwrite);
-  setFieldValue('tsr-time-started', schedule.time_start, overwrite);
-  setFieldValue('tsr-time-finished', schedule.time_end, overwrite);
-  setFieldValue('tsr-serviced-by', schedule.serviced_by || LOGGED_IN_ENGINEER_NAME, overwrite);
-  setFieldValue('tsr-department', 'Radiology', false);
-  setFieldValue('tsr-machine-type', 'Medical', true);
 
   const card = document.getElementById('tsr-selected-schedule-card');
   if(card){
@@ -1442,7 +1448,7 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
   }
   setStandaloneScheduleLockedFields(true);
   updateCreateTSRScheduleGate();
-  saveStandaloneTSRDraft(true).then(()=>renderStandaloneTSRDraftPanel()).catch(err => console.warn('[Offline TSR] Schedule draft save skipped', err));
+  renderStandaloneTSRDraftPanel();
   resetAllTSRKnowledgeQuickPicks();
   showTSRStatus('TSR fields auto-filled from selected schedule. Client/equipment fields are locked; start and finish time can be adjusted before saving.');
 }
@@ -2256,6 +2262,67 @@ function getStandaloneTSRDraftSubtitle(data){
   ].filter(Boolean).join(' | ') || 'No equipment details yet';
 }
 
+function getStandaloneDraftScheduleId(data){
+  return String(data?.schedule_id || data?.selectedScheduleId || data?.selectedSchedule?.id || '').trim();
+}
+
+function normalizeStandaloneDraftComparable(value){
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isStandaloneTSRDraftMeaningful(data){
+  if(!data) return false;
+  const selectedSchedule = data.selectedSchedule || {};
+  const defaultComplaint = buildComplaintFromSelectedSchedule(selectedSchedule);
+  const complaint = String(data['tsr-complaint'] || '').trim();
+  const hasCustomComplaint = complaint && normalizeStandaloneDraftComparable(complaint) !== normalizeStandaloneDraftComparable(defaultComplaint);
+  const timeStart = String(data['tsr-time-started'] || '').trim();
+  const timeEnd = String(data['tsr-time-finished'] || '').trim();
+  const originalStart = String(data.original_schedule_time_start || selectedSchedule.time_start || '').trim();
+  const originalEnd = String(data.original_schedule_time_end || selectedSchedule.time_end || '').trim();
+  const hasAdjustedTime = Boolean((timeStart && originalStart && timeStart !== originalStart) || (timeEnd && originalEnd && timeEnd !== originalEnd));
+  const parts = Array.isArray(data.parts) ? data.parts : [];
+  const hasParts = parts.some(part => ['item','number','description','qty','dr'].some(key => String(part?.[key] || '').trim()));
+  const signatures = data.signatures || {};
+  return Boolean(
+    hasCustomComplaint ||
+    hasAdjustedTime ||
+    String(data['tsr-requested-by'] || '').trim() ||
+    String(data['tsr-service-category'] || '').trim() ||
+    String(data['tsr-actions-taken'] || '').trim() ||
+    String(data['tsr-remarks'] || '').trim() ||
+    String(data['tsr-acknowledged-by'] || '').trim() ||
+    String(data['tsr-contact-no'] || '').trim() ||
+    String(data['tsr-email-add'] || '').trim() ||
+    (Array.isArray(data.documents) && data.documents.length) ||
+    (Array.isArray(data.attachments) && data.attachments.length) ||
+    String(signatures.serviced || '').trim() ||
+    String(signatures.acknowledged || '').trim() ||
+    hasParts
+  );
+}
+
+function draftMatchesSelectedStandaloneSchedule(record, schedule=null){
+  const selected = schedule || getSelectedStandaloneSchedule();
+  const selectedId = String(getStandaloneScheduleRealId(selected || {}) || getStandaloneScheduleRuntimeId(selected || {}) || selectedStandaloneScheduleId || '').trim();
+  if(!selectedId) return true;
+  const payload = record?.payload || {};
+  const draftIds = [
+    record?.schedule_id,
+    record?.selected_schedule_id,
+    getStandaloneDraftScheduleId(payload),
+    payload?.selectedSchedule?.id,
+    payload?.selectedScheduleId
+  ].map(value => String(value || '').trim()).filter(Boolean);
+  if(draftIds.some(id => id === selectedId || id === String(selectedStandaloneScheduleId || '').trim())) return true;
+
+  const selectedClient = normalizeStandaloneDraftComparable(selected?.client_name);
+  const selectedDate = normalizeStandaloneDraftComparable(selected?.date_iso || selected?.date_label);
+  const draftClient = normalizeStandaloneDraftComparable(record?.client_name || payload?.['tsr-customer-name'] || payload?.selectedSchedule?.client_name);
+  const draftDate = normalizeStandaloneDraftComparable(record?.service_date || payload?.['tsr-service-date'] || payload?.selectedSchedule?.date_iso || payload?.selectedSchedule?.date_label);
+  return Boolean(selectedClient && selectedDate && draftClient === selectedClient && draftDate === selectedDate);
+}
+
 function formatStandaloneTSRDraftTime(value){
   if(!value) return 'Not saved yet';
   const date = new Date(value);
@@ -2297,9 +2364,7 @@ async function loadStandaloneTSRDraftFromIndexedDB(){
     ? await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, standaloneCurrentDraftId)
     : await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, OFFLINE_TSR_ACTIVE_DRAFT_ID);
   if(record?.payload) return Object.assign({}, record.payload, { _draft_id: record.id });
-  const records = await loadStandaloneTSRDraftRecordsFromIndexedDB();
-  const latest = records[0] || null;
-  return latest?.payload ? Object.assign({}, latest.payload, { _draft_id: latest.id }) : null;
+  return null;
 }
 
 async function loadStandaloneTSRDraftRecordsFromIndexedDB(){
@@ -2311,6 +2376,7 @@ async function loadStandaloneTSRDraftRecordsFromIndexedDB(){
       payload._draft_id = payload._draft_id || record.id;
       return Object.assign({}, record, { payload });
     })
+    .filter(record => isStandaloneTSRDraftMeaningful(record.payload))
     .sort((a,b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
 }
 
@@ -2475,6 +2541,9 @@ async function loadOnlineTSRRevisionFromUrl(){
 }
 
 async function saveStandaloneTSRDraftLocally(data){
+  if(!isStandaloneTSRDraftMeaningful(data)){
+    return { skipped:true, reason:'empty_tsr_draft' };
+  }
   try{
     const record = await saveStandaloneTSRDraftToIndexedDB(data);
     saveStandaloneTSRDraftToLocalStorageFallback(record.payload || data);
@@ -2501,7 +2570,7 @@ async function getStandaloneTSRDraftRecords(){
     console.warn('[Offline TSR DB] Unable to read TSR draft list', err);
   }
   const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
-  if(fallback && !records.some(record => record.id === OFFLINE_TSR_ACTIVE_DRAFT_ID || record.id === fallback._draft_id)){
+  if(fallback && isStandaloneTSRDraftMeaningful(fallback) && !records.some(record => record.id === OFFLINE_TSR_ACTIVE_DRAFT_ID || record.id === fallback._draft_id)){
     records.push({
       id: fallback._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID,
       payload: Object.assign({}, fallback, { _draft_id: fallback._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID }),
@@ -2523,8 +2592,14 @@ async function renderStandaloneTSRDraftPanel(){
   }catch(err){
     console.warn('[Offline TSR] Unable to render draft panel', err);
   }
+  const hasScheduleFilter = hasStandaloneScheduleSelection();
+  if(hasScheduleFilter){
+    records = records.filter(record => draftMatchesSelectedStandaloneSchedule(record));
+  }
   if(!records.length){
-    list.innerHTML = '<div class="standalone-tsr-draft-empty">No saved TSR drafts on this device.</div>';
+    list.innerHTML = hasScheduleFilter
+      ? '<div class="standalone-tsr-draft-empty">No saved TSR drafts for the selected schedule.</div>'
+      : '<div class="standalone-tsr-draft-empty">No saved TSR drafts on this device.</div>';
     return;
   }
   list.innerHTML = records.map(record => {
@@ -4363,11 +4438,6 @@ async function loadStandaloneTSRDraft(){
   }
 
   if(!data){
-    data = loadStandaloneTSRDraftFromLocalStorageFallback();
-    source = 'localstorage';
-  }
-
-  if(!data){
     initializeBlankStandaloneTSR();
     updateCreateTSRScheduleGate({ showMessage:true });
     return;
@@ -4394,7 +4464,11 @@ async function saveStandaloneTSRLocalDraft(){
   }
   try{
     const data=collectTSRData();
-    await saveStandaloneTSRDraftLocally(data);
+    const result = await saveStandaloneTSRDraftLocally(data);
+    if(result?.skipped){
+      showTSRStatus('Nothing to save yet. Add TSR details such as actions taken, remarks, documents, signature, or contact details before saving a draft.', 'info');
+      return;
+    }
     await renderStandaloneTSRDraftPanel();
     showTSRStatus('Draft saved on this device. You can leave this page and continue later.', 'success');
     if(isOfflineTSRStorageHealthAdmin()) renderOfflineTSRStorageHealth();
