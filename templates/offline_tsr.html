@@ -363,7 +363,7 @@
 </div>
 
 <div class="modal fade" id="tsrPrintPreviewModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable tsr-preview-dialog">
     <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
       <div class="modal-header bg-dark text-white no-print">
         <div>
@@ -441,9 +441,13 @@
 @media(max-width:900px){.tsr-print-sheet{width:100%;min-height:auto;padding:14px;font-size:12px}.tsr-print-doc-grid{grid-template-columns:repeat(2,1fr)}.tsr-print-row.two,.tsr-print-row.two-even,.tsr-print-service-billing,.tsr-print-signatures{grid-template-columns:1fr}.tsr-print-billing{border-left:0;border-top:1px solid #111}.tsr-print-header{grid-template-columns:1fr}.tsr-print-no{text-align:left}.tsr-print-machine-checks{justify-content:start}}
 
 
-.tsr-pdf-preview-frame{width:100%;height:min(78vh,980px);border:0;border-radius:14px;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.18)}
+.tsr-preview-dialog{width:min(96vw,1680px);max-width:1680px}
+.tsr-preview-dialog .modal-content{min-height:min(94vh,1120px)}
+.tsr-preview-dialog .modal-body{display:flex;flex-direction:column;min-height:0}
+#tsr-print-preview-content{flex:1;min-height:0}
+.tsr-pdf-preview-frame{width:100%;height:min(84vh,1040px);min-height:720px;border:0;border-radius:14px;background:#fff;box-shadow:0 10px 30px rgba(15,23,42,.18)}
 .tsr-pdf-preview-loading{min-height:220px;display:flex;align-items:center;justify-content:center;text-align:center;background:#fff;border:1px dashed #cbd5e1;border-radius:14px;color:#475569;font-weight:900}
-@media(max-width:768px){.tsr-pdf-preview-frame{height:72vh;border-radius:10px}}
+@media(max-width:768px){.tsr-preview-dialog{width:100%;max-width:none;margin:8px}.tsr-preview-dialog .modal-content{min-height:calc(100vh - 16px)}.tsr-pdf-preview-frame{height:78vh;min-height:520px;border-radius:10px}}
 
 /* Print readability/header update */
 .tsr-print-value, .tsr-print-text-area, .tsr-print-service-full-table td, .tsr-print-parts td, .tsr-print-sign-caption{font-style:italic!important;}
