@@ -3294,6 +3294,19 @@ def is_approver_only_user(user=None):
     )
 
 
+def is_approver_only_engineer_profile(engineer=None):
+    """Return True when a Personnel/Engineer row belongs to an approver-only login."""
+    if not engineer:
+        return False
+
+    linked_user = getattr(engineer, 'user_account', None)
+    if not linked_user:
+        linked_user_id = clean_int(getattr(engineer, 'user_id', None))
+        linked_user = db.session.get(User, linked_user_id) if linked_user_id else None
+
+    return bool(linked_user and is_approver_only_user(linked_user))
+
+
 def is_approval_center_user(user=None):
     """Return True for users allowed to enter Approval Center.
 
@@ -27832,7 +27845,11 @@ def get_timeline_data():
     elif branch_filter != 'ALL':
         engineer_query = engineer_query.filter(Engineer.branch == branch_filter)
 
-    engineers = engineer_query.all()
+    engineers = [
+        engineer
+        for engineer in engineer_query.all()
+        if not is_approver_only_engineer_profile(engineer)
+    ]
     visible_engineer_ids = {engineer.id for engineer in engineers}
 
     schedule_mapping = {
@@ -29308,7 +29325,11 @@ def export_timeline():
     elif branch_filter != 'ALL':
         personnel_query = personnel_query.filter(Engineer.branch == branch_filter)
 
-    personnel = personnel_query.all()
+    personnel = [
+        engineer
+        for engineer in personnel_query.all()
+        if not is_approver_only_engineer_profile(engineer)
+    ]
 
     for eng in personnel:
         row_data = [eng.name, eng.branch or '']
