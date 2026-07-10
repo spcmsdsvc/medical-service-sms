@@ -106,6 +106,7 @@ import zlib
 import tempfile
 import time
 import traceback
+import hashlib
 from email.message import EmailMessage
 from email.utils import formataddr
 
@@ -28852,12 +28853,6 @@ def _resolve_tsr_archive_file_for_preview(file_id):
 
     display_name = get_shift_file_display_name(file_rec)
     disk_name = get_shift_file_disk_name(file_rec)
-    if not existing_files_have_tsr([display_name, disk_name]):
-        return None, _tsr_archive_error_response(
-            f'File #{file_id} is not recognized as a TSR file: {display_name or disk_name or "unnamed"}.',
-            400
-        )
-
     candidate_paths = get_tsr_archive_file_candidate_paths(disk_name, display_name)
     found_paths = _unique_existing_paths(candidate_paths)
     if not found_paths:
@@ -28874,6 +28869,15 @@ def _resolve_tsr_archive_file_for_preview(file_id):
         )
 
     file_path = found_paths[0]
+    if (
+        not existing_files_have_tsr([display_name, disk_name]) and
+        not report_file_content_looks_like_tsr(file_path, display_name or disk_name)
+    ):
+        return None, _tsr_archive_error_response(
+            f'File #{file_id} is not recognized as a TSR file: {display_name or disk_name or "unnamed"}.',
+            400
+        )
+
     ext_source = display_name or disk_name or file_path
     ext = ext_source.rsplit('.', 1)[-1].lower() if '.' in ext_source else ''
 
@@ -31807,23 +31811,69 @@ def get_tsr_files_for_shift(shift):
 
     try:
         ensure_online_tsr_submission_table()
+        generated_file_ids = set()
         latest_file_ids = set()
+        generated_file_meta = {}
+        generated_file_shift_ids = {}
+        shifts_with_confirmed_latest_file = set()
+
+        submissions = OnlineTsrSubmission.query.filter(
+            OnlineTsrSubmission.shift_id.in_(seen_shift_ids)
+        ).all() if seen_shift_ids else []
+        for submission in submissions:
+            submission_payload = parse_online_tsr_payload_json(submission)
+            generated_file_id = clean_int(submission_payload.get('_attached_file_id'))
+            if not generated_file_id:
+                continue
+            generated_file_ids.add(generated_file_id)
+            generated_file_shift_ids[generated_file_id] = clean_int(getattr(submission, 'shift_id', None))
+            generated_file_meta[generated_file_id] = {
+                'revision_no': clean_int(getattr(submission, 'revision_no', None)) or 1
+            }
+
         for candidate_shift_id in seen_shift_ids:
             latest_submission = get_latest_online_tsr_submission_for_shift(candidate_shift_id)
             latest_payload = parse_online_tsr_payload_json(latest_submission)
             latest_file_id = clean_int(latest_payload.get('_attached_file_id'))
             if latest_file_id:
                 latest_file_ids.add(latest_file_id)
+                shifts_with_confirmed_latest_file.add(clean_int(candidate_shift_id))
 
-        if latest_file_ids:
-            latest_files = [file_info for file_info in files if clean_int(file_info.get('id')) in latest_file_ids]
-            if latest_files:
-                files = latest_files
+        # Remove only superseded generated revisions. Manual uploads are
+        # independent TSRs and must remain in the client email package.
+        superseded_generated_ids = {
+            file_id for file_id in generated_file_ids
+            if generated_file_shift_ids.get(file_id) in shifts_with_confirmed_latest_file
+            and file_id not in latest_file_ids
+        }
+        if superseded_generated_ids:
+            files = [
+                file_info for file_info in files
+                if clean_int(file_info.get('id')) not in superseded_generated_ids
+            ]
+
+        for file_info in files:
+            file_id = clean_int(file_info.get('id'))
+            generated_meta = generated_file_meta.get(file_id)
+            file_info['source_type'] = 'generated' if generated_meta else 'uploaded'
+            file_info['source_label'] = 'Generated TSR' if generated_meta else 'Uploaded TSR'
+            file_info['revision_no'] = generated_meta.get('revision_no') if generated_meta else None
     except Exception as latest_filter_error:
         print(
             f"[EMAIL-CLIENT] Latest online TSR filter skipped for selected_shift_id={getattr(shift, 'id', None)}: {latest_filter_error}",
             flush=True
         )
+
+    shift_by_id = {candidate.id: candidate for candidate in candidate_shifts if getattr(candidate, 'id', None)}
+    for file_info in files:
+        source_shift = shift_by_id.get(clean_int(file_info.get('shift_id')))
+        source_date = getattr(source_shift, 'start_time', None)
+        file_path = file_info.get('path')
+        file_info.setdefault('source_type', 'uploaded')
+        file_info.setdefault('source_label', 'Uploaded TSR')
+        file_info['service_date'] = source_date.strftime('%Y-%m-%d') if source_date else ''
+        file_info['file_size'] = os.path.getsize(file_path) if file_path and os.path.isfile(file_path) else 0
+        file_info['preview_url'] = f"/preview_tsr_archive_file/{file_info.get('id')}" if file_info.get('id') else ''
 
     if not files:
         print(
@@ -31833,6 +31883,19 @@ def get_tsr_files_for_shift(shift):
         )
 
     return files
+
+
+def get_tsr_email_attachment_manifest_signature(tsr_files):
+    """Return a stable signature for the exact TSR package shown before send."""
+    manifest_parts = []
+    for file_info in sorted(tsr_files or [], key=lambda item: clean_int(item.get('id')) or 0):
+        manifest_parts.append(':'.join([
+            str(clean_int(file_info.get('id')) or ''),
+            str(clean_int(file_info.get('shift_id')) or ''),
+            str(clean_int(file_info.get('file_size')) or 0),
+            clean_str(file_info.get('display_name')) or clean_str(file_info.get('filename')) or ''
+        ]))
+    return hashlib.sha256('|'.join(manifest_parts).encode('utf-8')).hexdigest()
 
 
 def detect_client_emails_from_tsr_files(tsr_files):
@@ -32149,6 +32212,7 @@ def preview_tsr_client_email(shift_id):
         return denied('You are not authorized to send TSR for this schedule.')
 
     tsr_files = get_tsr_files_for_shift(shift)
+    attachment_manifest_signature = get_tsr_email_attachment_manifest_signature(tsr_files)
     saved_email_candidates = get_saved_tsr_email_metadata_candidates(tsr_files)
     detected_emails = merge_tsr_email_candidate_lists(
         saved_email_candidates,
@@ -32205,10 +32269,17 @@ def preview_tsr_client_email(shift_id):
                 'id': file_info.get('id'),
                 'filename': file_info.get('filename'),
                 'display_name': file_info.get('display_name') or file_info.get('filename'),
-                'uploaded_at': file_info.get('uploaded_at')
+                'uploaded_at': file_info.get('uploaded_at'),
+                'service_date': file_info.get('service_date'),
+                'source_type': file_info.get('source_type') or 'uploaded',
+                'source_label': file_info.get('source_label') or 'Uploaded TSR',
+                'revision_no': file_info.get('revision_no'),
+                'file_size': clean_int(file_info.get('file_size')) or 0,
+                'preview_url': file_info.get('preview_url') or ''
             }
             for file_info in tsr_files
         ],
+        'attachment_manifest_signature': attachment_manifest_signature,
         'detected_emails': detected_emails,
         'saved_recipient_emails': saved_email_candidates,
         'fallback_emails': fallback_emails,
@@ -32246,6 +32317,14 @@ def send_tsr_client_email(shift_id):
     tsr_files = get_tsr_files_for_shift(shift)
     if not tsr_files:
         return jsonify({'message': 'No attached TSR file found for this schedule.'}), 400
+
+    current_manifest_signature = get_tsr_email_attachment_manifest_signature(tsr_files)
+    previewed_manifest_signature = clean_str(payload.get('attachment_manifest_signature')) or ''
+    if previewed_manifest_signature and previewed_manifest_signature != current_manifest_signature:
+        return jsonify({
+            'message': 'The TSR attachments have changed. Please reopen Send TSR and review the updated files before sending.',
+            'attachments_changed': True
+        }), 409
 
     subject = clean_str(payload.get('subject')) or build_tsr_client_email_subject(shift)
     sender_name = current_user.username.capitalize() if current_user and current_user.is_authenticated else 'Scheduler'
