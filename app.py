@@ -9416,6 +9416,126 @@ def correct_product_from_tsr_revision(shift, payload):
     }
 
 
+def ensure_product_from_tsr_payload(shift, payload):
+    """Create/link missing schedule equipment from explicit Create TSR fields.
+
+    Warranty values are intentionally not accepted from the TSR payload. A new
+    inventory record starts on the server date it is added and has no end date.
+    """
+    if not shift or not isinstance(payload, dict):
+        return {'status': 'blocked', 'reason': 'invalid_context'}
+
+    current_serial = (clean_str(getattr(shift, 'product_id', None)) or '').upper()
+    current_product = db.session.get(Product, current_serial) if current_serial else None
+    if current_product:
+        return {
+            'status': 'existing',
+            'serial_number': current_product.serial_number,
+            'product_name': current_product.name,
+            'client_id': current_product.client_id
+        }
+
+    client_id = clean_int(getattr(shift, 'client_id', None))
+    product_name = (clean_str(payload.get('tsr-equipment-model')) or '')[:100]
+    serial_number = (clean_str(payload.get('tsr-serial-no')) or '').upper()[:100]
+    if not client_id:
+        return {'status': 'blocked', 'reason': 'missing_client'}
+    if not product_name or not serial_number:
+        return {
+            'status': 'blocked',
+            'reason': 'missing_equipment_details',
+            'missing_fields': [
+                label for label, value in (
+                    ('Equipment / Model', product_name),
+                    ('Serial No.', serial_number)
+                ) if not value
+            ]
+        }
+
+    existing_product = db.session.get(Product, serial_number)
+    created = False
+    if existing_product:
+        existing_client_id = clean_int(getattr(existing_product, 'client_id', None))
+        if existing_client_id and existing_client_id != client_id:
+            return {
+                'status': 'blocked',
+                'reason': 'serial_owned_by_other_client',
+                'serial_number': serial_number,
+                'existing_name': clean_str(getattr(existing_product, 'name', None)),
+                'existing_client_id': existing_client_id
+            }
+        if not existing_client_id:
+            existing_product.client_id = client_id
+        if not clean_str(getattr(existing_product, 'name', None)):
+            existing_product.name = product_name
+        product_rec = existing_product
+    else:
+        product_rec = Product(
+            serial_number=serial_number,
+            name=product_name,
+            client_id=client_id,
+            start_warranty_date=get_manila_today(),
+            end_warranty_date=None
+        )
+        db.session.add(product_rec)
+        created = True
+
+    linked_shift_ids = []
+    for linked_shift in get_tsr_completion_linked_shifts(shift):
+        if not linked_shift or clean_int(getattr(linked_shift, 'client_id', None)) != client_id:
+            continue
+        if not clean_str(getattr(linked_shift, 'product_id', None)):
+            linked_shift.product_id = serial_number
+            linked_shift_ids.append(linked_shift.id)
+    if not clean_str(getattr(shift, 'product_id', None)):
+        shift.product_id = serial_number
+        linked_shift_ids.append(shift.id)
+
+    selected_schedule = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
+    selected_schedule['product_id'] = serial_number
+    selected_schedule['product_name'] = product_rec.name or product_name
+    payload['selectedSchedule'] = selected_schedule
+    payload['tsr-equipment-model'] = product_rec.name or product_name
+    payload['tsr-serial-no'] = serial_number
+
+    db.session.add(ActivityLog(
+        user=(getattr(current_user, 'username', '') or 'System').capitalize(),
+        action=(
+            f"{'Added' if created else 'Linked'} equipment from Create TSR: "
+            f"{product_rec.name or product_name} ({serial_number}) to client #{client_id}; "
+            f"schedule(s): {','.join(map(str, sorted(set(linked_shift_ids)))) or shift.id}"
+        )[:255]
+    ))
+
+    return {
+        'status': 'created' if created else 'linked_existing',
+        'serial_number': serial_number,
+        'product_name': product_rec.name or product_name,
+        'client_id': client_id,
+        'start_warranty_date': product_rec.start_warranty_date.isoformat() if product_rec.start_warranty_date else '',
+        'end_warranty_date': '',
+        'linked_shift_ids': sorted(set(linked_shift_ids))
+    }
+
+
+def get_online_tsr_missing_core_details(shift, payload):
+    """Return required Create TSR fields missing from the submitted payload."""
+    missing = []
+    if not clean_str(payload.get('tsr-service-category')):
+        missing.append('Service Category')
+    if not clean_str(payload.get('tsr-actions-taken')):
+        missing.append('Actions Taken')
+
+    current_serial = clean_str(getattr(shift, 'product_id', None)) if shift else None
+    current_product = db.session.get(Product, current_serial) if current_serial else None
+    if not current_product:
+        if not clean_str(payload.get('tsr-equipment-model')):
+            missing.append('Equipment / Model')
+        if not clean_str(payload.get('tsr-serial-no')):
+            missing.append('Serial No.')
+    return missing
+
+
 
 def parse_online_tsr_time_value(value):
     """Parse TSR actual service time values from the offline TSR form."""
@@ -9654,8 +9774,41 @@ def save_offline_tsr_online():
             'message': 'Serviced By signature is required before saving the TSR.'
         }), 400
 
-    submitted_tsr_number = (clean_str(payload.get('tsr-number')) or clean_str(payload.get('tsr_number')) or '')[:120]
     preserve_uploaded_pdf = str(payload.get('_offline_queue_preserve_pdf') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+    is_legacy_offline_queue = preserve_uploaded_pdf and not clean_str(payload.get('_tsr_form_version'))
+    missing_core_details = get_online_tsr_missing_core_details(shift, payload)
+    if missing_core_details and not is_legacy_offline_queue:
+        return jsonify({
+            'status': 'error',
+            'message': f"Complete these required TSR details before saving: {', '.join(missing_core_details)}.",
+            'missing_core_details': missing_core_details
+        }), 400
+    if missing_core_details and is_legacy_offline_queue:
+        payload['_legacy_core_validation_bypassed'] = missing_core_details
+
+    equipment_inventory_result = None
+    has_equipment_details = bool(
+        clean_str(payload.get('tsr-equipment-model')) and
+        clean_str(payload.get('tsr-serial-no'))
+    )
+    if has_equipment_details or not is_legacy_offline_queue:
+        equipment_inventory_result = ensure_product_from_tsr_payload(shift, payload)
+        if equipment_inventory_result.get('status') == 'blocked':
+            reason = equipment_inventory_result.get('reason')
+            if reason == 'serial_owned_by_other_client':
+                message = f"Serial number {equipment_inventory_result.get('serial_number')} already belongs to another Medical Center."
+                status_code = 409
+            else:
+                message = 'Equipment / Model and Serial No. are required because this schedule has no linked inventory equipment.'
+                status_code = 400
+            return jsonify({
+                'status': 'error',
+                'message': message,
+                'equipment_inventory': equipment_inventory_result
+            }), status_code
+        payload['_equipment_inventory_result'] = equipment_inventory_result
+
+    submitted_tsr_number = (clean_str(payload.get('tsr-number')) or clean_str(payload.get('tsr_number')) or '')[:120]
     sequence_date = (
         parse_online_tsr_sequence_date(payload.get('tsr-service-date')) or
         parse_online_tsr_sequence_date(payload.get('service_date')) or
@@ -9812,6 +9965,7 @@ def save_offline_tsr_online():
         'extra_attachment_file_ids': [file_rec.id for file_rec in extra_attached_files],
         'extra_attachment_filenames': [get_shift_file_display_name(file_rec) for file_rec in extra_attached_files],
         'auto_captured_contact_emails': payload.get('_auto_captured_contact_emails') or [],
+        'equipment_inventory': payload.get('_equipment_inventory_result'),
         'pdf_source': pdf_source,
         'revision_no': clean_int(getattr(submission, 'revision_no', None)) or 1,
         'parent_submission_id': clean_int(getattr(submission, 'parent_submission_id', None)),
@@ -9914,6 +10068,29 @@ def revise_online_tsr_submission(submission_id):
             'status': 'error',
             'message': 'Serviced By signature is required before saving the corrected TSR.'
         }), 400
+
+    missing_core_details = get_online_tsr_missing_core_details(shift, payload)
+    if missing_core_details:
+        return jsonify({
+            'status': 'error',
+            'message': f"Complete these required TSR details before saving: {', '.join(missing_core_details)}.",
+            'missing_core_details': missing_core_details
+        }), 400
+
+    equipment_inventory_result = ensure_product_from_tsr_payload(shift, payload)
+    if equipment_inventory_result.get('status') == 'blocked':
+        reason = equipment_inventory_result.get('reason')
+        message = (
+            f"Serial number {equipment_inventory_result.get('serial_number')} already belongs to another Medical Center."
+            if reason == 'serial_owned_by_other_client'
+            else 'Equipment / Model and Serial No. are required because this schedule has no linked inventory equipment.'
+        )
+        return jsonify({
+            'status': 'error',
+            'message': message,
+            'equipment_inventory': equipment_inventory_result
+        }), 409 if reason == 'serial_owned_by_other_client' else 400
+    payload['_equipment_inventory_result'] = equipment_inventory_result
 
     revision_reason = (
         clean_str(payload.get('revision_reason')) or
@@ -10083,6 +10260,7 @@ def revise_online_tsr_submission(submission_id):
         'extra_attachment_count': len(extra_attached_files),
         'auto_captured_contact_emails': payload.get('_auto_captured_contact_emails') or [],
         'equipment_correction': equipment_correction,
+        'equipment_inventory': payload.get('_equipment_inventory_result'),
         'completed_shift_ids': completed_shift_ids,
         'schedule_time_updates': schedule_time_updates,
         'pdf_source': pdf_source
@@ -10157,7 +10335,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v7';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v8';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
