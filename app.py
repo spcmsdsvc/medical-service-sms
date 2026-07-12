@@ -14926,7 +14926,7 @@ def reimbursement_shift_row(shift, display_engineer_names=None):
         'task': shift.title or '',
         'status': shift.status or '',
         'engineers': engineer_names,
-        'remarks': ' - '.join(part for part in [client_name, shift.title or '', product_name] if part)
+        'remarks': ''
     }
 
 
@@ -15169,14 +15169,43 @@ def reimbursement_excel_period_label(start_date, end_date):
         return f"{start_date} - {end_date}"
 
 
-def reimbursement_excel_row_remarks(row):
-    """Build the remarks/purpose cell for the reimbursement Excel.
+def reimbursement_excel_work_details(row):
+    """Build the read-only schedule context used in the reimbursement Excel."""
+    client_name = clean_str(getattr(row, 'client_name', None)) or ''
+    task_name = clean_str(getattr(row, 'task_name', None)) or ''
+    product_name = clean_str(getattr(row, 'product_name', None)) or ''
+    serial_number = clean_str(getattr(row, 'serial_number', None)) or ''
 
-    Keep this manual-only. The worksheet already has separate schedule/client
-    context in the system UI, and auto-combining client/product/task here can
-    duplicate remarks after drafts are saved/reloaded.
-    """
-    return (str(getattr(row, 'remarks', '') or '').strip())
+    details = []
+    if client_name:
+        details.append(f'Client: {client_name}')
+    if task_name:
+        details.append(f'Task: {task_name}')
+    equipment = ' / '.join(part for part in [product_name, serial_number] if part)
+    if equipment:
+        details.append(f'Equipment: {equipment}')
+    return '\n'.join(details)
+
+
+def reimbursement_excel_row_remarks(row):
+    """Return manual remarks while suppressing exact legacy generated text."""
+    remarks = clean_str(getattr(row, 'remarks', None)) or ''
+    if not remarks:
+        return ''
+
+    legacy_parts = [
+        clean_str(getattr(row, 'client_name', None)) or '',
+        clean_str(getattr(row, 'task_name', None)) or '',
+        clean_str(getattr(row, 'product_name', None)) or ''
+    ]
+    legacy_generated = ' - '.join(part for part in legacy_parts if part)
+    if not getattr(row, 'shift_id', None):
+        legacy_generated = clean_str(getattr(row, 'task_name', None)) or ''
+
+    normalize = lambda value: ' '.join(str(value or '').split()).casefold()
+    if legacy_generated and normalize(remarks) == normalize(legacy_generated):
+        return ''
+    return remarks
 
 
 def reimbursement_excel_filename(header, engineer_name=''):
@@ -15218,7 +15247,8 @@ def build_reimbursement_excel_workbook(header):
         'Per Diem',
         'Parking Coding',
         'Others / Misc',
-        'Customer / Contact Person / Remarks / Purpose'
+        'Work Details',
+        'Remarks'
     ]
 
     max_col = len(headers)
@@ -15265,7 +15295,8 @@ def build_reimbursement_excel_workbook(header):
             ws.cell(idx, offset).value = amount_value if amount_value else None
             ws.cell(idx, offset).number_format = money_fmt
 
-        ws.cell(idx, 12).value = reimbursement_excel_row_remarks(row)
+        ws.cell(idx, 12).value = reimbursement_excel_work_details(row)
+        ws.cell(idx, 13).value = reimbursement_excel_row_remarks(row)
 
         for col in range(1, max_col + 1):
             c = ws.cell(idx, col)
@@ -15302,8 +15333,9 @@ def build_reimbursement_excel_workbook(header):
     ws.cell(grand_row, 11).fill = PatternFill('solid', fgColor='FFF2CC')
     ws.cell(grand_row, 11).alignment = Alignment(horizontal='right')
 
-    ws.cell(grand_row, 12).value = ''
-    ws.cell(grand_row, 12).fill = PatternFill('solid', fgColor='FFF2CC')
+    for col in (12, 13):
+        ws.cell(grand_row, col).value = ''
+        ws.cell(grand_row, col).fill = PatternFill('solid', fgColor='FFF2CC')
 
     for row_idx in range(header_row, grand_row + 1):
         for col in range(1, max_col + 1):
@@ -15311,7 +15343,7 @@ def build_reimbursement_excel_workbook(header):
 
     widths = {
         1: 13, 2: 15, 3: 13, 4: 12, 5: 12, 6: 12,
-        7: 16, 8: 12, 9: 12, 10: 15, 11: 14, 12: 45
+        7: 16, 8: 12, 9: 12, 10: 15, 11: 14, 12: 38, 13: 32
     }
     for col, width in widths.items():
         ws.column_dimensions[get_column_letter(col)].width = width
@@ -15333,6 +15365,7 @@ def build_reimbursement_excel_workbook(header):
     ws.page_margins.right = 0.25
     ws.page_margins.top = 0.5
     ws.page_margins.bottom = 0.5
+    ws.print_area = f'A1:M{grand_row}'
 
     return wb
 
@@ -16928,7 +16961,7 @@ def reimbursement_row_to_dict(row, receipts_by_shift=None):
         'serial_number': row.serial_number or '',
         'task': row.task_name or '',
         'engineers': [row.engineer_name] if row.engineer_name else [],
-        'remarks': row.remarks or '',
+        'remarks': reimbursement_excel_row_remarks(row),
         'amounts': amounts,
         'row_total': reimbursement_money_value(row.row_total),
         'receipts': receipts
@@ -16989,7 +17022,7 @@ def reimbursement_apply_manual_row_payload(header, row_payload, profile, start_d
         serial_number='',
         task_name=item_name,
         engineer_name=getattr(profile, 'name', '') or getattr(current_user, 'username', '') or '',
-        remarks=item_name,
+        remarks=(clean_str(row_payload.get('remarks')) or ''),
         row_total=round(manual_amount, 2)
     )
 
