@@ -15180,7 +15180,7 @@ def reimbursement_excel_work_details(row):
     if client_name:
         details.append(f'Client: {client_name}')
     if task_name:
-        details.append(f'Task: {task_name}')
+        details.append(f'Task: {task_name}' if client_name else task_name)
     equipment = ' / '.join(part for part in [product_name, serial_number] if part)
     if equipment:
         details.append(f'Equipment: {equipment}')
