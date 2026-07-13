@@ -3282,6 +3282,13 @@ Recipient count: ${recipientCount}` : ''),
                     <div class="compact-request-remarks ${requestRemarks ? '' : 'empty'}">${approvalEscape(requestRemarks || 'No requester remarks entered.')}</div>
                 </div>
 
+                <div class="compact-panel">
+                    <h3>Supporting Attachments</h3>
+                    ${(data.attachments || []).length
+                        ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${renderApprovalReceiptLinks(data.attachments || [])}</div>`
+                        : '<div class="approval-muted">No supporting attachments uploaded.</div>'}
+                </div>
+
                 ${decisionPanel}
 
                 <details class="compact-accordion">

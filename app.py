@@ -4911,6 +4911,17 @@ def format_travel_request_accounting_email(request_rec, approved_by_user=None, r
     approved_amount = travel_request_money(getattr(request_rec, 'approved_amount', 0) or getattr(request_rec, 'requested_amount', 0))
     approved_amount_label = format_travel_currency_amount(approved_amount, ctx.get('currency_code') or getattr(request_rec, 'currency_code', None) or 'PHP')
     action_remarks = clean_str(remarks) or clean_str(getattr(request_rec, 'approval_remarks', None)) or 'None'
+    supporting_count = TravelRequestAttachment.query.filter_by(travel_request_id=request_rec.id).count()
+    attachment_summary = (
+        'Approved Travel Request PDF and Supporting Attachments PDF'
+        if supporting_count else
+        'Approved Travel Request PDF'
+    )
+    attachment_message = (
+        'The approved Travel Request form and compiled supporting attachments are included for your reference and processing.'
+        if supporting_count else
+        'The approved Travel Request form PDF is attached for your reference and processing.'
+    )
 
     subject = render_email_subject_template('travel_accounting_subject', {
         'request_no': ctx['request_no'],
@@ -4941,7 +4952,7 @@ def format_travel_request_accounting_email(request_rec, approved_by_user=None, r
         f"Approved By: {approved_by}",
         f"Approval Remarks: {action_remarks}",
         '',
-        'The approved Travel Request form PDF is attached for your reference and processing.',
+        attachment_message,
         'Please process the cash advance / accounting handoff according to the current accounting workflow.',
         '',
         f"System Link: {ctx['system_link']}",
@@ -4964,7 +4975,7 @@ def format_travel_request_accounting_email(request_rec, approved_by_user=None, r
         ('Purpose / Details', ctx['purpose']),
         ('Approved By', approved_by),
         ('Approval Remarks', action_remarks),
-        ('Attachment', 'Approved Cash Advance PDF')
+        ('Attachments', attachment_summary)
     ]
 
     detail_rows = ''.join(
@@ -4981,7 +4992,7 @@ def format_travel_request_accounting_email(request_rec, approved_by_user=None, r
         <table style="border-collapse:collapse;border:1px solid #e5e7eb;min-width:420px;">
             {detail_rows}
         </table>
-        <p style="margin-top:16px;color:#374151;">The approved Travel Request form PDF is attached for your reference and processing.</p>
+        <p style="margin-top:16px;color:#374151;">{html.escape(attachment_message)}</p>
         <p style="margin-top:8px;color:#374151;">Please process the cash advance / accounting handoff according to the current accounting workflow.</p>
         <p style="margin-top:8px;color:#374151;">
             <strong>System Link:</strong><br>
@@ -5000,7 +5011,7 @@ def send_travel_request_accounting_email_async(app_obj, travel_request_id, accou
         return False
 
     def worker():
-        temp_pdf_path = ''
+        temp_paths = []
         with app_obj.app_context():
             try:
                 request_rec = db.session.get(TravelRequest, clean_int(travel_request_id))
@@ -5024,6 +5035,29 @@ def send_travel_request_accounting_email_async(app_obj, travel_request_id, accou
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
                     temp_pdf.write(pdf_bytes)
                     temp_pdf_path = temp_pdf.name
+                temp_paths.append(temp_pdf_path)
+
+                email_attachments = [{
+                    'display_name': pdf_filename,
+                    'filename': pdf_filename,
+                    'path': temp_pdf_path
+                }]
+
+                supporting_records = travel_request_attachment_records(request_rec.id)
+                if supporting_records:
+                    supporting_pdf_bytes = build_travel_request_supporting_attachments_pdf_bytes(request_rec)
+                    if not supporting_pdf_bytes:
+                        raise ValueError('Travel Request supporting attachments could not be compiled for Accounting.')
+                    supporting_filename = travel_request_supporting_attachments_filename(request_rec)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as supporting_pdf:
+                        supporting_pdf.write(supporting_pdf_bytes)
+                        supporting_temp_path = supporting_pdf.name
+                    temp_paths.append(supporting_temp_path)
+                    email_attachments.append({
+                        'display_name': supporting_filename,
+                        'filename': supporting_filename,
+                        'path': supporting_temp_path
+                    })
 
                 requester_copy_emails = get_requester_accounting_copy_emails(request_rec, recipient_emails)
                 sent, message = send_email_with_attachments(
@@ -5031,11 +5065,7 @@ def send_travel_request_accounting_email_async(app_obj, travel_request_id, accou
                     subject,
                     text_body,
                     html_body,
-                    attachments=[{
-                        'display_name': pdf_filename,
-                        'filename': pdf_filename,
-                        'path': temp_pdf_path
-                    }],
+                    attachments=email_attachments,
                     cc_emails=requester_copy_emails
                 )
                 print(f"[EMAIL] Travel accounting handoff with PDF attachment: sent={sent} | {message}", flush=True)
@@ -5062,10 +5092,19 @@ def send_travel_request_accounting_email_async(app_obj, travel_request_id, accou
             except Exception as email_error:
                 db.session.rollback()
                 print(f"[EMAIL] Travel accounting handoff worker failed: {email_error}", flush=True)
+                try:
+                    failed_request = db.session.get(TravelRequest, clean_int(travel_request_id))
+                    if failed_request:
+                        failed_request.accounting_status = 'Accounting Email Failed'
+                        failed_request.accounting_remarks = clean_str(email_error) or 'Unable to prepare Travel Request accounting attachments.'
+                        failed_request.updated_at = get_manila_time()
+                        db.session.commit()
+                except Exception:
+                    db.session.rollback()
             finally:
-                if temp_pdf_path:
+                for temp_path in temp_paths:
                     try:
-                        os.unlink(temp_pdf_path)
+                        os.unlink(temp_path)
                     except Exception:
                         pass
 
@@ -20275,6 +20314,126 @@ def is_current_user_missing_travel_signature(missing_people):
             return True
     return False
 
+TRAVEL_REQUEST_ATTACHMENT_MAX_FILES = 10
+
+
+def travel_request_attachment_upload_root():
+    if os.environ.get('RAILWAY_ENVIRONMENT'):
+        root = '/data/uploads/travel_requests'
+    else:
+        root = os.path.join(basedir, 'static', 'uploads', 'travel_requests')
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def travel_request_attachment_path(attachment):
+    return os.path.join(
+        travel_request_attachment_upload_root(),
+        os.path.basename(clean_str(getattr(attachment, 'stored_filename', None)) or '')
+    )
+
+
+def travel_request_attachment_to_dict(attachment):
+    return {
+        'id': attachment.id,
+        'filename': attachment.original_filename or attachment.stored_filename,
+        'original_filename': attachment.original_filename or attachment.stored_filename,
+        'content_type': attachment.content_type or '',
+        'size': clean_int(attachment.file_size) or 0,
+        'created_at': attachment.created_at.isoformat() if attachment.created_at else None,
+        'preview_url': url_for('preview_travel_request_attachment', attachment_id=attachment.id),
+        'download_url': url_for('download_travel_request_attachment', attachment_id=attachment.id),
+    }
+
+
+def travel_request_attachment_records(travel_request_id):
+    return (
+        TravelRequestAttachment.query
+        .filter_by(travel_request_id=clean_int(travel_request_id))
+        .order_by(TravelRequestAttachment.created_at.asc(), TravelRequestAttachment.id.asc())
+        .all()
+    )
+
+
+def travel_request_attachment_dicts(travel_request_id):
+    return [travel_request_attachment_to_dict(item) for item in travel_request_attachment_records(travel_request_id)]
+
+
+def can_current_user_edit_travel_request_attachments(request_rec):
+    if not request_rec or travel_request_normalize_status(request_rec.status) not in TRAVEL_REQUEST_EDITABLE_STATUSES:
+        return False
+    return bool(
+        clean_int(request_rec.user_id) == clean_int(getattr(current_user, 'id', None)) or
+        is_current_user_travel_request_participant(request_rec) or
+        is_admin_authorized()
+    )
+
+
+def travel_request_attachment_mimetype(attachment):
+    stored_content_type = clean_str(getattr(attachment, 'content_type', None))
+    if stored_content_type in {'application/pdf', 'image/jpeg', 'image/png'}:
+        return stored_content_type
+    ext = reimbursement_receipt_extension(attachment.original_filename or attachment.stored_filename)
+    return {
+        'pdf': 'application/pdf',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+    }.get(ext, attachment.content_type or 'application/octet-stream')
+
+
+def build_travel_request_supporting_attachments_pdf_bytes(request_rec):
+    attachments = travel_request_attachment_records(request_rec.id)
+    if not attachments:
+        return None
+
+    try:
+        from pypdf import PdfWriter
+    except Exception:
+        from PyPDF2 import PdfWriter
+
+    writer = PdfWriter()
+    appended_count = 0
+    reimbursement_append_pdf_bytes(
+        writer,
+        reimbursement_receipt_divider_pdf_bytes(
+            'TRAVEL REQUEST SUPPORTING ATTACHMENTS',
+            [
+                ('Request No.', request_rec.request_no or f'TR-{request_rec.id}'),
+                ('Attachment Count', str(len(attachments))),
+            ]
+        )
+    )
+    for attachment in attachments:
+        path = travel_request_attachment_path(attachment)
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"Travel Request attachment is missing: {attachment.original_filename or attachment.stored_filename}"
+            )
+        ext = reimbursement_receipt_extension(attachment.original_filename or attachment.stored_filename)
+        if ext == 'pdf':
+            with open(path, 'rb') as file_obj:
+                reimbursement_append_pdf_bytes(writer, file_obj.read())
+        elif ext in {'jpg', 'jpeg', 'png'}:
+            reimbursement_append_pdf_bytes(writer, reimbursement_receipt_image_to_pdf_bytes(path))
+        else:
+            raise ValueError(f'Unsupported Travel Request attachment: {attachment.original_filename or attachment.stored_filename}')
+        appended_count += 1
+
+    if appended_count != len(attachments):
+        raise ValueError('Not all Travel Request attachments could be added to the supporting document package.')
+
+    output = io.BytesIO()
+    writer.write(output)
+    pdf_bytes = reimbursement_compress_pdf_bytes_best_effort(output.getvalue())
+    return pdf_bytes or None
+
+
+def travel_request_supporting_attachments_filename(request_rec):
+    request_no = secure_filename(clean_str(request_rec.request_no) or f'TR-{request_rec.id}') or f'TR-{request_rec.id}'
+    return f'{request_no}_Supporting_Attachments.pdf'
+
+
 def travel_request_to_dict(request_rec, include_lines=False, include_audit=False):
     requester = db.session.get(User, request_rec.user_id) if request_rec and request_rec.user_id else None
     engineer = db.session.get(Engineer, request_rec.engineer_id) if request_rec and request_rec.engineer_id else None
@@ -20346,6 +20505,9 @@ def travel_request_to_dict(request_rec, include_lines=False, include_audit=False
     }
 
     if include_lines:
+        attachments = travel_request_attachment_dicts(request_rec.id)
+        data['attachments'] = attachments
+        data['attachment_count'] = len(attachments)
         allow_airfare_c_o_note = travel_request_allows_airfare_c_o(request_rec)
         data['lines'] = [
             {
@@ -20808,6 +20970,7 @@ def delete_travel_request_draft(travel_request_id=None):
             if stored_name:
                 try:
                     candidate_paths = [
+                        travel_request_attachment_path(attachment),
                         os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(stored_name)),
                         os.path.join(basedir, 'static', 'uploads', 'travel_requests', os.path.basename(stored_name)),
                     ]
@@ -21111,6 +21274,172 @@ def get_travel_request(travel_request_id):
         'success': True,
         'travel_request': travel_request_to_dict(request_rec, include_lines=True, include_audit=True)
     })
+
+
+@app.route('/upload_travel_request_attachments/<int:travel_request_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def upload_travel_request_attachments(travel_request_id):
+    ensure_travel_request_tables()
+    request_rec = db.session.get(TravelRequest, travel_request_id)
+    if not request_rec:
+        return jsonify({'success': False, 'error': 'Travel request not found.'}), 404
+    if not can_current_user_edit_travel_request_attachments(request_rec):
+        return jsonify({'success': False, 'error': 'Attachments can only be changed while the Travel Request is Draft or Rejected.'}), 409
+
+    files = request.files.getlist('attachment_files') or request.files.getlist('attachment_file')
+    files = [item for item in files if item and item.filename]
+    if not files:
+        return jsonify({'success': False, 'error': 'No attachment file selected.'}), 400
+
+    existing_count = TravelRequestAttachment.query.filter_by(travel_request_id=request_rec.id).count()
+    if existing_count + len(files) > TRAVEL_REQUEST_ATTACHMENT_MAX_FILES:
+        return jsonify({
+            'success': False,
+            'error': f'A Travel Request can contain up to {TRAVEL_REQUEST_ATTACHMENT_MAX_FILES} attachments.'
+        }), 400
+
+    prepared_files = []
+    for file_obj in files:
+        if not reimbursement_receipt_allowed(file_obj.filename):
+            return jsonify({
+                'success': False,
+                'error': f'Unsupported attachment type: {file_obj.filename}. Allowed: PDF, JPG, JPEG, or PNG.'
+            }), 400
+        original = secure_filename(file_obj.filename) or 'attachment'
+        try:
+            file_bytes, stored_ext, content_type = reimbursement_prepare_receipt_upload_bytes(file_obj, original)
+        except ValueError as prep_error:
+            message = str(prep_error).replace('Receipt', 'Attachment').replace('receipt', 'attachment')
+            return jsonify({'success': False, 'error': message}), 400
+        prepared_files.append((original, stored_ext, content_type, file_bytes))
+
+    written_paths = []
+    saved = []
+    try:
+        root = travel_request_attachment_upload_root()
+        for original, stored_ext, content_type, file_bytes in prepared_files:
+            stored = f"travel_request_{request_rec.id}_{secrets.token_hex(8)}.{stored_ext}"
+            target_path = os.path.join(root, stored)
+            with open(target_path, 'wb') as target_file:
+                target_file.write(file_bytes)
+            written_paths.append(target_path)
+
+            attachment = TravelRequestAttachment(
+                travel_request_id=request_rec.id,
+                uploaded_by_id=current_user.id,
+                attachment_type='supporting_document',
+                stored_filename=stored,
+                original_filename=original,
+                content_type=content_type or '',
+                file_size=len(file_bytes),
+                created_at=get_manila_time()
+            )
+            db.session.add(attachment)
+            saved.append(attachment)
+
+        request_rec.updated_at = get_manila_time()
+        add_activity_log_entry(
+            f"Uploaded {len(saved)} Travel Request attachment(s): {request_rec.request_no or f'TR-{request_rec.id}'}"
+        )
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': f'{len(saved)} attachment(s) uploaded.',
+            'attachments': travel_request_attachment_dicts(request_rec.id),
+            'attachment_count': existing_count + len(saved)
+        })
+    except Exception as exc:
+        db.session.rollback()
+        for target_path in written_paths:
+            try:
+                if os.path.exists(target_path):
+                    os.remove(target_path)
+            except Exception:
+                pass
+        print(f'[TravelRequest] Attachment upload failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to upload Travel Request attachment.'}), 500
+
+
+def get_authorized_travel_request_attachment(attachment_id):
+    attachment = db.session.get(TravelRequestAttachment, attachment_id)
+    if not attachment:
+        return None, None, (jsonify({'success': False, 'error': 'Attachment not found.'}), 404)
+    request_rec = db.session.get(TravelRequest, attachment.travel_request_id)
+    if not request_rec or not can_user_access_travel_request(request_rec):
+        return None, None, (jsonify({'success': False, 'error': 'You are not allowed to access this attachment.'}), 403)
+    path = travel_request_attachment_path(attachment)
+    if not os.path.exists(path):
+        return None, None, (jsonify({'success': False, 'error': 'Attachment file is missing.'}), 404)
+    return attachment, path, None
+
+
+@app.route('/preview_travel_request_attachment/<int:attachment_id>')
+@login_required
+def preview_travel_request_attachment(attachment_id):
+    attachment, path, error_response = get_authorized_travel_request_attachment(attachment_id)
+    if error_response:
+        return error_response
+    response = send_file(
+        path,
+        as_attachment=False,
+        download_name=attachment.original_filename or attachment.stored_filename,
+        mimetype=travel_request_attachment_mimetype(attachment),
+        max_age=0
+    )
+    response.headers['Content-Disposition'] = 'inline'
+    return response
+
+
+@app.route('/download_travel_request_attachment/<int:attachment_id>')
+@login_required
+def download_travel_request_attachment(attachment_id):
+    attachment, path, error_response = get_authorized_travel_request_attachment(attachment_id)
+    if error_response:
+        return error_response
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=attachment.original_filename or attachment.stored_filename,
+        mimetype=travel_request_attachment_mimetype(attachment),
+        max_age=0
+    )
+
+
+@app.route('/delete_travel_request_attachment/<int:attachment_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_travel_request_attachment(attachment_id):
+    attachment = db.session.get(TravelRequestAttachment, attachment_id)
+    if not attachment:
+        return jsonify({'success': False, 'error': 'Attachment not found.'}), 404
+    request_rec = db.session.get(TravelRequest, attachment.travel_request_id)
+    if not can_current_user_edit_travel_request_attachments(request_rec):
+        return jsonify({'success': False, 'error': 'Attachments can only be changed while the Travel Request is Draft or Rejected.'}), 409
+
+    path = travel_request_attachment_path(attachment)
+    filename = attachment.original_filename or attachment.stored_filename
+    try:
+        db.session.delete(attachment)
+        request_rec.updated_at = get_manila_time()
+        add_activity_log_entry(
+            f"Deleted Travel Request attachment {filename}: {request_rec.request_no or f'TR-{request_rec.id}'}"
+        )
+        db.session.commit()
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception as file_error:
+            print(f'[TravelRequest] Deleted attachment record but file cleanup was skipped: {file_error}', flush=True)
+        return jsonify({
+            'success': True,
+            'message': 'Attachment deleted.',
+            'attachments': travel_request_attachment_dicts(request_rec.id)
+        })
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[TravelRequest] Attachment delete failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to delete Travel Request attachment.'}), 500
 
 
 @app.route('/get_travel_request_approval_queue')

@@ -627,6 +627,54 @@
         color: inherit;
     }
 
+    .travel-attachment-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+    }
+
+    .travel-attachment-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 12px;
+        border: 1px solid #dbe4ee;
+        background: #f8fafc;
+        border-radius: 8px;
+    }
+
+    .travel-attachment-name {
+        min-width: 0;
+        font-weight: 850;
+        color: #172554;
+        overflow-wrap: anywhere;
+    }
+
+    .travel-attachment-meta {
+        margin-top: 2px;
+        color: #64748b;
+        font-size: .8rem;
+        font-weight: 700;
+    }
+
+    .travel-attachment-actions {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    @media (max-width: 640px) {
+        .travel-attachment-item {
+            align-items: stretch;
+            flex-direction: column;
+        }
+        .travel-attachment-actions .travel-btn {
+            flex: 1 1 auto;
+        }
+    }
+
     .travel-conflict-panel.blocking .travel-conflict-item {
         border-color: rgba(248, 113, 113, 0.45);
     }
@@ -1166,6 +1214,26 @@
     </section>
 
     <section class="travel-card">
+        <h2 class="travel-section-title"><i class="fa-solid fa-paperclip"></i> Uploaded Attachments</h2>
+        <p class="travel-form-subtitle" style="text-align:left;margin-bottom:12px;">
+            Optional supporting documents. PDF, JPG, JPEG, and PNG only. Uploads up to 35MB each; the system will optimize each file to 2MB when possible. Maximum 10 files.
+        </p>
+        <input type="file" id="travel-attachment-files" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" multiple hidden>
+        <div class="travel-actions" style="justify-content:flex-start;margin-top:0;">
+            <button type="button" class="travel-btn travel-btn-secondary" id="travel-select-attachments-btn" onclick="document.getElementById('travel-attachment-files').click()">
+                <i class="fa-solid fa-folder-open"></i> Select Files
+            </button>
+            <button type="button" class="travel-btn travel-btn-primary" id="travel-upload-attachments-btn" onclick="uploadTravelRequestAttachments()">
+                <i class="fa-solid fa-cloud-arrow-up"></i> Upload Attachments
+            </button>
+        </div>
+        <div id="travel-attachment-selection" class="travel-attachment-meta">No files selected.</div>
+        <div id="travel-attachment-list" class="travel-attachment-list">
+            <div class="travel-attachment-meta">No attachments uploaded.</div>
+        </div>
+    </section>
+
+    <section class="travel-card">
         <h2 class="travel-section-title"><i class="fa-solid fa-signature"></i> Sign-off Placeholders</h2>
         <div class="travel-signature-grid">
             <div class="travel-signature-box"><div class="travel-signature-line">Checked By</div></div>
@@ -1213,6 +1281,7 @@ let travelRouteCounter = 0;
 let travelVisitCounter = 0;
 let latestTravelConflictCheck = null;
 let travelConflictCheckTimer = null;
+let travelRequestAttachments = [];
 
 function travelCsrfToken(){ return document.querySelector('meta[name="csrf-token"]')?.content || ''; }
 function travelEscape(value){ return String(value || '').replace(/[&<>"']/g, match => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[match]); }
@@ -1775,6 +1844,9 @@ function setTravelRequestLockedState(statusValue){
     const deleteBtn = document.getElementById('travel-delete-draft-btn');
     const restoreBtn = document.getElementById('travel-restore-blocks-btn');
     const timelineBtn = document.getElementById('travel-open-timeline-btn');
+    const attachmentInput = document.getElementById('travel-attachment-files');
+    const selectAttachmentsBtn = document.getElementById('travel-select-attachments-btn');
+    const uploadAttachmentsBtn = document.getElementById('travel-upload-attachments-btn');
 
     if(page){
         page.classList.toggle('travel-locked', !editable);
@@ -1812,6 +1884,11 @@ function setTravelRequestLockedState(statusValue){
         submitBtn.style.display = editable ? '' : 'none';
         submitBtn.disabled = !editable;
     }
+
+    if(attachmentInput) attachmentInput.disabled = !editable;
+    if(selectAttachmentsBtn) selectAttachmentsBtn.style.display = editable ? '' : 'none';
+    if(uploadAttachmentsBtn) uploadAttachmentsBtn.style.display = editable ? '' : 'none';
+    renderTravelRequestAttachments(travelRequestAttachments);
 
     if(deleteBtn){
         const requestId = document.getElementById('travel-request-id')?.value || '';
@@ -3235,6 +3312,143 @@ async function deleteTravelRequestDraft(){
     }
 }
 
+function formatTravelAttachmentSize(size){
+    const bytes = Number(size || 0);
+    if(bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    if(bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${bytes} bytes`;
+}
+
+function renderTravelRequestAttachments(attachments){
+    travelRequestAttachments = Array.isArray(attachments) ? attachments : [];
+    const list = document.getElementById('travel-attachment-list');
+    if(!list) return;
+    if(!travelRequestAttachments.length){
+        list.innerHTML = '<div class="travel-attachment-meta">No attachments uploaded.</div>';
+        return;
+    }
+
+    const editable = isCurrentTravelEditable();
+    list.innerHTML = travelRequestAttachments.map(item => `
+        <div class="travel-attachment-item">
+            <div class="travel-attachment-name">
+                <i class="fa-solid fa-file-lines"></i> ${travelEscape(item.filename || item.original_filename || ('Attachment #' + item.id))}
+                <div class="travel-attachment-meta">${travelEscape(formatTravelAttachmentSize(item.size || 0))}</div>
+            </div>
+            <div class="travel-attachment-actions">
+                <a class="travel-btn travel-btn-secondary" href="${travelEscape(item.preview_url || '#')}" target="_blank" rel="noopener">
+                    <i class="fa-solid fa-eye"></i> Preview
+                </a>
+                <a class="travel-btn travel-btn-secondary" href="${travelEscape(item.download_url || '#')}">
+                    <i class="fa-solid fa-download"></i> Download
+                </a>
+                ${editable ? `<button type="button" class="travel-btn travel-btn-danger-outline" onclick="deleteTravelRequestAttachment(${Number(item.id) || 0})"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
+            </div>
+        </div>
+    `).join('');
+}
+
+function updateTravelAttachmentSelection(){
+    const input = document.getElementById('travel-attachment-files');
+    const label = document.getElementById('travel-attachment-selection');
+    const files = Array.from(input?.files || []);
+    if(label){
+        label.textContent = files.length
+            ? `${files.length} file(s) selected: ${files.map(file => file.name).join(', ')}`
+            : 'No files selected.';
+    }
+}
+
+async function uploadTravelRequestAttachments(){
+    if(!guardTravelEditableAction('upload attachments')) return;
+    const input = document.getElementById('travel-attachment-files');
+    const files = Array.from(input?.files || []);
+    if(!files.length){
+        showTravelStatus('Please select at least one attachment.', 'error');
+        return;
+    }
+    if(travelRequestAttachments.length + files.length > 10){
+        showTravelStatus('A Travel Request can contain up to 10 attachments.', 'error');
+        return;
+    }
+    const oversized = files.find(file => Number(file.size || 0) > 35 * 1024 * 1024);
+    if(oversized){
+        showTravelStatus(`${oversized.name} exceeds the 35MB upload limit.`, 'error');
+        return;
+    }
+
+    let requestId = document.getElementById('travel-request-id')?.value || '';
+    if(!requestId){
+        const saved = await saveTravelRequestDraft();
+        requestId = saved?.id || document.getElementById('travel-request-id')?.value || '';
+        if(!requestId) return;
+    }
+
+    const button = document.getElementById('travel-upload-attachments-btn');
+    const originalHtml = button?.innerHTML || '';
+    if(button){
+        button.disabled = true;
+        button.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Uploading...';
+    }
+
+    try{
+        let latestAttachments = travelRequestAttachments;
+        for(let index = 0; index < files.length; index += 1){
+            const file = files[index];
+            if(button) button.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Uploading ${index + 1} of ${files.length}...`;
+            const formData = new FormData();
+            formData.append('attachment_files', file, file.name);
+            const res = await fetch(`/upload_travel_request_attachments/${encodeURIComponent(requestId)}`, {
+                method:'POST',
+                credentials:'same-origin',
+                cache:'no-store',
+                headers:{ 'X-CSRFToken': travelCsrfToken(), 'Accept':'application/json' },
+                body: formData
+            });
+            const data = await parseTravelJson(res, `Unable to upload ${file.name}.`);
+            latestAttachments = data.attachments || latestAttachments;
+            renderTravelRequestAttachments(latestAttachments);
+        }
+        input.value = '';
+        updateTravelAttachmentSelection();
+        showTravelStatus(`${files.length} attachment(s) uploaded.`, 'success');
+        await loadMyTravelRequests();
+    }catch(err){
+        showTravelStatus(err.message || 'Unable to upload Travel Request attachments.', 'error');
+    }finally{
+        if(button){
+            button.disabled = false;
+            button.innerHTML = originalHtml;
+        }
+    }
+}
+
+async function deleteTravelRequestAttachment(attachmentId){
+    if(!attachmentId || !guardTravelEditableAction('delete attachments')) return;
+    const confirmed = await travelConfirmDialog({
+        title: 'Delete Attachment?',
+        message: 'This supporting document will be permanently removed from the Travel Request.',
+        confirmText: 'Delete Attachment',
+        cancelText: 'Cancel',
+        tone: 'danger',
+        icon: 'trash'
+    });
+    if(!confirmed) return;
+
+    try{
+        const res = await fetch(`/delete_travel_request_attachment/${encodeURIComponent(attachmentId)}`, {
+            method:'POST', credentials:'same-origin', cache:'no-store',
+            headers:{ 'Content-Type':'application/json', 'Accept':'application/json', 'X-CSRFToken': travelCsrfToken() },
+            body: JSON.stringify({})
+        });
+        const data = await parseTravelJson(res, 'Unable to delete attachment.');
+        renderTravelRequestAttachments(data.attachments || []);
+        showTravelStatus(data.message || 'Attachment deleted.', 'success');
+    }catch(err){
+        showTravelStatus(err.message || 'Unable to delete attachment.', 'error');
+    }
+}
+
 async function saveTravelRequestDraft(){
     if(!guardTravelEditableAction('save changes')) return null;
     const payload = collectTravelPayload();
@@ -3379,6 +3593,10 @@ function resetTravelForm(){
     updateDepositFieldsState();
     calculateTravelTotal();
     clearTravelApprovalSignatureSnapshot();
+    renderTravelRequestAttachments([]);
+    const attachmentInput = document.getElementById('travel-attachment-files');
+    if(attachmentInput) attachmentInput.value = '';
+    updateTravelAttachmentSelection();
     showTravelStatus('', '');
 }
 
@@ -3473,6 +3691,7 @@ async function loadTravelRequestDetail(id){
         updateTravelDurationLabel();
         populateTravelAmountsFromRequest(item);
         renderTravelApprovalSignatureSnapshot(item);
+        renderTravelRequestAttachments(item.attachments || []);
         hydrateTravelPurposeFieldsFromRequest(item);
         setTravelParticipantsFromRequest(item);
 
@@ -3506,6 +3725,7 @@ document.addEventListener('DOMContentLoaded', async function(){
         input.addEventListener('input', calculateTravelTotal);
         input.addEventListener('change', calculateTravelTotal);
     });
+    document.getElementById('travel-attachment-files')?.addEventListener('change', updateTravelAttachmentSelection);
     setTravelCurrencyCode(document.getElementById('travel-currency-code')?.value || 'PHP');
 
     await loadTravelReferenceData();
