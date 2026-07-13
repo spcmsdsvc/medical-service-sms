@@ -77,7 +77,7 @@
         {"item_key": "2026-07-13-whats-new", "category": "System", "description": "A new What's New page provides readable daily system updates with account-based unread badges and acknowledgements.", "audiences": ["everyone"], "sort_order": 60},
         {"item_key": "2026-07-13-changelog-acknowledge-all", "category": "System", "description": "The What's New page now lets users acknowledge all of their unread updates at once.", "audiences": ["everyone"], "sort_order": 70},
         {"item_key": "2026-07-13-changelog-sidebar-display", "category": "System", "description": "The What's New sidebar label and unread badge now display clearly together on desktop and mobile.", "audiences": ["everyone"], "sort_order": 80},
-        {"item_key": "2026-07-13-changelog-header-button", "category": "System", "description": "What's New is now available from a compact desktop and mobile header button instead of occupying a full sidebar row.", "audiences": ["everyone"], "sort_order": 90}
+        {"item_key": "2026-07-13-changelog-header-button", "category": "System", "description": "What's New is now available from a compact bell button in the desktop and mobile headers instead of occupying a full sidebar row.", "audiences": ["everyone"], "sort_order": 90}
       ]
     }
   ]
