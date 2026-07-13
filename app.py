@@ -19548,7 +19548,8 @@ def find_travel_request_conflicts_for_user(
         )
     elif matching_schedules:
         conflict_payload['message'] = (
-            'Matching client schedule found. Calendar schedules are allowed for this Travel Request.'
+            'A calendar schedule for this client was found within the selected travel dates. '
+            'You may continue with this Travel Request.'
         )
 
     return conflict_payload

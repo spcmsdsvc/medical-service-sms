@@ -2099,9 +2099,9 @@ function buildTravelConflictHtml(conflicts, options={}){
         const time = [formatTravelConflictTime(item.start_time), formatTravelConflictTime(item.end_time)].filter(Boolean).join(' - ');
         rows.push(`
             <div class="travel-conflict-item">
-                <strong>Verified Client Schedule:</strong> ${travelEscape(item.title || ('Schedule #' + item.id))}
-                ${item.status ? ` â€¢ ${travelEscape(item.status)}` : ''}
-                <br>${travelEscape(formatTravelConflictDate(item.date))}${time ? ` â€¢ ${travelEscape(time)}` : ''}
+                <strong>Matching Calendar Schedule:</strong> ${travelEscape(item.title || ('Schedule #' + item.id))}
+                ${item.status ? ` - ${travelEscape(item.status)}` : ''}
+                <br>${travelEscape(formatTravelConflictDate(item.date))}${time ? ` | ${travelEscape(time)}` : ''}
                 ${item.client_name ? `<br>${travelEscape(item.client_name)}` : ''}
                 ${item.product ? `<br>${travelEscape(item.product)}` : ''}
             </div>
@@ -2111,7 +2111,7 @@ function buildTravelConflictHtml(conflicts, options={}){
     return `
         <div class="travel-conflict-title">
             <i class="fa-solid ${isBlocking ? 'fa-triangle-exclamation' : 'fa-circle-check'}"></i>
-            ${isBlocking ? 'Schedule Conflict Detected' : 'Client Schedule Verified'}
+            ${isBlocking ? 'Schedule Conflict Detected' : 'Client Schedule Confirmed'}
         </div>
         <div>${travelEscape(message)}</div>
         ${rows.length ? `<div class="travel-conflict-list">${rows.join('')}</div>` : ''}
@@ -2205,7 +2205,11 @@ async function checkTravelRequestConflicts(silent=false){
         const data = await parseTravelJson(res, 'Unable to check travel conflicts.');
         handleTravelConflictPayload(data, {blocking:false, scroll: !silent});
         if(data.ok && !silent){
-            showTravelStatus(data.message || 'No travel period conflicts found.', 'success');
+            if((data.conflicts?.verified_schedule_matches || []).length){
+                showTravelStatus('');
+            }else{
+                showTravelStatus('No travel period conflicts found.', 'success');
+            }
         }
         return data;
     }catch(err){
