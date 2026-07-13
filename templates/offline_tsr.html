@@ -486,6 +486,7 @@
 @media (max-width: 768px){.tsr-category-menu{position:static;margin-top:6px;box-shadow:none;}}
 </style>
 
+<script src="{{ url_for('static', filename='vendor/jspdf/jspdf.umd.min.js') }}"></script>
 <script>
 const STANDALONE_TSR_KEY = 'medicalServiceStandaloneTSRDraftV1';
 const STANDALONE_TSR_SCHEDULES_KEY = 'medicalServiceStandaloneTSRScheduleOptionsV1';
@@ -2120,7 +2121,7 @@ function collectTSRData(){
     original_schedule_time_end:selectedSchedule?.time_end || '',
     _draft_id:standaloneCurrentDraftId,
     savedAt:new Date().toISOString(),
-    _tsr_form_version:'strict-core-v1'
+    _tsr_form_version:'vector-pdf-v2'
   };
   document.querySelectorAll('.tsr-field').forEach(el=>data[el.id]=el.value);
   data._equipment_inventory_create_requested = Boolean(
@@ -3779,10 +3780,9 @@ async function buildStandaloneTSRPDFBlobForUpload(data){
   const target = document.getElementById('tsr-print-preview-content');
   const payload = data || collectTSRData();
   if(target) target.innerHTML = buildTSRPrintHTML(payload);
-  const canvases = await renderTSRPrintSheetCanvases(payload);
   const filename = buildTSRPDFFilename(payload);
-  const blob = makeImagePDFBlob(canvases, filename.replace(/\.pdf$/i,''));
-  return { blob, filename, page_count: canvases.length };
+  const vectorPdf = await buildVectorTSRPDFBlob(payload, filename.replace(/\.pdf$/i,''));
+  return { blob:vectorPdf.blob, filename, page_count:vectorPdf.pageCount, pdf_format:'vector-v2' };
 }
 
 async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline'){
@@ -3843,18 +3843,33 @@ function markOfflineTSRQueueItemConflict(item, result){
   });
 }
 
-async function uploadQueuedOfflineTSR(item){
+async function uploadQueuedOfflineTSR(item, numberRetryCount=0){
   const payload = Object.assign({}, item?.payload || {});
+  const isVectorQueue = String(payload._tsr_form_version || '').toLowerCase() === 'vector-pdf-v2';
   const finalizedPayload = Object.assign({}, payload, {
     schedule_id: payload.schedule_id || item?.schedule_id || payload.selectedScheduleId || payload.selectedSchedule?.id || '',
     completion_scope: payload.completion_scope || item?.completion_scope || 'linked_all',
     _offline_queue_preserve_pdf: true
   });
-  delete finalizedPayload['tsr-number'];
-  delete finalizedPayload.tsr_number;
+  if(isVectorQueue){
+    const serviceDate = finalizedPayload['tsr-service-date'] || finalizedPayload.service_date || finalizedPayload.selectedSchedule?.date_iso || todayISO();
+    const finalNumber = await fetchNextOnlineTSRNumber(serviceDate);
+    finalizedPayload['tsr-number'] = finalNumber;
+    finalizedPayload.tsr_number = finalNumber;
+  }else{
+    delete finalizedPayload['tsr-number'];
+    delete finalizedPayload.tsr_number;
+  }
   const formData = new FormData();
-  const filename = item?.pdf_filename || payload?.pdf_filename || payload?.download_filename || 'Online_TSR.pdf';
-  const pdfBlob = await resolveQueuedPDFBlob(item);
+  let filename = item?.pdf_filename || payload?.pdf_filename || payload?.download_filename || 'Online_TSR.pdf';
+  let pdfBlob = null;
+  if(isVectorQueue){
+    filename = buildTSRPDFFilename(finalizedPayload);
+    const vectorPdf = await buildVectorTSRPDFBlob(finalizedPayload, filename.replace(/\.pdf$/i, ''));
+    pdfBlob = vectorPdf.blob;
+  }else{
+    pdfBlob = await resolveQueuedPDFBlob(item);
+  }
 
   if(!pdfBlob || !Number(pdfBlob.size || 0)){
     const blobError = new Error('Queued TSR PDF is missing on this device. Please remove this queue item and recreate the TSR if needed.');
@@ -3897,6 +3912,9 @@ async function uploadQueuedOfflineTSR(item){
 
   const okStatus = result.status === 'success' || result.success === true;
   if(!res.ok || !okStatus){
+    if(isVectorQueue && res.status === 409 && numberRetryCount < 2){
+      return uploadQueuedOfflineTSR(item, numberRetryCount + 1);
+    }
     const serverMessage = result.message || result.error || result.detail || responseText.slice(0, 240);
     const syncError = new Error(serverMessage ? `Queued TSR sync failed (${res.status}): ${serverMessage}` : `Queued TSR sync failed (HTTP ${res.status}).`);
     syncError.result = result;
@@ -4471,7 +4489,7 @@ async function confirmStandaloneTSRFinalSave(){
   }
   finalTSRConfirmBusy = true;
   state.payload._final_preview_confirmed_at = new Date().toISOString();
-  state.payload._tsr_form_version = 'strict-core-v1';
+  state.payload._tsr_form_version = 'vector-pdf-v2';
   setFinalTSRPreviewMode(true, { busy:true });
   try{
     await finishStandaloneTSRFinalSave(state);
@@ -5095,7 +5113,198 @@ function drawActionsTakenBox(ctx, value, x, y, w, h, fontSize=18){
   }
   return { wrappedLines, overflowLines, visibleLines, maxLinesPerColumn, lineHeight, colW };
 }
+const TSR_VECTOR_FONT_REGULAR_URL = "{{ url_for('static', filename='fonts/liberation-sans/LiberationSans-Regular.ttf') }}";
+const TSR_VECTOR_FONT_BOLD_URL = "{{ url_for('static', filename='fonts/liberation-sans/LiberationSans-Bold.ttf') }}";
+let tsrVectorFontPromise = null;
+let activeTSRVectorRender = null;
+
+function tsrArrayBufferToBase64(buffer){
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for(let offset = 0; offset < bytes.length; offset += chunkSize){
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + chunkSize, bytes.length)));
+  }
+  return btoa(binary);
+}
+
+async function loadTSRVectorFonts(){
+  if(tsrVectorFontPromise) return tsrVectorFontPromise;
+  tsrVectorFontPromise = Promise.all([
+    fetch(TSR_VECTOR_FONT_REGULAR_URL, { cache:'force-cache', credentials:'same-origin' }),
+    fetch(TSR_VECTOR_FONT_BOLD_URL, { cache:'force-cache', credentials:'same-origin' })
+  ]).then(async responses => {
+    if(responses.some(response => !response.ok)){
+      throw new Error('The embedded TSR font could not be loaded. Open Create TSR once while online, then try again.');
+    }
+    const buffers = await Promise.all(responses.map(response => response.arrayBuffer()));
+    return {
+      regular: tsrArrayBufferToBase64(buffers[0]),
+      bold: tsrArrayBufferToBase64(buffers[1])
+    };
+  }).catch(error => {
+    tsrVectorFontPromise = null;
+    throw error;
+  });
+  return tsrVectorFontPromise;
+}
+
+function tsrParsePdfColor(value, fallback='#111111'){
+  const raw = String(value || fallback).trim();
+  const shortHex = raw.match(/^#([0-9a-f]{3})$/i);
+  const longHex = raw.match(/^#([0-9a-f]{6})$/i);
+  if(shortHex){
+    return shortHex[1].split('').map(char => parseInt(char + char, 16));
+  }
+  if(longHex){
+    return [0, 2, 4].map(index => parseInt(longHex[1].slice(index, index + 2), 16));
+  }
+  const rgb = raw.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+  return rgb ? rgb.slice(1, 4).map(Number) : tsrParsePdfColor(fallback, '#111111');
+}
+
+function tsrPdfImageAlias(src){
+  if(src === TSR_PRINT_LOGO_DATA_URI) return 'tsr-shimadzu-logo';
+  let hash = 2166136261;
+  const value = String(src || '');
+  for(let index = 0; index < value.length; index += Math.max(1, Math.floor(value.length / 800))){
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `tsr-image-${(hash >>> 0).toString(16)}-${value.length}`;
+}
+
+class TSRVectorCanvasContext {
+  constructor(pdf, width, height){
+    this.pdf = pdf;
+    this.width = width;
+    this.height = height;
+    this.scaleX = 595.28 / width;
+    this.scaleY = 841.89 / height;
+    this._font = '10px Arial';
+    this._fontSize = 10;
+    this._fontStyle = 'normal';
+    this._fillStyle = '#111111';
+    this._strokeStyle = '#111111';
+    this._lineWidth = 1;
+    this._textAlign = 'left';
+    this._stateStack = [];
+    this._path = [];
+    this.textBaseline = 'alphabetic';
+    this.applyFont();
+    this.applyColors();
+  }
+  set font(value){
+    this._font = String(value || '10px Arial');
+    const sizeMatch = this._font.match(/([0-9.]+)px/i);
+    this._fontSize = sizeMatch ? Number(sizeMatch[1]) : 10;
+    this._fontStyle = /\bbold\b/i.test(this._font) ? 'bold' : 'normal';
+    this.applyFont();
+  }
+  get font(){ return this._font; }
+  set fillStyle(value){ this._fillStyle = value; this.applyFillColor(); }
+  get fillStyle(){ return this._fillStyle; }
+  set strokeStyle(value){ this._strokeStyle = value; this.applyStrokeColor(); }
+  get strokeStyle(){ return this._strokeStyle; }
+  set lineWidth(value){
+    this._lineWidth = Number(value || 1);
+    this.pdf.setLineWidth(this._lineWidth * this.scaleX);
+  }
+  get lineWidth(){ return this._lineWidth; }
+  set textAlign(value){ this._textAlign = value || 'left'; }
+  get textAlign(){ return this._textAlign; }
+  applyFont(){
+    this.pdf.setFont('LiberationSans', this._fontStyle);
+    this.pdf.setFontSize(this._fontSize * this.scaleY);
+  }
+  applyFillColor(){
+    const [r,g,b] = tsrParsePdfColor(this._fillStyle);
+    this.pdf.setTextColor(r,g,b);
+    this.pdf.setFillColor(r,g,b);
+  }
+  applyStrokeColor(){
+    const [r,g,b] = tsrParsePdfColor(this._strokeStyle);
+    this.pdf.setDrawColor(r,g,b);
+  }
+  applyColors(){ this.applyFillColor(); this.applyStrokeColor(); this.lineWidth = this._lineWidth; }
+  measureText(text){
+    this.applyFont();
+    return { width: this.pdf.getTextWidth(String(text || '')) / this.scaleX };
+  }
+  fillText(text, x, y){
+    this.applyFont();
+    this.applyFillColor();
+    const align = this._textAlign === 'center' ? 'center' : (this._textAlign === 'right' || this._textAlign === 'end' ? 'right' : 'left');
+    this.pdf.text(String(text ?? ''), x * this.scaleX, y * this.scaleY, { align, baseline:'alphabetic' });
+  }
+  strokeRect(x, y, w, h){
+    this.applyStrokeColor();
+    this.pdf.setLineWidth(this._lineWidth * this.scaleX);
+    this.pdf.rect(x * this.scaleX, y * this.scaleY, w * this.scaleX, h * this.scaleY, 'S');
+  }
+  fillRect(x, y, w, h){
+    this.applyFillColor();
+    this.pdf.rect(x * this.scaleX, y * this.scaleY, w * this.scaleX, h * this.scaleY, 'F');
+  }
+  beginPath(){ this._path = []; }
+  moveTo(x, y){ this._path.push({ move:true, x, y }); }
+  lineTo(x, y){ this._path.push({ move:false, x, y }); }
+  stroke(){
+    this.applyStrokeColor();
+    this.pdf.setLineWidth(this._lineWidth * this.scaleX);
+    let cursor = null;
+    this._path.forEach(point => {
+      if(point.move || !cursor){ cursor = point; return; }
+      this.pdf.line(cursor.x * this.scaleX, cursor.y * this.scaleY, point.x * this.scaleX, point.y * this.scaleY);
+      cursor = point;
+    });
+  }
+  save(){
+    this._stateStack.push({
+      font:this._font, fillStyle:this._fillStyle, strokeStyle:this._strokeStyle,
+      lineWidth:this._lineWidth, textAlign:this._textAlign
+    });
+    if(this.pdf.saveGraphicsState) this.pdf.saveGraphicsState();
+  }
+  restore(){
+    if(this.pdf.restoreGraphicsState) this.pdf.restoreGraphicsState();
+    const state = this._stateStack.pop();
+    if(!state) return;
+    this._font = state.font;
+    this._fillStyle = state.fillStyle;
+    this._strokeStyle = state.strokeStyle;
+    this._lineWidth = state.lineWidth;
+    this._textAlign = state.textAlign;
+    this.font = this._font;
+    this.applyColors();
+  }
+  drawImage(image, x, y, w, h){
+    const src = typeof image === 'string' ? image : (image?.src || '');
+    if(!src) return;
+    const format = /^data:image\/jpe?g/i.test(src) ? 'JPEG' : 'PNG';
+    this.pdf.addImage(
+      src, format,
+      x * this.scaleX, y * this.scaleY, w * this.scaleX, h * this.scaleY,
+      tsrPdfImageAlias(src), 'FAST'
+    );
+  }
+}
+
 function createTSRCanvas(){
+  if(activeTSRVectorRender){
+    if(activeTSRVectorRender.pageCount > 0){
+      activeTSRVectorRender.pdf.addPage('a4', 'portrait');
+    }
+    activeTSRVectorRender.pageCount += 1;
+    const canvas = { width:1488, height:2105, vector:true };
+    const ctx = new TSRVectorCanvasContext(activeTSRVectorRender.pdf, canvas.width, canvas.height);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#111111';
+    ctx.strokeStyle = '#111111';
+    ctx.lineWidth = 1.4;
+    return { canvas, ctx };
+  }
   const canvas = document.createElement('canvas');
   canvas.width = 1488;
   canvas.height = 2105;
@@ -5107,6 +5316,38 @@ function createTSRCanvas(){
   ctx.lineWidth = 1.4;
   ctx.textBaseline = 'alphabetic';
   return { canvas, ctx };
+}
+
+async function buildVectorTSRPDFBlob(data, title){
+  if(!window.jspdf?.jsPDF){
+    throw new Error('The high-quality TSR PDF engine is unavailable. Reconnect, reload Create TSR, and try again.');
+  }
+  const fonts = await loadTSRVectorFonts();
+  const pdf = new window.jspdf.jsPDF({
+    orientation:'portrait',
+    unit:'pt',
+    format:'a4',
+    compress:true,
+    putOnlyUsedFonts:true,
+    precision:4
+  });
+  pdf.addFileToVFS('LiberationSans-Regular.ttf', fonts.regular);
+  pdf.addFont('LiberationSans-Regular.ttf', 'LiberationSans', 'normal');
+  pdf.addFileToVFS('LiberationSans-Bold.ttf', fonts.bold);
+  pdf.addFont('LiberationSans-Bold.ttf', 'LiberationSans', 'bold');
+  pdf.setProperties({
+    title:String(title || 'Technical Service Report'),
+    subject:'Technical Service Report',
+    author:'Shimadzu Philippines Corporation',
+    creator:'Medical Service TSR Vector PDF'
+  });
+  activeTSRVectorRender = { pdf, pageCount:0 };
+  try{
+    await renderTSRPrintSheetCanvases(data);
+    return { blob:pdf.output('blob'), pageCount:activeTSRVectorRender.pageCount };
+  }finally{
+    activeTSRVectorRender = null;
+  }
 }
 async function drawTSRCanvasHeader(ctx, data, margin, pageW, y=58){
   const logo = await loadImageForCanvas(TSR_PRINT_LOGO_DATA_URI);
@@ -5365,83 +5606,6 @@ async function renderTSRContinuationCanvases(data, sections){
   }
   return pages;
 }
-function pdfEscape(str){ return String(str || '').replace(/[\\()]/g, '\\$&'); }
-function dataURLToBinaryString(dataURL){
-  const base64 = String(dataURL).split(',')[1] || '';
-  return atob(base64);
-}
-function stringToUint8Array(binaryString){
-  const bytes = new Uint8Array(binaryString.length);
-  for(let i=0;i<binaryString.length;i++) bytes[i] = binaryString.charCodeAt(i) & 255;
-  return bytes;
-}
-function makeImagePDFBlob(canvases, title){
-  const pageW = 595.28;
-  const pageH = 841.89;
-  const pageCanvases = Array.isArray(canvases) && canvases.length ? canvases : [];
-  const imageData = pageCanvases.map(canvas => ({
-    width: canvas.width,
-    height: canvas.height,
-    binary: dataURLToBinaryString(canvas.toDataURL('image/jpeg', 0.99))
-  }));
-  const pageCount = imageData.length || 1;
-  const pageObjectsStart = 3;
-  const imageObjectsStart = pageObjectsStart + pageCount;
-  const contentObjectsStart = imageObjectsStart + pageCount;
-  const infoObjectNo = contentObjectsStart + pageCount;
-  const kids = Array.from({length: pageCount}, (_, idx) => `${pageObjectsStart + idx} 0 R`).join(' ');
-  const objects = [
-    `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`,
-    `2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${pageCount} >>\nendobj\n`
-  ];
-  imageData.forEach((item, idx) => {
-    const pageObjNo = pageObjectsStart + idx;
-    const imageObjNo = imageObjectsStart + idx;
-    const contentObjNo = contentObjectsStart + idx;
-    objects.push(`${pageObjNo} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW.toFixed(2)} ${pageH.toFixed(2)}] /Resources << /XObject << /Im${idx} ${imageObjNo} 0 R >> >> /Contents ${contentObjNo} 0 R >>\nendobj\n`);
-  });
-  imageData.forEach((item, idx) => {
-    const imageObjNo = imageObjectsStart + idx;
-    objects.push(`${imageObjNo} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${item.width} /Height ${item.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${item.binary.length} >>\nstream\n${item.binary}\nendstream\nendobj\n`);
-  });
-  imageData.forEach((_item, idx) => {
-    const contentObjNo = contentObjectsStart + idx;
-    const content = `q ${pageW.toFixed(2)} 0 0 ${pageH.toFixed(2)} 0 0 cm /Im${idx} Do Q`;
-    objects.push(`${contentObjNo} 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`);
-  });
-  objects.push(`${infoObjectNo} 0 obj\n<< /Title (${pdfEscape(title)}) /Producer (Medical Service Offline TSR) /CreationDate (D:${new Date().toISOString().replace(/[-:TZ.]/g,'').slice(0,14)}) >>\nendobj\n`);
-  let pdf = '%PDF-1.3\n';
-  const offsets = [0];
-  objects.forEach(obj => { offsets.push(pdf.length); pdf += obj; });
-  const xrefOffset = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for(let i=1;i<=objects.length;i++) pdf += String(offsets[i]).padStart(10,'0') + ' 00000 n \n';
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info ${infoObjectNo} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-  return new Blob([stringToUint8Array(pdf)], { type: 'application/pdf' });
-}
-function makeSingleImagePDFBlob(jpegDataURL, imageWidth, imageHeight, title){
-  const pageW = 595.28;
-  const pageH = 841.89;
-  const imgBinary = dataURLToBinaryString(jpegDataURL);
-  const content = `q ${pageW.toFixed(2)} 0 0 ${pageH.toFixed(2)} 0 0 cm /Im0 Do Q`;
-  const objects = [
-    `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`,
-    `2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n`,
-    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW.toFixed(2)} ${pageH.toFixed(2)}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`,
-    `4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${imageWidth} /Height ${imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBinary.length} >>\nstream\n${imgBinary}\nendstream\nendobj\n`,
-    `5 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`,
-    `6 0 obj\n<< /Title (${pdfEscape(title)}) /Producer (Medical Service Offline TSR) /CreationDate (D:${new Date().toISOString().replace(/[-:TZ.]/g,'').slice(0,14)}) >>\nendobj\n`
-  ];
-  let pdf = '%PDF-1.3\n';
-  const offsets = [0];
-  objects.forEach(obj => { offsets.push(pdf.length); pdf += obj; });
-  const xrefOffset = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for(let i=1;i<=objects.length;i++) pdf += String(offsets[i]).padStart(10,'0') + ' 00000 n \n';
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Info 6 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-  return new Blob([stringToUint8Array(pdf)], { type: 'application/pdf' });
-}
-
 let currentTSRPreviewPDFUrl = '';
 function clearCurrentTSRPreviewPDFUrl(){
   if(currentTSRPreviewPDFUrl){
@@ -5472,8 +5636,8 @@ async function downloadTSRPDF(){
     const filename = buildTSRPDFFilename(data);
     const target = document.getElementById('tsr-print-preview-content');
     if(target) target.innerHTML = buildTSRPrintHTML(data);
-    const canvases = await renderTSRPrintSheetCanvases(data);
-    const blob = makeImagePDFBlob(canvases, filename.replace(/\.pdf$/i,''));
+    const vectorPdf = await buildVectorTSRPDFBlob(data, filename.replace(/\.pdf$/i,''));
+    const blob = vectorPdf.blob;
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -5510,8 +5674,8 @@ async function openTSRPrintPreview(){
   try{
     const data = collectTSRData();
     const filename = buildTSRPDFFilename(data);
-    const canvases = await renderTSRPrintSheetCanvases(data);
-    const blob = makeImagePDFBlob(canvases, filename.replace(/\.pdf$/i,''));
+    const vectorPdf = await buildVectorTSRPDFBlob(data, filename.replace(/\.pdf$/i,''));
+    const blob = vectorPdf.blob;
     clearCurrentTSRPreviewPDFUrl();
     currentTSRPreviewPDFUrl = URL.createObjectURL(blob);
     if(target){

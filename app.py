@@ -9816,9 +9816,10 @@ def save_offline_tsr_online():
         parse_online_tsr_sequence_date(selected_schedule.get('date_label')) or
         online_tsr_daily_sequence_date()
     )
+    is_vector_pdf_submission = clean_str(payload.get('_tsr_form_version')).lower() == 'vector-pdf-v2'
     if submitted_tsr_number and online_tsr_submitted_number_is_available(submitted_tsr_number, sequence_date):
         tsr_number = submitted_tsr_number.upper()
-    elif submitted_tsr_number and not preserve_uploaded_pdf:
+    elif submitted_tsr_number and (not preserve_uploaded_pdf or is_vector_pdf_submission):
         return jsonify({
             'status': 'error',
             'message': 'The previewed TSR number is no longer available. Please preview the TSR again before saving.'
@@ -10335,7 +10336,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v8';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v9-vector-tsr';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -10345,6 +10346,9 @@ const APP_SHELL = [
   '/offline',
   '/manifest.json',
   '/pwa-icon.svg',
+  '/static/vendor/jspdf/jspdf.umd.min.js',
+  '/static/fonts/liberation-sans/LiberationSans-Regular.ttf',
+  '/static/fonts/liberation-sans/LiberationSans-Bold.ttf',
   'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
   'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
