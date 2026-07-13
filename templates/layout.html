@@ -137,8 +137,6 @@
         }
         .sidebar a.text-warning { color: #facc15 !important; }
         .sidebar a.text-warning:hover { color: #fff3cd !important; }
-        .changelog-sidebar-badge{margin-left:auto;flex:0 0 auto !important;min-width:26px;width:auto;height:22px;padding:0 7px;border-radius:999px;background:#f0b429;color:#3d2b00;display:none;align-items:center;justify-content:center;overflow:visible !important;text-overflow:clip !important;font-size:.72rem;font-weight:950;line-height:1;}
-        .changelog-sidebar-badge.show{display:inline-flex;}
         .main-content { margin-left: var(--sidebar-width); padding: 20px; transition: all 0.3s ease; }
         body.sidebar-collapsed .sidebar { width: 0; }
         body.sidebar-collapsed .main-content { margin-left: 0; }
@@ -648,6 +646,91 @@
     text-align: center;
 }
 
+.sidebar-header-actions,
+.mobile-nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.sidebar-header .changelog-header-button,
+.mobile-nav .changelog-header-button {
+    position: relative;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: 1px solid rgba(203, 213, 225, 0.34);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #cbd5e1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    box-sizing: border-box;
+    transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.sidebar-header .changelog-header-button i,
+.mobile-nav .changelog-header-button i {
+    width: auto;
+    min-width: 0;
+    margin: 0 !important;
+    font-size: 1rem;
+}
+
+.sidebar-header .changelog-header-button:hover,
+.sidebar-header .changelog-header-button:focus-visible,
+.mobile-nav .changelog-header-button:hover,
+.mobile-nav .changelog-header-button:focus-visible,
+.changelog-header-button.active {
+    background: rgba(240, 180, 41, 0.16);
+    border-color: #f0b429;
+    color: #ffd45f;
+    outline: none;
+}
+
+.changelog-header-button.has-unread {
+    background: rgba(240, 180, 41, 0.12);
+    border-color: rgba(240, 180, 41, 0.72);
+    color: #ffd45f;
+}
+
+.changelog-header-badge {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border: 2px solid #1a252f;
+    border-radius: 999px;
+    background: #f0b429;
+    color: #3d2b00;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.66rem;
+    font-weight: 950;
+    line-height: 1;
+    box-sizing: border-box;
+}
+
+.mobile-nav .changelog-header-badge {
+    border-color: #2c3e50;
+}
+
+.changelog-header-badge.show {
+    display: inline-flex;
+}
+
+.mobile-nav-actions .mobile-menu-button {
+    min-width: 72px;
+}
+
 /* Keep mobile optimization from inflating sidebar buttons unevenly. */
 @media (max-width: 768px) {
     .mobile-device .sidebar a,
@@ -723,13 +806,35 @@
 <body>
     <div class="mobile-nav no-print">
         <h4 class="m-0">MEDICAL SERVICE</h4>
-        <button class="btn btn-outline-light btn-sm" onclick="toggleSidebarMobile()">Menu</button>
+        <div class="mobile-nav-actions">
+            {% if current_user.is_authenticated %}
+            <a href="/whats_new"
+               class="changelog-header-button {{ 'active' if request.path == '/whats_new' }}"
+               aria-label="What's New"
+               title="What's New">
+                <i class="fa-solid fa-sparkles" aria-hidden="true"></i>
+                <span class="changelog-header-badge" aria-hidden="true"></span>
+            </a>
+            {% endif %}
+            <button class="btn btn-outline-light btn-sm mobile-menu-button" onclick="toggleSidebarMobile()">Menu</button>
+        </div>
     </div>
 
     <div class="sidebar no-print" id="sidebar">
         <div class="sidebar-header">
             <h5 class="m-0 text-white fw-bold">MEDICAL SERVICE</h5>
-            <i class="fa-solid fa-bars toggle-btn" onclick="toggleSidebarDesktop()"></i>
+            <div class="sidebar-header-actions">
+                {% if current_user.is_authenticated %}
+                <a href="/whats_new"
+                   class="changelog-header-button {{ 'active' if request.path == '/whats_new' }}"
+                   aria-label="What's New"
+                   title="What's New">
+                    <i class="fa-solid fa-sparkles" aria-hidden="true"></i>
+                    <span class="changelog-header-badge" aria-hidden="true"></span>
+                </a>
+                {% endif %}
+                <i class="fa-solid fa-bars toggle-btn" onclick="toggleSidebarDesktop()"></i>
+            </div>
         </div>
         
         <nav class="mt-2">
@@ -756,14 +861,6 @@
             {% set admin_paths = ['/activity_page', '/settings'] %}
 
             <a href="/" class="{{ 'active' if request.path == '/' }}"><i class="fa-solid fa-chart-line me-2"></i> Dashboard</a>
-
-            {% if current_user.is_authenticated %}
-                <a href="/whats_new" class="{{ 'active' if request.path == '/whats_new' }}">
-                    <i class="fa-solid fa-sparkles me-2"></i>
-                    <span>What's New</span>
-                    <span id="changelog-sidebar-badge" class="changelog-sidebar-badge" aria-label="Unread system updates"></span>
-                </a>
-            {% endif %}
 
             {% if not is_approver_only_user %}
                 <div class="sidebar-calendar-row {{ 'active' if request.path in ['/timeline', '/offline-tsr'] }}">
@@ -909,8 +1006,8 @@
         }
 
         async function refreshGlobalChangelogBadge(){
-            const badge = document.getElementById('changelog-sidebar-badge');
-            if(!badge) return;
+            const badges = Array.from(document.querySelectorAll('.changelog-header-badge'));
+            if(!badges.length) return;
             try{
                 const response = await fetch('/api/changelog/unread-summary', {
                     credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}
@@ -918,8 +1015,20 @@
                 if(!response.ok) return;
                 const data = await response.json();
                 const count = Number(data.unread_count || 0);
-                badge.textContent = count > 99 ? '99+' : String(count || '');
-                badge.classList.toggle('show', count > 0);
+                const countLabel = count > 99 ? '99+' : String(count || '');
+                const accessibleLabel = count > 0
+                    ? `What's New, ${count} unread update${count === 1 ? '' : 's'}`
+                    : "What's New, no unread updates";
+                badges.forEach(badge => {
+                    badge.textContent = countLabel;
+                    badge.classList.toggle('show', count > 0);
+                    const button = badge.closest('.changelog-header-button');
+                    if(button){
+                        button.classList.toggle('has-unread', count > 0);
+                        button.setAttribute('aria-label', accessibleLabel);
+                        button.setAttribute('title', accessibleLabel);
+                    }
+                });
                 window.dispatchEvent(new CustomEvent('changelog:summary', {detail:data}));
             }catch(error){
                 console.warn('[Changelog] Unable to refresh unread badge', error);
