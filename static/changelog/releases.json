@@ -74,7 +74,8 @@
         {"item_key": "2026-07-13-travel-conflict-protection", "category": "Travel Request", "description": "Non-client commitments and overlapping Travel Requests remain protected as real conflicts.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30},
         {"item_key": "2026-07-13-travel-attachments", "category": "Travel Request", "description": "Travel Requests now support up to 10 optional PDF or image attachments, with files up to 35MB optimized to 2MB when possible.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40},
         {"item_key": "2026-07-13-travel-attachment-handoff", "category": "Travel Request", "description": "Approvers can preview Travel Request supporting documents, and Accounting receives one compiled supporting-attachments PDF.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50},
-        {"item_key": "2026-07-13-whats-new", "category": "System", "description": "A new What's New page provides readable daily system updates with account-based unread badges and acknowledgements.", "audiences": ["everyone"], "sort_order": 60}
+        {"item_key": "2026-07-13-whats-new", "category": "System", "description": "A new What's New page provides readable daily system updates with account-based unread badges and acknowledgements.", "audiences": ["everyone"], "sort_order": 60},
+        {"item_key": "2026-07-13-changelog-acknowledge-all", "category": "System", "description": "The What's New page now lets users acknowledge all of their unread updates at once.", "audiences": ["everyone"], "sort_order": 70}
       ]
     }
   ]

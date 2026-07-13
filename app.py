@@ -11056,6 +11056,36 @@ def acknowledge_changelog_release(release_id):
     return jsonify({'success': True, 'message': 'Update acknowledged.', 'release_id': release.id})
 
 
+@app.route('/api/changelog/releases/acknowledge-all', methods=['POST'])
+@login_required
+def acknowledge_all_changelog_releases():
+    ensure_changelog_tables()
+    releases = get_visible_changelog_release_dicts(current_user, admin_view=False)
+    unread_releases = [release for release in releases if release.get('is_unread')]
+    acknowledged_at = get_manila_time()
+
+    for release_data in unread_releases:
+        release = db.session.get(ChangelogRelease, release_data['id'])
+        items = changelog_visible_items(release, current_user) if release else []
+        if not items:
+            continue
+        content_hash = changelog_visible_content_hash(release, items)
+        acknowledgement = changelog_acknowledgement_for(release.id, current_user.id)
+        if not acknowledgement:
+            acknowledgement = ChangelogAcknowledgement(release_id=release.id, user_id=current_user.id)
+            db.session.add(acknowledgement)
+        acknowledgement.content_hash = content_hash
+        acknowledgement.acknowledged_at = acknowledged_at
+
+    db.session.commit()
+    acknowledged_count = len(unread_releases)
+    return jsonify({
+        'success': True,
+        'message': f'{acknowledged_count} update{"s" if acknowledged_count != 1 else ""} acknowledged.',
+        'acknowledged_count': acknowledged_count,
+    })
+
+
 @app.route('/api/changelog/admin/releases/<int:release_id>', methods=['PUT'])
 @login_required
 def update_changelog_release(release_id):

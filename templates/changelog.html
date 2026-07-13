@@ -62,6 +62,7 @@
             <p class="changelog-subtitle">Recent improvements and workflow changes in Medical Service SMS.</p>
         </div>
         <div class="changelog-toolbar">
+            <button type="button" id="changelog-acknowledge-all" class="changelog-btn changelog-btn-primary" onclick="acknowledgeAllChangelog()" hidden><i class="fa-solid fa-check-double"></i><span>Acknowledge All</span></button>
             <button type="button" class="changelog-btn" onclick="loadChangelog()"><i class="fa-solid fa-rotate"></i>Refresh</button>
             {% if changelog_admin %}
             <button type="button" id="changelog-admin-toggle" class="changelog-btn changelog-btn-warning" onclick="toggleChangelogAdminMode()"><i class="fa-solid fa-pen-to-square"></i>Manage Updates</button>
@@ -153,6 +154,13 @@ function groupChangelogItems(items){
 function renderChangelog(){
     const list = document.getElementById('changelog-list');
     if(!list) return;
+    const unreadCount = changelogReleases.filter(release => release.is_unread).length;
+    const acknowledgeAllButton = document.getElementById('changelog-acknowledge-all');
+    if(acknowledgeAllButton){
+        acknowledgeAllButton.hidden = unreadCount === 0 || changelogAdminMode;
+        const label = acknowledgeAllButton.querySelector('span');
+        if(label) label.textContent = unreadCount > 0 ? `Acknowledge All (${unreadCount})` : 'Acknowledge All';
+    }
     if(!changelogReleases.length){
         list.innerHTML = '<div class="changelog-empty"><i class="fa-solid fa-circle-check me-2"></i>No published updates are available for your account.</div>';
         return;
@@ -225,6 +233,30 @@ async function acknowledgeChangelog(releaseId){
         if(typeof window.refreshGlobalChangelogBadge === 'function') window.refreshGlobalChangelogBadge();
         showChangelogStatus('Update acknowledged.', 'success');
     }catch(error){ showChangelogStatus(error.message || 'Unable to acknowledge update.', 'error'); }
+}
+
+async function acknowledgeAllChangelog(){
+    const button = document.getElementById('changelog-acknowledge-all');
+    if(!button || button.disabled) return;
+    const originalContent = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i><span>Acknowledging...</span>';
+    try{
+        const response = await fetch('/api/changelog/releases/acknowledge-all', {
+            method:'POST', credentials:'same-origin', cache:'no-store',
+            headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':getCSRFToken()}, body:'{}'
+        });
+        const data = await response.json();
+        if(!response.ok || !data.success) throw new Error(data.error || 'Unable to acknowledge updates.');
+        await loadChangelog();
+        if(typeof window.refreshGlobalChangelogBadge === 'function') await window.refreshGlobalChangelogBadge();
+        showChangelogStatus(data.message || 'All updates acknowledged.', 'success');
+    }catch(error){
+        showChangelogStatus(error.message || 'Unable to acknowledge updates.', 'error');
+    }finally{
+        button.disabled = false;
+        if(!button.hidden) button.innerHTML = originalContent;
+    }
 }
 
 function toggleChangelogAdminMode(){
