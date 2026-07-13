@@ -19377,12 +19377,62 @@ def travel_request_schedule_conflict_to_dict(shift):
         'date': shift.start_time.date().isoformat() if getattr(shift, 'start_time', None) else '',
         'start_time': shift.start_time.strftime('%H:%M') if getattr(shift, 'start_time', None) else '',
         'end_time': shift.end_time.strftime('%H:%M') if getattr(shift, 'end_time', None) else '',
+        'client_id': getattr(shift, 'client_id', None),
         'client_name': client_name,
         'product': product_label
     }
 
 
-def find_travel_request_conflicts_for_user(user_id, engineer_id, departure_date, return_date, exclude_request_id=None):
+def travel_request_client_identities(routes_payload=None, request_rec=None):
+    """Return exact client identities from unsaved routes or a saved request."""
+    client_ids = set()
+    client_names = set()
+
+    if isinstance(routes_payload, list):
+        visits = [
+            visit
+            for route in routes_payload if isinstance(route, dict)
+            for visit in (route.get('visits') or []) if isinstance(visit, dict)
+        ]
+        for visit in visits:
+            client_id = clean_int(visit.get('client_id'))
+            client_name = normalize_client_exact_duplicate_value(visit.get('client_name'))
+            if client_id:
+                client_ids.add(client_id)
+            if client_name:
+                client_names.add(client_name)
+
+    if request_rec is not None:
+        for route in getattr(request_rec, 'routes', []) or []:
+            for visit in getattr(route, 'visits', []) or []:
+                client_id = clean_int(getattr(visit, 'client_id', None))
+                client_name = normalize_client_exact_duplicate_value(
+                    getattr(visit, 'client_name', None) or
+                    getattr(getattr(visit, 'client', None), 'name', None)
+                )
+                if client_id:
+                    client_ids.add(client_id)
+                if client_name:
+                    client_names.add(client_name)
+
+        # Backward compatibility for older single-client Travel Requests.
+        if not client_ids and not client_names:
+            legacy_name = normalize_client_exact_duplicate_value(getattr(request_rec, 'client_name', None))
+            if legacy_name:
+                client_names.add(legacy_name)
+
+    return client_ids, client_names
+
+
+def find_travel_request_conflicts_for_user(
+    user_id,
+    engineer_id,
+    departure_date,
+    return_date,
+    exclude_request_id=None,
+    routes_payload=None,
+    request_rec=None
+):
     """Find travel-period conflicts for the selected requester/engineer."""
     start_date = departure_date
     end_date = return_date or departure_date
@@ -19394,7 +19444,9 @@ def find_travel_request_conflicts_for_user(user_id, engineer_id, departure_date,
             'blocking': False,
             'message': '',
             'travel_request_conflicts': [],
-            'schedule_conflicts': []
+            'schedule_conflicts': [],
+            'verified_schedule_matches': [],
+            'allowed_client_schedules': []
         }
 
     if end_date < start_date:
@@ -19442,23 +19494,61 @@ def find_travel_request_conflicts_for_user(user_id, engineer_id, departure_date,
             .all()
         )
 
+    request_client_ids, request_client_names = travel_request_client_identities(
+        routes_payload=routes_payload,
+        request_rec=request_rec
+    )
+    matching_schedules = []
+    client_schedules = []
+    non_client_schedules = []
+    for shift in schedule_conflicts:
+        shift_client_id = clean_int(getattr(shift, 'client_id', None))
+        shift_client_name = normalize_client_exact_duplicate_value(
+            getattr(getattr(shift, 'client', None), 'name', None)
+        )
+        has_client = bool(shift_client_id or shift_client_name)
+        is_match = bool(
+            (shift_client_id and shift_client_id in request_client_ids) or
+            (shift_client_name and shift_client_name in request_client_names)
+        )
+        if is_match:
+            matching_schedules.append(shift)
+        if has_client:
+            client_schedules.append(shift)
+        else:
+            non_client_schedules.append(shift)
+
+    # One exact client match validates client-linked work in the selected range.
+    # Non-client commitments remain conflicts because they cannot establish that
+    # the schedule belongs to this Travel Request.
+    blocking_schedules = non_client_schedules if matching_schedules else schedule_conflicts
+    allowed_client_schedules = client_schedules if matching_schedules else []
+    has_blocking = bool(travel_conflicts or blocking_schedules)
+
     conflict_payload = {
-        'ok': not bool(travel_conflicts or schedule_conflicts),
-        'has_conflicts': bool(travel_conflicts or schedule_conflicts),
-        'blocking': bool(travel_conflicts or schedule_conflicts),
+        'ok': not has_blocking,
+        'has_conflicts': has_blocking,
+        'blocking': has_blocking,
         'message': '',
         'travel_request_conflicts': [travel_request_conflict_item_to_dict(item) for item in travel_conflicts],
-        'schedule_conflicts': [travel_request_schedule_conflict_to_dict(item) for item in schedule_conflicts]
+        # Preserve this existing key as blocking schedules for old clients.
+        'schedule_conflicts': [travel_request_schedule_conflict_to_dict(item) for item in blocking_schedules],
+        'verified_schedule_matches': [travel_request_schedule_conflict_to_dict(item) for item in matching_schedules],
+        'allowed_client_schedules': [travel_request_schedule_conflict_to_dict(item) for item in allowed_client_schedules]
     }
 
-    if conflict_payload['has_conflicts']:
+    if has_blocking:
         parts = []
         if travel_conflicts:
             parts.append(f"{len(travel_conflicts)} existing travel request(s)")
-        if schedule_conflicts:
-            parts.append(f"{len(schedule_conflicts)} existing calendar schedule(s)")
+        if blocking_schedules:
+            parts.append(f"{len(blocking_schedules)} existing calendar schedule(s)")
         conflict_payload['message'] = (
             'Selected travel period has conflict with ' + ' and '.join(parts) + '.'
+        )
+    elif matching_schedules:
+        conflict_payload['message'] = (
+            'Matching client schedule found. Calendar schedules are allowed for this Travel Request.'
         )
 
     return conflict_payload
@@ -20484,13 +20574,15 @@ def check_travel_request_conflicts():
 
     departure_date = travel_request_date(payload.get('departure_date') or payload.get('start_date'))
     return_date = travel_request_date(payload.get('return_date') or payload.get('end_date')) or departure_date
+    routes_payload = normalize_travel_request_routes_payload(payload)
 
     conflicts = find_travel_request_conflicts_for_user(
         current_user.id,
         getattr(profile, 'id', None),
         departure_date,
         return_date,
-        exclude_request_id=request_id
+        exclude_request_id=request_id,
+        routes_payload=routes_payload
     )
 
     return jsonify({
@@ -20579,7 +20671,8 @@ def save_travel_request_draft():
         getattr(profile, 'id', None),
         request_rec.departure_date,
         request_rec.return_date,
-        exclude_request_id=request_rec.id
+        exclude_request_id=request_rec.id,
+        routes_payload=routes_payload
     )
 
     apply_travel_request_routes(request_rec, payload)
@@ -20790,7 +20883,8 @@ def submit_travel_request(travel_request_id):
         getattr(submit_profile, 'id', None),
         request_rec.departure_date,
         request_rec.return_date,
-        exclude_request_id=request_rec.id
+        exclude_request_id=request_rec.id,
+        request_rec=request_rec
     )
     if submit_conflicts.get('has_conflicts'):
         return travel_request_conflict_response(submit_conflicts, status_code=409)
