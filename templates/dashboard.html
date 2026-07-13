@@ -51,6 +51,41 @@
         </div>
     </div>
 
+    <section id="dashboard-whats-new" class="dashboard-whats-new mb-4" style="display:none;border:1px solid #9ad8b8;border-left:5px solid #14804a;background:#f2fbf6;padding:15px 17px;border-radius:8px;">
+        <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
+            <div class="d-flex align-items-start gap-3">
+                <div style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:#d9f2e5;color:#11643a;border-radius:6px;flex:0 0 auto;">
+                    <i class="fa-solid fa-sparkles"></i>
+                </div>
+                <div>
+                    <div class="small fw-bold text-success text-uppercase" id="dashboard-whats-new-date">New System Update</div>
+                    <h3 class="h6 fw-bold mb-1 text-dark" id="dashboard-whats-new-title">What's New</h3>
+                    <p class="small text-muted mb-0" id="dashboard-whats-new-summary"></p>
+                </div>
+            </div>
+            <a href="/whats_new" class="btn btn-success fw-bold"><i class="fa-solid fa-arrow-right me-1"></i>View Updates</a>
+        </div>
+    </section>
+
+    <script>
+    (function(){
+        function renderDashboardChangelogPrompt(data){
+            const panel = document.getElementById('dashboard-whats-new');
+            const latest = data?.latest_unread;
+            if(!panel) return;
+            if(!latest || Number(data.unread_count || 0) <= 0){
+                panel.style.display = 'none';
+                return;
+            }
+            document.getElementById('dashboard-whats-new-date').textContent = `${Number(data.unread_count || 0)} unread update${Number(data.unread_count || 0) === 1 ? '' : 's'} | ${latest.release_date || ''}`;
+            document.getElementById('dashboard-whats-new-title').textContent = latest.title || "What's New";
+            document.getElementById('dashboard-whats-new-summary').textContent = latest.summary || `${Number(latest.item_count || 0)} improvement(s) are ready to review.`;
+            panel.style.display = '';
+        }
+        window.addEventListener('changelog:summary', event => renderDashboardChangelogPrompt(event.detail || {}));
+    })();
+    </script>
+
     {% if dashboard_developer_mode %}
     <!-- DEVELOPER-ONLY DASHBOARD VIEW SWITCHER -->
     <div class="developer-dashboard-switcher mb-4 dashboard-sortable-section" data-dashboard-section="developer-view-switcher" data-dashboard-title="Developer View Switcher">

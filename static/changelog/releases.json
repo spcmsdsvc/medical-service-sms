@@ -1,0 +1,81 @@
+{
+  "releases": [
+    {
+      "release_key": "2026-07-08",
+      "release_date": "2026-07-08",
+      "title": "TSR Reliability and Records Improvements",
+      "summary": "Create TSR became safer and easier to complete, while frequently used records pages gained better sorting.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-08-tsr-signature-required", "category": "Create TSR", "description": "Engineer signatures are now required before a TSR can be saved.", "audiences": ["engineers", "admins"], "sort_order": 10},
+        {"item_key": "2026-07-08-tsr-email-suggestions", "category": "TSR Email", "description": "Client email suggestions are now collapsed to reduce confusion, and internal Shimadzu addresses are excluded from client suggestions.", "audiences": ["engineers", "admins"], "sort_order": 20},
+        {"item_key": "2026-07-08-tsr-detail-reminder", "category": "Create TSR", "description": "A soft reminder now identifies important TSR details that are still blank before final saving.", "audiences": ["engineers", "admins"], "sort_order": 30},
+        {"item_key": "2026-07-08-tsr-status-scroll", "category": "Create TSR", "description": "Save and error notifications automatically scroll into view.", "audiences": ["engineers", "admins"], "sort_order": 40},
+        {"item_key": "2026-07-08-tsr-clean-start", "category": "Create TSR", "description": "Starting a new TSR or opening a new session now clears stale form details.", "audiences": ["engineers", "admins"], "sort_order": 50},
+        {"item_key": "2026-07-08-tsr-visible-drafts", "category": "Create TSR", "description": "Saved TSR drafts are now visible and can be reopened from a dedicated draft list.", "audiences": ["engineers", "admins"], "sort_order": 60},
+        {"item_key": "2026-07-08-tsr-actions-space", "category": "TSR PDF", "description": "The Actions Taken section now uses more of the available first-page space before continuing to another page.", "audiences": ["engineers", "admins"], "sort_order": 70},
+        {"item_key": "2026-07-08-products-sorting", "category": "Inventory", "description": "Product columns can now be sorted, and the selected sort order is remembered.", "audiences": ["engineers", "admins"], "sort_order": 80},
+        {"item_key": "2026-07-08-calendar-card-width", "category": "Calendar", "description": "Long Travel Request schedule cards now retain a readable and consistent width.", "audiences": ["everyone"], "sort_order": 90}
+      ]
+    },
+    {
+      "release_key": "2026-07-09",
+      "release_date": "2026-07-09",
+      "title": "TSR Preview, Draft, and Workflow Updates",
+      "summary": "Final TSR review became more dependable, with stronger drafts, better PDF handling, and cleaner operational records.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-09-tsr-remarks-overflow", "category": "TSR PDF", "description": "Multiline Remarks and Recommendations now continue correctly instead of being limited to one printed line.", "audiences": ["engineers", "admins"], "sort_order": 10},
+        {"item_key": "2026-07-09-tsr-department-edit", "category": "Create TSR", "description": "The Department field is editable while Radiology remains the default value.", "audiences": ["engineers", "admins"], "sort_order": 20},
+        {"item_key": "2026-07-09-medical-center-sorting", "category": "Medical Centers", "description": "Medical Center columns can now be sorted for faster record lookup.", "audiences": ["engineers", "admins"], "sort_order": 30},
+        {"item_key": "2026-07-09-calendar-approver-filter", "category": "Calendar", "description": "Personnel with approver-only access are no longer shown as field engineers on the Calendar.", "audiences": ["everyone"], "sort_order": 40},
+        {"item_key": "2026-07-09-reimbursement-zero-rows", "category": "Reimbursement", "description": "Zero-amount schedule rows are excluded during final submission while remaining available in drafts.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50},
+        {"item_key": "2026-07-09-activity-log-upgrade", "category": "Administration", "description": "Activity Logs now classify newer TSR, reimbursement, travel, cash advance, approval, and accounting events more clearly.", "audiences": ["admins"], "sort_order": 60},
+        {"item_key": "2026-07-09-tsr-final-preview", "category": "Create TSR", "description": "Engineers must now review the final TSR PDF before confirming Save TSR.", "audiences": ["engineers", "admins"], "sort_order": 70},
+        {"item_key": "2026-07-09-tsr-preview-layout", "category": "Create TSR", "description": "The final TSR preview was resized for a professional layout with a default 100 percent zoom.", "audiences": ["engineers", "admins"], "sort_order": 80},
+        {"item_key": "2026-07-09-tsr-draft-filter", "category": "Create TSR", "description": "Draft loading now filters out unrelated and empty ghost drafts while preserving legitimate engineer drafts.", "audiences": ["engineers", "admins"], "sort_order": 90},
+        {"item_key": "2026-07-09-tsr-saved-signature", "category": "Create TSR", "description": "Engineers may explicitly apply their saved Settings signature instead of drawing it for every TSR.", "audiences": ["engineers", "admins"], "sort_order": 100}
+      ]
+    },
+    {
+      "release_key": "2026-07-10",
+      "release_date": "2026-07-10",
+      "title": "TSR Email and Save Protection",
+      "summary": "Multiple TSR attachments are handled more reliably, and blank or incomplete TSR files are prevented.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-10-multi-tsr-email", "category": "TSR Email", "description": "Schedules with multiple generated or uploaded TSRs now include the complete attachment list when sending email.", "audiences": ["engineers", "admins"], "sort_order": 10},
+        {"item_key": "2026-07-10-tsr-attachment-preview", "category": "TSR Email", "description": "Engineers can review which TSR files will be attached before sending an email.", "audiences": ["engineers", "admins"], "sort_order": 20},
+        {"item_key": "2026-07-10-blank-tsr-protection", "category": "Create TSR", "description": "Additional payload safeguards prevent completed TSR PDFs from being saved with blank engineer-entered details.", "audiences": ["engineers", "admins"], "sort_order": 30},
+        {"item_key": "2026-07-10-equipment-capture", "category": "Create TSR", "description": "Missing equipment and serial information entered in Create TSR is now captured more reliably.", "audiences": ["engineers", "admins"], "sort_order": 40}
+      ]
+    },
+    {
+      "release_key": "2026-07-12",
+      "release_date": "2026-07-12",
+      "title": "Cleaner Reimbursement Reports",
+      "summary": "Reimbursement Excel files now keep system work context separate from user-entered remarks.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-12-reimbursement-work-details", "category": "Reimbursement", "description": "Generated Excel reports now use separate Work Details and Remarks columns.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10},
+        {"item_key": "2026-07-12-reimbursement-blank-remarks", "category": "Reimbursement", "description": "Remarks remain blank by default instead of repeating the client, task, product, and equipment details.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 20},
+        {"item_key": "2026-07-12-reimbursement-no-client", "category": "Reimbursement", "description": "Schedules and manual items without clients now use cleaner Work Details wording.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30}
+      ]
+    },
+    {
+      "release_key": "2026-07-13",
+      "release_date": "2026-07-13",
+      "title": "Sharper TSR PDFs and Smarter Travel Requests",
+      "summary": "TSR output quality, Travel Request conflict handling, supporting documents, and system update communication received major improvements.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-13-vector-tsr", "category": "TSR PDF", "description": "Newly generated TSR PDFs now use sharp vector text, lines, and form elements for clearer viewing and zooming.", "audiences": ["engineers", "admins"], "sort_order": 10},
+        {"item_key": "2026-07-13-travel-client-conflicts", "category": "Travel Request", "description": "Urgent or retroactive Travel Requests can proceed when an exact matching client schedule exists within the travel dates.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 20},
+        {"item_key": "2026-07-13-travel-conflict-protection", "category": "Travel Request", "description": "Non-client commitments and overlapping Travel Requests remain protected as real conflicts.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30},
+        {"item_key": "2026-07-13-travel-attachments", "category": "Travel Request", "description": "Travel Requests now support up to 10 optional PDF or image attachments, with files up to 35MB optimized to 2MB when possible.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40},
+        {"item_key": "2026-07-13-travel-attachment-handoff", "category": "Travel Request", "description": "Approvers can preview Travel Request supporting documents, and Accounting receives one compiled supporting-attachments PDF.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50},
+        {"item_key": "2026-07-13-whats-new", "category": "System", "description": "A new What's New page provides readable daily system updates with account-based unread badges and acknowledgements.", "audiences": ["everyone"], "sort_order": 60}
+      ]
+    }
+  ]
+}

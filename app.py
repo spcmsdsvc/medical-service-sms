@@ -973,6 +973,52 @@ class SystemNotification(db.Model):
     user = db.relationship('User', foreign_keys=[user_id])
 
 
+class ChangelogRelease(db.Model):
+    """Human-readable daily deployment summary imported from the release manifest."""
+    id = db.Column(db.Integer, primary_key=True)
+    release_key = db.Column(db.String(40), unique=True, nullable=False, index=True)
+    release_date = db.Column(db.Date, nullable=False, index=True)
+    title = db.Column(db.String(180), nullable=False)
+    summary = db.Column(db.Text, nullable=True)
+    is_published = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    admin_edited = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False)
+
+    items = db.relationship(
+        'ChangelogItem', backref='release', lazy=True,
+        cascade='all, delete-orphan'
+    )
+
+
+class ChangelogItem(db.Model):
+    """One categorized, audience-targeted change inside a daily release."""
+    id = db.Column(db.Integer, primary_key=True)
+    release_id = db.Column(db.Integer, db.ForeignKey('changelog_release.id'), nullable=False, index=True)
+    item_key = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    category = db.Column(db.String(80), nullable=False, default='General', index=True)
+    description = db.Column(db.Text, nullable=False)
+    audiences_json = db.Column(db.Text, nullable=False, default='["everyone"]')
+    sort_order = db.Column(db.Integer, default=100, nullable=False)
+    is_published = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    admin_edited = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False)
+
+
+class ChangelogAcknowledgement(db.Model):
+    """Account-level acknowledgement for the content visible to one user."""
+    id = db.Column(db.Integer, primary_key=True)
+    release_id = db.Column(db.Integer, db.ForeignKey('changelog_release.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    content_hash = db.Column(db.String(64), nullable=False)
+    acknowledged_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('release_id', 'user_id', name='uq_changelog_ack_release_user'),
+    )
+
+
 class EmailRecipientSetting(db.Model):
     """S12A0 dynamic email recipients managed from Settings.
 
@@ -1653,6 +1699,8 @@ _universal_approval_audit_table_ready = False
 _travel_request_tables_ready = False
 _travel_request_participant_table_ready = False
 _system_notification_table_ready = False
+_changelog_tables_ready = False
+_changelog_manifest_synced = False
 _email_recipient_setting_table_ready = False
 _email_template_setting_table_ready = False
 _user_approval_columns_ready = False
@@ -2275,6 +2323,155 @@ def ensure_reimbursement_payment_columns():
         raise
 
 
+def ensure_changelog_tables():
+    """Create additive changelog tables and synchronize tracked release metadata."""
+    global _changelog_tables_ready, _changelog_manifest_synced
+
+    if not _changelog_tables_ready:
+        try:
+            ChangelogRelease.__table__.create(db.engine, checkfirst=True)
+            ChangelogItem.__table__.create(db.engine, checkfirst=True)
+            ChangelogAcknowledgement.__table__.create(db.engine, checkfirst=True)
+            with db.engine.begin() as connection:
+                connection.exec_driver_sql(
+                    'CREATE INDEX IF NOT EXISTS idx_changelog_release_published_date '
+                    'ON changelog_release (is_published, release_date)'
+                )
+                connection.exec_driver_sql(
+                    'CREATE INDEX IF NOT EXISTS idx_changelog_item_release_published '
+                    'ON changelog_item (release_id, is_published, sort_order)'
+                )
+                connection.exec_driver_sql(
+                    'CREATE INDEX IF NOT EXISTS idx_changelog_ack_user_release '
+                    'ON changelog_acknowledgement (user_id, release_id)'
+                )
+            _changelog_tables_ready = True
+        except Exception as changelog_error:
+            print(f'[Changelog] Unable to ensure changelog tables: {changelog_error}', flush=True)
+            raise
+
+    if not _changelog_manifest_synced:
+        sync_changelog_release_manifest()
+        _changelog_manifest_synced = True
+
+
+def changelog_manifest_path():
+    return os.path.join(basedir, 'static', 'changelog', 'releases.json')
+
+
+def normalize_changelog_audiences(value):
+    allowed = {'everyone', 'engineers', 'approvers', 'admins'}
+    values = value if isinstance(value, list) else [value]
+    normalized = []
+    for item in values:
+        audience = (clean_str(item) or '').strip().lower()
+        if audience in allowed and audience not in normalized:
+            normalized.append(audience)
+    return normalized or ['everyone']
+
+
+def sync_changelog_release_manifest():
+    """Append/update automatic releases without overwriting admin-corrected records."""
+    manifest_path = changelog_manifest_path()
+    if not os.path.exists(manifest_path):
+        print(f'[Changelog] Release manifest not found: {manifest_path}', flush=True)
+        return
+
+    try:
+        with open(manifest_path, 'r', encoding='utf-8') as manifest_file:
+            payload = json.load(manifest_file)
+        releases = payload.get('releases') if isinstance(payload, dict) else []
+        if not isinstance(releases, list):
+            raise ValueError('Release manifest must contain a releases list.')
+
+        changed = False
+        for release_payload in releases:
+            if not isinstance(release_payload, dict):
+                continue
+            release_key = (clean_str(release_payload.get('release_key')) or '').strip()[:40]
+            release_date = parse_date(release_payload.get('release_date') or release_key)
+            if not release_key or not release_date:
+                continue
+
+            release = ChangelogRelease.query.filter_by(release_key=release_key).first()
+            if not release:
+                release = ChangelogRelease(
+                    release_key=release_key,
+                    release_date=release_date,
+                    title=(clean_str(release_payload.get('title')) or f'Updates for {release_date.isoformat()}')[:180],
+                    summary=clean_str(release_payload.get('summary')) or '',
+                    is_published=bool(release_payload.get('is_published', True)),
+                    admin_edited=False,
+                    created_at=get_manila_time(),
+                    updated_at=get_manila_time()
+                )
+                db.session.add(release)
+                db.session.flush()
+                changed = True
+            elif not release.admin_edited:
+                new_title = (clean_str(release_payload.get('title')) or release.title)[:180]
+                new_summary = clean_str(release_payload.get('summary')) or ''
+                new_published = bool(release_payload.get('is_published', True))
+                if (release.title, release.summary or '', bool(release.is_published)) != (new_title, new_summary, new_published):
+                    release.title = new_title
+                    release.summary = new_summary
+                    release.is_published = new_published
+                    release.updated_at = get_manila_time()
+                    changed = True
+
+            items = release_payload.get('items') if isinstance(release_payload.get('items'), list) else []
+            for item_index, item_payload in enumerate(items, start=1):
+                if not isinstance(item_payload, dict):
+                    continue
+                item_key = (clean_str(item_payload.get('item_key')) or '')[:120]
+                description = clean_str(item_payload.get('description')) or ''
+                if not item_key or not description:
+                    continue
+                item = ChangelogItem.query.filter_by(item_key=item_key).first()
+                audiences = normalize_changelog_audiences(item_payload.get('audiences'))
+                if not item:
+                    db.session.add(ChangelogItem(
+                        release_id=release.id,
+                        item_key=item_key,
+                        category=(clean_str(item_payload.get('category')) or 'General')[:80],
+                        description=description,
+                        audiences_json=json.dumps(audiences),
+                        sort_order=clean_int(item_payload.get('sort_order')) or item_index * 10,
+                        is_published=bool(item_payload.get('is_published', True)),
+                        admin_edited=False,
+                        created_at=get_manila_time(),
+                        updated_at=get_manila_time()
+                    ))
+                    release.updated_at = get_manila_time()
+                    changed = True
+                elif not item.admin_edited:
+                    incoming = (
+                        release.id,
+                        (clean_str(item_payload.get('category')) or 'General')[:80],
+                        description,
+                        json.dumps(audiences),
+                        clean_int(item_payload.get('sort_order')) or item_index * 10,
+                        bool(item_payload.get('is_published', True))
+                    )
+                    existing = (
+                        item.release_id, item.category, item.description, item.audiences_json,
+                        item.sort_order, bool(item.is_published)
+                    )
+                    if incoming != existing:
+                        item.release_id, item.category, item.description, item.audiences_json, item.sort_order, item.is_published = incoming
+                        item.updated_at = get_manila_time()
+                        release.updated_at = get_manila_time()
+                        changed = True
+
+        if changed:
+            db.session.commit()
+            print('[Changelog] Release manifest synchronized.', flush=True)
+    except Exception as manifest_error:
+        db.session.rollback()
+        print(f'[Changelog] Release manifest sync failed: {manifest_error}', flush=True)
+        raise
+
+
 def ensure_reimbursement_receipt_columns():
     """Keep older live reimbursement receipt tables compatible with upload code."""
     try:
@@ -2469,6 +2666,7 @@ def ensure_live_engineer_signature_schema_before_routes():
     ensure_online_tsr_submission_table()
     ensure_contact_designation_column()
     ensure_system_notification_table()
+    ensure_changelog_tables()
     ensure_email_recipient_setting_table()
     ensure_email_template_setting_table()
     ensure_shift_travel_block_columns()
@@ -10692,6 +10890,229 @@ def dashboard_page():
         dashboard_developer_view=dashboard_caps.get('developer_view', 'default'),
         dashboard_developer_view_options=dashboard_caps.get('developer_view_options', [])
     )
+
+
+def changelog_user_audiences(user=None):
+    target = user or current_user
+    audiences = {'everyone'}
+    if not target or not getattr(target, 'is_authenticated', False):
+        return audiences
+    if is_admin_authorized(target):
+        audiences.add('admins')
+    if is_approval_center_user(target):
+        audiences.add('approvers')
+    role = (getattr(target, 'role', '') or '').strip().lower()
+    if not is_approver_only_user(target) and (role == 'engineer' or has_engineer_profile(target)):
+        audiences.add('engineers')
+    return audiences
+
+
+def changelog_item_audiences(item):
+    try:
+        parsed = json.loads(item.audiences_json or '[]')
+    except Exception:
+        parsed = []
+    return normalize_changelog_audiences(parsed)
+
+
+def changelog_visible_items(release, user=None, include_unpublished=False):
+    user_audiences = changelog_user_audiences(user)
+    items = sorted(release.items or [], key=lambda item: (item.sort_order or 100, item.id or 0))
+    return [
+        item for item in items
+        if (include_unpublished or item.is_published)
+        and bool(user_audiences.intersection(changelog_item_audiences(item)))
+    ]
+
+
+def changelog_visible_content_hash(release, items):
+    content = {
+        'release_key': release.release_key,
+        'title': release.title or '',
+        'summary': release.summary or '',
+        'items': [
+            {
+                'item_key': item.item_key,
+                'category': item.category,
+                'description': item.description,
+                'audiences': changelog_item_audiences(item),
+            }
+            for item in items
+        ]
+    }
+    encoded = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def changelog_acknowledgement_for(release_id, user_id):
+    return ChangelogAcknowledgement.query.filter_by(
+        release_id=clean_int(release_id), user_id=clean_int(user_id)
+    ).first()
+
+
+def changelog_release_to_dict(release, user=None, admin_view=False):
+    target = user or current_user
+    items = (
+        sorted(release.items or [], key=lambda item: (item.sort_order or 100, item.id or 0))
+        if admin_view else
+        changelog_visible_items(release, target)
+    )
+    content_hash = changelog_visible_content_hash(release, items) if items else ''
+    acknowledgement = changelog_acknowledgement_for(release.id, getattr(target, 'id', None))
+    is_acknowledged = bool(content_hash and acknowledgement and acknowledgement.content_hash == content_hash)
+    return {
+        'id': release.id,
+        'release_key': release.release_key,
+        'release_date': release.release_date.isoformat() if release.release_date else '',
+        'title': release.title or '',
+        'summary': release.summary or '',
+        'is_published': bool(release.is_published),
+        'admin_edited': bool(release.admin_edited),
+        'is_acknowledged': is_acknowledged,
+        'is_unread': bool(content_hash and not is_acknowledged and release.is_published),
+        'content_hash': content_hash if admin_view else '',
+        'items': [
+            {
+                'id': item.id,
+                'item_key': item.item_key,
+                'category': item.category or 'General',
+                'description': item.description or '',
+                'audiences': changelog_item_audiences(item),
+                'sort_order': item.sort_order or 100,
+                'is_published': bool(item.is_published),
+                'admin_edited': bool(item.admin_edited),
+            }
+            for item in items
+        ]
+    }
+
+
+def get_visible_changelog_release_dicts(user=None, admin_view=False):
+    target = user or current_user
+    query = ChangelogRelease.query
+    if not admin_view:
+        query = query.filter(ChangelogRelease.is_published.is_(True))
+    releases = query.order_by(ChangelogRelease.release_date.desc(), ChangelogRelease.id.desc()).all()
+    result = []
+    for release in releases:
+        serialized = changelog_release_to_dict(release, target, admin_view=admin_view)
+        if serialized['items'] or admin_view:
+            result.append(serialized)
+    return result
+
+
+@app.route('/whats_new')
+@login_required
+def whats_new_page():
+    ensure_changelog_tables()
+    return render_template('changelog.html', changelog_admin=is_admin_authorized())
+
+
+@app.route('/api/changelog/releases')
+@login_required
+def get_changelog_releases():
+    ensure_changelog_tables()
+    admin_view = bool(is_admin_authorized() and str(request.args.get('admin') or '').lower() in {'1', 'true', 'yes'})
+    releases = get_visible_changelog_release_dicts(current_user, admin_view=admin_view)
+    return jsonify({'success': True, 'releases': releases, 'count': len(releases), 'admin_view': admin_view})
+
+
+@app.route('/api/changelog/unread-summary')
+@login_required
+def get_changelog_unread_summary():
+    ensure_changelog_tables()
+    releases = get_visible_changelog_release_dicts(current_user, admin_view=False)
+    unread = [release for release in releases if release.get('is_unread')]
+    latest = unread[0] if unread else None
+    if latest:
+        latest = {
+            'id': latest['id'],
+            'release_date': latest['release_date'],
+            'title': latest['title'],
+            'summary': latest['summary'],
+            'item_count': len(latest['items'])
+        }
+    return jsonify({'success': True, 'unread_count': len(unread), 'latest_unread': latest})
+
+
+@app.route('/api/changelog/releases/<int:release_id>/acknowledge', methods=['POST'])
+@login_required
+def acknowledge_changelog_release(release_id):
+    ensure_changelog_tables()
+    release = db.session.get(ChangelogRelease, release_id)
+    if not release or not release.is_published:
+        return jsonify({'success': False, 'error': 'Published update not found.'}), 404
+    items = changelog_visible_items(release, current_user)
+    if not items:
+        return jsonify({'success': False, 'error': 'This update is not available for your account.'}), 403
+    content_hash = changelog_visible_content_hash(release, items)
+    acknowledgement = changelog_acknowledgement_for(release.id, current_user.id)
+    if not acknowledgement:
+        acknowledgement = ChangelogAcknowledgement(release_id=release.id, user_id=current_user.id)
+        db.session.add(acknowledgement)
+    acknowledgement.content_hash = content_hash
+    acknowledgement.acknowledged_at = get_manila_time()
+    db.session.commit()
+    return jsonify({'success': True, 'message': 'Update acknowledged.', 'release_id': release.id})
+
+
+@app.route('/api/changelog/admin/releases/<int:release_id>', methods=['PUT'])
+@login_required
+def update_changelog_release(release_id):
+    if not is_admin_authorized():
+        return jsonify({'success': False, 'error': 'Admin access required.'}), 403
+    ensure_changelog_tables()
+    release = db.session.get(ChangelogRelease, release_id)
+    if not release:
+        return jsonify({'success': False, 'error': 'Release not found.'}), 404
+    payload = request.get_json(silent=True) or {}
+    title = clean_str(payload.get('title'))
+    if title is not None:
+        title = title.strip()
+        if not title:
+            return jsonify({'success': False, 'error': 'Release title is required.'}), 400
+        release.title = title[:180]
+    if 'summary' in payload:
+        release.summary = clean_str(payload.get('summary')) or ''
+    if 'is_published' in payload:
+        release.is_published = bool(payload.get('is_published'))
+    release.admin_edited = True
+    release.updated_at = get_manila_time()
+    add_activity_log_entry(f"Updated What's New release: {release.release_key}")
+    db.session.commit()
+    return jsonify({'success': True, 'release': changelog_release_to_dict(release, current_user, admin_view=True)})
+
+
+@app.route('/api/changelog/admin/items/<int:item_id>', methods=['PUT'])
+@login_required
+def update_changelog_item(item_id):
+    if not is_admin_authorized():
+        return jsonify({'success': False, 'error': 'Admin access required.'}), 403
+    ensure_changelog_tables()
+    item = db.session.get(ChangelogItem, item_id)
+    if not item:
+        return jsonify({'success': False, 'error': 'Changelog item not found.'}), 404
+    payload = request.get_json(silent=True) or {}
+    if 'description' in payload:
+        description = (clean_str(payload.get('description')) or '').strip()
+        if not description:
+            return jsonify({'success': False, 'error': 'Update description is required.'}), 400
+        item.description = description
+    if 'category' in payload:
+        item.category = ((clean_str(payload.get('category')) or 'General').strip() or 'General')[:80]
+    if 'audiences' in payload:
+        raw_audiences = payload.get('audiences')
+        if not isinstance(raw_audiences, list) or not raw_audiences:
+            return jsonify({'success': False, 'error': 'Select at least one audience.'}), 400
+        item.audiences_json = json.dumps(normalize_changelog_audiences(raw_audiences))
+    if 'is_published' in payload:
+        item.is_published = bool(payload.get('is_published'))
+    item.admin_edited = True
+    item.updated_at = get_manila_time()
+    item.release.updated_at = get_manila_time()
+    add_activity_log_entry(f"Updated What's New item: {item.item_key}")
+    db.session.commit()
+    return jsonify({'success': True, 'item': changelog_release_to_dict(item.release, current_user, admin_view=True)})
 
 
 @app.route('/activity_page')

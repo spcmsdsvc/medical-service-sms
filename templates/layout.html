@@ -137,6 +137,8 @@
         }
         .sidebar a.text-warning { color: #facc15 !important; }
         .sidebar a.text-warning:hover { color: #fff3cd !important; }
+        .changelog-sidebar-badge{margin-left:auto;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#f0b429;color:#3d2b00;display:none;align-items:center;justify-content:center;font-size:.72rem;font-weight:950;}
+        .changelog-sidebar-badge.show{display:inline-flex;}
         .main-content { margin-left: var(--sidebar-width); padding: 20px; transition: all 0.3s ease; }
         body.sidebar-collapsed .sidebar { width: 0; }
         body.sidebar-collapsed .main-content { margin-left: 0; }
@@ -755,6 +757,14 @@
 
             <a href="/" class="{{ 'active' if request.path == '/' }}"><i class="fa-solid fa-chart-line me-2"></i> Dashboard</a>
 
+            {% if current_user.is_authenticated %}
+                <a href="/whats_new" class="{{ 'active' if request.path == '/whats_new' }}">
+                    <i class="fa-solid fa-sparkles me-2"></i>
+                    <span>What's New</span>
+                    <span id="changelog-sidebar-badge" class="changelog-sidebar-badge" aria-label="Unread system updates"></span>
+                </a>
+            {% endif %}
+
             {% if not is_approver_only_user %}
                 <div class="sidebar-calendar-row {{ 'active' if request.path in ['/timeline', '/offline-tsr'] }}">
                     <a href="/timeline" class="sidebar-calendar-main {{ 'active' if request.path == '/timeline' }}">
@@ -897,6 +907,26 @@
         function getCSRFToken() {
             return window.__freshCSRFToken || document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         }
+
+        async function refreshGlobalChangelogBadge(){
+            const badge = document.getElementById('changelog-sidebar-badge');
+            if(!badge) return;
+            try{
+                const response = await fetch('/api/changelog/unread-summary', {
+                    credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}
+                });
+                if(!response.ok) return;
+                const data = await response.json();
+                const count = Number(data.unread_count || 0);
+                badge.textContent = count > 99 ? '99+' : String(count || '');
+                badge.classList.toggle('show', count > 0);
+                window.dispatchEvent(new CustomEvent('changelog:summary', {detail:data}));
+            }catch(error){
+                console.warn('[Changelog] Unable to refresh unread badge', error);
+            }
+        }
+        window.refreshGlobalChangelogBadge = refreshGlobalChangelogBadge;
+        document.addEventListener('DOMContentLoaded', refreshGlobalChangelogBadge);
     </script>
 
 <!-- GLOBAL DELETE MODAL -->

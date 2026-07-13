@@ -1,0 +1,309 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<style>
+    .changelog-shell{max-width:1120px;margin:0 auto;padding:8px 0 36px;}
+    .changelog-header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;padding:22px 0 18px;border-bottom:1px solid #d9e2ec;margin-bottom:22px;}
+    .changelog-title{margin:0;color:#102a43;font-weight:950;font-size:2rem;letter-spacing:0;}
+    .changelog-subtitle{margin:6px 0 0;color:#52667a;font-weight:650;}
+    .changelog-toolbar{display:flex;gap:8px;flex-wrap:wrap;}
+    .changelog-btn{border:1px solid #bcccdc;background:#fff;color:#243b53;min-height:40px;padding:8px 14px;border-radius:6px;font-weight:850;display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;}
+    .changelog-btn:hover{background:#f0f4f8;color:#102a43;}
+    .changelog-btn-primary{background:#14804a;border-color:#14804a;color:#fff;}
+    .changelog-btn-primary:hover{background:#0f673b;color:#fff;}
+    .changelog-btn-warning{background:#fff7e6;border-color:#f0b429;color:#7c4a03;}
+    .changelog-empty{padding:48px 20px;text-align:center;border:1px dashed #bcccdc;background:#fff;color:#627d98;border-radius:8px;font-weight:750;}
+    .changelog-release{background:#fff;border:1px solid #d9e2ec;border-left:5px solid #14804a;border-radius:8px;margin-bottom:18px;box-shadow:0 5px 18px rgba(16,42,67,.07);overflow:hidden;}
+    .changelog-release.unread{border-left-color:#f0b429;box-shadow:0 7px 22px rgba(124,74,3,.12);}
+    .changelog-release.unpublished{opacity:.72;border-left-color:#829ab1;}
+    .changelog-release-head{display:grid;grid-template-columns:150px 1fr auto;gap:18px;align-items:start;padding:20px 22px;border-bottom:1px solid #e6edf3;}
+    .changelog-date{color:#14804a;font-weight:950;text-transform:uppercase;font-size:.84rem;line-height:1.35;}
+    .changelog-date span{display:block;color:#829ab1;font-weight:750;text-transform:none;margin-top:3px;}
+    .changelog-release-title{margin:0;color:#102a43;font-size:1.22rem;font-weight:950;letter-spacing:0;}
+    .changelog-summary{margin:5px 0 0;color:#52667a;line-height:1.55;font-weight:600;}
+    .changelog-release-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap;justify-content:flex-end;}
+    .changelog-unread-pill,.changelog-hidden-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;font-size:.75rem;font-weight:900;white-space:nowrap;}
+    .changelog-unread-pill{background:#fff3c4;color:#7c4a03;}
+    .changelog-hidden-pill{background:#e6edf3;color:#334e68;}
+    .changelog-body{padding:18px 22px 22px;display:grid;gap:18px;}
+    .changelog-category-title{margin:0 0 8px;color:#334e68;font-size:.82rem;font-weight:950;text-transform:uppercase;letter-spacing:.04em;}
+    .changelog-items{list-style:none;margin:0;padding:0;display:grid;gap:7px;}
+    .changelog-item{display:grid;grid-template-columns:18px 1fr auto;gap:9px;align-items:start;color:#243b53;line-height:1.5;font-weight:650;padding:7px 0;border-bottom:1px solid #f0f4f8;}
+    .changelog-item:last-child{border-bottom:0;}
+    .changelog-item-icon{color:#14804a;margin-top:3px;}
+    .changelog-audiences{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;}
+    .changelog-audience{background:#e6f6ee;color:#11643a;border-radius:999px;padding:3px 7px;font-size:.68rem;font-weight:900;text-transform:capitalize;}
+    .changelog-admin-control{display:none;}
+    body.changelog-admin-mode .changelog-admin-control{display:inline-flex;}
+    .changelog-status{display:none;margin-bottom:14px;padding:11px 13px;border-radius:6px;font-weight:800;}
+    .changelog-status.show{display:block;}
+    .changelog-status.success{background:#e6f6ee;color:#11643a;border:1px solid #8bd3ae;}
+    .changelog-status.error{background:#fff1f1;color:#9b1c1c;border:1px solid #f5b7b7;}
+    .changelog-edit-modal .modal-header{background:#102a43;color:#fff;}
+    .changelog-edit-modal .form-label{font-weight:850;color:#243b53;}
+    .changelog-audience-options{display:flex;gap:12px;flex-wrap:wrap;}
+    .changelog-audience-options label{font-weight:750;color:#334e68;}
+    @media(max-width:760px){
+        .changelog-header{align-items:flex-start;flex-direction:column;}
+        .changelog-title{font-size:1.65rem;}
+        .changelog-release-head{grid-template-columns:1fr;padding:16px;gap:10px;}
+        .changelog-release-actions{justify-content:flex-start;}
+        .changelog-body{padding:15px 16px 18px;}
+        .changelog-item{grid-template-columns:18px 1fr;}
+        .changelog-audiences{grid-column:2;justify-content:flex-start;}
+        .changelog-btn{min-height:44px;}
+    }
+</style>
+
+<div class="changelog-shell">
+    <header class="changelog-header">
+        <div>
+            <h1 class="changelog-title"><i class="fa-solid fa-sparkles me-2 text-success"></i>What’s New</h1>
+            <p class="changelog-subtitle">Recent improvements and workflow changes in Medical Service SMS.</p>
+        </div>
+        <div class="changelog-toolbar">
+            <button type="button" class="changelog-btn" onclick="loadChangelog()"><i class="fa-solid fa-rotate"></i>Refresh</button>
+            {% if changelog_admin %}
+            <button type="button" id="changelog-admin-toggle" class="changelog-btn changelog-btn-warning" onclick="toggleChangelogAdminMode()"><i class="fa-solid fa-pen-to-square"></i>Manage Updates</button>
+            {% endif %}
+        </div>
+    </header>
+
+    <div id="changelog-status" class="changelog-status" role="status" aria-live="polite"></div>
+    <div id="changelog-list"><div class="changelog-empty"><i class="fa-solid fa-circle-notch fa-spin me-2"></i>Loading updates...</div></div>
+</div>
+
+{% if changelog_admin %}
+<div class="modal fade changelog-edit-modal" id="changelogEditModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5" id="changelog-edit-title">Edit Update</h2>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="changelog-edit-type">
+                <input type="hidden" id="changelog-edit-id">
+                <div id="changelog-release-fields">
+                    <label class="form-label" for="changelog-release-title-input">Release Title</label>
+                    <input type="text" class="form-control mb-3" id="changelog-release-title-input" maxlength="180">
+                    <label class="form-label" for="changelog-release-summary-input">Summary</label>
+                    <textarea class="form-control mb-3" id="changelog-release-summary-input" rows="4"></textarea>
+                </div>
+                <div id="changelog-item-fields">
+                    <label class="form-label" for="changelog-item-category-input">Category</label>
+                    <input type="text" class="form-control mb-3" id="changelog-item-category-input" maxlength="80">
+                    <label class="form-label" for="changelog-item-description-input">Description</label>
+                    <textarea class="form-control mb-3" id="changelog-item-description-input" rows="5"></textarea>
+                    <div class="form-label">Audience</div>
+                    <div class="changelog-audience-options mb-3">
+                        <label><input type="checkbox" value="everyone" class="changelog-audience-check"> Everyone</label>
+                        <label><input type="checkbox" value="engineers" class="changelog-audience-check"> Engineers</label>
+                        <label><input type="checkbox" value="approvers" class="changelog-audience-check"> Approvers</label>
+                        <label><input type="checkbox" value="admins" class="changelog-audience-check"> Admins</label>
+                    </div>
+                </div>
+                <label class="form-check fw-bold">
+                    <input type="checkbox" class="form-check-input" id="changelog-published-input"> Published
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success fw-bold" id="changelog-save-edit-btn" onclick="saveChangelogEdit()"><i class="fa-solid fa-floppy-disk me-1"></i>Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+const changelogIsAdmin = {{ 'true' if changelog_admin else 'false' }};
+let changelogAdminMode = false;
+let changelogReleases = [];
+
+function changelogEscape(value){
+    return String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+}
+
+function changelogDate(value){
+    if(!value) return {main:'Update', year:''};
+    const date = new Date(`${value}T00:00:00`);
+    return {
+        main: date.toLocaleDateString(undefined, {month:'short', day:'numeric'}),
+        year: date.toLocaleDateString(undefined, {weekday:'long', year:'numeric'})
+    };
+}
+
+function showChangelogStatus(message, type='success'){
+    const box = document.getElementById('changelog-status');
+    if(!box) return;
+    box.textContent = message || '';
+    box.className = `changelog-status${message ? ' show' : ''}${message ? ' ' + type : ''}`;
+}
+
+function groupChangelogItems(items){
+    return (items || []).reduce((groups, item) => {
+        const category = item.category || 'General';
+        if(!groups[category]) groups[category] = [];
+        groups[category].push(item);
+        return groups;
+    }, {});
+}
+
+function renderChangelog(){
+    const list = document.getElementById('changelog-list');
+    if(!list) return;
+    if(!changelogReleases.length){
+        list.innerHTML = '<div class="changelog-empty"><i class="fa-solid fa-circle-check me-2"></i>No published updates are available for your account.</div>';
+        return;
+    }
+    list.innerHTML = changelogReleases.map(release => {
+        const date = changelogDate(release.release_date);
+        const groups = groupChangelogItems(release.items || []);
+        const categories = Object.entries(groups).map(([category, items]) => `
+            <section>
+                <h3 class="changelog-category-title">${changelogEscape(category)}</h3>
+                <ul class="changelog-items">
+                    ${items.map(item => `
+                        <li class="changelog-item">
+                            <i class="fa-solid fa-circle-check changelog-item-icon"></i>
+                            <span>${changelogEscape(item.description)}</span>
+                            <span class="changelog-audiences changelog-admin-control">
+                                ${(item.audiences || []).map(audience => `<span class="changelog-audience">${changelogEscape(audience)}</span>`).join('')}
+                                <button type="button" class="changelog-btn" style="min-height:30px;padding:3px 8px;" onclick="openChangelogItemEditor(${Number(item.id)})"><i class="fa-solid fa-pen"></i></button>
+                            </span>
+                        </li>
+                    `).join('')}
+                </ul>
+            </section>
+        `).join('');
+        return `
+            <article class="changelog-release ${release.is_unread ? 'unread' : ''} ${release.is_published ? '' : 'unpublished'}">
+                <div class="changelog-release-head">
+                    <div class="changelog-date">${changelogEscape(date.main)}<span>${changelogEscape(date.year)}</span></div>
+                    <div>
+                        <h2 class="changelog-release-title">${changelogEscape(release.title)}</h2>
+                        <p class="changelog-summary">${changelogEscape(release.summary)}</p>
+                    </div>
+                    <div class="changelog-release-actions">
+                        ${release.is_unread ? '<span class="changelog-unread-pill"><i class="fa-solid fa-circle"></i>New</span>' : ''}
+                        ${!release.is_published ? '<span class="changelog-hidden-pill">Hidden</span>' : ''}
+                        ${release.is_unread ? `<button type="button" class="changelog-btn changelog-btn-primary" onclick="acknowledgeChangelog(${Number(release.id)})"><i class="fa-solid fa-check"></i>Got It</button>` : ''}
+                        <button type="button" class="changelog-btn changelog-admin-control" onclick="openChangelogReleaseEditor(${Number(release.id)})"><i class="fa-solid fa-pen"></i>Edit</button>
+                    </div>
+                </div>
+                <div class="changelog-body">${categories || '<div class="changelog-empty">No visible items in this release.</div>'}</div>
+            </article>
+        `;
+    }).join('');
+}
+
+async function loadChangelog(){
+    const list = document.getElementById('changelog-list');
+    if(list) list.innerHTML = '<div class="changelog-empty"><i class="fa-solid fa-circle-notch fa-spin me-2"></i>Loading updates...</div>';
+    try{
+        const response = await fetch(`/api/changelog/releases${changelogAdminMode ? '?admin=1' : ''}`, {credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}});
+        const data = await response.json();
+        if(!response.ok || !data.success) throw new Error(data.error || 'Unable to load updates.');
+        changelogReleases = data.releases || [];
+        renderChangelog();
+        showChangelogStatus('');
+    }catch(error){
+        if(list) list.innerHTML = `<div class="changelog-empty">${changelogEscape(error.message || 'Unable to load updates.')}</div>`;
+    }
+}
+
+async function acknowledgeChangelog(releaseId){
+    try{
+        const response = await fetch(`/api/changelog/releases/${encodeURIComponent(releaseId)}/acknowledge`, {
+            method:'POST', credentials:'same-origin', cache:'no-store',
+            headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':getCSRFToken()}, body:'{}'
+        });
+        const data = await response.json();
+        if(!response.ok || !data.success) throw new Error(data.error || 'Unable to acknowledge update.');
+        await loadChangelog();
+        if(typeof window.refreshGlobalChangelogBadge === 'function') window.refreshGlobalChangelogBadge();
+        showChangelogStatus('Update acknowledged.', 'success');
+    }catch(error){ showChangelogStatus(error.message || 'Unable to acknowledge update.', 'error'); }
+}
+
+function toggleChangelogAdminMode(){
+    if(!changelogIsAdmin) return;
+    changelogAdminMode = !changelogAdminMode;
+    document.body.classList.toggle('changelog-admin-mode', changelogAdminMode);
+    const button = document.getElementById('changelog-admin-toggle');
+    if(button) button.innerHTML = changelogAdminMode ? '<i class="fa-solid fa-eye"></i>Exit Manage Mode' : '<i class="fa-solid fa-pen-to-square"></i>Manage Updates';
+    loadChangelog();
+}
+
+function findChangelogItem(itemId){
+    for(const release of changelogReleases){
+        const item = (release.items || []).find(entry => Number(entry.id) === Number(itemId));
+        if(item) return item;
+    }
+    return null;
+}
+
+function openChangelogReleaseEditor(releaseId){
+    const release = changelogReleases.find(entry => Number(entry.id) === Number(releaseId));
+    if(!release) return;
+    document.getElementById('changelog-edit-type').value = 'release';
+    document.getElementById('changelog-edit-id').value = release.id;
+    document.getElementById('changelog-edit-title').textContent = 'Edit Daily Release';
+    document.getElementById('changelog-release-fields').style.display = '';
+    document.getElementById('changelog-item-fields').style.display = 'none';
+    document.getElementById('changelog-release-title-input').value = release.title || '';
+    document.getElementById('changelog-release-summary-input').value = release.summary || '';
+    document.getElementById('changelog-published-input').checked = !!release.is_published;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('changelogEditModal')).show();
+}
+
+function openChangelogItemEditor(itemId){
+    const item = findChangelogItem(itemId);
+    if(!item) return;
+    document.getElementById('changelog-edit-type').value = 'item';
+    document.getElementById('changelog-edit-id').value = item.id;
+    document.getElementById('changelog-edit-title').textContent = 'Edit Update Item';
+    document.getElementById('changelog-release-fields').style.display = 'none';
+    document.getElementById('changelog-item-fields').style.display = '';
+    document.getElementById('changelog-item-category-input').value = item.category || '';
+    document.getElementById('changelog-item-description-input').value = item.description || '';
+    document.querySelectorAll('.changelog-audience-check').forEach(input => { input.checked = (item.audiences || []).includes(input.value); });
+    document.getElementById('changelog-published-input').checked = !!item.is_published;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('changelogEditModal')).show();
+}
+
+async function saveChangelogEdit(){
+    const type = document.getElementById('changelog-edit-type').value;
+    const id = document.getElementById('changelog-edit-id').value;
+    const payload = type === 'release' ? {
+        title: document.getElementById('changelog-release-title-input').value,
+        summary: document.getElementById('changelog-release-summary-input').value,
+        is_published: document.getElementById('changelog-published-input').checked
+    } : {
+        category: document.getElementById('changelog-item-category-input').value,
+        description: document.getElementById('changelog-item-description-input').value,
+        audiences: Array.from(document.querySelectorAll('.changelog-audience-check:checked')).map(input => input.value),
+        is_published: document.getElementById('changelog-published-input').checked
+    };
+    const button = document.getElementById('changelog-save-edit-btn');
+    button.disabled = true;
+    try{
+        const response = await fetch(`/api/changelog/admin/${type === 'release' ? 'releases' : 'items'}/${encodeURIComponent(id)}`, {
+            method:'PUT', credentials:'same-origin', cache:'no-store',
+            headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':getCSRFToken()},
+            body:JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if(!response.ok || !data.success) throw new Error(data.error || 'Unable to save update.');
+        bootstrap.Modal.getInstance(document.getElementById('changelogEditModal'))?.hide();
+        await loadChangelog();
+        if(typeof window.refreshGlobalChangelogBadge === 'function') window.refreshGlobalChangelogBadge();
+        showChangelogStatus('Changelog updated.', 'success');
+    }catch(error){ showChangelogStatus(error.message || 'Unable to save update.', 'error'); }
+    finally{ button.disabled = false; }
+}
+
+document.addEventListener('DOMContentLoaded', loadChangelog);
+</script>
+{% endblock %}
