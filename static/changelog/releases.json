@@ -79,6 +79,18 @@
         {"item_key": "2026-07-13-changelog-sidebar-display", "category": "System", "description": "The What's New sidebar label and unread badge now display clearly together on desktop and mobile.", "audiences": ["everyone"], "sort_order": 80},
         {"item_key": "2026-07-13-changelog-header-button", "category": "System", "description": "What's New is now available from a compact bell button in the desktop and mobile headers instead of occupying a full sidebar row.", "audiences": ["everyone"], "sort_order": 90}
       ]
+    },
+    {
+      "release_key": "2026-07-14",
+      "release_date": "2026-07-14",
+      "title": "Private Bucket Storage Cutover",
+      "summary": "Managed system uploads now use private Railway bucket storage with verified migration and protected access.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-14-bucket-storage", "category": "Administration", "description": "TSRs, schedule files, reimbursement receipts, Travel Request attachments, and liquidation receipts now use private bucket storage.", "audiences": ["admins"], "sort_order": 10},
+        {"item_key": "2026-07-14-bucket-verification", "category": "Administration", "description": "All migrated upload files passed size and SHA-256 verification before the production storage cutover.", "audiences": ["admins"], "sort_order": 20},
+        {"item_key": "2026-07-14-storage-settings", "category": "Administration", "description": "Settings now displays private bucket usage, connection, verification, region, and active storage mode instead of legacy volume capacity.", "audiences": ["admins"], "sort_order": 30}
+      ]
     }
   ]
 }

@@ -247,68 +247,64 @@
             <div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4 settings-storage-card">
                 <div class="card-header bg-info text-dark py-3 border-0 d-flex justify-content-between align-items-center">
                     <h5 class="mb-0 fw-bold">
-                        <i class="fa-solid fa-hard-drive me-2"></i>Storage Health
+                        <i class="fa-solid fa-cloud me-2"></i>Private Bucket Storage
                     </h5>
                     <span id="storage-status-badge" class="badge bg-light text-secondary small fw-bold">Checking...</span>
                 </div>
                 <div class="card-body p-4 bg-white">
                     <div id="storage-health-loading" class="text-muted small fw-bold">
-                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Checking Railway/storage usage...
+                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Checking private bucket storage...
                     </div>
 
                     <div id="storage-health-content" class="d-none">
-                        <div class="storage-meter mb-3">
-                            <div class="storage-meter-fill" id="storage-meter-fill" style="width: 0%;"></div>
-                        </div>
-
                         <div class="row g-3 mb-3">
                             <div class="col-6 col-lg-3">
                                 <div class="storage-stat">
-                                    <div class="storage-stat-label">Used</div>
-                                    <div class="storage-stat-value" id="storage-used">--</div>
+                                    <div class="storage-stat-label">Stored Data</div>
+                                    <div class="storage-stat-value" id="storage-bucket-size">--</div>
                                 </div>
                             </div>
                             <div class="col-6 col-lg-3">
                                 <div class="storage-stat">
-                                    <div class="storage-stat-label">Limit</div>
-                                    <div class="storage-stat-value" id="storage-limit">--</div>
+                                    <div class="storage-stat-label">Bucket Objects</div>
+                                    <div class="storage-stat-value" id="storage-bucket-objects">--</div>
                                 </div>
                             </div>
                             <div class="col-6 col-lg-3">
                                 <div class="storage-stat">
-                                    <div class="storage-stat-label">Remaining</div>
-                                    <div class="storage-stat-value" id="storage-remaining">--</div>
+                                    <div class="storage-stat-label">Storage Mode</div>
+                                    <div class="storage-stat-value" id="storage-active-mode">--</div>
                                 </div>
                             </div>
                             <div class="col-6 col-lg-3">
                                 <div class="storage-stat">
-                                    <div class="storage-stat-label">Usage</div>
-                                    <div class="storage-stat-value" id="storage-percent">--</div>
+                                    <div class="storage-stat-label">Connection</div>
+                                    <div class="storage-stat-value" id="storage-connection">--</div>
                                 </div>
                             </div>
                         </div>
 
                         <div class="storage-breakdown mb-3">
                             <div class="storage-breakdown-row">
-                                <span><i class="fa-solid fa-database me-2 text-primary"></i>Database</span>
-                                <strong id="storage-database">--</strong>
+                                <span><i class="fa-solid fa-shield-check me-2 text-success"></i>Verified Objects</span>
+                                <strong id="storage-verified-objects">--</strong>
                             </div>
                             <div class="storage-breakdown-row">
-                                <span><i class="fa-solid fa-folder-open me-2 text-warning"></i>Uploads / Reports</span>
-                                <strong id="storage-uploads">--</strong>
+                                <span><i class="fa-solid fa-triangle-exclamation me-2 text-warning"></i>Pending / Issues</span>
+                                <strong id="storage-bucket-issues">--</strong>
                             </div>
                             <div class="storage-breakdown-row">
-                                <span><i class="fa-solid fa-cloud me-2 text-info"></i>Private Bucket</span>
-                                <strong id="storage-bucket">--</strong>
+                                <span><i class="fa-solid fa-location-dot me-2 text-info"></i>Bucket Region</span>
+                                <strong id="storage-bucket-region">--</strong>
                             </div>
                             <div class="storage-breakdown-row">
-                                <span><i class="fa-solid fa-file-lines me-2 text-success"></i>Total Files</span>
-                                <strong id="storage-files">--</strong>
+                                <span><i class="fa-solid fa-rotate-left me-2 text-secondary"></i>Legacy Fallback</span>
+                                <strong id="storage-fallback">--</strong>
                             </div>
                         </div>
 
                         <div class="small text-muted fw-bold" id="storage-recommendation">
-                            Storage recommendation will appear here.
+                            Bucket storage status will appear here.
                         </div>
 
                         <div class="storage-last-checked mt-2" id="storage-last-checked">
@@ -328,7 +324,7 @@
 
             <div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4 bucket-migration-card">
                 <div class="card-header bg-dark text-white py-3 border-0 d-flex justify-content-between align-items-center gap-3">
-                    <h5 class="mb-0 fw-bold"><i class="fa-solid fa-cloud-arrow-up me-2 text-info"></i>Bucket Migration</h5>
+                    <h5 class="mb-0 fw-bold"><i class="fa-solid fa-shield-check me-2 text-info"></i>Bucket Verification</h5>
                     <span id="bucket-mode-badge" class="badge bg-secondary">Checking...</span>
                 </div>
                 <div class="card-body p-4 bg-white">
@@ -338,26 +334,19 @@
                     <div id="bucket-migration-content" class="d-none">
                         <div id="bucket-connection-message" class="bucket-connection-status mb-3"></div>
                         <div class="row g-3 mb-3">
-                            <div class="col-6 col-lg-3"><div class="storage-stat"><div class="storage-stat-label">Volume Files</div><div id="bucket-volume-files" class="storage-stat-value">--</div></div></div>
-                            <div class="col-6 col-lg-3"><div class="storage-stat"><div class="storage-stat-label">Bucket Objects</div><div id="bucket-object-count" class="storage-stat-value">--</div></div></div>
-                            <div class="col-6 col-lg-3"><div class="storage-stat"><div class="storage-stat-label">Verified</div><div id="bucket-verified-count" class="storage-stat-value">--</div></div></div>
-                            <div class="col-6 col-lg-3"><div class="storage-stat"><div class="storage-stat-label">Pending / Issues</div><div id="bucket-pending-count" class="storage-stat-value">--</div></div></div>
+                            <div class="col-6 col-lg-4"><div class="storage-stat"><div class="storage-stat-label">Bucket Objects</div><div id="bucket-object-count" class="storage-stat-value">--</div></div></div>
+                            <div class="col-6 col-lg-4"><div class="storage-stat"><div class="storage-stat-label">Verified</div><div id="bucket-verified-count" class="storage-stat-value">--</div></div></div>
+                            <div class="col-12 col-lg-4"><div class="storage-stat"><div class="storage-stat-label">Pending / Issues</div><div id="bucket-pending-count" class="storage-stat-value">--</div></div></div>
                         </div>
                         <div class="bucket-progress mb-3"><div id="bucket-progress-fill" class="bucket-progress-fill" style="width:0%"></div></div>
                         <div id="bucket-migration-summary" class="small text-muted fw-bold mb-3"></div>
                         <div id="bucket-status-counts" class="bucket-status-counts mb-3"></div>
                         <div class="d-flex flex-column flex-sm-row gap-2">
-                            <button id="bucket-migrate-btn" type="button" class="btn btn-primary fw-bold" onclick="runBucketMigrationBatch()">
-                                <i class="fa-solid fa-cloud-arrow-up me-2"></i>Migrate Next 25
-                            </button>
-                            <button id="bucket-verify-btn" type="button" class="btn btn-success fw-bold" onclick="runBucketVerificationBatch()">
-                                <i class="fa-solid fa-shield-check me-2"></i>Verify Next 25
-                            </button>
                             <button type="button" class="btn btn-outline-secondary fw-bold" onclick="loadBucketMigrationStatus(true)">
                                 <i class="fa-solid fa-rotate me-2"></i>Refresh
                             </button>
                         </div>
-                        <div class="xsmall text-muted mt-3">Migration is resumable. Conflicting objects are never overwritten.</div>
+                        <div class="xsmall text-muted mt-3">All managed uploads are stored in the private bucket. Verification compares stored object size and SHA-256 checksum.</div>
                     </div>
                     <div id="bucket-migration-error" class="alert alert-warning small d-none mb-0"></div>
                 </div>
@@ -1485,18 +1474,18 @@
         const badge = document.getElementById('storage-status-badge');
         if (!badge) return;
 
-        const status = (data.storage_status || '').toLowerCase();
-        badge.textContent = data.storage_status_label || 'Unknown';
+        const migration = data.bucket_migration || {};
+        const storage = migration.storage || {};
+        const connection = data.bucket_connection || migration.connection || {};
+        const healthy = Boolean(storage.bucket_enabled && connection.ok);
+        const status = healthy ? 'healthy' : 'warning';
+        badge.textContent = healthy ? 'Connected' : 'Check connection';
         badge.className = 'badge small fw-bold';
 
         if (status === 'healthy') {
             badge.classList.add('bg-success', 'text-white');
-        } else if (status === 'warning') {
-            badge.classList.add('bg-warning', 'text-dark');
-        } else if (status === 'critical') {
-            badge.classList.add('bg-danger', 'text-white');
         } else {
-            badge.classList.add('bg-secondary', 'text-white');
+            badge.classList.add('bg-warning', 'text-dark');
         }
     }
 
@@ -1520,36 +1509,32 @@
             }
 
             setStorageStatusBadge(data);
-            setStorageText('storage-used', data.used_human);
-            setStorageText('storage-limit', data.limit_human);
-            setStorageText('storage-remaining', data.remaining_human);
-            setStorageText('storage-percent', `${data.usage_percent}%`);
-            setStorageText('storage-database', data.database ? data.database.size_human : '--');
-            setStorageText('storage-uploads', data.legacy_upload_usage ? data.legacy_upload_usage.size_human : (data.active_upload_folder ? data.active_upload_folder.size_human : '--'));
-            setStorageText('storage-bucket', data.bucket_usage ? data.bucket_usage.size_human : '--');
-            setStorageText('storage-files', String(data.total_file_count || 0));
+            const migration = data.bucket_migration || {};
+            const storage = migration.storage || {};
+            const connection = data.bucket_connection || migration.connection || {};
+            const bucket = data.bucket_usage || migration.bucket || {};
+            const counts = migration.counts || {};
+            const pendingIssues = Number(counts.pending || 0)
+                + Number(counts.missing || 0)
+                + Number(counts.conflicting || 0)
+                + Number(counts.failed || 0);
+            setStorageText('storage-bucket-size', bucket.size_human || '0 B');
+            setStorageText('storage-bucket-objects', String(bucket.object_count || 0));
+            setStorageText('storage-active-mode', String(storage.mode || 'unknown').toUpperCase());
+            setStorageText('storage-connection', connection.ok ? 'Connected' : 'Attention');
+            setStorageText('storage-verified-objects', String(counts.verified || 0));
+            setStorageText('storage-bucket-issues', String(pendingIssues));
+            setStorageText('storage-bucket-region', String(storage.region || '--').toUpperCase());
+            setStorageText('storage-fallback', storage.volume_fallback ? 'Enabled' : 'Disabled');
             const recommendation = document.getElementById('storage-recommendation');
-            const status = String(data.storage_status || '').toLowerCase();
-            const statusLabel = status === 'healthy'
-                ? 'Healthy'
-                : (status === 'warning' ? 'Watch soon' : (status === 'critical' ? 'Action needed' : 'Status checked'));
             if (recommendation) {
-                recommendation.className = 'storage-recommendation storage-recommendation-' + (status || 'unknown');
-                recommendation.textContent = `${statusLabel}: ${data.recommendation || 'Storage status checked.'}`;
+                const healthy = Boolean(storage.bucket_enabled && connection.ok && pendingIssues === 0);
+                recommendation.className = 'storage-recommendation storage-recommendation-' + (healthy ? 'healthy' : 'warning');
+                recommendation.textContent = healthy
+                    ? 'Healthy: New uploads are stored in the private Railway bucket.'
+                    : `Attention: ${connection.message || 'Review the private bucket status.'}`;
             }
             setStorageText('storage-last-checked', `Last checked: ${new Date().toLocaleString()}`);
-
-            const meter = document.getElementById('storage-meter-fill');
-            if (meter) {
-                const usage = Math.max(0, Math.min(100, Number(data.usage_percent || 0)));
-                meter.style.width = `${usage}%`;
-                meter.classList.remove('storage-meter-warning', 'storage-meter-critical');
-                if (usage >= 90) {
-                    meter.classList.add('storage-meter-critical');
-                } else if (usage >= 75) {
-                    meter.classList.add('storage-meter-warning');
-                }
-            }
 
             if (content) content.classList.remove('d-none');
         } catch (err) {
@@ -1569,13 +1554,12 @@
         const volume = data.volume || {};
         const bucket = data.bucket || {};
         const counts = data.counts || {};
-        const total = Number(volume.file_count || 0);
+        const total = Number(bucket.object_count || 0);
         const verified = Number(counts.verified || 0);
         const pending = Number(counts.pending || 0) + Number(counts.missing || 0);
         const issues = Number(counts.conflicting || 0) + Number(counts.failed || 0);
         const completedPercent = total > 0 ? Math.round((verified / total) * 100) : 0;
 
-        setStorageText('bucket-volume-files', `${total} / ${volume.size_human || '0 B'}`);
         setStorageText('bucket-object-count', `${bucket.object_count || 0} / ${bucket.size_human || '0 B'}`);
         setStorageText('bucket-verified-count', String(verified));
         setStorageText('bucket-pending-count', issues ? `${pending} / ${issues} issues` : String(pending));
@@ -1595,8 +1579,8 @@
         const summary = document.getElementById('bucket-migration-summary');
         if (summary) {
             summary.textContent = data.complete
-                ? 'All volume upload files have passed size and SHA-256 verification.'
-                : `${verified} of ${total} volume files verified. ${Number(counts.migrated || 0)} migrated and awaiting verification.`;
+                ? 'All bucket objects have passed size and SHA-256 verification.'
+                : `${verified} of ${total} bucket objects verified. ${Number(counts.migrated || 0)} awaiting verification.`;
         }
         const countBox = document.getElementById('bucket-status-counts');
         if (countBox) {
