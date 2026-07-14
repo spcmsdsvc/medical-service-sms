@@ -12842,6 +12842,26 @@ def get_storage_health_report():
             'complete': False,
         }
 
+    bucket_usage = bucket_migration.get('bucket') or {}
+    try:
+        bucket_limit_gb = max(float(os.environ.get('STORAGE_BUCKET_LIMIT_GB', '1024') or 1024), 0)
+    except (TypeError, ValueError):
+        bucket_limit_gb = 1024.0
+    bucket_limit_bytes = int(bucket_limit_gb * 1024 * 1024 * 1024) if bucket_limit_gb else 0
+    bucket_used_bytes = clean_int(bucket_usage.get('size_bytes')) or 0
+    bucket_remaining_bytes = max(bucket_limit_bytes - bucket_used_bytes, 0) if bucket_limit_bytes else None
+    bucket_usage_percent = round((bucket_used_bytes / bucket_limit_bytes) * 100, 4) if bucket_limit_bytes else None
+    bucket_capacity = {
+        'limit_gb': bucket_limit_gb,
+        'limit_bytes': bucket_limit_bytes,
+        'limit_human': f'{bucket_limit_gb:,.0f} GB' if bucket_limit_gb else 'Unlimited',
+        'used_gb': round(bucket_used_bytes / (1024 ** 3), 4),
+        'used_human': f'{bucket_used_bytes / (1024 ** 3):,.2f} GB',
+        'remaining_gb': round(bucket_remaining_bytes / (1024 ** 3), 4) if bucket_remaining_bytes is not None else None,
+        'remaining_human': f'{bucket_remaining_bytes / (1024 ** 3):,.2f} GB' if bucket_remaining_bytes is not None else 'Unlimited',
+        'usage_percent': bucket_usage_percent,
+    }
+
     return {
         'status': 'success',
         'storage_status': status,
@@ -12859,6 +12879,7 @@ def get_storage_health_report():
         'database_volume_usage': database_snapshot,
         'legacy_upload_usage': bucket_migration.get('volume'),
         'bucket_usage': bucket_migration.get('bucket'),
+        'bucket_capacity': bucket_capacity,
         'bucket_connection': bucket_migration.get('connection'),
         'bucket_migration': bucket_migration,
         'active_upload_folder': active_upload_snapshot,

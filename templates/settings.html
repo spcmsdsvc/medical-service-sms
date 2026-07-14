@@ -257,34 +257,46 @@
                     </div>
 
                     <div id="storage-health-content" class="d-none">
+                        <div class="storage-meter mb-3" aria-label="Bucket storage usage">
+                            <div class="storage-meter-fill" id="storage-meter-fill" style="width: 0%;"></div>
+                        </div>
+
                         <div class="row g-3 mb-3">
                             <div class="col-6 col-lg-3">
                                 <div class="storage-stat">
-                                    <div class="storage-stat-label">Stored Data</div>
-                                    <div class="storage-stat-value" id="storage-bucket-size">--</div>
+                                    <div class="storage-stat-label">Used</div>
+                                    <div class="storage-stat-value" id="storage-bucket-used-gb">--</div>
                                 </div>
                             </div>
                             <div class="col-6 col-lg-3">
                                 <div class="storage-stat">
-                                    <div class="storage-stat-label">Bucket Objects</div>
-                                    <div class="storage-stat-value" id="storage-bucket-objects">--</div>
+                                    <div class="storage-stat-label">Total Capacity</div>
+                                    <div class="storage-stat-value" id="storage-bucket-capacity">--</div>
                                 </div>
                             </div>
                             <div class="col-6 col-lg-3">
                                 <div class="storage-stat">
-                                    <div class="storage-stat-label">Storage Mode</div>
-                                    <div class="storage-stat-value" id="storage-active-mode">--</div>
+                                    <div class="storage-stat-label">Remaining</div>
+                                    <div class="storage-stat-value" id="storage-bucket-remaining">--</div>
                                 </div>
                             </div>
                             <div class="col-6 col-lg-3">
                                 <div class="storage-stat">
-                                    <div class="storage-stat-label">Connection</div>
-                                    <div class="storage-stat-value" id="storage-connection">--</div>
+                                    <div class="storage-stat-label">Usage</div>
+                                    <div class="storage-stat-value" id="storage-bucket-percent">--</div>
                                 </div>
                             </div>
                         </div>
 
                         <div class="storage-breakdown mb-3">
+                            <div class="storage-breakdown-row">
+                                <span><i class="fa-solid fa-file-lines me-2 text-primary"></i>Bucket Objects</span>
+                                <strong id="storage-bucket-objects">--</strong>
+                            </div>
+                            <div class="storage-breakdown-row">
+                                <span><i class="fa-solid fa-cloud me-2 text-info"></i>Storage Mode</span>
+                                <strong id="storage-active-mode">--</strong>
+                            </div>
                             <div class="storage-breakdown-row">
                                 <span><i class="fa-solid fa-shield-check me-2 text-success"></i>Verified Objects</span>
                                 <strong id="storage-verified-objects">--</strong>
@@ -1513,12 +1525,17 @@
             const storage = migration.storage || {};
             const connection = data.bucket_connection || migration.connection || {};
             const bucket = data.bucket_usage || migration.bucket || {};
+            const capacity = data.bucket_capacity || {};
             const counts = migration.counts || {};
             const pendingIssues = Number(counts.pending || 0)
                 + Number(counts.missing || 0)
                 + Number(counts.conflicting || 0)
                 + Number(counts.failed || 0);
-            setStorageText('storage-bucket-size', bucket.size_human || '0 B');
+            setStorageText('storage-bucket-used-gb', capacity.used_human || '0.00 GB');
+            setStorageText('storage-bucket-capacity', capacity.limit_human || 'Unlimited');
+            setStorageText('storage-bucket-remaining', capacity.remaining_human || 'Unlimited');
+            const usagePercent = capacity.usage_percent == null ? null : Number(capacity.usage_percent || 0);
+            setStorageText('storage-bucket-percent', usagePercent == null ? 'Unlimited' : `${usagePercent.toFixed(3)}%`);
             setStorageText('storage-bucket-objects', String(bucket.object_count || 0));
             setStorageText('storage-active-mode', String(storage.mode || 'unknown').toUpperCase());
             setStorageText('storage-connection', connection.ok ? 'Connected' : 'Attention');
@@ -1535,6 +1552,18 @@
                     : `Attention: ${connection.message || 'Review the private bucket status.'}`;
             }
             setStorageText('storage-last-checked', `Last checked: ${new Date().toLocaleString()}`);
+
+            const meter = document.getElementById('storage-meter-fill');
+            if (meter) {
+                const meterPercent = Math.max(0, Math.min(100, Number(usagePercent || 0)));
+                meter.style.width = `${meterPercent}%`;
+                meter.classList.remove('storage-meter-warning', 'storage-meter-critical');
+                if (meterPercent >= 90) {
+                    meter.classList.add('storage-meter-critical');
+                } else if (meterPercent >= 75) {
+                    meter.classList.add('storage-meter-warning');
+                }
+            }
 
             if (content) content.classList.remove('d-none');
         } catch (err) {

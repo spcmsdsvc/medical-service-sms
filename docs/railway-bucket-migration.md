@@ -14,11 +14,14 @@ STORAGE_BUCKET_ACCESS_KEY=${{Bucket.ACCESS_KEY_ID}}
 STORAGE_BUCKET_SECRET_KEY=${{Bucket.SECRET_ACCESS_KEY}}
 STORAGE_BUCKET_REGION=${{Bucket.REGION}}
 STORAGE_BUCKET_URL_STYLE=virtual
+STORAGE_BUCKET_LIMIT_GB=1024
 STORAGE_VOLUME_FALLBACK=true
 ```
 
 Replace `Bucket` with the Railway bucket service name used by the variable-reference picker.
 The credential aliases injected automatically by Railway are also supported.
+`STORAGE_BUCKET_LIMIT_GB` controls the Settings capacity meter. Use `1024` for
+Railway Hobby's current 1 TB combined bucket limit, or `0` for an unlimited plan.
 
 ## Migration
 

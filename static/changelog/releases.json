@@ -89,7 +89,7 @@
       "items": [
         {"item_key": "2026-07-14-bucket-storage", "category": "Administration", "description": "TSRs, schedule files, reimbursement receipts, Travel Request attachments, and liquidation receipts now use private bucket storage.", "audiences": ["admins"], "sort_order": 10},
         {"item_key": "2026-07-14-bucket-verification", "category": "Administration", "description": "All migrated upload files passed size and SHA-256 verification before the production storage cutover.", "audiences": ["admins"], "sort_order": 20},
-        {"item_key": "2026-07-14-storage-settings", "category": "Administration", "description": "Settings now displays private bucket usage, connection, verification, region, and active storage mode instead of legacy volume capacity.", "audiences": ["admins"], "sort_order": 30}
+        {"item_key": "2026-07-14-storage-settings", "category": "Administration", "description": "Settings now displays private bucket usage, total capacity, remaining space, percentage, connection, verification, region, and active storage mode.", "audiences": ["admins"], "sort_order": 30}
       ]
     }
   ]
