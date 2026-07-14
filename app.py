@@ -1818,6 +1818,16 @@ class ShiftFile(db.Model):
 
     original_filename = db.Column(db.String(200), nullable=True)
 
+    # Stable identities used by retry-safe TSR supporting uploads.
+    upload_token = db.Column(db.String(100), nullable=True, unique=True, index=True)
+
+    online_tsr_submission_id = db.Column(
+        db.Integer,
+        db.ForeignKey('online_tsr_submission.id'),
+        nullable=True,
+        index=True,
+    )
+
     uploaded_at = db.Column(db.DateTime, default=get_manila_time)
 
 
@@ -1904,6 +1914,7 @@ class OnlineTsrSubmission(db.Model):
     submitted_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
     submitted_by_name = db.Column(db.String(120), nullable=True)
     status = db.Column(db.String(40), default='received', index=True)
+    submission_token = db.Column(db.String(100), nullable=True, unique=True, index=True)
     payload_json = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=get_manila_time, index=True)
     revision_no = db.Column(db.Integer, default=1, nullable=False, index=True)
@@ -1971,7 +1982,8 @@ def ensure_online_tsr_submission_table():
             "CREATE INDEX IF NOT EXISTS idx_online_tsr_submission_revision_no ON online_tsr_submission (revision_no)",
             "CREATE INDEX IF NOT EXISTS idx_online_tsr_submission_parent ON online_tsr_submission (parent_submission_id)",
             "CREATE INDEX IF NOT EXISTS idx_online_tsr_submission_latest ON online_tsr_submission (is_latest)",
-            "CREATE INDEX IF NOT EXISTS idx_online_tsr_submission_revised_by ON online_tsr_submission (revised_by_user_id)"
+            "CREATE INDEX IF NOT EXISTS idx_online_tsr_submission_revised_by ON online_tsr_submission (revised_by_user_id)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_online_tsr_submission_token ON online_tsr_submission (submission_token)"
         ]
 
         with db.engine.begin() as connection:
@@ -1985,7 +1997,8 @@ def ensure_online_tsr_submission_table():
                 'revision_reason': "ALTER TABLE online_tsr_submission ADD COLUMN revision_reason TEXT",
                 'is_latest': "ALTER TABLE online_tsr_submission ADD COLUMN is_latest BOOLEAN DEFAULT 1 NOT NULL",
                 'revised_at': "ALTER TABLE online_tsr_submission ADD COLUMN revised_at DATETIME",
-                'revised_by_user_id': "ALTER TABLE online_tsr_submission ADD COLUMN revised_by_user_id INTEGER"
+                'revised_by_user_id': "ALTER TABLE online_tsr_submission ADD COLUMN revised_by_user_id INTEGER",
+                'submission_token': "ALTER TABLE online_tsr_submission ADD COLUMN submission_token VARCHAR(100)"
             }
             for column_name, statement in column_statements.items():
                 if column_name not in existing_columns:
@@ -10181,6 +10194,72 @@ def online_tsr_has_serviced_signature(payload):
     return signature_value.startswith('data:image/') and ',' in signature_value
 
 
+TSR_SUPPORTING_ATTACHMENT_MAX_BYTES = 35 * 1024 * 1024
+TSR_SUPPORTING_ATTACHMENT_MAX_COUNT = 10
+
+
+def normalize_online_tsr_submission_token(value):
+    """Return a stable browser-generated token safe for logs and lookups."""
+    token = re.sub(r'[^A-Za-z0-9_-]+', '', clean_str(value) or '')[:100]
+    return token if len(token) >= 12 else ''
+
+
+def completed_online_tsr_response(submission, duplicate=False):
+    """Build the normal success contract for an idempotent TSR retry."""
+    payload = parse_online_tsr_payload_json(submission)
+    attached_file_id = clean_int(payload.get('_attached_file_id'))
+    attached_file = db.session.get(ShiftFile, attached_file_id) if attached_file_id else None
+    extra_ids = [
+        clean_int(value)
+        for value in (payload.get('_extra_attachment_file_ids') or [])
+        if clean_int(value)
+    ]
+    return {
+        'status': 'success',
+        'success': True,
+        'duplicate': bool(duplicate),
+        'idempotent_replay': bool(duplicate),
+        'message': (
+            'This TSR was already saved successfully. The existing record was reused.'
+            if duplicate else
+            'TSR saved online, PDF generated, and attached to the schedule.'
+        ),
+        'submission_id': submission.id,
+        'submission_token': clean_str(getattr(submission, 'submission_token', None)),
+        'schedule_id': submission.shift_id,
+        'completed_shift_ids': payload.get('_completed_shift_ids') or [],
+        'completion_scope': payload.get('_completion_scope') or payload.get('completion_scope') or 'linked_all',
+        'schedule_time_updates': payload.get('_schedule_time_updates') or {},
+        'tsr_number': submission.tsr_number,
+        'pdf_filename': payload.get('_generated_pdf_filename') or '',
+        'attached_file_id': attached_file_id,
+        'attached_filename': get_shift_file_display_name(attached_file) if attached_file else payload.get('_attached_display_filename') or '',
+        'attached_disk_filename': getattr(attached_file, 'filename', None) if attached_file else payload.get('_attached_disk_filename') or '',
+        'extra_attachment_count': len(extra_ids),
+        'extra_attachment_file_ids': extra_ids,
+        'extra_attachment_filenames': payload.get('_extra_attachment_filenames') or [],
+        'auto_captured_contact_emails': payload.get('_auto_captured_contact_emails') or [],
+        'equipment_inventory': payload.get('_equipment_inventory_result'),
+        'equipment_correction': payload.get('_equipment_correction'),
+        'pdf_source': payload.get('_pdf_source') or 'existing_attachment',
+        'revision_no': clean_int(getattr(submission, 'revision_no', None)) or 1,
+        'revision_reason': clean_str(getattr(submission, 'revision_reason', None)),
+        'parent_submission_id': clean_int(getattr(submission, 'parent_submission_id', None)),
+        'phase': 'complete-idempotent-replay' if duplicate else 'complete',
+    }
+
+
+@app.route('/offline_tsr_sync_ping', methods=['GET'])
+@login_required
+def offline_tsr_sync_ping():
+    """Small authenticated network check used before syncing a durable TSR queue."""
+    return jsonify({
+        'status': 'success',
+        'server_time': get_manila_time().isoformat(),
+        'csrf_token': generate_csrf(),
+    })
+
+
 @app.route('/save_offline_tsr_online', methods=['POST'])
 @csrf.exempt
 @login_required
@@ -10249,6 +10328,38 @@ def save_offline_tsr_online():
             'status': 'error',
             'message': 'Serviced By signature is required before saving the TSR.'
         }), 400
+
+    submission_token = normalize_online_tsr_submission_token(
+        payload.get('submission_token') or
+        request.form.get('submission_token') or
+        request.headers.get('X-TSR-Submission-Token')
+    )
+    if submission_token:
+        existing_submission = OnlineTsrSubmission.query.filter_by(
+            submission_token=submission_token
+        ).first()
+        if existing_submission:
+            if existing_submission.shift_id != shift.id:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'This TSR retry token belongs to a different schedule.'
+                }), 409
+            if existing_submission.status == 'completed':
+                print(
+                    f"[ONLINE-TSR] Idempotent replay token={submission_token} "
+                    f"submission={existing_submission.id} schedule={shift.id}",
+                    flush=True,
+                )
+                return jsonify(completed_online_tsr_response(existing_submission, duplicate=True))
+            return jsonify({
+                'status': 'error',
+                'message': 'A previous save with this token is still being processed. Retry shortly.',
+                'submission_id': existing_submission.id,
+                'retryable': True,
+            }), 409
+    else:
+        submission_token = f"legacy-{secrets.token_hex(16)}"
+    payload['submission_token'] = submission_token
 
     preserve_uploaded_pdf = str(payload.get('_offline_queue_preserve_pdf') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
     is_legacy_offline_queue = preserve_uploaded_pdf and not clean_str(payload.get('_tsr_form_version'))
@@ -10323,6 +10434,7 @@ def save_offline_tsr_online():
         submitted_by_user_id=getattr(current_user, 'id', None),
         submitted_by_name=submitted_by,
         status='received',
+        submission_token=submission_token,
         payload_json=json.dumps(payload, ensure_ascii=False),
         revision_no=next_revision_no,
         parent_submission_id=getattr(previous_latest, 'id', None) if previous_latest else None,
@@ -10332,9 +10444,9 @@ def save_offline_tsr_online():
         revised_by_user_id=getattr(current_user, 'id', None) if previous_latest else None
     )
     db.session.add(submission)
-    db.session.flush()
 
     try:
+        db.session.flush()
         uploaded_pdf = None
         if request.files:
             uploaded_pdf = (
@@ -10353,10 +10465,14 @@ def save_offline_tsr_online():
             attached_file = attach_online_tsr_pdf_to_shift(shift, pdf_filename)
             pdf_source = 'backend_reportlab_fallback' if not submitted_tsr_number or submitted_tsr_number == tsr_number else 'backend_reportlab_number_refresh'
 
+        attached_file.online_tsr_submission_id = submission.id
+
         extra_attached_files = attach_uploaded_online_tsr_extra_files_to_shift(
             shift,
             excluded_file_ids=[uploaded_pdf, attached_file]
         )
+        for extra_file in extra_attached_files:
+            extra_file.online_tsr_submission_id = submission.id
         schedule_time_updates = update_shift_time_from_online_tsr_payload(shift, payload)
         completed_shift_ids = complete_schedules_for_online_tsr(shift, completion_scope=completion_scope)
         try:
@@ -10392,6 +10508,12 @@ def save_offline_tsr_online():
             action=f"Generated online TSR PDF and completed schedule scope '{completion_scope}': {pdf_filename} for schedule #{shift.id} (+{len(extra_attached_files)} extra attachment(s))"
         ))
         db.session.commit()
+        print(
+            f"[ONLINE-TSR] Core stored token={submission_token} submission={submission.id} "
+            f"schedule={shift.id} user={getattr(current_user, 'id', None)} "
+            f"phase=core_complete storage={file_storage.mode} pdf_source={pdf_source}",
+            flush=True,
+        )
 
         # Keep a second lightweight pass for old browsers/forms that may submit
         # contact data after the first payload normalization path.
@@ -10414,14 +10536,20 @@ def save_offline_tsr_online():
                 flush=True
             )
     except Exception as pdf_error:
-        submission.status = 'pdf_error'
-        db.session.commit()
-        print(f"[ONLINE-TSR] PDF generation/attachment failed for submission #{submission.id}: {pdf_error}", flush=True)
+        failed_submission_id = getattr(submission, 'id', None)
+        db.session.rollback()
+        print(
+            f"[ONLINE-TSR] Atomic save rolled back token={submission_token} "
+            f"submission={failed_submission_id} schedule={shift.id}: {pdf_error}",
+            flush=True,
+        )
         return jsonify({
             'status': 'error',
-            'message': 'TSR was received but PDF generation or attachment failed. Please try again.',
-            'submission_id': submission.id,
-            'phase': '3-step-3'
+            'message': 'TSR could not be stored safely. No partial TSR was saved; retry is safe.',
+            'submission_id': failed_submission_id,
+            'submission_token': submission_token,
+            'retryable': True,
+            'phase': 'saving_core_tsr'
         }), 500
 
     return jsonify({
@@ -10429,6 +10557,7 @@ def save_offline_tsr_online():
         'success': True,
         'message': 'TSR saved online, PDF generated, attached to schedule, and linked schedule status completed.',
         'submission_id': submission.id,
+        'submission_token': submission_token,
         'schedule_id': shift.id,
         'completed_shift_ids': completed_shift_ids,
         'completion_scope': completion_scope,
@@ -10448,6 +10577,147 @@ def save_offline_tsr_online():
         'parent_submission_id': clean_int(getattr(submission, 'parent_submission_id', None)),
         'phase': '3-step-5-same-pdf'
     })
+
+
+@app.route('/upload_online_tsr_attachment/<int:submission_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def upload_online_tsr_attachment(submission_id):
+    """Upload one retry-safe supporting file after the core TSR is committed."""
+    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+        return denied()
+
+    ensure_online_tsr_submission_table()
+    ensure_shift_file_original_filename_column()
+
+    submission = db.session.get(OnlineTsrSubmission, submission_id)
+    if not submission or submission.status != 'completed':
+        return jsonify({
+            'status': 'error',
+            'message': 'Save the TSR PDF before uploading supporting attachments.'
+        }), 409
+
+    shift = db.session.get(Shift, submission.shift_id)
+    if not shift:
+        return jsonify({'status': 'error', 'message': 'Linked schedule was not found.'}), 404
+    if not can_work_on_existing_schedule_shift(shift):
+        return denied('You are not allowed to upload files for this TSR.')
+
+    upload_token = normalize_online_tsr_submission_token(
+        request.form.get('attachment_token') or request.headers.get('X-TSR-Attachment-Token')
+    )
+    if not upload_token:
+        return jsonify({
+            'status': 'error',
+            'message': 'Attachment retry token is missing.'
+        }), 400
+
+    existing_file = ShiftFile.query.filter_by(upload_token=upload_token).first()
+    if existing_file:
+        if existing_file.online_tsr_submission_id != submission.id:
+            return jsonify({
+                'status': 'error',
+                'message': 'This attachment token belongs to another TSR.'
+            }), 409
+        return jsonify({
+            'status': 'success',
+            'success': True,
+            'duplicate': True,
+            'message': 'Supporting attachment was already uploaded.',
+            'submission_id': submission.id,
+            'attachment_token': upload_token,
+            'file_id': existing_file.id,
+            'filename': get_shift_file_display_name(existing_file),
+        })
+
+    saved_count = ShiftFile.query.filter(
+        ShiftFile.online_tsr_submission_id == submission.id,
+        ShiftFile.upload_token.isnot(None),
+    ).count()
+    if saved_count >= TSR_SUPPORTING_ATTACHMENT_MAX_COUNT:
+        return jsonify({
+            'status': 'error',
+            'message': f'Only {TSR_SUPPORTING_ATTACHMENT_MAX_COUNT} supporting attachments are allowed per TSR.'
+        }), 400
+
+    file_obj = request.files.get('attachment') or request.files.get('tsr_attachment')
+    if not file_obj or not getattr(file_obj, 'filename', None):
+        return jsonify({'status': 'error', 'message': 'Select a supporting attachment to upload.'}), 400
+    if not allowed_file(file_obj.filename):
+        return jsonify({
+            'status': 'error',
+            'message': 'Unsupported attachment type. Use PDF, PNG, JPG, JPEG, DOCX, XLSX, or CSV.'
+        }), 400
+
+    original_name = secure_filename(os.path.basename(file_obj.filename))
+    if not original_name:
+        return jsonify({'status': 'error', 'message': 'Attachment filename is invalid.'}), 400
+
+    try:
+        file_obj.stream.seek(0)
+        file_bytes = file_obj.read(TSR_SUPPORTING_ATTACHMENT_MAX_BYTES + 1)
+        if not file_bytes:
+            return jsonify({'status': 'error', 'message': 'Supporting attachment is empty.'}), 400
+        if len(file_bytes) > TSR_SUPPORTING_ATTACHMENT_MAX_BYTES:
+            return jsonify({
+                'status': 'error',
+                'message': 'Supporting attachments must be 35MB or smaller.'
+            }), 413
+
+        disk_filename = get_unique_upload_filename(original_name)
+        disk_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_filename)
+        managed_storage_write_bytes(
+            STORAGE_PREFIX_REPORTS,
+            disk_path,
+            file_bytes,
+            original_filename=original_name,
+            content_type=clean_str(getattr(file_obj, 'mimetype', None)) or '',
+        )
+        file_rec = ShiftFile(
+            shift_id=shift.id,
+            filename=disk_filename,
+            original_filename=original_name,
+            upload_token=upload_token,
+            online_tsr_submission_id=submission.id,
+            uploaded_at=get_manila_time(),
+        )
+        db.session.add(file_rec)
+        db.session.add(ActivityLog(
+            user=(getattr(current_user, 'username', '') or 'System').capitalize(),
+            action=f"Uploaded TSR supporting attachment for submission #{submission.id}: {original_name}",
+        ))
+        db.session.commit()
+        print(
+            f"[ONLINE-TSR] Supporting attachment stored token={upload_token} "
+            f"submission={submission.id} file={file_rec.id}",
+            flush=True,
+        )
+        return jsonify({
+            'status': 'success',
+            'success': True,
+            'duplicate': False,
+            'message': 'Supporting attachment uploaded.',
+            'submission_id': submission.id,
+            'attachment_token': upload_token,
+            'file_id': file_rec.id,
+            'filename': get_shift_file_display_name(file_rec),
+            'size': len(file_bytes),
+        })
+    except Exception as attachment_error:
+        db.session.rollback()
+        print(
+            f"[ONLINE-TSR] Supporting attachment rollback token={upload_token} "
+            f"submission={submission.id}: {attachment_error}",
+            flush=True,
+        )
+        return jsonify({
+            'status': 'error',
+            'message': 'Supporting attachment could not be stored. The TSR itself remains saved.',
+            'submission_id': submission.id,
+            'attachment_token': upload_token,
+            'retryable': True,
+            'phase': 'uploading_supporting_attachment',
+        }), 500
 
 
 @app.route('/get_online_tsr_submission/<int:submission_id>', methods=['GET'])
@@ -10546,6 +10816,32 @@ def revise_online_tsr_submission(submission_id):
             'message': 'Serviced By signature is required before saving the corrected TSR.'
         }), 400
 
+    submission_token = normalize_online_tsr_submission_token(
+        payload.get('submission_token') or
+        request.form.get('submission_token') or
+        request.headers.get('X-TSR-Submission-Token')
+    )
+    if submission_token:
+        existing_revision = OnlineTsrSubmission.query.filter_by(
+            submission_token=submission_token
+        ).first()
+        if existing_revision:
+            if existing_revision.shift_id != shift.id:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'This TSR retry token belongs to a different schedule.'
+                }), 409
+            if existing_revision.status == 'completed':
+                return jsonify(completed_online_tsr_response(existing_revision, duplicate=True))
+            return jsonify({
+                'status': 'error',
+                'message': 'A previous correction with this token is still being processed. Retry shortly.',
+                'retryable': True,
+            }), 409
+    else:
+        submission_token = f"legacy-revision-{secrets.token_hex(12)}"
+    payload['submission_token'] = submission_token
+
     missing_core_details = get_online_tsr_missing_core_details(shift, payload)
     if missing_core_details:
         return jsonify({
@@ -10614,6 +10910,7 @@ def revise_online_tsr_submission(submission_id):
         submitted_by_user_id=getattr(current_user, 'id', None),
         submitted_by_name=submitted_by,
         status='received',
+        submission_token=submission_token,
         payload_json=json.dumps(payload, ensure_ascii=False),
         revision_no=next_revision_no,
         parent_submission_id=original.id,
@@ -10623,9 +10920,9 @@ def revise_online_tsr_submission(submission_id):
         revised_by_user_id=getattr(current_user, 'id', None)
     )
     db.session.add(revision)
-    db.session.flush()
 
     try:
+        db.session.flush()
         uploaded_pdf = None
         if request.files:
             uploaded_pdf = (
@@ -10653,10 +10950,14 @@ def revise_online_tsr_submission(submission_id):
             attached_file = attach_online_tsr_pdf_to_shift(shift, pdf_filename)
             pdf_source = 'backend_reportlab_revision'
 
+        attached_file.online_tsr_submission_id = revision.id
+
         extra_attached_files = attach_uploaded_online_tsr_extra_files_to_shift(
             shift,
             excluded_file_ids=[uploaded_pdf, attached_file]
         )
+        for extra_file in extra_attached_files:
+            extra_file.online_tsr_submission_id = revision.id
         schedule_time_updates = update_shift_time_from_online_tsr_payload(shift, payload)
         completed_shift_ids = complete_linked_schedules_for_online_tsr(shift)
         try:
@@ -10692,6 +10993,12 @@ def revise_online_tsr_submission(submission_id):
             action=f"Revised online TSR submission #{original.id} as REV{next_revision_no}: {revision_reason}"
         ))
         db.session.commit()
+        print(
+            f"[ONLINE-TSR] Revision stored token={submission_token} submission={revision.id} "
+            f"schedule={shift.id} user={getattr(current_user, 'id', None)} "
+            f"phase=revision_complete storage={file_storage.mode} pdf_source={pdf_source}",
+            flush=True,
+        )
 
         try:
             direct_contact_emails = save_tsr_payload_contact_to_medical_center(
@@ -10712,13 +11019,20 @@ def revise_online_tsr_submission(submission_id):
                 flush=True
             )
     except Exception as pdf_error:
-        revision.status = 'pdf_error'
-        db.session.commit()
-        print(f"[ONLINE-TSR] TSR revision failed for submission #{revision.id}: {pdf_error}", flush=True)
+        failed_revision_id = getattr(revision, 'id', None)
+        db.session.rollback()
+        print(
+            f"[ONLINE-TSR] Atomic revision rolled back token={submission_token} "
+            f"submission={failed_revision_id} schedule={shift.id}: {pdf_error}",
+            flush=True,
+        )
         return jsonify({
             'status': 'error',
-            'message': 'Corrected TSR was received but PDF generation or attachment failed. Please try again.',
-            'submission_id': revision.id
+            'message': 'Corrected TSR could not be stored safely. No partial revision was saved; retry is safe.',
+            'submission_id': failed_revision_id,
+            'submission_token': submission_token,
+            'retryable': True,
+            'phase': 'saving_corrected_tsr',
         }), 500
 
     return jsonify({
@@ -10726,6 +11040,7 @@ def revise_online_tsr_submission(submission_id):
         'success': True,
         'message': f'Corrected TSR saved as REV{next_revision_no}.',
         'submission_id': revision.id,
+        'submission_token': submission_token,
         'parent_submission_id': original.id,
         'schedule_id': shift.id,
         'revision_no': next_revision_no,
@@ -10812,7 +11127,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v9-vector-tsr';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v10-tsr-sync-repair';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -32447,6 +32762,25 @@ def ensure_shift_file_original_filename_column():
         db.session.execute(db.text("ALTER TABLE shift_file ADD COLUMN original_filename VARCHAR(200)"))
         changed = True
         print("[DB MIGRATION] Added shift_file.original_filename", flush=True)
+
+    if 'upload_token' not in existing_columns:
+        db.session.execute(db.text("ALTER TABLE shift_file ADD COLUMN upload_token VARCHAR(100)"))
+        changed = True
+        print("[DB MIGRATION] Added shift_file.upload_token", flush=True)
+
+    if 'online_tsr_submission_id' not in existing_columns:
+        db.session.execute(db.text("ALTER TABLE shift_file ADD COLUMN online_tsr_submission_id INTEGER"))
+        changed = True
+        print("[DB MIGRATION] Added shift_file.online_tsr_submission_id", flush=True)
+
+    db.session.execute(db.text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_shift_file_upload_token "
+        "ON shift_file (upload_token)"
+    ))
+    db.session.execute(db.text(
+        "CREATE INDEX IF NOT EXISTS idx_shift_file_online_tsr_submission "
+        "ON shift_file (online_tsr_submission_id)"
+    ))
 
     rows = db.session.execute(
         db.text("SELECT id, filename, original_filename FROM shift_file")

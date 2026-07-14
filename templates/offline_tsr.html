@@ -653,14 +653,101 @@ function generateTSRNumber(){
   refreshTSRNumberPreviewFromServer(el.value, initials);
 }
 
+function makeTSRSyncError(message, options={}){
+  const error = new Error(message || 'TSR synchronization failed.');
+  Object.assign(error, options);
+  return error;
+}
+
+function isRetriableTSRSyncError(error){
+  if(error?.retryable === true) return true;
+  const status = Number(error?.httpStatus || 0);
+  return !status || [408, 425, 429].includes(status) || status >= 500;
+}
+
+async function fetchTSRSyncJSON(url, options={}, syncOptions={}){
+  const phase = syncOptions.phase || 'connecting';
+  const timeoutMs = Number(syncOptions.timeoutMs || 15000);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try{
+    const response = await fetch(url, Object.assign({ credentials:'same-origin' }, options, {
+      signal: controller.signal
+    }));
+    const responseText = await response.text().catch(() => '');
+    let result = {};
+    try{ result = responseText ? JSON.parse(responseText) : {}; }catch(parseErr){}
+
+    if(response.redirected && /\/login(?:\?|$)/i.test(response.url || '')){
+      throw makeTSRSyncError('Your session expired. Sign in again, then the queued TSR will resume safely.', {
+        phase,
+        httpStatus: 401,
+        errorCode: 'session_expired',
+        retryable: false,
+        requiresLogin: true
+      });
+    }
+    if(!response.ok){
+      const message = result.message || result.error || result.detail || responseText.slice(0, 240) || `HTTP ${response.status}`;
+      throw makeTSRSyncError(message, {
+        phase,
+        httpStatus: response.status,
+        errorCode: `http_${response.status}`,
+        retryable: result.retryable === true || [408,425,429].includes(response.status) || response.status >= 500,
+        result,
+        responseText
+      });
+    }
+    return { response, result, responseText };
+  }catch(error){
+    if(error?.name === 'AbortError'){
+      throw makeTSRSyncError(`Connection timed out while ${phase.replaceAll('_',' ')}.`, {
+        phase,
+        errorCode: 'timeout',
+        retryable: true
+      });
+    }
+    if(error?.phase) throw error;
+    throw makeTSRSyncError(`Connection failed while ${phase.replaceAll('_',' ')}.`, {
+      phase,
+      errorCode: 'network_error',
+      retryable: true,
+      originalError: error
+    });
+  }finally{
+    clearTimeout(timeoutId);
+  }
+}
+
+async function checkOfflineTSRSyncHealth(){
+  const { result } = await fetchTSRSyncJSON(`/offline_tsr_sync_ping?_=${Date.now()}`, {
+    headers:{ 'Accept':'application/json' },
+    cache:'no-store'
+  }, { phase:'checking_connection', timeoutMs:12000 });
+  if(result.status !== 'success'){
+    throw makeTSRSyncError('The server did not confirm the connection.', {
+      phase:'checking_connection',
+      errorCode:'health_check_failed',
+      retryable:true
+    });
+  }
+  return result;
+}
+
 async function fetchNextOnlineTSRNumber(serviceDate=null){
   const dateParam = encodeURIComponent(serviceDate || getTSRSequenceDateISO());
-  const res = await fetch(`/get_next_online_tsr_number?service_date=${dateParam}&_=${Date.now()}`, { headers:{ 'Accept':'application/json' } });
-  const data = await res.json().catch(() => ({}));
-  if(!res.ok || !data.success || !data.tsr_number){
-    throw new Error(data.message || data.error || 'Unable to assign the next TSR number.');
+  const { result } = await fetchTSRSyncJSON(`/get_next_online_tsr_number?service_date=${dateParam}&_=${Date.now()}`, {
+    headers:{ 'Accept':'application/json' },
+    cache:'no-store'
+  }, { phase:'assigning_tsr_number', timeoutMs:15000 });
+  if(!result.success || !result.tsr_number){
+    throw makeTSRSyncError(result.message || result.error || 'Unable to assign the next TSR number.', {
+      phase:'assigning_tsr_number',
+      errorCode:'number_assignment_failed',
+      retryable:false
+    });
   }
-  return data.tsr_number;
+  return result.tsr_number;
 }
 
 let tsrNumberPreviewRefreshPending = false;
@@ -715,6 +802,7 @@ async function prepareTSRForFinalSave(data, { assignNumber=true, completionScope
     schedule_id: selectedSchedule?.id || data?.schedule_id || '',
     selectedSchedule: selectedSchedule || data?.selectedSchedule || null
   });
+  payload.submission_token = ensureTSRSubmissionToken(payload.submission_token);
   payload.completion_scope = completionScope || payload.completion_scope || await chooseTSRCompletionScope(selectedSchedule);
   if(assignNumber){
     const tsrNumber = await fetchNextOnlineTSRNumber(getTSRSequenceDateISO(payload));
@@ -1971,6 +2059,9 @@ function blobToBase64Payload(blob){
   return blobToDataURL(blob);
 }
 
+const TSR_SUPPORTING_ATTACHMENT_MAX_BYTES = 35 * 1024 * 1024;
+const TSR_SUPPORTING_ATTACHMENT_MAX_COUNT = 10;
+
 async function fileToQueuedAttachment(file, fallbackName='attachment'){
   const safeName = String(file?.name || fallbackName || 'attachment').replace(/[^\w.\-() ]+/g, '_').trim() || fallbackName;
   const dataUrl = await blobToBase64Payload(file);
@@ -2025,6 +2116,14 @@ async function handleTSRAttachmentInput(event){
   if(!files.length) return;
 
   for(const file of files){
+    if(offlineTSRAttachments.length >= TSR_SUPPORTING_ATTACHMENT_MAX_COUNT){
+      showTSRStatus(`Only ${TSR_SUPPORTING_ATTACHMENT_MAX_COUNT} supporting attachments are allowed per TSR.`, 'warning');
+      break;
+    }
+    if(Number(file?.size || 0) > TSR_SUPPORTING_ATTACHMENT_MAX_BYTES){
+      showTSRStatus(`${file?.name || 'Attachment'} is larger than 35MB and was not added.`, 'danger');
+      continue;
+    }
     const looksLikeCompletedTSR = /\.pdf$/i.test(file?.name || '') && /(^|[^a-z])tsr([^a-z]|$)/i.test(file?.name || '');
     if(looksLikeCompletedTSR){
       const choice = await offlineTSRConfirm({
@@ -2060,47 +2159,14 @@ function removeTSRAttachment(attachmentId){
   saveStandaloneTSRDraft(true);
 }
 
-function buildSignatureQueuedAttachments(data){
-  const signatures = data?.signatures || {};
-  const filenameBase = (buildTSRPDFFilename(data || collectTSRData()) || 'Online_TSR.pdf').replace(/\.pdf$/i, '');
-  const items = [];
-  if(signatures.serviced){
-    items.push({
-      id: `tsr-signature-serviced-${Date.now()}`,
-      name: `${filenameBase}_Serviced_Signature.png`,
-      type: 'image/png',
-      size: signatures.serviced.length,
-      data_url: signatures.serviced,
-      source: 'serviced_signature'
-    });
-  }
-  if(signatures.acknowledged){
-    items.push({
-      id: `tsr-signature-acknowledged-${Date.now()}`,
-      name: `${filenameBase}_Acknowledged_Signature.png`,
-      type: 'image/png',
-      size: signatures.acknowledged.length,
-      data_url: signatures.acknowledged,
-      source: 'acknowledged_signature'
-    });
-  }
-  return items;
-}
-
 function getCurrentTSRQueuedAttachments(data){
-  return normalizeQueuedAttachments([
-    ...offlineTSRAttachments,
-    ...buildSignatureQueuedAttachments(data || collectTSRData())
-  ]);
+  return normalizeQueuedAttachments(offlineTSRAttachments).filter(item => !isQueuedTSRSignatureAttachment(item));
 }
 
-function appendQueuedAttachmentsToFormData(formData, attachments){
-  normalizeQueuedAttachments(attachments).forEach((attachment, index) => {
-    const blob = dataURLToBlob(attachment.data_url || '');
-    const filename = attachment.name || `TSR_Attachment_${index + 1}`;
-    const fieldName = attachment.source && attachment.source.includes('signature') ? 'tsr_signature' : 'tsr_attachment';
-    formData.append(fieldName, blob, filename);
-  });
+function isQueuedTSRSignatureAttachment(attachment){
+  const source = String(attachment?.source || '').toLowerCase();
+  const id = String(attachment?.id || '').toLowerCase();
+  return source.includes('signature') || id.includes('signature-serviced') || id.includes('signature-acknowledged');
 }
 
 function collectTSRData(){
@@ -2838,7 +2904,22 @@ async function loadOfflineTSRQueueStore(){
     }
   }
 
-  offlineTSRQueueCache = normalizeOfflineTSRQueue(queue);
+  const upgradedQueue = [];
+  let queueChanged = false;
+  for(const item of normalizeOfflineTSRQueue(queue)){
+    const upgraded = await upgradeOfflineTSRQueueItemForReliableSync(item);
+    upgradedQueue.push(upgraded);
+    if(JSON.stringify(upgraded) !== JSON.stringify(item)) queueChanged = true;
+  }
+
+  offlineTSRQueueCache = upgradedQueue;
+  if(queueChanged){
+    try{
+      await saveOfflineTSRQueueToIndexedDB(upgradedQueue);
+    }catch(err){
+      console.warn('[Offline TSR DB] Reliable-sync queue upgrade will retry later.', err);
+    }
+  }
   offlineTSRQueueLastLoadedAt = new Date().toISOString();
   writeOfflineTSRQueueLocalStorageFallback(offlineTSRQueueCache);
   return offlineTSRQueueCache;
@@ -2962,7 +3043,7 @@ async function convertQueuedAttachmentToBlobReference(attachment, ownerId, index
 
     return Object.assign({}, normalized, {
       blob_id: blobId,
-      data_url: normalized.data_url || '',
+      data_url: '',
       blob: undefined,
       stored_as: 'indexeddb_blob'
     });
@@ -2990,22 +3071,88 @@ async function prepareOfflineTSRQueueItemBlobs(queueItem, pdfBlob, attachments){
         source: 'generated_tsr_pdf'
       });
       preparedItem.pdf_blob_id = pdfBlobId;
-      preparedItem.pdf_data_url = preparedItem.pdf_data_url || '';
+      preparedItem.pdf_data_url = '';
       preparedItem.pdf_stored_as = 'indexeddb_blob';
     }catch(err){
       console.warn('[Offline TSR DB] PDF blob save failed. Keeping data_url fallback.', err);
     }
   }
 
+  const payload = Object.assign({}, preparedItem.payload || {});
+  const signatures = Object.assign({}, payload.signatures || {});
+  const realAttachments = [];
+  for(const attachment of normalizeQueuedAttachments(attachments)){
+    if(isQueuedTSRSignatureAttachment(attachment)){
+      const signatureType = String(attachment?.source || attachment?.id || '').toLowerCase().includes('acknowledged')
+        ? 'acknowledged'
+        : 'serviced';
+      if(!signatures[signatureType]){
+        signatures[signatureType] = await resolveQueuedAttachmentDataURL(attachment);
+      }
+      continue;
+    }
+    realAttachments.push(attachment);
+  }
+  for(const signatureType of ['serviced','acknowledged']){
+    if(signatures[signatureType]){
+      signatures[signatureType] = await normalizeTSRSignatureDataURL(signatures[signatureType]);
+    }
+  }
+
   const preparedAttachments = [];
-  for(let i = 0; i < normalizeQueuedAttachments(attachments).length; i += 1){
-    const prepared = await convertQueuedAttachmentToBlobReference(attachments[i], ownerId, i);
+  for(let i = 0; i < realAttachments.length; i += 1){
+    const prepared = await convertQueuedAttachmentToBlobReference(realAttachments[i], ownerId, i);
     if(prepared) preparedAttachments.push(prepared);
   }
 
   preparedItem.attachments = preparedAttachments;
-  preparedItem.payload = Object.assign({}, preparedItem.payload || {}, { attachments: preparedAttachments });
+  payload.signatures = signatures;
+  preparedItem.payload = sanitizeTSRPayloadForTransport(payload);
+  preparedItem.submission_token = ensureTSRSubmissionToken(payload.submission_token || preparedItem.submission_token || preparedItem.id);
+  preparedItem.payload.submission_token = preparedItem.submission_token;
   return preparedItem;
+}
+
+async function resolveQueuedAttachmentDataURL(attachment){
+  if(attachment?.data_url) return attachment.data_url;
+  if(attachment?.blob_id){
+    const record = await loadOfflineTSRBlobRecord(attachment.blob_id);
+    if(record?.blob) return blobToDataURL(record.blob);
+  }
+  return '';
+}
+
+function ensureTSRSubmissionToken(existing=''){
+  const normalized = String(existing || '').replace(/[^A-Za-z0-9_-]+/g, '').slice(0, 100);
+  if(normalized.length >= 12) return normalized;
+  if(globalThis.crypto?.randomUUID) return `tsr-${globalThis.crypto.randomUUID()}`;
+  return `tsr-${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function sanitizeTSRPayloadForTransport(payload){
+  const cleanPayload = Object.assign({}, payload || {});
+  delete cleanPayload.attachments;
+  cleanPayload.submission_token = ensureTSRSubmissionToken(cleanPayload.submission_token);
+  return cleanPayload;
+}
+
+async function upgradeOfflineTSRQueueItemForReliableSync(item){
+  const sourceAttachments = item?.attachments || item?.payload?.attachments || [];
+  const legacyPdfBlob = !item?.pdf_blob_id && item?.pdf_data_url
+    ? dataURLToBlob(item.pdf_data_url)
+    : null;
+  let upgraded = await prepareOfflineTSRQueueItemBlobs(
+    Object.assign({}, item),
+    legacyPdfBlob,
+    sourceAttachments
+  );
+  if(upgraded.pdf_blob_id) upgraded.pdf_data_url = '';
+  upgraded.sync_phase = upgraded.sync_phase || 'waiting';
+  upgraded.sync_attempts = Number(upgraded.sync_attempts || 0);
+  upgraded.uploaded_attachment_tokens = Array.isArray(upgraded.uploaded_attachment_tokens)
+    ? upgraded.uploaded_attachment_tokens
+    : [];
+  return upgraded;
 }
 
 async function resolveQueuedPDFBlob(item){
@@ -3016,32 +3163,14 @@ async function resolveQueuedPDFBlob(item){
   return dataURLToBlob(item?.pdf_data_url || '');
 }
 
-async function appendQueuedAttachmentToFormDataAsync(formData, attachment, index=0){
-  const normalized = normalizeQueuedAttachments([attachment])[0] || attachment || {};
-  const filename = normalized.name || `TSR_Attachment_${index + 1}`;
-  let blob = null;
-
-  if(normalized.blob_id){
-    const record = await loadOfflineTSRBlobRecord(normalized.blob_id);
-    if(record?.blob) blob = record.blob;
+async function resolveQueuedAttachmentBlob(attachment){
+  if(attachment?.blob instanceof Blob) return attachment.blob;
+  if(attachment?.blob_id){
+    const record = await loadOfflineTSRBlobRecord(attachment.blob_id);
+    if(record?.blob) return record.blob;
   }
-
-  if(!blob && normalized.data_url){
-    blob = dataURLToBlob(normalized.data_url || '');
-  }
-
-  if(!blob) return false;
-
-  const fieldName = normalized.source && normalized.source.includes('signature') ? 'tsr_signature' : 'tsr_attachment';
-  formData.append(fieldName, blob, filename);
-  return true;
-}
-
-async function appendQueuedAttachmentsToFormDataAsync(formData, attachments){
-  const normalized = normalizeQueuedAttachments(attachments);
-  for(let i = 0; i < normalized.length; i += 1){
-    await appendQueuedAttachmentToFormDataAsync(formData, normalized[i], i);
-  }
+  if(attachment?.data_url) return dataURLToBlob(attachment.data_url);
+  return null;
 }
 
 /* =========================================================
@@ -3263,6 +3392,9 @@ async function removeSyncedOfflineTSRQueueItem(queue, item, result={}){
 
 async function markFailedOfflineTSRQueueItem(queue, item, err){
   const result = err?.result || {};
+  const retryable = isRetriableTSRSyncError(err);
+  const attempts = Number(item?.sync_attempts || 0) + 1;
+  const retryDelay = [5000, 15000, 30000, 60000][Math.min(attempts - 1, 3)] || 120000;
   const failedItem = result?.conflict
     ? markOfflineTSRQueueItemAttempt(markOfflineTSRQueueItemConflict(item, result), {
         status: 'pending',
@@ -3270,7 +3402,13 @@ async function markFailedOfflineTSRQueueItem(queue, item, err){
       })
     : markOfflineTSRQueueItemAttempt(item, {
         status: 'pending',
-        last_error: err?.message || 'Sync failed'
+        last_error: err?.message || 'Sync failed',
+        sync_phase: err?.phase || item?.sync_phase || 'sync_failed',
+        error_code: err?.errorCode || (err?.httpStatus ? `http_${err.httpStatus}` : 'sync_failed'),
+        last_http_status: Number(err?.httpStatus || 0) || null,
+        retryable,
+        requires_login: !!err?.requiresLogin,
+        next_retry_at: retryable ? new Date(Date.now() + retryDelay).toISOString() : ''
       });
 
   const updatedQueue = normalizeOfflineTSRQueue(queue).map(existing => existing.id === item.id ? failedItem : existing);
@@ -3279,6 +3417,9 @@ async function markFailedOfflineTSRQueueItem(queue, item, err){
     last_failure_at: new Date().toISOString(),
     last_failure_item_id: item.id,
     last_error: failedItem.last_error || failedItem.conflict_message || 'Sync failed',
+    last_error_code: failedItem.error_code || '',
+    last_error_phase: failedItem.sync_phase || '',
+    next_retry_at: failedItem.next_retry_at || '',
     pending_count: updatedQueue.filter(entry => (entry?.status || 'pending') === 'pending').length
   });
   return updatedQueue;
@@ -3727,8 +3868,15 @@ function renderOfflineTSRQueuePanel(){
     const task = item.task || item.payload?.selectedSchedule?.task || '';
     const filename = item.pdf_filename || 'Queued TSR PDF';
     const queuedAt = formatOfflineQueueTime(item.queued_at);
+    const realAttachments = normalizeQueuedAttachments(item.attachments || []).filter(att => !isQueuedTSRSignatureAttachment(att));
+    const attachmentBytes = realAttachments.reduce((total, att) => total + Number(att.size || 0), 0);
     const needsAttention = !!(item.last_error || item.conflict_message);
-    const statusLabel = needsAttention ? 'Needs attention' : (offlineTSRSyncRunning ? 'Syncing' : 'Waiting to sync');
+    const statusLabel = item.server_submission_id && needsAttention
+      ? 'TSR saved; attachment pending'
+      : needsAttention
+        ? (item.requires_login ? 'Sign in required' : (item.retryable === false ? 'Needs attention' : 'Retry scheduled'))
+        : (offlineTSRSyncRunning ? 'Syncing' : 'Waiting to sync');
+    const phaseLabel = String(item.sync_phase || 'waiting').replaceAll('_', ' ');
     return `
       <div class="offline-tsr-queue-card ${needsAttention ? 'failed' : ''}">
         <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
@@ -3737,8 +3885,10 @@ function renderOfflineTSRQueuePanel(){
         </div>
         <div class="offline-tsr-queue-meta">${escapeHTML([product, task].filter(Boolean).join(' • ') || 'TSR draft')}</div>
         <div class="offline-tsr-queue-meta">${escapeHTML(filename)}</div>
-        ${Array.isArray(item.attachments) && item.attachments.length ? `<div class="text-muted">${item.attachments.length} extra attachment${item.attachments.length === 1 ? '' : 's'} queued</div>` : ''}
+        ${realAttachments.length ? `<div class="text-muted">${realAttachments.length} supporting attachment${realAttachments.length === 1 ? '' : 's'} queued (${escapeHTML(formatTSRFileSize(attachmentBytes))})</div>` : ''}
+        <div class="offline-tsr-queue-meta text-capitalize">Phase: ${escapeHTML(phaseLabel)}${item.attachment_progress ? ` (${escapeHTML(item.attachment_progress)})` : ''}</div>
         <div class="offline-tsr-queue-meta">Queued: ${escapeHTML(queuedAt)}</div>
+        ${Number(item.sync_attempts || 0) ? `<div class="text-muted">Attempts: ${Number(item.sync_attempts || 0)}${item.next_retry_at ? ` | Next retry: ${escapeHTML(formatOfflineQueueTime(item.next_retry_at))}` : ''}</div>` : ''}
         ${item.last_error ? `<div class="text-danger fw-bold">Last sync error: ${escapeHTML(item.last_error)}</div>` : ''}
         ${item.conflict_message ? `<div class="text-warning fw-bold"><i class="fa-solid fa-triangle-exclamation me-1"></i>${escapeHTML(item.conflict_message)}</div>` : ''}
         ${item.conflict_type ? `<div class="text-muted">Conflict type: ${escapeHTML(item.conflict_type)}</div>` : ''}
@@ -3785,15 +3935,104 @@ async function buildStandaloneTSRPDFBlobForUpload(data){
   return { blob:vectorPdf.blob, filename, page_count:vectorPdf.pageCount, pdf_format:'vector-v2' };
 }
 
-async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline'){
+async function uploadTSRSupportingAttachments(coreResult, attachments, options={}){
+  const submissionId = Number(coreResult?.submission_id || options.submissionId || 0);
+  if(!submissionId) throw makeTSRSyncError('Saved TSR submission ID is missing.', {
+    phase:'uploading_supporting_attachments',
+    errorCode:'missing_submission_id',
+    retryable:false
+  });
+
+  const normalized = normalizeQueuedAttachments(attachments)
+    .filter(item => !isQueuedTSRSignatureAttachment(item))
+    .slice(0, TSR_SUPPORTING_ATTACHMENT_MAX_COUNT);
+  const uploadedTokens = new Set(options.uploadedTokens || []);
+  const uploaded = [];
+
+  for(let index = 0; index < normalized.length; index += 1){
+    const attachment = normalized[index];
+    const token = ensureTSRSubmissionToken(attachment.id);
+    if(uploadedTokens.has(token)) continue;
+
+    const blob = await resolveQueuedAttachmentBlob(attachment);
+    if(!blob || !Number(blob.size || 0)){
+      throw makeTSRSyncError(`${attachment.name || 'Supporting attachment'} is missing from this device.`, {
+        phase:'uploading_supporting_attachment',
+        errorCode:'missing_attachment_blob',
+        retryable:false,
+        attachmentIndex:index,
+        attachmentToken:token,
+        coreResult
+      });
+    }
+    if(Number(blob.size || 0) > TSR_SUPPORTING_ATTACHMENT_MAX_BYTES){
+      throw makeTSRSyncError(`${attachment.name || 'Supporting attachment'} is larger than 35MB.`, {
+        phase:'uploading_supporting_attachment',
+        errorCode:'attachment_too_large',
+        retryable:false,
+        attachmentIndex:index,
+        attachmentToken:token,
+        coreResult
+      });
+    }
+
+    if(typeof options.onProgress === 'function'){
+      await options.onProgress({ phase:'uploading_supporting_attachment', index, total:normalized.length, attachment, uploadedTokens:[...uploadedTokens] });
+    }
+    const formData = new FormData();
+    formData.append('attachment_token', token);
+    formData.append('attachment', blob, attachment.name || `TSR_Attachment_${index + 1}`);
+    const headers = { 'Accept':'application/json' };
+    try{
+      const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
+      if(csrfToken) headers['X-CSRFToken'] = csrfToken;
+    }catch(tokenErr){}
+
+    let result = {};
+    try{
+      ({ result } = await fetchTSRSyncJSON(`/upload_online_tsr_attachment/${encodeURIComponent(submissionId)}`, {
+        method:'POST',
+        headers,
+        body:formData
+      }, { phase:'uploading_supporting_attachment', timeoutMs:120000 }));
+    }catch(error){
+      error.coreResult = coreResult;
+      error.uploadedTokens = [...uploadedTokens];
+      error.attachmentIndex = index;
+      error.attachmentToken = token;
+      throw error;
+    }
+    if(result.status !== 'success' && result.success !== true){
+      throw makeTSRSyncError(result.message || 'Supporting attachment upload failed.', {
+        phase:'uploading_supporting_attachment',
+        errorCode:'attachment_upload_failed',
+        retryable:result.retryable === true,
+        result,
+        coreResult
+      });
+    }
+    uploadedTokens.add(token);
+    uploaded.push(result);
+    if(typeof options.onUploaded === 'function'){
+      await options.onUploaded({ result, token, index, total:normalized.length, uploadedTokens:[...uploadedTokens] });
+    }
+  }
+  return { uploaded, uploadedTokens:[...uploadedTokens], total:normalized.length };
+}
+
+async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', options={}){
   const queue = await loadOfflineTSRQueueStore();
   const queuedAt = new Date().toISOString();
   const selectedSchedule = payload?.selectedSchedule || getSelectedStandaloneSchedule() || {};
   const pdfDataUrl = pdfPackage?.blob ? await blobToDataURL(pdfPackage.blob) : '';
 
   const queuedAttachments = getCurrentTSRQueuedAttachments(payload);
+  const transportPayload = sanitizeTSRPayloadForTransport(payload);
+  const submissionToken = ensureTSRSubmissionToken(transportPayload.submission_token || options.submissionToken);
+  transportPayload.submission_token = submissionToken;
   let queueItem = {
     id: `offline-tsr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    submission_token: submissionToken,
     status: 'pending',
     reason,
     queued_at: queuedAt,
@@ -3804,7 +4043,12 @@ async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline'){
     pdf_filename: pdfPackage?.filename || payload?.pdf_filename || payload?.download_filename || 'Online_TSR.pdf',
     pdf_data_url: pdfDataUrl,
     attachments: queuedAttachments,
-    payload: Object.assign({}, payload, { attachments: queuedAttachments })
+    uploaded_attachment_tokens: options.uploadedAttachmentTokens || [],
+    server_submission_id: options.coreResult?.submission_id || null,
+    core_saved_at: options.coreResult?.submission_id ? new Date().toISOString() : '',
+    server_result: options.coreResult || null,
+    sync_phase: options.coreResult?.submission_id ? 'uploading_attachments' : 'waiting',
+    payload: transportPayload
   };
 
   queueItem = await prepareOfflineTSRQueueItemBlobs(queueItem, pdfPackage?.blob || null, queuedAttachments);
@@ -3815,6 +4059,31 @@ async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline'){
 }
 
 let offlineTSRSyncRunning = false;
+let offlineTSRSyncRetryTimer = null;
+
+function clearOfflineTSRSyncRetryTimer(){
+  if(offlineTSRSyncRetryTimer){
+    clearTimeout(offlineTSRSyncRetryTimer);
+    offlineTSRSyncRetryTimer = null;
+  }
+}
+
+function scheduleOfflineTSRSyncRetry(error=null){
+  if(error && !isRetriableTSRSyncError(error)) return;
+  clearOfflineTSRSyncRetryTimer();
+  const pending = readOfflineTSRQueue().filter(item =>
+    (item?.status || 'pending') === 'pending' && item?.retryable !== false
+  );
+  if(!pending.length) return;
+  const highestAttempts = Math.max(0, ...pending.map(item => Number(item.sync_attempts || 0)));
+  const delayIndex = Math.min(Math.max(highestAttempts - 1, 0), 4);
+  const delay = [5000,15000,30000,60000][delayIndex] || 120000;
+  offlineTSRSyncRetryTimer = setTimeout(() => {
+    offlineTSRSyncRetryTimer = null;
+    if(document.visibilityState !== 'hidden') syncOfflineTSRQueue({ silent:true });
+    else scheduleOfflineTSRSyncRetry(error);
+  }, delay);
+}
 
 function isOfflineTSRDuplicateOrConflictSuccess(result){
   return Boolean(
@@ -3843,86 +4112,127 @@ function markOfflineTSRQueueItemConflict(item, result){
   });
 }
 
+async function patchOfflineTSRQueueItem(itemId, update={}){
+  const queue = await loadOfflineTSRQueueStore();
+  let patched = null;
+  const updatedQueue = queue.map(existing => {
+    if(existing.id !== itemId) return existing;
+    patched = Object.assign({}, existing, update, { updated_at:new Date().toISOString() });
+    return patched;
+  });
+  if(patched) await writeOfflineTSRQueueAsync(updatedQueue);
+  return patched;
+}
+
 async function uploadQueuedOfflineTSR(item, numberRetryCount=0){
-  const payload = Object.assign({}, item?.payload || {});
+  const payload = sanitizeTSRPayloadForTransport(Object.assign({}, item?.payload || {}));
+  payload.submission_token = ensureTSRSubmissionToken(item?.submission_token || payload.submission_token || item?.id);
   const isVectorQueue = String(payload._tsr_form_version || '').toLowerCase() === 'vector-pdf-v2';
   const finalizedPayload = Object.assign({}, payload, {
     schedule_id: payload.schedule_id || item?.schedule_id || payload.selectedScheduleId || payload.selectedSchedule?.id || '',
     completion_scope: payload.completion_scope || item?.completion_scope || 'linked_all',
     _offline_queue_preserve_pdf: true
   });
-  if(isVectorQueue){
-    const serviceDate = finalizedPayload['tsr-service-date'] || finalizedPayload.service_date || finalizedPayload.selectedSchedule?.date_iso || todayISO();
-    const finalNumber = await fetchNextOnlineTSRNumber(serviceDate);
-    finalizedPayload['tsr-number'] = finalNumber;
-    finalizedPayload.tsr_number = finalNumber;
-  }else{
-    delete finalizedPayload['tsr-number'];
-    delete finalizedPayload.tsr_number;
-  }
-  const formData = new FormData();
-  let filename = item?.pdf_filename || payload?.pdf_filename || payload?.download_filename || 'Online_TSR.pdf';
-  let pdfBlob = null;
-  if(isVectorQueue){
-    filename = buildTSRPDFFilename(finalizedPayload);
-    const vectorPdf = await buildVectorTSRPDFBlob(finalizedPayload, filename.replace(/\.pdf$/i, ''));
-    pdfBlob = vectorPdf.blob;
-  }else{
-    pdfBlob = await resolveQueuedPDFBlob(item);
-  }
+  let result = item?.server_submission_id
+    ? Object.assign({}, item?.server_result || {}, { submission_id:item.server_submission_id, status:'success', success:true })
+    : null;
 
-  if(!pdfBlob || !Number(pdfBlob.size || 0)){
-    const blobError = new Error('Queued TSR PDF is missing on this device. Please remove this queue item and recreate the TSR if needed.');
-    blobError.phase = 'missing_pdf_blob';
-    throw blobError;
-  }
-
-  formData.append('payload_json', JSON.stringify(finalizedPayload));
-  formData.append('pdf_filename', filename);
-  formData.append('tsr_pdf', pdfBlob, filename);
-  await appendQueuedAttachmentsToFormDataAsync(formData, item?.attachments || finalizedPayload?.attachments || []);
-
-  const headers = { 'Accept': 'application/json' };
-  try{
-    if(typeof getCSRFToken === 'function'){
-      const token = getCSRFToken();
-      if(token) headers['X-CSRFToken'] = token;
+  if(!result?.submission_id){
+    await patchOfflineTSRQueueItem(item.id, { sync_phase:'assigning_tsr_number', last_error:'' });
+    if(isVectorQueue){
+      const serviceDate = finalizedPayload['tsr-service-date'] || finalizedPayload.service_date || finalizedPayload.selectedSchedule?.date_iso || todayISO();
+      const finalNumber = await fetchNextOnlineTSRNumber(serviceDate);
+      finalizedPayload['tsr-number'] = finalNumber;
+      finalizedPayload.tsr_number = finalNumber;
+    }else{
+      delete finalizedPayload['tsr-number'];
+      delete finalizedPayload.tsr_number;
     }
-  }catch(tokenErr){
-    console.warn('[Offline TSR] CSRF token lookup skipped', tokenErr);
+
+    await patchOfflineTSRQueueItem(item.id, { sync_phase:'generating_pdf' });
+    let filename = item?.pdf_filename || payload?.pdf_filename || payload?.download_filename || 'Online_TSR.pdf';
+    let pdfBlob = null;
+    if(isVectorQueue){
+      filename = buildTSRPDFFilename(finalizedPayload);
+      const vectorPdf = await buildVectorTSRPDFBlob(finalizedPayload, filename.replace(/\.pdf$/i, ''));
+      pdfBlob = vectorPdf.blob;
+    }else{
+      pdfBlob = await resolveQueuedPDFBlob(item);
+    }
+    if(!pdfBlob || !Number(pdfBlob.size || 0)){
+      throw makeTSRSyncError('Queued TSR PDF is missing on this device. Keep this queue item and contact an administrator.', {
+        phase:'generating_pdf',
+        errorCode:'missing_pdf_blob',
+        retryable:false
+      });
+    }
+
+    const formData = new FormData();
+    formData.append('submission_token', finalizedPayload.submission_token);
+    formData.append('payload_json', JSON.stringify(sanitizeTSRPayloadForTransport(finalizedPayload)));
+    formData.append('pdf_filename', filename);
+    formData.append('tsr_pdf', pdfBlob, filename);
+    const headers = { 'Accept':'application/json', 'X-TSR-Submission-Token':finalizedPayload.submission_token };
+    try{
+      const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
+      if(csrfToken) headers['X-CSRFToken'] = csrfToken;
+    }catch(tokenErr){}
+
+    await patchOfflineTSRQueueItem(item.id, { sync_phase:'saving_tsr' });
+    try{
+      const coreResponse = await fetchTSRSyncJSON('/save_offline_tsr_online', {
+        method:'POST',
+        headers,
+        body:formData
+      }, { phase:'saving_tsr', timeoutMs:120000 });
+      result = coreResponse.result;
+    }catch(error){
+      const numberConflict = isVectorQueue && Number(error?.httpStatus) === 409 && /number|preview/i.test(error?.message || '');
+      if(numberConflict && numberRetryCount < 2){
+        return uploadQueuedOfflineTSR(item, numberRetryCount + 1);
+      }
+      throw error;
+    }
+    if(result.status !== 'success' && result.success !== true){
+      throw makeTSRSyncError(result.message || 'The server did not confirm the TSR save.', {
+        phase:'saving_tsr',
+        errorCode:'core_save_unconfirmed',
+        retryable:result.retryable === true,
+        result
+      });
+    }
+    await patchOfflineTSRQueueItem(item.id, {
+      sync_phase:'uploading_attachments',
+      server_submission_id:result.submission_id,
+      server_result:result,
+      core_saved_at:new Date().toISOString(),
+      pdf_filename:result.pdf_filename || filename,
+      last_error:''
+    });
   }
 
-  const res = await fetch('/save_offline_tsr_online', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers,
-    body: formData
+  const attachmentResult = await uploadTSRSupportingAttachments(result, item?.attachments || [], {
+    uploadedTokens:item?.uploaded_attachment_tokens || [],
+    onProgress: async ({ index, total }) => {
+      await patchOfflineTSRQueueItem(item.id, {
+        sync_phase:'uploading_attachments',
+        attachment_progress:`${index + 1}/${total}`
+      });
+    },
+    onUploaded: async ({ uploadedTokens, index, total }) => {
+      await patchOfflineTSRQueueItem(item.id, {
+        sync_phase:'uploading_attachments',
+        uploaded_attachment_tokens:uploadedTokens,
+        attachment_progress:`${index + 1}/${total}`,
+        last_error:''
+      });
+    }
   });
-
-  const responseText = await res.text().catch(() => '');
-  let result = {};
-  try{
-    result = responseText ? JSON.parse(responseText) : {};
-  }catch(parseErr){
-    result = {
-      status: 'error',
-      message: responseText ? responseText.slice(0, 240) : ''
-    };
-  }
-
-  const okStatus = result.status === 'success' || result.success === true;
-  if(!res.ok || !okStatus){
-    if(isVectorQueue && res.status === 409 && numberRetryCount < 2){
-      return uploadQueuedOfflineTSR(item, numberRetryCount + 1);
-    }
-    const serverMessage = result.message || result.error || result.detail || responseText.slice(0, 240);
-    const syncError = new Error(serverMessage ? `Queued TSR sync failed (${res.status}): ${serverMessage}` : `Queued TSR sync failed (HTTP ${res.status}).`);
-    syncError.result = result;
-    syncError.httpStatus = res.status;
-    syncError.responseText = responseText;
-    throw syncError;
-  }
-  return result;
+  return Object.assign({}, result, {
+    extra_attachment_count:attachmentResult.uploadedTokens.length,
+    uploaded_attachment_tokens:attachmentResult.uploadedTokens,
+    sync_phase:'complete'
+  });
 }
 
 async function syncOfflineTSRQueue({ silent=false } = {}){
@@ -3939,19 +4249,46 @@ async function syncOfflineTSRQueue({ silent=false } = {}){
   }
 
   let queue = await loadOfflineTSRQueueStore();
-  let pending = queue.filter(item => (item?.status || 'pending') === 'pending');
+  let pending = queue.filter(item =>
+    (item?.status || 'pending') === 'pending' &&
+    (item?.retryable !== false || item?.requires_login === true)
+  );
 
   if(!pending.length){
+    clearOfflineTSRSyncRetryTimer();
     renderOfflineTSRQueuePanel();
     await saveOfflineTSRSyncMetadata({
       last_checked_at: new Date().toISOString(),
-      pending_count: 0,
-      last_status: 'idle_no_pending'
+      pending_count: queue.filter(item => (item?.status || 'pending') === 'pending').length,
+      last_status: queue.length ? 'attention_required' : 'idle_no_pending'
     });
     return;
   }
 
+  try{
+    await checkOfflineTSRSyncHealth();
+  }catch(connectionError){
+    const latestQueue = await loadOfflineTSRQueueStore();
+    const firstPending = latestQueue.find(entry =>
+      (entry?.status || 'pending') === 'pending' &&
+      (entry?.retryable !== false || entry?.requires_login === true)
+    );
+    if(firstPending){
+      await markFailedOfflineTSRQueueItem(latestQueue, firstPending, connectionError);
+    }
+    await saveOfflineTSRSyncMetadata({
+      last_status:'connection_unavailable',
+      last_error:connectionError?.message || 'Connection unavailable',
+      last_error_phase:connectionError?.phase || 'checking_connection'
+    });
+    scheduleOfflineTSRSyncRetry(connectionError);
+    if(!silent) showTSRStatus(connectionError?.message || 'Unable to reach the server. Sync will retry automatically.', 'warning');
+    renderOfflineTSRQueuePanel();
+    return;
+  }
+
   offlineTSRSyncRunning = true;
+  clearOfflineTSRSyncRetryTimer();
   await saveOfflineTSRSyncMetadata({
     last_started_at: new Date().toISOString(),
     last_status: 'syncing',
@@ -3980,7 +4317,10 @@ async function syncOfflineTSRQueue({ silent=false } = {}){
       }catch(err){
         failureCount += 1;
         console.warn('[Offline TSR] Queued TSR sync failed', currentItem, err);
-        queue = await markFailedOfflineTSRQueueItem(currentQueue, currentItem, err);
+        const latestFailureQueue = await loadOfflineTSRQueueStore();
+        const latestFailureItem = latestFailureQueue.find(existing => existing.id === currentItem.id) || currentItem;
+        queue = await markFailedOfflineTSRQueueItem(latestFailureQueue, latestFailureItem, err);
+        scheduleOfflineTSRSyncRetry(err);
       }
     }
   }finally{
@@ -3990,6 +4330,7 @@ async function syncOfflineTSRQueue({ silent=false } = {}){
 
   const latestQueue = await loadOfflineTSRQueueStore();
   const remaining = latestQueue.filter(item => (item?.status || 'pending') === 'pending').length;
+  if(!remaining) clearOfflineTSRSyncRetryTimer();
 
   await saveOfflineTSRSyncMetadata({
     last_finished_at: new Date().toISOString(),
@@ -4053,7 +4394,10 @@ async function retryOfflineTSRQueueItem(itemId){
       pending_count: updatedQueue.filter(entry => (entry?.status || 'pending') === 'pending').length
     });
   }catch(err){
-    await markFailedOfflineTSRQueueItem(await loadOfflineTSRQueueStore(), item, err);
+    const latestQueue = await loadOfflineTSRQueueStore();
+    const latestItem = latestQueue.find(entry => entry.id === item.id) || item;
+    await markFailedOfflineTSRQueueItem(latestQueue, latestItem, err);
+    scheduleOfflineTSRSyncRetry(err);
     await saveOfflineTSRSyncMetadata({
       last_status: 'manual_retry_failed',
       last_retry_item_id: itemId,
@@ -4108,6 +4452,7 @@ async function verifyOfflineTSRQueuePersistence(){
 
 function scheduleOfflineTSRAutoSync(){
   window.addEventListener('online', () => {
+    clearOfflineTSRSyncRetryTimer();
     refreshOfflineTSRQueueStore().then(() => {
       updateOfflineTSRStatusIntelligence();
       showTSRStatus('Internet connection restored. Checking pending offline TSR queue...', 'info');
@@ -4115,6 +4460,7 @@ function scheduleOfflineTSRAutoSync(){
     });
   });
   window.addEventListener('offline', () => {
+    clearOfflineTSRSyncRetryTimer();
     refreshOfflineTSRQueueStore().then(() => {
       updateOfflineTSRStatusIntelligence();
       showTSRStatus('Offline mode enabled. TSR saves will be queued locally until internet returns.', 'warning');
@@ -4124,6 +4470,16 @@ function scheduleOfflineTSRAutoSync(){
   window.addEventListener('storage', event => {
     if([OFFLINE_TSR_QUEUE_KEY, OFFLINE_TSR_QUEUE_BACKUP_KEY, OFFLINE_TSR_QUEUE_META_KEY].includes(event.key)){
       refreshOfflineTSRQueueStore();
+    }
+  });
+  window.addEventListener('focus', () => {
+    if(navigator.onLine && readOfflineTSRQueue().length){
+      syncOfflineTSRQueue({ silent:true });
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible' && navigator.onLine && readOfflineTSRQueue().length){
+      syncOfflineTSRQueue({ silent:true });
     }
   });
   window.addEventListener('pagehide', () => {
@@ -4137,18 +4493,20 @@ function scheduleOfflineTSRAutoSync(){
 }
 
 async function submitStandaloneTSROnline(data, options={}){
-  const payload = options.payload || await prepareTSRForFinalSave(data, { assignNumber:true });
+  const payload = sanitizeTSRPayloadForTransport(options.payload || await prepareTSRForFinalSave(data, { assignNumber:true }));
+  payload.submission_token = ensureTSRSubmissionToken(payload.submission_token);
   const pdfPackage = options.pdfPackage || await buildStandaloneTSRPDFBlobForUpload(payload);
   const formData = new FormData();
   const currentAttachments = getCurrentTSRQueuedAttachments(payload);
-  const payloadWithAttachments = Object.assign({}, payload, { attachments: currentAttachments });
-  formData.append('payload_json', JSON.stringify(payloadWithAttachments));
+  formData.append('submission_token', payload.submission_token);
+  formData.append('payload_json', JSON.stringify(payload));
   formData.append('pdf_filename', pdfPackage.filename);
   formData.append('tsr_pdf', pdfPackage.blob, pdfPackage.filename);
-  appendQueuedAttachmentsToFormData(formData, currentAttachments);
 
+  let coreResult = null;
+  let uploadedAttachmentTokens = [];
   try{
-    const headers = { 'Accept': 'application/json' };
+    const headers = { 'Accept':'application/json', 'X-TSR-Submission-Token':payload.submission_token };
     try{
       if(typeof getCSRFToken === 'function'){
         const token = getCSRFToken();
@@ -4158,28 +4516,38 @@ async function submitStandaloneTSROnline(data, options={}){
       console.warn('[Offline TSR] CSRF token lookup skipped', tokenErr);
     }
 
-    const res = await fetch('/save_offline_tsr_online', {
-      method: 'POST',
-      credentials: 'same-origin',
+    const coreResponse = await fetchTSRSyncJSON('/save_offline_tsr_online', {
+      method:'POST',
       headers,
-      body: formData
+      body:formData
+    }, { phase:'saving_tsr', timeoutMs:120000 });
+    coreResult = coreResponse.result;
+    if(coreResult.status !== 'success' && coreResult.success !== true){
+      throw makeTSRSyncError(coreResult.message || 'The server did not confirm the TSR save.', {
+        phase:'saving_tsr',
+        errorCode:'core_save_unconfirmed',
+        retryable:coreResult.retryable === true,
+        result:coreResult
+      });
+    }
+    const attachmentResult = await uploadTSRSupportingAttachments(coreResult, currentAttachments, {
+      uploadedTokens:uploadedAttachmentTokens,
+      onUploaded: async ({ uploadedTokens }) => { uploadedAttachmentTokens = uploadedTokens; }
     });
-    const responseText = await res.text().catch(() => '');
-    let result = {};
-    try{
-      result = responseText ? JSON.parse(responseText) : {};
-    }catch(parseErr){
-      result = { status:'error', message: responseText ? responseText.slice(0, 240) : '' };
-    }
-    const okStatus = result.status === 'success' || result.success === true;
-    if(!res.ok || !okStatus){
-      const serverMessage = result.message || result.error || result.detail || responseText.slice(0, 240);
-      throw new Error(serverMessage ? `Online TSR save failed (${res.status}): ${serverMessage}` : `Online TSR save failed (HTTP ${res.status}).`);
-    }
-    return result;
+    return Object.assign({}, coreResult, {
+      extra_attachment_count:attachmentResult.uploadedTokens.length,
+      uploaded_attachment_tokens:attachmentResult.uploadedTokens
+    });
   }catch(err){
+    uploadedAttachmentTokens = err?.uploadedTokens || uploadedAttachmentTokens;
+    coreResult = err?.coreResult || coreResult;
+    if(!isRetriableTSRSyncError(err)) throw err;
     const reason = navigator.onLine ? 'server_unavailable' : 'offline';
-    const queuedItem = await queueStandaloneTSROffline(payloadWithAttachments, pdfPackage, reason);
+    const queuedItem = await queueStandaloneTSROffline(payload, pdfPackage, reason, {
+      coreResult,
+      uploadedAttachmentTokens,
+      submissionToken:payload.submission_token
+    });
     const queueError = new Error('TSR queued locally for later sync.');
     queueError.queued = true;
     queueError.queueItem = queuedItem;
@@ -4210,23 +4578,23 @@ async function submitStandaloneTSRRevisionOnline(data, options={}){
   }
 
   const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule();
-  const payload = options.payload || Object.assign({}, data || {}, {
+  const payload = sanitizeTSRPayloadForTransport(options.payload || Object.assign({}, data || {}, {
     schedule_id: onlineTSRRevisionContext.shift_id || selectedSchedule?.id || data?.schedule_id || '',
     selectedSchedule: selectedSchedule || data?.selectedSchedule || null,
     revision_reason: revisionReason,
     parent_submission_id: onlineTSRRevisionContext.submission_id
-  });
+  }));
+  payload.submission_token = ensureTSRSubmissionToken(payload.submission_token);
   const pdfPackage = options.pdfPackage || await buildStandaloneTSRPDFBlobForUpload(payload);
   const formData = new FormData();
   const currentAttachments = getCurrentTSRQueuedAttachments(payload);
-  const payloadWithAttachments = Object.assign({}, payload, { attachments: currentAttachments });
-  formData.append('payload_json', JSON.stringify(payloadWithAttachments));
+  formData.append('submission_token', payload.submission_token);
+  formData.append('payload_json', JSON.stringify(payload));
   formData.append('revision_reason', revisionReason);
   formData.append('pdf_filename', pdfPackage.filename);
   formData.append('tsr_pdf', pdfPackage.blob, pdfPackage.filename);
-  appendQueuedAttachmentsToFormData(formData, currentAttachments);
 
-  const headers = { 'Accept': 'application/json' };
+  const headers = { 'Accept':'application/json', 'X-TSR-Submission-Token':payload.submission_token };
   try{
     if(typeof getCSRFToken === 'function'){
       const token = getCSRFToken();
@@ -4236,25 +4604,24 @@ async function submitStandaloneTSRRevisionOnline(data, options={}){
     console.warn('[Offline TSR] CSRF token lookup skipped', tokenErr);
   }
 
-  const res = await fetch(`/revise_online_tsr_submission/${encodeURIComponent(onlineTSRRevisionContext.submission_id)}`, {
-    method: 'POST',
-    credentials: 'same-origin',
+  const { result } = await fetchTSRSyncJSON(`/revise_online_tsr_submission/${encodeURIComponent(onlineTSRRevisionContext.submission_id)}`, {
+    method:'POST',
     headers,
-    body: formData
+    body:formData
+  }, { phase:'saving_corrected_tsr', timeoutMs:120000 });
+  if(result.status !== 'success' && result.success !== true){
+    throw makeTSRSyncError(result.message || 'The server did not confirm the corrected TSR save.', {
+      phase:'saving_corrected_tsr',
+      errorCode:'revision_save_unconfirmed',
+      retryable:result.retryable === true,
+      result
+    });
+  }
+  const attachmentResult = await uploadTSRSupportingAttachments(result, currentAttachments);
+  return Object.assign({}, result, {
+    extra_attachment_count:attachmentResult.uploadedTokens.length,
+    uploaded_attachment_tokens:attachmentResult.uploadedTokens
   });
-  const responseText = await res.text().catch(() => '');
-  let result = {};
-  try{
-    result = responseText ? JSON.parse(responseText) : {};
-  }catch(parseErr){
-    result = { status:'error', message: responseText ? responseText.slice(0, 240) : '' };
-  }
-  const okStatus = result.status === 'success' || result.success === true;
-  if(!res.ok || !okStatus){
-    const serverMessage = result.message || result.error || result.detail || responseText.slice(0, 240);
-    throw new Error(serverMessage ? `Corrected TSR save failed (${res.status}): ${serverMessage}` : `Corrected TSR save failed (HTTP ${res.status}).`);
-  }
-  return result;
 }
 
 let finalTSRPreviewState = null;
@@ -4380,6 +4747,7 @@ async function beginStandaloneTSRFinalPreview(data){
         completion_scope: data?.completion_scope || await chooseTSRCompletionScope(selectedSchedule)
       });
     }
+    payload.submission_token = ensureTSRSubmissionToken(payload.submission_token);
     const pdfPackage = await buildStandaloneTSRPDFBlobForUpload(payload);
     const offlineNote = !navigator.onLine && !isRevision
       ? 'Offline mode: this exact PDF will be queued now. The TSR number may be reconfirmed during sync.'
@@ -4462,7 +4830,7 @@ async function finishStandaloneTSRFinalSave(state){
         showTSRStatus(`TSR queued locally for later sync. Pending offline TSRs: ${queue.length}. Page cleared for the next TSR.`, 'warning');
       }else{
         await saveStandaloneTSRDraftLocally(payload);
-        showTSRStatus('Unable to save TSR online right now. Draft was kept locally on this device.', 'danger');
+        showTSRStatus(`${err?.message || 'Unable to save TSR online right now.'} Draft was kept locally on this device.`, 'danger');
       }
       renderOfflineTSRQueuePanel();
       await renderStandaloneTSRDraftPanel();
@@ -4652,7 +5020,44 @@ function bindSignature(){ const start=e=>{e.preventDefault();signatureDrawing=tr
 function clearSignaturePad(){ if(!signatureCtx)return; signatureCtx.clearRect(0,0,signatureCanvas.width,signatureCanvas.height); }
 function importSignatureImage(event){ const file=event.target.files[0]; if(!file)return; const reader=new FileReader(); reader.onload=()=>{ const img=new Image(); img.onload=()=>{ clearSignaturePad(); const rect=signatureCanvas.getBoundingClientRect(); signatureCtx.drawImage(img,0,0,rect.width,rect.height); }; img.src=reader.result; }; reader.readAsDataURL(file); }
 function signaturePadHasInk(){ if(!signatureCanvas || !signatureCtx) return false; const width=signatureCanvas.width; const height=signatureCanvas.height; if(!width || !height) return false; const pixels=signatureCtx.getImageData(0,0,width,height).data; for(let i=3;i<pixels.length;i+=4){ if(pixels[i] > 8) return true; } return false; }
-function applyMySavedSignatureToTSR(){
+async function normalizeTSRSignatureDataURL(dataUrl){
+  const source = String(dataUrl || '');
+  if(!source.startsWith('data:image/') || source.length <= 1400000) return source;
+  try{
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+      image.src = source;
+    });
+    const scale = Math.min(1, 1200 / Math.max(1, image.naturalWidth), 500 / Math.max(1, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const context = canvas.getContext('2d');
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const normalizedPng = canvas.toDataURL('image/png', 1.0);
+    if(normalizedPng.length <= 1400000) return normalizedPng;
+    const compact = document.createElement('canvas');
+    const compactScale = Math.min(1, 800 / canvas.width, 340 / canvas.height);
+    compact.width = Math.max(1, Math.round(canvas.width * compactScale));
+    compact.height = Math.max(1, Math.round(canvas.height * compactScale));
+    const compactContext = compact.getContext('2d');
+    compactContext.fillStyle = '#ffffff';
+    compactContext.fillRect(0, 0, compact.width, compact.height);
+    compactContext.imageSmoothingEnabled = true;
+    compactContext.imageSmoothingQuality = 'high';
+    compactContext.drawImage(canvas, 0, 0, compact.width, compact.height);
+    return compact.toDataURL('image/jpeg', 0.82);
+  }catch(error){
+    console.warn('[Offline TSR] Signature normalization skipped', error);
+    return source;
+  }
+}
+
+async function applyMySavedSignatureToTSR(){
   const target = document.getElementById('signature-target')?.value || 'serviced';
   if(target !== 'serviced'){
     showTSRStatus('Saved Settings signature is only for Serviced By.', 'warning');
@@ -4662,7 +5067,7 @@ function applyMySavedSignatureToTSR(){
     showTSRStatus('No saved signature found in Settings. Draw or upload your signature here, or save one in Settings first.', 'warning');
     return false;
   }
-  signatureData.serviced = mySavedSignatureData;
+  signatureData.serviced = await normalizeTSRSignatureDataURL(mySavedSignatureData);
   updateSignatureStatuses();
   saveStandaloneTSRDraft(true);
   bootstrap.Modal.getInstance(document.getElementById('standaloneSignatureModal'))?.hide();
@@ -4725,7 +5130,7 @@ async function validateTSRFinalSaveRequirements(data){
         backdropValue:'cancel'
       });
       if(choice === 'use_saved'){
-        signatureData.serviced = savedSignature;
+        signatureData.serviced = await normalizeTSRSignatureDataURL(savedSignature);
         data.signatures = signatureData;
         updateSignatureStatuses();
         await saveStandaloneTSRDraft(true);
@@ -4806,7 +5211,7 @@ async function confirmTSRRecommendedDetailsBeforeSave(data){
   showTSRStatus(`Please review: ${missing.map(item => item.label).join(', ')}. You can still Save TSR again and choose Save Anyway if not applicable.`, 'warning', { scroll:false });
   return false;
 }
-function saveSignatureFromModal(){ const target=document.getElementById('signature-target').value; if(!signaturePadHasInk()){ showTSRStatus('Please draw or upload a signature before saving it.', 'danger'); return; } signatureData[target]=signatureCanvas.toDataURL('image/png', 1.0); updateSignatureStatuses(); saveStandaloneTSRDraft(true); bootstrap.Modal.getInstance(document.getElementById('standaloneSignatureModal')).hide(); }
+async function saveSignatureFromModal(){ const target=document.getElementById('signature-target').value; if(!signaturePadHasInk()){ showTSRStatus('Please draw or upload a signature before saving it.', 'danger'); return; } signatureData[target]=await normalizeTSRSignatureDataURL(signatureCanvas.toDataURL('image/png', 1.0)); updateSignatureStatuses(); await saveStandaloneTSRDraft(true); bootstrap.Modal.getInstance(document.getElementById('standaloneSignatureModal')).hide(); }
 function updateSignatureStatuses(){ const servicedStatus=document.getElementById('serviced-signature-status'); const acknowledgedStatus=document.getElementById('acknowledged-signature-status'); if(servicedStatus){ servicedStatus.textContent=signatureData.serviced?'Signature saved locally.':'No signature saved.'; servicedStatus.classList.toggle('text-danger', !signatureData.serviced); servicedStatus.classList.toggle('fw-bold', !signatureData.serviced); } if(acknowledgedStatus) acknowledgedStatus.textContent=signatureData.acknowledged?'Signature saved locally.':'No signature saved.'; }
 function escapeHTML(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));} function escapeAttr(s){return escapeHTML(s).replace(/`/g,'&#96;');}
 
