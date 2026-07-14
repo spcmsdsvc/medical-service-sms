@@ -50,8 +50,11 @@ from flask import (
     url_for, 
     flash,
     send_file,
-    g
-, session)
+    g,
+    session,
+    after_this_request,
+    has_request_context,
+)
 
 from flask_sqlalchemy import SQLAlchemy
 
@@ -74,10 +77,11 @@ from werkzeug.utils import secure_filename
 from sqlalchemy import (
     func, 
     and_, 
-    or_
+    or_,
+    event,
 )
 
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import joinedload, selectinload, Session as SqlAlchemySession
 
 from datetime import (
     datetime, 
@@ -107,8 +111,16 @@ import tempfile
 import time
 import traceback
 import hashlib
+import mimetypes
 from email.message import EmailMessage
 from email.utils import formataddr
+
+from storage_backend import (
+    FileStorageBackend,
+    StorageObjectConflict,
+    StorageObjectNotFound,
+    sha256_file,
+)
 
 # --- APPLICATION CORE INITIALIZATION ---
 
@@ -503,6 +515,202 @@ else:
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = max(int(os.environ.get('MAX_UPLOAD_MB', '40')), 40) * 1024 * 1024
 
+file_storage = FileStorageBackend()
+bucket_connection_error_logged_at = 0.0
+STORAGE_PREFIX_REPORTS = 'reports'
+STORAGE_PREFIX_REIMBURSEMENTS = 'reimbursements'
+STORAGE_PREFIX_TRAVEL_REQUESTS = 'travel_requests'
+STORAGE_PREFIX_TRAVEL_LIQUIDATIONS = 'travel_liquidation_receipts'
+STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS = 'cash_advance_liquidation_receipts'
+
+
+def managed_storage_key(prefix, stored_filename):
+    safe_filename = os.path.basename(clean_str(stored_filename) or '')
+    if not safe_filename:
+        raise ValueError('Stored filename is empty.')
+    return file_storage.normalize_key(f"{prefix}/{safe_filename}")
+
+
+def managed_storage_content_type(filename, fallback='application/octet-stream'):
+    return mimetypes.guess_type(clean_str(filename) or '')[0] or fallback
+
+
+def managed_storage_write_bytes(prefix, local_path, data, original_filename='', content_type=''):
+    """Persist one new upload according to the active storage mode.
+
+    Bucket upload happens first. A failed bucket write is fatal and never falls
+    back to a volume-only success for a new object.
+    """
+    stored_filename = os.path.basename(local_path)
+    key = managed_storage_key(prefix, stored_filename)
+    bucket_written = False
+    try:
+        if file_storage.writes_bucket:
+            file_storage.upload_bytes(
+                key,
+                data,
+                content_type=content_type or managed_storage_content_type(original_filename or stored_filename),
+                original_filename=original_filename or stored_filename,
+            )
+            bucket_written = True
+        if file_storage.writes_volume:
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            temp_path = f"{local_path}.uploading-{secrets.token_hex(5)}"
+            try:
+                with open(temp_path, 'wb') as target_file:
+                    target_file.write(data)
+                os.replace(temp_path, local_path)
+            finally:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+        managed_storage_track_new_file(prefix, local_path)
+        return {'key': key, 'size': len(data), 'bucket_written': bucket_written}
+    except Exception:
+        if bucket_written:
+            try:
+                file_storage.delete(key)
+            except Exception:
+                pass
+        raise
+
+
+def managed_storage_adopt_file(prefix, local_path, original_filename='', content_type=''):
+    """Upload an already-generated local file and retain it only when configured."""
+    stored_filename = os.path.basename(local_path)
+    key = managed_storage_key(prefix, stored_filename)
+    try:
+        if file_storage.writes_bucket:
+            file_storage.upload_file(
+                key,
+                local_path,
+                content_type=content_type or managed_storage_content_type(original_filename or stored_filename),
+                original_filename=original_filename or stored_filename,
+            )
+    except Exception:
+        try:
+            if os.path.exists(local_path):
+                os.remove(local_path)
+        except OSError:
+            pass
+        raise
+    if not file_storage.writes_volume and os.path.exists(local_path):
+        os.remove(local_path)
+    managed_storage_track_new_file(prefix, local_path)
+    return key
+
+
+def managed_storage_track_new_file(prefix, local_path):
+    """Register a new object so a later database rollback removes it."""
+    try:
+        session_obj = db.session()
+        pending = session_obj.info.setdefault('_managed_storage_new_files', [])
+        item = (prefix, os.path.abspath(local_path))
+        if item not in pending:
+            pending.append(item)
+    except Exception:
+        # Called only from request/database flows after app initialization.
+        pass
+
+
+def managed_storage_object_exists(prefix, local_path):
+    key = managed_storage_key(prefix, os.path.basename(local_path))
+    if file_storage.bucket_enabled and file_storage.bucket_configured:
+        try:
+            if file_storage.head(key):
+                return True
+        except Exception:
+            if not file_storage.volume_fallback:
+                raise
+    return os.path.exists(local_path)
+
+
+def _register_managed_temp_cleanup(path):
+    if not has_request_context():
+        return
+    paths = getattr(g, '_managed_storage_temp_paths', None)
+    if paths is None:
+        paths = set()
+        g._managed_storage_temp_paths = paths
+
+        @after_this_request
+        def cleanup_managed_storage_temp_files(response):
+            for temp_path in list(getattr(g, '_managed_storage_temp_paths', set())):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+            return response
+    paths.add(path)
+
+
+def managed_storage_read_path(prefix, local_path):
+    """Return a readable path, preferring a private bucket object when enabled."""
+    key = managed_storage_key(prefix, os.path.basename(local_path))
+    if file_storage.bucket_enabled:
+        try:
+            data = file_storage.download_bytes(key)
+            suffix = os.path.splitext(local_path)[1]
+            temp_file = tempfile.NamedTemporaryFile(prefix='medical-storage-', suffix=suffix, delete=False)
+            try:
+                temp_file.write(data)
+                temp_path = temp_file.name
+            finally:
+                temp_file.close()
+            _register_managed_temp_cleanup(temp_path)
+            return temp_path
+        except StorageObjectNotFound:
+            if not file_storage.volume_fallback:
+                raise
+        except Exception:
+            if not file_storage.volume_fallback:
+                raise
+    if os.path.exists(local_path):
+        return local_path
+    raise FileNotFoundError(os.path.basename(local_path))
+
+
+def managed_storage_release_path(path):
+    """Immediately remove a materialized bucket temp file after processing."""
+    if not path:
+        return
+    try:
+        temp_root = os.path.abspath(tempfile.gettempdir())
+        absolute_path = os.path.abspath(path)
+        if (
+            os.path.commonpath([temp_root, absolute_path]) == temp_root
+            and os.path.basename(absolute_path).startswith('medical-storage-')
+            and os.path.isfile(absolute_path)
+        ):
+            os.remove(absolute_path)
+            if has_request_context():
+                getattr(g, '_managed_storage_temp_paths', set()).discard(absolute_path)
+    except (OSError, ValueError):
+        pass
+
+
+def managed_storage_delete(prefix, local_path):
+    key = managed_storage_key(prefix, os.path.basename(local_path))
+    errors = []
+    if file_storage.bucket_enabled and file_storage.bucket_configured:
+        try:
+            file_storage.delete(key)
+        except Exception as exc:
+            errors.append(exc)
+    try:
+        if os.path.exists(local_path):
+            os.remove(local_path)
+    except OSError as exc:
+        errors.append(exc)
+    if errors:
+        raise errors[0]
+
+
+def managed_storage_rollback_new_file(prefix, local_path):
+    try:
+        managed_storage_delete(prefix, local_path)
+    except Exception as exc:
+        print(f"[STORAGE] New object rollback warning: {exc}", flush=True)
+
 # SECURITY UPDATE: Allowed file extensions for Technical Service Reports
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'docx', 'xlsx', 'csv'}
 
@@ -549,6 +757,18 @@ if not os.path.exists(UPLOAD_FOLDER):
         print(f"CRITICAL ERROR: Directory initialization failure: {folder_err}")
 
 db = SQLAlchemy(app)
+
+
+@event.listens_for(SqlAlchemySession, 'after_commit')
+def clear_committed_managed_storage_files(session_obj):
+    session_obj.info.pop('_managed_storage_new_files', None)
+
+
+@event.listens_for(SqlAlchemySession, 'after_rollback')
+def rollback_managed_storage_files(session_obj):
+    pending = session_obj.info.pop('_managed_storage_new_files', [])
+    for prefix, local_path in pending:
+        managed_storage_rollback_new_file(prefix, local_path)
 
 
 # --- LIGHTWEIGHT PERFORMANCE DIAGNOSTICS ---
@@ -758,7 +978,10 @@ def get_unique_upload_filename(preferred_filename):
     candidate = f"{stem}{ext}"
     counter = 2
 
-    while os.path.exists(os.path.join(app.config['UPLOAD_FOLDER'], candidate)):
+    while managed_storage_object_exists(
+        STORAGE_PREFIX_REPORTS,
+        os.path.join(app.config['UPLOAD_FOLDER'], candidate)
+    ):
         candidate = f"{stem}_{counter}{ext}"
         counter += 1
 
@@ -8894,6 +9117,12 @@ def attach_online_tsr_pdf_to_shift(shift, pdf_filename):
     disk_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_filename)
 
     os.replace(source_path, disk_path)
+    managed_storage_adopt_file(
+        STORAGE_PREFIX_REPORTS,
+        disk_path,
+        original_filename=safe_original,
+        content_type='application/pdf',
+    )
 
     file_rec = ShiftFile(
         shift_id=shift.id,
@@ -8934,10 +9163,17 @@ def attach_uploaded_online_tsr_pdf_to_shift(shift, uploaded_pdf, display_filenam
     disk_filename = get_unique_upload_filename(safe_original)
     disk_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_filename)
 
-    uploaded_pdf.save(disk_path)
-
-    if not os.path.exists(disk_path) or os.path.getsize(disk_path) <= 0:
+    uploaded_pdf.stream.seek(0)
+    pdf_bytes = uploaded_pdf.read()
+    if not pdf_bytes:
         raise ValueError('Uploaded TSR PDF was empty or could not be saved.')
+    managed_storage_write_bytes(
+        STORAGE_PREFIX_REPORTS,
+        disk_path,
+        pdf_bytes,
+        original_filename=safe_original,
+        content_type='application/pdf',
+    )
 
     file_rec = ShiftFile(
         shift_id=shift.id,
@@ -9022,14 +9258,17 @@ def attach_uploaded_online_tsr_extra_files_to_shift(shift, excluded_file_ids=Non
 
             disk_filename = get_unique_upload_filename(original_name)
             disk_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_filename)
-            file_obj.save(disk_path)
-
-            if not os.path.exists(disk_path) or os.path.getsize(disk_path) <= 0:
-                try:
-                    os.remove(disk_path)
-                except OSError:
-                    pass
+            file_obj.stream.seek(0)
+            file_bytes = file_obj.read()
+            if not file_bytes:
                 continue
+            managed_storage_write_bytes(
+                STORAGE_PREFIX_REPORTS,
+                disk_path,
+                file_bytes,
+                original_filename=original_name,
+                content_type=clean_str(getattr(file_obj, 'mimetype', None)) or '',
+            )
 
             file_rec = ShiftFile(
                 shift_id=shift.id,
@@ -12064,6 +12303,7 @@ def get_backup_source_paths():
     """
     candidates = [
         ('app.py', os.path.join(basedir, 'app.py')),
+        ('storage_backend.py', os.path.join(basedir, 'storage_backend.py')),
         ('templates', os.path.join(basedir, 'templates')),
         ('static', os.path.join(basedir, 'static')),
         ('forms', os.path.join(basedir, 'forms')),
@@ -12088,6 +12328,346 @@ def get_backup_source_paths():
         })
 
     return source_paths
+
+
+def managed_storage_roots():
+    """Return the five upload families included in the bucket migration."""
+    return [
+        (STORAGE_PREFIX_REPORTS, app.config.get('UPLOAD_FOLDER')),
+        (STORAGE_PREFIX_REIMBURSEMENTS, reimbursement_receipt_upload_root()),
+        (STORAGE_PREFIX_TRAVEL_REQUESTS, travel_request_attachment_upload_root()),
+        (STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, travel_liquidation_receipt_folder()),
+        (STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, cash_advance_liquidation_receipt_folder()),
+    ]
+
+
+def managed_storage_volume_inventory(include_checksums=False):
+    """Inventory volume upload files without ever including the SQLite DB."""
+    inventory = []
+    seen_paths = set()
+    for prefix, root in managed_storage_roots():
+        if not root or not os.path.isdir(root):
+            continue
+        for current_root, _, filenames in os.walk(root):
+            for filename in filenames:
+                if prefix == STORAGE_PREFIX_REPORTS and filename in {
+                    '_tsr_email_metadata.json', '_bucket_migration_state.json'
+                }:
+                    continue
+                path = os.path.abspath(os.path.join(current_root, filename))
+                normalized_path = path.replace('\\', '/').lower()
+                if normalized_path in seen_paths or not os.path.isfile(path):
+                    continue
+                seen_paths.add(normalized_path)
+                relative_name = os.path.relpath(path, root).replace('\\', '/')
+                key = file_storage.normalize_key(f"{prefix}/{relative_name}")
+                item = {
+                    'prefix': prefix,
+                    'path': path,
+                    'key': key,
+                    'filename': filename,
+                    'size': os.path.getsize(path),
+                    'content_type': managed_storage_content_type(filename),
+                }
+                if include_checksums:
+                    item['checksum'] = sha256_file(path)
+                inventory.append(item)
+    inventory.sort(key=lambda item: item['key'])
+    return inventory
+
+
+def bucket_migration_state_path():
+    root = '/data' if os.environ.get('RAILWAY_ENVIRONMENT') else os.path.join(basedir, 'instance')
+    os.makedirs(root, exist_ok=True)
+    return os.path.join(root, '_bucket_migration_state.json')
+
+
+def load_bucket_migration_state():
+    path = bucket_migration_state_path()
+    try:
+        with open(path, 'r', encoding='utf-8') as state_file:
+            state = json.load(state_file)
+        return state if isinstance(state, dict) else {'files': {}}
+    except (OSError, ValueError, TypeError):
+        return {'files': {}}
+
+
+def save_bucket_migration_state(state):
+    path = bucket_migration_state_path()
+    temp_path = f"{path}.tmp-{secrets.token_hex(4)}"
+    state['updated_at'] = get_manila_time().isoformat()
+    try:
+        with open(temp_path, 'w', encoding='utf-8') as state_file:
+            json.dump(state, state_file, indent=2, sort_keys=True)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+def get_bucket_object_snapshot():
+    snapshot = {
+        'connected': False,
+        'connection_message': 'Bucket storage is not configured.',
+        'size_bytes': 0,
+        'size_human': '0 B',
+        'object_count': 0,
+        'objects': {},
+    }
+    if not file_storage.bucket_configured:
+        return snapshot
+    connection = file_storage.test_connection()
+    snapshot['connected'] = bool(connection.get('ok'))
+    snapshot['connection_message'] = connection.get('message') or ''
+    if not snapshot['connected']:
+        return snapshot
+    allowed_prefixes = {prefix for prefix, _ in managed_storage_roots()}
+    for object_info in file_storage.iter_objects():
+        top_prefix = object_info.key.split('/', 1)[0]
+        if top_prefix not in allowed_prefixes:
+            continue
+        snapshot['objects'][object_info.key] = {
+            'key': object_info.key,
+            'size': object_info.size,
+        }
+        snapshot['size_bytes'] += object_info.size
+        snapshot['object_count'] += 1
+    snapshot['size_human'] = bytes_to_human_size(snapshot['size_bytes'])
+    return snapshot
+
+
+def get_bucket_migration_report(include_objects=False):
+    volume_inventory = managed_storage_volume_inventory(include_checksums=False)
+    bucket_snapshot = get_bucket_object_snapshot()
+    state = load_bucket_migration_state()
+    file_state = state.get('files') if isinstance(state.get('files'), dict) else {}
+    counts = {
+        'verified': 0,
+        'migrated': 0,
+        'pending': 0,
+        'missing': 0,
+        'conflicting': 0,
+        'failed': 0,
+    }
+    items = []
+    bucket_objects = bucket_snapshot.get('objects') or {}
+    for item in volume_inventory:
+        saved = file_state.get(item['key']) or {}
+        bucket_item = bucket_objects.get(item['key'])
+        status = (clean_str(saved.get('status')) or '').lower()
+        if not bucket_item:
+            status = 'missing' if status in {'verified', 'migrated'} else 'pending'
+        elif bucket_item.get('size') != item['size']:
+            status = 'conflicting'
+        elif status not in {'verified', 'migrated', 'conflicting', 'failed'}:
+            status = 'migrated'
+        counts[status if status in counts else 'pending'] += 1
+        if include_objects:
+            items.append({
+                'key': item['key'],
+                'size': item['size'],
+                'size_human': bytes_to_human_size(item['size']),
+                'status': status,
+                'message': clean_str(saved.get('message')) or '',
+            })
+    volume_size = sum(item['size'] for item in volume_inventory)
+    return {
+        'storage': file_storage.public_config(),
+        'connection': {
+            'ok': bucket_snapshot.get('connected'),
+            'message': bucket_snapshot.get('connection_message'),
+        },
+        'volume': {
+            'file_count': len(volume_inventory),
+            'size_bytes': volume_size,
+            'size_human': bytes_to_human_size(volume_size),
+        },
+        'bucket': {
+            'object_count': bucket_snapshot.get('object_count', 0),
+            'size_bytes': bucket_snapshot.get('size_bytes', 0),
+            'size_human': bucket_snapshot.get('size_human', '0 B'),
+        },
+        'counts': counts,
+        'complete': bool(volume_inventory) and counts['verified'] == len(volume_inventory),
+        'items': items,
+        'state_updated_at': state.get('updated_at'),
+    }
+
+
+def record_storage_activity(action):
+    try:
+        db.session.add(ActivityLog(
+            user=(getattr(current_user, 'username', '') or 'Superadmin').capitalize(),
+            action=action,
+        ))
+        db.session.commit()
+    except Exception as log_error:
+        db.session.rollback()
+        print(f"[STORAGE] Activity log skipped: {log_error}", flush=True)
+
+
+def record_bucket_connection_error_throttled(message):
+    global bucket_connection_error_logged_at
+    now = time.time()
+    if now - bucket_connection_error_logged_at < 3600:
+        return
+    bucket_connection_error_logged_at = now
+    record_storage_activity(f"Bucket connection error: {(clean_str(message) or 'Unknown error')[:180]}")
+
+
+@app.route('/admin/storage-bucket/status')
+@login_required
+def admin_storage_bucket_status():
+    if not is_superadmin_user():
+        return denied('Only superadmins can manage bucket migration.')
+    try:
+        report = get_bucket_migration_report(include_objects=True)
+        if file_storage.bucket_configured and not (report.get('connection') or {}).get('ok'):
+            record_bucket_connection_error_throttled((report.get('connection') or {}).get('message'))
+        return jsonify({'status': 'success', **report})
+    except Exception as storage_error:
+        print(f"[STORAGE] Bucket status failed: {storage_error}", flush=True)
+        record_storage_activity(f"Bucket connection/status failed: {clean_str(storage_error)[:180]}")
+        return jsonify({'status': 'error', 'message': 'Unable to read bucket migration status.'}), 500
+
+
+@app.route('/admin/storage-bucket/migrate-batch', methods=['POST'])
+@login_required
+def admin_storage_bucket_migrate_batch():
+    if not is_superadmin_user():
+        return denied('Only superadmins can manage bucket migration.')
+    if not file_storage.bucket_configured:
+        return jsonify({'status': 'error', 'message': 'Railway bucket credentials are not configured.'}), 409
+    batch_size = min(max(clean_int((request.get_json(silent=True) or {}).get('batch_size')) or 25, 1), 25)
+    state = load_bucket_migration_state()
+    file_state = state.setdefault('files', {})
+    results = []
+    attempted = 0
+    inventory = managed_storage_volume_inventory(include_checksums=True)
+    inventory.sort(key=lambda item: (
+        1 if (clean_str((file_state.get(item['key']) or {}).get('status')) or '').lower() in {'failed', 'conflicting'} else 0,
+        item['key']
+    ))
+    for item in inventory:
+        if attempted >= batch_size:
+            break
+        existing_state = file_state.get(item['key']) or {}
+        existing_status = (clean_str(existing_state.get('status')) or '').lower()
+        if existing_status == 'verified':
+            continue
+        if existing_status == 'migrated':
+            try:
+                migrated_info = file_storage.head(item['key'])
+                if (
+                    migrated_info
+                    and migrated_info.size == item['size']
+                    and migrated_info.checksum == item['checksum']
+                ):
+                    continue
+            except Exception:
+                pass
+        attempted += 1
+        try:
+            bucket_info = file_storage.head(item['key'])
+            if bucket_info:
+                if bucket_info.size != item['size']:
+                    raise StorageObjectConflict('Bucket size differs from the volume file.')
+                if bucket_info.checksum and bucket_info.checksum != item['checksum']:
+                    raise StorageObjectConflict('Bucket checksum differs from the volume file.')
+                if not bucket_info.checksum:
+                    remote_checksum = hashlib.sha256(file_storage.download_bytes(item['key'])).hexdigest()
+                    if remote_checksum != item['checksum']:
+                        raise StorageObjectConflict('Bucket checksum differs from the volume file.')
+                    file_storage.upload_file(
+                        item['key'], item['path'], content_type=item['content_type'],
+                        original_filename=item['filename'], overwrite=True,
+                    )
+            else:
+                file_storage.upload_file(
+                    item['key'], item['path'], content_type=item['content_type'],
+                    original_filename=item['filename'], overwrite=False,
+                )
+            file_state[item['key']] = {
+                'status': 'migrated',
+                'size': item['size'],
+                'checksum': item['checksum'],
+                'updated_at': get_manila_time().isoformat(),
+            }
+            results.append({'key': item['key'], 'status': 'migrated'})
+        except StorageObjectConflict as conflict_error:
+            file_state[item['key']] = {
+                'status': 'conflicting', 'message': str(conflict_error),
+                'updated_at': get_manila_time().isoformat(),
+            }
+            results.append({'key': item['key'], 'status': 'conflicting', 'message': str(conflict_error)})
+        except Exception as migration_error:
+            file_state[item['key']] = {
+                'status': 'failed', 'message': clean_str(migration_error)[:240],
+                'updated_at': get_manila_time().isoformat(),
+            }
+            results.append({'key': item['key'], 'status': 'failed', 'message': clean_str(migration_error)[:240]})
+    save_bucket_migration_state(state)
+    failed_count = sum(1 for item in results if item['status'] in {'failed', 'conflicting'})
+    record_storage_activity(
+        f"Bucket migration batch completed: {len(results) - failed_count} migrated, {failed_count} issue(s)"
+    )
+    return jsonify({
+        'status': 'success' if not failed_count else 'warning',
+        'processed': len(results),
+        'results': results,
+        'report': get_bucket_migration_report(include_objects=False),
+    })
+
+
+@app.route('/admin/storage-bucket/verify', methods=['POST'])
+@login_required
+def admin_storage_bucket_verify():
+    if not is_superadmin_user():
+        return denied('Only superadmins can manage bucket migration.')
+    if not file_storage.bucket_configured:
+        return jsonify({'status': 'error', 'message': 'Railway bucket credentials are not configured.'}), 409
+    batch_size = min(max(clean_int((request.get_json(silent=True) or {}).get('batch_size')) or 25, 1), 25)
+    state = load_bucket_migration_state()
+    file_state = state.setdefault('files', {})
+    results = []
+    inventory = managed_storage_volume_inventory(include_checksums=True)
+    inventory.sort(key=lambda item: (
+        1 if (clean_str((file_state.get(item['key']) or {}).get('status')) or '').lower() == 'conflicting' else 0,
+        item['key']
+    ))
+    for item in inventory:
+        if len(results) >= batch_size:
+            break
+        saved = file_state.get(item['key']) or {}
+        if (clean_str(saved.get('status')) or '').lower() == 'verified':
+            continue
+        try:
+            remote_bytes = file_storage.download_bytes(item['key'])
+            remote_checksum = hashlib.sha256(remote_bytes).hexdigest()
+            if len(remote_bytes) != item['size'] or remote_checksum != item['checksum']:
+                raise StorageObjectConflict('Verification failed: bucket content differs from volume.')
+            file_state[item['key']] = {
+                'status': 'verified', 'size': item['size'], 'checksum': item['checksum'],
+                'verified_at': get_manila_time().isoformat(),
+            }
+            results.append({'key': item['key'], 'status': 'verified'})
+        except Exception as verify_error:
+            file_state[item['key']] = {
+                'status': 'conflicting', 'message': clean_str(verify_error)[:240],
+                'updated_at': get_manila_time().isoformat(),
+            }
+            results.append({'key': item['key'], 'status': 'conflicting', 'message': clean_str(verify_error)[:240]})
+    save_bucket_migration_state(state)
+    failed_count = sum(1 for item in results if item['status'] != 'verified')
+    record_storage_activity(
+        f"Bucket verification batch completed: {len(results) - failed_count} verified, {failed_count} failure(s)"
+    )
+    return jsonify({
+        'status': 'success' if not failed_count else 'warning',
+        'processed': len(results),
+        'results': results,
+        'report': get_bucket_migration_report(include_objects=False),
+    })
 
 
 def bytes_to_human_size(byte_count):
@@ -12250,6 +12830,18 @@ def get_storage_health_report():
         all_largest_files.extend(root_snapshot.get('largest_files') or [])
     all_largest_files.sort(key=lambda item: item.get('size_bytes', 0), reverse=True)
 
+    try:
+        bucket_migration = get_bucket_migration_report(include_objects=False)
+    except Exception as bucket_error:
+        bucket_migration = {
+            'storage': file_storage.public_config(),
+            'connection': {'ok': False, 'message': clean_str(bucket_error)[:240]},
+            'volume': {'file_count': 0, 'size_bytes': 0, 'size_human': '0 B'},
+            'bucket': {'object_count': 0, 'size_bytes': 0, 'size_human': '0 B'},
+            'counts': {},
+            'complete': False,
+        }
+
     return {
         'status': 'success',
         'storage_status': status,
@@ -12264,6 +12856,11 @@ def get_storage_health_report():
         'remaining_human': bytes_to_human_size(remaining_bytes) if remaining_bytes is not None else '',
         'usage_percent': usage_percent,
         'database': database_snapshot,
+        'database_volume_usage': database_snapshot,
+        'legacy_upload_usage': bucket_migration.get('volume'),
+        'bucket_usage': bucket_migration.get('bucket'),
+        'bucket_connection': bucket_migration.get('connection'),
+        'bucket_migration': bucket_migration,
         'active_upload_folder': active_upload_snapshot,
         'upload_roots': upload_snapshots,
         'total_file_count': len(unique_storage_paths),
@@ -12353,6 +12950,36 @@ def download_system_backup():
                 backup_zip.writestr('uploads/', '')
                 backup_zip.writestr('uploads/reports/', '')
 
+            bucket_object_manifest = []
+            if file_storage.bucket_configured:
+                connection = file_storage.test_connection()
+                if not connection.get('ok'):
+                    raise RuntimeError(
+                        f"Bucket objects could not be backed up: {connection.get('message') or 'connection failed'}"
+                    )
+                allowed_prefixes = {prefix for prefix, _ in managed_storage_roots()}
+                for object_info in file_storage.iter_objects():
+                    if object_info.key.split('/', 1)[0] not in allowed_prefixes:
+                        continue
+                    object_bytes = file_storage.download_bytes(object_info.key)
+                    checksum = hashlib.sha256(object_bytes).hexdigest()
+                    backup_zip.writestr(f"bucket_objects/{object_info.key}", object_bytes)
+                    bucket_object_manifest.append({
+                        'key': object_info.key,
+                        'size': len(object_bytes),
+                        'sha256': checksum,
+                    })
+                backup_zip.writestr(
+                    'bucket_objects_manifest.json',
+                    json.dumps(bucket_object_manifest, indent=2)
+                )
+
+            migration_state_source = bucket_migration_state_path()
+            migration_state_included = False
+            if os.path.isfile(migration_state_source):
+                backup_zip.write(migration_state_source, 'storage/bucket_migration_state.json')
+                migration_state_included = True
+
             manifest = {
                 'generated_at_manila': get_manila_time().isoformat(),
                 'generated_by': getattr(current_user, 'username', 'unknown'),
@@ -12362,6 +12989,10 @@ def download_system_backup():
                 'source_file_count': source_count,
                 'upload_roots': uploaded_roots_manifest,
                 'upload_file_count': upload_count,
+                'bucket_name': file_storage.bucket_name if file_storage.bucket_configured else '',
+                'bucket_object_count': len(bucket_object_manifest),
+                'bucket_objects_manifest': 'bucket_objects_manifest.json' if file_storage.bucket_configured else '',
+                'bucket_migration_state_included': migration_state_included,
                 'app': 'MEDICAL SERVICE Scheduler'
             }
             backup_zip.writestr('backup_manifest.json', json.dumps(manifest, indent=2))
@@ -17983,7 +18614,8 @@ def reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename):
 
 
 def reimbursement_receipt_path(receipt):
-    return os.path.join(reimbursement_receipt_upload_root(), receipt.stored_filename)
+    local_path = os.path.join(reimbursement_receipt_upload_root(), receipt.stored_filename)
+    return managed_storage_read_path(STORAGE_PREFIX_REIMBURSEMENTS, local_path)
 
 
 def reimbursement_receipt_to_dict(receipt):
@@ -18234,19 +18866,20 @@ def reimbursement_append_receipt_file_to_writer(writer, receipt):
         print(f"[Reimbursement] Receipt missing, skipped from merged PDF: {receipt_path}", flush=True)
         return False
 
-    ext = reimbursement_receipt_extension(receipt.original_filename or receipt.stored_filename)
-    if ext == 'pdf':
-        with open(receipt_path, 'rb') as file_obj:
-            reimbursement_append_pdf_bytes(writer, file_obj.read())
-        return True
-
-    if ext in {'jpg', 'jpeg', 'png'}:
-        pdf_bytes = reimbursement_receipt_image_to_pdf_bytes(receipt_path)
-        reimbursement_append_pdf_bytes(writer, pdf_bytes)
-        return True
-
-    print(f"[Reimbursement] Unsupported receipt type skipped from merged PDF: {receipt_path}", flush=True)
-    return False
+    try:
+        ext = reimbursement_receipt_extension(receipt.original_filename or receipt.stored_filename)
+        if ext == 'pdf':
+            with open(receipt_path, 'rb') as file_obj:
+                reimbursement_append_pdf_bytes(writer, file_obj.read())
+            return True
+        if ext in {'jpg', 'jpeg', 'png'}:
+            pdf_bytes = reimbursement_receipt_image_to_pdf_bytes(receipt_path)
+            reimbursement_append_pdf_bytes(writer, pdf_bytes)
+            return True
+        print(f"[Reimbursement] Unsupported receipt type skipped from merged PDF: {receipt_path}", flush=True)
+        return False
+    finally:
+        managed_storage_release_path(receipt_path)
 
 
 def reimbursement_compress_pdf_bytes_best_effort(pdf_bytes, target_bytes=None):
@@ -18764,6 +19397,7 @@ def upload_reimbursement_receipt():
         return jsonify({'success': False, 'error': 'No receipt file selected.'}), 400
 
     saved = []
+    written_paths = []
     try:
         root = reimbursement_receipt_upload_root()
         for file_obj in files:
@@ -18787,9 +19421,15 @@ def upload_reimbursement_receipt():
             stored = f"reimb_{header.id}_{receipt_group_label}_{secrets.token_hex(8)}.{stored_ext}"
             target_path = os.path.join(root, stored)
 
-            with open(target_path, 'wb') as target_file:
-                target_file.write(prepared_bytes)
-            size = os.path.getsize(target_path)
+            managed_storage_write_bytes(
+                STORAGE_PREFIX_REIMBURSEMENTS,
+                target_path,
+                prepared_bytes,
+                original_filename=original,
+                content_type=content_type or '',
+            )
+            written_paths.append(target_path)
+            size = len(prepared_bytes)
 
             receipt = ReimbursementReceipt(
                 reimbursement_id=header.id,
@@ -18816,6 +19456,8 @@ def upload_reimbursement_receipt():
 
     except Exception as exc:
         db.session.rollback()
+        for target_path in written_paths:
+            managed_storage_rollback_new_file(STORAGE_PREFIX_REIMBURSEMENTS, target_path)
         print(f"[Reimbursement] Receipt upload failed: {exc}", flush=True)
         print(traceback.format_exc(), flush=True)
         return jsonify({'success': False, 'error': 'Unable to upload receipt.'}), 500
@@ -18911,8 +19553,9 @@ def get_authorized_reimbursement_receipt_or_response(receipt_id):
     if not ((is_owner and is_uploader) or is_approver):
         return None, None, ("Receipt not found", 404)
 
-    path = reimbursement_receipt_path(receipt)
-    if not os.path.exists(path):
+    try:
+        path = reimbursement_receipt_path(receipt)
+    except (FileNotFoundError, StorageObjectNotFound):
         return None, None, ("Receipt file missing", 404)
 
     return receipt, path, None
@@ -19081,15 +19724,15 @@ def delete_reimbursement_receipt(receipt_id):
         return reimbursement_edit_lock_response(header, 'updated by deleting receipts')
 
     try:
-        path = reimbursement_receipt_path(receipt)
+        stored_filename = os.path.basename(clean_str(receipt.stored_filename) or '')
         db.session.delete(receipt)
         header.updated_at = get_manila_time()
         db.session.commit()
-        if os.path.exists(path):
-            try:
-                os.remove(path)
-            except Exception as file_err:
-                print(f"[Reimbursement] Receipt file delete skipped: {file_err}")
+        try:
+            local_path = os.path.join(reimbursement_receipt_upload_root(), stored_filename)
+            managed_storage_delete(STORAGE_PREFIX_REIMBURSEMENTS, local_path)
+        except Exception as file_err:
+            print(f"[Reimbursement] Receipt file delete skipped: {file_err}")
         return jsonify({'success': True, 'message': 'Receipt removed.'})
     except Exception as exc:
         db.session.rollback()
@@ -19132,12 +19775,11 @@ def clear_travel_liquidation(liquidation_id):
             stored_filename = os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or '')
             if stored_filename:
                 file_path = os.path.join(folder, stored_filename)
-                if os.path.exists(file_path) and os.path.isfile(file_path):
-                    try:
-                        os.remove(file_path)
-                        deleted_file_count += 1
-                    except Exception as file_delete_error:
-                        print(f"[TravelLiquidation] Receipt file delete skipped during clear: {file_delete_error}", flush=True)
+                try:
+                    managed_storage_delete(STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, file_path)
+                    deleted_file_count += 1
+                except Exception as file_delete_error:
+                    print(f"[TravelLiquidation] Receipt file delete skipped during clear: {file_delete_error}", flush=True)
             db.session.delete(receipt)
 
         for row in rows:
@@ -19440,10 +20082,10 @@ def clear_reimbursement_draft():
         ).all()
 
         for receipt in receipts:
-            try:
-                receipt_paths.append(reimbursement_receipt_path(receipt))
-            except Exception:
-                pass
+            receipt_paths.append(os.path.join(
+                reimbursement_receipt_upload_root(),
+                os.path.basename(clean_str(receipt.stored_filename) or '')
+            ))
             db.session.delete(receipt)
 
         ReimbursementRow.query.filter_by(reimbursement_id=header.id).delete()
@@ -19452,9 +20094,9 @@ def clear_reimbursement_draft():
 
         removed_files = 0
         for path in receipt_paths:
-            if path and os.path.exists(path):
+            if path:
                 try:
-                    os.remove(path)
+                    managed_storage_delete(STORAGE_PREFIX_REIMBURSEMENTS, path)
                     removed_files += 1
                 except Exception as file_err:
                     print(f"[Reimbursement] Clear draft file delete skipped: {file_err}")
@@ -19529,10 +20171,10 @@ def delete_reimbursement_draft(reimbursement_id=None):
         ).all()
 
         for receipt in receipts:
-            try:
-                receipt_paths.append(reimbursement_receipt_path(receipt))
-            except Exception:
-                pass
+            receipt_paths.append(os.path.join(
+                reimbursement_receipt_upload_root(),
+                os.path.basename(clean_str(receipt.stored_filename) or '')
+            ))
             db.session.delete(receipt)
 
         record_universal_approval_audit(
@@ -19555,9 +20197,9 @@ def delete_reimbursement_draft(reimbursement_id=None):
 
         removed_files = 0
         for path in receipt_paths:
-            if path and os.path.exists(path):
+            if path:
                 try:
-                    os.remove(path)
+                    managed_storage_delete(STORAGE_PREFIX_REIMBURSEMENTS, path)
                     removed_files += 1
                 except Exception as file_err:
                     print(f"[Reimbursement] Delete draft file delete skipped: {file_err}", flush=True)
@@ -20778,10 +21420,11 @@ def travel_request_attachment_upload_root():
 
 
 def travel_request_attachment_path(attachment):
-    return os.path.join(
+    local_path = os.path.join(
         travel_request_attachment_upload_root(),
         os.path.basename(clean_str(getattr(attachment, 'stored_filename', None)) or '')
     )
+    return managed_storage_read_path(STORAGE_PREFIX_TRAVEL_REQUESTS, local_path)
 
 
 def travel_request_attachment_to_dict(attachment):
@@ -20857,19 +21500,22 @@ def build_travel_request_supporting_attachments_pdf_bytes(request_rec):
     )
     for attachment in attachments:
         path = travel_request_attachment_path(attachment)
-        if not os.path.exists(path):
-            raise FileNotFoundError(
-                f"Travel Request attachment is missing: {attachment.original_filename or attachment.stored_filename}"
-            )
-        ext = reimbursement_receipt_extension(attachment.original_filename or attachment.stored_filename)
-        if ext == 'pdf':
-            with open(path, 'rb') as file_obj:
-                reimbursement_append_pdf_bytes(writer, file_obj.read())
-        elif ext in {'jpg', 'jpeg', 'png'}:
-            reimbursement_append_pdf_bytes(writer, reimbursement_receipt_image_to_pdf_bytes(path))
-        else:
-            raise ValueError(f'Unsupported Travel Request attachment: {attachment.original_filename or attachment.stored_filename}')
-        appended_count += 1
+        try:
+            if not os.path.exists(path):
+                raise FileNotFoundError(
+                    f"Travel Request attachment is missing: {attachment.original_filename or attachment.stored_filename}"
+                )
+            ext = reimbursement_receipt_extension(attachment.original_filename or attachment.stored_filename)
+            if ext == 'pdf':
+                with open(path, 'rb') as file_obj:
+                    reimbursement_append_pdf_bytes(writer, file_obj.read())
+            elif ext in {'jpg', 'jpeg', 'png'}:
+                reimbursement_append_pdf_bytes(writer, reimbursement_receipt_image_to_pdf_bytes(path))
+            else:
+                raise ValueError(f'Unsupported Travel Request attachment: {attachment.original_filename or attachment.stored_filename}')
+            appended_count += 1
+        finally:
+            managed_storage_release_path(path)
 
     if appended_count != len(attachments):
         raise ValueError('Not all Travel Request attachments could be added to the supporting document package.')
@@ -21420,16 +22066,12 @@ def delete_travel_request_draft(travel_request_id=None):
             stored_name = clean_str(getattr(attachment, 'stored_filename', None))
             if stored_name:
                 try:
-                    candidate_paths = [
-                        travel_request_attachment_path(attachment),
-                        os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(stored_name)),
-                        os.path.join(basedir, 'static', 'uploads', 'travel_requests', os.path.basename(stored_name)),
-                    ]
-                    for candidate_path in candidate_paths:
-                        if candidate_path and os.path.exists(candidate_path):
-                            os.remove(candidate_path)
-                            removed_files += 1
-                            break
+                    local_path = os.path.join(
+                        travel_request_attachment_upload_root(),
+                        os.path.basename(stored_name)
+                    )
+                    managed_storage_delete(STORAGE_PREFIX_TRAVEL_REQUESTS, local_path)
+                    removed_files += 1
                 except Exception as file_err:
                     print(f"[TravelRequest] Draft attachment delete skipped: {file_err}", flush=True)
             db.session.delete(attachment)
@@ -21772,8 +22414,13 @@ def upload_travel_request_attachments(travel_request_id):
         for original, stored_ext, content_type, file_bytes in prepared_files:
             stored = f"travel_request_{request_rec.id}_{secrets.token_hex(8)}.{stored_ext}"
             target_path = os.path.join(root, stored)
-            with open(target_path, 'wb') as target_file:
-                target_file.write(file_bytes)
+            managed_storage_write_bytes(
+                STORAGE_PREFIX_TRAVEL_REQUESTS,
+                target_path,
+                file_bytes,
+                original_filename=original,
+                content_type=content_type or '',
+            )
             written_paths.append(target_path)
 
             attachment = TravelRequestAttachment(
@@ -21803,11 +22450,7 @@ def upload_travel_request_attachments(travel_request_id):
     except Exception as exc:
         db.session.rollback()
         for target_path in written_paths:
-            try:
-                if os.path.exists(target_path):
-                    os.remove(target_path)
-            except Exception:
-                pass
+            managed_storage_rollback_new_file(STORAGE_PREFIX_TRAVEL_REQUESTS, target_path)
         print(f'[TravelRequest] Attachment upload failed: {exc}', flush=True)
         return jsonify({'success': False, 'error': 'Unable to upload Travel Request attachment.'}), 500
 
@@ -21819,8 +22462,9 @@ def get_authorized_travel_request_attachment(attachment_id):
     request_rec = db.session.get(TravelRequest, attachment.travel_request_id)
     if not request_rec or not can_user_access_travel_request(request_rec):
         return None, None, (jsonify({'success': False, 'error': 'You are not allowed to access this attachment.'}), 403)
-    path = travel_request_attachment_path(attachment)
-    if not os.path.exists(path):
+    try:
+        path = travel_request_attachment_path(attachment)
+    except (FileNotFoundError, StorageObjectNotFound):
         return None, None, (jsonify({'success': False, 'error': 'Attachment file is missing.'}), 404)
     return attachment, path, None
 
@@ -21868,7 +22512,7 @@ def delete_travel_request_attachment(attachment_id):
     if not can_current_user_edit_travel_request_attachments(request_rec):
         return jsonify({'success': False, 'error': 'Attachments can only be changed while the Travel Request is Draft or Rejected.'}), 409
 
-    path = travel_request_attachment_path(attachment)
+    stored_filename = os.path.basename(clean_str(getattr(attachment, 'stored_filename', None)) or '')
     filename = attachment.original_filename or attachment.stored_filename
     try:
         db.session.delete(attachment)
@@ -21878,8 +22522,11 @@ def delete_travel_request_attachment(attachment_id):
         )
         db.session.commit()
         try:
-            if os.path.exists(path):
-                os.remove(path)
+            local_path = os.path.join(
+                travel_request_attachment_upload_root(),
+                stored_filename
+            )
+            managed_storage_delete(STORAGE_PREFIX_TRAVEL_REQUESTS, local_path)
         except Exception as file_error:
             print(f'[TravelRequest] Deleted attachment record but file cleanup was skipped: {file_error}', flush=True)
         return jsonify({
@@ -26560,7 +27207,8 @@ def travel_liquidation_receipt_file_path(receipt):
     stored_filename = os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or '')
     if not stored_filename:
         return ''
-    return os.path.join(travel_liquidation_receipt_folder(), stored_filename)
+    local_path = os.path.join(travel_liquidation_receipt_folder(), stored_filename)
+    return managed_storage_read_path(STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, local_path)
 
 
 def travel_liquidation_receipt_pdf_safe_text(value, fallback=''):
@@ -26617,22 +27265,22 @@ def travel_liquidation_append_receipt_file_to_writer(writer, receipt):
         print(f"[TravelLiquidation] Receipt missing, skipped from compilation: {receipt_path}", flush=True)
         return False
 
-    ext = travel_liquidation_receipt_extension(
-        clean_str(getattr(receipt, 'original_filename', None)) or clean_str(getattr(receipt, 'stored_filename', None))
-    )
-
-    if ext == 'pdf':
-        with open(receipt_path, 'rb') as file_obj:
-            reimbursement_append_pdf_bytes(writer, file_obj.read())
-        return True
-
-    if ext in {'jpg', 'jpeg', 'png'}:
-        pdf_bytes = reimbursement_receipt_image_to_pdf_bytes(receipt_path)
-        reimbursement_append_pdf_bytes(writer, pdf_bytes)
-        return True
-
-    print(f"[TravelLiquidation] Unsupported receipt type skipped from compilation: {receipt_path}", flush=True)
-    return False
+    try:
+        ext = travel_liquidation_receipt_extension(
+            clean_str(getattr(receipt, 'original_filename', None)) or clean_str(getattr(receipt, 'stored_filename', None))
+        )
+        if ext == 'pdf':
+            with open(receipt_path, 'rb') as file_obj:
+                reimbursement_append_pdf_bytes(writer, file_obj.read())
+            return True
+        if ext in {'jpg', 'jpeg', 'png'}:
+            pdf_bytes = reimbursement_receipt_image_to_pdf_bytes(receipt_path)
+            reimbursement_append_pdf_bytes(writer, pdf_bytes)
+            return True
+        print(f"[TravelLiquidation] Unsupported receipt type skipped from compilation: {receipt_path}", flush=True)
+        return False
+    finally:
+        managed_storage_release_path(receipt_path)
 
 
 def travel_liquidation_receipt_records_grouped_for_package(liquidation):
@@ -27655,8 +28303,13 @@ def upload_travel_liquidation_receipt(row_id):
         stored_filename = os.path.splitext(stored_filename)[0] + f'.{stored_ext}'
         folder = travel_liquidation_receipt_folder()
         file_path = os.path.join(folder, stored_filename)
-        with open(file_path, 'wb') as target_file:
-            target_file.write(prepared_bytes)
+        managed_storage_write_bytes(
+            STORAGE_PREFIX_TRAVEL_LIQUIDATIONS,
+            file_path,
+            prepared_bytes,
+            original_filename=original_filename,
+            content_type=content_type or clean_str(getattr(file_obj, 'mimetype', None)) or '',
+        )
 
         receipt = TravelLiquidationReceipt(
             liquidation_id=liquidation.id,
@@ -27665,7 +28318,7 @@ def upload_travel_liquidation_receipt(row_id):
             stored_filename=stored_filename,
             original_filename=original_filename,
             content_type=content_type or clean_str(getattr(file_obj, 'mimetype', None)) or '',
-            file_size=os.path.getsize(file_path) if os.path.exists(file_path) else 0,
+            file_size=len(prepared_bytes),
             created_at=get_manila_time()
         )
         db.session.add(receipt)
@@ -27697,6 +28350,8 @@ def upload_travel_liquidation_receipt(row_id):
         })
     except Exception as exc:
         db.session.rollback()
+        if 'file_path' in locals():
+            managed_storage_rollback_new_file(STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, file_path)
         print(f"[TravelLiquidation] Receipt upload failed: {exc}", flush=True)
         return jsonify({'success': False, 'error': 'Unable to upload receipt.'}), 500
 
@@ -27740,9 +28395,8 @@ def delete_travel_liquidation_receipt(receipt_id):
     try:
         if stored_filename:
             file_path = os.path.join(travel_liquidation_receipt_folder(), stored_filename)
-            if os.path.exists(file_path) and os.path.isfile(file_path):
-                os.remove(file_path)
-                file_deleted = True
+            managed_storage_delete(STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, file_path)
+            file_deleted = True
 
         db.session.delete(receipt)
         liquidation.updated_at = get_manila_time()
@@ -27831,9 +28485,9 @@ def preview_travel_liquidation_receipt(receipt_id):
     if not can_current_user_view_travel_liquidation_form(liquidation):
         return jsonify({'success': False, 'error': 'You are not allowed to view this receipt.'}), 403
 
-    folder = travel_liquidation_receipt_folder()
-    file_path = os.path.join(folder, os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or ''))
-    if not os.path.exists(file_path):
+    try:
+        file_path = travel_liquidation_receipt_file_path(receipt)
+    except (FileNotFoundError, StorageObjectNotFound):
         return jsonify({'success': False, 'error': 'Receipt file is missing.'}), 404
 
     filename = clean_str(getattr(receipt, 'original_filename', None)) or os.path.basename(file_path)
@@ -27864,9 +28518,9 @@ def download_travel_liquidation_receipt(receipt_id):
     if not liquidation:
         return redirect(url_for('accounting_center'))
 
-    folder = travel_liquidation_receipt_folder()
-    file_path = os.path.join(folder, os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or ''))
-    if not os.path.exists(file_path):
+    try:
+        file_path = travel_liquidation_receipt_file_path(receipt)
+    except (FileNotFoundError, StorageObjectNotFound):
         return redirect(url_for('accounting_center'))
 
     filename = clean_str(getattr(receipt, 'original_filename', None)) or os.path.basename(file_path)
@@ -29944,7 +30598,22 @@ def _resolve_tsr_archive_file_for_preview(file_id):
     display_name = get_shift_file_display_name(file_rec)
     disk_name = get_shift_file_disk_name(file_rec)
     candidate_paths = get_tsr_archive_file_candidate_paths(disk_name, display_name)
-    found_paths = _unique_existing_paths(candidate_paths)
+    found_paths = []
+    if disk_name:
+        try:
+            found_paths = [managed_storage_read_path(
+                STORAGE_PREFIX_REPORTS,
+                os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
+            )]
+        except (FileNotFoundError, StorageObjectNotFound):
+            found_paths = []
+        except Exception as storage_error:
+            return None, _tsr_archive_error_response(
+                f'TSR storage is temporarily unavailable: {storage_error}',
+                503
+            )
+    if not found_paths:
+        found_paths = _unique_existing_paths(candidate_paths)
     if not found_paths:
         print(
             f"[TSR-ARCHIVE] Missing physical file for file_id={file_id}; "
@@ -31368,7 +32037,17 @@ def save_uploaded_shift_files(shift):
 
         unique_name = f"shift_{shift.id}_{secrets.token_hex(8)}_{original_name}"
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
-        file_obj.save(file_path)
+        file_obj.stream.seek(0)
+        file_bytes = file_obj.read()
+        if not file_bytes:
+            continue
+        managed_storage_write_bytes(
+            STORAGE_PREFIX_REPORTS,
+            file_path,
+            file_bytes,
+            original_filename=original_name,
+            content_type=clean_str(getattr(file_obj, 'mimetype', None)) or '',
+        )
 
         file_rec = ShiftFile(
             shift_id=shift.id,
@@ -32857,7 +33536,19 @@ def get_tsr_files_for_shift(shift):
             filename_detected = existing_files_have_tsr([display_name, disk_name])
 
             candidate_paths = get_tsr_archive_file_candidate_paths(disk_name, display_name)
-            found_paths = _unique_existing_paths(candidate_paths)
+            found_paths = []
+            if disk_name:
+                try:
+                    found_paths = [managed_storage_read_path(
+                        STORAGE_PREFIX_REPORTS,
+                        os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
+                    )]
+                except (FileNotFoundError, StorageObjectNotFound):
+                    found_paths = []
+                except Exception as storage_error:
+                    print(f"[EMAIL-CLIENT] Bucket read failed for {disk_name}: {storage_error}", flush=True)
+            if not found_paths:
+                found_paths = _unique_existing_paths(candidate_paths)
 
             if not found_paths:
                 if filename_detected:
@@ -34838,9 +35529,12 @@ def delete_file(filename):
         return denied('You are not authorized to delete this file.')
 
     try:
-        os.remove(os.path.join(app.config['UPLOAD_FOLDER'], safe_filename))
-    except OSError:
-        pass
+        managed_storage_delete(
+            STORAGE_PREFIX_REPORTS,
+            os.path.join(app.config['UPLOAD_FOLDER'], safe_filename)
+        )
+    except Exception as storage_error:
+        print(f"[STORAGE] Report file cleanup warning: {storage_error}", flush=True)
 
     for file_rec in file_recs:
         db.session.delete(file_rec)
@@ -38816,8 +39510,7 @@ def delete_cash_advance_liquidation_row(row_id):
             if stored_filename:
                 file_path = os.path.join(cash_advance_liquidation_receipt_folder(), stored_filename)
                 try:
-                    if os.path.exists(file_path) and os.path.isfile(file_path):
-                        os.remove(file_path)
+                    managed_storage_delete(STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, file_path)
                 except Exception as delete_error:
                     print(f"[CashAdvanceLiquidation] Receipt file delete skipped: {delete_error}", flush=True)
             db.session.delete(receipt)
@@ -38871,8 +39564,13 @@ def upload_cash_advance_liquidation_receipt(row_id):
         stored_filename = os.path.splitext(stored_filename)[0] + f'.{stored_ext}'
         folder = cash_advance_liquidation_receipt_folder()
         file_path = os.path.join(folder, stored_filename)
-        with open(file_path, 'wb') as target_file:
-            target_file.write(prepared_bytes)
+        managed_storage_write_bytes(
+            STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS,
+            file_path,
+            prepared_bytes,
+            original_filename=original_filename,
+            content_type=content_type or clean_str(getattr(file_obj, 'mimetype', None)) or '',
+        )
         receipt = CashAdvanceLiquidationReceipt(
             liquidation_id=liquidation.id,
             row_id=row.id,
@@ -38880,7 +39578,7 @@ def upload_cash_advance_liquidation_receipt(row_id):
             stored_filename=stored_filename,
             original_filename=original_filename,
             content_type=content_type or clean_str(getattr(file_obj, 'mimetype', None)) or '',
-            file_size=os.path.getsize(file_path) if os.path.exists(file_path) else 0,
+            file_size=len(prepared_bytes),
             created_at=get_manila_time()
         )
         db.session.add(receipt)
@@ -38905,6 +39603,8 @@ def upload_cash_advance_liquidation_receipt(row_id):
         })
     except Exception as exc:
         db.session.rollback()
+        if 'file_path' in locals():
+            managed_storage_rollback_new_file(STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, file_path)
         print(f"[CashAdvanceLiquidation] Receipt upload failed: {exc}", flush=True)
         return jsonify({'success': False, 'error': 'Unable to upload receipt.'}), 500
 
@@ -38936,9 +39636,8 @@ def delete_cash_advance_liquidation_receipt(receipt_id):
     try:
         if stored_filename:
             file_path = os.path.join(cash_advance_liquidation_receipt_folder(), stored_filename)
-            if os.path.exists(file_path) and os.path.isfile(file_path):
-                os.remove(file_path)
-                file_deleted = True
+            managed_storage_delete(STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, file_path)
+            file_deleted = True
         db.session.delete(receipt)
         cash_advance_liquidation_recalculate_totals(liquidation)
         record_universal_approval_audit(
@@ -38974,8 +39673,9 @@ def preview_cash_advance_liquidation_receipt(receipt_id):
     liquidation = cash_advance_liquidation_get_for_current_user(liquidation_id=getattr(receipt, 'liquidation_id', None))
     if not liquidation:
         return jsonify({'success': False, 'error': 'You are not allowed to view this receipt.'}), 403
-    file_path = os.path.join(cash_advance_liquidation_receipt_folder(), os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or ''))
-    if not os.path.exists(file_path):
+    try:
+        file_path = cash_advance_liquidation_receipt_file_path(receipt)
+    except (FileNotFoundError, StorageObjectNotFound):
         return jsonify({'success': False, 'error': 'Receipt file is missing.'}), 404
     filename = clean_str(getattr(receipt, 'original_filename', None)) or os.path.basename(file_path)
     response = send_file(file_path, as_attachment=False, download_name=filename, mimetype=cash_advance_liquidation_receipt_mimetype(receipt, file_path), max_age=0)
@@ -38996,8 +39696,9 @@ def download_cash_advance_liquidation_receipt(receipt_id):
     liquidation = cash_advance_liquidation_get_for_current_user(liquidation_id=getattr(receipt, 'liquidation_id', None))
     if not liquidation:
         return redirect(url_for('accounting_center_page'))
-    file_path = os.path.join(cash_advance_liquidation_receipt_folder(), os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or ''))
-    if not os.path.exists(file_path):
+    try:
+        file_path = cash_advance_liquidation_receipt_file_path(receipt)
+    except (FileNotFoundError, StorageObjectNotFound):
         return redirect(url_for('accounting_center_page'))
     filename = clean_str(getattr(receipt, 'original_filename', None)) or os.path.basename(file_path)
     force_download = (request.args.get('force_download') or request.args.get('download') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
@@ -40584,7 +41285,8 @@ def cash_advance_liquidation_receipt_file_path(receipt):
     stored_filename = os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or '')
     if not stored_filename:
         return ''
-    return os.path.join(cash_advance_liquidation_receipt_folder(), stored_filename)
+    local_path = os.path.join(cash_advance_liquidation_receipt_folder(), stored_filename)
+    return managed_storage_read_path(STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, local_path)
 
 
 def cash_advance_liquidation_append_receipt_file_to_writer(writer, receipt):
@@ -40594,20 +41296,22 @@ def cash_advance_liquidation_append_receipt_file_to_writer(writer, receipt):
         print(f"[CashAdvanceLiquidation] Receipt missing, skipped from compilation: {receipt_path}", flush=True)
         return False
 
-    ext = travel_liquidation_receipt_extension(
-        clean_str(getattr(receipt, 'original_filename', None)) or clean_str(getattr(receipt, 'stored_filename', None))
-    )
-    if ext == 'pdf':
-        with open(receipt_path, 'rb') as file_obj:
-            reimbursement_append_pdf_bytes(writer, file_obj.read())
-        return True
-    if ext in {'jpg', 'jpeg', 'png'}:
-        pdf_bytes = reimbursement_receipt_image_to_pdf_bytes(receipt_path)
-        reimbursement_append_pdf_bytes(writer, pdf_bytes)
-        return True
-
-    print(f"[CashAdvanceLiquidation] Unsupported receipt type skipped from compilation: {receipt_path}", flush=True)
-    return False
+    try:
+        ext = travel_liquidation_receipt_extension(
+            clean_str(getattr(receipt, 'original_filename', None)) or clean_str(getattr(receipt, 'stored_filename', None))
+        )
+        if ext == 'pdf':
+            with open(receipt_path, 'rb') as file_obj:
+                reimbursement_append_pdf_bytes(writer, file_obj.read())
+            return True
+        if ext in {'jpg', 'jpeg', 'png'}:
+            pdf_bytes = reimbursement_receipt_image_to_pdf_bytes(receipt_path)
+            reimbursement_append_pdf_bytes(writer, pdf_bytes)
+            return True
+        print(f"[CashAdvanceLiquidation] Unsupported receipt type skipped from compilation: {receipt_path}", flush=True)
+        return False
+    finally:
+        managed_storage_release_path(receipt_path)
 
 
 def cash_advance_liquidation_receipt_records_grouped_for_package(liquidation):

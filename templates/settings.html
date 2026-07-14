@@ -226,7 +226,8 @@
                 </div>
                 <div class="card-body p-4 bg-white">
                     <p class="text-muted small mb-3">
-                        Download a ZIP backup containing the active scheduler database and uploaded TSR/report files.
+                        Download a ZIP backup containing the active scheduler database, application source,
+                        TSR metadata, volume uploads, and private bucket objects with a checksum manifest.
                         Save the downloaded file to OneDrive, Google Drive, or an external drive.
                     </p>
                     <a class="btn btn-success fw-bold rounded-3 shadow-sm" href="{{ url_for('download_system_backup') }}">
@@ -297,6 +298,10 @@
                                 <strong id="storage-uploads">--</strong>
                             </div>
                             <div class="storage-breakdown-row">
+                                <span><i class="fa-solid fa-cloud me-2 text-info"></i>Private Bucket</span>
+                                <strong id="storage-bucket">--</strong>
+                            </div>
+                            <div class="storage-breakdown-row">
                                 <span><i class="fa-solid fa-file-lines me-2 text-success"></i>Total Files</span>
                                 <strong id="storage-files">--</strong>
                             </div>
@@ -318,6 +323,43 @@
                     <div id="storage-health-error" class="alert alert-warning small d-none mb-0">
                         Storage health could not be loaded. Please check server logs.
                     </div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm border-0 rounded-4 overflow-hidden mb-4 bucket-migration-card">
+                <div class="card-header bg-dark text-white py-3 border-0 d-flex justify-content-between align-items-center gap-3">
+                    <h5 class="mb-0 fw-bold"><i class="fa-solid fa-cloud-arrow-up me-2 text-info"></i>Bucket Migration</h5>
+                    <span id="bucket-mode-badge" class="badge bg-secondary">Checking...</span>
+                </div>
+                <div class="card-body p-4 bg-white">
+                    <div id="bucket-migration-loading" class="text-muted small fw-bold">
+                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Checking private bucket...
+                    </div>
+                    <div id="bucket-migration-content" class="d-none">
+                        <div id="bucket-connection-message" class="bucket-connection-status mb-3"></div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-6 col-lg-3"><div class="storage-stat"><div class="storage-stat-label">Volume Files</div><div id="bucket-volume-files" class="storage-stat-value">--</div></div></div>
+                            <div class="col-6 col-lg-3"><div class="storage-stat"><div class="storage-stat-label">Bucket Objects</div><div id="bucket-object-count" class="storage-stat-value">--</div></div></div>
+                            <div class="col-6 col-lg-3"><div class="storage-stat"><div class="storage-stat-label">Verified</div><div id="bucket-verified-count" class="storage-stat-value">--</div></div></div>
+                            <div class="col-6 col-lg-3"><div class="storage-stat"><div class="storage-stat-label">Pending / Issues</div><div id="bucket-pending-count" class="storage-stat-value">--</div></div></div>
+                        </div>
+                        <div class="bucket-progress mb-3"><div id="bucket-progress-fill" class="bucket-progress-fill" style="width:0%"></div></div>
+                        <div id="bucket-migration-summary" class="small text-muted fw-bold mb-3"></div>
+                        <div id="bucket-status-counts" class="bucket-status-counts mb-3"></div>
+                        <div class="d-flex flex-column flex-sm-row gap-2">
+                            <button id="bucket-migrate-btn" type="button" class="btn btn-primary fw-bold" onclick="runBucketMigrationBatch()">
+                                <i class="fa-solid fa-cloud-arrow-up me-2"></i>Migrate Next 25
+                            </button>
+                            <button id="bucket-verify-btn" type="button" class="btn btn-success fw-bold" onclick="runBucketVerificationBatch()">
+                                <i class="fa-solid fa-shield-check me-2"></i>Verify Next 25
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary fw-bold" onclick="loadBucketMigrationStatus(true)">
+                                <i class="fa-solid fa-rotate me-2"></i>Refresh
+                            </button>
+                        </div>
+                        <div class="xsmall text-muted mt-3">Migration is resumable. Conflicting objects are never overwritten.</div>
+                    </div>
+                    <div id="bucket-migration-error" class="alert alert-warning small d-none mb-0"></div>
                 </div>
             </div>
         </div>
@@ -927,6 +969,7 @@
             loadMySignature();
         } else if (sectionName === 'storage' && document.getElementById('storage-health-content')) {
             loadStorageHealth();
+            loadBucketMigrationStatus();
         } else if (sectionName === 'approval' && document.getElementById('approval-routing-content')) {
             loadApprovalRouting();
         } else if (sectionName === 'email-recipients' && document.getElementById('email-recipient-content')) {
@@ -1482,7 +1525,8 @@
             setStorageText('storage-remaining', data.remaining_human);
             setStorageText('storage-percent', `${data.usage_percent}%`);
             setStorageText('storage-database', data.database ? data.database.size_human : '--');
-            setStorageText('storage-uploads', data.active_upload_folder ? data.active_upload_folder.size_human : '--');
+            setStorageText('storage-uploads', data.legacy_upload_usage ? data.legacy_upload_usage.size_human : (data.active_upload_folder ? data.active_upload_folder.size_human : '--'));
+            setStorageText('storage-bucket', data.bucket_usage ? data.bucket_usage.size_human : '--');
             setStorageText('storage-files', String(data.total_file_count || 0));
             const recommendation = document.getElementById('storage-recommendation');
             const status = String(data.storage_status || '').toLowerCase();
@@ -1517,6 +1561,119 @@
         } finally {
             if (loading) loading.classList.add('d-none');
         }
+    }
+
+    function renderBucketMigrationStatus(data) {
+        const storage = data.storage || {};
+        const connection = data.connection || {};
+        const volume = data.volume || {};
+        const bucket = data.bucket || {};
+        const counts = data.counts || {};
+        const total = Number(volume.file_count || 0);
+        const verified = Number(counts.verified || 0);
+        const pending = Number(counts.pending || 0) + Number(counts.missing || 0);
+        const issues = Number(counts.conflicting || 0) + Number(counts.failed || 0);
+        const completedPercent = total > 0 ? Math.round((verified / total) * 100) : 0;
+
+        setStorageText('bucket-volume-files', `${total} / ${volume.size_human || '0 B'}`);
+        setStorageText('bucket-object-count', `${bucket.object_count || 0} / ${bucket.size_human || '0 B'}`);
+        setStorageText('bucket-verified-count', String(verified));
+        setStorageText('bucket-pending-count', issues ? `${pending} / ${issues} issues` : String(pending));
+
+        const modeBadge = document.getElementById('bucket-mode-badge');
+        if (modeBadge) {
+            modeBadge.textContent = String(storage.mode || 'volume').toUpperCase();
+            modeBadge.className = 'badge ' + (storage.mode === 'bucket' ? 'bg-success' : (storage.mode === 'mirror' ? 'bg-warning text-dark' : 'bg-secondary'));
+        }
+        const connectionBox = document.getElementById('bucket-connection-message');
+        if (connectionBox) {
+            connectionBox.className = 'bucket-connection-status mb-3 ' + (connection.ok ? 'connected' : 'disconnected');
+            connectionBox.innerHTML = `<i class="fa-solid fa-${connection.ok ? 'circle-check' : 'triangle-exclamation'} me-2"></i>${settingsEscape(connection.message || 'Bucket status unavailable.')}`;
+        }
+        const progress = document.getElementById('bucket-progress-fill');
+        if (progress) progress.style.width = `${Math.max(0, Math.min(100, completedPercent))}%`;
+        const summary = document.getElementById('bucket-migration-summary');
+        if (summary) {
+            summary.textContent = data.complete
+                ? 'All volume upload files have passed size and SHA-256 verification.'
+                : `${verified} of ${total} volume files verified. ${Number(counts.migrated || 0)} migrated and awaiting verification.`;
+        }
+        const countBox = document.getElementById('bucket-status-counts');
+        if (countBox) {
+            countBox.innerHTML = [
+                ['Migrated', counts.migrated || 0, 'info'],
+                ['Pending', counts.pending || 0, 'secondary'],
+                ['Missing', counts.missing || 0, 'warning'],
+                ['Conflicting', counts.conflicting || 0, 'danger'],
+                ['Failed', counts.failed || 0, 'danger']
+            ].map(([label, value, tone]) => `<span class="badge bg-${tone}${tone === 'warning' || tone === 'info' ? ' text-dark' : ''}">${settingsEscape(label)}: ${Number(value || 0)}</span>`).join('');
+        }
+        const disabled = !connection.ok;
+        const migrateBtn = document.getElementById('bucket-migrate-btn');
+        const verifyBtn = document.getElementById('bucket-verify-btn');
+        if (migrateBtn) migrateBtn.disabled = disabled || data.complete;
+        if (verifyBtn) verifyBtn.disabled = disabled || data.complete;
+    }
+
+    async function loadBucketMigrationStatus(forceRefresh=false) {
+        const loading = document.getElementById('bucket-migration-loading');
+        const content = document.getElementById('bucket-migration-content');
+        const error = document.getElementById('bucket-migration-error');
+        if (!loading) return;
+        loading.classList.remove('d-none');
+        error?.classList.add('d-none');
+        try {
+            const response = await fetch('/admin/storage-bucket/status' + (forceRefresh ? '?refresh=1' : ''), {
+                credentials: 'same-origin', cache: 'no-store'
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || data.status !== 'success') throw new Error(data.message || 'Bucket status failed.');
+            renderBucketMigrationStatus(data);
+            content?.classList.remove('d-none');
+        } catch (err) {
+            console.error('Bucket migration status failed:', err);
+            if (error) {
+                error.textContent = err.message || 'Bucket migration status could not be loaded.';
+                error.classList.remove('d-none');
+            }
+        } finally {
+            loading.classList.add('d-none');
+        }
+    }
+
+    async function runBucketOperation(url, buttonId, workingLabel) {
+        const button = document.getElementById(buttonId);
+        if (!button || button.disabled) return;
+        const originalHtml = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin me-2"></i>${settingsEscape(workingLabel)}`;
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken()},
+                body: JSON.stringify({batch_size: 25})
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !['success', 'warning'].includes(data.status)) {
+                throw new Error(data.message || 'Bucket operation failed.');
+            }
+            settingsAlert(`${data.processed || 0} file(s) processed.`, data.status === 'warning' ? 'warning' : 'success');
+            await Promise.all([loadBucketMigrationStatus(true), loadStorageHealth(true)]);
+        } catch (err) {
+            settingsAlert(err.message || 'Bucket operation failed.');
+        } finally {
+            button.innerHTML = originalHtml;
+            button.disabled = false;
+        }
+    }
+
+    function runBucketMigrationBatch() {
+        return runBucketOperation('/admin/storage-bucket/migrate-batch', 'bucket-migrate-btn', 'Migrating...');
+    }
+
+    function runBucketVerificationBatch() {
+        return runBucketOperation('/admin/storage-bucket/verify', 'bucket-verify-btn', 'Verifying...');
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -3155,6 +3312,29 @@
 
 
     .settings-storage-card { border-left: 5px solid #0dcaf0 !important; }
+    .bucket-migration-card { border-left: 5px solid #1d4ed8 !important; }
+    .bucket-connection-status {
+        border: 1px solid #dbe3ef;
+        border-radius: 0.75rem;
+        padding: 0.75rem 0.85rem;
+        font-size: 0.82rem;
+        font-weight: 850;
+    }
+    .bucket-connection-status.connected { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+    .bucket-connection-status.disconnected { background: #fff7ed; border-color: #fed7aa; color: #9a3412; }
+    .bucket-progress {
+        height: 10px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: #e2e8f0;
+    }
+    .bucket-progress-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: #16a34a;
+        transition: width 0.3s ease;
+    }
+    .bucket-status-counts { display: flex; flex-wrap: wrap; gap: 0.45rem; }
     .storage-meter {
         width: 100%;
         height: 14px;
