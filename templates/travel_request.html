@@ -1226,6 +1226,9 @@
             <button type="button" class="travel-btn travel-btn-primary" id="travel-upload-attachments-btn" onclick="uploadTravelRequestAttachments()">
                 <i class="fa-solid fa-cloud-arrow-up"></i> Upload Attachments
             </button>
+            <button type="button" class="travel-btn travel-btn-danger-outline" id="travel-delete-all-attachments-btn" onclick="deleteAllTravelRequestAttachments()" style="display:none;" title="Delete all supporting attachments">
+                <i class="fa-solid fa-trash"></i> Delete All
+            </button>
         </div>
         <div id="travel-attachment-selection" class="travel-attachment-meta">No files selected.</div>
         <div id="travel-attachment-list" class="travel-attachment-list">
@@ -3324,12 +3327,17 @@ function renderTravelRequestAttachments(attachments){
     travelRequestAttachments = Array.isArray(attachments) ? attachments : [];
     const list = document.getElementById('travel-attachment-list');
     if(!list) return;
+    const deleteAllButton = document.getElementById('travel-delete-all-attachments-btn');
+    const editable = isCurrentTravelEditable();
+    if(deleteAllButton){
+        deleteAllButton.style.display = travelRequestAttachments.length && editable ? '' : 'none';
+        deleteAllButton.disabled = !editable || !travelRequestAttachments.length;
+    }
     if(!travelRequestAttachments.length){
         list.innerHTML = '<div class="travel-attachment-meta">No attachments uploaded.</div>';
         return;
     }
 
-    const editable = isCurrentTravelEditable();
     list.innerHTML = travelRequestAttachments.map(item => `
         <div class="travel-attachment-item">
             <div class="travel-attachment-name">
@@ -3343,7 +3351,7 @@ function renderTravelRequestAttachments(attachments){
                 <a class="travel-btn travel-btn-secondary" href="${travelEscape(item.download_url || '#')}">
                     <i class="fa-solid fa-download"></i> Download
                 </a>
-                ${editable ? `<button type="button" class="travel-btn travel-btn-danger-outline" onclick="deleteTravelRequestAttachment(${Number(item.id) || 0})"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
+                ${editable ? `<button type="button" class="travel-btn travel-btn-danger-outline" title="Delete attachment" onclick="deleteTravelRequestAttachment(${Number(item.id) || 0})"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
             </div>
         </div>
     `).join('');
@@ -3444,9 +3452,38 @@ async function deleteTravelRequestAttachment(attachmentId){
         });
         const data = await parseTravelJson(res, 'Unable to delete attachment.');
         renderTravelRequestAttachments(data.attachments || []);
-        showTravelStatus(data.message || 'Attachment deleted.', 'success');
+        showTravelStatus(`${data.message || 'Attachment deleted.'}${data.cleanup_warning ? ' ' + data.cleanup_warning : ''}`, data.cleanup_warning ? 'warning' : 'success');
     }catch(err){
         showTravelStatus(err.message || 'Unable to delete attachment.', 'error');
+    }
+}
+
+async function deleteAllTravelRequestAttachments(){
+    if(!guardTravelEditableAction('delete attachments') || !travelRequestAttachments.length) return;
+    const requestId = document.getElementById('travel-request-id')?.value || '';
+    if(!requestId) return;
+    const count = travelRequestAttachments.length;
+    const confirmed = await travelConfirmDialog({
+        title: 'Delete All Attachments?',
+        message: `${count} supporting attachment${count === 1 ? '' : 's'} will be permanently removed.`,
+        confirmText: 'Delete All', cancelText: 'Cancel', tone: 'danger', icon: 'trash'
+    });
+    if(!confirmed) return;
+    const button = document.getElementById('travel-delete-all-attachments-btn');
+    const originalHtml = button?.innerHTML || '';
+    if(button){ button.disabled = true; button.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Deleting...'; }
+    try{
+        const res = await fetch(`/delete_all_travel_request_attachments/${encodeURIComponent(requestId)}`, {
+            method:'POST', credentials:'same-origin', cache:'no-store',
+            headers:{'Accept':'application/json','X-CSRFToken':travelCsrfToken()}
+        });
+        const data = await parseTravelJson(res, 'Unable to delete attachments.');
+        renderTravelRequestAttachments(data.attachments || []);
+        showTravelStatus(`${Number(data.deleted_count || count)} attachment(s) deleted.${data.cleanup_warning ? ' ' + data.cleanup_warning : ''}`, data.cleanup_warning ? 'warning' : 'success');
+    }catch(err){
+        showTravelStatus(err.message || 'Unable to delete attachments.', 'error');
+    }finally{
+        if(button){ button.disabled = false; button.innerHTML = originalHtml; }
     }
 }
 

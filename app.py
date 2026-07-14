@@ -520,6 +520,7 @@ bucket_connection_error_logged_at = 0.0
 STORAGE_PREFIX_REPORTS = 'reports'
 STORAGE_PREFIX_REIMBURSEMENTS = 'reimbursements'
 STORAGE_PREFIX_TRAVEL_REQUESTS = 'travel_requests'
+STORAGE_PREFIX_CASH_ADVANCES = 'cash_advances'
 STORAGE_PREFIX_TRAVEL_LIQUIDATIONS = 'travel_liquidation_receipts'
 STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS = 'cash_advance_liquidation_receipts'
 
@@ -11127,7 +11128,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v10-tsr-sync-repair';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v11-accounting-attachments';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -12646,11 +12647,12 @@ def get_backup_source_paths():
 
 
 def managed_storage_roots():
-    """Return the five upload families included in the bucket migration."""
+    """Return upload families included in bucket migration and storage health."""
     return [
         (STORAGE_PREFIX_REPORTS, app.config.get('UPLOAD_FOLDER')),
         (STORAGE_PREFIX_REIMBURSEMENTS, reimbursement_receipt_upload_root()),
         (STORAGE_PREFIX_TRAVEL_REQUESTS, travel_request_attachment_upload_root()),
+        (STORAGE_PREFIX_CASH_ADVANCES, cash_advance_attachment_upload_root()),
         (STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, travel_liquidation_receipt_folder()),
         (STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, cash_advance_liquidation_receipt_folder()),
     ]
@@ -20064,16 +20066,79 @@ def delete_reimbursement_receipt(receipt_id):
         db.session.delete(receipt)
         header.updated_at = get_manila_time()
         db.session.commit()
+        cleanup_warning = ''
         try:
             local_path = os.path.join(reimbursement_receipt_upload_root(), stored_filename)
             managed_storage_delete(STORAGE_PREFIX_REIMBURSEMENTS, local_path)
         except Exception as file_err:
+            cleanup_warning = 'Receipt was removed, but storage cleanup needs administrator review.'
             print(f"[Reimbursement] Receipt file delete skipped: {file_err}")
-        return jsonify({'success': True, 'message': 'Receipt removed.'})
+        return jsonify({'success': True, 'message': 'Receipt removed.', 'deleted_count': 1, 'cleanup_warning': cleanup_warning})
     except Exception as exc:
         db.session.rollback()
         print(f"[Reimbursement] Receipt delete failed: {exc}")
         return jsonify({'success': False, 'error': 'Unable to delete receipt.'}), 500
+
+
+@app.route('/delete_all_reimbursement_receipts', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_all_reimbursement_receipts():
+    payload = request.get_json(silent=True) or request.form or {}
+    try:
+        start_date = reimbursement_parse_date(payload.get('start'), 'start')
+        end_date = reimbursement_parse_date(payload.get('end'), 'end')
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+
+    profile = reimbursement_get_personal_profile()
+    header = reimbursement_find_header(start_date, end_date, create=False) if profile else None
+    if not header or header.user_id != current_user.id or header.engineer_id != profile.id:
+        return jsonify({'success': False, 'error': 'Reimbursement draft not found.'}), 404
+    if not reimbursement_header_is_editable(header):
+        return reimbursement_edit_lock_response(header, 'updated by deleting receipts')
+
+    receipts = reimbursement_get_receipt_records_for_header(header.id)
+    stored_filenames = [os.path.basename(clean_str(item.stored_filename) or '') for item in receipts]
+    deleted_count = len(receipts)
+    try:
+        for receipt in receipts:
+            db.session.delete(receipt)
+        header.updated_at = get_manila_time()
+        record_universal_approval_audit(
+            'reimbursement', header.id, 'receipts_deleted_all', actor_user=current_user,
+            status_from=header.status, status_to=header.status,
+            remarks=f'Deleted all {deleted_count} reimbursement receipt(s).',
+            metadata={'reimbursement_id': header.id, 'deleted_count': deleted_count}
+        )
+        add_activity_log_entry(f'Deleted all {deleted_count} Reimbursement receipt(s): #{header.id}')
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[Reimbursement] Delete all receipts failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to delete reimbursement receipts.'}), 500
+
+    cleanup_failures = 0
+    for stored_filename in stored_filenames:
+        if not stored_filename:
+            continue
+        try:
+            managed_storage_delete(
+                STORAGE_PREFIX_REIMBURSEMENTS,
+                os.path.join(reimbursement_receipt_upload_root(), stored_filename)
+            )
+        except Exception as file_error:
+            cleanup_failures += 1
+            print(f'[Reimbursement] Bulk receipt storage cleanup failed: {file_error}', flush=True)
+    cleanup_warning = f'{cleanup_failures} stored file(s) need administrator cleanup.' if cleanup_failures else ''
+    return jsonify({
+        'success': True,
+        'message': f'{deleted_count} receipt(s) deleted.',
+        'deleted_count': deleted_count,
+        'receipts_by_shift': {},
+        'all_receipts': [],
+        'cleanup_warning': cleanup_warning
+    })
 
 
 
@@ -22893,6 +22958,7 @@ def delete_travel_request_attachment(attachment_id):
             f"Deleted Travel Request attachment {filename}: {request_rec.request_no or f'TR-{request_rec.id}'}"
         )
         db.session.commit()
+        cleanup_warning = ''
         try:
             local_path = os.path.join(
                 travel_request_attachment_upload_root(),
@@ -22900,16 +22966,73 @@ def delete_travel_request_attachment(attachment_id):
             )
             managed_storage_delete(STORAGE_PREFIX_TRAVEL_REQUESTS, local_path)
         except Exception as file_error:
+            cleanup_warning = 'Attachment was removed, but storage cleanup needs administrator review.'
             print(f'[TravelRequest] Deleted attachment record but file cleanup was skipped: {file_error}', flush=True)
         return jsonify({
             'success': True,
             'message': 'Attachment deleted.',
-            'attachments': travel_request_attachment_dicts(request_rec.id)
+            'deleted_count': 1,
+            'attachments': travel_request_attachment_dicts(request_rec.id),
+            'cleanup_warning': cleanup_warning
         })
     except Exception as exc:
         db.session.rollback()
         print(f'[TravelRequest] Attachment delete failed: {exc}', flush=True)
         return jsonify({'success': False, 'error': 'Unable to delete Travel Request attachment.'}), 500
+
+
+@app.route('/delete_all_travel_request_attachments/<int:travel_request_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_all_travel_request_attachments(travel_request_id):
+    ensure_travel_request_tables()
+    request_rec = db.session.get(TravelRequest, travel_request_id)
+    if not request_rec:
+        return jsonify({'success': False, 'error': 'Travel request not found.'}), 404
+    if not can_current_user_edit_travel_request_attachments(request_rec):
+        return jsonify({'success': False, 'error': 'Attachments can only be changed while the Travel Request is Draft or Rejected.'}), 409
+
+    attachments = travel_request_attachment_records(request_rec.id)
+    stored_filenames = [os.path.basename(clean_str(item.stored_filename) or '') for item in attachments]
+    deleted_count = len(attachments)
+    try:
+        for attachment in attachments:
+            db.session.delete(attachment)
+        request_rec.updated_at = get_manila_time()
+        record_universal_approval_audit(
+            'travel_request', request_rec.id, 'attachments_deleted_all', actor_user=current_user,
+            status_from=request_rec.status, status_to=request_rec.status,
+            remarks=f'Deleted all {deleted_count} supporting attachment(s).',
+            metadata={'travel_request_id': request_rec.id, 'deleted_count': deleted_count}
+        )
+        add_activity_log_entry(f"Deleted all {deleted_count} Travel Request attachment(s): {request_rec.request_no or f'TR-{request_rec.id}'}")
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[TravelRequest] Delete all attachments failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to delete Travel Request attachments.'}), 500
+
+    cleanup_failures = 0
+    for stored_filename in stored_filenames:
+        if not stored_filename:
+            continue
+        try:
+            managed_storage_delete(
+                STORAGE_PREFIX_TRAVEL_REQUESTS,
+                os.path.join(travel_request_attachment_upload_root(), stored_filename)
+            )
+        except Exception as file_error:
+            cleanup_failures += 1
+            print(f'[TravelRequest] Bulk attachment storage cleanup failed: {file_error}', flush=True)
+    cleanup_warning = f'{cleanup_failures} stored file(s) need administrator cleanup.' if cleanup_failures else ''
+    return jsonify({
+        'success': True,
+        'message': f'{deleted_count} attachment(s) deleted.',
+        'deleted_count': deleted_count,
+        'attachments': [],
+        'attachment_count': 0,
+        'cleanup_warning': cleanup_warning
+    })
 
 
 @app.route('/get_travel_request_approval_queue')
@@ -28762,14 +28885,7 @@ def delete_travel_liquidation_receipt(receipt_id):
 
     original_filename = clean_str(getattr(receipt, 'original_filename', None)) or clean_str(getattr(receipt, 'stored_filename', None)) or 'receipt'
     stored_filename = os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or '')
-    file_deleted = False
-
     try:
-        if stored_filename:
-            file_path = os.path.join(travel_liquidation_receipt_folder(), stored_filename)
-            managed_storage_delete(STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, file_path)
-            file_deleted = True
-
         db.session.delete(receipt)
         liquidation.updated_at = get_manila_time()
 
@@ -28787,18 +28903,30 @@ def delete_travel_liquidation_receipt(receipt_id):
                 'row_id': clean_int(getattr(row, 'id', None)),
                 'receipt_id': clean_int(receipt_id),
                 'receipt_filename': original_filename,
-                'file_deleted': file_deleted
+                'file_deleted': False
             }
         )
 
         travel_liquidation_recalculate_totals(liquidation)
         db.session.commit()
 
+        file_deleted = False
+        cleanup_warning = ''
+        if stored_filename:
+            try:
+                file_path = os.path.join(travel_liquidation_receipt_folder(), stored_filename)
+                managed_storage_delete(STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, file_path)
+                file_deleted = True
+            except Exception as file_error:
+                cleanup_warning = 'Receipt was removed, but storage cleanup needs administrator review.'
+                print(f"[TravelLiquidation] Receipt storage cleanup failed: {file_error}", flush=True)
+
         return jsonify({
             'success': True,
             'message': 'Receipt deleted.',
             'deleted_receipt_id': clean_int(receipt_id),
             'file_deleted': file_deleted,
+            'cleanup_warning': cleanup_warning,
             'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
         })
 
@@ -28806,6 +28934,65 @@ def delete_travel_liquidation_receipt(receipt_id):
         db.session.rollback()
         print(f"[TravelLiquidation] Receipt delete failed: {exc}", flush=True)
         return jsonify({'success': False, 'error': 'Unable to delete receipt.'}), 500
+
+
+@app.route('/delete_all_travel_liquidation_receipts/<int:liquidation_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_all_travel_liquidation_receipts(liquidation_id):
+    denial = require_accounting_center_access()
+    if denial:
+        return denial
+    ensure_travel_liquidation_tables()
+    liquidation = get_travel_liquidation_for_current_user(liquidation_id=liquidation_id)
+    allowed, message = can_edit_travel_liquidation(liquidation)
+    if not allowed:
+        return jsonify({'success': False, 'error': message}), 403
+
+    receipts = TravelLiquidationReceipt.query.filter_by(liquidation_id=liquidation.id).all()
+    stored_filenames = [os.path.basename(clean_str(item.stored_filename) or '') for item in receipts]
+    deleted_count = len(receipts)
+    try:
+        for receipt in receipts:
+            db.session.delete(receipt)
+        liquidation.updated_at = get_manila_time()
+        record_universal_approval_audit(
+            'travel_request',
+            liquidation.travel_request_id,
+            'liquidation_receipts_deleted_all',
+            actor_user=current_user,
+            status_from=liquidation.status,
+            status_to=liquidation.status,
+            remarks=f'Deleted all {deleted_count} liquidation receipt(s).',
+            metadata={'liquidation_id': liquidation.id, 'liquidation_no': liquidation.liquidation_no, 'deleted_count': deleted_count}
+        )
+        add_activity_log_entry(f'Deleted all {deleted_count} Travel Liquidation receipt(s): {liquidation.liquidation_no or liquidation.id}')
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[TravelLiquidation] Delete all receipts failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to delete liquidation receipts.'}), 500
+
+    cleanup_failures = 0
+    for stored_filename in stored_filenames:
+        if not stored_filename:
+            continue
+        try:
+            managed_storage_delete(
+                STORAGE_PREFIX_TRAVEL_LIQUIDATIONS,
+                os.path.join(travel_liquidation_receipt_folder(), stored_filename)
+            )
+        except Exception as file_error:
+            cleanup_failures += 1
+            print(f'[TravelLiquidation] Bulk receipt storage cleanup failed: {file_error}', flush=True)
+    cleanup_warning = f'{cleanup_failures} stored file(s) need administrator cleanup.' if cleanup_failures else ''
+    return jsonify({
+        'success': True,
+        'message': f'{deleted_count} receipt(s) deleted. Expense rows were kept.',
+        'deleted_count': deleted_count,
+        'cleanup_warning': cleanup_warning,
+        'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
+    })
 
 
 
@@ -36955,6 +37142,11 @@ class CashAdvanceAttachment(db.Model):
     cash_advance_id = db.Column(db.Integer, index=True)
     file_name = db.Column(db.String(255))
     file_path = db.Column(db.String(500))
+    stored_filename = db.Column(db.String(255))
+    original_filename = db.Column(db.String(255))
+    content_type = db.Column(db.String(120))
+    file_size = db.Column(db.Integer, default=0)
+    uploaded_by_id = db.Column(db.Integer, index=True)
     uploaded_at = db.Column(db.DateTime)
 
 
@@ -37129,6 +37321,22 @@ def ensure_cash_advance_tables():
                     connection.exec_driver_sql(statement)
                     print(f"[DB MIGRATION] Added cash_advance_header.{column_name}", flush=True)
 
+            attachment_columns = {
+                row[1]
+                for row in connection.exec_driver_sql("PRAGMA table_info(cash_advance_attachment)").fetchall()
+            }
+            cash_advance_attachment_migrations = {
+                'stored_filename': 'ALTER TABLE cash_advance_attachment ADD COLUMN stored_filename VARCHAR(255)',
+                'original_filename': 'ALTER TABLE cash_advance_attachment ADD COLUMN original_filename VARCHAR(255)',
+                'content_type': 'ALTER TABLE cash_advance_attachment ADD COLUMN content_type VARCHAR(120)',
+                'file_size': 'ALTER TABLE cash_advance_attachment ADD COLUMN file_size INTEGER DEFAULT 0',
+                'uploaded_by_id': 'ALTER TABLE cash_advance_attachment ADD COLUMN uploaded_by_id INTEGER'
+            }
+            for column_name, statement in cash_advance_attachment_migrations.items():
+                if column_name not in attachment_columns:
+                    connection.exec_driver_sql(statement)
+                    print(f"[DB MIGRATION] Added cash_advance_attachment.{column_name}", flush=True)
+
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_cash_advance_header_user ON cash_advance_header (user_id)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_cash_advance_header_status ON cash_advance_header (status)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_cash_advance_header_no ON cash_advance_header (cash_advance_no)")
@@ -37141,6 +37349,7 @@ def ensure_cash_advance_tables():
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_cash_advance_ready_liquidation_at ON cash_advance_header (ready_for_liquidation_at)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_cash_advance_audit_record ON cash_advance_audit (cash_advance_id)")
             connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_cash_advance_attachment_record ON cash_advance_attachment (cash_advance_id)")
+            connection.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_cash_advance_attachment_uploader ON cash_advance_attachment (uploaded_by_id)")
 
         _cash_advance_tables_ready = True
     except Exception as table_error:
@@ -38235,7 +38444,7 @@ def send_cash_advance_accounting_email_async(app_obj, cash_advance_id, accountin
     )
 
     def worker():
-        temp_pdf_path = ''
+        temp_paths = []
         header = None
         with app_obj.app_context():
             try:
@@ -38261,6 +38470,28 @@ def send_cash_advance_accounting_email_async(app_obj, cash_advance_id, accountin
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf:
                     temp_pdf.write(pdf_bytes)
                     temp_pdf_path = temp_pdf.name
+                temp_paths.append(temp_pdf_path)
+
+                email_attachments = [{
+                    'display_name': pdf_filename,
+                    'filename': pdf_filename,
+                    'path': temp_pdf_path
+                }]
+                supporting_records = cash_advance_attachment_records(header.id)
+                if supporting_records:
+                    supporting_pdf_bytes = build_cash_advance_supporting_attachments_pdf_bytes(header)
+                    if not supporting_pdf_bytes:
+                        raise ValueError('Cash Advance supporting attachments could not be compiled for Accounting.')
+                    supporting_filename = cash_advance_supporting_attachments_filename(header)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as supporting_pdf:
+                        supporting_pdf.write(supporting_pdf_bytes)
+                        supporting_temp_path = supporting_pdf.name
+                    temp_paths.append(supporting_temp_path)
+                    email_attachments.append({
+                        'display_name': supporting_filename,
+                        'filename': supporting_filename,
+                        'path': supporting_temp_path
+                    })
 
                 requester_copy_emails = get_requester_accounting_copy_emails(header, recipient_emails)
                 sent, message = send_email_with_attachments(
@@ -38268,11 +38499,7 @@ def send_cash_advance_accounting_email_async(app_obj, cash_advance_id, accountin
                     subject,
                     text_body,
                     html_body,
-                    attachments=[{
-                        'display_name': pdf_filename,
-                        'filename': pdf_filename,
-                        'path': temp_pdf_path
-                    }],
+                    attachments=email_attachments,
                     cc_emails=requester_copy_emails
                 )
                 print(f"[EMAIL] Cash Advance accounting handoff with official form attachment: sent={sent} | {message}", flush=True)
@@ -38309,9 +38536,9 @@ def send_cash_advance_accounting_email_async(app_obj, cash_advance_id, accountin
                 except Exception:
                     db.session.rollback()
             finally:
-                if temp_pdf_path:
+                for temp_path in temp_paths:
                     try:
-                        os.unlink(temp_pdf_path)
+                        os.unlink(temp_path)
                     except Exception:
                         pass
 
@@ -38321,7 +38548,131 @@ def send_cash_advance_accounting_email_async(app_obj, cash_advance_id, accountin
     return True
 
 
-def cash_advance_to_dict(header, include_audit=False):
+CASH_ADVANCE_ATTACHMENT_MAX_FILES = 10
+
+
+def cash_advance_attachment_upload_root():
+    if os.environ.get('RAILWAY_ENVIRONMENT'):
+        root = '/data/uploads/cash_advances'
+    else:
+        root = os.path.join(basedir, 'static', 'uploads', 'cash_advances')
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def cash_advance_attachment_stored_filename(attachment):
+    return os.path.basename(
+        clean_str(getattr(attachment, 'stored_filename', None)) or
+        clean_str(getattr(attachment, 'file_path', None)) or
+        ''
+    )
+
+
+def cash_advance_attachment_original_filename(attachment):
+    return (
+        clean_str(getattr(attachment, 'original_filename', None)) or
+        clean_str(getattr(attachment, 'file_name', None)) or
+        cash_advance_attachment_stored_filename(attachment) or
+        'attachment'
+    )
+
+
+def cash_advance_attachment_path(attachment):
+    local_path = os.path.join(
+        cash_advance_attachment_upload_root(),
+        cash_advance_attachment_stored_filename(attachment)
+    )
+    return managed_storage_read_path(STORAGE_PREFIX_CASH_ADVANCES, local_path)
+
+
+def cash_advance_attachment_mimetype(attachment):
+    content_type = clean_str(getattr(attachment, 'content_type', None))
+    if content_type in {'application/pdf', 'image/jpeg', 'image/png'}:
+        return content_type
+    ext = reimbursement_receipt_extension(cash_advance_attachment_original_filename(attachment))
+    return {
+        'pdf': 'application/pdf',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png'
+    }.get(ext, 'application/octet-stream')
+
+
+def cash_advance_attachment_to_dict(attachment):
+    return {
+        'id': attachment.id,
+        'filename': cash_advance_attachment_original_filename(attachment),
+        'original_filename': cash_advance_attachment_original_filename(attachment),
+        'content_type': cash_advance_attachment_mimetype(attachment),
+        'size': clean_int(getattr(attachment, 'file_size', None)) or 0,
+        'created_at': attachment.uploaded_at.isoformat() if attachment.uploaded_at else None,
+        'preview_url': url_for('preview_cash_advance_attachment', attachment_id=attachment.id),
+        'download_url': url_for('download_cash_advance_attachment', attachment_id=attachment.id)
+    }
+
+
+def cash_advance_attachment_records(cash_advance_id):
+    return (
+        CashAdvanceAttachment.query
+        .filter_by(cash_advance_id=clean_int(cash_advance_id))
+        .order_by(CashAdvanceAttachment.uploaded_at.asc(), CashAdvanceAttachment.id.asc())
+        .all()
+    )
+
+
+def cash_advance_attachment_dicts(cash_advance_id):
+    return [cash_advance_attachment_to_dict(item) for item in cash_advance_attachment_records(cash_advance_id)]
+
+
+def build_cash_advance_supporting_attachments_pdf_bytes(header):
+    attachments = cash_advance_attachment_records(header.id)
+    if not attachments:
+        return None
+    try:
+        from pypdf import PdfWriter
+    except Exception:
+        from PyPDF2 import PdfWriter
+
+    writer = PdfWriter()
+    reimbursement_append_pdf_bytes(
+        writer,
+        reimbursement_receipt_divider_pdf_bytes(
+            'CASH ADVANCE SUPPORTING ATTACHMENTS',
+            [
+                ('Cash Advance No.', header.cash_advance_no or f'CA-{header.id}'),
+                ('Attachment Count', str(len(attachments)))
+            ]
+        )
+    )
+    appended_count = 0
+    for attachment in attachments:
+        path = cash_advance_attachment_path(attachment)
+        try:
+            ext = reimbursement_receipt_extension(cash_advance_attachment_original_filename(attachment))
+            if ext == 'pdf':
+                with open(path, 'rb') as file_obj:
+                    reimbursement_append_pdf_bytes(writer, file_obj.read())
+            elif ext in {'jpg', 'jpeg', 'png'}:
+                reimbursement_append_pdf_bytes(writer, reimbursement_receipt_image_to_pdf_bytes(path))
+            else:
+                raise ValueError(f'Unsupported Cash Advance attachment: {cash_advance_attachment_original_filename(attachment)}')
+            appended_count += 1
+        finally:
+            managed_storage_release_path(path)
+
+    if appended_count != len(attachments):
+        raise ValueError('Not all Cash Advance attachments could be added to the supporting document package.')
+    output = io.BytesIO()
+    writer.write(output)
+    return reimbursement_compress_pdf_bytes_best_effort(output.getvalue()) or None
+
+
+def cash_advance_supporting_attachments_filename(header):
+    request_no = secure_filename(clean_str(header.cash_advance_no) or f'CA-{header.id}') or f'CA-{header.id}'
+    return f'{request_no}_Supporting_Attachments.pdf'
+
+
+def cash_advance_to_dict(header, include_audit=False, include_attachments=False):
     if not header:
         return {}
 
@@ -38429,6 +38780,10 @@ def cash_advance_to_dict(header, include_audit=False):
             for entry in get_universal_approval_audit_entries('cash_advance', header.id)
         ]
 
+    if include_attachments or include_audit:
+        payload['attachments'] = cash_advance_attachment_dicts(header.id)
+        payload['attachment_count'] = len(payload['attachments'])
+
     return payload
 
 def can_user_access_cash_advance(header, user_obj=None):
@@ -38458,6 +38813,210 @@ def cash_advance_add_audit(header, action, remarks=''):
         ))
     except Exception as audit_error:
         print(f"[CashAdvance] Audit skipped: {audit_error}", flush=True)
+
+
+def can_current_user_edit_cash_advance_attachments(header):
+    return bool(
+        header and
+        can_user_manage_own_cash_advance(header) and
+        cash_advance_normalize_status(getattr(header, 'status', None)) in {'Draft', 'Rejected'}
+    )
+
+
+def get_authorized_cash_advance_attachment(attachment_id):
+    ensure_cash_advance_tables()
+    attachment = db.session.get(CashAdvanceAttachment, clean_int(attachment_id))
+    if not attachment:
+        return None, None, (jsonify({'success': False, 'error': 'Attachment not found.'}), 404)
+    header = db.session.get(CashAdvanceHeader, clean_int(attachment.cash_advance_id))
+    if not header or not (
+        can_user_access_cash_advance(header) or
+        can_user_approve_cash_advance(current_user, header)
+    ):
+        return None, None, (jsonify({'success': False, 'error': 'Attachment not found or access denied.'}), 404)
+    return attachment, header, None
+
+
+@app.route('/upload_cash_advance_attachments/<int:cash_advance_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def upload_cash_advance_attachments(cash_advance_id):
+    ensure_cash_advance_tables()
+    header = db.session.get(CashAdvanceHeader, cash_advance_id)
+    if not can_current_user_edit_cash_advance_attachments(header):
+        return jsonify({'success': False, 'error': 'Attachments can only be changed while the Cash Advance is Draft or Rejected.'}), 409
+
+    files = request.files.getlist('attachment_files') or request.files.getlist('attachment_file')
+    files = [item for item in files if item and item.filename]
+    if not files:
+        return jsonify({'success': False, 'error': 'No attachment file selected.'}), 400
+    existing_count = CashAdvanceAttachment.query.filter_by(cash_advance_id=header.id).count()
+    if existing_count + len(files) > CASH_ADVANCE_ATTACHMENT_MAX_FILES:
+        return jsonify({'success': False, 'error': f'A Cash Advance can contain up to {CASH_ADVANCE_ATTACHMENT_MAX_FILES} attachments.'}), 400
+
+    prepared_files = []
+    for file_obj in files:
+        if not reimbursement_receipt_allowed(file_obj.filename):
+            return jsonify({'success': False, 'error': f'Unsupported attachment type: {file_obj.filename}. Allowed: PDF, JPG, JPEG, or PNG.'}), 400
+        original = secure_filename(file_obj.filename) or 'attachment'
+        try:
+            file_bytes, stored_ext, content_type = reimbursement_prepare_receipt_upload_bytes(file_obj, original)
+        except ValueError as prep_error:
+            message = str(prep_error).replace('Receipt', 'Attachment').replace('receipt', 'attachment')
+            return jsonify({'success': False, 'error': message}), 400
+        prepared_files.append((original, stored_ext, content_type, file_bytes))
+
+    written_paths = []
+    try:
+        root = cash_advance_attachment_upload_root()
+        for original, stored_ext, content_type, file_bytes in prepared_files:
+            stored = f"cash_advance_{header.id}_{secrets.token_hex(8)}.{stored_ext}"
+            target_path = os.path.join(root, stored)
+            managed_storage_write_bytes(
+                STORAGE_PREFIX_CASH_ADVANCES,
+                target_path,
+                file_bytes,
+                original_filename=original,
+                content_type=content_type or ''
+            )
+            written_paths.append(target_path)
+            db.session.add(CashAdvanceAttachment(
+                cash_advance_id=header.id,
+                file_name=original,
+                file_path=stored,
+                stored_filename=stored,
+                original_filename=original,
+                content_type=content_type or '',
+                file_size=len(file_bytes),
+                uploaded_by_id=current_user.id,
+                uploaded_at=get_manila_time()
+            ))
+
+        header.updated_at = get_manila_time()
+        cash_advance_add_audit(header, 'attachments_uploaded', f'Uploaded {len(prepared_files)} supporting attachment(s).')
+        add_activity_log_entry(f"Uploaded {len(prepared_files)} Cash Advance attachment(s): {header.cash_advance_no or f'CA-{header.id}'}")
+        db.session.commit()
+        attachments = cash_advance_attachment_dicts(header.id)
+        return jsonify({
+            'success': True,
+            'message': f'{len(prepared_files)} attachment(s) uploaded.',
+            'attachments': attachments,
+            'attachment_count': len(attachments)
+        })
+    except Exception as exc:
+        db.session.rollback()
+        for target_path in written_paths:
+            managed_storage_rollback_new_file(STORAGE_PREFIX_CASH_ADVANCES, target_path)
+        print(f'[CashAdvance] Attachment upload failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to upload Cash Advance attachment.'}), 500
+
+
+@app.route('/preview_cash_advance_attachment/<int:attachment_id>')
+@login_required
+def preview_cash_advance_attachment(attachment_id):
+    attachment, _, error_response = get_authorized_cash_advance_attachment(attachment_id)
+    if error_response:
+        return error_response
+    try:
+        path = cash_advance_attachment_path(attachment)
+    except Exception:
+        return jsonify({'success': False, 'error': 'Attachment file is unavailable.'}), 404
+    return send_file(
+        path,
+        as_attachment=False,
+        download_name=cash_advance_attachment_original_filename(attachment),
+        mimetype=cash_advance_attachment_mimetype(attachment),
+        max_age=0
+    )
+
+
+@app.route('/download_cash_advance_attachment/<int:attachment_id>')
+@login_required
+def download_cash_advance_attachment(attachment_id):
+    attachment, _, error_response = get_authorized_cash_advance_attachment(attachment_id)
+    if error_response:
+        return error_response
+    try:
+        path = cash_advance_attachment_path(attachment)
+    except Exception:
+        return jsonify({'success': False, 'error': 'Attachment file is unavailable.'}), 404
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=cash_advance_attachment_original_filename(attachment),
+        mimetype=cash_advance_attachment_mimetype(attachment),
+        max_age=0
+    )
+
+
+@app.route('/delete_cash_advance_attachment/<int:attachment_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_cash_advance_attachment(attachment_id):
+    ensure_cash_advance_tables()
+    attachment = db.session.get(CashAdvanceAttachment, clean_int(attachment_id))
+    header = db.session.get(CashAdvanceHeader, clean_int(getattr(attachment, 'cash_advance_id', None))) if attachment else None
+    if not attachment or not can_current_user_edit_cash_advance_attachments(header):
+        return jsonify({'success': False, 'error': 'Attachment not found or Cash Advance is no longer editable.'}), 409
+
+    stored_filename = cash_advance_attachment_stored_filename(attachment)
+    original_filename = cash_advance_attachment_original_filename(attachment)
+    try:
+        db.session.delete(attachment)
+        header.updated_at = get_manila_time()
+        cash_advance_add_audit(header, 'attachment_deleted', f'Deleted supporting attachment: {original_filename}')
+        add_activity_log_entry(f"Deleted Cash Advance attachment {original_filename}: {header.cash_advance_no or f'CA-{header.id}'}")
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[CashAdvance] Attachment delete failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to delete Cash Advance attachment.'}), 500
+
+    cleanup_warning = ''
+    if stored_filename:
+        try:
+            managed_storage_delete(STORAGE_PREFIX_CASH_ADVANCES, os.path.join(cash_advance_attachment_upload_root(), stored_filename))
+        except Exception as file_error:
+            cleanup_warning = 'Attachment was removed from the request, but storage cleanup needs administrator review.'
+            print(f'[CashAdvance] Attachment storage cleanup failed: {file_error}', flush=True)
+    attachments = cash_advance_attachment_dicts(header.id)
+    return jsonify({'success': True, 'message': 'Attachment deleted.', 'deleted_count': 1, 'attachments': attachments, 'attachment_count': len(attachments), 'cleanup_warning': cleanup_warning})
+
+
+@app.route('/delete_all_cash_advance_attachments/<int:cash_advance_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_all_cash_advance_attachments(cash_advance_id):
+    ensure_cash_advance_tables()
+    header = db.session.get(CashAdvanceHeader, cash_advance_id)
+    if not can_current_user_edit_cash_advance_attachments(header):
+        return jsonify({'success': False, 'error': 'Attachments can only be changed while the Cash Advance is Draft or Rejected.'}), 409
+    attachments = cash_advance_attachment_records(header.id)
+    stored_filenames = [cash_advance_attachment_stored_filename(item) for item in attachments]
+    deleted_count = len(attachments)
+    try:
+        for attachment in attachments:
+            db.session.delete(attachment)
+        header.updated_at = get_manila_time()
+        cash_advance_add_audit(header, 'attachments_deleted_all', f'Deleted all {deleted_count} supporting attachment(s).')
+        add_activity_log_entry(f"Deleted all {deleted_count} Cash Advance attachment(s): {header.cash_advance_no or f'CA-{header.id}'}")
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[CashAdvance] Delete all attachments failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to delete Cash Advance attachments.'}), 500
+
+    cleanup_failures = 0
+    for stored_filename in stored_filenames:
+        if not stored_filename:
+            continue
+        try:
+            managed_storage_delete(STORAGE_PREFIX_CASH_ADVANCES, os.path.join(cash_advance_attachment_upload_root(), stored_filename))
+        except Exception as file_error:
+            cleanup_failures += 1
+            print(f'[CashAdvance] Bulk attachment storage cleanup failed: {file_error}', flush=True)
+    cleanup_warning = f'{cleanup_failures} stored file(s) need administrator cleanup.' if cleanup_failures else ''
+    return jsonify({'success': True, 'message': f'{deleted_count} attachment(s) deleted.', 'deleted_count': deleted_count, 'attachments': [], 'attachment_count': 0, 'cleanup_warning': cleanup_warning})
 
 
 @app.route('/cash_advance')
@@ -38513,8 +39072,8 @@ def get_cash_advance(cash_advance_id):
 
     return jsonify({
         'success': True,
-        'item': cash_advance_to_dict(header),
-        'cash_advance': cash_advance_to_dict(header)
+        'item': cash_advance_to_dict(header, include_attachments=True),
+        'cash_advance': cash_advance_to_dict(header, include_attachments=True)
     })
 
 
@@ -38573,7 +39132,7 @@ def save_cash_advance():
         cash_advance_add_audit(header, 'saved_draft', 'Cash advance draft saved.')
         db.session.commit()
 
-        item = cash_advance_to_dict(header)
+        item = cash_advance_to_dict(header, include_attachments=True)
         return jsonify({
             'success': True,
             'message': 'Cash advance draft saved.',
@@ -38672,7 +39231,7 @@ def submit_cash_advance(cash_advance_id):
             actor_user_id=current_user.id
         )
 
-        item = cash_advance_to_dict(header)
+        item = cash_advance_to_dict(header, include_attachments=True)
         return jsonify({
             'success': True,
             'message': 'Cash advance submitted for manager approval.',
@@ -40030,12 +40589,7 @@ def delete_cash_advance_liquidation_receipt(receipt_id):
 
     original_filename = clean_str(getattr(receipt, 'original_filename', None)) or clean_str(getattr(receipt, 'stored_filename', None)) or 'receipt'
     stored_filename = os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or '')
-    file_deleted = False
     try:
-        if stored_filename:
-            file_path = os.path.join(cash_advance_liquidation_receipt_folder(), stored_filename)
-            managed_storage_delete(STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, file_path)
-            file_deleted = True
         db.session.delete(receipt)
         cash_advance_liquidation_recalculate_totals(liquidation)
         record_universal_approval_audit(
@@ -40046,14 +40600,83 @@ def delete_cash_advance_liquidation_receipt(receipt_id):
             status_from=liquidation.status,
             status_to=liquidation.status,
             remarks=f"Deleted liquidation receipt: {original_filename}",
-            metadata={'cash_advance_id': liquidation.cash_advance_id, 'liquidation_no': liquidation.liquidation_no, 'receipt_id': clean_int(receipt_id), 'file_deleted': file_deleted}
+            metadata={'cash_advance_id': liquidation.cash_advance_id, 'liquidation_no': liquidation.liquidation_no, 'receipt_id': clean_int(receipt_id), 'file_deleted': False}
         )
         db.session.commit()
-        return jsonify({'success': True, 'message': 'Receipt deleted.', 'deleted_receipt_id': clean_int(receipt_id), 'file_deleted': file_deleted, 'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)})
+        file_deleted = False
+        cleanup_warning = ''
+        if stored_filename:
+            try:
+                file_path = os.path.join(cash_advance_liquidation_receipt_folder(), stored_filename)
+                managed_storage_delete(STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, file_path)
+                file_deleted = True
+            except Exception as file_error:
+                cleanup_warning = 'Receipt was removed, but storage cleanup needs administrator review.'
+                print(f"[CashAdvanceLiquidation] Receipt storage cleanup failed: {file_error}", flush=True)
+        return jsonify({'success': True, 'message': 'Receipt deleted.', 'deleted_receipt_id': clean_int(receipt_id), 'file_deleted': file_deleted, 'cleanup_warning': cleanup_warning, 'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)})
     except Exception as exc:
         db.session.rollback()
         print(f"[CashAdvanceLiquidation] Receipt delete failed: {exc}", flush=True)
         return jsonify({'success': False, 'error': 'Unable to delete receipt.'}), 500
+
+
+@app.route('/delete_all_cash_advance_liquidation_receipts/<int:liquidation_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_all_cash_advance_liquidation_receipts(liquidation_id):
+    denial = require_accounting_center_access()
+    if denial:
+        return denial
+    ensure_cash_advance_liquidation_tables()
+    liquidation = cash_advance_liquidation_get_for_current_user(liquidation_id=liquidation_id)
+    allowed, message = can_edit_cash_advance_liquidation(liquidation)
+    if not allowed:
+        return jsonify({'success': False, 'error': message}), 403
+
+    receipts = CashAdvanceLiquidationReceipt.query.filter_by(liquidation_id=liquidation.id).all()
+    stored_filenames = [os.path.basename(clean_str(item.stored_filename) or '') for item in receipts]
+    deleted_count = len(receipts)
+    try:
+        for receipt in receipts:
+            db.session.delete(receipt)
+        record_universal_approval_audit(
+            'cash_advance_liquidation',
+            liquidation.id,
+            'receipts_deleted_all',
+            actor_user=current_user,
+            status_from=liquidation.status,
+            status_to=liquidation.status,
+            remarks=f'Deleted all {deleted_count} liquidation receipt(s).',
+            metadata={'cash_advance_id': liquidation.cash_advance_id, 'liquidation_no': liquidation.liquidation_no, 'deleted_count': deleted_count}
+        )
+        liquidation.updated_at = get_manila_time()
+        add_activity_log_entry(f'Deleted all {deleted_count} Cash Advance Liquidation receipt(s): {liquidation.liquidation_no or liquidation.id}')
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[CashAdvanceLiquidation] Delete all receipts failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to delete Cash Advance Liquidation receipts.'}), 500
+
+    cleanup_failures = 0
+    for stored_filename in stored_filenames:
+        if not stored_filename:
+            continue
+        try:
+            managed_storage_delete(
+                STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS,
+                os.path.join(cash_advance_liquidation_receipt_folder(), stored_filename)
+            )
+        except Exception as file_error:
+            cleanup_failures += 1
+            print(f'[CashAdvanceLiquidation] Bulk receipt storage cleanup failed: {file_error}', flush=True)
+    cleanup_warning = f'{cleanup_failures} stored file(s) need administrator cleanup.' if cleanup_failures else ''
+    return jsonify({
+        'success': True,
+        'message': f'{deleted_count} receipt(s) deleted. Expense rows were kept.',
+        'deleted_count': deleted_count,
+        'cleanup_warning': cleanup_warning,
+        'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)
+    })
 
 
 @app.route('/preview_cash_advance_liquidation_receipt/<int:receipt_id>')

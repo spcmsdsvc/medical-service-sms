@@ -326,6 +326,24 @@
         border-top: 1px solid #e2e8f0;
     }
 
+    .cash-attachment-panel {
+        margin-top: 18px;
+        padding: 16px;
+        border: 1px solid #dbeafe;
+        background: #f8fafc;
+        border-radius: 16px;
+    }
+
+    .cash-attachment-list { display: grid; gap: 9px; margin-top: 12px; }
+    .cash-attachment-item {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 11px 12px; border: 1px solid #dbe3ef; border-radius: 12px; background: #fff;
+    }
+    .cash-attachment-name { min-width: 0; font-weight: 900; color: #172033; overflow-wrap: anywhere; }
+    .cash-attachment-meta { color: #64748b; font-size: .8rem; font-weight: 750; margin-top: 3px; }
+    .cash-attachment-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+    .cash-attachment-actions .cash-btn { min-height: 38px; padding: 8px 11px; border-radius: 10px; font-size: .82rem; }
+
     .cash-request-list {
         display: grid;
         gap: 10px;
@@ -480,6 +498,8 @@
         .cash-notification-close-btn {
             width: 100%;
         }
+        .cash-attachment-item { align-items: stretch; flex-direction: column; }
+        .cash-attachment-actions .cash-btn { flex: 1; }
     }
 </style>
 
@@ -612,6 +632,23 @@
                 </div>
             </div>
 
+            <div class="cash-attachment-panel">
+                <div class="cash-section-head" style="margin-bottom:8px;">
+                    <div>
+                        <h3 class="cash-section-title" style="font-size:1.05rem;"><i class="fa-solid fa-paperclip text-primary"></i> Uploaded Attachments</h3>
+                        <div class="cash-muted">Optional PDF or image documents. Up to 10 files, 35MB each; optimized to 2MB when possible.</div>
+                    </div>
+                    <div class="cash-actions" id="cashAttachmentActions">
+                        <input type="file" id="cashAttachmentFiles" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" multiple hidden>
+                        <button type="button" class="cash-btn cash-btn-secondary" id="cashSelectAttachmentsBtn" onclick="document.getElementById('cashAttachmentFiles').click()"><i class="fa-solid fa-folder-open"></i> Select Files</button>
+                        <button type="button" class="cash-btn cash-btn-primary" id="cashUploadAttachmentsBtn" onclick="uploadCashAdvanceAttachments()"><i class="fa-solid fa-cloud-arrow-up"></i> Upload</button>
+                        <button type="button" class="cash-btn cash-btn-danger-outline" id="cashDeleteAllAttachmentsBtn" onclick="deleteAllCashAdvanceAttachments()" style="display:none;" title="Delete all supporting attachments"><i class="fa-solid fa-trash"></i> Delete All</button>
+                    </div>
+                </div>
+                <div class="cash-attachment-meta" id="cashAttachmentSelection">No files selected.</div>
+                <div class="cash-attachment-list" id="cashAttachmentList"><div class="cash-muted">No attachments uploaded.</div></div>
+            </div>
+
             <div class="cash-form-actions">
                 <button type="button" class="cash-btn cash-btn-danger-outline" onclick="clearCashAdvanceForm()"><i class="fa-solid fa-eraser"></i> Clear Form</button>
                 <button type="button" class="cash-btn cash-btn-secondary" onclick="saveCashAdvanceDraft()"><i class="fa-solid fa-floppy-disk"></i> Save Draft</button>
@@ -669,6 +706,53 @@
     }
 
     let cashAdvanceNotificationItems = [];
+    let cashAdvanceAttachments = [];
+
+    function isCashAdvanceEditable() {
+        const status = String(document.getElementById('cashAdvanceStatus')?.value || 'Draft').trim().toLowerCase();
+        return status === 'draft' || status === 'rejected' || status === 'returned';
+    }
+
+    function cashFileSize(bytes) {
+        const size = Number(bytes || 0);
+        if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+        if (size >= 1024) return `${(size / 1024).toFixed(1)} KB`;
+        return `${size} bytes`;
+    }
+
+    function renderCashAdvanceAttachments(items) {
+        cashAdvanceAttachments = Array.isArray(items) ? items : [];
+        const list = document.getElementById('cashAttachmentList');
+        const editable = isCashAdvanceEditable();
+        const deleteAll = document.getElementById('cashDeleteAllAttachmentsBtn');
+        ['cashSelectAttachmentsBtn','cashUploadAttachmentsBtn'].forEach(id => { const el = document.getElementById(id); if (el) el.disabled = !editable; });
+        const input = document.getElementById('cashAttachmentFiles');
+        if (input) input.disabled = !editable;
+        if (deleteAll) {
+            deleteAll.style.display = editable && cashAdvanceAttachments.length ? '' : 'none';
+            deleteAll.disabled = !editable || !cashAdvanceAttachments.length;
+        }
+        if (!list) return;
+        if (!cashAdvanceAttachments.length) {
+            list.innerHTML = '<div class="cash-muted">No attachments uploaded.</div>';
+            return;
+        }
+        list.innerHTML = cashAdvanceAttachments.map(item => `
+            <div class="cash-attachment-item">
+                <div class="cash-attachment-name"><i class="fa-solid fa-file-lines text-primary"></i> ${cashEscape(item.filename || item.original_filename || 'Attachment')}<div class="cash-attachment-meta">${cashEscape(cashFileSize(item.size || 0))}</div></div>
+                <div class="cash-attachment-actions">
+                    <a class="cash-btn cash-btn-secondary" href="${cashEscape(item.preview_url || '#')}" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Preview</a>
+                    <a class="cash-btn cash-btn-secondary" href="${cashEscape(item.download_url || '#')}"><i class="fa-solid fa-download"></i> Download</a>
+                    ${editable ? `<button type="button" class="cash-btn cash-btn-danger-outline" title="Delete attachment" onclick="deleteCashAdvanceAttachment(${Number(item.id) || 0})"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
+                </div>
+            </div>`).join('');
+    }
+
+    function updateCashAttachmentSelection() {
+        const files = Array.from(document.getElementById('cashAttachmentFiles')?.files || []);
+        const label = document.getElementById('cashAttachmentSelection');
+        if (label) label.textContent = files.length ? `${files.length} file(s) selected: ${files.map(file => file.name).join(', ')}` : 'No files selected.';
+    }
 
     function cashNotificationRecordId(item) {
         const metadata = item?.metadata || {};
@@ -825,6 +909,7 @@
         document.getElementById('cashLiquidationDays').value = item.liquidation_days || 30;
         document.getElementById('cashPurpose').value = item.purpose || '';
         setCashStatus(item.status || 'Draft');
+        renderCashAdvanceAttachments(item.attachments || []);
         const statusText = document.getElementById('cashFormStatusText');
         if (statusText) statusText.textContent = item.lock_reason || (String(item.status || 'Draft').toLowerCase() === 'draft' ? 'Draft request. You may edit, save, and submit.' : 'Submitted record loaded for review.');
     }
@@ -838,7 +923,66 @@
         document.getElementById('cashPurpose').value = '';
         document.getElementById('cashRequestDate').value = todayInputValue();
         setCashStatus('Draft');
+        renderCashAdvanceAttachments([]);
+        const attachmentInput = document.getElementById('cashAttachmentFiles');
+        if (attachmentInput) attachmentInput.value = '';
+        updateCashAttachmentSelection();
         cashToast('Cash advance form cleared.', 'ok');
+    }
+
+    async function uploadCashAdvanceAttachments() {
+        if (!isCashAdvanceEditable()) { cashToast('Attachments can only be changed while the request is Draft, Rejected, or Returned.', 'warn'); return; }
+        const input = document.getElementById('cashAttachmentFiles');
+        const files = Array.from(input?.files || []);
+        if (!files.length) { cashToast('Please select at least one attachment.', 'warn'); return; }
+        if (cashAdvanceAttachments.length + files.length > 10) { cashToast('A Cash Advance can contain up to 10 attachments.', 'warn'); return; }
+        const oversized = files.find(file => Number(file.size || 0) > 35 * 1024 * 1024);
+        if (oversized) { cashToast(`${oversized.name} exceeds the 35MB upload limit.`, 'warn'); return; }
+        let id = document.getElementById('cashAdvanceId')?.value || '';
+        if (!id) {
+            const saved = await saveCashAdvanceDraft(true);
+            const record = saved && (saved.item || saved.cash_advance || saved);
+            id = record?.id || record?.cash_advance_id || document.getElementById('cashAdvanceId')?.value || '';
+            if (!id) { cashToast('Complete the request details so the draft can be saved before uploading.', 'warn'); return; }
+        }
+        const button = document.getElementById('cashUploadAttachmentsBtn');
+        const original = button?.innerHTML || '';
+        if (button) { button.disabled = true; button.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Uploading...'; }
+        try {
+            const form = new FormData();
+            files.forEach(file => form.append('attachment_files', file, file.name));
+            const response = await fetch(`/upload_cash_advance_attachments/${encodeURIComponent(id)}`, {method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json','X-CSRFToken':getCashCsrfToken()},body:form});
+            const data = await parseCashJson(response, 'Unable to upload attachments.');
+            renderCashAdvanceAttachments(data.attachments || []);
+            input.value = '';
+            updateCashAttachmentSelection();
+            cashToast(data.message || `${files.length} attachment(s) uploaded.`, 'ok', 'Uploaded');
+        } catch (error) { cashToast(error.message || 'Unable to upload attachments.', 'error'); }
+        finally { if (button) { button.disabled = false; button.innerHTML = original; } }
+    }
+
+    async function deleteCashAdvanceAttachment(id) {
+        if (!id || !isCashAdvanceEditable()) return;
+        if (!window.confirm('Permanently delete this supporting attachment?')) return;
+        try {
+            const response = await fetch(`/delete_cash_advance_attachment/${encodeURIComponent(id)}`, {method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json','X-CSRFToken':getCashCsrfToken()}});
+            const data = await parseCashJson(response, 'Unable to delete attachment.');
+            renderCashAdvanceAttachments(data.attachments || []);
+            cashToast(`${data.deleted_count || 1} attachment deleted.${data.cleanup_warning ? ' ' + data.cleanup_warning : ''}`, data.cleanup_warning ? 'warn' : 'ok', 'Deleted');
+        } catch (error) { cashToast(error.message || 'Unable to delete attachment.', 'error'); }
+    }
+
+    async function deleteAllCashAdvanceAttachments() {
+        if (!isCashAdvanceEditable() || !cashAdvanceAttachments.length) return;
+        const id = document.getElementById('cashAdvanceId')?.value || '';
+        const count = cashAdvanceAttachments.length;
+        if (!id || !window.confirm(`Permanently delete all ${count} supporting attachment${count === 1 ? '' : 's'}?`)) return;
+        try {
+            const response = await fetch(`/delete_all_cash_advance_attachments/${encodeURIComponent(id)}`, {method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Accept':'application/json','X-CSRFToken':getCashCsrfToken()}});
+            const data = await parseCashJson(response, 'Unable to delete attachments.');
+            renderCashAdvanceAttachments(data.attachments || []);
+            cashToast(`${data.deleted_count || count} attachment(s) deleted.${data.cleanup_warning ? ' ' + data.cleanup_warning : ''}`, data.cleanup_warning ? 'warn' : 'ok', 'Deleted');
+        } catch (error) { cashToast(error.message || 'Unable to delete attachments.', 'error'); }
     }
 
     function renderCashAdvanceList(items) {
@@ -1092,6 +1236,8 @@
     document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('cashRequestDate').value = todayInputValue();
         setCashStatus('Draft');
+        renderCashAdvanceAttachments([]);
+        document.getElementById('cashAttachmentFiles')?.addEventListener('change', updateCashAttachmentSelection);
         loadCashAdvances();
         loadCashAdvanceNotifications();
     });

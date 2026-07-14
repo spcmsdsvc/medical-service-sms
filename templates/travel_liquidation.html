@@ -170,7 +170,10 @@
                     <h2 class="h5 fw-bold mb-1">Actual Expense Entry</h2>
                     <div class="text-muted small">Per Diem and Airfare are auto-added when approved. Add or edit the remaining actual expenses, then attach receipts per row.</div>
                 </div>
-                <button class="btn btn-success fw-bold" id="addExpenseRowBtn" onclick="openRowModal()"><i class="fa-solid fa-plus me-2"></i>Add Expense Row</button>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-outline-danger fw-bold d-none" id="deleteAllReceiptsBtn" onclick="deleteAllLiquidationReceipts()" title="Delete all uploaded receipts"><i class="fa-solid fa-trash me-2"></i>Delete All Receipts</button>
+                    <button class="btn btn-success fw-bold" id="addExpenseRowBtn" onclick="openRowModal()"><i class="fa-solid fa-plus me-2"></i>Add Expense Row</button>
+                </div>
             </div>
         </div>
         <div class="card-body p-0">
@@ -697,6 +700,12 @@ function renderLiquidation(item){
     updateWorkflowButtons();
 
     const rows=item.rows || [];
+    const receiptCount = rows.reduce((total, row) => total + (Array.isArray(row.receipts) ? row.receipts.length : 0), 0);
+    const deleteAllReceiptsBtn = document.getElementById('deleteAllReceiptsBtn');
+    if(deleteAllReceiptsBtn){
+        deleteAllReceiptsBtn.classList.toggle('d-none', !isDraftLiquidation() || !receiptCount);
+        deleteAllReceiptsBtn.dataset.receiptCount = String(receiptCount);
+    }
     const body=document.getElementById('liqRows');
     if(!rows.length){
         const emptyHelp = isDraftLiquidation() ? 'Per Diem and Airfare are auto-added when approved. Click Add Expense Row to encode remaining actual expenses.' : 'This liquidation has no expense rows and is currently locked.';
@@ -712,7 +721,7 @@ function renderLiquidation(item){
             const receiptId = Number(receipt.id || receipt.receipt_id || 0);
             const receiptName = receipt.original_filename || 'Receipt';
             const downloadUrl = receipt.download_url || '#';
-            const deleteButton = receiptId ? `<button type="button" class="receipt-delete-btn" title="Delete receipt" onclick="openDeleteReceiptModal(${receiptId}, ${Number(row.id)}, '${esc(String(receiptName).replace(/'/g, "\\'"))}')"><i class="fa-solid fa-xmark"></i></button>` : '';
+            const deleteButton = receiptId && isDraft ? `<button type="button" class="receipt-delete-btn" title="Delete receipt" aria-label="Delete ${esc(receiptName)}" onclick="openDeleteReceiptModal(${receiptId}, ${Number(row.id)}, '${esc(String(receiptName).replace(/'/g, "\\'"))}')"><i class="fa-solid fa-trash"></i></button>` : '';
             return `<span class="receipt-item"><a class="receipt-pill" href="${esc(downloadUrl)}" target="_blank"><i class="fa-solid fa-paperclip"></i>${esc(receiptName)}</a>${deleteButton}</span>`;
         }).join('');
         return `
@@ -903,6 +912,22 @@ async function deleteReceiptConfirmed(){
     }finally{
         setButtonBusy('deleteReceiptBtn',false);
     }
+}
+
+async function deleteAllLiquidationReceipts(){
+    if(!isDraftLiquidation()) return;
+    const button=document.getElementById('deleteAllReceiptsBtn');
+    const count=Number(button?.dataset.receiptCount || 0);
+    if(!count || !window.confirm(`Permanently delete all ${count} receipt${count === 1 ? '' : 's'}? Expense rows will remain unchanged.`)) return;
+    setButtonBusy('deleteAllReceiptsBtn',true,'Deleting...');
+    try{
+        const res=await fetch(`/delete_all_travel_liquidation_receipts/${encodeURIComponent(LIQUIDATION_ID)}`,{method:'POST',headers:{'Accept':'application/json','X-CSRFToken':getCSRFToken()}});
+        const data=await res.json();
+        if(!res.ok || !data.success) throw new Error(data.error || data.message || 'Unable to delete receipts.');
+        renderLiquidation(data.liquidation || currentLiquidation || {});
+        showLiqAlert(`${Number(data.deleted_count || count)} receipt(s) deleted. Expense rows were kept.${data.cleanup_warning ? ' ' + data.cleanup_warning : ''}`,data.cleanup_warning ? 'warning' : 'success');
+    }catch(err){showLiqAlert(err.message || String(err),'danger');}
+    finally{setButtonBusy('deleteAllReceiptsBtn',false);}
 }
 
 function openDeleteModal(rowId){

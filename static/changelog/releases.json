@@ -93,6 +93,18 @@
         {"item_key": "2026-07-14-travel-request-privacy", "category": "Travel Request", "description": "Travel Request details and attachments are now limited to the requester, listed participants, and the specifically assigned approver through their dedicated workflow.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40},
         {"item_key": "2026-07-14-tsr-sync-reliability", "category": "Create TSR", "description": "Queued TSRs now recover automatically from temporary connection failures, avoid duplicate saves, and resume pending supporting-file uploads safely.", "audiences": ["engineers", "admins"], "sort_order": 50}
       ]
+    },
+    {
+      "release_key": "2026-07-15",
+      "release_date": "2026-07-15",
+      "title": "Accounting Attachment Controls",
+      "summary": "Supporting documents and receipts are easier to manage safely across every accounting workflow.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-15-accounting-attachment-delete", "category": "Accounting", "description": "Editable reimbursements, travel requests, and liquidations now provide clear individual Delete and Delete All controls for uploaded files.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10},
+        {"item_key": "2026-07-15-cash-advance-attachments", "category": "Cash Advance", "description": "Cash Advance requests now support optional PDF and image attachments that approvers can review and Accounting receives with the approved form.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 20},
+        {"item_key": "2026-07-15-attachment-locking", "category": "Accounting", "description": "Attachment deletion remains available for Draft, Rejected, or Returned records and is locked after submission or approval.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30}
+      ]
     }
   ]
 }

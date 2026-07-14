@@ -4264,6 +4264,13 @@ Recipient count: ${recipientCount}` : ''),
                 <div class="compact-request-remarks ${data.purpose ? '' : 'empty'}">${approvalEscape(data.purpose || 'No purpose entered.')}</div>
             </div>
 
+            <div class="approval-modal-panel full">
+                <h3>Supporting Attachments</h3>
+                ${(data.attachments || []).length
+                    ? `<div style="display:flex;gap:8px;flex-wrap:wrap;">${renderApprovalReceiptLinks(data.attachments || [])}</div>`
+                    : '<div class="approval-muted">No supporting attachments uploaded.</div>'}
+            </div>
+
             ${decisionPanel}
             ${renderApprovalAuditTrail(data.audit_trail || data.approval_audit_trail || [], 'cash_advance', data.id)}
         `;
