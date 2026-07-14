@@ -21660,13 +21660,36 @@ def travel_request_to_dict(request_rec, include_lines=False, include_audit=False
 
 
 def can_user_access_travel_request(request_rec):
-    if not request_rec:
+    """Return True only for the Travel Request requester or travel team.
+
+    This is the permission used by the normal requester-facing Travel Request
+    workspace and its detail API.  Administrative or approval-center status is
+    intentionally not a substitute for being part of the request team.
+    """
+    if not request_rec or not current_user or not getattr(current_user, 'is_authenticated', False):
         return False
-    if is_admin_authorized() or is_approval_center_user():
-        return True
-    return (
-        getattr(request_rec, 'user_id', None) == getattr(current_user, 'id', None) or
-        is_current_user_travel_request_participant(request_rec)
+
+    owner_id = clean_int(getattr(request_rec, 'user_id', None))
+    current_user_id = clean_int(getattr(current_user, 'id', None))
+    return bool(
+        owner_id and current_user_id and owner_id == current_user_id
+    ) or is_current_user_travel_request_participant(request_rec)
+
+
+def can_user_review_travel_request(approver_user, request_rec):
+    """Return True only for the Settings-assigned Travel Request approver."""
+    if not request_rec or not approver_user or not getattr(approver_user, 'is_authenticated', False):
+        return False
+    if not is_configured_approver_user(approver_user):
+        return False
+    return can_user_approve_for_requester(approver_user, request_rec.user_id, 'travel_request')
+
+
+def can_current_user_access_travel_request_attachment(request_rec):
+    """Allow team members or the specifically assigned approver to read attachments."""
+    return bool(
+        can_user_access_travel_request(request_rec) or
+        can_user_review_travel_request(current_user, request_rec)
     )
 
 
@@ -21677,11 +21700,7 @@ def can_user_approve_travel_request(approver_user, request_rec):
     Request must not fall back to hardcoded Rodito logic because Rodito may also
     be a submitter and must be routed to an alternate approver in Settings.
     """
-    if not request_rec:
-        return False
-    if not is_configured_approver_user(approver_user):
-        return False
-    return can_user_approve_for_requester(approver_user, request_rec.user_id, 'travel_request')
+    return can_user_review_travel_request(approver_user, request_rec)
 
 
 def travel_request_query_for_current_approver(status_filter='Submitted'):
@@ -22390,6 +22409,23 @@ def get_travel_request(travel_request_id):
     })
 
 
+@app.route('/get_travel_request_approval/<int:travel_request_id>')
+@login_required
+def get_travel_request_approval(travel_request_id):
+    """Return one Travel Request for its specifically assigned approver."""
+    ensure_travel_request_tables()
+    request_rec = db.session.get(TravelRequest, travel_request_id)
+    if not request_rec:
+        return jsonify({'success': False, 'error': 'Travel request not found.'}), 404
+    if not can_user_review_travel_request(current_user, request_rec):
+        return jsonify({'success': False, 'error': 'This travel request is not assigned to you for approval.'}), 403
+
+    return jsonify({
+        'success': True,
+        'travel_request': travel_request_to_dict(request_rec, include_lines=True, include_audit=True)
+    })
+
+
 @app.route('/upload_travel_request_attachments/<int:travel_request_id>', methods=['POST'])
 @csrf.exempt
 @login_required
@@ -22481,7 +22517,7 @@ def get_authorized_travel_request_attachment(attachment_id):
     if not attachment:
         return None, None, (jsonify({'success': False, 'error': 'Attachment not found.'}), 404)
     request_rec = db.session.get(TravelRequest, attachment.travel_request_id)
-    if not request_rec or not can_user_access_travel_request(request_rec):
+    if not request_rec or not can_current_user_access_travel_request_attachment(request_rec):
         return None, None, (jsonify({'success': False, 'error': 'You are not allowed to access this attachment.'}), 403)
     try:
         path = travel_request_attachment_path(attachment)
@@ -29881,6 +29917,7 @@ def get_timeline_data():
         if travel_request_ids:
             travel_requests = (
                 TravelRequest.query
+                .options(selectinload(TravelRequest.participants))
                 .filter(TravelRequest.id.in_(travel_request_ids))
                 .all()
             )
@@ -29963,6 +30000,9 @@ def get_timeline_data():
                 'travel_destination': clean_str(getattr(travel_request_rec, 'destination', None)) or '',
                 'travel_purpose': clean_str(getattr(travel_request_rec, 'purpose', None)) or '',
                 'travel_status': clean_str(getattr(travel_request_rec, 'status', None)) or '',
+                'can_open_travel_request': bool(
+                    is_travel_block and travel_request_rec and can_user_access_travel_request(travel_request_rec)
+                ),
                 'travel_departure_date': travel_request_rec.departure_date.isoformat() if travel_request_rec and travel_request_rec.departure_date else '',
                 'travel_return_date': travel_request_rec.return_date.isoformat() if travel_request_rec and travel_request_rec.return_date else '',
                 'travel_remarks': travel_request_email_context(travel_request_rec).get('request_remarks', '') if travel_request_rec else '',
@@ -30105,6 +30145,9 @@ def get_shift_details(shift_id):
             'travel_destination': clean_str(getattr(travel_request_rec, 'destination', None)) or '',
             'travel_purpose': clean_str(getattr(travel_request_rec, 'purpose', None)) or '',
             'travel_status': clean_str(getattr(travel_request_rec, 'status', None)) or '',
+            'can_open_travel_request': bool(
+                is_travel_block and travel_request_rec and can_user_access_travel_request(travel_request_rec)
+            ),
             'travel_schedule_suggestions': travel_suggestions,
             'travel_schedule_suggestion_count': len(travel_suggestions),
             'travel_schedule_single_suggestion': travel_suggestions[0] if len(travel_suggestions) == 1 else None

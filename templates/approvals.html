@@ -3340,7 +3340,7 @@ Recipient count: ${recipientCount}` : ''),
         selectedApprovalLiquidationId = null;
 
         try {
-            const res = await fetch(`/get_travel_request/${encodeURIComponent(travelRequestId)}`, {
+            const res = await fetch(`/get_travel_request_approval/${encodeURIComponent(travelRequestId)}`, {
                 credentials: 'same-origin',
                 cache: 'no-store',
                 headers: { 'Accept': 'application/json' }

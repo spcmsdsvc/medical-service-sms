@@ -2064,7 +2064,8 @@ async function openTravelRequestFromUrl(){
     const params = new URLSearchParams(window.location.search);
     const requestId = params.get('open_request_id') || params.get('travel_request_id') || params.get('id');
     if(requestId){
-        await loadTravelRequestDetail(Number(requestId));
+        const loaded = await loadTravelRequestDetail(Number(requestId));
+        if(!loaded) return;
 
         if(params.get('source') === 'timeline' || params.get('highlight') === 'travel'){
             const page = document.querySelector('.travel-page');
@@ -3712,8 +3713,10 @@ async function loadTravelRequestDetail(id){
             clearTravelConflictPanel();
         }
         showTravelStatus(`Loaded ${item.request_no || ('Travel Request #' + item.id)}.`, 'success');
+        return true;
     }catch(err){
         showTravelStatus(err.message || 'Unable to load travel request.', 'error');
+        return false;
     }
 }
 

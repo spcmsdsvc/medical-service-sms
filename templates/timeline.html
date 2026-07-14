@@ -10798,6 +10798,11 @@ function collectMobileEngineerSchedules(){
             return;
         }
 
+        if(typeof shiftOrRequestId === 'object' && shiftOrRequestId?.can_open_travel_request !== true){
+            timelineAlert('This Travel Request is private to its requester and participants.', 'warning');
+            return;
+        }
+
         const params = new URLSearchParams({
             open_request_id: String(requestId),
             source: 'timeline',
@@ -10809,7 +10814,7 @@ function collectMobileEngineerSchedules(){
 
     function getOpenTravelRequestButtonHtml(shift, mode='desktop'){
         const requestId = getTravelRequestIdFromShift(shift);
-        if(!requestId || !isTimelineTravelBlock(shift)) return '';
+        if(!requestId || !isTimelineTravelBlock(shift) || shift?.can_open_travel_request !== true) return '';
 
         const cls = mode === 'mobile-lite'
             ? 'mobile-full-calendar-lite-open-request-btn'
@@ -11200,7 +11205,7 @@ function collectMobileEngineerSchedules(){
                         <i class="fa-solid fa-paper-plane"></i>Send TSR
                     </button>
                 `}
-                ${isTravelBlock && requestId ? `
+                ${isTravelBlock && requestId && shift.can_open_travel_request === true ? `
                     <button type="button" class="timeline-summary-action-btn timeline-summary-action-request" onclick="openTimelineSummaryTravelRequest(event)">
                         <i class="fa-solid fa-arrow-up-right-from-square"></i>Open Request
                     </button>
