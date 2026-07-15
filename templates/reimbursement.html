@@ -3053,6 +3053,32 @@ function renderReimbursementRows(rows) {
         return rows;
     }
 
+    function snapshotCurrentReimbursementWorksheetRows() {
+        const collectedRows = collectReimbursementRowsForSave();
+        const existingRows = currentReimbursementRows || [];
+
+        return collectedRows.map(function(payloadRow) {
+            const payloadKey = payloadRow.manual
+                ? String(payloadRow.manual_key || '')
+                : String(payloadRow.shift_id || '');
+            const existingRow = existingRows.find(function(row) {
+                return getReimbursementRowKey(row) === payloadKey;
+            }) || {};
+            const amounts = normalizeReimbursementAmounts(payloadRow.amounts || {});
+
+            return Object.assign({}, existingRow, {
+                manual: !!payloadRow.manual,
+                manual_key: payloadRow.manual ? payloadKey : existingRow.manual_key,
+                shift_id: payloadRow.manual ? null : payloadRow.shift_id,
+                task: payloadRow.manual ? (payloadRow.item_name || existingRow.task || 'Manual reimbursement item') : existingRow.task,
+                date: existingRow.date || payloadRow.date || '',
+                amounts: amounts,
+                remarks: payloadRow.remarks || '',
+                row_total: getReimbursementPayloadRowTotal({ amounts: amounts, manual: !!payloadRow.manual })
+            });
+        });
+    }
+
     function getReimbursementPayloadRowTotal(row) {
         if (!row || typeof row !== 'object') return 0;
         const amounts = row.amounts && typeof row.amounts === 'object' ? row.amounts : {};
@@ -3598,7 +3624,11 @@ async function saveReimbursementDraft(silent) {
             row_total: amount
         };
 
-        const rows = sortReimbursementRows((currentReimbursementRows || []).concat([manualRow]));
+        // Capture the live worksheet before rebuilding it. currentReimbursementRows
+        // contains the values from the last render, while engineers may have
+        // entered newer amounts and remarks directly in the visible controls.
+        const preservedRows = snapshotCurrentReimbursementWorksheetRows();
+        const rows = sortReimbursementRows(preservedRows.concat([manualRow]));
         renderReimbursementRows(rows);
         markReimbursementDirty();
         closeManualReimbursementModal();

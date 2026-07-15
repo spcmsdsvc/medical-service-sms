@@ -5145,6 +5145,20 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
         def money_text(amount):
             return f'{travel_request_money(amount):,.2f}'
 
+        currency_code = normalize_travel_currency_code(
+            ctx.get('currency_code') or getattr(request_rec, 'currency_code', None) or 'PHP'
+        )
+
+        def draw_money_row(y, amount, bold=False):
+            if currency_code == 'USD':
+                # The official template prints a fixed PHP marker. Cover only
+                # that marker so the original form remains intact, then stamp
+                # the selected Travel Request currency beside the amount.
+                c.setFillColorRGB(1, 1, 1)
+                c.rect(278, y - 3, 31, 11, stroke=0, fill=1)
+                draw_text(281, y, 'USD', size=7, bold=True, max_width=26)
+            draw_text(331, y, money_text(amount), size=8, bold=bold, max_width=90, align='right')
+
         requester_name = pdf_title_case_name(ctx.get('requester_name') or '')
         participant_names_clean = [
             pdf_title_case_name(name)
@@ -5304,14 +5318,14 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
         draw_wrapped_text(204, 508, route_text, max_width=372, max_lines=1, size=8)
         draw_wrapped_text(204, 488, travel_dates_text, max_width=372, max_lines=1, size=8)
 
-        draw_text(331, 457, money_text(airfare), size=8, max_width=90, align='right')
+        draw_money_row(457, airfare)
         if airfare == 0 and airfare_note:
             draw_wrapped_text(426, 457, airfare_note, max_width=150, max_lines=1, size=6.8)
-        draw_text(331, 445, money_text(landfare), size=8, max_width=90, align='right')
-        draw_text(331, 434, money_text(per_diem), size=8, max_width=90, align='right')
-        draw_text(331, 422, money_text(hotel), size=8, max_width=90, align='right')
-        draw_text(331, 410, money_text(misc), size=8, max_width=90, align='right')
-        draw_text(331, 388, money_text(total_amount), size=8, bold=True, max_width=90, align='right')
+        draw_money_row(445, landfare)
+        draw_money_row(434, per_diem)
+        draw_money_row(422, hotel)
+        draw_money_row(410, misc)
+        draw_money_row(388, total_amount, bold=True)
 
         # Use the explicit saved instruction. Older requests had Deposit
         # stamped by default, so keep that fallback when no value exists.
@@ -11157,7 +11171,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v13-travel-draft-instructions';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v14-accounting-form-reliability';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

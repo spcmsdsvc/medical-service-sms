@@ -105,7 +105,9 @@
         {"item_key": "2026-07-15-cash-advance-attachments", "category": "Cash Advance", "description": "Cash Advance requests now support optional PDF and image attachments that approvers can review and Accounting receives with the approved form.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 20},
         {"item_key": "2026-07-15-attachment-locking", "category": "Accounting", "description": "Attachment deletion remains available for Draft, Rejected, or Returned records and is locked after submission or approval.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30},
         {"item_key": "2026-07-15-reimbursement-upload-dedup", "category": "Reimbursement", "description": "Repeated receipt uploads are now detected by file content, preventing duplicate copies after double-clicks or upload retries.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40},
-        {"item_key": "2026-07-15-travel-deposit-draft", "category": "Travel Request", "description": "Travel Request drafts now retain the selected check instruction, BPI account number, health condition, and special notes when reopened.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50}
+        {"item_key": "2026-07-15-travel-deposit-draft", "category": "Travel Request", "description": "Travel Request drafts now retain the selected check instruction, BPI account number, health condition, and special notes when reopened.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50},
+        {"item_key": "2026-07-15-travel-pdf-currency", "category": "Travel Request", "description": "Generated Travel Request forms now show USD beside every requested amount when International / USD is selected.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 60},
+        {"item_key": "2026-07-15-reimbursement-manual-row-preserve", "category": "Reimbursement", "description": "Adding a manual reimbursement item now preserves all amounts and remarks already entered in the worksheet.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 70}
       ]
     }
   ]
