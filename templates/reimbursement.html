@@ -1767,6 +1767,7 @@
     };
     let reimbursementReceiptsByShift = {};
     let reimbursementAdditionalReceipts = [];
+    let reimbursementReceiptUploadBusy = false;
 
     function reimEscape(value) {
         return String(value || '').replace(/[&<>"']/g, function(match) {
@@ -2585,8 +2586,14 @@ function renderReimbursementRows(rows) {
 
     async function uploadAdditionalReimbursementReceipts(files) {
         const input = document.getElementById('reimAdditionalReceiptInput');
+        const uploadButton = document.getElementById('reimAdditionalReceiptBtn');
         const start = document.getElementById('reimStartDate').value;
         const end = document.getElementById('reimEndDate').value;
+
+        if (reimbursementReceiptUploadBusy) {
+            setReimbursementDraftStatus('A receipt upload is already in progress.', '');
+            return false;
+        }
 
         if (!start || !end) {
             reimAlert('Please load a date range first.');
@@ -2617,6 +2624,13 @@ function renderReimbursementRows(rows) {
             formData.append('receipt_files', file);
         });
 
+        reimbursementReceiptUploadBusy = true;
+        if (input) input.disabled = true;
+        if (uploadButton) {
+            uploadButton.disabled = true;
+            uploadButton.dataset.originalHtml = uploadButton.innerHTML;
+            uploadButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading...';
+        }
         setReimbursementDraftStatus('Uploading receipt...', '');
 
         try {
@@ -2632,15 +2646,21 @@ function renderReimbursementRows(rows) {
             }
 
             await fetchReimbursementReceipts(start, end);
-            setReimbursementDraftStatus('Receipt uploaded.', 'ok');
+            setReimbursementDraftStatus(payload.message || 'Receipt uploaded.', 'ok');
             return true;
         } catch (error) {
             console.error(error);
-            setReimbursementDraftStatus(error.message || 'Unable to upload receipt.', 'err');
+            setReimbursementDraftStatus(error.message || 'Unable to upload receipt.', 'error');
             reimAlert(error.message || 'Unable to upload receipt.');
             return false;
         } finally {
+            reimbursementReceiptUploadBusy = false;
             if (input) input.value = '';
+            if (input) input.disabled = !reimbursementIsEditable();
+            if (uploadButton) {
+                uploadButton.disabled = !reimbursementIsEditable();
+                uploadButton.innerHTML = uploadButton.dataset.originalHtml || 'Upload Receipts';
+            }
         }
     }
 
@@ -2671,6 +2691,10 @@ function renderReimbursementRows(rows) {
     }
 
     async function uploadReimbursementReceipt(rowKey, files) {
+        if (reimbursementReceiptUploadBusy) {
+            setReimbursementDraftStatus('A receipt upload is already in progress.', '');
+            return;
+        }
         if (!reimbursementIsEditable()) {
             const message = currentReimbursementLifecycle.lock_reason || 'Receipts are locked after submission.';
             reimAlert(message);
@@ -2712,6 +2736,7 @@ function renderReimbursementRows(rows) {
             formData.append('receipt_files', file);
         });
 
+        reimbursementReceiptUploadBusy = true;
         setReimbursementDraftStatus('Uploading receipt...', '');
 
         try {
@@ -2725,11 +2750,13 @@ function renderReimbursementRows(rows) {
                 throw new Error(payload.error || 'Unable to upload receipt.');
             }
             await fetchReimbursementReceipts(start, end);
-            setReimbursementDraftStatus('Receipt uploaded', 'ok');
+            setReimbursementDraftStatus(payload.message || 'Receipt uploaded.', 'ok');
         } catch (error) {
             console.error(error);
             setReimbursementDraftStatus(error.message || 'Unable to upload receipt.', 'error');
             reimAlert(error.message || 'Unable to upload receipt.');
+        } finally {
+            reimbursementReceiptUploadBusy = false;
         }
     }
 

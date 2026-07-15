@@ -1463,6 +1463,7 @@ class ReimbursementReceipt(db.Model):
     original_filename = db.Column(db.String(255))
     content_type = db.Column(db.String(120))
     file_size = db.Column(db.Integer, default=0)
+    content_sha256 = db.Column(db.String(64), nullable=True, index=True)
 
     created_at = db.Column(db.DateTime, default=get_manila_time)
 
@@ -2730,6 +2731,7 @@ def ensure_reimbursement_receipt_columns():
                 'original_filename': 'ALTER TABLE reimbursement_receipt ADD COLUMN original_filename VARCHAR(255)',
                 'content_type': 'ALTER TABLE reimbursement_receipt ADD COLUMN content_type VARCHAR(120)',
                 'file_size': 'ALTER TABLE reimbursement_receipt ADD COLUMN file_size INTEGER DEFAULT 0',
+                'content_sha256': 'ALTER TABLE reimbursement_receipt ADD COLUMN content_sha256 VARCHAR(64)',
                 'created_at': 'ALTER TABLE reimbursement_receipt ADD COLUMN created_at DATETIME',
             }
 
@@ -2737,6 +2739,12 @@ def ensure_reimbursement_receipt_columns():
                 if column_name not in columns:
                     connection.exec_driver_sql(alter_sql)
                     print(f"[ReimbursementReceipt] Added missing column: {column_name}", flush=True)
+
+            connection.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_reimbursement_receipt_content "
+                "ON reimbursement_receipt (reimbursement_id, content_sha256) "
+                "WHERE content_sha256 IS NOT NULL"
+            )
     except Exception as receipt_column_error:
         print(f"[ReimbursementReceipt] Unable to ensure receipt columns: {receipt_column_error}", flush=True)
         raise
@@ -11128,7 +11136,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v11-accounting-attachments';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v12-reimbursement-upload-dedup';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -18956,6 +18964,51 @@ def reimbursement_receipt_path(receipt):
     return managed_storage_read_path(STORAGE_PREFIX_REIMBURSEMENTS, local_path)
 
 
+def reimbursement_find_duplicate_receipt(reimbursement_id, content_sha256):
+    """Find the same stored receipt content within one reimbursement package.
+
+    New rows use the indexed checksum. Older rows are checked lazily so existing
+    receipts remain protected without a destructive backfill migration.
+    """
+    checksum = clean_str(content_sha256).lower()
+    if not reimbursement_id or len(checksum) != 64:
+        return None
+
+    duplicate = ReimbursementReceipt.query.filter_by(
+        reimbursement_id=reimbursement_id,
+        content_sha256=checksum
+    ).first()
+    if duplicate:
+        return duplicate
+
+    legacy_receipts = ReimbursementReceipt.query.filter_by(
+        reimbursement_id=reimbursement_id,
+        content_sha256=None
+    ).order_by(ReimbursementReceipt.id.asc()).all()
+    for legacy_receipt in legacy_receipts:
+        receipt_path = None
+        try:
+            receipt_path = reimbursement_receipt_path(legacy_receipt)
+            with open(receipt_path, 'rb') as receipt_file:
+                legacy_checksum = hashlib.sha256(receipt_file.read()).hexdigest()
+        except Exception as checksum_error:
+            print(
+                f"[Reimbursement] Unable to fingerprint legacy receipt #{legacy_receipt.id}: {checksum_error}",
+                flush=True
+            )
+            continue
+        finally:
+            if receipt_path:
+                managed_storage_release_path(receipt_path)
+
+        if legacy_checksum == checksum:
+            # Lazily index only the matching legacy row. Existing duplicate rows
+            # remain untouched and therefore cannot break the unique index.
+            legacy_receipt.content_sha256 = checksum
+            return legacy_receipt
+    return None
+
+
 def reimbursement_receipt_to_dict(receipt):
     return {
         'id': receipt.id,
@@ -19734,26 +19787,47 @@ def upload_reimbursement_receipt():
     if not files:
         return jsonify({'success': False, 'error': 'No receipt file selected.'}), 400
 
+    prepared_files = []
+    for file_obj in files:
+        if not reimbursement_receipt_allowed(file_obj.filename):
+            return jsonify({
+                'success': False,
+                'error': f"Unsupported receipt file type: {file_obj.filename}. Allowed: {REIMBURSEMENT_RECEIPT_ALLOWED_LABEL}."
+            }), 400
+
+        original = secure_filename(file_obj.filename) or 'receipt'
+        ext = reimbursement_receipt_extension(original)
+        if not ext:
+            return jsonify({'success': False, 'error': f'Invalid receipt filename: {file_obj.filename}'}), 400
+
+        try:
+            prepared_bytes, stored_ext, content_type = reimbursement_prepare_receipt_upload_bytes(file_obj, original)
+        except ValueError as prep_error:
+            return jsonify({'success': False, 'error': str(prep_error)}), 400
+        prepared_files.append({
+            'original': original,
+            'stored_ext': stored_ext,
+            'content_type': content_type,
+            'prepared_bytes': prepared_bytes,
+            'content_sha256': hashlib.sha256(prepared_bytes).hexdigest()
+        })
+
     saved = []
+    duplicates = []
     written_paths = []
     try:
         root = reimbursement_receipt_upload_root()
-        for file_obj in files:
-            if not reimbursement_receipt_allowed(file_obj.filename):
-                return jsonify({
-                    'success': False,
-                    'error': f"Unsupported receipt file type: {file_obj.filename}. Allowed: {REIMBURSEMENT_RECEIPT_ALLOWED_LABEL}."
-                }), 400
+        for prepared in prepared_files:
+            original = prepared['original']
+            stored_ext = prepared['stored_ext']
+            content_type = prepared['content_type']
+            prepared_bytes = prepared['prepared_bytes']
+            content_sha256 = prepared['content_sha256']
 
-            original = secure_filename(file_obj.filename) or 'receipt'
-            ext = reimbursement_receipt_extension(original)
-            if not ext:
-                return jsonify({'success': False, 'error': f'Invalid receipt filename: {file_obj.filename}'}), 400
-
-            try:
-                prepared_bytes, stored_ext, content_type = reimbursement_prepare_receipt_upload_bytes(file_obj, original)
-            except ValueError as prep_error:
-                return jsonify({'success': False, 'error': str(prep_error)}), 400
+            duplicate = reimbursement_find_duplicate_receipt(header.id, content_sha256)
+            if duplicate:
+                duplicates.append(duplicate)
+                continue
 
             receipt_group_label = 'additional' if receipt_group_id is None else str(receipt_group_id)
             stored = f"reimb_{header.id}_{receipt_group_label}_{secrets.token_hex(8)}.{stored_ext}"
@@ -19776,7 +19850,8 @@ def upload_reimbursement_receipt():
                 stored_filename=stored,
                 original_filename=original,
                 content_type=content_type or '',
-                file_size=size
+                file_size=size,
+                content_sha256=content_sha256
             )
             db.session.add(receipt)
             saved.append(receipt)
@@ -19786,11 +19861,26 @@ def upload_reimbursement_receipt():
 
         receipt_dicts = [reimbursement_receipt_to_dict(r) for r in saved]
         try:
-            log_activity(f"Uploaded {len(saved)} reimbursement receipt(s) for {start_date.isoformat()} to {end_date.isoformat()}")
+            if saved:
+                log_activity(f"Uploaded {len(saved)} reimbursement receipt(s) for {start_date.isoformat()} to {end_date.isoformat()}")
+            if duplicates:
+                log_activity(f"Skipped {len(duplicates)} duplicate reimbursement receipt upload(s) for {start_date.isoformat()} to {end_date.isoformat()}")
         except Exception as log_err:
             print(f"[Reimbursement] Receipt activity log skipped: {log_err}")
 
-        return jsonify({'success': True, 'receipts': receipt_dicts, 'message': 'Receipt uploaded.'})
+        if duplicates and not saved:
+            message = 'This receipt is already uploaded. No duplicate copy was added.'
+        elif duplicates:
+            message = f'{len(saved)} receipt(s) uploaded; {len(duplicates)} duplicate file(s) skipped.'
+        else:
+            message = f'{len(saved)} receipt(s) uploaded.'
+        return jsonify({
+            'success': True,
+            'receipts': receipt_dicts,
+            'message': message,
+            'uploaded_count': len(saved),
+            'duplicate_count': len(duplicates)
+        })
 
     except Exception as exc:
         db.session.rollback()

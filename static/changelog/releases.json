@@ -103,7 +103,8 @@
       "items": [
         {"item_key": "2026-07-15-accounting-attachment-delete", "category": "Accounting", "description": "Editable reimbursements, travel requests, and liquidations now provide clear individual Delete and Delete All controls for uploaded files.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10},
         {"item_key": "2026-07-15-cash-advance-attachments", "category": "Cash Advance", "description": "Cash Advance requests now support optional PDF and image attachments that approvers can review and Accounting receives with the approved form.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 20},
-        {"item_key": "2026-07-15-attachment-locking", "category": "Accounting", "description": "Attachment deletion remains available for Draft, Rejected, or Returned records and is locked after submission or approval.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30}
+        {"item_key": "2026-07-15-attachment-locking", "category": "Accounting", "description": "Attachment deletion remains available for Draft, Rejected, or Returned records and is locked after submission or approval.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30},
+        {"item_key": "2026-07-15-reimbursement-upload-dedup", "category": "Reimbursement", "description": "Repeated receipt uploads are now detected by file content, preventing duplicate copies after double-clicks or upload retries.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40}
       ]
     }
   ]

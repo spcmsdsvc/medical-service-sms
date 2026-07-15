@@ -54,6 +54,14 @@ class AccountingAttachmentManagementTests(unittest.TestCase):
         self.assertIn("Supporting Attachments", approvals)
         self.assertIn("renderApprovalReceiptLinks(data.attachments || [])", approvals)
 
+    def test_reimbursement_uploads_are_content_deduplicated(self):
+        reimbursement = template_source("reimbursement.html")
+        self.assertIn("content_sha256 = db.Column(db.String(64)", APP_SOURCE)
+        self.assertIn("uq_reimbursement_receipt_content", APP_SOURCE)
+        self.assertIn("reimbursement_find_duplicate_receipt", APP_SOURCE)
+        self.assertIn("already uploaded. No duplicate copy was added", APP_SOURCE)
+        self.assertIn("reimbursementReceiptUploadBusy", reimbursement)
+
 
 if __name__ == "__main__":
     unittest.main()
