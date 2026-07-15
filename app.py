@@ -1502,6 +1502,13 @@ class TravelRequest(db.Model):
     liquidation_balance = db.Column(db.Float, default=0)
     currency_code = db.Column(db.String(3), nullable=False, default='PHP')
 
+    # Cash-advance instructions must be stored separately from the compact
+    # purpose summary so Draft reloads do not lose or truncate these values.
+    special_instruction = db.Column(db.String(40), nullable=True)
+    account_number = db.Column(db.String(100), nullable=True)
+    health_condition = db.Column(db.String(150), nullable=True)
+    special_notes = db.Column(db.Text, nullable=True)
+
     status = db.Column(db.String(40), nullable=False, default='Draft', index=True)
     accounting_status = db.Column(db.String(40), nullable=True, index=True)
 
@@ -2111,7 +2118,11 @@ def ensure_travel_request_tables():
                 'approval_signature_snapshot': 'ALTER TABLE travel_request ADD COLUMN approval_signature_snapshot TEXT',
                 'approval_signature_layout': 'ALTER TABLE travel_request ADD COLUMN approval_signature_layout VARCHAR(50)',
                 'approval_signed_at': 'ALTER TABLE travel_request ADD COLUMN approval_signed_at DATETIME',
-                'currency_code': "ALTER TABLE travel_request ADD COLUMN currency_code VARCHAR(3) DEFAULT 'PHP'"
+                'currency_code': "ALTER TABLE travel_request ADD COLUMN currency_code VARCHAR(3) DEFAULT 'PHP'",
+                'special_instruction': 'ALTER TABLE travel_request ADD COLUMN special_instruction VARCHAR(40)',
+                'account_number': 'ALTER TABLE travel_request ADD COLUMN account_number VARCHAR(100)',
+                'health_condition': 'ALTER TABLE travel_request ADD COLUMN health_condition VARCHAR(150)',
+                'special_notes': 'ALTER TABLE travel_request ADD COLUMN special_notes TEXT'
             }
             for column_name, ddl in travel_request_column_migrations.items():
                 if column_name not in travel_request_columns:
@@ -4454,6 +4465,10 @@ def travel_request_email_context(request_rec):
     return {
         'request_no': request_no,
         'currency_code': currency_code,
+        'special_instruction': clean_str(getattr(request_rec, 'special_instruction', None)),
+        'account_number': clean_str(getattr(request_rec, 'account_number', None)),
+        'health_condition': clean_str(getattr(request_rec, 'health_condition', None)),
+        'special_notes': clean_str(getattr(request_rec, 'special_notes', None)),
         'requester_name': requester_name,
         'participant_names': participant_names,
         'participants_label': ', '.join(participant_names) if participant_names else 'Not specified',
@@ -5298,11 +5313,17 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
         draw_text(331, 410, money_text(misc), size=8, max_width=90, align='right')
         draw_text(331, 388, money_text(total_amount), size=8, bold=True, max_width=90, align='right')
 
-        # Special instruction and approval fields.
-        # F4A5J6: Put the deposit X inside the official checkbox.
-        # The previous x=28 placed the mark beside the box instead of inside it.
-        draw_check(18, 341)  # Check for deposit
-        health_text = 'Fit to travel'
+        # Use the explicit saved instruction. Older requests had Deposit
+        # stamped by default, so keep that fallback when no value exists.
+        special_instruction = safe_text(ctx.get('special_instruction')).lower()
+        if special_instruction == 'check for encashment':
+            draw_check(18, 352)
+        else:
+            draw_check(18, 341)
+            account_number = safe_text(ctx.get('account_number'))
+            if account_number:
+                draw_text(306, 341, account_number, size=7.2, max_width=270)
+        health_text = safe_text(ctx.get('health_condition')) or 'Fit to travel'
         draw_wrapped_text(434, 277, health_text, max_width=142, max_lines=1, size=8)
         approver_label = pdf_title_case_name(safe_text(getattr(request_rec, 'approval_name_snapshot', None)) or approved_by)
         # F4A5I2: The approver name/signature must be stamped only in the official
@@ -11136,7 +11157,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v12-reimbursement-upload-dedup';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v13-travel-draft-instructions';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -22062,6 +22083,10 @@ def travel_request_to_dict(request_rec, include_lines=False, include_audit=False
         'total_expenses': travel_request_money(request_rec.total_expenses),
         'liquidation_balance': travel_request_money(request_rec.liquidation_balance),
         'currency_code': currency_code,
+        'special_instruction': clean_str(getattr(request_rec, 'special_instruction', None)),
+        'account_number': clean_str(getattr(request_rec, 'account_number', None)),
+        'health_condition': clean_str(getattr(request_rec, 'health_condition', None)),
+        'special_notes': clean_str(getattr(request_rec, 'special_notes', None)),
         'requested_amount_label': format_travel_currency_amount(request_rec.requested_amount, currency_code),
         'approved_amount_label': format_travel_currency_amount(request_rec.approved_amount, currency_code),
         'total_expenses_label': format_travel_currency_amount(request_rec.total_expenses, currency_code),
@@ -22434,6 +22459,11 @@ def save_travel_request_draft():
     request_rec.arrival_date = travel_request_date(payload.get('arrival_date')) or request_rec.return_date
     request_rec.currency_code = normalize_travel_currency_code(payload.get('currency_code') or getattr(request_rec, 'currency_code', None) or 'PHP')
     request_rec.requested_amount = travel_request_money(payload.get('requested_amount') or payload.get('amount'))
+    special_instruction = clean_str(payload.get('special_instruction'))
+    request_rec.special_instruction = special_instruction if special_instruction in {'Check for encashment', 'Check for deposit'} else None
+    request_rec.account_number = (clean_str(payload.get('account_number')) or '')[:100] or None
+    request_rec.health_condition = (clean_str(payload.get('health_condition')) or '')[:150] or None
+    request_rec.special_notes = clean_str(payload.get('special_notes')) or None
     request_rec.updated_at = now
 
     travel_conflicts = find_travel_request_conflicts_for_user(

@@ -3232,6 +3232,7 @@ function collectTravelPayload(){
         special_instruction: specialInstruction,
         account_number: document.getElementById('travel-account-number')?.value || '',
         health_condition: document.getElementById('travel-health-condition')?.value || '',
+        special_notes: document.getElementById('travel-special-notes')?.value || '',
         notes: notes,
         lines: cashLines,
         routes: routes
@@ -3711,6 +3712,24 @@ function hydrateTravelPurposeFieldsFromRequest(item){
     if(meetingObjective) meetingObjective.value = extractTravelFieldFromText(text, 'Objective');
 }
 
+function hydrateTravelDepositFieldsFromRequest(item){
+    const text = [item?.purpose || '', item?.notes || ''].join('\n');
+    const specialInstruction = item?.special_instruction || extractTravelFieldFromText(text, 'Special instruction');
+    document.querySelectorAll('input[name="travel-special-instruction"]').forEach(input => {
+        input.checked = input.value === specialInstruction;
+    });
+
+    // Enable the deposit fields before assigning their saved values. Calling
+    // this afterward would intentionally clear them when no deposit is chosen.
+    updateDepositFieldsState();
+    const accountNumber = document.getElementById('travel-account-number');
+    const healthCondition = document.getElementById('travel-health-condition');
+    const specialNotes = document.getElementById('travel-special-notes');
+    if(accountNumber) accountNumber.value = item?.account_number || extractTravelFieldFromText(text, 'BPI Account Number');
+    if(healthCondition) healthCondition.value = item?.health_condition || extractTravelFieldFromText(text, 'Health Condition');
+    if(specialNotes) specialNotes.value = item?.special_notes || '';
+}
+
 async function loadTravelRequestDetail(id){
     if(!id) return;
     try{
@@ -3731,6 +3750,7 @@ async function loadTravelRequestDetail(id){
         renderTravelApprovalSignatureSnapshot(item);
         renderTravelRequestAttachments(item.attachments || []);
         hydrateTravelPurposeFieldsFromRequest(item);
+        hydrateTravelDepositFieldsFromRequest(item);
         setTravelParticipantsFromRequest(item);
 
         clearRoutePlans();
