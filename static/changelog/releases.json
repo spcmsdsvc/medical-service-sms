@@ -107,7 +107,8 @@
         {"item_key": "2026-07-15-reimbursement-upload-dedup", "category": "Reimbursement", "description": "Repeated receipt uploads are now detected by file content, preventing duplicate copies after double-clicks or upload retries.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40},
         {"item_key": "2026-07-15-travel-deposit-draft", "category": "Travel Request", "description": "Travel Request drafts now retain the selected check instruction, BPI account number, health condition, and special notes when reopened.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50},
         {"item_key": "2026-07-15-travel-pdf-currency", "category": "Travel Request", "description": "Generated Travel Request forms now show USD beside every requested amount when International / USD is selected.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 60},
-        {"item_key": "2026-07-15-reimbursement-manual-row-preserve", "category": "Reimbursement", "description": "Adding a manual reimbursement item now preserves all amounts and remarks already entered in the worksheet.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 70}
+        {"item_key": "2026-07-15-reimbursement-manual-row-preserve", "category": "Reimbursement", "description": "Adding a manual reimbursement item now preserves all amounts and remarks already entered in the worksheet.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 70},
+        {"item_key": "2026-07-15-tsr-address-wrap", "category": "Create TSR", "description": "Generated TSR forms now wrap long customer addresses and automatically expand the information row so the complete address remains visible.", "audiences": ["engineers", "admins"], "sort_order": 80}
       ]
     }
   ]

@@ -5376,23 +5376,7 @@ async function loadImageForCanvas(src){
   });
 }
 function canvasText(ctx, text, x, y, maxWidth, lineHeight, options={}){
-  const raw = String(text || '').replace(/\r/g, '');
-  const lines = [];
-  raw.split('\n').forEach(paragraph => {
-    const words = paragraph.split(/\s+/).filter(Boolean);
-    if(!words.length){ lines.push(''); return; }
-    let line = '';
-    words.forEach(word => {
-      const test = line ? `${line} ${word}` : word;
-      if(ctx.measureText(test).width > maxWidth && line){
-        lines.push(line);
-        line = word;
-      }else{
-        line = test;
-      }
-    });
-    lines.push(line);
-  });
+  const lines = wrapCanvasTextLines(ctx, text, maxWidth);
   const maxLines = options.maxLines || lines.length;
   const drawLines = lines.slice(0, maxLines);
   drawLines.forEach((line, idx) => ctx.fillText(line, x, y + (idx * lineHeight)));
@@ -5406,13 +5390,25 @@ function wrapCanvasTextLines(ctx, text, maxWidth){
     if(!words.length){ lines.push(''); return; }
     let line = '';
     words.forEach(word => {
-      const test = line ? `${line} ${word}` : word;
-      if(ctx.measureText(test).width > maxWidth && line){
-        lines.push(line);
-        line = word;
-      }else{
-        line = test;
+      const pendingParts = [];
+      let remainingWord = word;
+      while(remainingWord && ctx.measureText(remainingWord).width > maxWidth){
+        let splitAt = remainingWord.length - 1;
+        while(splitAt > 1 && ctx.measureText(remainingWord.slice(0, splitAt)).width > maxWidth) splitAt -= 1;
+        pendingParts.push(remainingWord.slice(0, Math.max(1, splitAt)));
+        remainingWord = remainingWord.slice(Math.max(1, splitAt));
       }
+      if(remainingWord) pendingParts.push(remainingWord);
+
+      pendingParts.forEach(part => {
+        const test = line ? `${line} ${part}` : part;
+        if(ctx.measureText(test).width > maxWidth && line){
+          lines.push(line);
+          line = part;
+        }else{
+          line = test;
+        }
+      });
     });
     lines.push(line);
   });
@@ -5430,15 +5426,42 @@ function canvasCheckbox(ctx, x, y, label, checked, options={}){
   ctx.font = `bold ${fontSize}px Arial`;
   ctx.fillText(label, x + box + 7, y);
 }
-function drawTableCell(ctx, x, y, w, h, label, value, labelWidth=0){
+function getAdaptiveTSRTableCellLayout(ctx, value, width, options={}){
+  const preferredFontSize = Number(options.preferredFontSize || 22);
+  const minimumFontSize = Number(options.minimumFontSize || 15);
+  const targetLines = Math.max(1, Number(options.targetLines || 4));
+  let fontSize = preferredFontSize;
+  let lines = [];
+
+  while(fontSize >= minimumFontSize){
+    ctx.font = `bold ${fontSize}px Arial`;
+    lines = wrapCanvasTextLines(ctx, value, Math.max(40, width - 20));
+    if(lines.length <= targetLines || fontSize === minimumFontSize) break;
+    fontSize -= 1;
+  }
+
+  const lineHeight = fontSize + 4;
+  return {
+    fontSize,
+    lineHeight,
+    lineCount:Math.max(1, lines.length),
+    requiredHeight:Math.max(72, 62 + ((Math.max(1, lines.length) - 1) * lineHeight))
+  };
+}
+function drawTableCell(ctx, x, y, w, h, label, value, labelWidth=0, options={}){
   // STEP 6B5: label and data are separated into two clean lines.
   // This prevents exported PDF overlap when font sizes are increased.
   ctx.lineWidth = 1.4;
   ctx.strokeRect(x, y, w, h);
   ctx.font = 'bold 18px Arial';
   ctx.fillText(label, x + 10, y + 22);
-  ctx.font = 'bold 22px Arial';
-  canvasText(ctx, value, x + 10, y + 53, w - 20, 24, {maxLines: Math.max(1, Math.floor((h-30)/24))});
+  const layout = options.layout || {
+    fontSize:22,
+    lineHeight:24,
+    lineCount:Math.max(1, Math.floor((h - 30) / 24))
+  };
+  ctx.font = `bold ${layout.fontSize}px Arial`;
+  canvasText(ctx, value, x + 10, y + 53, w - 20, layout.lineHeight, {maxLines:layout.lineCount});
 }
 function drawSectionTitle(ctx, title, x, y, w, h=27){
   ctx.lineWidth = 1.4;
@@ -5840,9 +5863,12 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
   const leftW = Math.round(pageW * 0.60);
   const rightW = pageW - leftW;
   const rowH = 72;
-  drawTableCell(ctx, margin, y, leftW, rowH, 'CUSTOMER NAME:', data['tsr-customer-name'], 135);
-  drawTableCell(ctx, margin + leftW, y, rightW, rowH, 'ADDRESS:', data['tsr-address'], 85);
-  y += rowH;
+  const customerLayout = getAdaptiveTSRTableCellLayout(ctx, data['tsr-customer-name'], leftW, {preferredFontSize:22, minimumFontSize:16, targetLines:3});
+  const addressLayout = getAdaptiveTSRTableCellLayout(ctx, data['tsr-address'], rightW, {preferredFontSize:20, minimumFontSize:15, targetLines:4});
+  const customerAddressRowH = Math.max(rowH, customerLayout.requiredHeight, addressLayout.requiredHeight);
+  drawTableCell(ctx, margin, y, leftW, customerAddressRowH, 'CUSTOMER NAME:', data['tsr-customer-name'], 135, {layout:customerLayout});
+  drawTableCell(ctx, margin + leftW, y, rightW, customerAddressRowH, 'ADDRESS:', data['tsr-address'], 85, {layout:addressLayout});
+  y += customerAddressRowH;
   drawTableCell(ctx, margin, y, leftW, rowH, 'SERVICE REQUESTED BY:', data['tsr-requested-by'], 190);
   drawTableCell(ctx, margin + leftW, y, rightW, rowH, 'DEPARTMENT:', data['tsr-department'], 118);
   y += rowH;
