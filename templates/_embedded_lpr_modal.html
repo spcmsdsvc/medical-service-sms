@@ -37,8 +37,6 @@
     .embedded-lpr-btn:disabled { opacity:.55; cursor:not-allowed; }
     .embedded-lpr-foot { display:flex; justify-content:flex-end; gap:9px; flex-wrap:wrap; padding:13px 18px; border-top:1px solid #e2e8f0; background:#fff; }
     .embedded-lpr-notice { margin:0 0 12px; padding:10px 12px; border-radius:10px; background:#eff6ff; color:#1e3a8a; font-weight:800; }
-    .embedded-lpr-parent-list { display:none; margin-top:10px; border:1px solid #dbeafe; border-radius:12px; padding:10px; background:#f8fafc; }
-    .embedded-lpr-parent-list.has-items { display:block; }
     @media (max-width:900px) { .embedded-lpr-layout { grid-template-columns:1fr; } .embedded-lpr-form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
     @media (max-width:560px) { .embedded-lpr-modal { padding:0; } .embedded-lpr-dialog { max-height:100vh; border-radius:0; } .embedded-lpr-body { padding:12px; } .embedded-lpr-form-grid { grid-template-columns:1fr; } .embedded-lpr-field.wide { grid-column:span 1; } .embedded-lpr-foot .embedded-lpr-btn { flex:1 1 45%; justify-content:center; } }
 </style>
@@ -53,10 +51,9 @@
             <div id="embeddedLprNotice" class="embedded-lpr-notice" hidden></div>
             <div class="embedded-lpr-layout">
                 <section class="embedded-lpr-panel">
-                    <h3>Attached LPRs</h3>
-                    <div class="embedded-lpr-muted">These LPRs support this parent request and do not create a separate approval route.</div>
-                    <div id="embeddedLprModalList" class="embedded-lpr-list" style="margin-top:10px;"><div class="embedded-lpr-muted">No LPR attached yet.</div></div>
-                    <button type="button" class="embedded-lpr-btn primary" style="margin-top:10px;" onclick="newEmbeddedLpr()"><i class="fa-solid fa-plus"></i> New LPR</button>
+                    <h3>LPR Attachment</h3>
+                    <div class="embedded-lpr-muted">Attach one LPR to this request. It follows the request's approval.</div>
+                    <div id="embeddedLprModalList" class="embedded-lpr-list" style="margin-top:10px;"><div class="embedded-lpr-muted">No LPR attached yet. Complete the form and save it.</div></div>
                 </section>
                 <section class="embedded-lpr-panel">
                     <input type="hidden" id="embeddedLprId" value="">
@@ -113,11 +110,8 @@
     function collect(){ return {id:$('embeddedLprId').value || null, parent_module:embeddedLprParentModule, parent_id:parentId(), request_date:$('embeddedLprDate').value, branch_code:$('embeddedLprBranch').value, class_code:$('embeddedLprClass').value, dept_code:$('embeddedLprDept').value, product_code:$('embeddedLprProduct').value, intended_for:$('embeddedLprIntendedFor').value, equipment:$('embeddedLprEquipment').value, po_no:$('embeddedLprPoNo').value, invoice_no:$('embeddedLprInvoiceNo').value, received_by:$('embeddedLprReceivedBy').value, items:rowValues()}; }
     function updateEmbeddedLprGate(){ const editable=parentEditable() && ['Draft','Rejected','Returned'].includes(String($('embeddedLprStatus')?.value || 'Draft')); document.querySelectorAll('#embeddedLprModal input:not([readonly]), #embeddedLprModal select').forEach(el=>el.disabled=!editable); if($('embeddedLprAddItemBtn'))$('embeddedLprAddItemBtn').disabled=!editable; if($('embeddedLprSaveBtn'))$('embeddedLprSaveBtn').disabled=!editable; if($('embeddedLprUploadLabel'))$('embeddedLprUploadLabel').style.display=editable?'inline-flex':'none'; if($('embeddedLprDeleteAllBtn'))$('embeddedLprDeleteAllBtn').hidden=!editable || !embeddedLprAttachments.length; }
     function renderAttachments(){ const box=$('embeddedLprAttachmentList'); if(!box)return; const editable=parentEditable() && ['Draft','Rejected','Returned'].includes(String($('embeddedLprStatus')?.value || 'Draft')); if(!embeddedLprAttachments.length){box.innerHTML='<div class="embedded-lpr-muted">No supporting attachments.</div>';return;} box.innerHTML=embeddedLprAttachments.map(item=>{ const deleteButton=editable ? '<button type="button" class="embedded-lpr-btn danger" onclick="deleteEmbeddedLprAttachment(' + (Number(item.id) || 0) + ')"><i class="fa-solid fa-trash"></i> Delete</button>' : ''; return '<div class="embedded-lpr-attachment"><div><strong>' + esc(item.filename || item.original_filename || 'Attachment') + '</strong><div class="embedded-lpr-muted">' + esc(item.content_type || '') + '  -  ' + money((item.file_size || item.size || 0)/1024) + ' KB</div></div><div class="embedded-lpr-attachment-actions"><a class="embedded-lpr-btn secondary" href="' + esc(item.preview_url || '#') + '" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Preview</a><a class="embedded-lpr-btn secondary" href="' + esc(item.download_url || '#') + '"><i class="fa-solid fa-download"></i> Download</a>' + deleteButton + '</div></div>'; }).join(''); }
-    function renderParentList(items){ const target=$(embeddedLprParentModule === 'cash_advance' ? 'cashLinkedLprList' : 'travelLinkedLprList'); if(!target)return; const list=Array.isArray(items)?items:[]; target.classList.toggle('has-items', list.length>0); const cards=list.map(item => '<div class="embedded-lpr-record" style="margin-top:8px;"><div class="embedded-lpr-record-title"><span>' + esc(item.lpr_no || 'LPR') + '</span><span>PHP ' + money(item.total_requested) + '</span></div><div class="embedded-lpr-record-meta">' + esc(item.status || 'Draft') + '  -  ' + Number(item.item_count || 0) + ' item(s)</div><div class="embedded-lpr-record-actions"><a class="embedded-lpr-btn secondary" href="' + esc(item.preview_url || '#') + '" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Preview</a><a class="embedded-lpr-btn secondary" href="' + esc(item.download_url || '#') + '"><i class="fa-solid fa-download"></i> Download</a></div></div>').join(''); target.innerHTML=list.length ? '<strong><i class="fa-solid fa-file-invoice"></i> Linked LPRs</strong>' + cards : ''; }
-    async function refreshParentList(){ const id=parentId(); if(!id){renderParentList([]);return;} try { const data=await api(`/get_parent_lprs/${embeddedLprParentModule}/${encodeURIComponent(id)}`); renderParentList(data.items || []); } catch(error){ renderParentList([]); } }
     window.closeEmbeddedLprModal = () => { $('embeddedLprModal').classList.remove('open'); };
-    window.newEmbeddedLpr = () => fill(null);
-    window.saveEmbeddedLpr = async () => { try { let id=parentId(); if(!id){ let saved=null; if(embeddedLprParentModule==='cash_advance' && window.saveCashAdvanceDraft) saved=await window.saveCashAdvanceDraft(true); if(embeddedLprParentModule==='travel_request' && window.saveTravelRequestDraft) saved=await window.saveTravelRequestDraft(); id=saved?.item?.id || saved?.cash_advance?.id || saved?.travel_request?.id || saved?.id || $(embeddedLprParentModule==='cash_advance'?'cashAdvanceId':'travel-request-id')?.value || ''; } if(!id){notify('Complete and save the parent request before attaching an LPR.','warn');return;} const data=await api('/save_embedded_lpr',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({...collect(),parent_id:id})}); fill(data.item); renderParentList(data.linked_lprs || []); renderEmbeddedLprModalList(data.linked_lprs || []); notify('LPR saved as an attachment.','success'); } catch(error){ notify(error.message,'error'); } };
+    window.saveEmbeddedLpr = async () => { try { let id=parentId(); if(!id){ let saved=null; if(embeddedLprParentModule==='cash_advance' && window.saveCashAdvanceDraft) saved=await window.saveCashAdvanceDraft(true); if(embeddedLprParentModule==='travel_request' && window.saveTravelRequestDraft) saved=await window.saveTravelRequestDraft(); id=saved?.item?.id || saved?.cash_advance?.id || saved?.travel_request?.id || saved?.id || $(embeddedLprParentModule==='cash_advance'?'cashAdvanceId':'travel-request-id')?.value || ''; } if(!id){notify('Complete and save this request before attaching an LPR.','warn');return;} const data=await api('/save_embedded_lpr',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({...collect(),parent_id:id})}); fill(data.item); renderEmbeddedLprModalList(data.linked_lprs || [data.item]); notify('LPR saved for this request.','success'); } catch(error){ notify(error.message,'error'); } };
     window.uploadEmbeddedLprAttachments = async files => {
         if (!files?.length) return;
         const id = $('embeddedLprId')?.value || '';
@@ -156,27 +150,24 @@
         )).join('') : '<div class="embedded-lpr-muted">No LPR attached yet.</div>';
     }
 
-    window.renderEmbeddedLprParentList = items => { renderParentList(items); renderEmbeddedLprModalList(items); };
     window.openEmbeddedLprModal = async lprId => {
-        if (!parentEditable()) { notify('Save the parent request as a Draft before attaching an LPR.', 'warn'); return; }
+        if (!parentEditable()) { notify('Save this request as a Draft before attaching an LPR.', 'warn'); return; }
         $('embeddedLprModal').classList.add('open');
         fill(null);
         setEmbeddedLprNotice('');
         const id = parentId();
         if (!id) {
-            setEmbeddedLprNotice('This parent request has not been saved yet. Save the first LPR and the parent will be created as a Draft automatically.');
-            renderParentList([]);
+            setEmbeddedLprNotice('This request has not been saved yet. Saving the LPR will create a Draft automatically.');
             renderEmbeddedLprModalList([]);
             return;
         }
         try {
             const data = await api('/get_parent_lprs/' + embeddedLprParentModule + '/' + encodeURIComponent(id));
-            renderParentList(data.items || []);
             renderEmbeddedLprModalList(data.items || []);
-            if (lprId) {
-                const item = (data.items || []).find(row => Number(row.id) === Number(lprId));
-                if (item) fill(item);
-            }
+            const item = lprId
+                ? (data.items || []).find(row => Number(row.id) === Number(lprId))
+                : (data.items || [])[0];
+            if (item) fill(item);
         } catch (error) { notify(error.message, 'error'); }
     };
     window.editEmbeddedLpr = async id => {
@@ -192,7 +183,6 @@
         if (!id || !parentEditable() || !window.confirm('Delete this linked LPR and its supporting files?')) return;
         try {
             const data = await api('/delete_embedded_lpr/' + encodeURIComponent(id), {method:'POST', headers:{'Accept':'application/json','X-CSRFToken':csrf()}});
-            renderParentList(data.linked_lprs || []);
             renderEmbeddedLprModalList(data.linked_lprs || []);
             fill(null);
             notify(data.message || 'Linked LPR deleted.', 'success');

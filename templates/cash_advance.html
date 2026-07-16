@@ -642,14 +642,13 @@
                         <input type="file" id="cashAttachmentFiles" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" multiple hidden>
                         <button type="button" class="cash-btn cash-btn-secondary" id="cashSelectAttachmentsBtn" onclick="document.getElementById('cashAttachmentFiles').click()"><i class="fa-solid fa-folder-open"></i> Select Files</button>
                         <button type="button" class="cash-btn cash-btn-primary" id="cashUploadAttachmentsBtn" onclick="uploadCashAdvanceAttachments()"><i class="fa-solid fa-cloud-arrow-up"></i> Upload</button>
-                        {% if embedded_lpr_enabled %}<button type="button" class="cash-btn cash-btn-secondary" id="cashAttachLprBtn" onclick="openEmbeddedLprModal()" title="Attach an LPR before or after saving this Cash Advance"><i class="fa-solid fa-file-invoice"></i> Attach LPR</button>{% endif %}
+                        {% if embedded_lpr_enabled %}<button type="button" class="cash-btn cash-btn-secondary" id="cashAttachLprBtn" onclick="openEmbeddedLprModal()" title="Add one LPR to this Cash Advance"><i class="fa-solid fa-file-invoice"></i> Attach LPR</button>{% endif %}
                         <button type="button" class="cash-btn cash-btn-danger-outline" id="cashDeleteAllAttachmentsBtn" onclick="deleteAllCashAdvanceAttachments()" style="display:none;" title="Delete all supporting attachments"><i class="fa-solid fa-trash"></i> Delete All</button>
                     </div>
                 </div>
                 <div class="cash-attachment-meta" id="cashAttachmentSelection">No files selected.</div>
-                {% if embedded_lpr_enabled %}<div class="cash-attachment-meta">You can attach an LPR before saving. Saving the first LPR will save this Cash Advance as a draft automatically.</div>{% endif %}
+                {% if embedded_lpr_enabled %}<div class="cash-attachment-meta">You can add one LPR before saving. Saving it will create a draft automatically.</div>{% endif %}
                 <div class="cash-attachment-list" id="cashAttachmentList"><div class="cash-muted">No attachments uploaded.</div></div>
-                {% if embedded_lpr_enabled %}<div id="cashLinkedLprList" class="embedded-lpr-parent-list"></div>{% endif %}
             </div>
 
             <div class="cash-form-actions">
@@ -915,7 +914,6 @@
         document.getElementById('cashPurpose').value = item.purpose || '';
         setCashStatus(item.status || 'Draft');
         renderCashAdvanceAttachments(item.attachments || []);
-        if (window.renderEmbeddedLprParentList) window.renderEmbeddedLprParentList(item.linked_lprs || []);
         const statusText = document.getElementById('cashFormStatusText');
         if (statusText) statusText.textContent = item.lock_reason || (String(item.status || 'Draft').toLowerCase() === 'draft' ? 'Draft request. You may edit, save, and submit.' : 'Submitted record loaded for review.');
     }
@@ -930,7 +928,6 @@
         document.getElementById('cashRequestDate').value = todayInputValue();
         setCashStatus('Draft');
         renderCashAdvanceAttachments([]);
-        if (window.renderEmbeddedLprParentList) window.renderEmbeddedLprParentList([]);
         const attachmentInput = document.getElementById('cashAttachmentFiles');
         if (attachmentInput) attachmentInput.value = '';
         updateCashAttachmentSelection();

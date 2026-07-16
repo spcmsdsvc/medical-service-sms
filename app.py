@@ -45609,7 +45609,7 @@ def embedded_lpr_authorized_header(lpr_id, require_edit=False):
     module_name = normalize_embedded_lpr_parent_module(getattr(header, 'parent_module', None))
     _, parent = embedded_lpr_parent(module_name, parent_id)
     if not parent:
-        return None, None, None, (jsonify({'success': False, 'error': 'Parent request not found.'}), 404)
+        return None, None, None, (jsonify({'success': False, 'error': 'Request not found.'}), 404)
     allowed = embedded_lpr_parent_can_manage(module_name, parent) if require_edit else embedded_lpr_parent_can_view(module_name, parent)
     if not allowed or (require_edit and not embedded_lpr_parent_is_editable(module_name, parent)):
         return None, None, None, (jsonify({'success': False, 'error': 'Linked LPR access is not allowed for this request.'}), 403)
@@ -45624,7 +45624,7 @@ def get_parent_lprs(parent_module, parent_id):
     ensure_lpr_tables()
     module_name, parent = embedded_lpr_parent(parent_module, parent_id)
     if not parent or not embedded_lpr_parent_can_view(module_name, parent):
-        return jsonify({'success': False, 'error': 'Parent request not found or access denied.'}), 404
+        return jsonify({'success': False, 'error': 'Request not found or access denied.'}), 404
     items = linked_lpr_dicts(module_name, parent.id, include_items=True, include_attachments=True)
     return jsonify({'success': True, 'module': module_name, 'parent_id': parent.id, 'items': items, 'count': len(items)})
 
@@ -45639,11 +45639,16 @@ def save_embedded_lpr():
     payload = request.get_json(silent=True) or {}
     module_name, parent = embedded_lpr_parent(payload.get('parent_module'), payload.get('parent_id'))
     if not parent or not embedded_lpr_parent_can_manage(module_name, parent):
-        return jsonify({'success': False, 'error': 'Parent request not found or access denied.'}), 404
+        return jsonify({'success': False, 'error': 'Request not found or access denied.'}), 404
     if not embedded_lpr_parent_is_editable(module_name, parent):
-        return jsonify({'success': False, 'error': 'Linked LPRs can only be changed while the parent request is editable.'}), 409
+        return jsonify({'success': False, 'error': 'The LPR can only be changed while this request is editable.'}), 409
 
     requested_id = clean_int(payload.get('id') or payload.get('lpr_id'))
+    if not requested_id and linked_lpr_records(module_name, parent.id):
+        return jsonify({
+            'success': False,
+            'error': 'This request already has an LPR. Edit the existing LPR instead of adding another.'
+        }), 409
     header = db.session.get(LPRHeader, requested_id) if requested_id else None
     if header:
         linked_module = normalize_embedded_lpr_parent_module(getattr(header, 'parent_module', None))
@@ -45734,7 +45739,7 @@ def save_lpr():
     ensure_lpr_tables()
     payload = request.get_json(silent=True) or {}
     if payload.get('parent_module') or payload.get('parent_id') or payload.get('cash_advance_id') or payload.get('travel_request_id'):
-        return jsonify({'success': False, 'error': 'Use the embedded LPR workflow to attach an LPR to a parent request.'}), 400
+        return jsonify({'success': False, 'error': 'Use the embedded LPR workflow to attach an LPR to a Cash Advance or Travel Request.'}), 400
     header = db.session.get(LPRHeader, clean_int(payload.get('id') or payload.get('lpr_id'))) if clean_int(payload.get('id') or payload.get('lpr_id')) else None
     if header:
         if not lpr_can_manage(header) or not lpr_is_editable(header):
