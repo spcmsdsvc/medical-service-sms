@@ -11027,6 +11027,38 @@ def _tsr_schedule_coverage_repair_candidate_rows(start_date, end_date, limit=100
             })
             continue
 
+        # The authoritative schedule can have multiple engineers even when
+        # an older vector PDF was generated before Schedule Coverage existed.
+        # Probe the actual file before calling it a repair candidate so those
+        # PDFs are reported as safely untouched instead of becoming apply-time
+        # errors.
+        probe_path = None
+        try:
+            probe_path = managed_storage_read_path(STORAGE_PREFIX_REPORTS, local_path)
+            with open(probe_path, 'rb') as source_file:
+                probe = repair_tsr_single_day_multi_engineer_coverage_pdf(
+                    source_file.read(),
+                    engineer_names,
+                )
+            if probe.get('already_repaired'):
+                skipped.append({
+                    'submission_id': submission.id,
+                    'file_id': file_rec.id,
+                    'reason': 'already-repaired',
+                })
+                continue
+        except Exception as error:
+            skipped.append({
+                'submission_id': submission.id,
+                'file_id': file_rec.id,
+                'reason': 'coverage-layout-not-found-or-unsafe',
+                'detail': str(error),
+            })
+            continue
+        finally:
+            if probe_path and probe_path != local_path:
+                managed_storage_release_path(probe_path)
+
         candidates.append({
             'submission': submission,
             'payload': payload,
