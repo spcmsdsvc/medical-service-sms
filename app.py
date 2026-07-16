@@ -548,6 +548,14 @@ else:
 
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + DATABASE_PATH
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'connect_args': {
+        # Railway can start multiple workers against the same SQLite volume.
+        # Give short additive migrations time to wait for the writer instead
+        # of failing the first page request with "database is locked".
+        'timeout': 60
+    }
+}
 
 # --- FILE UPLOAD SYSTEM CONFIGURATION ---
 
@@ -44841,37 +44849,46 @@ def ensure_lpr_tables():
     global _lpr_tables_ready
     if _lpr_tables_ready:
         return
-    LPRHeader.__table__.create(db.engine, checkfirst=True)
-    LPRItem.__table__.create(db.engine, checkfirst=True)
-    LPRAttachment.__table__.create(db.engine, checkfirst=True)
-    LPRAudit.__table__.create(db.engine, checkfirst=True)
-    with db.engine.begin() as connection:
-        existing_columns = {
-            row[1]
-            for row in connection.exec_driver_sql('PRAGMA table_info(lpr_header)').fetchall()
-        }
-        for column_name, column_sql in (
-            ('parent_module', 'VARCHAR(40)'),
-            ('cash_advance_id', 'INTEGER'),
-            ('travel_request_id', 'INTEGER')
-        ):
-            if column_name not in existing_columns:
-                connection.exec_driver_sql(
-                    f'ALTER TABLE lpr_header ADD COLUMN {column_name} {column_sql}'
-                )
-        for statement in (
-            'CREATE INDEX IF NOT EXISTS idx_lpr_header_user_status ON lpr_header (user_id, status)',
-            'CREATE INDEX IF NOT EXISTS idx_lpr_header_request_date ON lpr_header (request_date)',
-            'CREATE INDEX IF NOT EXISTS idx_lpr_header_procurement_status ON lpr_header (procurement_status)',
-            'CREATE INDEX IF NOT EXISTS idx_lpr_header_parent_module ON lpr_header (parent_module)',
-            'CREATE INDEX IF NOT EXISTS idx_lpr_header_cash_advance ON lpr_header (cash_advance_id)',
-            'CREATE INDEX IF NOT EXISTS idx_lpr_header_travel_request ON lpr_header (travel_request_id)',
-            'CREATE INDEX IF NOT EXISTS idx_lpr_item_header ON lpr_item (lpr_id)',
-            'CREATE INDEX IF NOT EXISTS idx_lpr_attachment_header ON lpr_attachment (lpr_id)',
-            'CREATE INDEX IF NOT EXISTS idx_lpr_audit_header ON lpr_audit (lpr_id)'
-        ):
-            connection.exec_driver_sql(statement)
-    _lpr_tables_ready = True
+    for attempt in range(6):
+        try:
+            LPRHeader.__table__.create(db.engine, checkfirst=True)
+            LPRItem.__table__.create(db.engine, checkfirst=True)
+            LPRAttachment.__table__.create(db.engine, checkfirst=True)
+            LPRAudit.__table__.create(db.engine, checkfirst=True)
+            with db.engine.begin() as connection:
+                existing_columns = {
+                    row[1]
+                    for row in connection.exec_driver_sql('PRAGMA table_info(lpr_header)').fetchall()
+                }
+                for column_name, column_sql in (
+                    ('parent_module', 'VARCHAR(40)'),
+                    ('cash_advance_id', 'INTEGER'),
+                    ('travel_request_id', 'INTEGER')
+                ):
+                    if column_name not in existing_columns:
+                        connection.exec_driver_sql(
+                            f'ALTER TABLE lpr_header ADD COLUMN {column_name} {column_sql}'
+                        )
+                for statement in (
+                    'CREATE INDEX IF NOT EXISTS idx_lpr_header_user_status ON lpr_header (user_id, status)',
+                    'CREATE INDEX IF NOT EXISTS idx_lpr_header_request_date ON lpr_header (request_date)',
+                    'CREATE INDEX IF NOT EXISTS idx_lpr_header_procurement_status ON lpr_header (procurement_status)',
+                    'CREATE INDEX IF NOT EXISTS idx_lpr_header_parent_module ON lpr_header (parent_module)',
+                    'CREATE INDEX IF NOT EXISTS idx_lpr_header_cash_advance ON lpr_header (cash_advance_id)',
+                    'CREATE INDEX IF NOT EXISTS idx_lpr_header_travel_request ON lpr_header (travel_request_id)',
+                    'CREATE INDEX IF NOT EXISTS idx_lpr_item_header ON lpr_item (lpr_id)',
+                    'CREATE INDEX IF NOT EXISTS idx_lpr_attachment_header ON lpr_attachment (lpr_id)',
+                    'CREATE INDEX IF NOT EXISTS idx_lpr_audit_header ON lpr_audit (lpr_id)'
+                ):
+                    connection.exec_driver_sql(statement)
+            _lpr_tables_ready = True
+            return
+        except Exception as exc:
+            _lpr_tables_ready = False
+            if 'database is locked' not in str(exc).lower() or attempt == 5:
+                raise
+            db.session.rollback()
+            time.sleep(0.5 * (attempt + 1))
 
 
 EMBEDDED_LPR_PARENT_MODULES = {'cash_advance', 'travel_request'}
@@ -45589,13 +45606,10 @@ def get_lpr_list():
     except Exception as exc:
         db.session.rollback()
         print(f'[LPR] List load failed for user={getattr(current_user, "id", None)}: {exc}', flush=True)
-        response_payload = {
+        return jsonify({
             'success': False,
             'error': 'Unable to load LPR records right now. Please refresh and try again.'
-        }
-        if request.args.get('diagnostic') == '1' and is_admin_authorized():
-            response_payload['diagnostic'] = f'{type(exc).__name__}: {str(exc)[:500]}'
-        return jsonify(response_payload), 500
+        }), 500
 
 
 @app.route('/get_lpr/<int:lpr_id>')
