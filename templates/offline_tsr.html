@@ -5234,6 +5234,11 @@ function isTSRDocSelected(data, label){
 function tsrCheckHtml(checked, label, extra=''){
   return `<span class="tsr-print-check"><span class="tsr-print-check-box">${checked ? '✓' : ''}</span><span class="tsr-print-check-label">${escapeHTML(label)}${extra}</span></span>`;
 }
+// Keep checkmark HTML encoding stable even when this legacy source file is
+// served through a non-Unicode-aware browser or cached document.
+tsrCheckHtml = function(checked, label, extra=''){
+  return `<span class="tsr-print-check"><span class="tsr-print-check-box">${checked ? '&#10003;' : ''}</span><span class="tsr-print-check-label">${escapeHTML(label)}${extra}</span></span>`;
+};
 function tsrValue(data, key){ return escapeHTML(data[key] || ''); }
 function tsrUpperValue(data, key, fallback=''){
   const value = String(data[key] || fallback || '').trim();
@@ -5426,6 +5431,30 @@ function canvasCheckbox(ctx, x, y, label, checked, options={}){
   ctx.font = `bold ${fontSize}px Arial`;
   ctx.fillText(label, x + box + 7, y);
 }
+// Use vector strokes for every checked box so marks remain visible in the
+// generated PDF across browsers, fonts, and zoom levels.
+canvasCheckbox = function(ctx, x, y, label, checked, options={}){
+  const box = options.box || 14;
+  const fontSize = options.fontSize || 14;
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(x, y - box + 2, box, box);
+  if(checked){
+    const top = y - box + 2;
+    ctx.save();
+    ctx.strokeStyle = '#111111';
+    ctx.lineWidth = Math.max(1.7, box * 0.13);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + box * 0.18, top + box * 0.52);
+    ctx.lineTo(x + box * 0.42, top + box * 0.78);
+    ctx.lineTo(x + box * 0.84, top + box * 0.20);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.font = `bold ${fontSize}px Arial`;
+  ctx.fillText(label, x + box + 7, y);
+};
 function getAdaptiveTSRTableCellLayout(ctx, value, width, options={}){
   const preferredFontSize = Number(options.preferredFontSize || 22);
   const minimumFontSize = Number(options.minimumFontSize || 15);
