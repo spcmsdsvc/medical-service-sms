@@ -929,7 +929,7 @@
                     <a href="/travel_request" class="{{ 'active' if request.path == '/travel_request' }}"><i class="fa-solid fa-plane-departure me-2"></i> Travel Request</a>
                     <a href="/reimbursement" class="{{ 'active' if request.path == '/reimbursement' }}"><i class="fa-solid fa-file-invoice-dollar me-2"></i> Liquidation</a>
                     <a href="/cash_advance"><i class="fa-solid fa-money-bill-transfer me-2"></i> Cash Advance</a>
-                    {% if lpr_enabled %}<a href="/lpr" class="{{ 'active' if request.path == '/lpr' }}"><i class="fa-solid fa-file-invoice me-2"></i> Local Purchase Requisition</a>{% endif %}
+                    {% if lpr_enabled %}<a href="/lpr" class="{{ 'active' if request.path == '/lpr' }}"><i class="fa-solid fa-file-invoice me-2"></i> LPR</a>{% endif %}
                 </div>
             {% endif %}
 

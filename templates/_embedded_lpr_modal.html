@@ -1,0 +1,222 @@
+{% if embedded_lpr_enabled %}
+<style>
+    .embedded-lpr-modal { position:fixed; inset:0; z-index:1200; display:none; align-items:center; justify-content:center; padding:18px; background:rgba(15,23,42,.66); }
+    .embedded-lpr-modal.open { display:flex; }
+    .embedded-lpr-dialog { width:min(1180px,100%); max-height:min(94vh,980px); overflow:hidden; background:#fff; border-radius:18px; box-shadow:0 24px 70px rgba(15,23,42,.35); display:flex; flex-direction:column; }
+    .embedded-lpr-head { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:16px 20px; background:linear-gradient(135deg,#14213d,#2563eb); color:#fff; }
+    .embedded-lpr-head h2 { margin:0; font-size:1.18rem; font-weight:900; }
+    .embedded-lpr-head button { border:1px solid rgba(255,255,255,.7); background:transparent; color:#fff; border-radius:10px; width:38px; height:38px; font-size:1.25rem; cursor:pointer; }
+    .embedded-lpr-body { overflow:auto; padding:18px; }
+    .embedded-lpr-layout { display:grid; grid-template-columns:minmax(240px,.72fr) minmax(480px,1.5fr); gap:16px; }
+    .embedded-lpr-panel { border:1px solid #dbeafe; border-radius:14px; padding:14px; background:#f8fafc; }
+    .embedded-lpr-panel h3 { margin:0 0 10px; color:#0f172a; font-size:1rem; font-weight:900; }
+    .embedded-lpr-list { display:grid; gap:9px; }
+    .embedded-lpr-record { background:#fff; border:1px solid #dbeafe; border-radius:12px; padding:10px; display:grid; gap:6px; }
+    .embedded-lpr-record-title { font-weight:900; color:#0f172a; display:flex; justify-content:space-between; gap:8px; }
+    .embedded-lpr-record-meta { color:#64748b; font-size:.78rem; font-weight:750; }
+    .embedded-lpr-record-actions { display:flex; flex-wrap:wrap; gap:6px; }
+    .embedded-lpr-form-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+    .embedded-lpr-field.wide { grid-column:span 2; }
+    .embedded-lpr-field label { display:block; margin-bottom:4px; color:#334155; font-size:.75rem; font-weight:900; text-transform:uppercase; }
+    .embedded-lpr-field input, .embedded-lpr-field select { width:100%; min-height:40px; border:1px solid #cbd5e1; border-radius:9px; padding:8px 10px; background:#fff; color:#0f172a; font-weight:700; }
+    .embedded-lpr-items-wrap { overflow:auto; margin-top:14px; border:1px solid #dbeafe; border-radius:12px; background:#fff; }
+    .embedded-lpr-items { width:100%; min-width:760px; border-collapse:collapse; }
+    .embedded-lpr-items th { background:#eaf2ff; color:#1e3a8a; padding:9px; font-size:.72rem; text-align:left; text-transform:uppercase; }
+    .embedded-lpr-items td { padding:7px; border-top:1px solid #e2e8f0; vertical-align:middle; }
+    .embedded-lpr-items input { width:100%; min-height:36px; border:1px solid #cbd5e1; border-radius:8px; padding:7px; }
+    .embedded-lpr-total { display:flex; justify-content:space-between; gap:12px; margin-top:10px; padding:11px 12px; border-radius:10px; background:#dcfce7; color:#166534; font-weight:950; }
+    .embedded-lpr-attachments { margin-top:14px; border:1px solid #dbeafe; border-radius:12px; padding:12px; background:#fff; }
+    .embedded-lpr-attachments-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; }
+    .embedded-lpr-muted { color:#64748b; font-size:.78rem; font-weight:700; }
+    .embedded-lpr-attachment { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 0; border-top:1px solid #e2e8f0; }
+    .embedded-lpr-attachment-actions, .embedded-lpr-actions { display:flex; flex-wrap:wrap; gap:7px; }
+    .embedded-lpr-btn { border:0; border-radius:9px; padding:8px 11px; font-weight:850; cursor:pointer; display:inline-flex; align-items:center; gap:6px; text-decoration:none; }
+    .embedded-lpr-btn.primary { background:#2563eb; color:#fff; }
+    .embedded-lpr-btn.secondary { background:#e2e8f0; color:#334155; }
+    .embedded-lpr-btn.danger { background:#fff; color:#dc2626; border:1px solid #fecaca; }
+    .embedded-lpr-btn:disabled { opacity:.55; cursor:not-allowed; }
+    .embedded-lpr-foot { display:flex; justify-content:flex-end; gap:9px; flex-wrap:wrap; padding:13px 18px; border-top:1px solid #e2e8f0; background:#fff; }
+    .embedded-lpr-notice { margin:0 0 12px; padding:10px 12px; border-radius:10px; background:#eff6ff; color:#1e3a8a; font-weight:800; }
+    .embedded-lpr-parent-list { display:none; margin-top:10px; border:1px solid #dbeafe; border-radius:12px; padding:10px; background:#f8fafc; }
+    .embedded-lpr-parent-list.has-items { display:block; }
+    @media (max-width:900px) { .embedded-lpr-layout { grid-template-columns:1fr; } .embedded-lpr-form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media (max-width:560px) { .embedded-lpr-modal { padding:0; } .embedded-lpr-dialog { max-height:100vh; border-radius:0; } .embedded-lpr-body { padding:12px; } .embedded-lpr-form-grid { grid-template-columns:1fr; } .embedded-lpr-field.wide { grid-column:span 1; } .embedded-lpr-foot .embedded-lpr-btn { flex:1 1 45%; justify-content:center; } }
+</style>
+
+<div id="embeddedLprModal" class="embedded-lpr-modal" role="dialog" aria-modal="true" aria-labelledby="embeddedLprTitle">
+    <div class="embedded-lpr-dialog">
+        <div class="embedded-lpr-head">
+            <h2 id="embeddedLprTitle"><i class="fa-solid fa-file-invoice me-2"></i> Attach LPR</h2>
+            <button type="button" aria-label="Close Attach LPR" onclick="closeEmbeddedLprModal()">&times;</button>
+        </div>
+        <div class="embedded-lpr-body">
+            <div id="embeddedLprNotice" class="embedded-lpr-notice" hidden></div>
+            <div class="embedded-lpr-layout">
+                <section class="embedded-lpr-panel">
+                    <h3>Attached LPRs</h3>
+                    <div class="embedded-lpr-muted">These LPRs support this parent request and do not create a separate approval route.</div>
+                    <div id="embeddedLprModalList" class="embedded-lpr-list" style="margin-top:10px;"><div class="embedded-lpr-muted">No LPR attached yet.</div></div>
+                    <button type="button" class="embedded-lpr-btn primary" style="margin-top:10px;" onclick="newEmbeddedLpr()"><i class="fa-solid fa-plus"></i> New LPR</button>
+                </section>
+                <section class="embedded-lpr-panel">
+                    <input type="hidden" id="embeddedLprId" value="">
+                    <div class="embedded-lpr-form-grid">
+                        <div class="embedded-lpr-field"><label for="embeddedLprNo">LPR No.</label><input id="embeddedLprNo" readonly placeholder="Assigned on save"></div>
+                        <div class="embedded-lpr-field"><label for="embeddedLprDate">Request Date</label><input id="embeddedLprDate" type="date"></div>
+                        <div class="embedded-lpr-field"><label for="embeddedLprCurrency">Currency</label><input id="embeddedLprCurrency" value="PHP" readonly></div>
+                        <div class="embedded-lpr-field"><label for="embeddedLprStatus">Status</label><input id="embeddedLprStatus" value="Draft" readonly></div>
+                        <div class="embedded-lpr-field"><label for="embeddedLprBranch">Branch</label><select id="embeddedLprBranch"><option value="">Select branch</option><option value="BC01">BC01 - Manila/Main</option><option value="BC02">BC02 - Cebu</option><option value="BC03">BC03 - Davao</option></select></div>
+                        <div class="embedded-lpr-field"><label for="embeddedLprClass">Class</label><select id="embeddedLprClass"><option value="">Select class</option><option value="CC01">CC01 - Analytical</option><option value="CC02">CC02 - Scientific</option><option value="CC03">CC03 - Testing &amp; NDT</option><option value="CC04">CC04 - Medical</option><option value="CC05">CC05 - Balance</option><option value="CC06">CC06 - Admin</option></select></div>
+                        <div class="embedded-lpr-field"><label for="embeddedLprDept">Department</label><select id="embeddedLprDept"><option value="">Select department</option><option value="DC01">DC01 - Admin</option><option value="DC02">DC02 - Sales</option><option value="DC03">DC03 - Service</option><option value="DC04">DC04 - CSC</option></select></div>
+                        <div class="embedded-lpr-field"><label for="embeddedLprProduct">Product Code</label><select id="embeddedLprProduct"><option value="">Select product</option><optgroup label="Medical"><option value="PC18">PC18 - RA - R/F</option><option value="PC19">PC19 - RK - R/F FPD</option><option value="PC20">PC20 - RB - CVS</option><option value="PC21">PC21 - RL - CVS FPD</option><option value="PC22">PC22 - RC - RAD</option><option value="PC23">PC23 - RP - Parts</option><option value="PC24">PC24 - SMIP MFG</option></optgroup><optgroup label="Admin"><option value="PC26">PC26 - Admin</option></optgroup></select></div>
+                        <div class="embedded-lpr-field wide"><label for="embeddedLprIntendedFor">Intended For</label><input id="embeddedLprIntendedFor" placeholder="Person, client, or project"></div>
+                        <div class="embedded-lpr-field wide"><label for="embeddedLprEquipment">Equipment</label><input id="embeddedLprEquipment" placeholder="Equipment or system"></div>
+                        <div class="embedded-lpr-field"><label for="embeddedLprPoNo">PO No. <span class="embedded-lpr-muted">(optional)</span></label><input id="embeddedLprPoNo"></div>
+                        <div class="embedded-lpr-field"><label for="embeddedLprInvoiceNo">Invoice No. <span class="embedded-lpr-muted">(optional)</span></label><input id="embeddedLprInvoiceNo"></div>
+                        <div class="embedded-lpr-field"><label for="embeddedLprReceivedBy">Received By <span class="embedded-lpr-muted">(optional)</span></label><input id="embeddedLprReceivedBy"></div>
+                    </div>
+                    <div class="embedded-lpr-actions" style="margin-top:14px;justify-content:space-between;"><div><strong>Requested Items</strong><div class="embedded-lpr-muted">Items after the official first eight rows continue on additional pages.</div></div><button type="button" class="embedded-lpr-btn secondary" id="embeddedLprAddItemBtn" onclick="addEmbeddedLprItem()"><i class="fa-solid fa-plus"></i> Add Item</button></div>
+                    <div class="embedded-lpr-items-wrap"><table class="embedded-lpr-items"><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit</th><th>Unit Price</th><th>Note</th><th>Line Total</th><th></th></tr></thead><tbody id="embeddedLprItemsBody"></tbody></table></div>
+                    <div class="embedded-lpr-total"><span>Overall Total</span><span id="embeddedLprTotal">PHP 0.00</span></div>
+                    <div class="embedded-lpr-attachments">
+                        <div class="embedded-lpr-attachments-head"><div><strong>Supporting Attachments</strong><div class="embedded-lpr-muted">Optional PDF or image documents, up to 35MB intake and optimized to 2MB.</div></div><div class="embedded-lpr-actions"><input id="embeddedLprAttachmentInput" type="file" accept=".pdf,.jpg,.jpeg,.png" multiple hidden onchange="uploadEmbeddedLprAttachments(this.files)"><label for="embeddedLprAttachmentInput" class="embedded-lpr-btn secondary" id="embeddedLprUploadLabel"><i class="fa-solid fa-upload"></i> Upload</label><button type="button" class="embedded-lpr-btn danger" id="embeddedLprDeleteAllBtn" onclick="deleteAllEmbeddedLprAttachments()" hidden><i class="fa-solid fa-trash"></i> Delete All</button></div></div>
+                        <div id="embeddedLprAttachmentList" style="margin-top:8px;"><div class="embedded-lpr-muted">No supporting attachments.</div></div>
+                    </div>
+                </section>
+            </div>
+        </div>
+        <div class="embedded-lpr-foot"><button type="button" class="embedded-lpr-btn secondary" onclick="closeEmbeddedLprModal()">Close</button><button type="button" class="embedded-lpr-btn primary" id="embeddedLprSaveBtn" onclick="saveEmbeddedLpr()"><i class="fa-solid fa-floppy-disk"></i> Save LPR</button></div>
+    </div>
+</div>
+
+<script>
+(() => {
+    const embeddedLprParentModule = '{{ embedded_lpr_parent_module }}';
+    let embeddedLprCurrent = null;
+    let embeddedLprItems = [];
+    let embeddedLprAttachments = [];
+    const $ = id => document.getElementById(id);
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    const money = value => Number(value || 0).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
+    const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const parentId = () => embeddedLprParentModule === 'cash_advance' ? ($('cashAdvanceId')?.value || '') : ($('travel-request-id')?.value || '');
+    const parentEditable = () => embeddedLprParentModule === 'cash_advance' ? Boolean(window.isCashAdvanceEditable?.()) : Boolean(window.isCurrentTravelEditable?.());
+    const notify = (message, tone='success') => { if(embeddedLprParentModule === 'cash_advance' && window.cashToast) window.cashToast(message, tone); else if(window.showTravelStatus) window.showTravelStatus(message, tone === 'success' ? 'success' : 'error'); };
+    const setEmbeddedLprNotice = message => { const notice = $('embeddedLprNotice'); if (!notice) return; notice.textContent = message || ''; notice.hidden = !message; };
+    async function api(url, options={}) { const res = await fetch(url, {credentials:'same-origin', cache:'no-store', ...options}); const data = await res.json().catch(() => ({})); if(!res.ok || data.success === false) throw new Error(data.error || data.message || 'Request failed.'); return data; }
+    function rowValues(){ return Array.from(document.querySelectorAll('#embeddedLprItemsBody tr')).map(row => ({description:row.querySelector('[data-field="description"]')?.value || '', quantity:row.querySelector('[data-field="quantity"]')?.value || 0, unit_measure:row.querySelector('[data-field="unit_measure"]')?.value || '', unit_price:row.querySelector('[data-field="unit_price"]')?.value || 0, note:row.querySelector('[data-field="note"]')?.value || ''})); }
+    function renderItems(items){ embeddedLprItems = Array.isArray(items) && items.length ? items : [{}]; const body=$('embeddedLprItemsBody'); if(!body)return; body.innerHTML=embeddedLprItems.map((item,index)=>`<tr><td>${index+1}</td><td><input data-field="description" value="${esc(item.description || '')}" placeholder="Item description"></td><td><input data-field="quantity" type="number" min="0" step="any" value="${item.quantity ?? ''}" placeholder="0"></td><td><input data-field="unit_measure" value="${esc(item.unit_measure || '')}" placeholder="pcs"></td><td><input data-field="unit_price" type="number" min="0" step="0.01" value="${item.unit_price ?? ''}" placeholder="0.00"></td><td><input data-field="note" value="${esc(item.note || '')}" placeholder="Optional note"></td><td class="embedded-lpr-line-total">PHP 0.00</td><td><button type="button" class="embedded-lpr-btn danger" title="Remove item" onclick="removeEmbeddedLprItem(this)"><i class="fa-solid fa-trash"></i></button></td></tr>`).join(''); body.querySelectorAll('input').forEach(input => input.addEventListener('input', updateTotals)); updateTotals(); updateEmbeddedLprGate(); }
+    function updateTotals(){ let total=0; document.querySelectorAll('#embeddedLprItemsBody tr').forEach(row=>{ const line=Number(row.querySelector('[data-field="quantity"]')?.value || 0)*Number(row.querySelector('[data-field="unit_price"]')?.value || 0); total += Number.isFinite(line) ? line : 0; const out=row.querySelector('.embedded-lpr-line-total'); if(out)out.textContent=`PHP ${money(line)}`; }); if($('embeddedLprTotal'))$('embeddedLprTotal').textContent=`PHP ${money(total)}`; }
+    window.addEmbeddedLprItem = () => { renderItems([...rowValues(), {}]); };
+    window.removeEmbeddedLprItem = button => { const rows=rowValues(); const index=Array.from(document.querySelectorAll('#embeddedLprItemsBody tr')).indexOf(button.closest('tr')); rows.splice(index,1); renderItems(rows); };
+    function fill(item){ embeddedLprCurrent=item || null; $('embeddedLprId').value=item?.id || ''; $('embeddedLprNo').value=item?.lpr_no || ''; $('embeddedLprDate').value=item?.request_date || new Date().toISOString().slice(0,10); $('embeddedLprCurrency').value='PHP'; $('embeddedLprStatus').value=item?.status || 'Draft'; $('embeddedLprBranch').value=item?.branch_code || ''; $('embeddedLprClass').value=item?.class_code || ''; $('embeddedLprDept').value=item?.dept_code || ''; $('embeddedLprProduct').value=item?.product_code || ''; $('embeddedLprIntendedFor').value=item?.intended_for || ''; $('embeddedLprEquipment').value=item?.equipment || ''; $('embeddedLprPoNo').value=item?.po_no || ''; $('embeddedLprInvoiceNo').value=item?.invoice_no || ''; $('embeddedLprReceivedBy').value=item?.received_by || ''; embeddedLprAttachments=Array.isArray(item?.attachments) ? item.attachments : []; renderItems(item?.items || [{}]); renderAttachments(); updateEmbeddedLprGate(); }
+    function collect(){ return {id:$('embeddedLprId').value || null, parent_module:embeddedLprParentModule, parent_id:parentId(), request_date:$('embeddedLprDate').value, branch_code:$('embeddedLprBranch').value, class_code:$('embeddedLprClass').value, dept_code:$('embeddedLprDept').value, product_code:$('embeddedLprProduct').value, intended_for:$('embeddedLprIntendedFor').value, equipment:$('embeddedLprEquipment').value, po_no:$('embeddedLprPoNo').value, invoice_no:$('embeddedLprInvoiceNo').value, received_by:$('embeddedLprReceivedBy').value, items:rowValues()}; }
+    function updateEmbeddedLprGate(){ const editable=parentEditable() && ['Draft','Rejected','Returned'].includes(String($('embeddedLprStatus')?.value || 'Draft')); document.querySelectorAll('#embeddedLprModal input:not([readonly]), #embeddedLprModal select').forEach(el=>el.disabled=!editable); if($('embeddedLprAddItemBtn'))$('embeddedLprAddItemBtn').disabled=!editable; if($('embeddedLprSaveBtn'))$('embeddedLprSaveBtn').disabled=!editable; if($('embeddedLprUploadLabel'))$('embeddedLprUploadLabel').style.display=editable?'inline-flex':'none'; if($('embeddedLprDeleteAllBtn'))$('embeddedLprDeleteAllBtn').hidden=!editable || !embeddedLprAttachments.length; }
+    function renderAttachments(){ const box=$('embeddedLprAttachmentList'); if(!box)return; const editable=parentEditable() && ['Draft','Rejected','Returned'].includes(String($('embeddedLprStatus')?.value || 'Draft')); if(!embeddedLprAttachments.length){box.innerHTML='<div class="embedded-lpr-muted">No supporting attachments.</div>';return;} box.innerHTML=embeddedLprAttachments.map(item=>{ const deleteButton=editable ? '<button type="button" class="embedded-lpr-btn danger" onclick="deleteEmbeddedLprAttachment(' + (Number(item.id) || 0) + ')"><i class="fa-solid fa-trash"></i> Delete</button>' : ''; return '<div class="embedded-lpr-attachment"><div><strong>' + esc(item.filename || item.original_filename || 'Attachment') + '</strong><div class="embedded-lpr-muted">' + esc(item.content_type || '') + '  -  ' + money((item.file_size || item.size || 0)/1024) + ' KB</div></div><div class="embedded-lpr-attachment-actions"><a class="embedded-lpr-btn secondary" href="' + esc(item.preview_url || '#') + '" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Preview</a><a class="embedded-lpr-btn secondary" href="' + esc(item.download_url || '#') + '"><i class="fa-solid fa-download"></i> Download</a>' + deleteButton + '</div></div>'; }).join(''); }
+    function renderParentList(items){ const target=$(embeddedLprParentModule === 'cash_advance' ? 'cashLinkedLprList' : 'travelLinkedLprList'); if(!target)return; const list=Array.isArray(items)?items:[]; target.classList.toggle('has-items', list.length>0); const cards=list.map(item => '<div class="embedded-lpr-record" style="margin-top:8px;"><div class="embedded-lpr-record-title"><span>' + esc(item.lpr_no || 'LPR') + '</span><span>PHP ' + money(item.total_requested) + '</span></div><div class="embedded-lpr-record-meta">' + esc(item.status || 'Draft') + '  -  ' + Number(item.item_count || 0) + ' item(s)</div><div class="embedded-lpr-record-actions"><a class="embedded-lpr-btn secondary" href="' + esc(item.preview_url || '#') + '" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Preview</a><a class="embedded-lpr-btn secondary" href="' + esc(item.download_url || '#') + '"><i class="fa-solid fa-download"></i> Download</a></div></div>').join(''); target.innerHTML=list.length ? '<strong><i class="fa-solid fa-file-invoice"></i> Linked LPRs</strong>' + cards : ''; }
+    async function refreshParentList(){ const id=parentId(); if(!id){renderParentList([]);return;} try { const data=await api(`/get_parent_lprs/${embeddedLprParentModule}/${encodeURIComponent(id)}`); renderParentList(data.items || []); } catch(error){ renderParentList([]); } }
+    window.closeEmbeddedLprModal = () => { $('embeddedLprModal').classList.remove('open'); };
+    window.newEmbeddedLpr = () => fill(null);
+    window.saveEmbeddedLpr = async () => { try { let id=parentId(); if(!id){ let saved=null; if(embeddedLprParentModule==='cash_advance' && window.saveCashAdvanceDraft) saved=await window.saveCashAdvanceDraft(true); if(embeddedLprParentModule==='travel_request' && window.saveTravelRequestDraft) saved=await window.saveTravelRequestDraft(); id=saved?.item?.id || saved?.cash_advance?.id || saved?.travel_request?.id || saved?.id || $(embeddedLprParentModule==='cash_advance'?'cashAdvanceId':'travel-request-id')?.value || ''; } if(!id){notify('Complete and save the parent request before attaching an LPR.','warn');return;} const data=await api('/save_embedded_lpr',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({...collect(),parent_id:id})}); fill(data.item); renderParentList(data.linked_lprs || []); renderEmbeddedLprModalList(data.linked_lprs || []); notify('LPR saved as an attachment.','success'); } catch(error){ notify(error.message,'error'); } };
+    window.uploadEmbeddedLprAttachments = async files => {
+        if (!files?.length) return;
+        const id = $('embeddedLprId')?.value || '';
+        if (!id) { notify('Save the LPR before uploading its supporting files.', 'warn'); return; }
+        try {
+            const form = new FormData();
+            Array.from(files).forEach(file => form.append('attachment_files', file, file.name));
+            const data = await api('/upload_embedded_lpr_attachments/' + encodeURIComponent(id), {
+                method: 'POST',
+                headers: {'Accept': 'application/json', 'X-CSRFToken': csrf()},
+                body: form
+            });
+            embeddedLprAttachments = data.attachments || [];
+            renderAttachments();
+            $('embeddedLprAttachmentInput').value = '';
+            notify(data.message || 'LPR attachments uploaded.', 'success');
+        } catch (error) {
+            $('embeddedLprAttachmentInput').value = '';
+            notify(error.message, 'error');
+        }
+    };
+    function renderEmbeddedLprModalList(items) {
+        const target = $('embeddedLprModalList');
+        const list = Array.isArray(items) ? items : [];
+        if (!target) return;
+        target.innerHTML = list.length ? list.map(item => (
+            '<div class="embedded-lpr-record">' +
+            '<div class="embedded-lpr-record-title"><span>' + esc(item.lpr_no || 'LPR') + '</span><span>PHP ' + money(item.total_requested) + '</span></div>' +
+            '<div class="embedded-lpr-record-meta">' + esc(item.status || 'Draft') + '  -  ' + Number(item.item_count || 0) + ' item(s)</div>' +
+            '<div class="embedded-lpr-record-actions">' +
+            '<button type="button" class="embedded-lpr-btn secondary" onclick="editEmbeddedLpr(' + Number(item.id) + ')"><i class="fa-solid fa-pen"></i> Edit</button>' +
+            '<a class="embedded-lpr-btn secondary" href="' + esc(item.preview_url || '#') + '" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Preview</a>' +
+            '<a class="embedded-lpr-btn secondary" href="' + esc(item.download_url || '#') + '"><i class="fa-solid fa-download"></i> Download</a>' +
+            (parentEditable() && ['Draft', 'Rejected', 'Returned'].includes(String(item.status || 'Draft')) ? '<button type="button" class="embedded-lpr-btn danger" onclick="deleteEmbeddedLpr(' + Number(item.id) + ')"><i class="fa-solid fa-trash"></i> Delete</button>' : '') +
+            '</div></div>'
+        )).join('') : '<div class="embedded-lpr-muted">No LPR attached yet.</div>';
+    }
+
+    window.renderEmbeddedLprParentList = items => { renderParentList(items); renderEmbeddedLprModalList(items); };
+    window.openEmbeddedLprModal = async lprId => {
+        if (!parentEditable()) { notify('Save the parent request as a Draft before attaching an LPR.', 'warn'); return; }
+        $('embeddedLprModal').classList.add('open');
+        fill(null);
+        setEmbeddedLprNotice('');
+        const id = parentId();
+        if (!id) {
+            setEmbeddedLprNotice('This parent request has not been saved yet. Save the first LPR and the parent will be created as a Draft automatically.');
+            renderParentList([]);
+            renderEmbeddedLprModalList([]);
+            return;
+        }
+        try {
+            const data = await api('/get_parent_lprs/' + embeddedLprParentModule + '/' + encodeURIComponent(id));
+            renderParentList(data.items || []);
+            renderEmbeddedLprModalList(data.items || []);
+            if (lprId) {
+                const item = (data.items || []).find(row => Number(row.id) === Number(lprId));
+                if (item) fill(item);
+            }
+        } catch (error) { notify(error.message, 'error'); }
+    };
+    window.editEmbeddedLpr = async id => {
+        const parent = parentId();
+        if (!parent) return;
+        try {
+            const data = await api('/get_parent_lprs/' + embeddedLprParentModule + '/' + encodeURIComponent(parent));
+            const item = (data.items || []).find(row => Number(row.id) === Number(id));
+            if (item) fill(item);
+        } catch (error) { notify(error.message, 'error'); }
+    };
+    window.deleteEmbeddedLpr = async id => {
+        if (!id || !parentEditable() || !window.confirm('Delete this linked LPR and its supporting files?')) return;
+        try {
+            const data = await api('/delete_embedded_lpr/' + encodeURIComponent(id), {method:'POST', headers:{'Accept':'application/json','X-CSRFToken':csrf()}});
+            renderParentList(data.linked_lprs || []);
+            renderEmbeddedLprModalList(data.linked_lprs || []);
+            fill(null);
+            notify(data.message || 'Linked LPR deleted.', 'success');
+        } catch (error) { notify(error.message, 'error'); }
+    };
+    window.deleteEmbeddedLprAttachment = async id => {
+        if (!id || !embeddedLprCurrent || !window.confirm('Delete this LPR supporting attachment?')) return;
+        try {
+            const data = await api('/delete_embedded_lpr_attachment/' + encodeURIComponent(id), {method:'POST', headers:{'Accept':'application/json','X-CSRFToken':csrf()}});
+            embeddedLprAttachments = data.attachments || [];
+            renderAttachments();
+            notify(data.message || 'LPR attachment deleted.', 'success');
+        } catch (error) { notify(error.message, 'error'); }
+    };
+    window.deleteAllEmbeddedLprAttachments = async () => {
+        if (!embeddedLprCurrent || !embeddedLprAttachments.length || !window.confirm('Delete all ' + embeddedLprAttachments.length + ' LPR supporting attachments?')) return;
+        try {
+            const data = await api('/delete_all_embedded_lpr_attachments/' + encodeURIComponent(embeddedLprCurrent.id), {method:'POST', headers:{'Accept':'application/json','X-CSRFToken':csrf()}});
+            embeddedLprAttachments = [];
+            renderAttachments();
+            notify(data.message || 'LPR attachments deleted.', 'success');
+        } catch (error) { notify(error.message, 'error'); }
+    };
+    document.addEventListener('DOMContentLoaded', () => { $('embeddedLprModal')?.addEventListener('click', event => { if(event.target.id==='embeddedLprModal')closeEmbeddedLprModal(); }); });
+})();
+</script>
+{% endif %}

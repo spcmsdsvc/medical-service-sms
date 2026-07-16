@@ -1226,14 +1226,17 @@
             <button type="button" class="travel-btn travel-btn-primary" id="travel-upload-attachments-btn" onclick="uploadTravelRequestAttachments()">
                 <i class="fa-solid fa-cloud-arrow-up"></i> Upload Attachments
             </button>
+            {% if embedded_lpr_enabled %}<button type="button" class="travel-btn travel-btn-secondary" id="travelAttachLprBtn" onclick="openEmbeddedLprModal()" title="Attach an LPR before or after saving this Travel Request"><i class="fa-solid fa-file-invoice"></i> Attach LPR</button>{% endif %}
             <button type="button" class="travel-btn travel-btn-danger-outline" id="travel-delete-all-attachments-btn" onclick="deleteAllTravelRequestAttachments()" style="display:none;" title="Delete all supporting attachments">
                 <i class="fa-solid fa-trash"></i> Delete All
             </button>
         </div>
+        {% if embedded_lpr_enabled %}<div class="travel-attachment-meta">You can attach an LPR before saving. Saving the first LPR will save this Travel Request as a draft automatically.</div>{% endif %}
         <div id="travel-attachment-selection" class="travel-attachment-meta">No files selected.</div>
         <div id="travel-attachment-list" class="travel-attachment-list">
             <div class="travel-attachment-meta">No attachments uploaded.</div>
         </div>
+        {% if embedded_lpr_enabled %}<div id="travelLinkedLprList" class="embedded-lpr-parent-list"></div>{% endif %}
     </section>
 
     <section class="travel-card">
@@ -1850,9 +1853,13 @@ function setTravelRequestLockedState(statusValue){
     const attachmentInput = document.getElementById('travel-attachment-files');
     const selectAttachmentsBtn = document.getElementById('travel-select-attachments-btn');
     const uploadAttachmentsBtn = document.getElementById('travel-upload-attachments-btn');
+    const attachLprBtn = document.getElementById('travelAttachLprBtn');
 
     if(page){
         page.classList.toggle('travel-locked', !editable);
+    }
+    if(attachLprBtn){
+        attachLprBtn.disabled = !editable;
     }
 
     if(lockBanner){
@@ -3633,6 +3640,7 @@ function resetTravelForm(){
     calculateTravelTotal();
     clearTravelApprovalSignatureSnapshot();
     renderTravelRequestAttachments([]);
+    if (window.renderEmbeddedLprParentList) window.renderEmbeddedLprParentList([]);
     const attachmentInput = document.getElementById('travel-attachment-files');
     if(attachmentInput) attachmentInput.value = '';
     updateTravelAttachmentSelection();
@@ -3749,6 +3757,7 @@ async function loadTravelRequestDetail(id){
         populateTravelAmountsFromRequest(item);
         renderTravelApprovalSignatureSnapshot(item);
         renderTravelRequestAttachments(item.attachments || []);
+        if (window.renderEmbeddedLprParentList) window.renderEmbeddedLprParentList(item.linked_lprs || []);
         hydrateTravelPurposeFieldsFromRequest(item);
         hydrateTravelDepositFieldsFromRequest(item);
         setTravelParticipantsFromRequest(item);
@@ -3801,4 +3810,5 @@ document.addEventListener('DOMContentLoaded', async function(){
     await openTravelRequestFromUrl();
 });
 </script>
+{% if embedded_lpr_enabled %}{% set embedded_lpr_parent_module = 'travel_request' %}{% include '_embedded_lpr_modal.html' %}{% endif %}
 {% endblock %}

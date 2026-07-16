@@ -202,14 +202,12 @@ def env_flag_enabled(name, default=False):
 
 
 app.config['NEW_WORKFLOWS_ENABLED'] = env_flag_enabled('NEW_WORKFLOWS_ENABLED', default=False)
-app.config['LPR_ENABLED'] = env_flag_enabled('LPR_ENABLED', default=False)
 
 NEW_WORKFLOW_BLOCKED_EXACT_PATHS = {
     '/accounting_center',
     '/approvals',
     '/cash_advance',
     '/cash_advance_liquidation',
-    '/lpr',
     '/get_my_approval_notifications',
     '/get_my_cash_advance_notifications',
     '/get_my_reimbursement_notifications',
@@ -250,8 +248,6 @@ NEW_WORKFLOW_BLOCKED_PREFIXES = (
     '/get_accounting_',
     '/get_approval_',
     '/get_cash_advance',
-    '/get_lpr',
-    '/get_lpr_',
     '/get_my_cash_advance_liquidation',
     '/get_my_reimbursement_',
     '/get_my_travel_',
@@ -285,7 +281,6 @@ NEW_WORKFLOW_BLOCKED_PREFIXES = (
     '/return_cash_advance_liquidation',
     '/return_travel_liquidation',
     '/save_cash_advance',
-    '/save_lpr',
     '/save_reimbursement_',
     '/save_travel_liquidation_',
     '/save_travel_request_',
@@ -295,24 +290,14 @@ NEW_WORKFLOW_BLOCKED_PREFIXES = (
     '/settings/save-approval-',
     '/settings/update-approval-',
     '/submit_cash_advance',
-    '/submit_lpr',
     '/submit_reimbursement',
     '/submit_travel_',
     '/travel_request_ready_for_liquidation',
     '/upload_cash_advance_liquidation_',
-    '/upload_lpr_',
     '/upload_reimbursement_',
     '/upload_travel_liquidation_',
     '/update_cash_advance_liquidation_',
-    '/update_travel_liquidation_',
-    '/approve_lpr',
-    '/reject_lpr',
-    '/preview_lpr',
-    '/download_lpr',
-    '/delete_lpr_',
-    '/delete_all_lpr_',
-    '/mark_lpr_',
-    '/resend_lpr_'
+    '/update_travel_liquidation_'
 )
 
 LPR_BLOCKED_EXACT_PATHS = {'/lpr'}
@@ -338,7 +323,12 @@ def new_workflows_enabled():
 
 
 def lpr_enabled():
-    return bool(app.config.get('LPR_ENABLED'))
+    return True
+
+
+def embedded_lpr_enabled():
+    """Embedded LPR attachments are part of the released LPR workflow."""
+    return True
 
 
 def is_lpr_path(path):
@@ -933,18 +923,11 @@ def start_performance_timer():
 
 @app.before_request
 def block_new_workflows_when_disabled():
-    if not lpr_enabled() and is_lpr_path(request.path):
-        if request.accept_mimetypes.accept_json or request.path.startswith((
-            '/get_', '/save_', '/submit_', '/approve_', '/reject_', '/delete_',
-            '/upload_', '/download_', '/preview_', '/open_', '/inline_',
-            '/mark_', '/create_', '/complete_', '/resend_'
-        )):
-            return jsonify({
-                'success': False,
-                'status': 'disabled',
-                'message': 'Local Purchase Requisition is not available yet.'
-            }), 403
-        return redirect(url_for('dashboard_page'))
+    # LPR is now released independently of the legacy staged-workflow flag.
+    # Keep the older flag for other modules that still use it, but never let it
+    # block standalone or embedded LPR routes.
+    if is_lpr_path(request.path):
+        return
 
     if new_workflows_enabled():
         return
@@ -965,7 +948,8 @@ def block_new_workflows_when_disabled():
 def inject_feature_flags():
     return {
         'new_workflows_enabled': new_workflows_enabled(),
-        'lpr_enabled': lpr_enabled()
+        'lpr_enabled': lpr_enabled(),
+        'embedded_lpr_enabled': embedded_lpr_enabled()
     }
 
 
@@ -22606,7 +22590,8 @@ def travel_request_attachment_mimetype(attachment):
 
 def build_travel_request_supporting_attachments_pdf_bytes(request_rec):
     attachments = travel_request_attachment_records(request_rec.id)
-    if not attachments:
+    linked_lprs = linked_lpr_records('travel_request', request_rec.id)
+    if not attachments and not linked_lprs:
         return None
 
     try:
@@ -22622,7 +22607,8 @@ def build_travel_request_supporting_attachments_pdf_bytes(request_rec):
             'TRAVEL REQUEST SUPPORTING ATTACHMENTS',
             [
                 ('Request No.', request_rec.request_no or f'TR-{request_rec.id}'),
-                ('Attachment Count', str(len(attachments))),
+                ('Attachment Count', str(len(attachments) + len(linked_lprs))),
+                ('Linked LPR Count', str(len(linked_lprs)),),
             ]
         )
     )
@@ -22647,6 +22633,13 @@ def build_travel_request_supporting_attachments_pdf_bytes(request_rec):
 
     if appended_count != len(attachments):
         raise ValueError('Not all Travel Request attachments could be added to the supporting document package.')
+
+    for lpr_header in linked_lprs:
+        reimbursement_append_pdf_bytes(writer, lpr_fill_pdf_bytes(lpr_header))
+        supporting_lpr_bytes = build_lpr_supporting_attachments_pdf_bytes(lpr_header)
+        if supporting_lpr_bytes:
+            reimbursement_append_pdf_bytes(writer, supporting_lpr_bytes)
+        appended_count += 1
 
     output = io.BytesIO()
     writer.write(output)
@@ -22737,6 +22730,8 @@ def travel_request_to_dict(request_rec, include_lines=False, include_audit=False
         attachments = travel_request_attachment_dicts(request_rec.id)
         data['attachments'] = attachments
         data['attachment_count'] = len(attachments)
+        data['linked_lprs'] = linked_lpr_dicts('travel_request', request_rec.id, include_items=True, include_attachments=True)
+        data['linked_lpr_count'] = len(data['linked_lprs'])
         allow_airfare_c_o_note = travel_request_allows_airfare_c_o(request_rec)
         data['lines'] = [
             {
@@ -23232,6 +23227,8 @@ def delete_travel_request_draft(travel_request_id=None):
                     print(f"[TravelRequest] Draft attachment delete skipped: {file_err}", flush=True)
             db.session.delete(attachment)
 
+        linked_lpr_count, linked_lpr_files_removed = delete_linked_lprs_for_parent('travel_request', request_rec.id)
+
         record_universal_approval_audit(
             'travel_request',
             request_rec.id,
@@ -23261,6 +23258,8 @@ def delete_travel_request_draft(travel_request_id=None):
             'id': target_id,
             'request_no': request_no,
             'files_removed': removed_files,
+            'linked_lprs_removed': linked_lpr_count,
+            'linked_lpr_files_removed': linked_lpr_files_removed,
             'message': 'Travel request draft deleted.'
         })
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -23393,6 +23392,7 @@ def submit_travel_request(travel_request_id):
     request_rec.rejected_by_id = None
     request_rec.approval_remarks = None
     request_rec.updated_at = now
+    sync_embedded_lpr_parent_signatures('travel_request', request_rec, 'submitted', actor_user=current_user, signed_at=now)
 
     record_universal_approval_audit(
         'travel_request',
@@ -24186,6 +24186,7 @@ def approve_travel_request(travel_request_id):
     request_rec.approval_remarks = remarks
     request_rec.updated_at = now
     apply_approval_signature_snapshot(request_rec, current_user, action_label='Approved', signed_at=now)
+    sync_embedded_lpr_parent_signatures('travel_request', request_rec, 'approved', actor_user=current_user, signed_at=now)
 
     # S11H1B Travel Block Foundation:
     # Manager approval now creates duplicate-safe timeline Travel Block rows.
@@ -39401,7 +39402,8 @@ def cash_advance_attachment_dicts(cash_advance_id):
 
 def build_cash_advance_supporting_attachments_pdf_bytes(header):
     attachments = cash_advance_attachment_records(header.id)
-    if not attachments:
+    linked_lprs = linked_lpr_records('cash_advance', header.id)
+    if not attachments and not linked_lprs:
         return None
     try:
         from pypdf import PdfWriter
@@ -39415,7 +39417,8 @@ def build_cash_advance_supporting_attachments_pdf_bytes(header):
             'CASH ADVANCE SUPPORTING ATTACHMENTS',
             [
                 ('Cash Advance No.', header.cash_advance_no or f'CA-{header.id}'),
-                ('Attachment Count', str(len(attachments)))
+                ('Attachment Count', str(len(attachments) + len(linked_lprs))),
+                ('Linked LPR Count', str(len(linked_lprs)))
             ]
         )
     )
@@ -39437,6 +39440,12 @@ def build_cash_advance_supporting_attachments_pdf_bytes(header):
 
     if appended_count != len(attachments):
         raise ValueError('Not all Cash Advance attachments could be added to the supporting document package.')
+    for lpr_header in linked_lprs:
+        reimbursement_append_pdf_bytes(writer, lpr_fill_pdf_bytes(lpr_header))
+        supporting_lpr_bytes = build_lpr_supporting_attachments_pdf_bytes(lpr_header)
+        if supporting_lpr_bytes:
+            reimbursement_append_pdf_bytes(writer, supporting_lpr_bytes)
+        appended_count += 1
     output = io.BytesIO()
     writer.write(output)
     return reimbursement_compress_pdf_bytes_best_effort(output.getvalue()) or None
@@ -39558,6 +39567,8 @@ def cash_advance_to_dict(header, include_audit=False, include_attachments=False)
     if include_attachments or include_audit:
         payload['attachments'] = cash_advance_attachment_dicts(header.id)
         payload['attachment_count'] = len(payload['attachments'])
+        payload['linked_lprs'] = linked_lpr_dicts('cash_advance', header.id, include_items=True, include_attachments=True)
+        payload['linked_lpr_count'] = len(payload['linked_lprs'])
 
     return payload
 
@@ -39949,6 +39960,7 @@ def submit_cash_advance(cash_advance_id):
         header.submitted_at = now
         header.updated_at = now
         submitter_snapshot = apply_cash_advance_requester_signature_snapshot(header, current_user, signed_at=now)
+        sync_embedded_lpr_parent_signatures('cash_advance', header, 'submitted', actor_user=current_user, signed_at=now)
 
         cash_advance_add_audit(header, 'submitted', f'{previous_status} → Submitted')
         record_universal_approval_audit(
@@ -40219,6 +40231,7 @@ def approve_cash_advance(cash_advance_id):
         header.approval_remarks = remarks
         header.updated_at = now
         apply_approval_signature_snapshot(header, current_user, action_label='Approved', signed_at=now)
+        sync_embedded_lpr_parent_signatures('cash_advance', header, 'approved', actor_user=current_user, signed_at=now)
 
         cash_advance_add_audit(header, 'approved', remarks)
         record_universal_approval_audit(
@@ -44736,6 +44749,9 @@ class LPRHeader(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     lpr_no = db.Column(db.String(80), unique=True, index=True)
     user_id = db.Column(db.Integer, index=True, nullable=False)
+    parent_module = db.Column(db.String(40), index=True)
+    cash_advance_id = db.Column(db.Integer, db.ForeignKey('cash_advance_header.id'), index=True)
+    travel_request_id = db.Column(db.Integer, db.ForeignKey('travel_request.id'), index=True)
     request_date = db.Column(db.Date, index=True)
     branch_code = db.Column(db.String(80))
     class_code = db.Column(db.String(80))
@@ -44830,16 +44846,208 @@ def ensure_lpr_tables():
     LPRAttachment.__table__.create(db.engine, checkfirst=True)
     LPRAudit.__table__.create(db.engine, checkfirst=True)
     with db.engine.begin() as connection:
+        existing_columns = {
+            row[1]
+            for row in connection.exec_driver_sql('PRAGMA table_info(lpr_header)').fetchall()
+        }
+        for column_name, column_sql in (
+            ('parent_module', 'VARCHAR(40)'),
+            ('cash_advance_id', 'INTEGER'),
+            ('travel_request_id', 'INTEGER')
+        ):
+            if column_name not in existing_columns:
+                connection.exec_driver_sql(
+                    f'ALTER TABLE lpr_header ADD COLUMN {column_name} {column_sql}'
+                )
         for statement in (
             'CREATE INDEX IF NOT EXISTS idx_lpr_header_user_status ON lpr_header (user_id, status)',
             'CREATE INDEX IF NOT EXISTS idx_lpr_header_request_date ON lpr_header (request_date)',
             'CREATE INDEX IF NOT EXISTS idx_lpr_header_procurement_status ON lpr_header (procurement_status)',
+            'CREATE INDEX IF NOT EXISTS idx_lpr_header_parent_module ON lpr_header (parent_module)',
+            'CREATE INDEX IF NOT EXISTS idx_lpr_header_cash_advance ON lpr_header (cash_advance_id)',
+            'CREATE INDEX IF NOT EXISTS idx_lpr_header_travel_request ON lpr_header (travel_request_id)',
             'CREATE INDEX IF NOT EXISTS idx_lpr_item_header ON lpr_item (lpr_id)',
             'CREATE INDEX IF NOT EXISTS idx_lpr_attachment_header ON lpr_attachment (lpr_id)',
             'CREATE INDEX IF NOT EXISTS idx_lpr_audit_header ON lpr_audit (lpr_id)'
         ):
             connection.exec_driver_sql(statement)
     _lpr_tables_ready = True
+
+
+EMBEDDED_LPR_PARENT_MODULES = {'cash_advance', 'travel_request'}
+
+
+def embedded_lpr_disabled_response():
+    return jsonify({
+        'success': False,
+        'status': 'disabled',
+        'message': 'Embedded LPR attachments are not available yet.'
+    }), 403
+
+
+def normalize_embedded_lpr_parent_module(value):
+    raw = clean_str(value).lower().replace('-', '_').replace(' ', '_')
+    aliases = {
+        'cashadvance': 'cash_advance',
+        'travelrequest': 'travel_request',
+        'travel': 'travel_request'
+    }
+    return aliases.get(raw, raw)
+
+
+def embedded_lpr_parent(module_name, parent_id):
+    module_name = normalize_embedded_lpr_parent_module(module_name)
+    parent_id = clean_int(parent_id)
+    if module_name == 'cash_advance':
+        ensure_cash_advance_tables()
+        return module_name, db.session.get(CashAdvanceHeader, parent_id)
+    if module_name == 'travel_request':
+        ensure_travel_request_tables()
+        return module_name, db.session.get(TravelRequest, parent_id)
+    return module_name, None
+
+
+def embedded_lpr_parent_is_editable(module_name, parent):
+    if not parent:
+        return False
+    module_name = normalize_embedded_lpr_parent_module(module_name)
+    if module_name == 'cash_advance':
+        return cash_advance_normalize_status(getattr(parent, 'status', None)) in {'Draft', 'Rejected', 'Returned'}
+    if module_name == 'travel_request':
+        return travel_request_normalize_status(getattr(parent, 'status', None)) in TRAVEL_REQUEST_EDITABLE_STATUSES
+    return False
+
+
+def embedded_lpr_parent_can_manage(module_name, parent):
+    module_name = normalize_embedded_lpr_parent_module(module_name)
+    if module_name == 'cash_advance':
+        return can_user_manage_own_cash_advance(parent)
+    if module_name == 'travel_request':
+        return can_user_access_travel_request(parent)
+    return False
+
+
+def embedded_lpr_parent_can_view(module_name, parent):
+    module_name = normalize_embedded_lpr_parent_module(module_name)
+    if module_name == 'cash_advance':
+        return bool(can_user_access_cash_advance(parent) or can_user_approve_cash_advance(current_user, parent))
+    if module_name == 'travel_request':
+        return bool(can_current_user_access_travel_request_attachment(parent))
+    return False
+
+
+def linked_lpr_query(parent_module, parent_id):
+    ensure_lpr_tables()
+    parent_module = normalize_embedded_lpr_parent_module(parent_module)
+    parent_id = clean_int(parent_id)
+    if parent_module == 'cash_advance':
+        return LPRHeader.query.filter_by(parent_module=parent_module, cash_advance_id=parent_id)
+    if parent_module == 'travel_request':
+        return LPRHeader.query.filter_by(parent_module=parent_module, travel_request_id=parent_id)
+    return LPRHeader.query.filter(LPRHeader.id == -1)
+
+
+def linked_lpr_records(parent_module, parent_id):
+    if not embedded_lpr_enabled():
+        return []
+    return linked_lpr_query(parent_module, parent_id).order_by(
+        LPRHeader.created_at.asc(), LPRHeader.id.asc()
+    ).all()
+
+
+def linked_lpr_dicts(parent_module, parent_id, include_items=True, include_attachments=True):
+    return [
+        lpr_to_dict(record, include_items=include_items, include_attachments=include_attachments)
+        for record in linked_lpr_records(parent_module, parent_id)
+    ]
+
+
+def lpr_assign_number(header):
+    if clean_str(getattr(header, 'lpr_no', None)):
+        return header.lpr_no
+    prefix = get_manila_today().strftime('%Y%m%d')
+    used = []
+    for record in LPRHeader.query.filter(LPRHeader.lpr_no.like(f'LPR-{prefix}-%')).all():
+        try:
+            used.append(int(str(record.lpr_no).rsplit('-', 1)[-1]))
+        except Exception:
+            continue
+    header.lpr_no = f'LPR-{prefix}-{max(used or [0]) + 1:02d}'
+    return header.lpr_no
+
+
+def lpr_linked_parent_label(header):
+    module_name = normalize_embedded_lpr_parent_module(getattr(header, 'parent_module', None))
+    if module_name == 'cash_advance':
+        return 'Cash Advance', clean_int(getattr(header, 'cash_advance_id', None))
+    if module_name == 'travel_request':
+        return 'Travel Request', clean_int(getattr(header, 'travel_request_id', None))
+    return '', None
+
+
+def sync_embedded_lpr_parent_signatures(parent_module, parent, phase, actor_user=None, signed_at=None):
+    """Copy parent workflow signature snapshots into linked LPRs.
+
+    Draft editing never stamps a signature.  The parent submit/approval
+    transitions are the only moments that finalize the linked LPR document.
+    """
+    if not embedded_lpr_enabled() or not parent:
+        return 0
+    records = linked_lpr_records(parent_module, parent.id)
+    if not records:
+        return 0
+    now = signed_at or get_manila_time()
+    requester = db.session.get(User, clean_int(getattr(parent, 'user_id', None)))
+    requester_signature = clean_str(getattr(parent, 'requester_signature_snapshot', None))
+    if not requester_signature and requester:
+        requester_signature = get_user_signature_snapshot(requester)
+    requester_name = approval_user_display_name(requester) if requester else ''
+    if clean_str(getattr(parent, 'requester_name_snapshot', None)):
+        requester_name = clean_str(parent.requester_name_snapshot)
+
+    for header in records:
+        if phase == 'submitted':
+            header.requester_name_snapshot = requester_name or lpr_requester_name(header)
+            header.requester_signature_snapshot = requester_signature or header.requester_signature_snapshot
+            header.requester_signature_layout = 'signature_over_printed_name' if header.requester_signature_snapshot else header.requester_signature_layout
+            header.requester_signed_at = now if header.requester_signature_snapshot else header.requester_signed_at
+        elif phase == 'approved':
+            approval_signature = clean_str(getattr(parent, 'approval_signature_snapshot', None))
+            approval_name = clean_str(getattr(parent, 'approval_name_snapshot', None))
+            approval_title = clean_str(getattr(parent, 'approval_title_snapshot', None))
+            if not approval_signature and actor_user:
+                approval_signature = get_user_signature_snapshot(actor_user)
+            header.approved_by_id = clean_int(getattr(parent, 'approved_by_id', None)) or clean_int(getattr(actor_user, 'id', None)) or header.approved_by_id
+            header.approved_at = getattr(parent, 'approved_at', None) or now
+            header.approval_action = 'approved'
+            header.approval_name_snapshot = approval_name or universal_approval_actor_name(actor_user) or header.approval_name_snapshot
+            header.approval_title_snapshot = approval_title or (approval_user_title_label(actor_user) if actor_user else header.approval_title_snapshot)
+            header.approval_signature_snapshot = approval_signature or header.approval_signature_snapshot
+            header.approval_signature_layout = 'signature_over_printed_name' if header.approval_signature_snapshot else header.approval_signature_layout
+            header.approval_signed_at = now if header.approval_signature_snapshot else header.approval_signed_at
+        header.updated_at = now
+    return len(records)
+
+
+def delete_linked_lprs_for_parent(parent_module, parent_id):
+    if not embedded_lpr_enabled():
+        return 0, 0
+    records = linked_lpr_records(parent_module, parent_id)
+    removed_files = 0
+    for header in records:
+        for attachment in lpr_attachment_records(header.id):
+            stored_filename = lpr_attachment_stored_filename(attachment)
+            db.session.delete(attachment)
+            if stored_filename:
+                try:
+                    managed_storage_delete(STORAGE_PREFIX_LPR, os.path.join(lpr_attachment_upload_root(), stored_filename))
+                    removed_files += 1
+                except Exception as exc:
+                    print(f'[Embedded LPR] Parent cleanup skipped: {exc}', flush=True)
+        for audit in LPRAudit.query.filter_by(lpr_id=header.id).all():
+            db.session.delete(audit)
+        db.session.delete(header)
+    return len(records), removed_files
 
 
 def lpr_attachment_upload_root():
@@ -44943,6 +45151,10 @@ def lpr_attachment_path(attachment):
 
 
 def lpr_attachment_to_dict(attachment):
+    header = db.session.get(LPRHeader, clean_int(getattr(attachment, 'lpr_id', None)))
+    embedded = bool(header and getattr(header, 'parent_module', None))
+    preview_route = 'preview_embedded_lpr_attachment' if embedded else 'preview_lpr_attachment'
+    download_route = 'download_embedded_lpr_attachment' if embedded else 'download_lpr_attachment'
     return {
         'id': attachment.id,
         'filename': lpr_attachment_original_filename(attachment),
@@ -44951,8 +45163,8 @@ def lpr_attachment_to_dict(attachment):
         'size': clean_int(getattr(attachment, 'file_size', None)) or 0,
         'file_size': clean_int(getattr(attachment, 'file_size', None)) or 0,
         'uploaded_at': attachment.uploaded_at.isoformat() if attachment.uploaded_at else '',
-        'preview_url': f'/preview_lpr_attachment/{attachment.id}',
-        'download_url': f'/download_lpr_attachment/{attachment.id}'
+        'preview_url': f'/{preview_route}/{attachment.id}',
+        'download_url': f'/{download_route}/{attachment.id}'
     }
 
 
@@ -44968,9 +45180,17 @@ def lpr_to_dict(header, include_items=True, include_attachments=False, include_a
     attachments = lpr_attachment_records(header.id) if include_attachments else []
     approver = db.session.get(User, clean_int(header.approved_by_id)) if clean_int(header.approved_by_id) else None
     rejector = db.session.get(User, clean_int(header.rejected_by_id)) if clean_int(header.rejected_by_id) else None
+    embedded = bool(getattr(header, 'parent_module', None))
+    preview_route = 'preview_embedded_lpr' if embedded else 'preview_lpr'
+    download_route = 'download_embedded_lpr' if embedded else 'download_lpr'
     payload = {
         'id': header.id, 'lpr_id': header.id, 'lpr_no': header.lpr_no or '', 'request_no': header.lpr_no or '',
         'user_id': header.user_id, 'requester_user_id': header.user_id, 'requester_name': lpr_requester_name(header),
+        'parent_module': normalize_embedded_lpr_parent_module(getattr(header, 'parent_module', None)) if getattr(header, 'parent_module', None) else '',
+        'parent_id': clean_int(getattr(header, 'cash_advance_id', None) or getattr(header, 'travel_request_id', None)),
+        'cash_advance_id': clean_int(getattr(header, 'cash_advance_id', None)),
+        'travel_request_id': clean_int(getattr(header, 'travel_request_id', None)),
+        'embedded': bool(getattr(header, 'parent_module', None)),
         'request_date': header.request_date.isoformat() if header.request_date else '',
         'branch_code': header.branch_code or '', 'class_code': header.class_code or '', 'dept_code': header.dept_code or '',
         'product_code': header.product_code or '', 'intended_for': header.intended_for or '', 'equipment': header.equipment or '',
@@ -44991,7 +45211,12 @@ def lpr_to_dict(header, include_items=True, include_attachments=False, include_a
         'sent_to_procurement_at': header.sent_to_procurement_at.isoformat() if header.sent_to_procurement_at else '',
         'procurement_remarks': header.procurement_remarks or '', 'editable': status in LPR_EDITABLE_STATUSES,
         'locked': status not in LPR_EDITABLE_STATUSES, 'detail_url': f'/lpr?lpr_id={header.id}',
-        'approval_url': f'/approvals?module=lpr&id={header.id}', 'item_count': len(header.items or [])
+        'approval_url': f'/approvals?module=lpr&id={header.id}',
+        'preview_url': f'/{preview_route}/{header.id}',
+        'download_url': f'/{download_route}/{header.id}',
+        'item_count': len(header.items or []),
+        'attachment_type': 'linked_lpr' if getattr(header, 'parent_module', None) else 'lpr',
+        'parent_label': lpr_linked_parent_label(header)[0]
     }
     if include_items:
         payload['items'] = [lpr_item_to_dict(item) for item in sorted(header.items or [], key=lambda row: (row.row_index, row.id))]
@@ -45302,6 +45527,7 @@ def send_lpr_procurement_email_async(app_obj, lpr_id, recipient_emails, approved
 def lpr_approval_counts():
     ensure_lpr_tables()
     query = db.session.query(func.lower(func.trim(LPRHeader.status)).label('status_key'), func.count(LPRHeader.id))
+    query = query.filter(LPRHeader.parent_module.is_(None))
     query = apply_assigned_approver_filter(query, LPRHeader, current_user, 'lpr')
     raw = {key or 'draft': int(value or 0) for key, value in query.group_by(func.lower(func.trim(LPRHeader.status))).all()}
     return {'draft': raw.get('draft', 0), 'submitted': raw.get('submitted', 0), 'approved': raw.get('approved', 0), 'rejected': raw.get('rejected', 0), 'pending': raw.get('submitted', 0), 'total': sum(raw.values())}
@@ -45309,7 +45535,8 @@ def lpr_approval_counts():
 
 def lpr_query_for_current_approver(status_filter='Submitted'):
     ensure_lpr_tables()
-    query = apply_assigned_approver_filter(LPRHeader.query, LPRHeader, current_user, 'lpr')
+    query = LPRHeader.query.filter(LPRHeader.parent_module.is_(None))
+    query = apply_assigned_approver_filter(query, LPRHeader, current_user, 'lpr')
     if status_filter != 'All':
         status_key = 'Rejected' if status_filter == 'Rejected' else status_filter
         query = query.filter(func.lower(func.trim(LPRHeader.status)) == status_key.lower())
@@ -45351,7 +45578,7 @@ def get_lpr_list():
     ensure_lpr_tables()
     if is_approver_only_user():
         return jsonify({'success': True, 'items': [], 'count': 0})
-    query = LPRHeader.query.filter_by(user_id=current_user.id).order_by(LPRHeader.updated_at.desc(), LPRHeader.id.desc())
+    query = LPRHeader.query.filter_by(user_id=current_user.id, parent_module=None).order_by(LPRHeader.updated_at.desc(), LPRHeader.id.desc())
     items = query.limit(300).all()
     return jsonify({'success': True, 'items': [lpr_to_dict(item, include_items=False, include_attachments=True) for item in items], 'count': len(items)})
 
@@ -45366,12 +45593,148 @@ def get_lpr(lpr_id):
     return jsonify({'success': True, 'item': lpr_to_dict(header, include_items=True, include_attachments=True, include_audit=True)})
 
 
+def embedded_lpr_parent_response(module_name, parent, include_details=True):
+    if module_name == 'cash_advance':
+        item = cash_advance_to_dict(parent, include_attachments=True)
+    else:
+        item = travel_request_to_dict(parent, include_lines=include_details)
+    return {'module': module_name, 'parent': item}
+
+
+def embedded_lpr_authorized_header(lpr_id, require_edit=False):
+    header = db.session.get(LPRHeader, clean_int(lpr_id))
+    module_name, parent_id = lpr_linked_parent_label(header) if header else ('', None)
+    if not header or not module_name or not parent_id:
+        return None, None, None, (jsonify({'success': False, 'error': 'Linked LPR not found.'}), 404)
+    module_name = normalize_embedded_lpr_parent_module(getattr(header, 'parent_module', None))
+    _, parent = embedded_lpr_parent(module_name, parent_id)
+    if not parent:
+        return None, None, None, (jsonify({'success': False, 'error': 'Parent request not found.'}), 404)
+    allowed = embedded_lpr_parent_can_manage(module_name, parent) if require_edit else embedded_lpr_parent_can_view(module_name, parent)
+    if not allowed or (require_edit and not embedded_lpr_parent_is_editable(module_name, parent)):
+        return None, None, None, (jsonify({'success': False, 'error': 'Linked LPR access is not allowed for this request.'}), 403)
+    return header, module_name, parent, None
+
+
+@app.route('/get_parent_lprs/<parent_module>/<int:parent_id>')
+@login_required
+def get_parent_lprs(parent_module, parent_id):
+    if not embedded_lpr_enabled():
+        return embedded_lpr_disabled_response()
+    ensure_lpr_tables()
+    module_name, parent = embedded_lpr_parent(parent_module, parent_id)
+    if not parent or not embedded_lpr_parent_can_view(module_name, parent):
+        return jsonify({'success': False, 'error': 'Parent request not found or access denied.'}), 404
+    items = linked_lpr_dicts(module_name, parent.id, include_items=True, include_attachments=True)
+    return jsonify({'success': True, 'module': module_name, 'parent_id': parent.id, 'items': items, 'count': len(items)})
+
+
+@app.route('/save_embedded_lpr', methods=['POST'])
+@csrf.exempt
+@login_required
+def save_embedded_lpr():
+    if not embedded_lpr_enabled():
+        return embedded_lpr_disabled_response()
+    ensure_lpr_tables()
+    payload = request.get_json(silent=True) or {}
+    module_name, parent = embedded_lpr_parent(payload.get('parent_module'), payload.get('parent_id'))
+    if not parent or not embedded_lpr_parent_can_manage(module_name, parent):
+        return jsonify({'success': False, 'error': 'Parent request not found or access denied.'}), 404
+    if not embedded_lpr_parent_is_editable(module_name, parent):
+        return jsonify({'success': False, 'error': 'Linked LPRs can only be changed while the parent request is editable.'}), 409
+
+    requested_id = clean_int(payload.get('id') or payload.get('lpr_id'))
+    header = db.session.get(LPRHeader, requested_id) if requested_id else None
+    if header:
+        linked_module = normalize_embedded_lpr_parent_module(getattr(header, 'parent_module', None))
+        linked_parent_id = clean_int(getattr(header, 'cash_advance_id', None) or getattr(header, 'travel_request_id', None))
+        if linked_module != module_name or linked_parent_id != clean_int(parent.id) or not lpr_can_manage(header) or not lpr_is_editable(header):
+            return jsonify({'success': False, 'error': 'This linked LPR is no longer editable or belongs to another request.'}), 409
+    else:
+        now = get_manila_time()
+        header = LPRHeader(
+            user_id=current_user.id,
+            parent_module=module_name,
+            cash_advance_id=parent.id if module_name == 'cash_advance' else None,
+            travel_request_id=parent.id if module_name == 'travel_request' else None,
+            request_date=get_manila_today(),
+            status='Draft', currency_code='PHP', created_at=now, updated_at=now
+        )
+        db.session.add(header)
+        db.session.flush()
+        lpr_assign_number(header)
+
+    try:
+        lpr_apply_payload(header, payload, require_items=True)
+        lpr_add_audit(header, 'embedded_draft_saved', f'Linked LPR draft saved to {module_name} {parent.id}.')
+        add_activity_log_entry(f'Saved linked LPR {header.lpr_no or header.id} on {module_name.replace("_", " ").title()} {parent.id}')
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': 'Linked LPR saved.',
+            'item': lpr_to_dict(header, include_items=True, include_attachments=True),
+            'linked_lprs': linked_lpr_dicts(module_name, parent.id, include_items=True, include_attachments=True),
+            **embedded_lpr_parent_response(module_name, parent)
+        })
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[Embedded LPR] Save failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to save linked LPR.'}), 500
+
+
+@app.route('/delete_embedded_lpr/<int:lpr_id>', methods=['POST', 'DELETE'])
+@csrf.exempt
+@login_required
+def delete_embedded_lpr(lpr_id):
+    if not embedded_lpr_enabled():
+        return embedded_lpr_disabled_response()
+    ensure_lpr_tables()
+    header, module_name, parent, error_response = embedded_lpr_authorized_header(lpr_id, require_edit=True)
+    if error_response:
+        return error_response
+    attachments = lpr_attachment_records(header.id)
+    stored_filenames = [lpr_attachment_stored_filename(item) for item in attachments]
+    try:
+        for attachment in attachments:
+            db.session.delete(attachment)
+        for audit in LPRAudit.query.filter_by(lpr_id=header.id).all():
+            db.session.delete(audit)
+        db.session.delete(header)
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[Embedded LPR] Delete failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to delete linked LPR.'}), 500
+    cleanup_failures = 0
+    for stored_filename in stored_filenames:
+        if not stored_filename:
+            continue
+        try:
+            managed_storage_delete(STORAGE_PREFIX_LPR, os.path.join(lpr_attachment_upload_root(), stored_filename))
+        except Exception as exc:
+            cleanup_failures += 1
+            print(f'[Embedded LPR] Attachment cleanup failed: {exc}', flush=True)
+    add_activity_log_entry(f'Deleted linked LPR from {module_name.replace("_", " ").title()} {parent.id}')
+    return jsonify({
+        'success': True,
+        'message': 'Linked LPR deleted.',
+        'deleted_count': 1,
+        'cleanup_warning': f'{cleanup_failures} LPR attachment file(s) need administrator cleanup.' if cleanup_failures else '',
+        'linked_lprs': linked_lpr_dicts(module_name, parent.id, include_items=True, include_attachments=True)
+    })
+
+
 @app.route('/save_lpr', methods=['POST'])
 @csrf.exempt
 @login_required
 def save_lpr():
     ensure_lpr_tables()
     payload = request.get_json(silent=True) or {}
+    if payload.get('parent_module') or payload.get('parent_id') or payload.get('cash_advance_id') or payload.get('travel_request_id'):
+        return jsonify({'success': False, 'error': 'Use the embedded LPR workflow to attach an LPR to a parent request.'}), 400
     header = db.session.get(LPRHeader, clean_int(payload.get('id') or payload.get('lpr_id'))) if clean_int(payload.get('id') or payload.get('lpr_id')) else None
     if header:
         if not lpr_can_manage(header) or not lpr_is_editable(header):
@@ -45380,13 +45743,7 @@ def save_lpr():
         header = LPRHeader(user_id=current_user.id, request_date=get_manila_today(), status='Draft', currency_code='PHP', created_at=get_manila_time(), updated_at=get_manila_time())
         db.session.add(header)
         db.session.flush()
-        prefix = get_manila_today().strftime('%Y%m%d')
-        used = []
-        for record in LPRHeader.query.filter(LPRHeader.lpr_no.like(f'LPR-{prefix}-%')).all():
-            try: used.append(int(str(record.lpr_no).rsplit('-', 1)[-1]))
-            except Exception: pass
-        next_number = max(used or [0]) + 1
-        header.lpr_no = f'LPR-{prefix}-{next_number:02d}'
+        lpr_assign_number(header)
     try:
         lpr_apply_payload(header, payload, require_items=True)
         lpr_add_audit(header, 'draft_saved', 'LPR draft saved.')
@@ -45638,6 +45995,114 @@ def resend_lpr_procurement_email(lpr_id):
     header.procurement_status = 'Queued'; header.procurement_remarks = 'Procurement handoff resend queued.'; header.updated_at = get_manila_time(); lpr_add_audit(header, 'procurement_email_resent', 'Procurement handoff resend queued.'); db.session.commit()
     send_lpr_procurement_email_async(app, header.id, recipients, approved_by_user_id=header.approved_by_id or current_user.id, remarks=header.approval_remarks or '')
     return jsonify({'success': True, 'message': 'LPR Procurement handoff resend queued.', 'item': lpr_to_dict(header, include_items=True, include_attachments=True)})
+
+
+def embedded_lpr_attachment_context(attachment_id):
+    attachment = db.session.get(LPRAttachment, clean_int(attachment_id))
+    header = db.session.get(LPRHeader, clean_int(getattr(attachment, 'lpr_id', None))) if attachment else None
+    if not attachment or not header or not getattr(header, 'parent_module', None):
+        return None, None, None, (jsonify({'success': False, 'error': 'Linked LPR attachment not found.'}), 404)
+    module_name, parent_id = lpr_linked_parent_label(header)
+    module_name = normalize_embedded_lpr_parent_module(getattr(header, 'parent_module', None))
+    _, parent = embedded_lpr_parent(module_name, parent_id)
+    if not parent or not embedded_lpr_parent_can_view(module_name, parent):
+        return None, None, None, (jsonify({'success': False, 'error': 'Linked LPR attachment access denied.'}), 403)
+    return attachment, header, parent, None
+
+
+@app.route('/upload_embedded_lpr_attachments/<int:lpr_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def upload_embedded_lpr_attachments(lpr_id):
+    if not embedded_lpr_enabled():
+        return embedded_lpr_disabled_response()
+    ensure_lpr_tables()
+    header, _, _, error_response = embedded_lpr_authorized_header(lpr_id, require_edit=True)
+    if error_response:
+        return error_response
+    return upload_lpr_attachments(lpr_id)
+
+
+@app.route('/delete_embedded_lpr_attachment/<int:attachment_id>', methods=['POST', 'DELETE'])
+@csrf.exempt
+@login_required
+def delete_embedded_lpr_attachment(attachment_id):
+    if not embedded_lpr_enabled():
+        return embedded_lpr_disabled_response()
+    ensure_lpr_tables()
+    attachment = db.session.get(LPRAttachment, clean_int(attachment_id))
+    header = db.session.get(LPRHeader, clean_int(getattr(attachment, 'lpr_id', None))) if attachment else None
+    if not attachment or not header or not getattr(header, 'parent_module', None):
+        return jsonify({'success': False, 'error': 'Linked LPR attachment not found.'}), 404
+    _, _, _, error_response = embedded_lpr_authorized_header(header.id, require_edit=True)
+    if error_response:
+        return error_response
+    return delete_lpr_attachment(attachment_id)
+
+
+@app.route('/delete_all_embedded_lpr_attachments/<int:lpr_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_all_embedded_lpr_attachments(lpr_id):
+    if not embedded_lpr_enabled():
+        return embedded_lpr_disabled_response()
+    ensure_lpr_tables()
+    header, _, _, error_response = embedded_lpr_authorized_header(lpr_id, require_edit=True)
+    if error_response:
+        return error_response
+    return delete_all_lpr_attachments(header.id)
+
+
+@app.route('/preview_embedded_lpr_attachment/<int:attachment_id>')
+@login_required
+def preview_embedded_lpr_attachment(attachment_id):
+    if not embedded_lpr_enabled():
+        return embedded_lpr_disabled_response()
+    attachment, _, _, error_response = embedded_lpr_attachment_context(attachment_id)
+    if error_response:
+        return error_response
+    try:
+        path = lpr_attachment_path(attachment)
+    except Exception:
+        return jsonify({'success': False, 'error': 'Attachment file is unavailable.'}), 404
+    return send_file(path, as_attachment=False, download_name=lpr_attachment_original_filename(attachment), mimetype=attachment.content_type or 'application/octet-stream', max_age=0)
+
+
+@app.route('/download_embedded_lpr_attachment/<int:attachment_id>')
+@login_required
+def download_embedded_lpr_attachment(attachment_id):
+    if not embedded_lpr_enabled():
+        return embedded_lpr_disabled_response()
+    attachment, _, _, error_response = embedded_lpr_attachment_context(attachment_id)
+    if error_response:
+        return error_response
+    try:
+        path = lpr_attachment_path(attachment)
+    except Exception:
+        return jsonify({'success': False, 'error': 'Attachment file is unavailable.'}), 404
+    return send_file(path, as_attachment=True, download_name=lpr_attachment_original_filename(attachment), mimetype=attachment.content_type or 'application/octet-stream', max_age=0)
+
+
+@app.route('/preview_embedded_lpr/<int:lpr_id>')
+@login_required
+def preview_embedded_lpr(lpr_id):
+    if not embedded_lpr_enabled():
+        return embedded_lpr_disabled_response()
+    header, _, _, error_response = embedded_lpr_authorized_header(lpr_id, require_edit=False)
+    if error_response:
+        return error_response
+    return send_file(io.BytesIO(lpr_fill_pdf_bytes(header)), as_attachment=False, download_name=f'{secure_filename(header.lpr_no or "LPR")}.pdf', mimetype='application/pdf', max_age=0)
+
+
+@app.route('/download_embedded_lpr/<int:lpr_id>')
+@login_required
+def download_embedded_lpr(lpr_id):
+    if not embedded_lpr_enabled():
+        return embedded_lpr_disabled_response()
+    header, _, _, error_response = embedded_lpr_authorized_header(lpr_id, require_edit=False)
+    if error_response:
+        return error_response
+    return send_file(io.BytesIO(lpr_fill_pdf_bytes(header)), as_attachment=True, download_name=f'{secure_filename(header.lpr_no or "LPR")}.pdf', mimetype='application/pdf', max_age=0)
 
 
 if __name__ == '__main__':
