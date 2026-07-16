@@ -44849,6 +44849,13 @@ def ensure_lpr_tables():
     global _lpr_tables_ready
     if _lpr_tables_ready:
         return
+    # Flask-Login and the request migrations may have opened a read
+    # transaction before this additive SQLite migration runs. Release it so
+    # the schema writer is not blocked by the same request session.
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
     for attempt in range(6):
         try:
             LPRHeader.__table__.create(db.engine, checkfirst=True)
