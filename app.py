@@ -8481,6 +8481,14 @@ def get_offline_tsr_schedule_options():
 
         client = shift.client
         product = shift.product
+        linked_shifts = get_tsr_completion_linked_shifts(shift)
+        schedule_coverage = get_tsr_schedule_coverage_rows(shift, linked_shifts=linked_shifts)
+        coverage_engineer_names = list(dict.fromkeys(
+            name
+            for row in schedule_coverage
+            for name in (row.get('engineer_names') or [])
+            if clean_str(name)
+        ))
 
         options.append({
             'id': shift.id,
@@ -8500,8 +8508,13 @@ def get_offline_tsr_schedule_options():
             'serviced_by': serviced_engineer.name if serviced_engineer else '',
             'serviced_by_initials': serviced_engineer.initials if serviced_engineer else '',
             'branch': getattr(serviced_engineer, 'branch', '') if serviced_engineer else '',
-            'linked_schedule_count': len(get_tsr_completion_linked_shifts(shift)),
-            'has_linked_schedules': len(get_tsr_completion_linked_shifts(shift)) > 1
+            'group_id': shift.group_id or '',
+            'parent_shift_id': shift.parent_shift_id,
+            'schedule_coverage': schedule_coverage,
+            'linked_schedule_count': len(linked_shifts),
+            'has_linked_schedules': len(linked_shifts) > 1,
+            'is_multi_day': len({row.get('date_iso') for row in schedule_coverage if row.get('date_iso')}) > 1,
+            'is_multi_engineer': len(coverage_engineer_names) > 1
         })
 
     return jsonify({
@@ -9050,6 +9063,43 @@ def generate_online_tsr_submission_pdf(submission, shift, payload):
         ('Email Add.', payload_value('tsr-email-add')),
     ]))
 
+    coverage_rows = get_tsr_schedule_coverage_rows(shift)
+    coverage_engineers = list(dict.fromkeys(
+        name
+        for row in coverage_rows
+        for name in (row.get('engineer_names') or [])
+        if clean_str(name)
+    ))
+    if len(coverage_rows) > 1 or len(coverage_engineers) > 1:
+        story.append(Paragraph('Schedule Coverage', section_style))
+        coverage_data = [[
+            Paragraph('<b>Date</b>', body_style),
+            Paragraph('<b>Time</b>', body_style),
+            Paragraph('<b>Assigned Engineer(s)</b>', body_style),
+        ]]
+        for row in coverage_rows:
+            time_text = ' - '.join(filter(None, [row.get('time_start'), row.get('time_end')]))
+            coverage_data.append([
+                safe_paragraph(row.get('date_label') or row.get('date_iso')),
+                safe_paragraph(time_text),
+                safe_paragraph(', '.join(row.get('engineer_names') or [])),
+            ])
+        coverage_table = Table(
+            coverage_data,
+            colWidths=[38 * mm, 38 * mm, 98 * mm],
+            repeatRows=1
+        )
+        coverage_table.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#cbd5e1')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f1f5f9')),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 5),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.append(coverage_table)
+
     story.append(Paragraph('Complaint', section_style))
     story.append(detail_table([('Complaint', payload_value('tsr-complaint'))]))
 
@@ -9112,6 +9162,66 @@ def get_tsr_completion_linked_shifts(shift):
                     linked_by_id[group_shift.id] = group_shift
 
     return list(linked_by_id.values())
+
+
+def get_tsr_schedule_coverage_rows(shift, linked_shifts=None):
+    """Build canonical date/time/engineer coverage for a TSR schedule group."""
+    if not shift:
+        return []
+
+    linked_shifts = list(linked_shifts if linked_shifts is not None else get_tsr_completion_linked_shifts(shift))
+    if not linked_shifts:
+        linked_shifts = [shift]
+
+    grouped = {}
+    for linked_shift in linked_shifts:
+        if not linked_shift or not linked_shift.start_time:
+            continue
+
+        date_iso = linked_shift.start_time.date().isoformat()
+        time_start = linked_shift.start_time.strftime('%H:%M')
+        time_end = linked_shift.end_time.strftime('%H:%M') if linked_shift.end_time else ''
+        key = (date_iso, time_start, time_end)
+        row = grouped.setdefault(key, {
+            'date_iso': date_iso,
+            'date_label': linked_shift.start_time.strftime('%b %d, %Y'),
+            'time_start': time_start,
+            'time_end': time_end,
+            'engineer_ids': [],
+            'engineer_names': [],
+            'shift_ids': [],
+            'status': linked_shift.status or '',
+            'is_selected': False
+        })
+
+        if linked_shift.id == shift.id:
+            row['is_selected'] = True
+        row['shift_ids'].append(linked_shift.id)
+        if linked_shift.status:
+            row['status'] = linked_shift.status
+
+        for engineer_id in get_shift_assigned_engineer_ids(linked_shift):
+            engineer_id = clean_int(engineer_id)
+            if engineer_id and engineer_id not in row['engineer_ids']:
+                row['engineer_ids'].append(engineer_id)
+            engineer = db.session.get(Engineer, engineer_id) if engineer_id else None
+            engineer_name = clean_str(getattr(engineer, 'name', None)) if engineer else ''
+            if engineer_name and engineer_name not in row['engineer_names']:
+                row['engineer_names'].append(engineer_name)
+
+    rows = sorted(
+        grouped.values(),
+        key=lambda item: (
+            item.get('date_iso') or '',
+            item.get('time_start') or '',
+            item.get('time_end') or ''
+        )
+    )
+    for row in rows:
+        row['shift_ids'] = sorted(set(row.get('shift_ids') or []))
+        row['engineer_ids'] = sorted(set(row.get('engineer_ids') or []))
+        row['is_selected'] = bool(row.get('is_selected'))
+    return rows
 
 
 def complete_linked_schedules_for_online_tsr(shift):
@@ -10888,6 +10998,12 @@ def save_offline_tsr_online():
     if not can_work_on_existing_schedule_shift(shift):
         return denied('You are not allowed to save a TSR for this schedule.')
 
+    authoritative_coverage = get_tsr_schedule_coverage_rows(shift)
+    payload['schedule_coverage'] = authoritative_coverage
+    if isinstance(payload.get('selectedSchedule'), dict):
+        payload['selectedSchedule'] = dict(payload['selectedSchedule'])
+        payload['selectedSchedule']['schedule_coverage'] = authoritative_coverage
+
     if not online_tsr_has_serviced_signature(payload):
         return jsonify({
             'status': 'error',
@@ -11374,6 +11490,12 @@ def revise_online_tsr_submission(submission_id):
     for filename_key in ('pdf_filename', 'download_filename', 'tsr_pdf_filename'):
         if request.form.get(filename_key) and not payload.get(filename_key):
             payload[filename_key] = request.form.get(filename_key)
+
+    authoritative_coverage = get_tsr_schedule_coverage_rows(shift)
+    payload['schedule_coverage'] = authoritative_coverage
+    if isinstance(payload.get('selectedSchedule'), dict):
+        payload['selectedSchedule'] = dict(payload['selectedSchedule'])
+        payload['selectedSchedule']['schedule_coverage'] = authoritative_coverage
 
     if not online_tsr_has_serviced_signature(payload):
         return jsonify({

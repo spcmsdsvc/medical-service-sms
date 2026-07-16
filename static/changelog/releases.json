@@ -125,7 +125,8 @@
         {"item_key": "2026-07-16-lpr-workflow", "category": "LPR", "description": "Local Purchase Requisition is now available for item purchasing with drafts, approvals, PDF forms, and Procurement handoff.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50},
         {"item_key": "2026-07-16-embedded-lpr", "category": "LPR", "description": "A Cash Advance or Travel Request can now include one supporting LPR with its own items, documents, preview, and approval signature.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 60},
         {"item_key": "2026-07-16-lpr-attachment-cleanup", "category": "LPR", "description": "The LPR attachment area is now simpler: use one Attach LPR action beside the request attachments, without extra list panels or confusing parent terminology.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 70},
-        {"item_key": "2026-07-16-reimbursement-office-field-items", "category": "Reimbursement", "description": "The Office Supplies reimbursement category is now labeled Office/Field Items for clearer use in the worksheet, approvals, and generated Excel reports.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 80}
+        {"item_key": "2026-07-16-reimbursement-office-field-items", "category": "Reimbursement", "description": "The Office Supplies reimbursement category is now labeled Office/Field Items for clearer use in the worksheet, approvals, and generated Excel reports.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 80},
+        {"item_key": "2026-07-16-tsr-schedule-coverage", "category": "Create TSR", "description": "System-generated TSRs now show every linked service day and assigned engineer in a Schedule Coverage section while keeping the current engineer as the only required signer.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 90}
       ]
     }
   ]

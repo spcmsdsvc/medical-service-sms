@@ -136,6 +136,7 @@
     </div>
 
     <div class="schedule-picker-selected mt-3 d-none" id="tsr-selected-schedule-card"></div>
+    <div class="tsr-schedule-coverage-panel mt-3 d-none" id="tsr-schedule-coverage-panel"></div>
   </div>
 
   <div class="row g-3">
@@ -421,7 +422,7 @@
 
 <style>
 .offline-tsr-dialog-backdrop{position:fixed;inset:0;z-index:4100;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px}.offline-tsr-dialog-backdrop.show{display:flex}.offline-tsr-dialog-box{width:min(470px,100%);background:#fff;border-radius:22px;box-shadow:0 28px 90px rgba(15,23,42,.38);border:1px solid #dbeafe;overflow:hidden;animation:offlineTSRDialogIn .18s ease-out}.offline-tsr-dialog-header{padding:18px 18px 10px;display:flex;gap:12px;align-items:flex-start}.offline-tsr-dialog-icon{width:42px;height:42px;border-radius:16px;background:#eff6ff;color:#0d6efd;display:inline-flex;align-items:center;justify-content:center;font-size:1.05rem;flex:0 0 auto}.offline-tsr-dialog-box.danger .offline-tsr-dialog-icon{background:#fee2e2;color:#b91c1c}.offline-tsr-dialog-box.warning .offline-tsr-dialog-icon{background:#fffbeb;color:#b45309}.offline-tsr-dialog-box.success .offline-tsr-dialog-icon{background:#dcfce7;color:#166534}.offline-tsr-dialog-text{min-width:0;flex:1}.offline-tsr-dialog-title{margin:0;color:#0f172a;font-weight:950;font-size:1.08rem}.offline-tsr-dialog-message{margin-top:5px;color:#475569;font-weight:800;line-height:1.45;white-space:pre-wrap}.offline-tsr-dialog-actions{padding:12px 18px 18px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}.tsr-recommended-highlight{outline:3px solid rgba(245,158,11,.8)!important;box-shadow:0 0 0 6px rgba(245,158,11,.18)!important;border-radius:12px;transition:outline .18s ease,box-shadow .18s ease}@keyframes offlineTSRDialogIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}@media(max-width:768px){.offline-tsr-dialog-backdrop{align-items:flex-end;padding:12px}.offline-tsr-dialog-box{width:100%;border-radius:20px}}
-.offline-tsr-page{max-width:1180px;margin:0 auto}.offline-tsr-hero{display:flex;justify-content:space-between;gap:16px;align-items:center;background:#fff;border-radius:22px;padding:18px 20px;margin-bottom:16px;box-shadow:0 8px 28px rgba(15,23,42,.07)}.offline-tsr-eyebrow{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.08em}.offline-tsr-hero-actions{display:flex;gap:8px;flex-wrap:wrap}.offline-tsr-schedule-picker-card{border-left:5px solid #0d6efd}.schedule-picker-selected{border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.schedule-picker-title{font-weight:900;color:#0f172a}.schedule-picker-meta{font-size:.82rem;color:#475569}.standalone-pill{display:inline-flex;align-items:center;background:#e7f5ff;color:#0d6efd;border:1px solid #bfdbfe;border-radius:999px;padding:10px 14px;font-weight:900}.tsr-list-box{border:1px solid #e5e7eb;border-radius:14px;min-height:46px;padding:8px;background:#f8fafc}.tsr-list-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 10px;margin-bottom:6px}.tsr-action-text{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}.tsr-action-controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}.tsr-action-controls .btn{font-weight:800}.tsr-chip-box{display:flex;gap:6px;flex-wrap:wrap}.tsr-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#e7f1ff;border:1px solid #bfdbfe;color:#0d6efd;padding:6px 10px;font-size:.82rem;font-weight:800}.tsr-chip button{border:0;background:transparent;color:#0d6efd;font-weight:900}.tsr-parts-grid{display:grid;grid-template-columns:80px 1fr 1.5fr 70px 1fr;gap:6px;align-items:center}.tsr-parts-header{font-size:.72rem;text-transform:uppercase;font-weight:900;color:#64748b;margin-bottom:6px}.tsr-part-row{margin-bottom:6px}.signature-canvas{display:block;width:100%;height:min(48vh,430px);min-height:340px;border:2px dashed #94a3b8;border-radius:18px;background:#fff;touch-action:none}.tsr-saved-signature-panel{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.tsr-saved-signature-copy{min-width:0}.schedule-picker-open-btn{text-align:left;justify-content:flex-start;display:flex;align-items:center}.standalone-schedule-card-list{display:grid;gap:10px}.standalone-schedule-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:12px;box-shadow:0 6px 18px rgba(15,23,42,.05);cursor:pointer;transition:.15s ease}.standalone-schedule-card:hover{border-color:#0d6efd;transform:translateY(-1px);box-shadow:0 10px 24px rgba(13,110,253,.12)}.standalone-schedule-card.active{border:2px solid #0d6efd;background:#eff6ff}.standalone-schedule-card-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.standalone-schedule-client{font-weight:900;color:#0f172a}.standalone-schedule-date{font-size:.76rem;font-weight:900;color:#0d6efd;background:#e7f1ff;border:1px solid #bfdbfe;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-date-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.standalone-schedule-date-chip{border:1px solid #bfdbfe;background:#fff;color:#0d6efd;border-radius:999px;padding:6px 10px;font-size:.78rem;font-weight:900;cursor:pointer}.standalone-schedule-date-chip.active,.standalone-schedule-date-chip:hover{background:#0d6efd;color:#fff}.standalone-schedule-count-badge{font-size:.72rem;font-weight:900;color:#475569;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-product{font-size:.88rem;font-weight:800;color:#334155;margin-top:4px}.standalone-schedule-serial{font-size:.8rem;color:#64748b;margin-top:2px}.standalone-schedule-meta{font-size:.78rem;color:#64748b;margin-top:6px}.standalone-schedule-empty{background:#fff;border:1px dashed #cbd5e1;border-radius:16px;padding:22px;text-align:center;color:#64748b;font-weight:800}.tsr-inline-suggestions{border:1px dashed #bfdbfe;background:#f8fbff;border-radius:14px;padding:8px;display:grid;gap:8px;max-height:260px;overflow:auto}.tsr-schedule-locked{background:#f1f5f9!important;color:#475569!important;border-color:#cbd5e1!important;cursor:not-allowed}.tsr-missing-equipment-entry{background:#fffbeb!important;border-color:#f59e0b!important;box-shadow:0 0 0 3px rgba(245,158,11,.08)}.tsr-schedule-locked-note{font-size:.76rem;color:#64748b;font-weight:800;margin-top:4px}.tsr-knowledge-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.tsr-knowledge-meta{font-size:.76rem;color:#64748b;font-weight:800;margin-bottom:5px}.tsr-knowledge-text{font-size:.86rem;color:#0f172a;white-space:pre-wrap}.tsr-knowledge-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tsr-knowledge-section-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.04em;margin:2px 0 4px}.tsr-knowledge-quick-header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.76rem;font-weight:900;color:#334155}.tsr-knowledge-quick-context{font-size:.72rem;color:#64748b;font-weight:800}.tsr-knowledge-badges{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}.tsr-knowledge-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:.68rem;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#334155}.tsr-knowledge-badge.primary{border-color:#bfdbfe;background:#e7f1ff;color:#0d6efd}.tsr-knowledge-badge.success{border-color:#bbf7d0;background:#ecfdf5;color:#15803d}.tsr-knowledge-badge.warning{border-color:#fde68a;background:#fffbeb;color:#92400e}.tsr-knowledge-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:12px;text-align:center;color:#64748b;font-weight:800;background:#fff}@media(max-width:768px){.offline-tsr-hero{align-items:stretch;flex-direction:column}.offline-tsr-hero-actions .btn{width:100%}.tsr-list-item{align-items:stretch;flex-direction:column}.tsr-action-controls{justify-content:flex-start}.tsr-action-controls .btn{flex:1 1 auto}.tsr-parts-grid{grid-template-columns:1fr}.tsr-parts-header{display:none}.signature-canvas{height:360px;min-height:320px}.tsr-saved-signature-panel{align-items:stretch;flex-direction:column}.tsr-saved-signature-panel .btn{width:100%}}
+.offline-tsr-page{max-width:1180px;margin:0 auto}.offline-tsr-hero{display:flex;justify-content:space-between;gap:16px;align-items:center;background:#fff;border-radius:22px;padding:18px 20px;margin-bottom:16px;box-shadow:0 8px 28px rgba(15,23,42,.07)}.offline-tsr-eyebrow{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.08em}.offline-tsr-hero-actions{display:flex;gap:8px;flex-wrap:wrap}.offline-tsr-schedule-picker-card{border-left:5px solid #0d6efd}.schedule-picker-selected{border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.schedule-picker-title{font-weight:900;color:#0f172a}.schedule-picker-meta{font-size:.82rem;color:#475569}.tsr-schedule-coverage-panel{border:1px solid #bfdbfe;background:#f8fbff;border-radius:16px;padding:12px}.tsr-schedule-coverage-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.05em}.tsr-schedule-coverage-table{width:100%;border-collapse:collapse;font-size:.78rem}.tsr-schedule-coverage-table th,.tsr-schedule-coverage-table td{border:1px solid #bfdbfe;padding:6px 8px;text-align:left;vertical-align:top}.tsr-schedule-coverage-table th{background:#e7f1ff;color:#334155;font-weight:900}.standalone-pill{display:inline-flex;align-items:center;background:#e7f5ff;color:#0d6efd;border:1px solid #bfdbfe;border-radius:999px;padding:10px 14px;font-weight:900}.tsr-list-box{border:1px solid #e5e7eb;border-radius:14px;min-height:46px;padding:8px;background:#f8fafc}.tsr-list-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 10px;margin-bottom:6px}.tsr-action-text{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}.tsr-action-controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}.tsr-action-controls .btn{font-weight:800}.tsr-chip-box{display:flex;gap:6px;flex-wrap:wrap}.tsr-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#e7f1ff;border:1px solid #bfdbfe;color:#0d6efd;padding:6px 10px;font-size:.82rem;font-weight:800}.tsr-chip button{border:0;background:transparent;color:#0d6efd;font-weight:900}.tsr-parts-grid{display:grid;grid-template-columns:80px 1fr 1.5fr 70px 1fr;gap:6px;align-items:center}.tsr-parts-header{font-size:.72rem;text-transform:uppercase;font-weight:900;color:#64748b;margin-bottom:6px}.tsr-part-row{margin-bottom:6px}.signature-canvas{display:block;width:100%;height:min(48vh,430px);min-height:340px;border:2px dashed #94a3b8;border-radius:18px;background:#fff;touch-action:none}.tsr-saved-signature-panel{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.tsr-saved-signature-copy{min-width:0}.schedule-picker-open-btn{text-align:left;justify-content:flex-start;display:flex;align-items:center}.standalone-schedule-card-list{display:grid;gap:10px}.standalone-schedule-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:12px;box-shadow:0 6px 18px rgba(15,23,42,.05);cursor:pointer;transition:.15s ease}.standalone-schedule-card:hover{border-color:#0d6efd;transform:translateY(-1px);box-shadow:0 10px 24px rgba(13,110,253,.12)}.standalone-schedule-card.active{border:2px solid #0d6efd;background:#eff6ff}.standalone-schedule-card-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.standalone-schedule-client{font-weight:900;color:#0f172a}.standalone-schedule-date{font-size:.76rem;font-weight:900;color:#0d6efd;background:#e7f1ff;border:1px solid #bfdbfe;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-date-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.standalone-schedule-date-chip{border:1px solid #bfdbfe;background:#fff;color:#0d6efd;border-radius:999px;padding:6px 10px;font-size:.78rem;font-weight:900;cursor:pointer}.standalone-schedule-date-chip.active,.standalone-schedule-date-chip:hover{background:#0d6efd;color:#fff}.standalone-schedule-count-badge{font-size:.72rem;font-weight:900;color:#475569;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-product{font-size:.88rem;font-weight:800;color:#334155;margin-top:4px}.standalone-schedule-serial{font-size:.8rem;color:#64748b;margin-top:2px}.standalone-schedule-meta{font-size:.78rem;color:#64748b;margin-top:6px}.standalone-schedule-empty{background:#fff;border:1px dashed #cbd5e1;border-radius:16px;padding:22px;text-align:center;color:#64748b;font-weight:800}.tsr-inline-suggestions{border:1px dashed #bfdbfe;background:#f8fbff;border-radius:14px;padding:8px;display:grid;gap:8px;max-height:260px;overflow:auto}.tsr-schedule-locked{background:#f1f5f9!important;color:#475569!important;border-color:#cbd5e1!important;cursor:not-allowed}.tsr-missing-equipment-entry{background:#fffbeb!important;border-color:#f59e0b!important;box-shadow:0 0 0 3px rgba(245,158,11,.08)}.tsr-schedule-locked-note{font-size:.76rem;color:#64748b;font-weight:800;margin-top:4px}.tsr-knowledge-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.tsr-knowledge-meta{font-size:.76rem;color:#64748b;font-weight:800;margin-bottom:5px}.tsr-knowledge-text{font-size:.86rem;color:#0f172a;white-space:pre-wrap}.tsr-knowledge-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tsr-knowledge-section-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.04em;margin:2px 0 4px}.tsr-knowledge-quick-header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.76rem;font-weight:900;color:#334155}.tsr-knowledge-quick-context{font-size:.72rem;color:#64748b;font-weight:800}.tsr-knowledge-badges{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}.tsr-knowledge-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:.68rem;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#334155}.tsr-knowledge-badge.primary{border-color:#bfdbfe;background:#e7f1ff;color:#0d6efd}.tsr-knowledge-badge.success{border-color:#bbf7d0;background:#ecfdf5;color:#15803d}.tsr-knowledge-badge.warning{border-color:#fde68a;background:#fffbeb;color:#92400e}.tsr-knowledge-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:12px;text-align:center;color:#64748b;font-weight:800;background:#fff}@media(max-width:768px){.offline-tsr-hero{align-items:stretch;flex-direction:column}.offline-tsr-hero-actions .btn{width:100%}.tsr-list-item{align-items:stretch;flex-direction:column}.tsr-action-controls{justify-content:flex-start}.tsr-action-controls .btn{flex:1 1 auto}.tsr-parts-grid{grid-template-columns:1fr}.tsr-parts-header{display:none}.signature-canvas{height:360px;min-height:320px}.tsr-saved-signature-panel{align-items:stretch;flex-direction:column}.tsr-saved-signature-panel .btn{width:100%}}
 .offline-tsr-drafts-card{border-left:5px solid #f59e0b}.standalone-tsr-drafts-list{display:grid;gap:10px}.standalone-tsr-draft-card{border:1px solid #e5e7eb;background:#fff;border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 6px 18px rgba(15,23,42,.05)}.standalone-tsr-draft-card.active{border-color:#0d6efd;background:#eff6ff}.standalone-tsr-draft-title{font-weight:950;color:#0f172a}.standalone-tsr-draft-meta{font-size:.82rem;color:#64748b;font-weight:800;margin-top:3px}.standalone-tsr-draft-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.standalone-tsr-draft-empty{border:1px dashed #cbd5e1;border-radius:16px;padding:16px;text-align:center;color:#64748b;font-weight:800;background:#f8fafc}@media(max-width:768px){.standalone-tsr-draft-card{align-items:stretch;flex-direction:column}.standalone-tsr-draft-actions .btn{flex:1 1 auto}}
 .offline-tsr-connection-banner{border-radius:16px;padding:10px 12px;margin-bottom:12px;font-weight:800;display:flex;align-items:center;gap:8px}.offline-tsr-connection-banner.online{background:#ecfdf5;color:#15803d;border:1px solid #bbf7d0}.offline-tsr-connection-banner.offline{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}.offline-tsr-connection-banner.syncing{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}.offline-tsr-connection-banner.failed{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}.offline-tsr-queue-panel-syncing{border-left:5px solid #0d6efd!important}.offline-tsr-queue-panel-failed{border-left:5px solid #dc3545!important}.offline-tsr-queue-panel-success{border-left:5px solid #198754!important}
 
@@ -484,6 +485,10 @@
 .tsr-category-menu input[type="checkbox"]:checked + span{font-weight:700;color:#0f5132;}
 .tsr-category-picker.is-open .tsr-category-toggle{border-color:#86b7fe;box-shadow:0 0 0 .2rem rgba(13,110,253,.15);}
 @media (max-width: 768px){.tsr-category-menu{position:static;margin-top:6px;box-shadow:none;}}
+  .tsr-print-coverage-table{width:100%;border-collapse:collapse;font-size:12px;margin:4px 0 8px}
+  .tsr-print-coverage-table th,.tsr-print-coverage-table td{border:1px solid #111;padding:4px 6px;vertical-align:top;line-height:1.2}
+  .tsr-print-coverage-table th{font-weight:900;text-transform:uppercase;background:#f1f5f9}
+  .tsr-print-coverage-table th:nth-child(1){width:27%}.tsr-print-coverage-table th:nth-child(2){width:23%}.tsr-print-coverage-table th:nth-child(3){width:50%}
 </style>
 
 <script src="{{ url_for('static', filename='vendor/jspdf/jspdf.umd.min.js') }}"></script>
@@ -989,6 +994,8 @@ function initializeBlankStandaloneTSR(){
     if(partsRows) partsRows.innerHTML = '';
     const selectedCard = document.getElementById('tsr-selected-schedule-card');
     if(selectedCard){ selectedCard.classList.add('d-none'); selectedCard.innerHTML = ''; }
+    const coveragePanel = document.getElementById('tsr-schedule-coverage-panel');
+    if(coveragePanel){ coveragePanel.classList.add('d-none'); coveragePanel.innerHTML = ''; }
     const select = document.getElementById('tsr-schedule-select');
     if(select) select.value = '';
     setStandaloneScheduleLockedFields(false);
@@ -1030,6 +1037,84 @@ function getScheduleProductLabel(schedule){
   const name = schedule?.product_name || '';
   if(serial && name) return `${serial} — ${name}`;
   return serial || name || 'No equipment';
+}
+function normalizeTSRScheduleCoverageRows(scheduleOrData){
+  const source = Array.isArray(scheduleOrData?.schedule_coverage)
+    ? scheduleOrData.schedule_coverage
+    : (Array.isArray(scheduleOrData?.selectedSchedule?.schedule_coverage) ? scheduleOrData.selectedSchedule.schedule_coverage : []);
+  const rows = source.map((row, index) => {
+    const names = Array.isArray(row?.engineer_names) ? row.engineer_names : [];
+    return {
+      ...(row || {}),
+      date_iso: String(row?.date_iso || row?.date || '').slice(0, 10),
+      date_label: String(row?.date_label || row?.date_iso || row?.date || '').trim(),
+      time_start: String(row?.time_start || '').trim(),
+      time_end: String(row?.time_end || '').trim(),
+      engineer_names: [...new Set(names.map(name => String(name || '').trim()).filter(Boolean))],
+      _coverage_index: index
+    };
+  }).filter(row => row.date_iso || row.date_label || row.time_start || row.time_end || row.engineer_names.length);
+  return rows.sort((a, b) => String(a.date_iso || a.date_label).localeCompare(String(b.date_iso || b.date_label))
+    || String(a.time_start).localeCompare(String(b.time_start))
+    || Number(a._coverage_index || 0) - Number(b._coverage_index || 0));
+}
+function getTSRScheduleCoverageRows(scheduleOrData){
+  let rows = normalizeTSRScheduleCoverageRows(scheduleOrData);
+  if(rows.length) return rows;
+  const schedule = scheduleOrData?.selectedSchedule || scheduleOrData;
+  if(!schedule) return [];
+  const names = Array.isArray(schedule.engineer_names) && schedule.engineer_names.length
+    ? schedule.engineer_names
+    : [schedule.serviced_by || LOGGED_IN_ENGINEER_NAME || ''];
+  return [{
+    date_iso: String(schedule.date_iso || schedule.start_date || '').slice(0, 10),
+    date_label: String(schedule.date_label || schedule.date_iso || schedule.start_date || '').trim(),
+    time_start: String(schedule.time_start || '').trim(),
+    time_end: String(schedule.time_end || '').trim(),
+    engineer_names: [...new Set(names.map(name => String(name || '').trim()).filter(Boolean))]
+  }].filter(row => row.date_iso || row.date_label || row.time_start || row.time_end || row.engineer_names.length);
+}
+function shouldShowTSRScheduleCoverage(scheduleOrData){
+  const rows = getTSRScheduleCoverageRows(scheduleOrData);
+  const engineerNames = new Set(rows.flatMap(row => row.engineer_names || []));
+  return rows.length > 1 || engineerNames.size > 1;
+}
+function formatTSRCoverageDate(row){
+  const rawIso = String(row?.date_iso || '').trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(rawIso)){
+    const date = new Date(`${rawIso}T00:00:00`);
+    if(!Number.isNaN(date.getTime())) return date.toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' });
+  }
+  const rawLabel = String(row?.date_label || '').trim();
+  if(rawLabel) return rawLabel.replace(/^([A-Z][a-z]{2})\s+0?(\d{1,2}),\s+(\d{4})$/, (_, month, day, year) => `${month} ${day}, ${year}`);
+  return rawIso;
+}
+function formatTSRCoverageTime(row){
+  const formatOne = value => {
+    const raw = String(value || '').trim();
+    const match = raw.match(/^(\d{1,2}):(\d{2})/);
+    if(!match) return raw;
+    let hour = Number(match[1]);
+    const minutes = match[2];
+    const suffix = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12 || 12;
+    return `${hour}:${minutes} ${suffix}`;
+  };
+  return [formatOne(row?.time_start), formatOne(row?.time_end)].filter(Boolean).join('–');
+}
+function renderTSRScheduleCoveragePanel(scheduleOrData){
+  const panel = document.getElementById('tsr-schedule-coverage-panel');
+  if(!panel) return;
+  if(!shouldShowTSRScheduleCoverage(scheduleOrData)){
+    panel.classList.add('d-none');
+    panel.innerHTML = '';
+    return;
+  }
+  const rows = getTSRScheduleCoverageRows(scheduleOrData);
+  panel.classList.remove('d-none');
+  panel.innerHTML = `<div class="tsr-schedule-coverage-title"><i class="fa-solid fa-calendar-days me-1"></i>Schedule Coverage</div>
+    <div class="small text-muted mb-2">All linked service days and assigned engineers are shown for reference. The selected engineer remains the only required signer.</div>
+    <div class="table-responsive"><table class="tsr-schedule-coverage-table"><thead><tr><th>Date</th><th>Time</th><th>Assigned Engineer(s)</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHTML(formatTSRCoverageDate(row))}</td><td>${escapeHTML(formatTSRCoverageTime(row))}</td><td>${escapeHTML((row.engineer_names || []).join(', ') || 'Assigned engineer')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 function getScheduleOptionLabel(schedule){
   if(!schedule) return '';
@@ -1081,6 +1166,10 @@ function normalizeStandaloneCreateTSRContext(rawContext){
     engineer_id: ctx.engineer_id || ctx.engineerId || '',
     serviced_by: ctx.engineer_name || ctx.serviced_by || LOGGED_IN_ENGINEER_NAME || '',
     serviced_by_initials: ctx.engineer_initials || LOGGED_IN_ENGINEER_INITIALS || '',
+    engineer_names: Array.isArray(ctx.engineer_names) ? ctx.engineer_names : [],
+    group_id: ctx.group_id || ctx.groupId || '',
+    parent_shift_id: ctx.parent_shift_id || ctx.parent_id || '',
+    schedule_coverage: Array.isArray(ctx.schedule_coverage) ? ctx.schedule_coverage : [],
     source: ctx.source || 'timeline-create-tsr-context'
   };
 }
@@ -1276,6 +1365,35 @@ function getScheduleSearchText(schedule){
     schedule?.serviced_by
   ].filter(Boolean).join(' ').toLowerCase();
 }
+function enrichCachedStandaloneScheduleCoverage(schedules){
+  const groups = new Map();
+  (schedules || []).forEach(schedule => {
+    const key = schedule.group_id
+      ? `group:${schedule.group_id}`
+      : (schedule.id ? `shift:${schedule.id}` : getStandaloneScheduleGroupKey(schedule));
+    if(!key) return;
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(schedule);
+  });
+  groups.forEach(items => {
+    const coverage = items.map(item => ({
+      date_iso: String(item.date_iso || item.start_date || '').slice(0, 10),
+      date_label: String(item.date_label || item.date_iso || item.start_date || '').trim(),
+      time_start: String(item.time_start || '').trim(),
+      time_end: String(item.time_end || '').trim(),
+      engineer_names: [...new Set([...(item.engineer_names || []), item.serviced_by || ''].map(name => String(name || '').trim()).filter(Boolean))]
+    })).filter(row => row.date_iso || row.date_label || row.time_start || row.time_end || row.engineer_names.length);
+    const names = [...new Set(coverage.flatMap(row => row.engineer_names || []))];
+    items.forEach(item => {
+      if(!Array.isArray(item.schedule_coverage) || !item.schedule_coverage.length){
+        item.schedule_coverage = coverage;
+      }
+      item.is_multi_day = new Set(coverage.map(row => row.date_iso).filter(Boolean)).size > 1;
+      item.is_multi_engineer = names.length > 1;
+    });
+  });
+  return schedules;
+}
 function readTimelineSnapshotSchedules(){
   const schedules = [];
   const seen = new Set();
@@ -1292,6 +1410,12 @@ function readTimelineSnapshotSchedules(){
           if(!shift || seen.has(snapshotScheduleKey) || !shift.client_name) return;
           seen.add(snapshotScheduleKey);
           const engineer = engineerMap[String(engineerId)] || {};
+          const rawEngineers = Array.isArray(shift.engineers) ? shift.engineers : [];
+          const engineerNames = rawEngineers.map(item => {
+            if(item && typeof item === 'object') return item.name || item.full_name || '';
+            return engineerMap[String(item)]?.name || '';
+          }).filter(Boolean);
+          if(!engineerNames.length && engineer.name) engineerNames.push(engineer.name);
           schedules.push({
             id: shift.id,
             date_iso: dayIso || shift.start_date || '',
@@ -1305,11 +1429,14 @@ function readTimelineSnapshotSchedules(){
             client_id: shift.client_id || '',
             product_name: shift.product_name || '',
             product_id: shift.product_id || '',
-            engineers: shift.engineers || [],
-            engineer_names: [],
+            engineers: rawEngineers,
+            engineer_names: [...new Set(engineerNames)],
             serviced_by: LOGGED_IN_ENGINEER_NAME || shift.day_owner_engineer_name || engineer.name || '',
             serviced_by_initials: LOGGED_IN_ENGINEER_INITIALS || shift.day_owner_engineer_initials || engineer.initials || '',
-            branch: engineer.branch || ''
+            branch: engineer.branch || '',
+            group_id: shift.group_id || shift.groupId || shift.schedule_group_id || shift.shift_group_id || '',
+            parent_shift_id: shift.parent_shift_id || shift.parent_id || '',
+            schedule_coverage: Array.isArray(shift.schedule_coverage) ? shift.schedule_coverage : []
           });
         });
       });
@@ -1327,7 +1454,7 @@ function readTimelineSnapshotSchedules(){
       consumeSnapshot(latest);
     }catch(err){}
   });
-  return schedules.sort((a,b)=>String(a.date_iso||'').localeCompare(String(b.date_iso||'')));
+  return enrichCachedStandaloneScheduleCoverage(schedules.sort((a,b)=>String(a.date_iso||'').localeCompare(String(b.date_iso||''))));
 }
 function cacheStandaloneScheduleOptions(schedules){
   try{
@@ -1570,6 +1697,7 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
           ? 'No inventory equipment is linked. Enter Product and Serial; saving creates it under this Medical Center with today as the warranty start date.'
           : 'Client/equipment fields are locked. Start and finish time may be adjusted before saving.')}</div>`;
   }
+  renderTSRScheduleCoveragePanel(schedule);
   setStandaloneScheduleLockedFields(true);
   updateCreateTSRScheduleGate();
   renderStandaloneTSRDraftPanel();
@@ -1590,6 +1718,7 @@ function clearStandaloneScheduleSelection(showMessage=true){
   if(select) select.value = '';
   const card = document.getElementById('tsr-selected-schedule-card');
   if(card){ card.classList.add('d-none'); card.innerHTML = ''; }
+  renderTSRScheduleCoveragePanel(null);
   setStandaloneScheduleLockedFields(false);
   updateCreateTSRScheduleGate({ showMessage });
   resetAllInlineTSRKnowledgeSuggestions();
@@ -2183,6 +2312,7 @@ function collectTSRData(){
     selectedScheduleId:selectedStandaloneScheduleId,
     schedule_id:selectedSchedule?.id || selectedStandaloneScheduleId || '',
     selectedSchedule:selectedSchedule || null,
+    schedule_coverage:getTSRScheduleCoverageRows(selectedSchedule),
     original_schedule_time_start:selectedSchedule?.time_start || '',
     original_schedule_time_end:selectedSchedule?.time_end || '',
     _draft_id:standaloneCurrentDraftId,
@@ -2568,6 +2698,7 @@ function applyStandaloneTSRDraftData(data){
     standaloneDocuments=data.documents||[];
     offlineTSRAttachments=normalizeQueuedAttachments(data.attachments||[]);
     signatureData=data.signatures||{serviced:'',acknowledged:''};
+    renderTSRScheduleCoveragePanel(data.selectedSchedule || data);
 
     const partsRows = document.getElementById('tsr-parts-rows');
     if(partsRows) partsRows.innerHTML = '';
@@ -5249,6 +5380,12 @@ function tsrSignatureHtml(data, target){
   const src = data.signatures && data.signatures[target] ? data.signatures[target] : '';
   return src ? `<img src="${src}" alt="${target} signature">` : '';
 }
+function buildTSRScheduleCoverageHTML(data){
+  if(!shouldShowTSRScheduleCoverage(data)) return '';
+  const rows = getTSRScheduleCoverageRows(data);
+  return `<div class="tsr-print-section-title">Schedule Coverage</div>
+    <table class="tsr-print-coverage-table"><thead><tr><th>Date</th><th>Time</th><th>Assigned Engineer(s)</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHTML(formatTSRCoverageDate(row))}</td><td>${escapeHTML(formatTSRCoverageTime(row))}</td><td>${escapeHTML((row.engineer_names || []).join(', ') || 'Assigned engineer')}</td></tr>`).join('')}</tbody></table>`;
+}
 function buildTSRPrintHTML(data){
   const categoryOther = isTSRCategorySelected(data,'Others') ? `<span class="tsr-print-other-line">${tsrValue(data,'tsr-service-category-other')}</span>` : '<span class="tsr-print-other-line"></span>';
   const parts = (Array.isArray(data.parts) ? data.parts : []).filter(p => p && Object.values(p).some(Boolean));
@@ -5288,6 +5425,7 @@ function buildTSRPrintHTML(data){
         ${tsrCheckHtml(isTSRCategorySelected(data,'Installation'),'Installation')}
         ${tsrCheckHtml(isTSRCategorySelected(data,'Others'),'Others', categoryOther)}
       </div>
+      ${buildTSRScheduleCoverageHTML(data)}
       <div class="tsr-print-section-title">Complaint</div>
       <div class="tsr-print-text-area">${tsrMultiline(data['tsr-complaint'])}</div>
       <div class="tsr-print-section-title">Actions Taken</div>
@@ -5497,6 +5635,42 @@ function drawSectionTitle(ctx, title, x, y, w, h=27){
   ctx.strokeRect(x, y, w, h);
   ctx.font = 'bold 19px Arial';
   ctx.fillText(title, x + 10, y + 22);
+}
+function drawTSRScheduleCoverageTable(ctx, rows, x, y, w, maxRows=8, title='SCHEDULE COVERAGE'){
+  const safeRows = Array.isArray(rows) ? rows : [];
+  drawSectionTitle(ctx, title, x, y, w, 32);
+  const headerY = y + 32;
+  const headerH = 30;
+  const rowH = 36;
+  const cols = [Math.round(w * 0.27), Math.round(w * 0.23), w - Math.round(w * 0.27) - Math.round(w * 0.23)];
+  const pageRows = safeRows.slice(0, maxRows);
+  let cellX = x;
+  ctx.fillStyle = '#f1f5f9';
+  cols.forEach(colW => { ctx.fillRect(cellX, headerY, colW, headerH); cellX += colW; });
+  ctx.fillStyle = '#111111';
+  const headers = ['DATE', 'TIME', 'ASSIGNED ENGINEER(S)'];
+  cellX = x;
+  ctx.font = 'bold 15px Arial';
+  headers.forEach((header, index) => {
+    ctx.strokeRect(cellX, headerY, cols[index], headerH);
+    canvasText(ctx, header, cellX + 8, headerY + 20, cols[index] - 16, 15, {maxLines:1});
+    cellX += cols[index];
+  });
+  pageRows.forEach((row, rowIndex) => {
+    const rowY = headerY + headerH + rowIndex * rowH;
+    const values = [formatTSRCoverageDate(row), formatTSRCoverageTime(row), (row.engineer_names || []).join(', ') || 'Assigned engineer'];
+    cellX = x;
+    ctx.font = 'bold 15px Arial';
+    values.forEach((value, index) => {
+      ctx.strokeRect(cellX, rowY, cols[index], rowH);
+      canvasText(ctx, value, cellX + 8, rowY + 21, cols[index] - 16, 16, {maxLines:2});
+      cellX += cols[index];
+    });
+  });
+  return {
+    nextY: headerY + headerH + pageRows.length * rowH,
+    overflowRows: safeRows.slice(maxRows)
+  };
 }
 function drawMultilineBox(ctx, title, value, x, y, w, h, fontSize=16){
   drawSectionTitle(ctx, title, x, y, w, 27);
@@ -5918,6 +6092,15 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
   ctx.fillText(isTSRCategorySelected(data,'Others') ? (data['tsr-service-category-other'] || '') : '', margin + 1060, y + 36);
   y += 56;
 
+  const coverageRows = getTSRScheduleCoverageRows(data);
+  const showCoverage = shouldShowTSRScheduleCoverage(data);
+  let coverageOverflowRows = [];
+  if(showCoverage){
+    const coverageResult = drawTSRScheduleCoverageTable(ctx, coverageRows, margin, y, pageW, 8);
+    coverageOverflowRows = coverageResult.overflowRows || [];
+    y = coverageResult.nextY + 8;
+  }
+
   drawMultilineBox(ctx, 'COMPLAINT', data['tsr-complaint'], margin, y, pageW, 88, 19);
   y += 88;
 
@@ -5925,7 +6108,7 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
   const visiblePartRows = Math.max(2, Math.min(5, parts.length || 2));
   const remarksHeight = 150;
   const reserveAfterActions = remarksHeight + 140 + (64 + visiblePartRows * 38) + 80 + 247;
-  const actionsHeight = Math.max(420, Math.min(700, canvas.height - y - reserveAfterActions - 40));
+  const actionsHeight = Math.max(showCoverage ? 240 : 420, Math.min(700, canvas.height - y - reserveAfterActions - 40));
   const actionsResult = drawActionsTakenBox(ctx, data['tsr-actions-taken'], margin, y, pageW, actionsHeight, 18);
   y += actionsHeight;
 
@@ -5984,6 +6167,7 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
 
   await drawTSRSignatureFooter(ctx, data, margin, pageW, y);
   const continuationCanvases = await renderTSRContinuationCanvases(data, [
+    { type:'coverage', title:'SCHEDULE COVERAGE - CONTINUED', note:'Continuation page automatically added because the linked schedule coverage did not fit on the main TSR page.', rows:coverageOverflowRows },
     { title:'ACTIONS TAKEN - CONTINUED', note:'Continuation page automatically added because Actions Taken exceeded the main TSR page.', lines:actionsResult.overflowLines || [] },
     { title:'REMARKS/RECOMMENDATIONS - CONTINUED', note:'Continuation page automatically added because Remarks/Recommendations exceeded the main TSR page.', lines:remarksResult.overflowLines || [] }
   ]);
@@ -5996,11 +6180,13 @@ async function renderTSRPrintSheetToCanvas(){
 async function renderTSRContinuationCanvases(data, sections){
   const pendingSections = (Array.isArray(sections) ? sections : [{ title:'ACTIONS TAKEN - CONTINUED', note:'Continuation page automatically added because Actions Taken exceeded the main TSR page.', lines:sections }])
     .map(section => ({
+      type: section?.type || 'text',
       title: section?.title || 'TSR DETAILS - CONTINUED',
       note: section?.note || 'Continuation page automatically added because details exceeded the main TSR page.',
-      lines: Array.isArray(section?.lines) ? section.lines.slice() : []
+      lines: Array.isArray(section?.lines) ? section.lines.slice() : [],
+      rows: Array.isArray(section?.rows) ? section.rows.slice() : []
     }))
-    .filter(section => section.lines.length);
+    .filter(section => section.type === 'coverage' ? section.rows.length : section.lines.length);
   const pages = [];
   let pageNo = 2;
   while(pendingSections.length){
@@ -6042,25 +6228,37 @@ async function renderTSRContinuationCanvases(data, sections){
     });
     y += 28;
 
-    drawSectionTitle(ctx, currentSection.title, margin, y, pageW, 32);
-    y += 32;
-    const boxH = 1180;
-    ctx.strokeRect(margin, y, pageW, boxH);
-    ctx.font = 'bold 18px Arial';
-    const lineHeight = 24;
-    const maxLines = Math.max(1, Math.floor((boxH - 28) / lineHeight));
-    const pageLines = currentSection.lines.splice(0, maxLines);
-    pageLines.forEach((line, idx) => ctx.fillText(line, margin + 14, y + 26 + idx * lineHeight));
-    y += boxH + 28;
-    if(!currentSection.lines.length){
-      pendingSections.shift();
-    }
+    if(currentSection.type === 'coverage'){
+      const coverageResult = drawTSRScheduleCoverageTable(ctx, currentSection.rows, margin, y, pageW, 22, currentSection.title);
+      currentSection.rows = coverageResult.overflowRows || [];
+      y = coverageResult.nextY + 32;
+      if(!currentSection.rows.length) pendingSections.shift();
+      ctx.font = 'bold 16px Arial';
+      ctx.fillStyle = '#334155';
+      ctx.fillText(currentSection.note, margin + 12, y);
+      ctx.fillStyle = '#111111';
+      await drawTSRSignatureFooter(ctx, data, margin, pageW, 1740);
+    }else{
+      drawSectionTitle(ctx, currentSection.title, margin, y, pageW, 32);
+      y += 32;
+      const boxH = 1180;
+      ctx.strokeRect(margin, y, pageW, boxH);
+      ctx.font = 'bold 18px Arial';
+      const lineHeight = 24;
+      const maxLines = Math.max(1, Math.floor((boxH - 28) / lineHeight));
+      const pageLines = currentSection.lines.splice(0, maxLines);
+      pageLines.forEach((line, idx) => ctx.fillText(line, margin + 14, y + 26 + idx * lineHeight));
+      y += boxH + 28;
+      if(!currentSection.lines.length){
+        pendingSections.shift();
+      }
 
-    ctx.font = 'bold 16px Arial';
-    ctx.fillStyle = '#334155';
-    ctx.fillText(currentSection.note, margin + 12, y);
-    ctx.fillStyle = '#111111';
-    await drawTSRSignatureFooter(ctx, data, margin, pageW, y + 8);
+      ctx.font = 'bold 16px Arial';
+      ctx.fillStyle = '#334155';
+      ctx.fillText(currentSection.note, margin + 12, y);
+      ctx.fillStyle = '#111111';
+      await drawTSRSignatureFooter(ctx, data, margin, pageW, y + 8);
+    }
     pages.push(canvas);
     pageNo += 1;
   }
