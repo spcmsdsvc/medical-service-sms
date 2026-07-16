@@ -9072,23 +9072,36 @@ def generate_online_tsr_submission_pdf(submission, shift, payload):
     ))
     if len(coverage_rows) > 1 or len(coverage_engineers) > 1:
         story.append(Paragraph('Schedule Coverage', section_style))
-        coverage_data = [[
-            Paragraph('<b>Date</b>', body_style),
-            Paragraph('<b>Time</b>', body_style),
-            Paragraph('<b>Assigned Engineer(s)</b>', body_style),
-        ]]
-        for row in coverage_rows:
-            time_text = ' - '.join(filter(None, [row.get('time_start'), row.get('time_end')]))
-            coverage_data.append([
-                safe_paragraph(row.get('date_label') or row.get('date_iso')),
-                safe_paragraph(time_text),
-                safe_paragraph(', '.join(row.get('engineer_names') or [])),
-            ])
-        coverage_table = Table(
-            coverage_data,
-            colWidths=[38 * mm, 38 * mm, 98 * mm],
-            repeatRows=1
-        )
+        coverage_dates = {
+            clean_str(row.get('date_iso') or row.get('date_label'))
+            for row in coverage_rows
+            if clean_str(row.get('date_iso') or row.get('date_label'))
+        }
+        compact_coverage = len(coverage_rows) == 1 and len(coverage_dates) <= 1 and len(coverage_engineers) > 1
+        if compact_coverage:
+            coverage_data = [[
+                Paragraph('<b>Assigned Engineer(s)</b>', body_style),
+                safe_paragraph(', '.join(coverage_engineers) or 'Assigned engineer'),
+            ]]
+            coverage_table = Table(coverage_data, colWidths=[44 * mm, 130 * mm])
+        else:
+            coverage_data = [[
+                Paragraph('<b>Scheduled Date</b>', body_style),
+                Paragraph('<b>Scheduled Time</b>', body_style),
+                Paragraph('<b>Assigned Engineer(s)</b>', body_style),
+            ]]
+            for row in coverage_rows:
+                time_text = ' - '.join(filter(None, [row.get('time_start'), row.get('time_end')]))
+                coverage_data.append([
+                    safe_paragraph(row.get('date_label') or row.get('date_iso')),
+                    safe_paragraph(time_text),
+                    safe_paragraph(', '.join(row.get('engineer_names') or [])),
+                ])
+            coverage_table = Table(
+                coverage_data,
+                colWidths=[38 * mm, 38 * mm, 98 * mm],
+                repeatRows=1
+            )
         coverage_table.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#cbd5e1')),
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f1f5f9')),
@@ -10552,6 +10565,151 @@ def repair_tsr_pdf_checkboxes(pdf_bytes, payload):
         document.close()
 
 
+TSR_SCHEDULE_COVERAGE_REPAIR_MARKER = 'medical-service-tsr-coverage-repair:compact-v1'
+
+
+def _tsr_coverage_repair_engineer_names(coverage_rows):
+    names = []
+    for row in coverage_rows or []:
+        for name in row.get('engineer_names') or []:
+            value = clean_str(name)
+            if value and value not in names:
+                names.append(value)
+    return names
+
+
+def repair_tsr_single_day_multi_engineer_coverage_pdf(pdf_bytes, engineer_names):
+    """Replace one-day coverage date/time table with a compact engineer row.
+
+    The repair redacts only the first page's coverage band and redraws the
+    compact row in place. Existing text, logo, signatures, and form geometry
+    outside the coverage band remain untouched and vector-based.
+    """
+    if not isinstance(pdf_bytes, (bytes, bytearray)) or not pdf_bytes:
+        raise ValueError('TSR PDF is empty.')
+
+    names = list(dict.fromkeys(clean_str(name) for name in engineer_names or [] if clean_str(name)))
+    if len(names) < 2:
+        raise ValueError('At least two assigned engineers are required for compact coverage repair.')
+
+    try:
+        import fitz  # PyMuPDF
+    except Exception as error:
+        raise RuntimeError(f'PyMuPDF is unavailable: {error}') from error
+
+    document = fitz.open(stream=bytes(pdf_bytes), filetype='pdf')
+    try:
+        metadata = dict(document.metadata or {})
+        keywords = clean_str(metadata.get('keywords')) or ''
+        if TSR_SCHEDULE_COVERAGE_REPAIR_MARKER in keywords:
+            return {
+                'pdf_bytes': bytes(pdf_bytes),
+                'already_repaired': True,
+                'page_count': len(document),
+                'delta_points': 0,
+            }
+
+        if not document:
+            raise ValueError('TSR PDF has no pages.')
+
+        source_page = document[0]
+        coverage_rect = _tsr_repair_find_text(
+            source_page,
+            'SCHEDULE COVERAGE',
+            min_y=0,
+            max_y=source_page.rect.height * 0.72,
+        )
+        complaint_rect = _tsr_repair_find_text(
+            source_page,
+            'COMPLAINT',
+            min_y=(coverage_rect.y1 if coverage_rect else 0),
+            max_y=source_page.rect.height * 0.85,
+        )
+        if not coverage_rect or not complaint_rect:
+            raise ValueError('Coverage and Complaint section boundaries could not be located.')
+
+        page_width = source_page.rect.width
+        page_height = source_page.rect.height
+        content_left = max(0.0, coverage_rect.x0 - 0.8)
+        content_right = min(page_width, page_width - content_left)
+        section_top = max(0.0, coverage_rect.y0 - 0.8)
+        section_bottom = min(page_height, complaint_rect.y0 - 0.8)
+        old_height = section_bottom - section_top
+        if old_height < 28.0:
+            raise ValueError('Coverage section is too small for a safe compact replacement.')
+
+        section_rect = fitz.Rect(content_left, section_top, content_right, section_bottom)
+        source_page.add_redact_annot(section_rect, fill=(1, 1, 1))
+        source_page.apply_redactions(
+            images=fitz.PDF_REDACT_IMAGE_NONE,
+            graphics=fitz.PDF_REDACT_LINE_ART_NONE,
+            text=fitz.PDF_REDACT_TEXT_REMOVE,
+        )
+
+        compact_height = old_height
+        title_height = min(12.0, compact_height * 0.40)
+        source_page.draw_rect(
+            section_rect,
+            color=(0, 0, 0),
+            fill=(1, 1, 1),
+            width=0.8,
+            overlay=True,
+        )
+        source_page.draw_line(
+            fitz.Point(content_left, section_top + title_height),
+            fitz.Point(content_right, section_top + title_height),
+            color=(0, 0, 0),
+            width=0.6,
+            overlay=True,
+        )
+        source_page.insert_text(
+            fitz.Point(content_left + 7, section_top + 12),
+            'SCHEDULE COVERAGE',
+            fontname='hebo',
+            fontsize=7.6,
+            color=(0.067, 0.067, 0.067),
+            overlay=True,
+        )
+        source_page.insert_textbox(
+            fitz.Rect(content_left + 7, section_top + title_height + 3, content_right - 7, section_bottom - 4),
+            f'ASSIGNED ENGINEER(S): {", ".join(names)}',
+            fontname='hebo',
+            fontsize=7.2,
+            lineheight=1.15,
+            color=(0.067, 0.067, 0.067),
+            overlay=True,
+        )
+
+        metadata['keywords'] = f'{keywords}; {TSR_SCHEDULE_COVERAGE_REPAIR_MARKER}'.strip('; ')
+        document.set_metadata(metadata)
+        # Keep the repaired PDF on disk briefly while PyMuPDF serializes it.
+        # In older TSRs, returning document.tobytes() after redaction can
+        # corrupt shared background resources and turn the page black.
+        temp_path = None
+        try:
+            temp_file = tempfile.NamedTemporaryFile(
+                prefix='tsr-coverage-repair-',
+                suffix='.pdf',
+                delete=False,
+            )
+            temp_path = temp_file.name
+            temp_file.close()
+            document.save(temp_path, garbage=3, deflate=True)
+            with open(temp_path, 'rb') as repaired_file:
+                repaired_bytes = repaired_file.read()
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+        return {
+            'pdf_bytes': repaired_bytes,
+            'already_repaired': False,
+            'page_count': len(document),
+            'delta_points': 0,
+        }
+    finally:
+        document.close()
+
+
 def _tsr_repair_submission_file(submission):
     """Resolve the PDF ShiftFile associated with one online TSR submission."""
     if not submission:
@@ -10777,6 +10935,304 @@ def admin_repair_tsr_checkboxes():
         'message': (
             'Dry run complete. No files were changed.' if dry_run else
             'TSR checkbox repair complete. Submitted data and database records were not changed.'
+        ),
+    })
+
+
+def _tsr_schedule_coverage_repair_candidate_rows(start_date, end_date, limit=100):
+    """Return latest active vector TSRs needing the compact coverage repair."""
+    ensure_online_tsr_submission_table()
+    start_at = datetime.combine(start_date, datetime.min.time())
+    end_at = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+    submissions = OnlineTsrSubmission.query.filter(
+        OnlineTsrSubmission.created_at >= start_at,
+        OnlineTsrSubmission.created_at < end_at,
+        OnlineTsrSubmission.status == 'completed',
+        OnlineTsrSubmission.is_latest.is_(True),
+    ).order_by(
+        OnlineTsrSubmission.created_at.asc(),
+        OnlineTsrSubmission.id.asc(),
+    ).limit(limit).all()
+
+    candidates = []
+    skipped = []
+    for submission in submissions:
+        payload = parse_online_tsr_payload_json(submission)
+        if clean_str(payload.get('_tsr_form_version')) != 'vector-pdf-v2':
+            skipped.append({'submission_id': submission.id, 'reason': 'not-vector-pdf-v2'})
+            continue
+
+        file_rec = _tsr_repair_submission_file(submission)
+        if not file_rec:
+            skipped.append({'submission_id': submission.id, 'reason': 'attached-pdf-record-not-found'})
+            continue
+
+        display_name = get_shift_file_display_name(file_rec)
+        disk_name = get_shift_file_disk_name(file_rec)
+        if not disk_name or not clean_str(display_name or disk_name).lower().endswith('.pdf'):
+            skipped.append({
+                'submission_id': submission.id,
+                'file_id': file_rec.id,
+                'reason': 'attached-file-is-not-pdf',
+            })
+            continue
+
+        local_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
+        readable_path = None
+        try:
+            readable_path = managed_storage_read_path(STORAGE_PREFIX_REPORTS, local_path)
+            if not readable_path or not os.path.isfile(readable_path):
+                skipped.append({
+                    'submission_id': submission.id,
+                    'file_id': file_rec.id,
+                    'reason': 'pdf-file-not-found-in-bucket-or-volume',
+                })
+                continue
+        except Exception as error:
+            skipped.append({
+                'submission_id': submission.id,
+                'file_id': file_rec.id,
+                'reason': 'pdf-file-read-failed',
+                'detail': str(error),
+            })
+            continue
+        finally:
+            if readable_path and readable_path != local_path:
+                managed_storage_release_path(readable_path)
+
+        shift = db.session.get(Shift, clean_int(submission.shift_id))
+        if not shift:
+            skipped.append({
+                'submission_id': submission.id,
+                'file_id': file_rec.id,
+                'reason': 'linked-schedule-not-found',
+            })
+            continue
+
+        coverage_rows = get_tsr_schedule_coverage_rows(shift)
+        coverage_dates = {
+            clean_str(row.get('date_iso') or row.get('date_label'))
+            for row in coverage_rows
+            if clean_str(row.get('date_iso') or row.get('date_label'))
+        }
+        engineer_names = _tsr_coverage_repair_engineer_names(coverage_rows)
+        if len(coverage_rows) != 1 or len(coverage_dates) > 1 or len(engineer_names) < 2:
+            skipped.append({
+                'submission_id': submission.id,
+                'file_id': file_rec.id,
+                'reason': 'not-single-day-multi-engineer-coverage',
+                'coverage_row_count': len(coverage_rows),
+                'coverage_date_count': len(coverage_dates),
+                'engineer_count': len(engineer_names),
+            })
+            continue
+
+        candidates.append({
+            'submission': submission,
+            'payload': payload,
+            'shift': shift,
+            'coverage_rows': coverage_rows,
+            'engineer_names': engineer_names,
+            'file_rec': file_rec,
+            'display_name': display_name or disk_name,
+            'disk_name': disk_name,
+        })
+
+    return candidates, skipped
+
+
+def _write_tsr_schedule_coverage_repair_object(prefix, local_path, data, original_filename):
+    """Write a repair backup/replacement without registering a DB rollback file."""
+    stored_filename = os.path.basename(local_path)
+    key = managed_storage_key(prefix, stored_filename)
+    bucket_written = False
+    volume_written = False
+    old_volume_exists = os.path.exists(local_path)
+    temp_path = f'{local_path}.repairing-{secrets.token_hex(5)}'
+    try:
+        if file_storage.writes_bucket:
+            file_storage.upload_bytes(
+                key,
+                data,
+                content_type='application/pdf',
+                original_filename=original_filename or stored_filename,
+            )
+            bucket_written = True
+        if file_storage.writes_volume:
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            with open(temp_path, 'wb') as target_file:
+                target_file.write(data)
+            os.replace(temp_path, local_path)
+            volume_written = True
+        return {'key': key, 'size': len(data), 'bucket_written': bucket_written, 'volume_written': volume_written}
+    except Exception:
+        if bucket_written:
+            try:
+                file_storage.delete(key)
+            except Exception:
+                pass
+        if volume_written and not old_volume_exists:
+            try:
+                os.remove(local_path)
+            except OSError:
+                pass
+        raise
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+def _tsr_schedule_coverage_repair_html_form(default_start, default_end):
+    return f'''<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>TSR Schedule Coverage Repair</title>
+<style>body{{font-family:Arial,sans-serif;background:#f5f7fb;color:#182235;padding:32px;}}main{{max-width:720px;background:#fff;border:1px solid #d9e1ee;border-radius:14px;padding:24px;box-shadow:0 8px 30px #18223518;}}label{{display:block;font-weight:700;margin:14px 0 6px;}}input{{padding:10px;border:1px solid #aab7c9;border-radius:8px;}}button{{margin:18px 10px 0 0;padding:11px 16px;border:0;border-radius:8px;font-weight:700;cursor:pointer;}}button[name="mode"][value="dry_run"]{{background:#e7eef9;color:#183a6b;}}button[name="mode"][value="apply"]{{background:#198754;color:white;}}small{{color:#52647c;}}</style></head>
+<body><main><h1>TSR Schedule Coverage Repair</h1><p>Superadmin-only file repair for latest active vector TSRs with one service day and multiple assigned engineers. TSR records and submitted payloads are not changed.</p>
+<form method="post" action="/admin/repair_tsr_schedule_coverage">
+<label for="start_date">Saved date from</label><input id="start_date" name="start_date" type="date" value="{default_start.isoformat()}" required>
+<label for="end_date">Saved date to</label><input id="end_date" name="end_date" type="date" value="{default_end.isoformat()}" required>
+<label for="limit">Maximum files</label><input id="limit" name="limit" type="number" value="100" min="1" max="100">
+<br><button type="submit" name="mode" value="dry_run">Preview repair candidates</button><button type="submit" name="mode" value="apply">Apply compact repair</button>
+</form><p><small>The original PDF is backed up before replacement. Re-running is safe because repaired files carry an internal marker.</small></p></main></body></html>'''
+
+
+@app.route('/admin/repair_tsr_schedule_coverage', methods=['GET', 'POST'])
+@login_required
+@csrf.exempt
+def admin_repair_tsr_schedule_coverage():
+    """Preview/apply compact coverage repairs for latest vector TSR PDFs."""
+    if not is_superadmin_user():
+        return jsonify({'status': 'error', 'message': 'Superadmin access required.'}), 403
+
+    today = get_manila_today()
+    default_start = today - timedelta(days=6)
+    default_end = today
+
+    if request.method == 'GET':
+        if (clean_str(request.args.get('format')) or '').lower() == 'json':
+            start_date = _tsr_repair_date_value(request.args.get('start_date'), default_start)
+            end_date = _tsr_repair_date_value(request.args.get('end_date'), default_end)
+            limit = min(max(clean_int(request.args.get('limit')) or 100, 1), 100)
+            candidates, skipped = _tsr_schedule_coverage_repair_candidate_rows(start_date, end_date, limit)
+            return jsonify({
+                'status': 'success',
+                'dry_run': True,
+                'start_date': start_date.isoformat(),
+                'end_date': end_date.isoformat(),
+                'candidates': [
+                    {
+                        'submission_id': row['submission'].id,
+                        'shift_id': row['submission'].shift_id,
+                        'file_id': row['file_rec'].id,
+                        'tsr_number': row['submission'].tsr_number,
+                        'filename': row['display_name'],
+                        'client_name': row['submission'].client_name or '',
+                        'engineer_names': row['engineer_names'],
+                        'created_at': row['submission'].created_at.isoformat() if row['submission'].created_at else '',
+                    }
+                    for row in candidates
+                ],
+                'skipped': skipped,
+            })
+        return _tsr_schedule_coverage_repair_html_form(default_start, default_end)
+
+    form = request.form or {}
+    body = request.get_json(silent=True) if request.is_json else None
+    values = body if isinstance(body, dict) else form
+    start_date = _tsr_repair_date_value(values.get('start_date'), default_start)
+    end_date = _tsr_repair_date_value(values.get('end_date'), default_end)
+    if end_date < start_date:
+        return jsonify({'status': 'error', 'message': 'End date cannot be before start date.'}), 400
+    limit = min(max(clean_int(values.get('limit')) or 100, 1), 100)
+    mode = (clean_str(values.get('mode')) or '').lower()
+    dry_run = mode != 'apply' and not parse_bool_flag(values.get('apply'))
+
+    candidates, skipped = _tsr_schedule_coverage_repair_candidate_rows(start_date, end_date, limit)
+    repaired = []
+    errors = []
+
+    for row in candidates:
+        submission = row['submission']
+        file_rec = row['file_rec']
+        local_path = os.path.join(app.config['UPLOAD_FOLDER'], row['disk_name'])
+        readable_path = None
+        try:
+            readable_path = managed_storage_read_path(STORAGE_PREFIX_REPORTS, local_path)
+            with open(readable_path, 'rb') as source_file:
+                original_bytes = source_file.read()
+            repair = repair_tsr_single_day_multi_engineer_coverage_pdf(
+                original_bytes,
+                row['engineer_names'],
+            )
+            repaired_bytes = repair['pdf_bytes']
+            old_sha = hashlib.sha256(original_bytes).hexdigest()
+            new_sha = hashlib.sha256(repaired_bytes).hexdigest()
+            result = {
+                'submission_id': submission.id,
+                'shift_id': submission.shift_id,
+                'file_id': file_rec.id,
+                'tsr_number': submission.tsr_number,
+                'filename': row['display_name'],
+                'created_at': submission.created_at.isoformat() if submission.created_at else '',
+                'engineer_names': row['engineer_names'],
+                'old_sha256': old_sha,
+                'new_sha256': new_sha,
+                'old_size': len(original_bytes),
+                'new_size': len(repaired_bytes),
+                'already_repaired': repair['already_repaired'],
+                'delta_points': repair.get('delta_points', 0),
+                'dry_run': dry_run,
+            }
+
+            if not dry_run and not repair['already_repaired'] and new_sha != old_sha:
+                backup_date = get_manila_today().isoformat()
+                backup_name = secure_filename(f'{submission.id}_{old_sha[:12]}_{row["disk_name"]}')
+                backup_path = os.path.join(
+                    app.config['UPLOAD_FOLDER'],
+                    '_tsr_schedule_coverage_backups',
+                    backup_date,
+                    backup_name,
+                )
+                _write_tsr_schedule_coverage_repair_object(
+                    f'{STORAGE_PREFIX_REPORTS}/_tsr_schedule_coverage_backups/{backup_date}',
+                    backup_path,
+                    original_bytes,
+                    row['display_name'],
+                )
+                _write_tsr_schedule_coverage_repair_object(
+                    STORAGE_PREFIX_REPORTS,
+                    local_path,
+                    repaired_bytes,
+                    row['display_name'],
+                )
+                result['backup_name'] = backup_name
+                result['applied'] = True
+            else:
+                result['applied'] = False
+
+            repaired.append(result)
+        except Exception as error:
+            errors.append({
+                'submission_id': submission.id,
+                'file_id': file_rec.id,
+                'filename': row['display_name'],
+                'error': str(error),
+            })
+        finally:
+            if readable_path and readable_path != local_path:
+                managed_storage_release_path(readable_path)
+
+    return jsonify({
+        'status': 'success' if not errors else 'partial_success',
+        'dry_run': dry_run,
+        'start_date': start_date.isoformat(),
+        'end_date': end_date.isoformat(),
+        'candidate_count': len(candidates),
+        'repaired': repaired,
+        'skipped': skipped,
+        'errors': errors,
+        'message': (
+            'Dry run complete. No files were changed.' if dry_run else
+            'TSR schedule coverage repair complete. TSR records and database payloads were not changed.'
         ),
     })
 

@@ -1079,6 +1079,12 @@ function shouldShowTSRScheduleCoverage(scheduleOrData){
   const engineerNames = new Set(rows.flatMap(row => row.engineer_names || []));
   return rows.length > 1 || engineerNames.size > 1;
 }
+function isCompactTSRScheduleCoverage(scheduleOrData){
+  const rows = getTSRScheduleCoverageRows(scheduleOrData);
+  const dates = new Set(rows.map(row => row.date_iso || row.date_label).filter(Boolean));
+  const engineerNames = new Set(rows.flatMap(row => row.engineer_names || []));
+  return rows.length === 1 && dates.size <= 1 && engineerNames.size > 1;
+}
 function formatTSRCoverageDate(row){
   const rawIso = String(row?.date_iso || '').trim();
   if(/^\d{4}-\d{2}-\d{2}$/.test(rawIso)){
@@ -1111,10 +1117,16 @@ function renderTSRScheduleCoveragePanel(scheduleOrData){
     return;
   }
   const rows = getTSRScheduleCoverageRows(scheduleOrData);
+  const compact = isCompactTSRScheduleCoverage(scheduleOrData);
   panel.classList.remove('d-none');
+  const explanation = compact
+    ? 'All assigned engineers are shown for reference. The selected engineer remains the only required signer.'
+    : 'All linked service days and assigned engineers are shown for reference. The selected engineer remains the only required signer.';
+  const content = compact
+    ? `<div class="table-responsive"><table class="tsr-schedule-coverage-table"><tbody><tr><th>Assigned Engineer(s)</th><td>${escapeHTML((rows[0].engineer_names || []).join(', ') || 'Assigned engineer')}</td></tr></tbody></table></div>`
+    : `<div class="table-responsive"><table class="tsr-schedule-coverage-table"><thead><tr><th>Scheduled Date</th><th>Scheduled Time</th><th>Assigned Engineer(s)</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHTML(formatTSRCoverageDate(row))}</td><td>${escapeHTML(formatTSRCoverageTime(row))}</td><td>${escapeHTML((row.engineer_names || []).join(', ') || 'Assigned engineer')}</td></tr>`).join('')}</tbody></table></div>`;
   panel.innerHTML = `<div class="tsr-schedule-coverage-title"><i class="fa-solid fa-calendar-days me-1"></i>Schedule Coverage</div>
-    <div class="small text-muted mb-2">All linked service days and assigned engineers are shown for reference. The selected engineer remains the only required signer.</div>
-    <div class="table-responsive"><table class="tsr-schedule-coverage-table"><thead><tr><th>Date</th><th>Time</th><th>Assigned Engineer(s)</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHTML(formatTSRCoverageDate(row))}</td><td>${escapeHTML(formatTSRCoverageTime(row))}</td><td>${escapeHTML((row.engineer_names || []).join(', ') || 'Assigned engineer')}</td></tr>`).join('')}</tbody></table></div>`;
+    <div class="small text-muted mb-2">${explanation}</div>${content}`;
 }
 function getScheduleOptionLabel(schedule){
   if(!schedule) return '';
@@ -5636,19 +5648,33 @@ function drawSectionTitle(ctx, title, x, y, w, h=27){
   ctx.font = 'bold 19px Arial';
   ctx.fillText(title, x + 10, y + 22);
 }
-function drawTSRScheduleCoverageTable(ctx, rows, x, y, w, maxRows=8, title='SCHEDULE COVERAGE'){
+function drawTSRScheduleCoverageTable(ctx, rows, x, y, w, maxRows=8, title='SCHEDULE COVERAGE', options={}){
   const safeRows = Array.isArray(rows) ? rows : [];
   drawSectionTitle(ctx, title, x, y, w, 32);
   const headerY = y + 32;
   const headerH = 30;
   const rowH = 36;
+  const uniqueDates = new Set(safeRows.map(row => row?.date_iso || row?.date_label).filter(Boolean));
+  const engineerNames = [...new Set(safeRows.flatMap(row => row?.engineer_names || []).filter(Boolean))];
+  const compact = options.compact === true || (options.compact !== false && safeRows.length === 1 && uniqueDates.size <= 1 && engineerNames.length > 1);
+  if(compact){
+    const compactRowH = 42;
+    const compactText = `ASSIGNED ENGINEER(S): ${engineerNames.join(', ') || 'Assigned engineer'}`;
+    ctx.fillStyle = '#f1f5f9';
+    ctx.fillRect(x, headerY, w, compactRowH);
+    ctx.fillStyle = '#111111';
+    ctx.strokeRect(x, headerY, w, compactRowH);
+    ctx.font = 'bold 15px Arial';
+    canvasText(ctx, compactText, x + 8, headerY + 23, w - 16, 16, {maxLines:2});
+    return { nextY: headerY + compactRowH, overflowRows: [] };
+  }
   const cols = [Math.round(w * 0.27), Math.round(w * 0.23), w - Math.round(w * 0.27) - Math.round(w * 0.23)];
   const pageRows = safeRows.slice(0, maxRows);
   let cellX = x;
   ctx.fillStyle = '#f1f5f9';
   cols.forEach(colW => { ctx.fillRect(cellX, headerY, colW, headerH); cellX += colW; });
   ctx.fillStyle = '#111111';
-  const headers = ['DATE', 'TIME', 'ASSIGNED ENGINEER(S)'];
+  const headers = ['SCHEDULED DATE', 'SCHEDULED TIME', 'ASSIGNED ENGINEER(S)'];
   cellX = x;
   ctx.font = 'bold 15px Arial';
   headers.forEach((header, index) => {
