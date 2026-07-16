@@ -2050,6 +2050,11 @@
                     <span id="approvalLiquidationPendingCount">0</span>
                     <small>Active workflow</small>
                 </div>
+                {% if lpr_enabled %}<div class="approval-module-mini">
+                    <strong>LPR</strong>
+                    <span id="approvalLprPendingCount">0</span>
+                    <small>Active workflow</small>
+                </div>{% endif %}
             </div>
         </div>
     </section>
@@ -5540,4 +5545,187 @@ async function dismissApprovalNotification(event, notificationId) {
         });
     });
 </script>
+{% if lpr_enabled %}<script>
+// LPR approval-center extension. Kept additive so the existing queues retain
+// their established workflow while LPR plugs into the same review surface.
+(function () {
+    let selectedApprovalLprId = null;
+
+    function lprApprovalModuleId() {
+        return Number(selectedApprovalLprId || 0);
+    }
+
+    function lprApprovalRecordId(moduleKey) {
+        return String(moduleKey || '').toLowerCase() === 'lpr'
+            ? lprApprovalModuleId()
+            : approvalCurrentRecordIdForModule(moduleKey);
+    }
+
+    const originalApprovalCurrentRecordIdForModule = window.approvalCurrentRecordIdForModule;
+    window.approvalCurrentRecordIdForModule = function (moduleKey) {
+        if (String(moduleKey || '').toLowerCase() === 'lpr') return lprApprovalModuleId();
+        return originalApprovalCurrentRecordIdForModule(moduleKey);
+    };
+
+    const originalApprovalModuleCanResendEmail = window.approvalModuleCanResendEmail;
+    window.approvalModuleCanResendEmail = function (moduleKey) {
+        if (String(moduleKey || '').toLowerCase() === 'lpr') return true;
+        return originalApprovalModuleCanResendEmail(moduleKey);
+    };
+
+    const originalApprovalResendEmailLabel = window.approvalResendEmailLabel;
+    window.approvalResendEmailLabel = function (moduleKey) {
+        if (String(moduleKey || '').toLowerCase() === 'lpr') return 'Resend LPR Procurement Email';
+        return originalApprovalResendEmailLabel(moduleKey);
+    };
+
+    function lprApprovalStatusLabel(status) {
+        const normalized = String(status || '').toLowerCase();
+        if (normalized === 'approved') return 'Approved';
+        if (normalized === 'rejected') return 'Rejected / Returned';
+        return 'Submitted';
+    }
+
+    function lprApprovalItem(moduleKey, item, status) {
+        if (moduleKey !== 'lpr') return null;
+        const itemStatus = item.status || status || 'Submitted';
+        const pending = String(itemStatus).toLowerCase() === 'submitted';
+        const title = item.lpr_no || ('LPR #' + item.id);
+        const requester = item.requester_name || 'Unknown requester';
+        const amount = `PHP ${formatMoney(item.total_requested || item.grand_total || 0)}`;
+        const actionDate = itemStatus.toLowerCase() === 'approved' ? item.approved_at : item.rejected_at;
+        const actionBy = itemStatus.toLowerCase() === 'approved' ? item.approved_by : item.rejected_by;
+        const buttonText = pending ? 'Review' : 'View Details';
+        return `<div class="approval-work-card">
+            <div class="approval-work-top"><div>
+                <div class="approval-work-no">${approvalEscape(title)} <span class="approval-status-pill ${statusPillClass(itemStatus)}">${approvalEscape(lprApprovalStatusLabel(itemStatus))}</span></div>
+                <div class="approval-meta">Requester: ${approvalEscape(requester)} &bull; Intended for: ${approvalEscape(item.intended_for || 'Not specified')}</div>
+                <div class="approval-meta">Amount: ${approvalEscape(amount)} &bull; Items: ${Number(item.item_count || 0)}</div>
+                <div class="approval-meta">Submitted: ${approvalEscape(formatApprovalDateTime(item.submitted_at) || '—')}</div>
+                ${!pending ? `<div class="approval-history-meta">${approvalEscape(lprApprovalStatusLabel(itemStatus))}: ${approvalEscape(formatApprovalDateTime(actionDate) || '—')}${actionBy ? `<br>By: ${approvalEscape(actionBy)}` : ''}${item.approval_remarks ? `<br>Remarks: ${approvalEscape(item.approval_remarks)}` : ''}</div>` : ''}
+            </div><div class="approval-actions"><button type="button" class="approval-btn approval-btn-primary" onclick="openLprApprovalDetail(${Number(item.id) || 0})">${approvalEscape(buttonText)}</button></div></div>
+        </div>`;
+    }
+
+    const originalBuildUnifiedApprovalItem = window.buildUnifiedApprovalItem;
+    window.buildUnifiedApprovalItem = function (moduleKey, item, status) {
+        const lprCard = lprApprovalItem(moduleKey, item, status);
+        if (lprCard) return lprCard;
+        return originalBuildUnifiedApprovalItem(moduleKey, item, status);
+    };
+
+    async function fetchLprApprovalItems(status) {
+        const response = await fetch(`/get_lpr_approval_items?status=${encodeURIComponent(status)}&_=${Date.now()}`, {credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}});
+        const payload = await parseApprovalJsonResponse(response, `Unable to load ${status} LPRs.`);
+        return payload.items || [];
+    }
+
+    async function openLprApprovalDetail(lprId) {
+        if (!lprId) return;
+        const backdrop = document.getElementById('approvalModalBackdrop');
+        const body = document.getElementById('approvalDetailBody');
+        if (backdrop) backdrop.style.display = 'flex';
+        if (body) body.innerHTML = '<div class="approval-empty">Loading LPR details...</div>';
+        selectedApprovalModule = 'lpr';
+        selectedApprovalLprId = Number(lprId);
+        selectedApprovalReimbursementId = null;
+        selectedApprovalTravelRequestId = null;
+        selectedApprovalLiquidationId = null;
+        selectedApprovalCashAdvanceId = null;
+        selectedApprovalCashAdvanceLiquidationId = null;
+        try {
+            const response = await fetch(`/get_lpr_approval_detail/${encodeURIComponent(lprId)}?_=${Date.now()}`, {credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}});
+            const payload = await parseApprovalJsonResponse(response, 'Unable to load LPR details.');
+            renderLprApprovalDetail(payload.lpr || {});
+        } catch (error) {
+            if (body) body.innerHTML = `<div class="approval-empty">${approvalEscape(error.message || 'Unable to load LPR details.')}</div>`;
+        }
+    }
+    window.openLprApprovalDetail = openLprApprovalDetail;
+
+    function renderLprApprovalDetail(data) {
+        const body = document.getElementById('approvalDetailBody');
+        const title = document.getElementById('approvalModalTitle');
+        const subtitle = document.getElementById('approvalModalSubtitle');
+        const approveBtn = document.getElementById('approvalApproveBtn');
+        const rejectBtn = document.getElementById('approvalRejectBtn');
+        if (!body) return;
+        const submitted = String(data.status || '').toLowerCase() === 'submitted';
+        if (title) title.textContent = `Review ${data.lpr_no || 'LPR #' + data.id}`;
+        if (subtitle) subtitle.textContent = `${data.requester_name || 'Requester'} • ${data.intended_for || 'Local purchase requisition'}`;
+        if (approveBtn) approveBtn.style.display = submitted ? '' : 'none';
+        if (rejectBtn) rejectBtn.style.display = submitted ? '' : 'none';
+        updateApprovalResendButton(data);
+        const rows = (data.items || []).map(item => `<tr><td>${Number(item.row_index || 0) + 1}</td><td>${approvalEscape(item.description || '')}</td><td>${approvalEscape(item.quantity || '')}</td><td>${approvalEscape(item.unit_measure || '')}</td><td style="text-align:right">PHP ${formatMoney(item.unit_price || 0)}</td><td style="text-align:right">PHP ${formatMoney(item.line_total || 0)}</td><td>${approvalEscape(item.note || '')}</td></tr>`).join('') || '<tr><td colspan="7" class="approval-empty">No items found.</td></tr>';
+        body.innerHTML = `<div class="approval-detail-grid">
+            <div class="approval-stat"><small>LPR No.</small><strong>${approvalEscape(data.lpr_no || '')}</strong></div>
+            <div class="approval-stat"><small>Requester</small><strong>${approvalEscape(data.requester_name || '')}</strong></div>
+            <div class="approval-stat"><small>Status</small><strong>${approvalEscape(data.procurement_status || data.status || '')}</strong></div>
+            <div class="approval-stat"><small>Total</small><strong>PHP ${formatMoney(data.total_requested || 0)}</strong></div>
+        </div>
+        <div class="approval-detail-grid"><div class="approval-stat"><small>Request Date</small><strong>${approvalEscape(data.request_date || '—')}</strong></div><div class="approval-stat"><small>Branch / Class</small><strong>${approvalEscape([data.branch_code, data.class_code].filter(Boolean).join(' / ') || '—')}</strong></div><div class="approval-stat"><small>Department / Product</small><strong>${approvalEscape([data.dept_code, data.product_code].filter(Boolean).join(' / ') || '—')}</strong></div><div class="approval-stat"><small>Intended For</small><strong>${approvalEscape(data.intended_for || '—')}</strong></div></div>
+        <div class="approval-modal-panel full"><h3>Requested Items</h3><div style="overflow:auto"><table class="approval-rows"><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit</th><th>Unit Price</th><th>Total</th><th>Note</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+        <div class="approval-modal-panel full"><h3>Supporting Attachments</h3>${(data.attachments || []).length ? `<div style="display:flex;gap:8px;flex-wrap:wrap">${renderApprovalReceiptLinks(data.attachments || [])}</div>` : '<div class="approval-muted">No supporting attachments uploaded.</div>'}</div>
+        <div class="approval-actions" style="justify-content:flex-start"><a class="approval-btn approval-btn-secondary" href="/preview_lpr/${Number(data.id)}" target="_blank" rel="noopener"><i class="fa-solid fa-eye me-1"></i>Preview LPR</a><a class="approval-btn approval-btn-secondary" href="/download_lpr/${Number(data.id)}"><i class="fa-solid fa-download me-1"></i>Download LPR</a></div>
+        ${renderApprovalAuditTrail(data.audit_trail || [], 'lpr', data.id)}`;
+        const remarks = document.getElementById('approvalRemarks');
+        if (remarks) { remarks.value = data.approval_remarks || ''; remarks.readOnly = !submitted; remarks.disabled = !submitted; remarks.placeholder = submitted ? 'Optional for approval. Required for return.' : 'Manager remarks'; }
+    }
+
+    window.approveSelectedLpr = async function () {
+        if (!selectedApprovalLprId) return;
+        const shouldApprove = await approvalConfirmDialog({title:'Approve LPR?', message:'This will approve the requisition and queue the Procurement handoff.', confirmText:'Approve', cancelText:'Review Again', tone:'success', icon:'check'});
+        if (!shouldApprove) return;
+        try {
+            const response = await fetch(`/approve_lpr/${selectedApprovalLprId}`, {method:'POST', credentials:'same-origin', cache:'no-store', headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':getApprovalCsrfToken()}, body:JSON.stringify({remarks:document.getElementById('approvalRemarks')?.value || ''})});
+            const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to approve LPR.');
+            approvalAlert(payload.message || 'LPR approved.', 'success'); closeApprovalModal(); await refreshAllApprovalCenterLists(); await loadApprovalNotifications();
+        } catch (error) { if (error?.payload?.requires_signature || error?.payload?.signature_required) { showApprovalSignatureRequiredPrompt(error); return; } approvalAlert(error.message || 'Unable to approve LPR.'); }
+    };
+
+    window.rejectSelectedLpr = async function () {
+        if (!selectedApprovalLprId) return;
+        const remarks = (document.getElementById('approvalRemarks')?.value || '').trim();
+        if (!remarks) { approvalAlert('Please enter return remarks before returning this LPR.'); return; }
+        const shouldReject = await approvalConfirmDialog({title:'Return LPR?', message:'This will return the LPR to the requester for correction.', confirmText:'Return', cancelText:'Cancel', tone:'danger', icon:'rotate-left'});
+        if (!shouldReject) return;
+        try {
+            const response = await fetch(`/reject_lpr/${selectedApprovalLprId}`, {method:'POST', credentials:'same-origin', cache:'no-store', headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':getApprovalCsrfToken()}, body:JSON.stringify({remarks})});
+            const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to return LPR.');
+            approvalAlert(payload.message || 'LPR returned for revision.'); closeApprovalModal(); await refreshAllApprovalCenterLists(); await loadApprovalNotifications();
+        } catch (error) { if (error?.payload?.requires_signature || error?.payload?.signature_required) { showApprovalSignatureRequiredPrompt(error); return; } approvalAlert(error.message || 'Unable to return LPR.'); }
+    };
+
+    const originalApproveSelectedApproval = window.approveSelectedApproval;
+    window.approveSelectedApproval = function () { return selectedApprovalModule === 'lpr' ? window.approveSelectedLpr() : originalApproveSelectedApproval(); };
+    const originalRejectSelectedApproval = window.rejectSelectedApproval;
+    window.rejectSelectedApproval = function () { return selectedApprovalModule === 'lpr' ? window.rejectSelectedLpr() : originalRejectSelectedApproval(); };
+
+    const originalOpenApprovalNotification = window.openApprovalNotification;
+    window.openApprovalNotification = async function (notificationId, moduleKey, recordId) {
+        if (String(moduleKey || '').toLowerCase() === 'lpr' && Number(recordId || 0)) {
+            await markApprovalNotificationRead(notificationId); await loadApprovalNotifications(); await openLprApprovalDetail(Number(recordId)); return;
+        }
+        return originalOpenApprovalNotification(notificationId, moduleKey, recordId);
+    };
+
+    const originalRefreshAllApprovalCenterLists = window.refreshAllApprovalCenterLists;
+    window.refreshAllApprovalCenterLists = async function () {
+        const modules = ['travel_request','reimbursement','cash_advance','cash_advance_liquidation','travel_liquidation','lpr'];
+        const statuses = ['Submitted','Approved','Rejected'];
+        const result = {};
+        for (const module of modules) { result[module] = {}; for (const status of statuses) { try { const response=await fetch(`/get_approval_center_items?module=${module}&status=${status}&_=${Date.now()}`,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}); const payload=await parseApprovalJsonResponse(response,`Unable to load ${module}.`); result[module][status]=payload.items||[]; } catch(error) { console.error('[Approvals] module load failed',module,status,error); result[module][status]=[]; } } }
+        const lprPending = document.getElementById('approvalLprPendingCount'); if (lprPending) lprPending.textContent=String(result.lpr.Submitted.length);
+        const countMap = {reimbursement:'approvalReimbursementPendingCount', travel_request:'approvalTravelPendingCount', travel_liquidation:'approvalLiquidationPendingCount', cash_advance:'approvalCashAdvancePendingCount', cash_advance_liquidation:'approvalCashAdvanceLiquidationPendingCount'};
+        Object.entries(countMap).forEach(([module,id])=>{const el=document.getElementById(id);if(el)el.textContent=String(result[module].Submitted.length);});
+        const pending = [], approved = [], rejected = [];
+        modules.forEach(module=>{ result[module].Submitted.forEach(item=>pending.push({module,item,status:'Submitted'})); result[module].Approved.forEach(item=>approved.push({module,item,status:'Approved'})); result[module].Rejected.forEach(item=>rejected.push({module,item,status:'Rejected'})); });
+        const pendingTotal=document.getElementById('approvalSummaryPending'), approvedTotal=document.getElementById('approvalSummaryApproved'), rejectedTotal=document.getElementById('approvalSummaryRejected'), total=document.getElementById('approvalSummaryTotal');
+        if(pendingTotal)pendingTotal.textContent=String(pending.length); if(approvedTotal)approvedTotal.textContent=String(approved.length); if(rejectedTotal)rejectedTotal.textContent=String(rejected.length); if(total)total.textContent=String(pending.length+approved.length+rejected.length);
+        renderUnifiedApprovalQueues({pending,approved,rejected});
+        return result;
+    };
+})();
+</script>
+{% endif %}
 {% endblock %}

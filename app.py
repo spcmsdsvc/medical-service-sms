@@ -202,12 +202,14 @@ def env_flag_enabled(name, default=False):
 
 
 app.config['NEW_WORKFLOWS_ENABLED'] = env_flag_enabled('NEW_WORKFLOWS_ENABLED', default=False)
+app.config['LPR_ENABLED'] = env_flag_enabled('LPR_ENABLED', default=False)
 
 NEW_WORKFLOW_BLOCKED_EXACT_PATHS = {
     '/accounting_center',
     '/approvals',
     '/cash_advance',
     '/cash_advance_liquidation',
+    '/lpr',
     '/get_my_approval_notifications',
     '/get_my_cash_advance_notifications',
     '/get_my_reimbursement_notifications',
@@ -248,6 +250,8 @@ NEW_WORKFLOW_BLOCKED_PREFIXES = (
     '/get_accounting_',
     '/get_approval_',
     '/get_cash_advance',
+    '/get_lpr',
+    '/get_lpr_',
     '/get_my_cash_advance_liquidation',
     '/get_my_reimbursement_',
     '/get_my_travel_',
@@ -281,6 +285,7 @@ NEW_WORKFLOW_BLOCKED_PREFIXES = (
     '/return_cash_advance_liquidation',
     '/return_travel_liquidation',
     '/save_cash_advance',
+    '/save_lpr',
     '/save_reimbursement_',
     '/save_travel_liquidation_',
     '/save_travel_request_',
@@ -290,19 +295,57 @@ NEW_WORKFLOW_BLOCKED_PREFIXES = (
     '/settings/save-approval-',
     '/settings/update-approval-',
     '/submit_cash_advance',
+    '/submit_lpr',
     '/submit_reimbursement',
     '/submit_travel_',
     '/travel_request_ready_for_liquidation',
     '/upload_cash_advance_liquidation_',
+    '/upload_lpr_',
     '/upload_reimbursement_',
     '/upload_travel_liquidation_',
     '/update_cash_advance_liquidation_',
-    '/update_travel_liquidation_'
+    '/update_travel_liquidation_',
+    '/approve_lpr',
+    '/reject_lpr',
+    '/preview_lpr',
+    '/download_lpr',
+    '/delete_lpr_',
+    '/delete_all_lpr_',
+    '/mark_lpr_',
+    '/resend_lpr_'
+)
+
+LPR_BLOCKED_EXACT_PATHS = {'/lpr'}
+LPR_BLOCKED_PREFIXES = (
+    '/get_lpr',
+    '/save_lpr',
+    '/submit_lpr',
+    '/upload_lpr_',
+    '/approve_lpr',
+    '/reject_lpr',
+    '/preview_lpr',
+    '/download_lpr',
+    '/delete_lpr_',
+    '/delete_all_lpr_',
+    '/mark_lpr_',
+    '/resend_lpr_',
+    '/get_lpr_approval_'
 )
 
 
 def new_workflows_enabled():
     return bool(app.config.get('NEW_WORKFLOWS_ENABLED'))
+
+
+def lpr_enabled():
+    return bool(app.config.get('LPR_ENABLED'))
+
+
+def is_lpr_path(path):
+    clean_path = (path or '').rstrip('/') or '/'
+    if clean_path in LPR_BLOCKED_EXACT_PATHS:
+        return True
+    return clean_path.startswith(LPR_BLOCKED_PREFIXES)
 
 
 def is_new_workflow_path(path):
@@ -335,6 +378,10 @@ EMAIL_RECIPIENT_GROUPS = {
     'reimbursement_accounting': {
         'label': 'Reimbursement Accounting',
         'description': 'Future accounting recipients for reimbursement handoff.'
+    },
+    'lpr_procurement': {
+        'label': 'LPR Procurement',
+        'description': 'Recipients for approved Local Purchase Requisition procurement handoff.'
     }
 }
 
@@ -344,7 +391,8 @@ EMAIL_RECIPIENT_GROUP_ORDER = [
     'travel_accounting',
     'cash_advance_accounting',
     'cash_advance_release',
-    'reimbursement_accounting'
+    'reimbursement_accounting',
+    'lpr_procurement'
 ]
 
 EMAIL_TEMPLATE_DEFAULTS = {
@@ -371,6 +419,12 @@ EMAIL_TEMPLATE_DEFAULTS = {
         'description': 'Subject used when reimbursement packages are emailed to Accounting.',
         'template_type': 'subject',
         'default_template': '[REIMBURSEMENT] {employee_name} | {date_range} | PHP {grand_total}'
+    },
+    'lpr_procurement_subject': {
+        'label': 'LPR Procurement Subject',
+        'description': 'Subject used when an approved Local Purchase Requisition is emailed to Procurement.',
+        'template_type': 'subject',
+        'default_template': '[LPR] {lpr_no} | {requester} | PHP {total_requested}'
     }
 }
 
@@ -378,7 +432,8 @@ EMAIL_TEMPLATE_ORDER = [
     'tsr_client_subject',
     'travel_accounting_subject',
     'cash_advance_accounting_subject',
-    'reimbursement_accounting_subject'
+    'reimbursement_accounting_subject',
+    'lpr_procurement_subject'
 ]
 
 EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS = {
@@ -523,6 +578,7 @@ STORAGE_PREFIX_TRAVEL_REQUESTS = 'travel_requests'
 STORAGE_PREFIX_CASH_ADVANCES = 'cash_advances'
 STORAGE_PREFIX_TRAVEL_LIQUIDATIONS = 'travel_liquidation_receipts'
 STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS = 'cash_advance_liquidation_receipts'
+STORAGE_PREFIX_LPR = 'lpr'
 
 
 def managed_storage_key(prefix, stored_filename):
@@ -877,6 +933,19 @@ def start_performance_timer():
 
 @app.before_request
 def block_new_workflows_when_disabled():
+    if not lpr_enabled() and is_lpr_path(request.path):
+        if request.accept_mimetypes.accept_json or request.path.startswith((
+            '/get_', '/save_', '/submit_', '/approve_', '/reject_', '/delete_',
+            '/upload_', '/download_', '/preview_', '/open_', '/inline_',
+            '/mark_', '/create_', '/complete_', '/resend_'
+        )):
+            return jsonify({
+                'success': False,
+                'status': 'disabled',
+                'message': 'Local Purchase Requisition is not available yet.'
+            }), 403
+        return redirect(url_for('dashboard_page'))
+
     if new_workflows_enabled():
         return
     if not is_new_workflow_path(request.path):
@@ -895,7 +964,8 @@ def block_new_workflows_when_disabled():
 @app.context_processor
 def inject_feature_flags():
     return {
-        'new_workflows_enabled': new_workflows_enabled()
+        'new_workflows_enabled': new_workflows_enabled(),
+        'lpr_enabled': lpr_enabled()
     }
 
 
@@ -3708,7 +3778,14 @@ REGIONAL_ADMIN_BRANCHES = {'Cebu', 'Davao'}
 # are migrated to assigned approver routing. S1 only adds the backend foundation
 # for future Settings-driven routing.
 APPROVAL_CENTER_MANAGER_USERNAME = 'rodito'
-APPROVAL_REQUEST_SCOPES = {'all', 'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'request_for_payment'}
+APPROVAL_REQUEST_SCOPES = {'all', 'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'lpr', 'request_for_payment'}
+
+
+def available_approval_request_scopes():
+    scopes = set(APPROVAL_REQUEST_SCOPES)
+    if not lpr_enabled():
+        scopes.discard('lpr')
+    return sorted(scopes)
 
 
 def is_legacy_reimbursement_approval_user(user=None):
@@ -11177,7 +11254,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v17-dark-mode-repair';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v19-lpr-hidden';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -11862,6 +11939,7 @@ def approvals_page():
             {'key': 'travel_request', 'label': 'Travel Request', 'status': 'active'},
             {'key': 'reimbursement', 'label': 'Reimbursement', 'status': 'active'},
             {'key': 'cash_advance', 'label': 'Cash Advance', 'status': 'active'},
+            {'key': 'lpr', 'label': 'LPR', 'status': 'active'},
             {'key': 'request_for_payment', 'label': 'Request For Payment', 'status': 'coming_soon'},
         ]
     )
@@ -11911,7 +11989,7 @@ def settings_page():
         users=all_accounts,
         backup_superadmin=backup_superadmin,
         approval_routing_enabled=True,
-        approval_request_scopes=sorted(APPROVAL_REQUEST_SCOPES)
+        approval_request_scopes=available_approval_request_scopes()
     )
 
 
@@ -12186,7 +12264,7 @@ def settings_approval_routing_data():
     routes = ApprovalRouting.query.order_by(ApprovalRouting.request_scope.asc(), ApprovalRouting.id.asc()).all()
     return jsonify({
         'success': True,
-        'scopes': sorted(APPROVAL_REQUEST_SCOPES),
+        'scopes': available_approval_request_scopes(),
         'users': [approval_user_to_dict(user) for user in users],
         'approvers': [approval_user_to_dict(user) for user in users if getattr(user, 'can_approve_requests', False)],
         'routes': [approval_route_to_dict(route) for route in routes]
@@ -12707,6 +12785,7 @@ def managed_storage_roots():
         (STORAGE_PREFIX_CASH_ADVANCES, cash_advance_attachment_upload_root()),
         (STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, travel_liquidation_receipt_folder()),
         (STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, cash_advance_liquidation_receipt_folder()),
+        (STORAGE_PREFIX_LPR, lpr_attachment_upload_root()),
     ]
 
 
@@ -20828,7 +20907,7 @@ def approval_center_module_catalog():
     modules stay as placeholders so the frontend can show the final approved
     structure without enabling unfinished workflows.
     """
-    return [
+    modules = [
         {
             'key': 'travel_request',
             'label': 'Travel Request',
@@ -20865,6 +20944,15 @@ def approval_center_module_catalog():
             'description': 'Submitted travel liquidation drafts routed for manager approval.'
         }
     ]
+    if lpr_enabled():
+        modules.append({
+            'key': 'lpr',
+            'label': 'LPR',
+            'status': 'active',
+            'enabled': True,
+            'description': 'Local Purchase Requisition submissions routed to Procurement.'
+        })
+    return modules
 
 
 def approval_center_reimbursement_counts():
@@ -23881,6 +23969,14 @@ def get_approval_center_summary():
     liquidation_counts = approval_center_travel_liquidation_counts()
     cash_advance_counts = approval_center_cash_advance_counts()
     cash_advance_liquidation_counts = approval_center_cash_advance_liquidation_counts()
+    lpr_counts = lpr_approval_counts() if lpr_enabled() else {
+        'draft': 0,
+        'submitted': 0,
+        'approved': 0,
+        'rejected': 0,
+        'pending': 0,
+        'total': 0
+    }
     modules = approval_center_module_catalog()
 
     travel_counts = {
@@ -23941,6 +24037,10 @@ def get_approval_center_summary():
             module['status'] = 'active'
             module['enabled'] = True
             module['counts'] = cash_advance_liquidation_counts
+        elif module['key'] == 'lpr':
+            module['status'] = 'active'
+            module['enabled'] = True
+            module['counts'] = lpr_counts
         else:
             module['counts'] = {
                 'draft': 0,
@@ -23958,8 +24058,8 @@ def get_approval_center_summary():
         'generated_at': get_manila_time().isoformat(),
         'modules': modules,
         'summary': {
-            'pending_total': reimbursement_counts['pending'] + travel_counts['pending'] + liquidation_counts['pending'] + cash_advance_counts['pending'] + cash_advance_liquidation_counts['pending'],
-            'active_modules': 5,
+            'pending_total': reimbursement_counts['pending'] + travel_counts['pending'] + liquidation_counts['pending'] + cash_advance_counts['pending'] + cash_advance_liquidation_counts['pending'] + lpr_counts['pending'],
+            'active_modules': 6 if lpr_enabled() else 5,
             'coming_soon_modules': 0
         }
     })
@@ -23978,7 +24078,13 @@ def get_approval_center_items():
         return denied_response
 
     module_key = (request.args.get('module') or 'reimbursement').strip().lower()
-    if module_key not in {'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'liquidation'}:
+    if module_key == 'lpr' and not lpr_enabled():
+        return jsonify({
+            'success': False,
+            'status': 'disabled',
+            'message': 'Local Purchase Requisition is not available yet.'
+        }), 403
+    if module_key not in {'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'lpr', 'liquidation'}:
         return jsonify({'success': False, 'error': 'Unknown approval module.'}), 400
 
     requested_status = (request.args.get('status') or 'Submitted').strip().lower()
@@ -24037,6 +24143,17 @@ def get_approval_center_items():
             'count': len(items)
         })
 
+    if module_key == 'lpr':
+        items = lpr_query_for_current_approver(status_filter).limit(300).all()
+        return jsonify({
+            'success': True,
+            'module': 'lpr',
+            'enabled': True,
+            'status': status_filter,
+            'items': [lpr_to_dict(item, include_items=False, include_attachments=False) for item in items],
+            'count': len(items)
+        })
+
     if module_key not in {'reimbursement'}:
         return jsonify({
             'success': True,
@@ -24082,6 +24199,12 @@ def get_approval_center_items():
 def get_approval_audit_trail():
     """S9 API: return universal approval audit timeline for one request."""
     module = normalize_approval_scope(request.args.get('module') or request.args.get('request_module') or 'reimbursement')
+    if module == 'lpr' and not lpr_enabled():
+        return jsonify({
+            'success': False,
+            'status': 'disabled',
+            'message': 'Local Purchase Requisition is not available yet.'
+        }), 403
     record_id = clean_int(
         request.args.get('record_id') or
         request.args.get('request_id') or
@@ -37256,6 +37379,7 @@ def initialize_database():
             ensure_cash_advance_tables()
             # F4A5A: Prepare standalone Cash Advance Liquidation tables during app startup.
             ensure_cash_advance_liquidation_tables()
+            ensure_lpr_tables()
         except NameError:
             # Cash Advance module may not be present in older rollback builds.
             pass
@@ -43861,9 +43985,18 @@ def resend_approved_request_email():
         'liquidations': 'travel_liquidation',
         'cash_advance_liquidations': 'cash_advance_liquidation',
         'ca_liquidation': 'cash_advance_liquidation',
-        'cal': 'cash_advance_liquidation'
+        'cal': 'cash_advance_liquidation',
+        'lpr_requests': 'lpr',
+        'local_purchase_requisition': 'lpr'
     }
     module = module_aliases.get(module, module)
+
+    if module == 'lpr' and not lpr_enabled():
+        return jsonify({
+            'success': False,
+            'status': 'disabled',
+            'message': 'Local Purchase Requisition is not available yet.'
+        }), 403
 
     if not module or not record_id:
         return jsonify({'success': False, 'error': 'Module and record_id are required.'}), 400
@@ -43874,6 +44007,7 @@ def resend_approved_request_email():
         'cash_advance',
         'travel_liquidation',
         'cash_advance_liquidation'
+        ,'lpr'
     }
     if module not in supported_modules:
         return jsonify({'success': False, 'error': f'Resend email is not supported for module: {module}.'}), 400
@@ -43919,6 +44053,27 @@ def resend_approved_request_email():
         })
 
     try:
+        if module == 'lpr':
+            ensure_lpr_tables()
+            header = db.session.get(LPRHeader, record_id)
+            if not header:
+                return jsonify({'success': False, 'error': 'LPR not found.'}), 404
+            if not is_superadmin_user() and not can_user_approve_lpr(current_user, header):
+                return jsonify({'success': False, 'error': 'This LPR is not assigned to you.'}), 403
+            if lpr_status(header) != 'Approved':
+                return jsonify({'success': False, 'error': 'Only approved LPRs can be resent.'}), 409
+            recipient_emails = lpr_procurement_recipient_emails()
+            if not recipient_emails:
+                return jsonify({'success': False, 'error': 'No active LPR Procurement recipient is configured.', 'module': module, 'record_id': record_id}), 400
+            header.procurement_status = 'Queued'
+            header.procurement_remarks = remarks
+            header.updated_at = now
+            lpr_add_audit(header, 'procurement_email_resent', remarks)
+            record_universal_approval_audit('lpr', header.id, 'procurement_email_resent', actor_user=current_user, status_from='Approved', status_to='Queued', remarks=remarks, metadata={'resend': True, 'recipient_count': len(recipient_emails), 'lpr_no': header.lpr_no})
+            db.session.commit()
+            queued = send_lpr_procurement_email_async(app, header.id, recipient_emails, approved_by_user_id=header.approved_by_id or current_user.id, remarks=header.approval_remarks or remarks)
+            return _queue_result(header, recipient_emails, queued, 'LPR Procurement handoff', 'Signed LPR and supporting attachments', lpr_to_dict(header, include_items=False, include_attachments=True))
+
         if module == 'reimbursement':
             ensure_reimbursement_accounting_columns()
             header = db.session.get(ReimbursementHeader, record_id)
@@ -44124,6 +44279,920 @@ def resend_approved_request_email():
         return jsonify({'success': False, 'error': 'Unable to queue resend email.'}), 500
 
     return jsonify({'success': False, 'error': 'Unsupported resend module.'}), 400
+
+# ============================================================
+# STANDALONE LPR WORKFLOW (LOCAL PURCHASE REQUISITION)
+# ============================================================
+
+class LPRHeader(db.Model):
+    __tablename__ = 'lpr_header'
+
+    id = db.Column(db.Integer, primary_key=True)
+    lpr_no = db.Column(db.String(80), unique=True, index=True)
+    user_id = db.Column(db.Integer, index=True, nullable=False)
+    request_date = db.Column(db.Date, index=True)
+    branch_code = db.Column(db.String(80))
+    class_code = db.Column(db.String(80))
+    dept_code = db.Column(db.String(80))
+    product_code = db.Column(db.String(120))
+    intended_for = db.Column(db.String(255))
+    equipment = db.Column(db.String(255))
+    po_no = db.Column(db.String(120))
+    invoice_no = db.Column(db.String(120))
+    received_by = db.Column(db.String(150))
+    currency_code = db.Column(db.String(10), default='PHP', nullable=False)
+    total_requested = db.Column(db.Float, default=0)
+    requester_name_snapshot = db.Column(db.String(150))
+    requester_signature_snapshot = db.Column(db.Text)
+    requester_signature_layout = db.Column(db.String(50))
+    requester_signed_at = db.Column(db.DateTime)
+    status = db.Column(db.String(40), default='Draft', index=True)
+    submitted_at = db.Column(db.DateTime)
+    approved_at = db.Column(db.DateTime)
+    approved_by_id = db.Column(db.Integer, index=True)
+    rejected_at = db.Column(db.DateTime)
+    rejected_by_id = db.Column(db.Integer, index=True)
+    approval_remarks = db.Column(db.Text)
+    approval_action = db.Column(db.String(20))
+    approval_name_snapshot = db.Column(db.String(150))
+    approval_title_snapshot = db.Column(db.String(150))
+    approval_signature_snapshot = db.Column(db.Text)
+    approval_signature_layout = db.Column(db.String(50))
+    approval_signed_at = db.Column(db.DateTime)
+    procurement_status = db.Column(db.String(50), index=True)
+    sent_to_procurement_at = db.Column(db.DateTime)
+    procurement_remarks = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=get_manila_time)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time)
+
+    items = db.relationship('LPRItem', backref='lpr', lazy=True, cascade='all, delete-orphan', order_by='LPRItem.row_index')
+
+
+class LPRItem(db.Model):
+    __tablename__ = 'lpr_item'
+
+    id = db.Column(db.Integer, primary_key=True)
+    lpr_id = db.Column(db.Integer, db.ForeignKey('lpr_header.id'), nullable=False, index=True)
+    row_index = db.Column(db.Integer, default=0, nullable=False)
+    description = db.Column(db.String(500), nullable=False)
+    quantity = db.Column(db.Float, default=1)
+    unit_measure = db.Column(db.String(40))
+    unit_price = db.Column(db.Float, default=0)
+    line_total = db.Column(db.Float, default=0)
+    note = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=get_manila_time)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time)
+
+
+class LPRAttachment(db.Model):
+    __tablename__ = 'lpr_attachment'
+
+    id = db.Column(db.Integer, primary_key=True)
+    lpr_id = db.Column(db.Integer, db.ForeignKey('lpr_header.id'), nullable=False, index=True)
+    file_name = db.Column(db.String(255))
+    file_path = db.Column(db.String(500))
+    stored_filename = db.Column(db.String(255))
+    original_filename = db.Column(db.String(255))
+    content_type = db.Column(db.String(120))
+    file_size = db.Column(db.Integer, default=0)
+    uploaded_by_id = db.Column(db.Integer, index=True)
+    uploaded_at = db.Column(db.DateTime, default=get_manila_time)
+
+
+class LPRAudit(db.Model):
+    __tablename__ = 'lpr_audit'
+
+    id = db.Column(db.Integer, primary_key=True)
+    lpr_id = db.Column(db.Integer, db.ForeignKey('lpr_header.id'), nullable=False, index=True)
+    action = db.Column(db.String(100))
+    remarks = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=get_manila_time)
+
+
+LPR_EDITABLE_STATUSES = {'Draft', 'Rejected', 'Returned'}
+LPR_ATTACHMENT_MAX_FILES = 10
+_lpr_tables_ready = False
+
+
+def ensure_lpr_tables():
+    """Create the additive LPR tables and indexes for local/live startup."""
+    global _lpr_tables_ready
+    if _lpr_tables_ready:
+        return
+    LPRHeader.__table__.create(db.engine, checkfirst=True)
+    LPRItem.__table__.create(db.engine, checkfirst=True)
+    LPRAttachment.__table__.create(db.engine, checkfirst=True)
+    LPRAudit.__table__.create(db.engine, checkfirst=True)
+    with db.engine.begin() as connection:
+        for statement in (
+            'CREATE INDEX IF NOT EXISTS idx_lpr_header_user_status ON lpr_header (user_id, status)',
+            'CREATE INDEX IF NOT EXISTS idx_lpr_header_request_date ON lpr_header (request_date)',
+            'CREATE INDEX IF NOT EXISTS idx_lpr_header_procurement_status ON lpr_header (procurement_status)',
+            'CREATE INDEX IF NOT EXISTS idx_lpr_item_header ON lpr_item (lpr_id)',
+            'CREATE INDEX IF NOT EXISTS idx_lpr_attachment_header ON lpr_attachment (lpr_id)',
+            'CREATE INDEX IF NOT EXISTS idx_lpr_audit_header ON lpr_audit (lpr_id)'
+        ):
+            connection.exec_driver_sql(statement)
+    _lpr_tables_ready = True
+
+
+def lpr_attachment_upload_root():
+    if os.environ.get('RAILWAY_ENVIRONMENT'):
+        root = '/data/uploads/lpr'
+    else:
+        root = os.path.join(basedir, 'static', 'uploads', 'lpr')
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def lpr_money(value):
+    try:
+        return round(max(0.0, float(value or 0)), 2)
+    except Exception:
+        return 0.0
+
+
+def lpr_parse_date(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if hasattr(value, 'year') and hasattr(value, 'month'):
+        return value
+    raw = clean_str(value) or ''
+    for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y'):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except Exception:
+            continue
+    return None
+
+
+def lpr_requester_name(header):
+    if not header:
+        return 'Requester'
+    if clean_str(getattr(header, 'requester_name_snapshot', None)):
+        return clean_str(header.requester_name_snapshot)
+    user = db.session.get(User, clean_int(getattr(header, 'user_id', None)))
+    return approval_user_display_name(user) or clean_str(getattr(user, 'username', None)) or 'Requester'
+
+
+def lpr_status(header):
+    value = (clean_str(getattr(header, 'status', None)) or 'Draft').strip().lower()
+    return {
+        'draft': 'Draft', 'submitted': 'Submitted', 'approved': 'Approved',
+        'rejected': 'Rejected', 'returned': 'Returned'
+    }.get(value, clean_str(getattr(header, 'status', None)) or 'Draft')
+
+
+def lpr_is_editable(header):
+    return bool(header and lpr_status(header) in LPR_EDITABLE_STATUSES)
+
+
+def lpr_can_manage(header, user_obj=None):
+    target = user_obj or current_user
+    if not header or not target or not getattr(target, 'is_authenticated', False):
+        return False
+    if clean_int(getattr(header, 'user_id', None)) == clean_int(getattr(target, 'id', None)):
+        return True
+    if target == current_user:
+        return bool(is_admin_authorized())
+    return getattr(target, 'role', '') in {'superadmin', 'regional_admin'}
+
+
+def can_user_approve_lpr(user_obj, header):
+    if not header or not user_obj or not getattr(user_obj, 'is_authenticated', False):
+        return False
+    if getattr(user_obj, 'role', '') in {'superadmin', 'regional_admin'}:
+        return True
+    return can_user_approve_for_requester(user_obj, header.user_id, 'lpr')
+
+
+def lpr_add_audit(header, action, remarks=''):
+    db.session.add(LPRAudit(lpr_id=header.id, action=action, remarks=clean_str(remarks) or '', created_at=get_manila_time()))
+
+
+def lpr_item_to_dict(item):
+    return {
+        'id': item.id,
+        'row_index': item.row_index,
+        'description': item.description or '',
+        'quantity': float(item.quantity or 0),
+        'unit_measure': item.unit_measure or '',
+        'unit_price': lpr_money(item.unit_price),
+        'line_total': lpr_money(item.line_total),
+        'note': item.note or ''
+    }
+
+
+def lpr_attachment_original_filename(attachment):
+    return clean_str(getattr(attachment, 'original_filename', None)) or clean_str(getattr(attachment, 'file_name', None)) or clean_str(getattr(attachment, 'stored_filename', None)) or 'attachment'
+
+
+def lpr_attachment_stored_filename(attachment):
+    return os.path.basename(clean_str(getattr(attachment, 'stored_filename', None)) or clean_str(getattr(attachment, 'file_path', None)) or '')
+
+
+def lpr_attachment_path(attachment):
+    local_path = os.path.join(lpr_attachment_upload_root(), lpr_attachment_stored_filename(attachment))
+    return managed_storage_read_path(STORAGE_PREFIX_LPR, local_path)
+
+
+def lpr_attachment_to_dict(attachment):
+    return {
+        'id': attachment.id,
+        'filename': lpr_attachment_original_filename(attachment),
+        'original_filename': lpr_attachment_original_filename(attachment),
+        'content_type': attachment.content_type or '',
+        'size': clean_int(getattr(attachment, 'file_size', None)) or 0,
+        'file_size': clean_int(getattr(attachment, 'file_size', None)) or 0,
+        'uploaded_at': attachment.uploaded_at.isoformat() if attachment.uploaded_at else '',
+        'preview_url': f'/preview_lpr_attachment/{attachment.id}',
+        'download_url': f'/download_lpr_attachment/{attachment.id}'
+    }
+
+
+def lpr_attachment_records(lpr_id):
+    ensure_lpr_tables()
+    return LPRAttachment.query.filter_by(lpr_id=clean_int(lpr_id)).order_by(LPRAttachment.uploaded_at.asc(), LPRAttachment.id.asc()).all()
+
+
+def lpr_to_dict(header, include_items=True, include_attachments=False, include_audit=False):
+    if not header:
+        return {}
+    status = lpr_status(header)
+    attachments = lpr_attachment_records(header.id) if include_attachments else []
+    approver = db.session.get(User, clean_int(header.approved_by_id)) if clean_int(header.approved_by_id) else None
+    rejector = db.session.get(User, clean_int(header.rejected_by_id)) if clean_int(header.rejected_by_id) else None
+    payload = {
+        'id': header.id, 'lpr_id': header.id, 'lpr_no': header.lpr_no or '', 'request_no': header.lpr_no or '',
+        'user_id': header.user_id, 'requester_user_id': header.user_id, 'requester_name': lpr_requester_name(header),
+        'request_date': header.request_date.isoformat() if header.request_date else '',
+        'branch_code': header.branch_code or '', 'class_code': header.class_code or '', 'dept_code': header.dept_code or '',
+        'product_code': header.product_code or '', 'intended_for': header.intended_for or '', 'equipment': header.equipment or '',
+        'po_no': header.po_no or '', 'invoice_no': header.invoice_no or '', 'received_by': header.received_by or '',
+        'currency_code': 'PHP', 'total_requested': lpr_money(header.total_requested), 'grand_total': lpr_money(header.total_requested),
+        'requester_name_snapshot': header.requester_name_snapshot or '', 'requester_signature_snapshot': header.requester_signature_snapshot or '',
+        'requester_signature_layout': header.requester_signature_layout or '',
+        'requester_signed_at': header.requester_signed_at.isoformat() if header.requester_signed_at else '',
+        'status': status, 'procurement_status': header.procurement_status or '',
+        'submitted_at': header.submitted_at.isoformat() if header.submitted_at else '',
+        'approved_at': header.approved_at.isoformat() if header.approved_at else '',
+        'approved_by_id': clean_int(header.approved_by_id), 'approved_by': approval_user_display_name(approver),
+        'rejected_at': header.rejected_at.isoformat() if header.rejected_at else '', 'rejected_by_id': clean_int(header.rejected_by_id),
+        'rejected_by': approval_user_display_name(rejector), 'approval_remarks': header.approval_remarks or '',
+        'approval_name_snapshot': header.approval_name_snapshot or '', 'approval_title_snapshot': header.approval_title_snapshot or '',
+        'approval_signature_snapshot': header.approval_signature_snapshot or '', 'approval_signature_layout': header.approval_signature_layout or '',
+        'approval_signed_at': header.approval_signed_at.isoformat() if header.approval_signed_at else '',
+        'sent_to_procurement_at': header.sent_to_procurement_at.isoformat() if header.sent_to_procurement_at else '',
+        'procurement_remarks': header.procurement_remarks or '', 'editable': status in LPR_EDITABLE_STATUSES,
+        'locked': status not in LPR_EDITABLE_STATUSES, 'detail_url': f'/lpr?lpr_id={header.id}',
+        'approval_url': f'/approvals?module=lpr&id={header.id}', 'item_count': len(header.items or [])
+    }
+    if include_items:
+        payload['items'] = [lpr_item_to_dict(item) for item in sorted(header.items or [], key=lambda row: (row.row_index, row.id))]
+    if include_attachments:
+        payload['attachments'] = [lpr_attachment_to_dict(item) for item in attachments]
+        payload['attachment_count'] = len(attachments)
+    if include_audit:
+        payload['audit_trail'] = [
+            {'id': item.id, 'action': item.action or '', 'remarks': item.remarks or '', 'created_at': item.created_at.isoformat() if item.created_at else ''}
+            for item in LPRAudit.query.filter_by(lpr_id=header.id).order_by(LPRAudit.created_at.asc(), LPRAudit.id.asc()).all()
+        ]
+    return payload
+
+
+def lpr_validate_items(items):
+    clean_items = []
+    for index, raw in enumerate(items or []):
+        raw = raw or {}
+        description = clean_str(raw.get('description') or raw.get('item') or '') or ''
+        quantity_raw = raw.get('quantity', raw.get('qty', 0))
+        price_raw = raw.get('unit_price', raw.get('price', 0))
+        try:
+            quantity = float(quantity_raw or 0)
+            unit_price = float(price_raw or 0)
+        except Exception:
+            raise ValueError(f'Item {index + 1} has an invalid quantity or unit price.')
+        unit_measure = clean_str(raw.get('unit_measure') or raw.get('um') or '') or ''
+        note = clean_str(raw.get('note') or raw.get('notes') or '') or ''
+        if not description and quantity == 0 and unit_price == 0 and not unit_measure and not note:
+            continue
+        if not description:
+            raise ValueError(f'Item {index + 1} needs a description.')
+        if quantity <= 0:
+            raise ValueError(f'Item {index + 1} quantity must be greater than zero.')
+        if not unit_measure:
+            raise ValueError(f'Item {index + 1} needs a unit of measure.')
+        if unit_price < 0:
+            raise ValueError(f'Item {index + 1} unit price cannot be negative.')
+        clean_items.append({
+            'row_index': len(clean_items), 'description': description[:500], 'quantity': quantity,
+            'unit_measure': unit_measure[:40], 'unit_price': lpr_money(unit_price),
+            'line_total': lpr_money(quantity * unit_price), 'note': note[:2000]
+        })
+    if not clean_items:
+        raise ValueError('Add at least one LPR item before saving or submitting.')
+    total = lpr_money(sum(item['line_total'] for item in clean_items))
+    if total <= 0:
+        raise ValueError('LPR total must be greater than zero.')
+    return clean_items, total
+
+
+def lpr_apply_payload(header, payload, require_items=False):
+    payload = payload or {}
+    header.request_date = lpr_parse_date(payload.get('request_date')) or header.request_date or get_manila_today()
+    for field_name, max_len in (
+        ('branch_code', 80), ('class_code', 80), ('dept_code', 80), ('product_code', 120),
+        ('intended_for', 255), ('equipment', 255), ('po_no', 120), ('invoice_no', 120), ('received_by', 150)
+    ):
+        setattr(header, field_name, (clean_str(payload.get(field_name)) or '')[:max_len])
+    header.currency_code = 'PHP'
+    raw_items = payload.get('items') if isinstance(payload.get('items'), list) else payload.get('rows')
+    if raw_items is not None:
+        items, total = lpr_validate_items(raw_items)
+        header.total_requested = total
+        header.items.clear()
+        for item_data in items:
+            header.items.append(LPRItem(**item_data))
+    elif require_items:
+        raise ValueError('Add at least one LPR item before saving or submitting.')
+    header.updated_at = get_manila_time()
+
+
+def find_lpr_form_template_path():
+    names = {'lpr form.pdf', 'lpr_form.pdf'}
+    for folder in (os.path.join(basedir, 'forms'), os.path.join(basedir, 'static', 'forms'), '/data/forms', basedir):
+        try:
+            for filename in os.listdir(folder):
+                if filename.lower() in names:
+                    return os.path.join(folder, filename)
+        except Exception:
+            continue
+    return ''
+
+
+def lpr_fill_pdf_bytes(header, approved_by_user=None):
+    """Fill the official LPR AcroForm and append continuation pages after row eight."""
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except Exception as exc:
+        raise RuntimeError('pypdf is required to generate the LPR PDF.') from exc
+    template_path = find_lpr_form_template_path()
+    if not template_path:
+        raise FileNotFoundError('Official LPR FORM.pdf was not found in the forms folder.')
+    reader = PdfReader(template_path)
+    writer = PdfWriter()
+    writer.clone_document_from_reader(reader)
+    values = {
+        'Branch': header.branch_code or '', 'Class': header.class_code or '', 'Dept': header.dept_code or '',
+        'Product': header.product_code or '', 'Textfield': (header.lpr_no or '').replace('LPR-', ''),
+        'Date': header.request_date.strftime('%m/%d/%Y') if header.request_date else '',
+        'Intended for': header.intended_for or '', 'Equipment': header.equipment or '', 'PO No': header.po_no or '',
+        'Invoice No': header.invoice_no or '', 'Requested by': header.requester_name_snapshot or lpr_requester_name(header),
+        'Received by': header.received_by or '', 'Approved by': header.approval_name_snapshot or ''
+    }
+    items = sorted(header.items or [], key=lambda row: (row.row_index, row.id))
+    field_groups = [
+        ('ITEM  DESCRIPTION', 'QTY', 'UM', 'PRICE', 'N OTE'),
+        *[(f'ITEM  DESCRIPTION-{i}', f'QTY-{i}', f'UM-{i}', f'PRICE-{i}', f'N OTE-{i}') for i in range(7)]
+    ]
+    for index, item in enumerate(items[:8]):
+        desc_field, qty_field, um_field, price_field, note_field = field_groups[index]
+        values.update({
+            desc_field: item.description or '', qty_field: f"{item.quantity:g}", um_field: item.unit_measure or '',
+            price_field: f"{lpr_money(item.unit_price):,.2f}", note_field: item.note or ''
+        })
+    for page in writer.pages:
+        writer.update_page_form_field_values(page, values)
+
+    # Stamp signature images over the existing Requested by / Approved by lines.
+    signature_data = [clean_str(header.requester_signature_snapshot), clean_str(header.approval_signature_snapshot)]
+    if any(signature_data):
+        try:
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.utils import ImageReader
+            overlay = io.BytesIO()
+            canvas_obj = canvas.Canvas(overlay, pagesize=(576, 360))
+
+            def draw_signature(data, x, y, w, h):
+                if not clean_str(data):
+                    return
+                try:
+                    png = reimbursement_signature_data_url_to_png_bytes(clean_str(data) or '')
+                except Exception:
+                    png = None
+                if not png:
+                    return
+                canvas_obj.drawImage(
+                    ImageReader(io.BytesIO(png)), x, y, width=w, height=h,
+                    preserveAspectRatio=True, mask='auto'
+                )
+
+            draw_signature(header.requester_signature_snapshot, 145, 49, 100, 18)
+            draw_signature(header.approval_signature_snapshot, 397, 63, 100, 18)
+            canvas_obj.save()
+            overlay_reader = PdfReader(io.BytesIO(overlay.getvalue()))
+            writer.pages[0].merge_page(overlay_reader.pages[0])
+        except Exception as stamp_error:
+            print(f'[LPR] Signature overlay skipped: {stamp_error}', flush=True)
+
+    overflow = items[8:]
+    if overflow:
+        try:
+            from reportlab.pdfgen import canvas
+            continuation = io.BytesIO()
+            page_width, page_height = 576, 360
+            page_index = 0
+            for start in range(0, len(overflow), 12):
+                page_index += 1
+                c = canvas.Canvas(continuation, pagesize=(page_width, page_height))
+                c.setStrokeColorRGB(0.25, 0.25, 0.25)
+                c.setFont('Helvetica-Bold', 13)
+                c.drawString(36, 326, 'LOCAL PURCHASE REQUISITION - CONTINUED')
+                c.setFont('Helvetica', 9)
+                c.drawString(36, 311, f"LPR No.: {header.lpr_no or ''}    Page {page_index + 1}")
+                y = 282
+                c.setFont('Helvetica-Bold', 8)
+                c.line(36, y + 12, 540, y + 12)
+                c.drawString(42, y, 'ITEM / DESCRIPTION')
+                c.drawString(300, y, 'QTY')
+                c.drawString(345, y, 'UM')
+                c.drawString(390, y, 'UNIT PRICE')
+                c.drawString(470, y, 'NOTE')
+                y -= 12
+                c.setFont('Helvetica', 8)
+                for item in overflow[start:start + 12]:
+                    if y < 48:
+                        break
+                    c.line(36, y + 12, 540, y + 12)
+                    c.drawString(42, y, (item.description or '')[:42])
+                    c.drawString(300, y, f'{item.quantity:g}')
+                    c.drawString(345, y, (item.unit_measure or '')[:8])
+                    c.drawRightString(450, y, f'{lpr_money(item.unit_price):,.2f}')
+                    c.drawString(470, y, (item.note or '')[:17])
+                    y -= 18
+                c.line(36, y + 12, 540, y + 12)
+                c.setFont('Helvetica-Bold', 9)
+                c.drawRightString(540, 28, f"Continuation total: PHP {lpr_money(sum(item.line_total for item in overflow[start:start + 12])):,.2f}")
+                c.showPage()
+            c.save()
+            continuation_reader = PdfReader(io.BytesIO(continuation.getvalue()))
+            for page in continuation_reader.pages:
+                writer.add_page(page)
+        except Exception as continuation_error:
+            raise RuntimeError(f'Unable to generate LPR continuation page: {continuation_error}') from continuation_error
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def build_lpr_supporting_attachments_pdf_bytes(header):
+    attachments = lpr_attachment_records(header.id)
+    if not attachments:
+        return None
+    try:
+        from pypdf import PdfWriter
+    except Exception:
+        from PyPDF2 import PdfWriter
+    writer = PdfWriter()
+    reimbursement_append_pdf_bytes(writer, reimbursement_receipt_divider_pdf_bytes('LPR SUPPORTING ATTACHMENTS', [
+        ('LPR No.', header.lpr_no or f'LPR-{header.id}'), ('Attachment Count', str(len(attachments)))
+    ]))
+    appended = 0
+    for attachment in attachments:
+        path = lpr_attachment_path(attachment)
+        try:
+            ext = reimbursement_receipt_extension(lpr_attachment_original_filename(attachment))
+            if ext == 'pdf':
+                with open(path, 'rb') as file_obj:
+                    reimbursement_append_pdf_bytes(writer, file_obj.read())
+            elif ext in {'jpg', 'jpeg', 'png'}:
+                reimbursement_append_pdf_bytes(writer, reimbursement_receipt_image_to_pdf_bytes(path))
+            else:
+                raise ValueError(f'Unsupported LPR attachment: {lpr_attachment_original_filename(attachment)}')
+            appended += 1
+        finally:
+            managed_storage_release_path(path)
+    if appended != len(attachments):
+        raise ValueError('Not all LPR attachments could be added to the supporting document package.')
+    output = io.BytesIO()
+    writer.write(output)
+    return reimbursement_compress_pdf_bytes_best_effort(output.getvalue()) or output.getvalue()
+
+
+def lpr_email_subject_context(header, approved_by_user=None):
+    return {
+        'lpr_no': header.lpr_no or f'LPR-{header.id}', 'requester': lpr_requester_name(header),
+        'request_date': header.request_date.strftime('%m/%d/%Y') if header.request_date else '',
+        'total_requested': f'{lpr_money(header.total_requested):,.2f}',
+        'approved_by': universal_approval_actor_name(approved_by_user) if approved_by_user else header.approval_name_snapshot or ''
+    }
+
+
+def lpr_procurement_recipient_emails():
+    return get_active_email_recipients_by_group('lpr_procurement')
+
+
+def send_lpr_procurement_email_async(app_obj, lpr_id, recipient_emails, approved_by_user_id=None, remarks=''):
+    def worker():
+        with app_obj.app_context():
+            header = db.session.get(LPRHeader, clean_int(lpr_id))
+            if not header:
+                return
+            temp_paths = []
+            try:
+                main_bytes = lpr_fill_pdf_bytes(header)
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as main_file:
+                    main_file.write(main_bytes); main_path = main_file.name
+                temp_paths.append(main_path)
+                attachments = [{'path': main_path, 'display_name': f'{header.lpr_no or "LPR"}.pdf'}]
+                supporting = build_lpr_supporting_attachments_pdf_bytes(header)
+                if supporting:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as support_file:
+                        support_file.write(supporting); support_path = support_file.name
+                    temp_paths.append(support_path)
+                    attachments.append({'path': support_path, 'display_name': f'{header.lpr_no or "LPR"}_Supporting_Attachments.pdf'})
+                approved_by = db.session.get(User, clean_int(approved_by_user_id)) if clean_int(approved_by_user_id) else None
+                subject = render_email_subject_template('lpr_procurement_subject', lpr_email_subject_context(header, approved_by))
+                text_body = '\n'.join([
+                    'Approved Local Purchase Requisition for Procurement', '',
+                    f'LPR No.: {header.lpr_no or ""}', f'Requester: {lpr_requester_name(header)}',
+                    f'Request Date: {header.request_date.strftime("%m/%d/%Y") if header.request_date else ""}',
+                    f'Total: PHP {lpr_money(header.total_requested):,.2f}',
+                    f'Approved By: {header.approval_name_snapshot or universal_approval_actor_name(approved_by)}',
+                    f'Approval Remarks: {clean_str(remarks) or header.approval_remarks or "None"}', '',
+                    'The signed LPR and supporting documents are attached.', 'Regards,', 'Medical Service SMS'
+                ])
+                html_body = '<div style="font-family:Arial,sans-serif"><h2>Approved Local Purchase Requisition</h2><p>The signed LPR and supporting documents are attached for Procurement.</p></div>'
+                requester = db.session.get(User, clean_int(header.user_id))
+                cc = [getattr(requester, 'email', '')] if requester and getattr(requester, 'email', None) else []
+                sent, message = send_email_with_attachments(recipient_emails, subject, text_body, html_body, attachments=attachments, cc_emails=cc)
+                header.procurement_status = 'Sent' if sent else 'Email Failed'
+                header.procurement_remarks = message
+                header.sent_to_procurement_at = get_manila_time() if sent else header.sent_to_procurement_at
+                lpr_add_audit(header, 'procurement_email_sent' if sent else 'procurement_email_failed', message)
+                db.session.commit()
+            except Exception as exc:
+                db.session.rollback()
+                try:
+                    header = db.session.get(LPRHeader, clean_int(lpr_id))
+                    if header:
+                        header.procurement_status = 'Email Failed'
+                        header.procurement_remarks = str(exc)[:1000]
+                        lpr_add_audit(header, 'procurement_email_failed', str(exc)[:1000])
+                        db.session.commit()
+                except Exception:
+                    db.session.rollback()
+                print(f'[LPR] Procurement handoff failed: {exc}', flush=True)
+            finally:
+                for path in temp_paths:
+                    try:
+                        os.unlink(path)
+                    except Exception:
+                        pass
+    threading.Thread(target=worker, daemon=True).start()
+    return True
+
+
+def lpr_approval_counts():
+    ensure_lpr_tables()
+    query = db.session.query(func.lower(func.trim(LPRHeader.status)).label('status_key'), func.count(LPRHeader.id))
+    query = apply_assigned_approver_filter(query, LPRHeader, current_user, 'lpr')
+    raw = {key or 'draft': int(value or 0) for key, value in query.group_by(func.lower(func.trim(LPRHeader.status))).all()}
+    return {'draft': raw.get('draft', 0), 'submitted': raw.get('submitted', 0), 'approved': raw.get('approved', 0), 'rejected': raw.get('rejected', 0), 'pending': raw.get('submitted', 0), 'total': sum(raw.values())}
+
+
+def lpr_query_for_current_approver(status_filter='Submitted'):
+    ensure_lpr_tables()
+    query = apply_assigned_approver_filter(LPRHeader.query, LPRHeader, current_user, 'lpr')
+    if status_filter != 'All':
+        status_key = 'Rejected' if status_filter == 'Rejected' else status_filter
+        query = query.filter(func.lower(func.trim(LPRHeader.status)) == status_key.lower())
+    return query.order_by(LPRHeader.submitted_at.asc() if status_filter == 'Submitted' else LPRHeader.updated_at.desc(), LPRHeader.id.desc())
+
+
+def lpr_signature_required_response(user_obj=None):
+    target = user_obj or current_user
+    if get_user_signature_snapshot(target):
+        return None
+    return jsonify({'success': False, 'status': 'error', 'error': 'Saved signature is required before submitting an LPR. Go to Settings -> My Signature, save your signature, then submit again.', 'requires_signature': True}), 400
+
+
+def lpr_notification_url(header, for_approver=False):
+    return f'/approvals?module=lpr&id={header.id}' if for_approver else f'/lpr?lpr_id={header.id}'
+
+
+def lpr_authorized_attachment(attachment_id):
+    attachment = db.session.get(LPRAttachment, clean_int(attachment_id))
+    header = db.session.get(LPRHeader, clean_int(getattr(attachment, 'lpr_id', None))) if attachment else None
+    if not attachment or not header:
+        return None, None, (jsonify({'success': False, 'error': 'Attachment not found.'}), 404)
+    if not lpr_can_manage(header) and not can_user_approve_lpr(current_user, header):
+        return None, None, (jsonify({'success': False, 'error': 'Attachment not found or access denied.'}), 404)
+    return attachment, header, None
+
+
+@app.route('/lpr')
+@login_required
+def lpr_page():
+    if is_approver_only_user():
+        return redirect(url_for('dashboard_page'))
+    return render_template('lpr.html')
+
+
+@app.route('/get_lpr_list')
+@login_required
+def get_lpr_list():
+    ensure_lpr_tables()
+    if is_approver_only_user():
+        return jsonify({'success': True, 'items': [], 'count': 0})
+    query = LPRHeader.query.filter_by(user_id=current_user.id).order_by(LPRHeader.updated_at.desc(), LPRHeader.id.desc())
+    items = query.limit(300).all()
+    return jsonify({'success': True, 'items': [lpr_to_dict(item, include_items=False, include_attachments=True) for item in items], 'count': len(items)})
+
+
+@app.route('/get_lpr/<int:lpr_id>')
+@login_required
+def get_lpr(lpr_id):
+    ensure_lpr_tables()
+    header = db.session.get(LPRHeader, lpr_id)
+    if not header or (not lpr_can_manage(header) and not can_user_approve_lpr(current_user, header)):
+        return jsonify({'success': False, 'error': 'LPR not found or access denied.'}), 404
+    return jsonify({'success': True, 'item': lpr_to_dict(header, include_items=True, include_attachments=True, include_audit=True)})
+
+
+@app.route('/save_lpr', methods=['POST'])
+@csrf.exempt
+@login_required
+def save_lpr():
+    ensure_lpr_tables()
+    payload = request.get_json(silent=True) or {}
+    header = db.session.get(LPRHeader, clean_int(payload.get('id') or payload.get('lpr_id'))) if clean_int(payload.get('id') or payload.get('lpr_id')) else None
+    if header:
+        if not lpr_can_manage(header) or not lpr_is_editable(header):
+            return jsonify({'success': False, 'error': 'This LPR is no longer editable.'}), 409
+    else:
+        header = LPRHeader(user_id=current_user.id, request_date=get_manila_today(), status='Draft', currency_code='PHP', created_at=get_manila_time(), updated_at=get_manila_time())
+        db.session.add(header)
+        db.session.flush()
+        prefix = get_manila_today().strftime('%Y%m%d')
+        used = []
+        for record in LPRHeader.query.filter(LPRHeader.lpr_no.like(f'LPR-{prefix}-%')).all():
+            try: used.append(int(str(record.lpr_no).rsplit('-', 1)[-1]))
+            except Exception: pass
+        next_number = max(used or [0]) + 1
+        header.lpr_no = f'LPR-{prefix}-{next_number:02d}'
+    try:
+        lpr_apply_payload(header, payload, require_items=True)
+        lpr_add_audit(header, 'draft_saved', 'LPR draft saved.')
+        add_activity_log_entry(f'Saved LPR draft {header.lpr_no or header.id} ({len(header.items or [])} item(s))')
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'LPR draft saved.', 'item': lpr_to_dict(header, include_items=True, include_attachments=True)})
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[LPR] Save failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to save LPR draft.'}), 500
+
+
+@app.route('/submit_lpr/<int:lpr_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def submit_lpr(lpr_id):
+    ensure_lpr_tables()
+    header = db.session.get(LPRHeader, lpr_id)
+    if not header or not lpr_can_manage(header):
+        return jsonify({'success': False, 'error': 'LPR not found or access denied.'}), 404
+    if not lpr_is_editable(header):
+        return jsonify({'success': False, 'error': 'Only Draft, Rejected, or Returned LPRs can be submitted.'}), 409
+    signature_response = lpr_signature_required_response(current_user)
+    if signature_response:
+        return signature_response
+    try:
+        if not header.items:
+            raise ValueError('Add at least one LPR item before submitting.')
+        header.total_requested = lpr_money(sum(item.line_total or 0 for item in header.items))
+        now = get_manila_time()
+        previous_status = lpr_status(header)
+        header.status = 'Submitted'; header.submitted_at = now; header.updated_at = now
+        header.requester_name_snapshot = lpr_requester_name(header)
+        header.requester_signature_snapshot = get_user_signature_snapshot(current_user)
+        header.requester_signature_layout = 'signature_over_printed_name'; header.requester_signed_at = now
+        lpr_add_audit(header, 'submitted', f'{previous_status} -> Submitted')
+        add_activity_log_entry(f'Submitted LPR {header.lpr_no or header.id} for approval ({len(header.items or [])} item(s))')
+        record_universal_approval_audit('lpr', header.id, 'submitted', actor_user=current_user, status_from=previous_status, status_to='Submitted', remarks='LPR submitted for manager approval.', metadata={'lpr_no': header.lpr_no, 'total_requested': header.total_requested})
+        approvers = get_assigned_approvers_for_requester(header.user_id, 'lpr')
+        create_system_notifications_for_users(approvers, 'LPR Awaiting Approval', f'{header.lpr_no} from {lpr_requester_name(header)} is awaiting approval.', module='lpr', record_id=header.id, target_url=lpr_notification_url(header, True), exclude_user_ids=[header.user_id])
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'LPR submitted for approval.', 'item': lpr_to_dict(header, include_items=True, include_attachments=True)})
+    except ValueError as exc:
+        db.session.rollback(); return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback(); print(f'[LPR] Submit failed: {exc}', flush=True); return jsonify({'success': False, 'error': 'Unable to submit LPR.'}), 500
+
+
+@app.route('/preview_lpr/<int:lpr_id>')
+@login_required
+def preview_lpr(lpr_id):
+    ensure_lpr_tables(); header = db.session.get(LPRHeader, lpr_id)
+    if not header or (not lpr_can_manage(header) and not can_user_approve_lpr(current_user, header)):
+        return jsonify({'success': False, 'error': 'LPR not found or access denied.'}), 404
+    return send_file(io.BytesIO(lpr_fill_pdf_bytes(header)), as_attachment=False, download_name=f'{secure_filename(header.lpr_no or "LPR")}.pdf', mimetype='application/pdf', max_age=0)
+
+
+@app.route('/download_lpr/<int:lpr_id>')
+@login_required
+def download_lpr(lpr_id):
+    ensure_lpr_tables(); header = db.session.get(LPRHeader, lpr_id)
+    if not header or (not lpr_can_manage(header) and not can_user_approve_lpr(current_user, header)):
+        return jsonify({'success': False, 'error': 'LPR not found or access denied.'}), 404
+    return send_file(io.BytesIO(lpr_fill_pdf_bytes(header)), as_attachment=True, download_name=f'{secure_filename(header.lpr_no or "LPR")}.pdf', mimetype='application/pdf', max_age=0)
+
+
+@app.route('/get_lpr_approval_items')
+@login_required
+def get_lpr_approval_items():
+    denied = require_approval_center_user()
+    if denied: return denied
+    requested = (request.args.get('status') or 'Submitted').strip().lower()
+    status = {'submitted': 'Submitted', 'approved': 'Approved', 'rejected': 'Rejected', 'returned': 'Rejected', 'all': 'All'}.get(requested, 'Submitted')
+    items = lpr_query_for_current_approver(status).limit(300).all()
+    return jsonify({'success': True, 'module': 'lpr', 'status': status, 'items': [lpr_to_dict(item, include_items=False, include_attachments=False) for item in items], 'count': len(items)})
+
+
+@app.route('/get_lpr_approval_detail/<int:lpr_id>')
+@login_required
+def get_lpr_approval_detail(lpr_id):
+    denied = require_approval_center_user()
+    if denied: return denied
+    header = db.session.get(LPRHeader, lpr_id)
+    if not header or not can_user_approve_lpr(current_user, header):
+        return jsonify({'success': False, 'error': 'LPR is not assigned to you.'}), 403
+    return jsonify({'success': True, 'lpr': lpr_to_dict(header, include_items=True, include_attachments=True, include_audit=True)})
+
+
+@app.route('/approve_lpr/<int:lpr_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def approve_lpr(lpr_id):
+    denied = require_approval_center_user()
+    if denied: return denied
+    ensure_lpr_tables(); header = db.session.get(LPRHeader, lpr_id)
+    if not header or not can_user_approve_lpr(current_user, header): return jsonify({'success': False, 'error': 'LPR is not assigned to you.'}), 403
+    if lpr_status(header) != 'Submitted': return jsonify({'success': False, 'error': 'Only submitted LPRs can be approved.'}), 409
+    signature_response = approval_signature_required_response(current_user, module_label='LPR')
+    if signature_response: return signature_response
+    body = request.get_json(silent=True) or {}; remarks = clean_str(body.get('remarks') or '') or ''
+    try:
+        now = get_manila_time(); header.status = 'Approved'; header.approved_at = now; header.approved_by_id = current_user.id; header.approval_remarks = remarks; header.approval_action = 'approved'; header.approval_name_snapshot = universal_approval_actor_name(current_user); header.approval_title_snapshot = approval_user_title_label(current_user); header.approval_signature_snapshot = get_user_signature_snapshot(current_user); header.approval_signature_layout = 'signature_over_printed_name'; header.approval_signed_at = now; header.procurement_status = 'Ready for Purchase'; header.updated_at = now
+        lpr_add_audit(header, 'approved', remarks or 'LPR approved.')
+        add_activity_log_entry(f'Approved LPR {header.lpr_no or header.id} for PHP {lpr_money(header.total_requested):,.2f}')
+        record_universal_approval_audit('lpr', header.id, 'approved', actor_user=current_user, status_from='Submitted', status_to='Approved', remarks=remarks, metadata={'lpr_no': header.lpr_no, 'total_requested': header.total_requested})
+        requester = db.session.get(User, header.user_id)
+        create_system_notifications_for_users([requester] if requester else [], 'LPR Approved', f'{header.lpr_no} was approved and is ready for purchase.', module='lpr', record_id=header.id, target_url=lpr_notification_url(header))
+        db.session.commit()
+        recipients = lpr_procurement_recipient_emails()
+        if recipients:
+            send_lpr_procurement_email_async(app, header.id, recipients, approved_by_user_id=current_user.id, remarks=remarks)
+            message = 'LPR approved. Procurement handoff was queued.'
+        else:
+            message = 'LPR approved, but no Procurement recipients are configured in Settings -> Email Recipients -> LPR Procurement.'
+        return jsonify({'success': True, 'status': 'warning' if not recipients else 'success', 'message': message, 'item': lpr_to_dict(header, include_items=True, include_attachments=True)})
+    except Exception as exc:
+        db.session.rollback(); print(f'[LPR] Approval failed: {exc}', flush=True); return jsonify({'success': False, 'error': 'Unable to approve LPR.'}), 500
+
+
+@app.route('/reject_lpr/<int:lpr_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def reject_lpr(lpr_id):
+    denied = require_approval_center_user()
+    if denied: return denied
+    ensure_lpr_tables(); header = db.session.get(LPRHeader, lpr_id)
+    if not header or not can_user_approve_lpr(current_user, header): return jsonify({'success': False, 'error': 'LPR is not assigned to you.'}), 403
+    if lpr_status(header) != 'Submitted': return jsonify({'success': False, 'error': 'Only submitted LPRs can be returned.'}), 409
+    signature_response = approval_signature_required_response(current_user, module_label='LPR')
+    if signature_response: return signature_response
+    body = request.get_json(silent=True) or {}; remarks = clean_str(body.get('remarks') or '') or ''
+    if not remarks: return jsonify({'success': False, 'error': 'Please provide a reason for returning this LPR.'}), 400
+    try:
+        now = get_manila_time(); header.status = 'Rejected'; header.rejected_at = now; header.rejected_by_id = current_user.id; header.approval_remarks = remarks; header.approval_action = 'returned'; header.approval_name_snapshot = universal_approval_actor_name(current_user); header.approval_title_snapshot = approval_user_title_label(current_user); header.approval_signature_snapshot = get_user_signature_snapshot(current_user); header.approval_signed_at = now; header.procurement_status = None; header.updated_at = now
+        lpr_add_audit(header, 'returned', remarks)
+        add_activity_log_entry(f'Returned LPR {header.lpr_no or header.id} for revision')
+        record_universal_approval_audit('lpr', header.id, 'returned', actor_user=current_user, status_from='Submitted', status_to='Rejected', remarks=remarks, metadata={'lpr_no': header.lpr_no})
+        requester = db.session.get(User, header.user_id)
+        create_system_notifications_for_users([requester] if requester else [], 'LPR Returned', f'{header.lpr_no} was returned for revision.', module='lpr', record_id=header.id, target_url=lpr_notification_url(header), metadata={'remarks': remarks})
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'LPR returned for revision.', 'item': lpr_to_dict(header, include_items=True, include_attachments=True)})
+    except Exception as exc:
+        db.session.rollback(); print(f'[LPR] Return failed: {exc}', flush=True); return jsonify({'success': False, 'error': 'Unable to return LPR.'}), 500
+
+
+@app.route('/upload_lpr_attachments/<int:lpr_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def upload_lpr_attachments(lpr_id):
+    ensure_lpr_tables(); header = db.session.get(LPRHeader, lpr_id)
+    if not header or not lpr_can_manage(header) or not lpr_is_editable(header): return jsonify({'success': False, 'error': 'Attachments can only be changed while the LPR is Draft, Rejected, or Returned.'}), 409
+    files = [item for item in (request.files.getlist('attachment_files') or request.files.getlist('attachment_file')) if item and item.filename]
+    if not files: return jsonify({'success': False, 'error': 'No attachment file selected.'}), 400
+    existing = len(lpr_attachment_records(header.id))
+    if existing + len(files) > LPR_ATTACHMENT_MAX_FILES: return jsonify({'success': False, 'error': f'An LPR can contain up to {LPR_ATTACHMENT_MAX_FILES} attachments.'}), 400
+    prepared = []
+    for file_obj in files:
+        if not reimbursement_receipt_allowed(file_obj.filename): return jsonify({'success': False, 'error': f'Unsupported attachment type: {file_obj.filename}. Allowed: PDF, JPG, JPEG, or PNG.'}), 400
+        original = secure_filename(file_obj.filename) or 'attachment'
+        try: file_bytes, stored_ext, content_type = reimbursement_prepare_receipt_upload_bytes(file_obj, original)
+        except ValueError as exc: return jsonify({'success': False, 'error': str(exc).replace('Receipt', 'Attachment').replace('receipt', 'attachment')}), 400
+        prepared.append((original, stored_ext, content_type, file_bytes))
+    written = []
+    try:
+        root = lpr_attachment_upload_root()
+        for original, stored_ext, content_type, file_bytes in prepared:
+            stored = f'lpr_{header.id}_{secrets.token_hex(8)}.{stored_ext}'; target = os.path.join(root, stored)
+            managed_storage_write_bytes(STORAGE_PREFIX_LPR, target, file_bytes, original_filename=original, content_type=content_type or '')
+            written.append(target); db.session.add(LPRAttachment(lpr_id=header.id, file_name=original, file_path=stored, stored_filename=stored, original_filename=original, content_type=content_type or '', file_size=len(file_bytes), uploaded_by_id=current_user.id, uploaded_at=get_manila_time()))
+        header.updated_at = get_manila_time(); lpr_add_audit(header, 'attachments_uploaded', f'Uploaded {len(prepared)} supporting attachment(s).'); add_activity_log_entry(f'Uploaded {len(prepared)} LPR attachment(s): {header.lpr_no or header.id}'); db.session.commit()
+        return jsonify({'success': True, 'message': f'{len(prepared)} attachment(s) uploaded.', 'attachments': [lpr_attachment_to_dict(item) for item in lpr_attachment_records(header.id)], 'attachment_count': existing + len(prepared)})
+    except Exception as exc:
+        db.session.rollback()
+        for path in written: managed_storage_rollback_new_file(STORAGE_PREFIX_LPR, path)
+        print(f'[LPR] Attachment upload failed: {exc}', flush=True); return jsonify({'success': False, 'error': 'Unable to upload LPR attachment.'}), 500
+
+
+@app.route('/preview_lpr_attachment/<int:attachment_id>')
+@login_required
+def preview_lpr_attachment(attachment_id):
+    attachment, _, error = lpr_authorized_attachment(attachment_id)
+    if error: return error
+    try: path = lpr_attachment_path(attachment)
+    except Exception: return jsonify({'success': False, 'error': 'Attachment file is unavailable.'}), 404
+    return send_file(path, as_attachment=False, download_name=lpr_attachment_original_filename(attachment), mimetype=attachment.content_type or 'application/octet-stream', max_age=0)
+
+
+@app.route('/download_lpr_attachment/<int:attachment_id>')
+@login_required
+def download_lpr_attachment(attachment_id):
+    attachment, _, error = lpr_authorized_attachment(attachment_id)
+    if error: return error
+    try: path = lpr_attachment_path(attachment)
+    except Exception: return jsonify({'success': False, 'error': 'Attachment file is unavailable.'}), 404
+    return send_file(path, as_attachment=True, download_name=lpr_attachment_original_filename(attachment), mimetype=attachment.content_type or 'application/octet-stream', max_age=0)
+
+
+@app.route('/delete_lpr_attachment/<int:attachment_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_lpr_attachment(attachment_id):
+    ensure_lpr_tables(); attachment = db.session.get(LPRAttachment, clean_int(attachment_id)); header = db.session.get(LPRHeader, clean_int(getattr(attachment, 'lpr_id', None))) if attachment else None
+    if not attachment or not header or not lpr_can_manage(header) or not lpr_is_editable(header): return jsonify({'success': False, 'error': 'Attachment not found or LPR is no longer editable.'}), 409
+    stored = lpr_attachment_stored_filename(attachment); name = lpr_attachment_original_filename(attachment)
+    try:
+        db.session.delete(attachment); header.updated_at = get_manila_time(); lpr_add_audit(header, 'attachment_deleted', f'Deleted supporting attachment: {name}'); add_activity_log_entry(f'Deleted LPR attachment {name}: {header.lpr_no or header.id}'); db.session.commit()
+    except Exception as exc:
+        db.session.rollback(); print(f'[LPR] Attachment delete failed: {exc}', flush=True); return jsonify({'success': False, 'error': 'Unable to delete LPR attachment.'}), 500
+    warning = ''
+    try: managed_storage_delete(STORAGE_PREFIX_LPR, os.path.join(lpr_attachment_upload_root(), stored))
+    except Exception as exc: warning = 'Attachment was removed from the request, but storage cleanup needs administrator review.'; print(f'[LPR] Storage cleanup failed: {exc}', flush=True)
+    attachments = [lpr_attachment_to_dict(item) for item in lpr_attachment_records(header.id)]
+    return jsonify({'success': True, 'message': 'Attachment deleted.', 'deleted_count': 1, 'attachments': attachments, 'attachment_count': len(attachments), 'cleanup_warning': warning})
+
+
+@app.route('/delete_all_lpr_attachments/<int:lpr_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def delete_all_lpr_attachments(lpr_id):
+    ensure_lpr_tables(); header = db.session.get(LPRHeader, lpr_id)
+    if not header or not lpr_can_manage(header) or not lpr_is_editable(header): return jsonify({'success': False, 'error': 'Attachments can only be changed while the LPR is Draft, Rejected, or Returned.'}), 409
+    attachments = lpr_attachment_records(header.id); stored = [lpr_attachment_stored_filename(item) for item in attachments]; count = len(attachments)
+    try:
+        for item in attachments: db.session.delete(item)
+        header.updated_at = get_manila_time(); lpr_add_audit(header, 'attachments_deleted_all', f'Deleted all {count} supporting attachment(s).'); add_activity_log_entry(f'Deleted all {count} LPR attachment(s): {header.lpr_no or header.id}'); db.session.commit()
+    except Exception as exc:
+        db.session.rollback(); print(f'[LPR] Delete all attachments failed: {exc}', flush=True); return jsonify({'success': False, 'error': 'Unable to delete LPR attachments.'}), 500
+    failures = 0
+    for filename in stored:
+        try: managed_storage_delete(STORAGE_PREFIX_LPR, os.path.join(lpr_attachment_upload_root(), filename))
+        except Exception: failures += 1
+    return jsonify({'success': True, 'message': f'{count} attachment(s) deleted.', 'deleted_count': count, 'attachments': [], 'attachment_count': 0, 'cleanup_warning': f'{failures} stored file(s) need administrator cleanup.' if failures else ''})
+
+
+@app.route('/resend_lpr_procurement_email/<int:lpr_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def resend_lpr_procurement_email(lpr_id):
+    denied = require_approval_center_user()
+    if denied: return denied
+    ensure_lpr_tables(); header = db.session.get(LPRHeader, lpr_id)
+    if not header or not can_user_approve_lpr(current_user, header): return jsonify({'success': False, 'error': 'LPR is not assigned to you.'}), 403
+    if lpr_status(header) != 'Approved': return jsonify({'success': False, 'error': 'Only approved LPRs can be resent.'}), 409
+    recipients = lpr_procurement_recipient_emails()
+    if not recipients: return jsonify({'success': False, 'error': 'No active recipients are configured under Settings -> Email Recipients -> LPR Procurement.'}), 409
+    header.procurement_status = 'Queued'; header.procurement_remarks = 'Procurement handoff resend queued.'; header.updated_at = get_manila_time(); lpr_add_audit(header, 'procurement_email_resent', 'Procurement handoff resend queued.'); db.session.commit()
+    send_lpr_procurement_email_async(app, header.id, recipients, approved_by_user_id=header.approved_by_id or current_user.id, remarks=header.approval_remarks or '')
+    return jsonify({'success': True, 'message': 'LPR Procurement handoff resend queued.', 'item': lpr_to_dict(header, include_items=True, include_attachments=True)})
+
 
 if __name__ == '__main__':
     initialize_database()

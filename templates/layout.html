@@ -881,6 +881,7 @@
             {% set is_accounting_center_user = current_user.is_authenticated and not is_approver_only_user %}
             {% set is_reports_sidebar_user = is_management_user or is_engineer_only %}
             {% set field_ops_paths = ['/travel_request', '/reimbursement', '/cash_advance'] %}
+            {% if lpr_enabled %}{% set field_ops_paths = field_ops_paths + ['/lpr'] %}{% endif %}
             {% set approval_paths = ['/approvals'] %}
             {% set reports_paths = ['/analytics_page', '/reports_page'] %}
             {% set records_paths = ['/engineers_page', '/clients_page', '/products_page'] %}
@@ -928,6 +929,7 @@
                     <a href="/travel_request" class="{{ 'active' if request.path == '/travel_request' }}"><i class="fa-solid fa-plane-departure me-2"></i> Travel Request</a>
                     <a href="/reimbursement" class="{{ 'active' if request.path == '/reimbursement' }}"><i class="fa-solid fa-file-invoice-dollar me-2"></i> Liquidation</a>
                     <a href="/cash_advance"><i class="fa-solid fa-money-bill-transfer me-2"></i> Cash Advance</a>
+                    {% if lpr_enabled %}<a href="/lpr" class="{{ 'active' if request.path == '/lpr' }}"><i class="fa-solid fa-file-invoice me-2"></i> Local Purchase Requisition</a>{% endif %}
                 </div>
             {% endif %}
 
