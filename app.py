@@ -45589,10 +45589,13 @@ def get_lpr_list():
     except Exception as exc:
         db.session.rollback()
         print(f'[LPR] List load failed for user={getattr(current_user, "id", None)}: {exc}', flush=True)
-        return jsonify({
+        response_payload = {
             'success': False,
             'error': 'Unable to load LPR records right now. Please refresh and try again.'
-        }), 500
+        }
+        if request.args.get('diagnostic') == '1' and is_admin_authorized():
+            response_payload['diagnostic'] = f'{type(exc).__name__}: {str(exc)[:500]}'
+        return jsonify(response_payload), 500
 
 
 @app.route('/get_lpr/<int:lpr_id>')
