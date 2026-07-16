@@ -11177,7 +11177,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v16-system-themes';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v17-dark-mode-repair';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -11188,6 +11188,7 @@ const APP_SHELL = [
   '/manifest.json',
   '/pwa-icon.svg',
   '/static/css/app-themes.css',
+  '/static/css/app-dark-pages.css',
   '/static/js/app-appearance.js',
   '/static/vendor/jspdf/jspdf.umd.min.js',
   '/static/fonts/liberation-sans/LiberationSans-Regular.ttf',

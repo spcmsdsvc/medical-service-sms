@@ -14,6 +14,8 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         styles = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
 
         self.assertIn('app-themes.css', layout)
+        self.assertIn('app-dark-pages.css', layout)
+        self.assertGreater(layout.index('app-dark-pages.css'), layout.index('{% block content %}'))
         self.assertIn('app-appearance.js', layout)
         self.assertEqual(layout.count('appearance-header-button'), 2)
         self.assertIn('data-appearance-mode="system"', settings)
@@ -21,6 +23,10 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn("app-theme-changed", runtime)
         self.assertIn('[data-app-theme="dark"]', styles)
         self.assertIn('@media print', styles)
+
+        app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        self.assertIn('medical-service-pwa-offline-navigation-v17-dark-mode-repair', app_source)
+        self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
     def test_login_uses_last_device_appearance(self):
         login = (ROOT / 'templates' / 'login.html').read_text(encoding='utf-8')
@@ -31,7 +37,21 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
         release = next(item for item in manifest['releases'] if item['release_key'] == '2026-07-16')
         self.assertTrue(release['is_published'])
-        self.assertEqual(len(release['items']), 3)
+        self.assertEqual(len(release['items']), 4)
+
+    def test_dark_page_repair_covers_high_risk_surfaces(self):
+        css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+        for selector in (
+            '.activity-summary-card',
+            '.calendar-drop-cell',
+            '.schedule-card',
+            '.mobile-schedule-client',
+            '.mobile-meta-row > span',
+            '.dashboard-workflow-card',
+            '.travel-notification-panel',
+        ):
+            self.assertIn(selector, css)
+        self.assertIn('@media print', css)
 
 
 if __name__ == '__main__':

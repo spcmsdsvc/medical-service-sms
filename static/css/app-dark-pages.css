@@ -1,0 +1,342 @@
+/* Late-loaded page-aware dark mode repairs. Generated documents are excluded below. */
+:root[data-app-theme="dark"] {
+    --dark-page: #0f1722;
+    --dark-panel: #182333;
+    --dark-card: #202d3e;
+    --dark-card-hover: #263549;
+    --dark-input: #111b29;
+    --dark-border: #3b4a5e;
+    --dark-text: #f1f5f9;
+    --dark-muted: #a8b5c6;
+}
+
+:root[data-app-theme="dark"] body,
+:root[data-app-theme="dark"] .main-content {
+    background: var(--dark-page) !important;
+    color: var(--dark-text);
+}
+
+/* Text inherits from its actual surface. This prevents white text on an unthemed light card. */
+:root[data-app-theme="dark"] :is(h1, h2, h3, h4, h5, h6, th, td) { color: inherit; }
+:root[data-app-theme="dark"] label { color: var(--dark-muted); }
+:root[data-app-theme="dark"] :is(.text-muted, .form-text) { color: var(--dark-muted) !important; }
+
+:root[data-app-theme="dark"] :is(.btn-light, .btn-outline-light) {
+    background: var(--dark-card) !important;
+    border-color: var(--dark-border) !important;
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(.btn-light, .btn-outline-light):hover {
+    background: var(--dark-card-hover) !important;
+    border-color: var(--app-primary) !important;
+}
+:root[data-app-theme="dark"] .btn-outline-dark {
+    color: var(--dark-text);
+    border-color: #7c8ba0;
+}
+:root[data-app-theme="dark"] .btn-outline-dark:hover { background: #35445a; color: #fff; }
+:root[data-app-theme="dark"] :is(.table-light, .table-light > *) {
+    --bs-table-bg: var(--dark-card) !important;
+    --bs-table-color: var(--dark-text) !important;
+    --bs-table-border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(.pagination, .page-link) {
+    background: var(--dark-card);
+    color: var(--dark-text);
+    border-color: var(--dark-border);
+}
+:root[data-app-theme="dark"] ::-webkit-scrollbar-track { background: #101925; }
+:root[data-app-theme="dark"] ::-webkit-scrollbar-thumb { background: #536176; border-color: #101925; }
+:root[data-app-theme="dark"] { scrollbar-color: #536176 #101925; }
+
+/* Activity Logs */
+:root[data-app-theme="dark"] .activity-summary-card,
+:root[data-app-theme="dark"] .activity-mobile-card,
+:root[data-app-theme="dark"] .activity-mobile-empty {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .activity-summary-card .h5 { color: var(--dark-text) !important; }
+:root[data-app-theme="dark"] .activity-mobile-list,
+:root[data-app-theme="dark"] .activity-mobile-details {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(.activity-mobile-time, .activity-mobile-user, .activity-mobile-branch) { color: var(--dark-text) !important; }
+:root[data-app-theme="dark"] .quick-filter {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .quick-filter:hover { background: var(--dark-card-hover) !important; color: #fff !important; }
+:root[data-app-theme="dark"] .branch-chip { background: #2a394c; color: #d9e2ec; border-color: #526177; }
+:root[data-app-theme="dark"] .activity-table-wrap { background: var(--dark-panel) !important; }
+:root[data-app-theme="dark"] .activity-log-row:hover > * { background: var(--dark-card-hover) !important; }
+
+/* Calendar application chrome */
+:root[data-app-theme="dark"] .timeline-freeze-toolbar,
+:root[data-app-theme="dark"] :is(
+    .timeline-engineer-focus-strip, .timeline-engineer-desktop-hero, .timeline-hybrid-desktop-hero,
+    .timeline-scheduler-desktop-hero, .timeline-approver-banner
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+    box-shadow: 0 10px 24px rgba(0,0,0,.25) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .timeline-engineer-focus-title, .timeline-engineer-focus-sub,
+    .timeline-engineer-hero-title, .timeline-engineer-hero-sub,
+    .timeline-hybrid-hero-title, .timeline-hybrid-hero-sub,
+    .timeline-scheduler-hero-title, .timeline-scheduler-hero-sub,
+    .timeline-approver-banner-title, .timeline-approver-banner-sub
+) { color: inherit !important; }
+:root[data-app-theme="dark"] :is(
+    .timeline-engineer-focus-icon, .timeline-engineer-hero-icon, .timeline-hybrid-hero-icon,
+    .timeline-scheduler-hero-icon, .timeline-engineer-mini-badge
+) {
+    background: #26374b !important;
+    color: #dce8f5 !important;
+    border-color: #526177 !important;
+}
+:root[data-app-theme="dark"] .timeline-scroll-hint {
+    background: var(--dark-panel) !important;
+    color: var(--dark-muted) !important;
+    border-color: #55657a !important;
+}
+:root[data-app-theme="dark"] :is(.timeline-sticky-h-scroll, .timeline-bottom-scroll) {
+    background: #111b28 !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(.timeline-sticky-h-scroll, .timeline-bottom-scroll)::-webkit-scrollbar-track { background: #111b28 !important; }
+:root[data-app-theme="dark"] :is(.timeline-sticky-h-scroll, .timeline-bottom-scroll)::-webkit-scrollbar-thumb { background: #607087 !important; border-color: #111b28 !important; }
+:root[data-app-theme="dark"] .timeline-scroll-wrapper {
+    background: #111b28 !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .timeline-scroll-wrapper::-webkit-scrollbar-track { background: #111b28 !important; }
+:root[data-app-theme="dark"] .timeline-scroll-wrapper::-webkit-scrollbar-thumb { background: #607087 !important; border-color: #111b28 !important; }
+:root[data-app-theme="dark"] .timeline-grid-table > thead th {
+    background: #161f2b !important;
+    color: #f8fafc !important;
+    border-color: #465569 !important;
+}
+:root[data-app-theme="dark"] .timeline-grid-table > tbody > tr:not(.branch-divider) > td {
+    background: #172231 !important;
+    color: var(--dark-text) !important;
+    border-color: #3d4c60 !important;
+}
+:root[data-app-theme="dark"] .timeline-grid-table > tbody > tr:not(.branch-divider):nth-child(even) > td {
+    background: #1a2636 !important;
+}
+:root[data-app-theme="dark"] .timeline-grid-table > tbody > tr > td:first-child {
+    background: #202d3e !important;
+    color: var(--dark-text) !important;
+    border-right-color: #526177 !important;
+}
+:root[data-app-theme="dark"] .timeline-grid-table .row-me > td:first-child {
+    background: #173457 !important;
+}
+:root[data-app-theme="dark"] .calendar-drop-cell:is(.workload-free, .workload-normal, .workload-busy, .workload-heavy) {
+    background: #172231 !important;
+}
+:root[data-app-theme="dark"] .calendar-drop-cell.workload-busy { box-shadow: inset 0 0 0 1px rgba(245,158,11,.25); }
+:root[data-app-theme="dark"] .calendar-drop-cell.workload-heavy { box-shadow: inset 0 0 0 1px rgba(239,68,68,.32); }
+:root[data-app-theme="dark"] .calendar-drop-cell.drop-denied { background: #3a2029 !important; }
+:root[data-app-theme="dark"] .calendar-drop-cell.drop-saving { background: #3d3520 !important; }
+:root[data-app-theme="dark"] .add-hint { color: #91a0b4 !important; opacity: .42 !important; }
+
+/* Calendar cards: dark body, existing category colors remain as borders/badges/icons. */
+:root[data-app-theme="dark"] .schedule-card,
+:root[data-app-theme="dark"] .schedule-card:is(.schedule-office, .schedule-travel, .schedule-pullout, .schedule-holiday, .schedule-travel-request-block) {
+    background: linear-gradient(180deg, #263549 0%, #202d3e 100%) !important;
+    color: var(--dark-text) !important;
+    border-top-color: #53647a;
+    border-right-color: #53647a;
+    border-bottom-color: #53647a;
+    box-shadow: 0 5px 14px rgba(0,0,0,.32) !important;
+}
+:root[data-app-theme="dark"] .schedule-card:hover,
+:root[data-app-theme="dark"] .schedule-card:focus-within {
+    background: linear-gradient(180deg, #304158 0%, #263549 100%) !important;
+    box-shadow: 0 15px 30px rgba(0,0,0,.45) !important;
+}
+:root[data-app-theme="dark"] .schedule-card[data-linked-schedule-key] {
+    border-top-color: #60a5fa !important;
+    box-shadow: 0 10px 24px rgba(37,99,235,.22), 0 3px 10px rgba(0,0,0,.3) !important;
+}
+:root[data-app-theme="dark"] .schedule-card :is(.schedule-title, .schedule-client, .schedule-client-primary, .schedule-task-secondary) { color: var(--dark-text) !important; }
+:root[data-app-theme="dark"] .schedule-card :is(.schedule-product, .schedule-product-tertiary) { color: #8fc2ff !important; }
+:root[data-app-theme="dark"] .schedule-card .schedule-time { color: #b7c3d1 !important; }
+:root[data-app-theme="dark"] .schedule-card :is(.schedule-footer, .schedule-card-actions) { border-color: rgba(203,213,225,.18); }
+:root[data-app-theme="dark"] .schedule-card-action-btn {
+    background: #172231 !important;
+    color: #dce5ef !important;
+    border-color: #526177 !important;
+}
+:root[data-app-theme="dark"] .schedule-card-action-details:hover { background: #38485d !important; color: #fff !important; }
+:root[data-app-theme="dark"] .schedule-card-action-edit:hover { background: #173e68 !important; color: #93c5fd !important; }
+:root[data-app-theme="dark"] .schedule-card-action-tsr:hover { background: #4a351c !important; color: #fbbf24 !important; }
+:root[data-app-theme="dark"] .schedule-card-action-send:hover { background: #163c30 !important; color: #6ee7b7 !important; }
+:root[data-app-theme="dark"] .schedule-card-action-delete:hover { background: #4a2029 !important; color: #fda4af !important; }
+:root[data-app-theme="dark"] :is(.schedule-linked-badge, .mobile-linked-badge, .mobile-full-calendar-lite-linked-badge) { background: #18395f; color: #93c5fd; border-color: #3b82f6; }
+:root[data-app-theme="dark"] :is(.schedule-travel-request-badge, .schedule-override-badge) { filter: saturate(.9) brightness(.9); }
+:root[data-app-theme="dark"] .schedule-travel-destination { color: #c4b5fd !important; }
+:root[data-app-theme="dark"] .schedule-travel-reference { color: #ddd6fe !important; }
+
+:root[data-app-theme="dark"] .calendar-legend { color: var(--dark-muted); }
+:root[data-app-theme="dark"] .legend-pill { background: var(--dark-card) !important; color: var(--dark-text); border-color: #526177; box-shadow: none; }
+:root[data-app-theme="dark"] :is(.timeline-schedule-hover-summary, .timeline-summary-close-btn) {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .timeline-hover-summary-head { background: #25344a !important; border-color: var(--dark-border); }
+:root[data-app-theme="dark"] :is(.timeline-hover-summary-title, .timeline-hover-summary-sub) { color: inherit !important; }
+:root[data-app-theme="dark"] .timeline-summary-action-close { background: #35445a; color: #fff; border-color: #607087; }
+
+/* Calendar mobile */
+:root[data-app-theme="dark"] :is(
+    .mobile-add-schedule-card, .mobile-date-section, .mobile-engineer-workflow-strip,
+    .mobile-card-expanded-details, .mobile-full-calendar-sheet, .mobile-full-calendar-lite-chip
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .mobile-schedule-card,
+:root[data-app-theme="dark"] .mobile-schedule-card.mobile-travel-request-block {
+    background: linear-gradient(180deg, #263549, #202d3e) !important;
+    color: var(--dark-text) !important;
+    border-color: #526177 !important;
+}
+:root[data-app-theme="dark"] .mobile-schedule-card :is(.mobile-card-title, .mobile-card-client, .mobile-card-task, .mobile-card-time, .mobile-card-meta) { color: inherit !important; }
+:root[data-app-theme="dark"] .mobile-schedule-card :is(
+    .mobile-schedule-client, .mobile-schedule-task, .mobile-card-detail-value,
+    .mobile-card-detail-label, .mobile-card-hint
+) { color: var(--dark-text) !important; }
+:root[data-app-theme="dark"] .mobile-schedule-card .mobile-meta-row > span { color: var(--dark-muted) !important; }
+:root[data-app-theme="dark"] .mobile-schedule-card .mobile-card-detail-label { color: var(--dark-muted) !important; }
+:root[data-app-theme="dark"] .mobile-schedule-card .mobile-engineer-chip {
+    background: #2a394c !important;
+    color: #dce5ef !important;
+    border-color: #526177 !important;
+}
+:root[data-app-theme="dark"] :is(.mobile-day-step-btn, .mobile-selected-day-label, .mobile-hybrid-team-add-btn) { background: var(--dark-card) !important; color: var(--dark-text) !important; border-color: var(--dark-border) !important; }
+:root[data-app-theme="dark"] :is(.mobile-pill, .mobile-desktop-toggle) {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .mobile-pill.active { background: var(--app-primary) !important; color: #fff !important; }
+:root[data-app-theme="dark"] .mobile-sticky-actions { background: #111b28 !important; border-color: var(--dark-border) !important; }
+
+/* Workflow surfaces */
+:root[data-app-theme="dark"] :is(
+    [class*="approval-"][class*="-card"],
+    [class*="reim-"][class*="-card"],
+    [class*="travel-"][class*="-card"],
+    [class*="cash-"][class*="-card"],
+    [class*="liq-"][class*="-card"],
+    [class*="liquidation-"][class*="-card"],
+    [class*="report-"][class*="-card"],
+    [class*="product-"][class*="-card"],
+    [class*="client-"][class*="-card"],
+    [class*="engineer-"][class*="-card"]
+) {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .reim-filter-card, .reim-table-card, .travel-card, .cash-card,
+    .approval-module-card, .approval-card, .reports-hero, .report-stat-card,
+    .analytics-card, .analytics-panel, .accounting-card
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .travel-form-group-box, .travel-check, .travel-money-settings, .travel-money-option,
+    .travel-total, .reim-manual-panel, .reim-status-card,
+    .cash-form-group, .cash-summary-box, .compact-kpi-row > div
+) {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .approval-module-title, .approval-module-note,
+    .travel-form-title, .travel-form-subtitle, .travel-section-title, .travel-label,
+    .cash-section-title, .cash-muted, .stat-label, .stat-value, .stat-sub
+) { color: inherit !important; }
+:root[data-app-theme="dark"] :is(.reim-field input, .reim-field select, .travel-input, .travel-select, .travel-textarea) {
+    background: var(--dark-input) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .travel-money-option.active { background: var(--app-primary) !important; color: #fff !important; }
+
+/* Dashboard, records, reports, changelog and accounting custom surfaces */
+:root[data-app-theme="dark"] :is(
+    .dashboard-whats-new, .dashboard-card, .dashboard-section-card, .dashboard-stat-card,
+    .dashboard-personalize-toolbar, .dashboard-workflow-card,
+    .reports-hero, .report-stat-card, .reports-section-card, .reports-filter-card,
+    .changelog-release, .changelog-empty, .changelog-btn,
+    .accounting-center-card, .accounting-request-card,
+    .product-row, .client-row, .engineer-row
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .dashboard-workflow-card :is(.dashboard-workflow-title, .dashboard-workflow-subtitle, strong, span) { color: inherit !important; }
+:root[data-app-theme="dark"] .dashboard-whats-new :is(h3, p, div) { color: inherit !important; }
+:root[data-app-theme="dark"] .changelog-btn:hover { background: var(--dark-card-hover) !important; }
+:root[data-app-theme="dark"] .travel-notification-panel {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+
+/* Create TSR UI remains dark, but the official PDF/preview remains white. */
+:root[data-app-theme="dark"] :is(
+    .offline-tsr-hero, .offline-tsr-dialog-box, .offline-tsr-storage-health,
+    .offline-tsr-health-tile, .standalone-schedule-card, .standalone-schedule-empty,
+    .standalone-tsr-draft-card, .standalone-tsr-draft-empty,
+    .offline-tsr-queue-card, .tsr-knowledge-card, .tsr-knowledge-empty,
+    .schedule-picker-detail-grid > div, .tsr-category-menu
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .standalone-schedule-client, .standalone-schedule-product, .standalone-schedule-serial,
+    .standalone-schedule-meta, .standalone-tsr-draft-title, .standalone-tsr-draft-meta,
+    .tsr-knowledge-text, .tsr-knowledge-meta, .offline-tsr-dialog-title, .offline-tsr-dialog-message
+) { color: inherit !important; }
+
+/* Fixed-output exceptions: never theme generated documents or their inner content. */
+:root[data-app-theme="dark"] :is(
+    .tsr-print-sheet, .tsr-pdf-render-clone, .tsr-pdf-preview-frame, .tsr-pdf-preview-loading,
+    .pdf-page, .document-page, .print-page, .request-form-preview, .accounting-document-preview,
+    .signature-pad, .signature-preview-img, canvas[data-document-canvas]
+) {
+    background: #fff !important;
+    color: #111 !important;
+}
+:root[data-app-theme="dark"] .tsr-print-sheet * { color: #111 !important; border-color: #111; }
+
+@media print {
+    :root[data-app-theme="dark"] body,
+    :root[data-app-theme="dark"] .main-content,
+    :root[data-app-theme="dark"] .main-content * {
+        background: #fff !important;
+        color: #000 !important;
+        box-shadow: none !important;
+    }
+}

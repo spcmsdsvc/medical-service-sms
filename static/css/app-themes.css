@@ -123,7 +123,7 @@ a:not(.btn):not(.sidebar a) { color: var(--app-primary); }
     color: var(--app-text) !important;
     border-color: var(--app-border) !important;
 }
-:root[data-app-theme="dark"] :is(.text-dark, h1, h2, h3, h4, h5, h6, label, th, td) { color: var(--app-text) !important; }
+:root[data-app-theme="dark"] .text-dark { color: var(--app-text) !important; }
 :root[data-app-theme="dark"] :is(.text-muted, .form-text, small) { color: var(--app-muted) !important; }
 :root[data-app-theme="dark"] :is(.border, .border-top, .border-bottom, .border-start, .border-end, hr) { border-color: var(--app-border) !important; }
 :root[data-app-theme="dark"] :is(.form-control, .form-select, .input-group-text, textarea, input:not([type="checkbox"]):not([type="radio"])) {
