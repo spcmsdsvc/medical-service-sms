@@ -110,6 +110,18 @@
         {"item_key": "2026-07-15-reimbursement-manual-row-preserve", "category": "Reimbursement", "description": "Adding a manual reimbursement item now preserves all amounts and remarks already entered in the worksheet.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 70},
         {"item_key": "2026-07-15-tsr-address-wrap", "category": "Create TSR", "description": "Generated TSR forms now wrap long customer addresses and automatically expand the information row so the complete address remains visible.", "audiences": ["engineers", "admins"], "sort_order": 80}
       ]
+    },
+    {
+      "release_key": "2026-07-16",
+      "release_date": "2026-07-16",
+      "title": "Personal Appearance Themes",
+      "summary": "The complete system now supports account-synced dark mode and selectable accent themes.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-16-dark-mode", "category": "System", "description": "Light, Dark, and Use Device Setting modes are now available across desktop, mobile, and installed PWA screens.", "audiences": ["everyone"], "sort_order": 10},
+        {"item_key": "2026-07-16-accent-themes", "category": "System", "description": "Classic, Shimadzu Red, Clinical Green, and Corporate Blue accent themes can be selected under Settings > My Account.", "audiences": ["everyone"], "sort_order": 20},
+        {"item_key": "2026-07-16-theme-sync", "category": "System", "description": "Appearance preferences follow each account across devices and remain available during offline work.", "audiences": ["everyone"], "sort_order": 30}
+      ]
     }
   ]
 }

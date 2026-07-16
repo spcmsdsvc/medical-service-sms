@@ -212,6 +212,37 @@
             </div>
         </div>
 
+        <div class="col-12">
+            <section class="appearance-panel rounded-3 p-4 shadow-sm" aria-labelledby="appearance-title">
+                <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
+                    <div>
+                        <h5 id="appearance-title" class="fw-bold mb-1"><i class="fa-solid fa-palette me-2 text-primary"></i>Appearance</h5>
+                        <p class="text-muted small mb-0">Choose how the system looks on your account. Documents and printed forms stay unchanged.</p>
+                    </div>
+                    <span id="appearance-save-status" class="small fw-bold text-muted align-self-lg-center">Account synced</span>
+                </div>
+                <div class="row g-4">
+                    <div class="col-12 col-lg-5">
+                        <label class="small fw-bold text-uppercase text-muted mb-2 d-block">Mode</label>
+                        <div class="appearance-mode-control" role="group" aria-label="Appearance mode">
+                            <button type="button" class="appearance-mode-button" data-appearance-mode="light" onclick="setAppearanceMode('light')"><i class="fa-solid fa-sun me-1"></i>Light</button>
+                            <button type="button" class="appearance-mode-button" data-appearance-mode="dark" onclick="setAppearanceMode('dark')"><i class="fa-solid fa-moon me-1"></i>Dark</button>
+                            <button type="button" class="appearance-mode-button" data-appearance-mode="system" onclick="setAppearanceMode('system')"><i class="fa-solid fa-display me-1"></i>System</button>
+                        </div>
+                    </div>
+                    <div class="col-12 col-lg-7">
+                        <label class="small fw-bold text-uppercase text-muted mb-2 d-block">Accent</label>
+                        <div class="appearance-accent-grid" role="group" aria-label="Accent theme">
+                            <button type="button" class="appearance-accent-button" data-appearance-accent="classic" onclick="setAppearanceAccent('classic')"><span class="appearance-swatch" style="background:#0d6efd"></span>Classic</button>
+                            <button type="button" class="appearance-accent-button" data-appearance-accent="shimadzu-red" onclick="setAppearanceAccent('shimadzu-red')"><span class="appearance-swatch" style="background:#c8102e"></span>Shimadzu Red</button>
+                            <button type="button" class="appearance-accent-button" data-appearance-accent="clinical-green" onclick="setAppearanceAccent('clinical-green')"><span class="appearance-swatch" style="background:#198754"></span>Clinical Green</button>
+                            <button type="button" class="appearance-accent-button" data-appearance-accent="corporate-blue" onclick="setAppearanceAccent('corporate-blue')"><span class="appearance-swatch" style="background:#2563eb"></span>Corporate Blue</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
         </div>
 
         {% if backup_superadmin %}
@@ -2885,6 +2916,44 @@
             settingsAlert("Error: Promotion failed.");
         }
     }
+
+    function renderAppearanceControls() {
+        if (!window.appAppearance) return;
+        const current = window.appAppearance.getState();
+        document.querySelectorAll('[data-appearance-mode]').forEach(button => {
+            button.classList.toggle('active', button.dataset.appearanceMode === current.mode);
+            button.setAttribute('aria-pressed', button.dataset.appearanceMode === current.mode ? 'true' : 'false');
+        });
+        document.querySelectorAll('[data-appearance-accent]').forEach(button => {
+            button.classList.toggle('active', button.dataset.appearanceAccent === current.accent);
+            button.setAttribute('aria-pressed', button.dataset.appearanceAccent === current.accent ? 'true' : 'false');
+        });
+    }
+
+    async function saveAppearanceChoice(mode, accent) {
+        const status = document.getElementById('appearance-save-status');
+        if (status) status.textContent = 'Saving...';
+        const result = await window.appAppearance.save(mode, accent);
+        renderAppearanceControls();
+        if (status) {
+            status.textContent = result && result.success
+                ? 'Saved to your account'
+                : 'Saved on this device; will sync online';
+        }
+    }
+
+    function setAppearanceMode(mode) {
+        const current = window.appAppearance.getState();
+        saveAppearanceChoice(mode, current.accent);
+    }
+
+    function setAppearanceAccent(accent) {
+        const current = window.appAppearance.getState();
+        saveAppearanceChoice(current.mode, accent);
+    }
+
+    window.addEventListener('app-theme-changed', renderAppearanceControls);
+    document.addEventListener('DOMContentLoaded', renderAppearanceControls);
 </script>
 
 <style>

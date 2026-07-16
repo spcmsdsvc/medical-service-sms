@@ -1072,6 +1072,9 @@ class User(UserMixin, db.Model):
     approval_scope = db.Column(db.String(50), default='', nullable=True)
     approval_title = db.Column(db.String(100), default='', nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    ui_theme_mode = db.Column(db.String(20), default='light', nullable=False)
+    ui_accent_theme = db.Column(db.String(30), default='classic', nullable=False)
+    ui_theme_updated_at = db.Column(db.DateTime, nullable=True)
 
     # v5.4.0: Direct Relationship to Engineer profile
     engineer_rel = db.relationship('Engineer', backref='user_account', uselist=False)
@@ -2469,6 +2472,9 @@ def ensure_user_approval_columns():
                 ('approval_scope', "ALTER TABLE user ADD COLUMN approval_scope VARCHAR(50) DEFAULT ''"),
                 ('approval_title', "ALTER TABLE user ADD COLUMN approval_title VARCHAR(100) DEFAULT ''"),
                 ('is_active', "ALTER TABLE user ADD COLUMN is_active BOOLEAN DEFAULT 1 NOT NULL"),
+                ('ui_theme_mode', "ALTER TABLE user ADD COLUMN ui_theme_mode VARCHAR(20) DEFAULT 'light' NOT NULL"),
+                ('ui_accent_theme', "ALTER TABLE user ADD COLUMN ui_accent_theme VARCHAR(30) DEFAULT 'classic' NOT NULL"),
+                ('ui_theme_updated_at', "ALTER TABLE user ADD COLUMN ui_theme_updated_at DATETIME"),
             ]
 
             for column_name, ddl in migrations:
@@ -11171,7 +11177,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v15-tsr-address-wrap';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v16-system-themes';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -11181,6 +11187,8 @@ const APP_SHELL = [
   '/offline',
   '/manifest.json',
   '/pwa-icon.svg',
+  '/static/css/app-themes.css',
+  '/static/js/app-appearance.js',
   '/static/vendor/jspdf/jspdf.umd.min.js',
   '/static/fonts/liberation-sans/LiberationSans-Regular.ttf',
   '/static/fonts/liberation-sans/LiberationSans-Bold.ttf',
@@ -12977,6 +12985,65 @@ def admin_storage_bucket_migrate_batch():
         'results': results,
         'report': get_bucket_migration_report(include_objects=False),
     })
+
+
+APPEARANCE_THEME_MODES = {'light', 'dark', 'system'}
+APPEARANCE_ACCENT_THEMES = {'classic', 'shimadzu-red', 'clinical-green', 'corporate-blue'}
+
+
+def normalize_appearance_mode(value):
+    mode = (clean_str(value) or 'light').lower()
+    return mode if mode in APPEARANCE_THEME_MODES else 'light'
+
+
+def normalize_appearance_accent(value):
+    accent = (clean_str(value) or 'classic').lower()
+    return accent if accent in APPEARANCE_ACCENT_THEMES else 'classic'
+
+
+def appearance_preference_payload(user):
+    mode = normalize_appearance_mode(getattr(user, 'ui_theme_mode', None))
+    accent = normalize_appearance_accent(getattr(user, 'ui_accent_theme', None))
+    updated_at = getattr(user, 'ui_theme_updated_at', None)
+    return {
+        'success': True,
+        'mode': mode,
+        'accent': accent,
+        'effective_mode': mode if mode in {'light', 'dark'} else 'system',
+        'updated_at': updated_at.isoformat() if updated_at else None
+    }
+
+
+@app.route('/api/preferences/appearance', methods=['GET', 'POST'])
+@login_required
+def appearance_preferences_api():
+    """Load or update the current account's UI appearance preference."""
+    ensure_user_approval_columns()
+
+    if request.method == 'GET':
+        response = jsonify(appearance_preference_payload(current_user))
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        return response
+
+    payload = request.get_json(silent=True) or {}
+    raw_mode = (clean_str(payload.get('mode')) or '').lower()
+    raw_accent = (clean_str(payload.get('accent')) or '').lower()
+    if raw_mode not in APPEARANCE_THEME_MODES:
+        return jsonify({'success': False, 'error': 'Invalid appearance mode.'}), 400
+    if raw_accent not in APPEARANCE_ACCENT_THEMES:
+        return jsonify({'success': False, 'error': 'Invalid accent theme.'}), 400
+
+    current_user.ui_theme_mode = raw_mode
+    current_user.ui_accent_theme = raw_accent
+    current_user.ui_theme_updated_at = get_manila_time()
+    db.session.commit()
+
+    try:
+        log_activity(f"Updated appearance preference: {raw_mode} / {raw_accent}")
+    except Exception as log_error:
+        print(f"[Appearance] Activity log skipped: {log_error}", flush=True)
+
+    return jsonify(appearance_preference_payload(current_user))
 
 
 @app.route('/admin/storage-bucket/verify', methods=['POST'])
@@ -37167,6 +37234,9 @@ def initialize_database():
     """
     with app.app_context():
         db.create_all()
+        # User model queries during startup require additive columns before any
+        # hierarchy/account migration loads an existing user record.
+        ensure_user_approval_columns()
         ensure_engineer_signature_column()
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()
