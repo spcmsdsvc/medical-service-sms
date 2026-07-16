@@ -45575,12 +45575,24 @@ def lpr_page():
 @app.route('/get_lpr_list')
 @login_required
 def get_lpr_list():
-    ensure_lpr_tables()
-    if is_approver_only_user():
-        return jsonify({'success': True, 'items': [], 'count': 0})
-    query = LPRHeader.query.filter_by(user_id=current_user.id, parent_module=None).order_by(LPRHeader.updated_at.desc(), LPRHeader.id.desc())
-    items = query.limit(300).all()
-    return jsonify({'success': True, 'items': [lpr_to_dict(item, include_items=False, include_attachments=True) for item in items], 'count': len(items)})
+    try:
+        ensure_lpr_tables()
+        if is_approver_only_user():
+            return jsonify({'success': True, 'items': [], 'count': 0})
+        query = LPRHeader.query.filter_by(user_id=current_user.id, parent_module=None).order_by(LPRHeader.updated_at.desc(), LPRHeader.id.desc())
+        items = query.limit(300).all()
+        # The list view only needs request metadata. Attachment details are
+        # loaded when an individual LPR is opened, keeping this endpoint
+        # resilient when older attachment records need compatibility handling.
+        payload = [lpr_to_dict(item, include_items=False, include_attachments=False) for item in items]
+        return jsonify({'success': True, 'items': payload, 'count': len(payload)})
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[LPR] List load failed for user={getattr(current_user, "id", None)}: {exc}', flush=True)
+        return jsonify({
+            'success': False,
+            'error': 'Unable to load LPR records right now. Please refresh and try again.'
+        }), 500
 
 
 @app.route('/get_lpr/<int:lpr_id>')
