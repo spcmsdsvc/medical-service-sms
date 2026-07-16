@@ -10233,6 +10233,452 @@ def parse_online_tsr_payload_json(submission):
         return {}
 
 
+TSR_CHECKBOX_REPAIR_MARKER = 'medical-service-tsr-checkbox-repair:v1'
+
+
+def _tsr_repair_selected_category(payload, label):
+    """Match one service category using the same tolerant rules as the TSR UI."""
+    if not isinstance(payload, dict):
+        return False
+
+    raw_value = payload.get('tsr-service-category')
+    if isinstance(raw_value, list):
+        values = [clean_str(value) for value in raw_value if clean_str(value)]
+        category_text = ', '.join(values)
+    else:
+        category_text = clean_str(raw_value) or ''
+
+    other_value = clean_str(payload.get('tsr-service-category-other'))
+    if other_value and 'others' in category_text.lower():
+        category_text = f'{category_text}, {other_value}'
+
+    return clean_str(label).lower() in category_text.lower()
+
+
+def _tsr_repair_selected_document(payload, label):
+    """Return whether a submitted-documents checkbox was selected."""
+    if not isinstance(payload, dict):
+        return False
+
+    raw_value = payload.get('documents')
+    if raw_value is None:
+        raw_value = payload.get('tsr-documents')
+
+    if isinstance(raw_value, list):
+        values = raw_value
+    else:
+        values = re.split(r'[,;\n]+', clean_str(raw_value)) if raw_value else []
+
+    wanted = re.sub(r'\s+', ' ', clean_str(label).strip()).lower()
+    return any(
+        re.sub(r'\s+', ' ', clean_str(value).strip()).lower() == wanted
+        for value in values
+        if clean_str(value)
+    )
+
+
+def _tsr_repair_find_text(page, text, min_y=None, max_y=None, min_x=None):
+    """Find the most likely rendered label rectangle on a TSR page."""
+    try:
+        matches = page.search_for(text) or []
+    except Exception:
+        matches = []
+
+    filtered = []
+    for rect in matches:
+        if min_y is not None and rect.y0 < min_y:
+            continue
+        if max_y is not None and rect.y0 > max_y:
+            continue
+        if min_x is not None and rect.x0 < min_x:
+            continue
+        filtered.append(rect)
+
+    return sorted(filtered, key=lambda rect: (rect.y0, rect.x0))[0] if filtered else None
+
+
+def _tsr_repair_draw_check(page, label_rect, canvas_box=16):
+    """Overlay a sharp vector checkmark in the box immediately left of a label."""
+    if not label_rect:
+        return False
+
+    canvas_width = 1488.0
+    canvas_height = 2105.0
+    page_width = 595.28
+    page_height = 841.89
+    scale_x = page_width / canvas_width
+    scale_y = page_height / canvas_height
+    box_width = canvas_box * scale_x
+    box_height = canvas_box * scale_y
+    label_gap = 7 * scale_x
+    box_x = label_rect.x0 - box_width - label_gap
+    box_y = label_rect.y0 + max(0, (label_rect.height - box_height) / 2)
+    top = box_y
+
+    # Keep the coordinates proportional to the existing browser renderer.
+    p1 = (box_x + box_width * 0.18, top + box_height * 0.52)
+    p2 = (box_x + box_width * 0.42, top + box_height * 0.78)
+    p3 = (box_x + box_width * 0.84, top + box_height * 0.20)
+    width = max(1.7, canvas_box * 0.13) * scale_x
+    color = (0.067, 0.067, 0.067)
+    page.draw_line(p1, p2, color=color, width=width, overlay=True)
+    page.draw_line(p2, p3, color=color, width=width, overlay=True)
+    return True
+
+
+def repair_tsr_pdf_checkboxes(pdf_bytes, payload):
+    """Overlay corrected TSR checkbox marks without changing submitted content.
+
+    This is intentionally an overlay repair, rather than a full PDF
+    regeneration. It preserves the existing form data, signatures, layout,
+    and page breaks while fixing the old canvas checkmark glyph output.
+    """
+    if not isinstance(pdf_bytes, (bytes, bytearray)) or not pdf_bytes:
+        raise ValueError('TSR PDF is empty.')
+
+    try:
+        import fitz  # PyMuPDF
+    except Exception as error:
+        raise RuntimeError(f'PyMuPDF is unavailable: {error}') from error
+
+    document = fitz.open(stream=bytes(pdf_bytes), filetype='pdf')
+    try:
+        metadata = dict(document.metadata or {})
+        keywords = clean_str(metadata.get('keywords')) or ''
+        if TSR_CHECKBOX_REPAIR_MARKER in keywords:
+            return {
+                'pdf_bytes': bytes(pdf_bytes),
+                'already_repaired': True,
+                'marks_added': [],
+                'missing_labels': [],
+                'page_count': len(document),
+            }
+
+        if not document:
+            raise ValueError('TSR PDF has no pages.')
+
+        first_page = document[0]
+        page_width = float(first_page.rect.width)
+        page_height = float(first_page.rect.height)
+
+        service_anchor = _tsr_repair_find_text(first_page, 'SERVICE CATEGORY')
+        documents_anchor = _tsr_repair_find_text(first_page, 'SUBMITTED ORIGINAL DOCUMENTS')
+        category_min_y = service_anchor.y0 + 2 if service_anchor else page_height * 0.18
+        category_max_y = service_anchor.y0 + 55 if service_anchor else page_height * 0.55
+        documents_min_y = documents_anchor.y0 + 2 if documents_anchor else page_height * 0.35
+        documents_max_y = documents_anchor.y0 + 75 if documents_anchor else page_height * 0.75
+
+        marks_added = []
+        missing_labels = []
+
+        # The current TSR renderer always marks Medical at the top of the form.
+        medical_rect = _tsr_repair_find_text(
+            first_page,
+            'Medical',
+            min_y=0,
+            max_y=page_height * 0.30,
+            min_x=page_width * 0.60,
+        )
+        if medical_rect and _tsr_repair_draw_check(first_page, medical_rect, canvas_box=15):
+            marks_added.append('Medical')
+        else:
+            missing_labels.append('Medical')
+
+        category_labels = (
+            ('Warranty', 'Warranty'),
+            ('Checkup/Repair', 'Checkup/Repair'),
+            ('Preventive Maintenance', 'Preventive Maintenance'),
+            ('Installation', 'Installation'),
+            ('Others', 'Others'),
+        )
+        for label, payload_label in category_labels:
+            if not _tsr_repair_selected_category(payload, payload_label):
+                continue
+            label_rect = _tsr_repair_find_text(
+                first_page,
+                label,
+                min_y=category_min_y,
+                max_y=category_max_y,
+            )
+            if label_rect and _tsr_repair_draw_check(first_page, label_rect):
+                marks_added.append(label)
+            else:
+                missing_labels.append(label)
+
+        document_labels = (
+            'Sticker',
+            'Calibration Certificate',
+            'PM Certificate',
+            'Completion Report',
+            'System Check',
+            'IQ Documents',
+            'OQ Documents',
+            'PM Documents',
+            'Service Report',
+            'Calibration Data (Medical)',
+            'Invoice / Billing',
+            'Delivery Receipt',
+        )
+        for label in document_labels:
+            if not _tsr_repair_selected_document(payload, label):
+                continue
+            label_rect = _tsr_repair_find_text(
+                first_page,
+                label,
+                min_y=documents_min_y,
+                max_y=documents_max_y,
+            )
+            if label_rect and _tsr_repair_draw_check(first_page, label_rect):
+                marks_added.append(label)
+            else:
+                missing_labels.append(label)
+
+        if not marks_added:
+            raise ValueError('No repairable TSR checkbox labels were found.')
+
+        metadata['keywords'] = f'{keywords}; {TSR_CHECKBOX_REPAIR_MARKER}'.strip('; ')
+        document.set_metadata(metadata)
+        repaired_bytes = document.tobytes(garbage=4, deflate=True, clean=True)
+        return {
+            'pdf_bytes': repaired_bytes,
+            'already_repaired': False,
+            'marks_added': marks_added,
+            'missing_labels': missing_labels,
+            'page_count': len(document),
+        }
+    finally:
+        document.close()
+
+
+def _tsr_repair_submission_file(submission):
+    """Resolve the PDF ShiftFile associated with one online TSR submission."""
+    if not submission:
+        return None
+
+    payload = parse_online_tsr_payload_json(submission)
+    attached_file_id = clean_int(payload.get('_attached_file_id'))
+    attached_file = db.session.get(ShiftFile, attached_file_id) if attached_file_id else None
+    if attached_file and attached_file.shift_id == submission.shift_id:
+        return attached_file
+
+    return ShiftFile.query.filter_by(
+        online_tsr_submission_id=submission.id,
+    ).order_by(ShiftFile.uploaded_at.desc(), ShiftFile.id.desc()).first()
+
+
+def _tsr_repair_date_value(value, fallback):
+    try:
+        return datetime.strptime(clean_str(value), '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _tsr_repair_candidate_rows(start_date, end_date, limit=100):
+    """Return eligible vector TSR submissions and their linked PDF records."""
+    start_at = datetime.combine(start_date, datetime.min.time())
+    end_at = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+    submissions = OnlineTsrSubmission.query.filter(
+        OnlineTsrSubmission.created_at >= start_at,
+        OnlineTsrSubmission.created_at < end_at,
+        OnlineTsrSubmission.status == 'completed',
+        OnlineTsrSubmission.is_latest.is_(True),
+    ).order_by(
+        OnlineTsrSubmission.created_at.asc(),
+        OnlineTsrSubmission.id.asc(),
+    ).limit(limit).all()
+
+    candidates = []
+    skipped = []
+    for submission in submissions:
+        payload = parse_online_tsr_payload_json(submission)
+        if clean_str(payload.get('_tsr_form_version')) != 'vector-pdf-v2':
+            skipped.append({
+                'submission_id': submission.id,
+                'reason': 'not-vector-pdf-v2',
+            })
+            continue
+
+        file_rec = _tsr_repair_submission_file(submission)
+        if not file_rec:
+            skipped.append({
+                'submission_id': submission.id,
+                'reason': 'attached-pdf-record-not-found',
+            })
+            continue
+
+        display_name = get_shift_file_display_name(file_rec)
+        disk_name = get_shift_file_disk_name(file_rec)
+        if not disk_name or not clean_str(display_name or disk_name).lower().endswith('.pdf'):
+            skipped.append({
+                'submission_id': submission.id,
+                'file_id': file_rec.id,
+                'reason': 'attached-file-is-not-pdf',
+            })
+            continue
+
+        candidates.append({
+            'submission': submission,
+            'payload': payload,
+            'file_rec': file_rec,
+            'display_name': display_name or disk_name,
+            'disk_name': disk_name,
+        })
+
+    return candidates, skipped
+
+
+def _tsr_repair_html_form(default_start, default_end):
+    return f'''<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>TSR Checkbox Repair</title>
+<style>body{{font-family:Arial,sans-serif;background:#f5f7fb;color:#182235;padding:32px;}}main{{max-width:720px;background:#fff;border:1px solid #d9e1ee;border-radius:14px;padding:24px;box-shadow:0 8px 30px #18223518;}}label{{display:block;font-weight:700;margin:14px 0 6px;}}input{{padding:10px;border:1px solid #aab7c9;border-radius:8px;}}button{{margin:18px 10px 0 0;padding:11px 16px;border:0;border-radius:8px;font-weight:700;cursor:pointer;}}button[name="mode"][value="dry_run"]{{background:#e7eef9;color:#183a6b;}}button[name="mode"][value="apply"]{{background:#198754;color:white;}}small{{color:#52647c;}}</style></head>
+<body><main><h1>TSR Checkbox Repair</h1><p>Admin-only, file-only repair for vector TSR PDFs. The submitted TSR payload and database records are not changed.</p>
+<form method="post" action="/admin/repair_tsr_checkboxes">
+<label for="start_date">Start date</label><input id="start_date" name="start_date" type="date" value="{default_start.isoformat()}" required>
+<label for="end_date">End date</label><input id="end_date" name="end_date" type="date" value="{default_end.isoformat()}" required>
+<label for="limit">Maximum files</label><input id="limit" name="limit" type="number" value="100" min="1" max="100">
+<br><button type="submit" name="mode" value="dry_run">Preview repair candidates</button><button type="submit" name="mode" value="apply">Apply checkbox repair</button>
+</form><p><small>Backups are written before replacement. Re-running is safe because repaired files carry an internal repair marker.</small></p></main></body></html>'''
+
+
+@app.route('/admin/repair_tsr_checkboxes', methods=['GET', 'POST'])
+@login_required
+@csrf.exempt
+def admin_repair_tsr_checkboxes():
+    """Preview/apply checkbox-only repairs for recent system-generated TSR PDFs."""
+    if not is_superadmin_user():
+        return jsonify({'status': 'error', 'message': 'Superadmin access required.'}), 403
+
+    today = get_manila_today()
+    default_start = today - timedelta(days=1)
+    default_end = today
+
+    if request.method == 'GET':
+        if (clean_str(request.args.get('format')) or '').lower() == 'json':
+            start_date = _tsr_repair_date_value(request.args.get('start_date'), default_start)
+            end_date = _tsr_repair_date_value(request.args.get('end_date'), default_end)
+            limit = min(max(clean_int(request.args.get('limit')) or 100, 1), 100)
+            candidates, skipped = _tsr_repair_candidate_rows(start_date, end_date, limit)
+            return jsonify({
+                'status': 'success',
+                'dry_run': True,
+                'start_date': start_date.isoformat(),
+                'end_date': end_date.isoformat(),
+                'candidates': [
+                    {
+                        'submission_id': row['submission'].id,
+                        'shift_id': row['submission'].shift_id,
+                        'file_id': row['file_rec'].id,
+                        'tsr_number': row['submission'].tsr_number,
+                        'filename': row['display_name'],
+                        'created_at': row['submission'].created_at.isoformat() if row['submission'].created_at else '',
+                    }
+                    for row in candidates
+                ],
+                'skipped': skipped,
+            })
+        return _tsr_repair_html_form(default_start, default_end)
+
+    form = request.form or {}
+    body = request.get_json(silent=True) if request.is_json else None
+    values = body if isinstance(body, dict) else form
+    start_date = _tsr_repair_date_value(values.get('start_date'), default_start)
+    end_date = _tsr_repair_date_value(values.get('end_date'), default_end)
+    if end_date < start_date:
+        return jsonify({'status': 'error', 'message': 'End date cannot be before start date.'}), 400
+    limit = min(max(clean_int(values.get('limit')) or 100, 1), 100)
+    mode = (clean_str(values.get('mode')) or '').lower()
+    dry_run = mode != 'apply' and not parse_bool_flag(values.get('apply'))
+
+    candidates, skipped = _tsr_repair_candidate_rows(start_date, end_date, limit)
+    repaired = []
+    errors = []
+
+    for row in candidates:
+        submission = row['submission']
+        file_rec = row['file_rec']
+        local_path = os.path.join(app.config['UPLOAD_FOLDER'], row['disk_name'])
+        readable_path = None
+        try:
+            readable_path = managed_storage_read_path(STORAGE_PREFIX_REPORTS, local_path)
+            with open(readable_path, 'rb') as source_file:
+                original_bytes = source_file.read()
+            repair = repair_tsr_pdf_checkboxes(original_bytes, row['payload'])
+            repaired_bytes = repair['pdf_bytes']
+            old_sha = hashlib.sha256(original_bytes).hexdigest()
+            new_sha = hashlib.sha256(repaired_bytes).hexdigest()
+            result = {
+                'submission_id': submission.id,
+                'shift_id': submission.shift_id,
+                'file_id': file_rec.id,
+                'tsr_number': submission.tsr_number,
+                'filename': row['display_name'],
+                'created_at': submission.created_at.isoformat() if submission.created_at else '',
+                'old_sha256': old_sha,
+                'new_sha256': new_sha,
+                'old_size': len(original_bytes),
+                'new_size': len(repaired_bytes),
+                'already_repaired': repair['already_repaired'],
+                'marks_added': repair['marks_added'],
+                'missing_labels': repair['missing_labels'],
+                'dry_run': dry_run,
+            }
+
+            if not dry_run and not repair['already_repaired'] and new_sha != old_sha:
+                backup_date = get_manila_today().isoformat()
+                backup_name = secure_filename(f'{submission.id}_{old_sha[:12]}_{row["disk_name"]}')
+                backup_path = os.path.join(
+                    app.config['UPLOAD_FOLDER'],
+                    '_tsr_repair_backups',
+                    backup_date,
+                    backup_name,
+                )
+                managed_storage_write_bytes(
+                    f'{STORAGE_PREFIX_REPORTS}/_tsr_repair_backups/{backup_date}',
+                    backup_path,
+                    original_bytes,
+                    original_filename=row['display_name'],
+                    content_type='application/pdf',
+                )
+                managed_storage_write_bytes(
+                    STORAGE_PREFIX_REPORTS,
+                    local_path,
+                    repaired_bytes,
+                    original_filename=row['display_name'],
+                    content_type='application/pdf',
+                )
+                result['backup_name'] = backup_name
+                result['applied'] = True
+            else:
+                result['applied'] = False
+
+            repaired.append(result)
+        except Exception as error:
+            errors.append({
+                'submission_id': submission.id,
+                'file_id': file_rec.id,
+                'filename': row['display_name'],
+                'error': str(error),
+            })
+        finally:
+            if readable_path and readable_path != local_path:
+                managed_storage_release_path(readable_path)
+
+    return jsonify({
+        'status': 'success' if not errors else 'partial_success',
+        'dry_run': dry_run,
+        'start_date': start_date.isoformat(),
+        'end_date': end_date.isoformat(),
+        'candidate_count': len(candidates),
+        'repaired': repaired,
+        'skipped': skipped,
+        'errors': errors,
+        'message': (
+            'Dry run complete. No files were changed.' if dry_run else
+            'TSR checkbox repair complete. Submitted data and database records were not changed.'
+        ),
+    })
+
+
 def online_tsr_submission_to_dict(submission, include_payload=True):
     """Serialize an online TSR submission for revision/edit flows."""
     if not submission:
