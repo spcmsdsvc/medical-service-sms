@@ -5,80 +5,121 @@ import fitz
 from app import (
     TSR_SCHEDULE_COVERAGE_REPAIR_MARKER,
     TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V1,
+    TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V2,
     repair_tsr_single_day_multi_engineer_coverage_pdf,
 )
 
 
 class TsrScheduleCoverageRepairTests(unittest.TestCase):
     @staticmethod
-    def make_v1_repaired_pdf():
+    def make_legacy_team_pdf(marker=TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V2, compact=True):
         document = fitz.open()
         page = document.new_page(width=595.28, height=841.89)
 
-        page.draw_rect(fitz.Rect(24, 239, 571, 252), color=(0, 0, 0), width=0.8)
+        page.insert_text((30, 45), 'TECHNICAL SERVICE REPORT', fontsize=12)
+        if compact:
+            page.draw_rect(fitz.Rect(24, 239, 571, 278), color=(0, 0, 0), width=0.8)
+            page.draw_line(fitz.Point(24, 252), fitz.Point(571, 252), color=(0, 0, 0), width=0.8)
+        else:
+            page.draw_rect(fitz.Rect(24, 239, 571, 252), color=(0, 0, 0), width=0.8)
+            page.draw_rect(fitz.Rect(24, 252, 571, 278), color=(0, 0, 0), width=0.8)
         page.insert_text((31, 249), 'SCHEDULE COVERAGE', fontsize=7.5)
-        columns = [(24, 172), (172, 298), (298, 571)]
-        for left, right in columns:
-            page.draw_rect(fitz.Rect(left, 252, right, 264), color=(0, 0, 0), width=0.8)
-            page.draw_rect(fitz.Rect(left, 264, right, 278), color=(0, 0, 0), width=0.8)
-        page.insert_text((31, 261), 'SCHEDULED DATE', fontsize=6.5)
-        page.insert_text((179, 261), 'SCHEDULED TIME', fontsize=6.5)
-        page.insert_text((305, 261), 'ASSIGNED ENGINEER(S)', fontsize=6.5)
-        page.insert_text((31, 274), 'Jul 16, 2026', fontsize=6.5)
-        page.insert_text((179, 274), '17:00 - 19:00', fontsize=6.5)
-        page.insert_text((305, 274), 'Engineer One, Engineer Two', fontsize=6.5)
+        page.insert_text((31, 267), 'ASSIGNED ENGINEER(S): Engineer One, Engineer Two', fontsize=7.2)
 
-        # Simulate the first repair's extra compact rectangle while retaining
-        # the old table graphics underneath it.
-        page.draw_rect(fitz.Rect(27, 240, 568, 283), color=(0, 0, 0), fill=(1, 1, 1), width=0.8)
-        page.draw_line(fitz.Point(27, 252), fitz.Point(568, 252), color=(0, 0, 0), width=0.6)
-        page.insert_text((34, 250), 'SCHEDULE COVERAGE', fontsize=7.5)
-        page.insert_text((34, 264), 'ASSIGNED ENGINEER(S): Engineer One, Engineer Two', fontsize=7.2)
+        page.draw_rect(fitz.Rect(24, 278, 571, 291), color=(0, 0, 0), width=0.8)
+        page.insert_text((28, 288), 'COMPLAINT', fontsize=7.5)
+        page.draw_rect(fitz.Rect(24, 291, 571, 320), color=(0, 0, 0), width=0.8)
+        page.insert_text((28, 306), 'Preventive Maintenance', fontsize=7.5)
 
-        page.draw_rect(fitz.Rect(24, 282, 571, 293), color=(0, 0, 0), width=0.8)
-        page.insert_text((28, 291), 'COMPLAINT', fontsize=7.5)
-        page.draw_rect(fitz.Rect(24, 294, 571, 319), color=(0, 0, 0), width=0.8)
-        page.insert_text((28, 307), 'Preventive Maintenance', fontsize=7.5)
+        page.draw_rect(fitz.Rect(24, 320, 571, 333), color=(0, 0, 0), width=0.8)
+        page.insert_text((28, 330), 'ACTIONS TAKEN', fontsize=7.5)
+        page.draw_rect(fitz.Rect(24, 333, 571, 520), color=(0, 0, 0), width=0.8)
+        page.insert_text((28, 348), 'Checked system operation.', fontsize=7.5)
 
-        document.set_metadata({'keywords': TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V1})
+        page.draw_rect(fitz.Rect(24, 520, 571, 533), color=(0, 0, 0), width=0.8)
+        page.insert_text((28, 530), 'REMARKS/RECOMMENDATIONS', fontsize=7.5)
+        page.draw_rect(fitz.Rect(24, 533, 571, 560), color=(0, 0, 0), width=0.8)
+        page.insert_text((28, 548), 'Unit is operational.', fontsize=7.5)
+
+        page.draw_rect(fitz.Rect(24, 560, 571, 680), color=(0, 0, 0), width=0.8)
+        page.insert_text((28, 575), 'SUBMITTED ORIGINAL DOCUMENTS', fontsize=7.5)
+        page.insert_text((70, 730), 'SERVICED BY:', fontsize=7)
+        page.insert_text((80, 760), 'ENGINEER ONE', fontsize=8)
+        page.insert_text((360, 730), 'ACKNOWLEDGED BY:', fontsize=7)
+        page.insert_text((365, 760), 'CUSTOMER NAME', fontsize=8)
+        page.insert_text((24, 815), 'SPC Service TSR 004-2020', fontsize=6)
+
+        document.set_metadata({'keywords': marker})
         raw = document.tobytes()
         document.close()
         return raw
 
-    def test_v1_overlap_is_upgraded_to_clean_v2_block(self):
+    def test_original_full_coverage_table_is_removed(self):
         result = repair_tsr_single_day_multi_engineer_coverage_pdf(
-            self.make_v1_repaired_pdf(),
+            self.make_legacy_team_pdf(marker='', compact=False),
             ['Engineer One', 'Engineer Two'],
+            serviced_by='Engineer One',
         )
-
-        self.assertFalse(result['already_repaired'])
         repaired = fitz.open(stream=result['pdf_bytes'], filetype='pdf')
-        page = repaired[0]
-        self.assertIn(TSR_SCHEDULE_COVERAGE_REPAIR_MARKER, repaired.metadata.get('keywords', ''))
-        self.assertEqual(len(page.search_for('SCHEDULE COVERAGE')), 1)
-        self.assertEqual(len(page.search_for('ASSIGNED ENGINEER(S)')), 1)
-        self.assertEqual(len(page.search_for('COMPLAINT')), 1)
-
-        # Old table dividers at x=172 and x=298 must be removed from the
-        # coverage band; only the compact outer border and title divider remain.
-        old_dividers = []
-        for drawing in page.get_drawings():
-            rect = drawing.get('rect')
-            if not rect or rect.y1 < 239 or rect.y0 > 282:
-                continue
-            if abs(rect.x0 - 172) < 1 or abs(rect.x0 - 298) < 1:
-                old_dividers.append(rect)
-        self.assertEqual(old_dividers, [])
+        page_text = '\n'.join(page.get_text() for page in repaired)
+        self.assertNotIn('SCHEDULE COVERAGE', page_text)
+        self.assertIn('OTHER ASSIGNED ENGINEER(S): ENGINEER TWO', page_text)
+        self.assertIn('COMPLAINT', page_text)
         repaired.close()
 
-    def test_v2_repair_is_idempotent(self):
+    def test_v1_and_v2_repairs_upgrade_to_team_footer_v3(self):
+        for marker in (TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V1, TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V2):
+            with self.subTest(marker=marker):
+                result = repair_tsr_single_day_multi_engineer_coverage_pdf(
+                    self.make_legacy_team_pdf(marker),
+                    ['Engineer One', 'Engineer Two'],
+                    serviced_by='Engineer One',
+                )
+
+                self.assertFalse(result['already_repaired'])
+                self.assertEqual(result['other_assigned_engineers'], ['Engineer Two'])
+                repaired = fitz.open(stream=result['pdf_bytes'], filetype='pdf')
+                page_text = '\n'.join(page.get_text() for page in repaired)
+                self.assertIn(TSR_SCHEDULE_COVERAGE_REPAIR_MARKER, repaired.metadata.get('keywords', ''))
+                self.assertNotIn('SCHEDULE COVERAGE', page_text)
+                self.assertIn('OTHER ASSIGNED ENGINEER(S): ENGINEER TWO', page_text)
+                self.assertNotIn('OTHER ASSIGNED ENGINEER(S): ENGINEER ONE', page_text)
+                self.assertIn('COMPLAINT', page_text)
+                self.assertIn('ACTIONS TAKEN', page_text)
+                self.assertIn('REMARKS/RECOMMENDATIONS', page_text)
+                self.assertIn('UNIT IS OPERATIONAL', page_text.upper())
+                self.assertIn('SPC Service TSR 004-2020', page_text)
+                repaired.close()
+
+    def test_team_footer_wraps_up_to_five_assigned_engineers(self):
+        names = [
+            'Engineer One',
+            'Engineer Two',
+            'Engineer Three',
+            'Engineer Four',
+            'Engineer Five',
+        ]
+        result = repair_tsr_single_day_multi_engineer_coverage_pdf(
+            self.make_legacy_team_pdf(),
+            names,
+            serviced_by='Engineer One',
+        )
+        repaired = fitz.open(stream=result['pdf_bytes'], filetype='pdf')
+        page_text = '\n'.join(page.get_text() for page in repaired)
+        for name in names[1:]:
+            self.assertIn(name.upper(), page_text)
+        repaired.close()
+
+    def test_team_footer_v3_is_idempotent(self):
         first = repair_tsr_single_day_multi_engineer_coverage_pdf(
-            self.make_v1_repaired_pdf(),
+            self.make_legacy_team_pdf(),
             ['Engineer One', 'Engineer Two'],
+            serviced_by='Engineer One',
         )
         second = repair_tsr_single_day_multi_engineer_coverage_pdf(
             first['pdf_bytes'],
             ['Engineer One', 'Engineer Two'],
+            serviced_by='Engineer One',
         )
 
         self.assertTrue(second['already_repaired'])

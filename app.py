@@ -9050,58 +9050,52 @@ def generate_online_tsr_submission_pdf(submission, shift, payload):
         ('Service Category', payload_value('tsr-service-category') or payload_value('tsr-service-category-other')),
     ]))
 
-    story.append(Paragraph('Service Details', section_style))
-    story.append(detail_table([
+    coverage_rows = get_tsr_schedule_coverage_rows(shift)
+    serviced_by_name = payload_value('tsr-serviced-by') or clean_str(submission.submitted_by_name)
+    other_assigned_engineers = get_tsr_other_assigned_engineer_names(coverage_rows, serviced_by_name)
+    coverage_dates = {
+        clean_str(row.get('date_iso') or row.get('date_label'))
+        for row in coverage_rows
+        if clean_str(row.get('date_iso') or row.get('date_label'))
+    }
+    is_single_day_team = len(coverage_rows) == 1 and len(coverage_dates) <= 1 and bool(other_assigned_engineers)
+
+    service_detail_rows = [
         ('Schedule ID', getattr(shift, 'id', '')),
         ('Task', schedule_value('task') or clean_str(getattr(shift, 'title', ''))),
         ('Date of Service', payload_value('tsr-service-date') or schedule_value('date_iso', 'date_label')),
         ('Time Started', payload_value('tsr-time-started') or schedule_value('time_start')),
         ('Time Finished', payload_value('tsr-time-finished') or schedule_value('time_end')),
-        ('Serviced By', payload_value('tsr-serviced-by') or clean_str(submission.submitted_by_name)),
+        ('Serviced By', serviced_by_name),
         ('Acknowledged By', payload_value('tsr-acknowledged-by')),
         ('Contact No.', payload_value('tsr-contact-no')),
         ('Email Add.', payload_value('tsr-email-add')),
-    ]))
+    ]
+    if is_single_day_team:
+        service_detail_rows.append(('Other Assigned Engineer(s)', ', '.join(other_assigned_engineers)))
 
-    coverage_rows = get_tsr_schedule_coverage_rows(shift)
-    coverage_engineers = list(dict.fromkeys(
-        name
-        for row in coverage_rows
-        for name in (row.get('engineer_names') or [])
-        if clean_str(name)
-    ))
-    if len(coverage_rows) > 1 or len(coverage_engineers) > 1:
+    story.append(Paragraph('Service Details', section_style))
+    story.append(detail_table(service_detail_rows))
+
+    if len(coverage_rows) > 1 or len(coverage_dates) > 1:
         story.append(Paragraph('Schedule Coverage', section_style))
-        coverage_dates = {
-            clean_str(row.get('date_iso') or row.get('date_label'))
-            for row in coverage_rows
-            if clean_str(row.get('date_iso') or row.get('date_label'))
-        }
-        compact_coverage = len(coverage_rows) == 1 and len(coverage_dates) <= 1 and len(coverage_engineers) > 1
-        if compact_coverage:
-            coverage_data = [[
-                Paragraph('<b>Assigned Engineer(s)</b>', body_style),
-                safe_paragraph(', '.join(coverage_engineers) or 'Assigned engineer'),
-            ]]
-            coverage_table = Table(coverage_data, colWidths=[44 * mm, 130 * mm])
-        else:
-            coverage_data = [[
-                Paragraph('<b>Scheduled Date</b>', body_style),
-                Paragraph('<b>Scheduled Time</b>', body_style),
-                Paragraph('<b>Assigned Engineer(s)</b>', body_style),
-            ]]
-            for row in coverage_rows:
-                time_text = ' - '.join(filter(None, [row.get('time_start'), row.get('time_end')]))
-                coverage_data.append([
-                    safe_paragraph(row.get('date_label') or row.get('date_iso')),
-                    safe_paragraph(time_text),
-                    safe_paragraph(', '.join(row.get('engineer_names') or [])),
-                ])
-            coverage_table = Table(
-                coverage_data,
-                colWidths=[38 * mm, 38 * mm, 98 * mm],
-                repeatRows=1
-            )
+        coverage_data = [[
+            Paragraph('<b>Scheduled Date</b>', body_style),
+            Paragraph('<b>Scheduled Time</b>', body_style),
+            Paragraph('<b>Assigned Engineer(s)</b>', body_style),
+        ]]
+        for row in coverage_rows:
+            time_text = ' - '.join(filter(None, [row.get('time_start'), row.get('time_end')]))
+            coverage_data.append([
+                safe_paragraph(row.get('date_label') or row.get('date_iso')),
+                safe_paragraph(time_text),
+                safe_paragraph(', '.join(row.get('engineer_names') or [])),
+            ])
+        coverage_table = Table(
+            coverage_data,
+            colWidths=[38 * mm, 38 * mm, 98 * mm],
+            repeatRows=1
+        )
         coverage_table.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#cbd5e1')),
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f1f5f9')),
@@ -9235,6 +9229,35 @@ def get_tsr_schedule_coverage_rows(shift, linked_shifts=None):
         row['engineer_ids'] = sorted(set(row.get('engineer_ids') or []))
         row['is_selected'] = bool(row.get('is_selected'))
     return rows
+
+
+def normalize_tsr_engineer_identity(value):
+    return re.sub(r'[^a-z0-9]+', ' ', clean_str(value).lower()).strip()
+
+
+def get_tsr_other_assigned_engineer_names(coverage_rows, serviced_by):
+    """Return unique single-day team members other than the TSR signer."""
+    rows = list(coverage_rows or [])
+    coverage_dates = {
+        clean_str(row.get('date_iso') or row.get('date_label'))
+        for row in rows
+        if clean_str(row.get('date_iso') or row.get('date_label'))
+    }
+    if len(rows) != 1 or len(coverage_dates) > 1:
+        return []
+
+    signer_identity = normalize_tsr_engineer_identity(serviced_by)
+    names = []
+    seen = set()
+    for row in rows:
+        for raw_name in row.get('engineer_names') or []:
+            display_name = clean_str(raw_name)
+            identity = normalize_tsr_engineer_identity(display_name)
+            if not display_name or not identity or identity == signer_identity or identity in seen:
+                continue
+            seen.add(identity)
+            names.append(display_name)
+    return names
 
 
 def complete_linked_schedules_for_online_tsr(shift):
@@ -10566,7 +10589,8 @@ def repair_tsr_pdf_checkboxes(pdf_bytes, payload):
 
 
 TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V1 = 'medical-service-tsr-coverage-repair:compact-v1'
-TSR_SCHEDULE_COVERAGE_REPAIR_MARKER = 'medical-service-tsr-coverage-repair:compact-v2'
+TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V2 = 'medical-service-tsr-coverage-repair:compact-v2'
+TSR_SCHEDULE_COVERAGE_REPAIR_MARKER = 'medical-service-tsr-coverage-repair:team-footer-v3'
 
 
 def _tsr_coverage_repair_engineer_names(coverage_rows):
@@ -10579,43 +10603,51 @@ def _tsr_coverage_repair_engineer_names(coverage_rows):
     return names
 
 
-def repair_tsr_single_day_multi_engineer_coverage_pdf(pdf_bytes, engineer_names):
-    """Replace one-day coverage date/time table with a compact engineer row.
+def repair_tsr_single_day_multi_engineer_coverage_pdf(pdf_bytes, engineer_names, serviced_by=''):
+    """Remove single-day coverage and place other engineers below the signer.
 
-    The repair redacts the first page's complete coverage band, including the
-    old table line art, then redraws one compact row in place. Existing text,
-    logo, signatures, and form geometry outside the coverage band remain
-    untouched and vector-based. Files repaired by the original v1 routine are
-    intentionally eligible for this v2 cleanup because v1 preserved old lines.
+    The first page is rebuilt from vector clips rather than flattened or
+    edited in place. Complaint and Actions Taken move upward, the removed
+    coverage height extends the Actions area, and signatures remain at their
+    original coordinates. Previous compact-v1/v2 files remain eligible.
     """
     if not isinstance(pdf_bytes, (bytes, bytearray)) or not pdf_bytes:
         raise ValueError('TSR PDF is empty.')
 
     names = list(dict.fromkeys(clean_str(name) for name in engineer_names or [] if clean_str(name)))
     if len(names) < 2:
-        raise ValueError('At least two assigned engineers are required for compact coverage repair.')
+        raise ValueError('At least two assigned engineers are required for team footer repair.')
+    serviced_by = clean_str(serviced_by) or names[0]
+    signer_identity = normalize_tsr_engineer_identity(serviced_by)
+    other_names = [
+        name for name in names
+        if normalize_tsr_engineer_identity(name) != signer_identity
+    ]
+    if not other_names:
+        raise ValueError('No additional assigned engineer remains after excluding the TSR signer.')
 
     try:
         import fitz  # PyMuPDF
     except Exception as error:
         raise RuntimeError(f'PyMuPDF is unavailable: {error}') from error
 
-    document = fitz.open(stream=bytes(pdf_bytes), filetype='pdf')
+    source_document = fitz.open(stream=bytes(pdf_bytes), filetype='pdf')
+    repaired_document = None
     try:
-        metadata = dict(document.metadata or {})
+        metadata = dict(source_document.metadata or {})
         keywords = clean_str(metadata.get('keywords')) or ''
         if TSR_SCHEDULE_COVERAGE_REPAIR_MARKER in keywords:
             return {
                 'pdf_bytes': bytes(pdf_bytes),
                 'already_repaired': True,
-                'page_count': len(document),
+                'page_count': len(source_document),
                 'delta_points': 0,
             }
 
-        if not document:
+        if not source_document:
             raise ValueError('TSR PDF has no pages.')
 
-        source_page = document[0]
+        source_page = source_document[0]
         coverage_rect = _tsr_repair_find_text(
             source_page,
             'SCHEDULE COVERAGE',
@@ -10626,85 +10658,163 @@ def repair_tsr_single_day_multi_engineer_coverage_pdf(pdf_bytes, engineer_names)
             source_page,
             'COMPLAINT',
             min_y=(coverage_rect.y1 if coverage_rect else 0),
-            max_y=source_page.rect.height * 0.85,
+            max_y=source_page.rect.height * 0.82,
         )
-        if not coverage_rect or not complaint_rect:
-            raise ValueError('Coverage and Complaint section boundaries could not be located.')
+        remarks_rect = _tsr_repair_find_text(
+            source_page,
+            'REMARKS/RECOMMENDATIONS',
+            min_y=(complaint_rect.y1 if complaint_rect else 0),
+            max_y=source_page.rect.height * 0.90,
+        )
+        if not coverage_rect or not complaint_rect or not remarks_rect:
+            raise ValueError('Coverage, Complaint, and Remarks section boundaries could not be located.')
 
         page_width = source_page.rect.width
         page_height = source_page.rect.height
-        coverage_band_drawings = []
+        wide_drawings = []
         for drawing in source_page.get_drawings():
             drawing_rect = drawing.get('rect')
             if not drawing_rect or drawing_rect.width < page_width * 0.75:
                 continue
             if drawing_rect.x0 <= 1 or drawing_rect.x1 >= page_width - 1:
                 continue
-            if drawing_rect.y1 < coverage_rect.y0 - 8 or drawing_rect.y0 > complaint_rect.y0 + 2:
-                continue
-            coverage_band_drawings.append(drawing_rect)
+            wide_drawings.append(drawing_rect)
 
-        if coverage_band_drawings:
-            content_left = max(0.0, min(rect.x0 for rect in coverage_band_drawings))
-            content_right = min(page_width, max(rect.x1 for rect in coverage_band_drawings))
-        else:
-            # All system-generated vector TSRs use the same A4 form margin.
-            # Keep a safe proportional fallback for any unusual older file.
-            content_left = page_width * 0.04032
-            content_right = page_width - content_left
-        section_top = max(0.0, coverage_rect.y0 - 0.8)
-        section_bottom = min(page_height, complaint_rect.y0 - 0.8)
-        old_height = section_bottom - section_top
-        if old_height < 28.0:
-            raise ValueError('Coverage section is too small for a safe compact replacement.')
+        coverage_sections = [
+            rect for rect in wide_drawings
+            if rect.y0 <= coverage_rect.y0 and rect.y1 >= coverage_rect.y1
+        ]
+        remarks_sections = [
+            rect for rect in wide_drawings
+            if rect.y0 <= remarks_rect.y0 and rect.y1 >= remarks_rect.y1
+        ]
+        if not coverage_sections or not remarks_sections:
+            raise ValueError('TSR section borders could not be located safely.')
 
-        section_rect = fitz.Rect(content_left, section_top, content_right, section_bottom)
-        source_page.add_redact_annot(section_rect, fill=(1, 1, 1))
-        source_page.apply_redactions(
-            images=fitz.PDF_REDACT_IMAGE_NONE,
-            graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
-            text=fitz.PDF_REDACT_TEXT_REMOVE,
+        coverage_section = max(coverage_sections, key=lambda rect: rect.height)
+        remarks_section = min(remarks_sections, key=lambda rect: rect.height)
+        section_top = min(rect.y0 for rect in coverage_sections)
+        coverage_band_drawings = [
+            rect for rect in wide_drawings
+            if rect.y0 >= section_top - 2 and rect.y1 <= complaint_rect.y0 + 2
+        ]
+        if not coverage_band_drawings:
+            raise ValueError('Schedule Coverage lower boundary could not be located safely.')
+        complaint_top = max(rect.y1 for rect in coverage_band_drawings)
+        remarks_top = remarks_section.y0
+        removed_height = complaint_top - section_top
+        if removed_height < 24 or remarks_top <= complaint_top + 30:
+            raise ValueError('Coverage section geometry is unsafe for vector reconstruction.')
+
+        signer_matches = source_page.search_for(serviced_by)
+        signer_matches = [rect for rect in signer_matches if rect.y0 > page_height * 0.70]
+        footer_matches = source_page.search_for('SPC Service TSR 004-2020')
+        if not signer_matches or not footer_matches:
+            raise ValueError('Serviced By caption or TSR footer could not be located.')
+        signer_rect = max(signer_matches, key=lambda rect: rect.y0)
+        footer_rect = max(footer_matches, key=lambda rect: rect.y0)
+
+        repaired_document = fitz.open()
+        repaired_page = repaired_document.new_page(width=page_width, height=page_height)
+        repaired_page.show_pdf_page(
+            fitz.Rect(0, 0, page_width, section_top),
+            source_document,
+            0,
+            clip=fitz.Rect(0, 0, page_width, section_top),
+        )
+        repaired_page.show_pdf_page(
+            fitz.Rect(0, section_top, page_width, remarks_top - removed_height),
+            source_document,
+            0,
+            clip=fitz.Rect(0, complaint_top, page_width, remarks_top),
+        )
+        repaired_page.show_pdf_page(
+            fitz.Rect(0, remarks_top, page_width, page_height),
+            source_document,
+            0,
+            clip=fitz.Rect(0, remarks_top, page_width, page_height),
         )
 
-        compact_height = old_height
-        title_height = min(12.0, compact_height * 0.40)
-        source_page.draw_rect(
-            section_rect,
-            color=(0, 0, 0),
+        # The removed section becomes additional Actions Taken writing space.
+        form_left = coverage_section.x0
+        form_right = coverage_section.x1
+        extension_top = remarks_top - removed_height
+        repaired_page.draw_rect(
+            fitz.Rect(form_left + 1, extension_top - 1, form_right - 1, extension_top + 1),
+            color=None,
             fill=(1, 1, 1),
-            width=0.8,
             overlay=True,
         )
-        source_page.draw_line(
-            fitz.Point(content_left, section_top + title_height),
-            fitz.Point(content_right, section_top + title_height),
+        repaired_page.draw_line(
+            fitz.Point(form_left, extension_top - 1),
+            fitz.Point(form_left, remarks_top),
             color=(0, 0, 0),
-            width=0.6,
+            width=0.7,
             overlay=True,
         )
-        source_page.insert_text(
-            fitz.Point(content_left + 7, section_top + 12),
-            'SCHEDULE COVERAGE',
-            fontname='hebo',
-            fontsize=7.6,
-            color=(0.067, 0.067, 0.067),
+        repaired_page.draw_line(
+            fitz.Point(form_right, extension_top - 1),
+            fitz.Point(form_right, remarks_top),
+            color=(0, 0, 0),
+            width=0.7,
             overlay=True,
         )
-        source_page.insert_textbox(
-            fitz.Rect(content_left + 7, section_top + title_height + 3, content_right - 7, section_bottom - 4),
-            f'ASSIGNED ENGINEER(S): {", ".join(names)}',
-            fontname='hebo',
-            fontsize=7.2,
-            lineheight=1.15,
-            color=(0.067, 0.067, 0.067),
-            overlay=True,
+
+        team_text = f'OTHER ASSIGNED ENGINEER(S): {", ".join(other_names)}'.upper()
+        team_box = fitz.Rect(
+            max(form_left + 26, 42),
+            signer_rect.y1 + 3,
+            page_width / 2 - 12,
+            footer_rect.y0 - 2,
         )
+        font = fitz.Font(fontname='hebo')
+        team_lines = None
+        team_font_size = None
+        for candidate_size in (6.2, 5.8, 5.4, 5.0):
+            words = team_text.split()
+            lines = []
+            current_line = ''
+            for word in words:
+                candidate_line = f'{current_line} {word}'.strip()
+                if current_line and font.text_length(candidate_line, fontsize=candidate_size) > team_box.width:
+                    lines.append(current_line)
+                    current_line = word
+                else:
+                    current_line = candidate_line
+            if current_line:
+                lines.append(current_line)
+            if len(lines) <= 2 and len(lines) * candidate_size * 1.18 <= team_box.height:
+                team_lines = lines
+                team_font_size = candidate_size
+                break
+        if not team_lines or not team_font_size:
+            raise ValueError('Additional assigned engineer names do not fit safely below Serviced By.')
+
+        baseline_y = team_box.y0 + team_font_size
+        for line_index, line in enumerate(team_lines):
+            repaired_page.insert_text(
+                fitz.Point(team_box.x0, baseline_y + line_index * team_font_size * 1.18),
+                line,
+                fontname='hebo',
+                fontsize=team_font_size,
+                color=(0.067, 0.067, 0.067),
+                overlay=True,
+            )
+
+        for page_index in range(1, len(source_document)):
+            source_continuation = source_document[page_index]
+            target_continuation = repaired_document.new_page(
+                width=source_continuation.rect.width,
+                height=source_continuation.rect.height,
+            )
+            target_continuation.show_pdf_page(
+                target_continuation.rect,
+                source_document,
+                page_index,
+            )
 
         metadata['keywords'] = f'{keywords}; {TSR_SCHEDULE_COVERAGE_REPAIR_MARKER}'.strip('; ')
-        document.set_metadata(metadata)
-        # Keep the repaired PDF on disk briefly while PyMuPDF serializes it.
-        # In older TSRs, returning document.tobytes() after redaction can
-        # corrupt shared background resources and turn the page black.
+        repaired_document.set_metadata(metadata)
         temp_path = None
         try:
             temp_file = tempfile.NamedTemporaryFile(
@@ -10714,7 +10824,7 @@ def repair_tsr_single_day_multi_engineer_coverage_pdf(pdf_bytes, engineer_names)
             )
             temp_path = temp_file.name
             temp_file.close()
-            document.save(temp_path, garbage=3, deflate=True)
+            repaired_document.save(temp_path, garbage=3, deflate=True)
             with open(temp_path, 'rb') as repaired_file:
                 repaired_bytes = repaired_file.read()
         finally:
@@ -10723,11 +10833,14 @@ def repair_tsr_single_day_multi_engineer_coverage_pdf(pdf_bytes, engineer_names)
         return {
             'pdf_bytes': repaired_bytes,
             'already_repaired': False,
-            'page_count': len(document),
-            'delta_points': 0,
+            'page_count': len(repaired_document),
+            'delta_points': removed_height,
+            'other_assigned_engineers': other_names,
         }
     finally:
-        document.close()
+        if repaired_document is not None:
+            repaired_document.close()
+        source_document.close()
 
 
 def _tsr_repair_submission_file(submission):
@@ -10959,20 +11072,25 @@ def admin_repair_tsr_checkboxes():
     })
 
 
-def _tsr_schedule_coverage_repair_candidate_rows(start_date, end_date, limit=100):
-    """Return latest active vector TSRs needing the compact coverage repair."""
+def _tsr_schedule_coverage_repair_candidate_rows(start_date=None, end_date=None, limit=100):
+    """Return latest active vector TSRs needing the team-footer repair."""
     ensure_online_tsr_submission_table()
-    start_at = datetime.combine(start_date, datetime.min.time())
-    end_at = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
-    submissions = OnlineTsrSubmission.query.filter(
-        OnlineTsrSubmission.created_at >= start_at,
-        OnlineTsrSubmission.created_at < end_at,
+    query = OnlineTsrSubmission.query.filter(
         OnlineTsrSubmission.status == 'completed',
         OnlineTsrSubmission.is_latest.is_(True),
-    ).order_by(
+    )
+    if start_date is not None:
+        query = query.filter(
+            OnlineTsrSubmission.created_at >= datetime.combine(start_date, datetime.min.time()),
+        )
+    if end_date is not None:
+        query = query.filter(
+            OnlineTsrSubmission.created_at < datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
+        )
+    submissions = query.order_by(
         OnlineTsrSubmission.created_at.asc(),
         OnlineTsrSubmission.id.asc(),
-    ).limit(limit).all()
+    ).all()
 
     candidates = []
     skipped = []
@@ -11047,6 +11165,25 @@ def _tsr_schedule_coverage_repair_candidate_rows(start_date, end_date, limit=100
             })
             continue
 
+        serviced_by = (
+            clean_str(payload.get('tsr-serviced-by'))
+            or clean_str(submission.submitted_by_name)
+            or engineer_names[0]
+        )
+        other_assigned_engineers = get_tsr_other_assigned_engineer_names(
+            coverage_rows,
+            serviced_by,
+        )
+        if not other_assigned_engineers:
+            skipped.append({
+                'submission_id': submission.id,
+                'file_id': file_rec.id,
+                'reason': 'no-additional-engineer-after-excluding-signer',
+                'serviced_by': serviced_by,
+                'engineer_names': engineer_names,
+            })
+            continue
+
         # The authoritative schedule can have multiple engineers even when
         # an older vector PDF was generated before Schedule Coverage existed.
         # Probe the actual file before calling it a repair candidate so those
@@ -11059,6 +11196,7 @@ def _tsr_schedule_coverage_repair_candidate_rows(start_date, end_date, limit=100
                 probe = repair_tsr_single_day_multi_engineer_coverage_pdf(
                     source_file.read(),
                     engineer_names,
+                    serviced_by=serviced_by,
                 )
             if probe.get('already_repaired'):
                 skipped.append({
@@ -11085,10 +11223,14 @@ def _tsr_schedule_coverage_repair_candidate_rows(start_date, end_date, limit=100
             'shift': shift,
             'coverage_rows': coverage_rows,
             'engineer_names': engineer_names,
+            'serviced_by': serviced_by,
+            'other_assigned_engineers': other_assigned_engineers,
             'file_rec': file_rec,
             'display_name': display_name or disk_name,
             'disk_name': disk_name,
         })
+        if len(candidates) >= limit:
+            break
 
     return candidates, skipped
 
@@ -11138,12 +11280,13 @@ def _tsr_schedule_coverage_repair_html_form(default_start, default_end):
     return f'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>TSR Schedule Coverage Repair</title>
 <style>body{{font-family:Arial,sans-serif;background:#f5f7fb;color:#182235;padding:32px;}}main{{max-width:720px;background:#fff;border:1px solid #d9e1ee;border-radius:14px;padding:24px;box-shadow:0 8px 30px #18223518;}}label{{display:block;font-weight:700;margin:14px 0 6px;}}input{{padding:10px;border:1px solid #aab7c9;border-radius:8px;}}button{{margin:18px 10px 0 0;padding:11px 16px;border:0;border-radius:8px;font-weight:700;cursor:pointer;}}button[name="mode"][value="dry_run"]{{background:#e7eef9;color:#183a6b;}}button[name="mode"][value="apply"]{{background:#198754;color:white;}}small{{color:#52647c;}}</style></head>
-<body><main><h1>TSR Schedule Coverage Repair</h1><p>Superadmin-only file repair for latest active vector TSRs with one service day and multiple assigned engineers. TSR records and submitted payloads are not changed.</p>
+<body><main><h1>TSR Assigned Engineers Repair</h1><p>Superadmin-only file repair for latest active vector TSRs with one service day and multiple assigned engineers. TSR records and submitted payloads are not changed.</p>
 <form method="post" action="/admin/repair_tsr_schedule_coverage">
+<label><input name="all_eligible" type="checkbox" value="true"> Scan all eligible completed vector TSRs</label>
 <label for="start_date">Saved date from</label><input id="start_date" name="start_date" type="date" value="{default_start.isoformat()}" required>
 <label for="end_date">Saved date to</label><input id="end_date" name="end_date" type="date" value="{default_end.isoformat()}" required>
-<label for="limit">Maximum files</label><input id="limit" name="limit" type="number" value="100" min="1" max="100">
-<br><button type="submit" name="mode" value="dry_run">Preview repair candidates</button><button type="submit" name="mode" value="apply">Apply compact repair</button>
+<label for="limit">Maximum repair candidates per batch</label><input id="limit" name="limit" type="number" value="25" min="1" max="100">
+<br><button type="submit" name="mode" value="dry_run">Preview repair candidates</button><button type="submit" name="mode" value="apply">Apply team-footer repair</button>
 </form><p><small>The original PDF is backed up before replacement. Re-running is safe because repaired files carry an internal marker.</small></p></main></body></html>'''
 
 
@@ -11151,7 +11294,7 @@ def _tsr_schedule_coverage_repair_html_form(default_start, default_end):
 @login_required
 @csrf.exempt
 def admin_repair_tsr_schedule_coverage():
-    """Preview/apply compact coverage repairs for latest vector TSR PDFs."""
+    """Preview/apply team-footer repairs for latest vector TSR PDFs."""
     if not is_superadmin_user():
         return jsonify({'status': 'error', 'message': 'Superadmin access required.'}), 403
 
@@ -11163,13 +11306,19 @@ def admin_repair_tsr_schedule_coverage():
         if (clean_str(request.args.get('format')) or '').lower() == 'json':
             start_date = _tsr_repair_date_value(request.args.get('start_date'), default_start)
             end_date = _tsr_repair_date_value(request.args.get('end_date'), default_end)
-            limit = min(max(clean_int(request.args.get('limit')) or 100, 1), 100)
-            candidates, skipped = _tsr_schedule_coverage_repair_candidate_rows(start_date, end_date, limit)
+            all_eligible = parse_bool_flag(request.args.get('all_eligible'))
+            limit = min(max(clean_int(request.args.get('limit')) or 25, 1), 100)
+            candidates, skipped = _tsr_schedule_coverage_repair_candidate_rows(
+                None if all_eligible else start_date,
+                None if all_eligible else end_date,
+                limit,
+            )
             return jsonify({
                 'status': 'success',
                 'dry_run': True,
-                'start_date': start_date.isoformat(),
-                'end_date': end_date.isoformat(),
+                'all_eligible': all_eligible,
+                'start_date': None if all_eligible else start_date.isoformat(),
+                'end_date': None if all_eligible else end_date.isoformat(),
                 'candidates': [
                     {
                         'submission_id': row['submission'].id,
@@ -11179,6 +11328,8 @@ def admin_repair_tsr_schedule_coverage():
                         'filename': row['display_name'],
                         'client_name': row['submission'].client_name or '',
                         'engineer_names': row['engineer_names'],
+                        'serviced_by': row['serviced_by'],
+                        'other_assigned_engineers': row['other_assigned_engineers'],
                         'created_at': row['submission'].created_at.isoformat() if row['submission'].created_at else '',
                     }
                     for row in candidates
@@ -11190,15 +11341,20 @@ def admin_repair_tsr_schedule_coverage():
     form = request.form or {}
     body = request.get_json(silent=True) if request.is_json else None
     values = body if isinstance(body, dict) else form
+    all_eligible = parse_bool_flag(values.get('all_eligible'))
     start_date = _tsr_repair_date_value(values.get('start_date'), default_start)
     end_date = _tsr_repair_date_value(values.get('end_date'), default_end)
-    if end_date < start_date:
+    if not all_eligible and end_date < start_date:
         return jsonify({'status': 'error', 'message': 'End date cannot be before start date.'}), 400
-    limit = min(max(clean_int(values.get('limit')) or 100, 1), 100)
+    limit = min(max(clean_int(values.get('limit')) or 25, 1), 100)
     mode = (clean_str(values.get('mode')) or '').lower()
     dry_run = mode != 'apply' and not parse_bool_flag(values.get('apply'))
 
-    candidates, skipped = _tsr_schedule_coverage_repair_candidate_rows(start_date, end_date, limit)
+    candidates, skipped = _tsr_schedule_coverage_repair_candidate_rows(
+        None if all_eligible else start_date,
+        None if all_eligible else end_date,
+        limit,
+    )
     repaired = []
     errors = []
 
@@ -11214,6 +11370,7 @@ def admin_repair_tsr_schedule_coverage():
             repair = repair_tsr_single_day_multi_engineer_coverage_pdf(
                 original_bytes,
                 row['engineer_names'],
+                serviced_by=row['serviced_by'],
             )
             repaired_bytes = repair['pdf_bytes']
             old_sha = hashlib.sha256(original_bytes).hexdigest()
@@ -11226,6 +11383,8 @@ def admin_repair_tsr_schedule_coverage():
                 'filename': row['display_name'],
                 'created_at': submission.created_at.isoformat() if submission.created_at else '',
                 'engineer_names': row['engineer_names'],
+                'serviced_by': row['serviced_by'],
+                'other_assigned_engineers': row['other_assigned_engineers'],
                 'old_sha256': old_sha,
                 'new_sha256': new_sha,
                 'old_size': len(original_bytes),
@@ -11276,15 +11435,16 @@ def admin_repair_tsr_schedule_coverage():
     return jsonify({
         'status': 'success' if not errors else 'partial_success',
         'dry_run': dry_run,
-        'start_date': start_date.isoformat(),
-        'end_date': end_date.isoformat(),
+        'all_eligible': all_eligible,
+        'start_date': None if all_eligible else start_date.isoformat(),
+        'end_date': None if all_eligible else end_date.isoformat(),
         'candidate_count': len(candidates),
         'repaired': repaired,
         'skipped': skipped,
         'errors': errors,
         'message': (
             'Dry run complete. No files were changed.' if dry_run else
-            'TSR schedule coverage repair complete. TSR records and database payloads were not changed.'
+            'TSR assigned-engineer repair complete. TSR records and database payloads were not changed.'
         ),
     })
 
@@ -12322,7 +12482,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v19-lpr-hidden';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v20-tsr-team-footer';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -32787,7 +32947,7 @@ def preview_tsr_archive_file(file_id):
   <div class="viewer-header">
     <div class="viewer-title">{html.escape(safe_name)}</div>
     <div class="viewer-actions">
-      <button type="button" onclick="location.reload()">Reload</button>
+      <button type="button" onclick="reloadLatestPreview()">Reload</button>
       <a href="{html.escape(download_url)}">Download</a>
     </div>
   </div>
@@ -32800,6 +32960,12 @@ def preview_tsr_archive_file(file_id):
     const FILE_EXT = {json.dumps(ext)};
     const FILE_NAME = {json.dumps(safe_name)};
     const viewer = document.getElementById('viewer');
+
+    function reloadLatestPreview() {{
+      const url = new URL(window.location.href);
+      url.searchParams.set('preview_reload', String(Date.now()));
+      window.location.replace(url.toString());
+    }}
 
     function showMessage(title, message) {{
       viewer.innerHTML = `<div class="message"><h2>${{title}}</h2><p>${{message}}</p><p><a href="{html.escape(download_url)}">Download file</a></p></div>`;
@@ -32826,7 +32992,8 @@ def preview_tsr_archive_file(file_id):
         image.alt = `${{FILE_NAME}} page ${{pageNumber}}`;
         image.loading = 'eager';
         image.decoding = 'async';
-        const pageUrl = PDF_PAGE_URL_TEMPLATE.replace('__PAGE__', String(pageNumber)) + `&preview_ts=${{Date.now()}}`;
+        const fingerprint = encodeURIComponent(meta.content_version || 'latest');
+        const pageUrl = PDF_PAGE_URL_TEMPLATE.replace('__PAGE__', String(pageNumber)) + `&v=${{fingerprint}}&preview_ts=${{Date.now()}}`;
 
         await new Promise((resolve, reject) => {{
           const timeout = setTimeout(() => reject(new Error(`Page ${{pageNumber}} render timeout.`)), 25000);
@@ -32882,7 +33049,15 @@ def preview_tsr_archive_file(file_id):
 </body>
 </html>"""
 
-    return Response(viewer_html, mimetype='text/html', headers={'Cache-Control': 'no-store'})
+    return Response(
+        viewer_html,
+        mimetype='text/html',
+        headers={
+            'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+        },
+    )
 
 
 @app.route('/preview_tsr_archive_pdf_meta/<int:file_id>')
@@ -32898,13 +33073,21 @@ def preview_tsr_archive_pdf_meta(file_id):
 
     try:
         import fitz  # PyMuPDF
-        with fitz.open(resolved['file_path']) as pdf_doc:
+        with open(resolved['file_path'], 'rb') as source_file:
+            pdf_bytes = source_file.read()
+        content_version = hashlib.sha256(pdf_bytes).hexdigest()[:20]
+        with fitz.open(stream=pdf_bytes, filetype='pdf') as pdf_doc:
             page_count = int(getattr(pdf_doc, 'page_count', 0) or len(pdf_doc))
-        return jsonify({
+        response = jsonify({
             'status': 'success',
             'page_count': page_count,
-            'filename': resolved['display_name'] or resolved['disk_name']
+            'filename': resolved['display_name'] or resolved['disk_name'],
+            'content_version': content_version,
         })
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
     except Exception as preview_error:
         return jsonify({
             'status': 'error',
@@ -32947,7 +33130,9 @@ def preview_tsr_archive_pdf_page(file_id, page_number):
             image_bytes,
             mimetype='image/jpeg',
             headers={
-                'Cache-Control': 'no-store',
+                'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+                'Pragma': 'no-cache',
+                'Expires': '0',
                 'Content-Disposition': f'inline; filename="tsr_preview_page_{page_number}.jpg"',
                 'X-Content-Type-Options': 'nosniff'
             }
@@ -32983,7 +33168,9 @@ def preview_tsr_archive_content(file_id):
         mimetype=mimetype_map.get(ext, 'application/octet-stream')
     )
     response.headers['Content-Disposition'] = f'inline; filename="{clean_preview_name}"'
-    response.headers['Cache-Control'] = 'no-store'
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
     return response
 
 
@@ -33004,7 +33191,9 @@ def download_tsr_archive_file(file_id):
     )
     response = send_file(resolved['file_path'], as_attachment=True, download_name=clean_download_name)
     response.headers['Content-Disposition'] = f'attachment; filename="{clean_download_name}"'
-    response.headers['Cache-Control'] = 'no-store'
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
     return response
 
 

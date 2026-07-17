@@ -65,10 +65,11 @@ class LPRWorkflowTests(unittest.TestCase):
         self.assertIn('<optgroup label="Medical">', self.template_source)
         self.assertIn('<optgroup label="Admin">', self.template_source)
 
-    def test_lpr_is_separately_launch_gated(self):
-        self.assertIn("app.config['LPR_ENABLED']", self.app_source)
+    def test_lpr_is_enabled_in_the_released_workflow(self):
         self.assertIn("def lpr_enabled()", self.app_source)
-        self.assertIn("'message': 'Local Purchase Requisition is not available yet.'", self.app_source)
+        self.assertIsNotNone(app_module)
+        self.assertTrue(app_module.lpr_enabled())
+        self.assertTrue(app_module.embedded_lpr_enabled())
         self.assertIn("{% if lpr_enabled %}", (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8'))
         self.assertIn("{% if lpr_enabled %}", (ROOT / 'templates' / 'approvals.html').read_text(encoding='utf-8'))
 
