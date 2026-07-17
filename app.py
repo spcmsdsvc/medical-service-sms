@@ -5945,6 +5945,12 @@ def build_reimbursement_package_zip_bytes(header):
                 reimbursement_all_receipts_filename(header, engineer_name),
                 all_receipts_buffer.getvalue()
             )
+        for lpr_header in linked_lpr_records('reimbursement', header.id):
+            lpr_name = secure_filename(lpr_header.lpr_no or f'LPR-{lpr_header.id}') or f'LPR-{lpr_header.id}'
+            package.writestr(f'{lpr_name}.pdf', lpr_fill_pdf_bytes(lpr_header))
+            supporting_lpr_bytes = build_lpr_supporting_attachments_pdf_bytes(lpr_header)
+            if supporting_lpr_bytes:
+                package.writestr(f'{lpr_name}_Supporting_Attachments.pdf', supporting_lpr_bytes)
 
     zip_buffer.seek(0)
     return reimbursement_package_filename(header, engineer_name), zip_buffer.getvalue()
@@ -13398,7 +13404,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v22-tsr-date-range';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v23-reimbursement-lpr';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -18950,6 +18956,8 @@ def reimbursement_header_to_manager_dict(header, include_rows=False):
     if include_rows:
         payload['rows'] = rows
         payload['additional_receipts'] = receipts_by_shift.get('additional', [])
+        payload['linked_lprs'] = linked_lpr_dicts('reimbursement', header.id, include_items=True, include_attachments=True)
+        payload['linked_lpr_count'] = len(payload['linked_lprs'])
     return payload
 
 
@@ -23008,6 +23016,7 @@ def delete_reimbursement_draft(reimbursement_id=None):
             }
         )
 
+        linked_lpr_count, linked_lpr_files_removed = delete_linked_lprs_for_parent('reimbursement', header.id)
         ReimbursementRow.query.filter_by(reimbursement_id=header.id).delete()
         db.session.delete(header)
         db.session.commit()
@@ -23031,6 +23040,8 @@ def delete_reimbursement_draft(reimbursement_id=None):
             'deleted': True,
             'id': header_id,
             'files_removed': removed_files,
+            'linked_lprs_removed': linked_lpr_count,
+            'linked_lpr_files_removed': linked_lpr_files_removed,
             'message': 'Reimbursement draft deleted.'
         })
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -27267,6 +27278,7 @@ def approve_reimbursement(reimbursement_id):
         header.rejected_by_id = None
         header.approval_remarks = remarks
         apply_approval_signature_snapshot(header, current_user, action_label='Approved', signed_at=now)
+        sync_embedded_lpr_parent_signatures('reimbursement', header, 'approved', actor_user=current_user, signed_at=now)
         header.updated_at = now
         record_universal_approval_audit(
             'reimbursement',
@@ -32525,6 +32537,22 @@ def submit_reimbursement():
                 'rows_submitted': 0
             }), 400
 
+        office_field_sources = reimbursement_lpr_sources(header)
+        linked_lprs = linked_lpr_records('reimbursement', header.id)
+        if office_field_sources:
+            if len(linked_lprs) != 1:
+                return jsonify({
+                    'success': False,
+                    'lpr_required': True,
+                    'error': 'Review and confirm the required LPR before submitting this reimbursement.'
+                }), 409
+            try:
+                validate_reimbursement_linked_lpr(header, linked_lprs[0], require_header=True)
+            except ValueError as exc:
+                return jsonify({'success': False, 'lpr_required': True, 'error': str(exc)}), 409
+        elif linked_lprs:
+            delete_linked_lprs_for_parent('reimbursement', header.id)
+
         for row in zero_rows:
             db.session.delete(row)
         if zero_rows:
@@ -32542,6 +32570,7 @@ def submit_reimbursement():
         header.approval_remarks = None
         header.updated_at = now
         db.session.add(header)
+        sync_embedded_lpr_parent_signatures('reimbursement', header, 'submitted', actor_user=current_user, signed_at=now)
         record_universal_approval_audit(
             'reimbursement',
             header.id,
@@ -46772,6 +46801,7 @@ class LPRHeader(db.Model):
     parent_module = db.Column(db.String(40), index=True)
     cash_advance_id = db.Column(db.Integer, db.ForeignKey('cash_advance_header.id'), index=True)
     travel_request_id = db.Column(db.Integer, db.ForeignKey('travel_request.id'), index=True)
+    reimbursement_id = db.Column(db.Integer, db.ForeignKey('reimbursement_header.id'), index=True)
     request_date = db.Column(db.Date, index=True)
     branch_code = db.Column(db.String(80))
     class_code = db.Column(db.String(80))
@@ -46822,6 +46852,7 @@ class LPRItem(db.Model):
     unit_price = db.Column(db.Float, default=0)
     line_total = db.Column(db.Float, default=0)
     note = db.Column(db.Text)
+    reimbursement_source_key = db.Column(db.String(100), index=True)
     created_at = db.Column(db.DateTime, default=get_manila_time)
     updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time)
 
@@ -46882,12 +46913,21 @@ def ensure_lpr_tables():
                 for column_name, column_sql in (
                     ('parent_module', 'VARCHAR(40)'),
                     ('cash_advance_id', 'INTEGER'),
-                    ('travel_request_id', 'INTEGER')
+                    ('travel_request_id', 'INTEGER'),
+                    ('reimbursement_id', 'INTEGER')
                 ):
                     if column_name not in existing_columns:
                         connection.exec_driver_sql(
                             f'ALTER TABLE lpr_header ADD COLUMN {column_name} {column_sql}'
                         )
+                existing_item_columns = {
+                    row[1]
+                    for row in connection.exec_driver_sql('PRAGMA table_info(lpr_item)').fetchall()
+                }
+                if 'reimbursement_source_key' not in existing_item_columns:
+                    connection.exec_driver_sql(
+                        'ALTER TABLE lpr_item ADD COLUMN reimbursement_source_key VARCHAR(100)'
+                    )
                 for statement in (
                     'CREATE INDEX IF NOT EXISTS idx_lpr_header_user_status ON lpr_header (user_id, status)',
                     'CREATE INDEX IF NOT EXISTS idx_lpr_header_request_date ON lpr_header (request_date)',
@@ -46895,7 +46935,10 @@ def ensure_lpr_tables():
                     'CREATE INDEX IF NOT EXISTS idx_lpr_header_parent_module ON lpr_header (parent_module)',
                     'CREATE INDEX IF NOT EXISTS idx_lpr_header_cash_advance ON lpr_header (cash_advance_id)',
                     'CREATE INDEX IF NOT EXISTS idx_lpr_header_travel_request ON lpr_header (travel_request_id)',
+                    'CREATE INDEX IF NOT EXISTS idx_lpr_header_reimbursement ON lpr_header (reimbursement_id)',
+                    'CREATE UNIQUE INDEX IF NOT EXISTS uq_lpr_header_reimbursement ON lpr_header (reimbursement_id) WHERE reimbursement_id IS NOT NULL',
                     'CREATE INDEX IF NOT EXISTS idx_lpr_item_header ON lpr_item (lpr_id)',
+                    'CREATE INDEX IF NOT EXISTS idx_lpr_item_reimbursement_source ON lpr_item (reimbursement_source_key)',
                     'CREATE INDEX IF NOT EXISTS idx_lpr_attachment_header ON lpr_attachment (lpr_id)',
                     'CREATE INDEX IF NOT EXISTS idx_lpr_audit_header ON lpr_audit (lpr_id)'
                 ):
@@ -46910,7 +46953,7 @@ def ensure_lpr_tables():
             time.sleep(0.5 * (attempt + 1))
 
 
-EMBEDDED_LPR_PARENT_MODULES = {'cash_advance', 'travel_request'}
+EMBEDDED_LPR_PARENT_MODULES = {'cash_advance', 'travel_request', 'reimbursement'}
 
 
 def embedded_lpr_disabled_response():
@@ -46926,7 +46969,8 @@ def normalize_embedded_lpr_parent_module(value):
     aliases = {
         'cashadvance': 'cash_advance',
         'travelrequest': 'travel_request',
-        'travel': 'travel_request'
+        'travel': 'travel_request',
+        'reimburse': 'reimbursement'
     }
     return aliases.get(raw, raw)
 
@@ -46940,6 +46984,9 @@ def embedded_lpr_parent(module_name, parent_id):
     if module_name == 'travel_request':
         ensure_travel_request_tables()
         return module_name, db.session.get(TravelRequest, parent_id)
+    if module_name == 'reimbursement':
+        ensure_reimbursement_approval_columns()
+        return module_name, db.session.get(ReimbursementHeader, parent_id)
     return module_name, None
 
 
@@ -46951,6 +46998,8 @@ def embedded_lpr_parent_is_editable(module_name, parent):
         return cash_advance_normalize_status(getattr(parent, 'status', None)) in {'Draft', 'Rejected', 'Returned'}
     if module_name == 'travel_request':
         return travel_request_normalize_status(getattr(parent, 'status', None)) in TRAVEL_REQUEST_EDITABLE_STATUSES
+    if module_name == 'reimbursement':
+        return reimbursement_header_is_editable(parent)
     return False
 
 
@@ -46960,6 +47009,8 @@ def embedded_lpr_parent_can_manage(module_name, parent):
         return can_user_manage_own_cash_advance(parent)
     if module_name == 'travel_request':
         return can_user_access_travel_request(parent)
+    if module_name == 'reimbursement':
+        return bool(getattr(parent, 'user_id', None) == current_user.id)
     return False
 
 
@@ -46969,6 +47020,12 @@ def embedded_lpr_parent_can_view(module_name, parent):
         return bool(can_user_access_cash_advance(parent) or can_user_approve_cash_advance(current_user, parent))
     if module_name == 'travel_request':
         return bool(can_current_user_access_travel_request_attachment(parent))
+    if module_name == 'reimbursement':
+        return bool(
+            getattr(parent, 'user_id', None) == current_user.id
+            or can_user_approve_reimbursement_header(current_user, parent)
+            or can_access_accounting_center(current_user)
+        )
     return False
 
 
@@ -46980,6 +47037,8 @@ def linked_lpr_query(parent_module, parent_id):
         return LPRHeader.query.filter_by(parent_module=parent_module, cash_advance_id=parent_id)
     if parent_module == 'travel_request':
         return LPRHeader.query.filter_by(parent_module=parent_module, travel_request_id=parent_id)
+    if parent_module == 'reimbursement':
+        return LPRHeader.query.filter_by(parent_module=parent_module, reimbursement_id=parent_id)
     return LPRHeader.query.filter(LPRHeader.id == -1)
 
 
@@ -46996,6 +47055,114 @@ def linked_lpr_dicts(parent_module, parent_id, include_items=True, include_attac
         lpr_to_dict(record, include_items=include_items, include_attachments=include_attachments)
         for record in linked_lpr_records(parent_module, parent_id)
     ]
+
+
+def reimbursement_lpr_sources(header):
+    """Return stable Office/Field Items sources for a reimbursement-linked LPR."""
+    sources = []
+    if not header:
+        return sources
+    for row in sorted(header.rows or [], key=lambda item: (item.row_date or header.start_date, item.id)):
+        amount = reimbursement_money_value(getattr(row, 'office_supplies', 0))
+        if amount <= 0:
+            continue
+        source_key = f"shift:{row.shift_id}" if clean_int(row.shift_id) else f"row:{row.id}"
+        work_details = reimbursement_excel_work_details(row)
+        remarks = reimbursement_excel_row_remarks(row)
+        date_label = row.row_date.strftime('%b %d, %Y') if row.row_date else 'Reimbursement item'
+        description = remarks or work_details.replace('\n', ' - ') or f'Office/Field Item - {date_label}'
+        note_parts = [date_label]
+        if work_details and remarks:
+            note_parts.append(work_details.replace('\n', ' | '))
+        sources.append({
+            'key': source_key,
+            'row_id': row.id,
+            'shift_id': row.shift_id,
+            'date': row.row_date.isoformat() if row.row_date else '',
+            'label': f"{date_label} - {description}"[:500],
+            'description': description[:500],
+            'note': ' | '.join(note_parts)[:2000],
+            'amount': lpr_money(amount)
+        })
+    return sources
+
+
+def prepared_reimbursement_lpr_payload(header, lpr_header=None):
+    """Build review data without mutating a saved LPR until the engineer confirms."""
+    sources = reimbursement_lpr_sources(header)
+    source_by_key = {item['key']: item for item in sources}
+    existing_by_source = {}
+    if lpr_header:
+        for item in sorted(lpr_header.items or [], key=lambda row: (row.row_index, row.id)):
+            key = clean_str(getattr(item, 'reimbursement_source_key', None)) or ''
+            if key in source_by_key:
+                existing_by_source.setdefault(key, []).append(lpr_item_to_dict(item))
+
+    prepared_items = []
+    for source in sources:
+        existing = existing_by_source.get(source['key'], [])
+        existing_total = lpr_money(sum(lpr_money(item.get('line_total')) for item in existing))
+        if existing and abs(existing_total - source['amount']) <= 0.01:
+            for item in existing:
+                item['reimbursement_source_key'] = source['key']
+                prepared_items.append(item)
+            continue
+        first = existing[0] if existing else {}
+        prepared_items.append({
+            'description': clean_str(first.get('description')) or source['description'],
+            'quantity': 1,
+            'unit_measure': clean_str(first.get('unit_measure')) or 'lot',
+            'unit_price': source['amount'],
+            'line_total': source['amount'],
+            'note': clean_str(first.get('note')) or source['note'],
+            'reimbursement_source_key': source['key']
+        })
+
+    if lpr_header:
+        payload = lpr_to_dict(lpr_header, include_items=False, include_attachments=True)
+    else:
+        payload = {
+            'id': None, 'lpr_no': '', 'request_date': get_manila_today().isoformat(),
+            'currency_code': 'PHP', 'status': 'Draft', 'attachments': []
+        }
+    payload['items'] = prepared_items
+    payload['item_count'] = len(prepared_items)
+    payload['total_requested'] = lpr_money(sum(item['amount'] for item in sources))
+    payload['reimbursement_sources'] = sources
+    return payload
+
+
+def validate_reimbursement_linked_lpr(header, lpr_header, require_header=False):
+    """Require every Office/Field source to reconcile with its attached LPR lines."""
+    sources = reimbursement_lpr_sources(header)
+    if not sources:
+        return True
+    if not lpr_header:
+        raise ValueError('Review and confirm the required LPR before submitting this reimbursement.')
+    if require_header:
+        required = (
+            ('branch_code', 'Branch'), ('class_code', 'Class'), ('dept_code', 'Department'),
+            ('product_code', 'Product Code'), ('intended_for', 'Intended For'), ('equipment', 'Equipment')
+        )
+        missing = [label for field, label in required if not clean_str(getattr(lpr_header, field, None))]
+        if missing:
+            raise ValueError(f"Complete these LPR fields: {', '.join(missing)}.")
+    expected = {source['key']: source['amount'] for source in sources}
+    actual = {key: 0.0 for key in expected}
+    for item in lpr_header.items or []:
+        key = clean_str(getattr(item, 'reimbursement_source_key', None)) or ''
+        if key not in expected:
+            raise ValueError('The LPR contains an item that is no longer linked to an Office/Field Items row. Review the LPR again.')
+        actual[key] = lpr_money(actual[key] + lpr_money(getattr(item, 'line_total', 0)))
+    for source in sources:
+        if abs(actual.get(source['key'], 0) - source['amount']) > 0.01:
+            raise ValueError(
+                f"LPR items for {source['label']} must total PHP {source['amount']:,.2f}."
+            )
+    expected_total = lpr_money(sum(expected.values()))
+    if abs(lpr_money(getattr(lpr_header, 'total_requested', 0)) - expected_total) > 0.01:
+        raise ValueError(f'LPR total must match Office/Field Items total of PHP {expected_total:,.2f}.')
+    return True
 
 
 def lpr_assign_number(header):
@@ -47018,6 +47185,8 @@ def lpr_linked_parent_label(header):
         return 'Cash Advance', clean_int(getattr(header, 'cash_advance_id', None))
     if module_name == 'travel_request':
         return 'Travel Request', clean_int(getattr(header, 'travel_request_id', None))
+    if module_name == 'reimbursement':
+        return 'Reimbursement', clean_int(getattr(header, 'reimbursement_id', None))
     return '', None
 
 
@@ -47169,7 +47338,8 @@ def lpr_item_to_dict(item):
         'unit_measure': item.unit_measure or '',
         'unit_price': lpr_money(item.unit_price),
         'line_total': lpr_money(item.line_total),
-        'note': item.note or ''
+        'note': item.note or '',
+        'reimbursement_source_key': clean_str(getattr(item, 'reimbursement_source_key', None)) or ''
     }
 
 
@@ -47223,9 +47393,10 @@ def lpr_to_dict(header, include_items=True, include_attachments=False, include_a
         'id': header.id, 'lpr_id': header.id, 'lpr_no': header.lpr_no or '', 'request_no': header.lpr_no or '',
         'user_id': header.user_id, 'requester_user_id': header.user_id, 'requester_name': lpr_requester_name(header),
         'parent_module': normalize_embedded_lpr_parent_module(getattr(header, 'parent_module', None)) if getattr(header, 'parent_module', None) else '',
-        'parent_id': clean_int(getattr(header, 'cash_advance_id', None) or getattr(header, 'travel_request_id', None)),
+        'parent_id': clean_int(getattr(header, 'cash_advance_id', None) or getattr(header, 'travel_request_id', None) or getattr(header, 'reimbursement_id', None)),
         'cash_advance_id': clean_int(getattr(header, 'cash_advance_id', None)),
         'travel_request_id': clean_int(getattr(header, 'travel_request_id', None)),
+        'reimbursement_id': clean_int(getattr(header, 'reimbursement_id', None)),
         'embedded': bool(getattr(header, 'parent_module', None)),
         'request_date': header.request_date.isoformat() if header.request_date else '',
         'branch_code': header.branch_code or '', 'class_code': header.class_code or '', 'dept_code': header.dept_code or '',
@@ -47250,6 +47421,7 @@ def lpr_to_dict(header, include_items=True, include_attachments=False, include_a
         'approval_url': f'/approvals?module=lpr&id={header.id}',
         'preview_url': f'/{preview_route}/{header.id}',
         'download_url': f'/{download_route}/{header.id}',
+        'filename': f'{header.lpr_no or "LPR"}.pdf',
         'item_count': len(header.items or []),
         'attachment_type': 'linked_lpr' if getattr(header, 'parent_module', None) else 'lpr',
         'parent_label': lpr_linked_parent_label(header)[0]
@@ -47294,7 +47466,8 @@ def lpr_validate_items(items):
         clean_items.append({
             'row_index': len(clean_items), 'description': description[:500], 'quantity': quantity,
             'unit_measure': unit_measure[:40], 'unit_price': lpr_money(unit_price),
-            'line_total': lpr_money(quantity * unit_price), 'note': note[:2000]
+            'line_total': lpr_money(quantity * unit_price), 'note': note[:2000],
+            'reimbursement_source_key': (clean_str(raw.get('reimbursement_source_key')) or '')[:100] or None
         })
     if not clean_items:
         raise ValueError('Add at least one LPR item before saving or submitting.')
@@ -47644,8 +47817,10 @@ def get_lpr(lpr_id):
 def embedded_lpr_parent_response(module_name, parent, include_details=True):
     if module_name == 'cash_advance':
         item = cash_advance_to_dict(parent, include_attachments=True)
-    else:
+    elif module_name == 'travel_request':
         item = travel_request_to_dict(parent, include_lines=include_details)
+    else:
+        item = reimbursement_header_to_manager_dict(parent, include_rows=include_details)
     return {'module': module_name, 'parent': item}
 
 
@@ -47677,6 +47852,32 @@ def get_parent_lprs(parent_module, parent_id):
     return jsonify({'success': True, 'module': module_name, 'parent_id': parent.id, 'items': items, 'count': len(items)})
 
 
+@app.route('/prepare_reimbursement_lpr/<int:reimbursement_id>')
+@login_required
+def prepare_reimbursement_lpr(reimbursement_id):
+    if not embedded_lpr_enabled():
+        return embedded_lpr_disabled_response()
+    ensure_lpr_tables()
+    header = db.session.get(ReimbursementHeader, reimbursement_id)
+    if not header or not embedded_lpr_parent_can_manage('reimbursement', header):
+        return jsonify({'success': False, 'error': 'Reimbursement not found or access denied.'}), 404
+    if not reimbursement_header_is_editable(header):
+        return reimbursement_edit_lock_response(header, 'changed')
+    sources = reimbursement_lpr_sources(header)
+    if not sources:
+        return jsonify({'success': False, 'error': 'No Office/Field Items amounts require an LPR.'}), 400
+    existing = linked_lpr_records('reimbursement', header.id)
+    item = prepared_reimbursement_lpr_payload(header, existing[0] if existing else None)
+    return jsonify({
+        'success': True,
+        'module': 'reimbursement',
+        'parent_id': header.id,
+        'item': item,
+        'items': [item] if item.get('id') else [],
+        'office_field_total': lpr_money(sum(source['amount'] for source in sources))
+    })
+
+
 @app.route('/save_embedded_lpr', methods=['POST'])
 @csrf.exempt
 @login_required
@@ -47700,7 +47901,7 @@ def save_embedded_lpr():
     header = db.session.get(LPRHeader, requested_id) if requested_id else None
     if header:
         linked_module = normalize_embedded_lpr_parent_module(getattr(header, 'parent_module', None))
-        linked_parent_id = clean_int(getattr(header, 'cash_advance_id', None) or getattr(header, 'travel_request_id', None))
+        linked_parent_id = clean_int(getattr(header, 'cash_advance_id', None) or getattr(header, 'travel_request_id', None) or getattr(header, 'reimbursement_id', None))
         if linked_module != module_name or linked_parent_id != clean_int(parent.id) or not lpr_can_manage(header) or not lpr_is_editable(header):
             return jsonify({'success': False, 'error': 'This linked LPR is no longer editable or belongs to another request.'}), 409
     else:
@@ -47710,6 +47911,7 @@ def save_embedded_lpr():
             parent_module=module_name,
             cash_advance_id=parent.id if module_name == 'cash_advance' else None,
             travel_request_id=parent.id if module_name == 'travel_request' else None,
+            reimbursement_id=parent.id if module_name == 'reimbursement' else None,
             request_date=get_manila_today(),
             status='Draft', currency_code='PHP', created_at=now, updated_at=now
         )
@@ -47719,6 +47921,8 @@ def save_embedded_lpr():
 
     try:
         lpr_apply_payload(header, payload, require_items=True)
+        if module_name == 'reimbursement':
+            validate_reimbursement_linked_lpr(parent, header, require_header=True)
         lpr_add_audit(header, 'embedded_draft_saved', f'Linked LPR draft saved to {module_name} {parent.id}.')
         add_activity_log_entry(f'Saved linked LPR {header.lpr_no or header.id} on {module_name.replace("_", " ").title()} {parent.id}')
         db.session.commit()
@@ -47786,8 +47990,8 @@ def delete_embedded_lpr(lpr_id):
 def save_lpr():
     ensure_lpr_tables()
     payload = request.get_json(silent=True) or {}
-    if payload.get('parent_module') or payload.get('parent_id') or payload.get('cash_advance_id') or payload.get('travel_request_id'):
-        return jsonify({'success': False, 'error': 'Use the embedded LPR workflow to attach an LPR to a Cash Advance or Travel Request.'}), 400
+    if payload.get('parent_module') or payload.get('parent_id') or payload.get('cash_advance_id') or payload.get('travel_request_id') or payload.get('reimbursement_id'):
+        return jsonify({'success': False, 'error': 'Use the embedded LPR workflow to attach an LPR to its request.'}), 400
     header = db.session.get(LPRHeader, clean_int(payload.get('id') or payload.get('lpr_id'))) if clean_int(payload.get('id') or payload.get('lpr_id')) else None
     if header:
         if not lpr_can_manage(header) or not lpr_is_editable(header):

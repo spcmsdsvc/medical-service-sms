@@ -1647,6 +1647,19 @@
             </div>
         </div>
 
+        {% if embedded_lpr_enabled %}
+        <div class="reim-additional-receipts-card" id="reimLprPanel" style="display:none;">
+            <div class="reim-additional-receipts-head">
+                <div>
+                    <h3><i class="fa-solid fa-file-invoice"></i> Attached LPR</h3>
+                    <div class="reim-muted">Required when Office/Field Items has a claimed amount.</div>
+                </div>
+                <div id="reimLprPanelActions" class="d-flex gap-2 flex-wrap"></div>
+            </div>
+            <div class="reim-additional-receipts-body" id="reimLprPanelBody"></div>
+        </div>
+        {% endif %}
+
     </section>
 
     <div class="reim-manual-modal" id="reimManualItemModal" aria-hidden="true">
@@ -1745,6 +1758,8 @@
     ];
 
     let currentReimbursementRows = [];
+    let currentReimbursementId = null;
+    window.currentReimbursementId = null;
     let currentReimbursementStatus = 'Draft';
     let currentReimbursementLifecycle = {
         status: 'Draft',
@@ -2288,6 +2303,11 @@ function renderReimbursementRows(rows) {
 
     function updateReimbursementLifecycleFromPayload(payload) {
         if (!payload) return currentReimbursementLifecycle;
+        const payloadId = Number(payload.id || payload.reimbursement_id || 0);
+        if (payloadId > 0) {
+            currentReimbursementId = payloadId;
+            window.currentReimbursementId = payloadId;
+        }
         return setCurrentReimbursementLifecycle(payload);
     }
 
@@ -3350,6 +3370,7 @@ async function saveReimbursementDraft(silent) {
 
             updateReimbursementLifecycleFromPayload(payload);
             applyReimbursementStatusUi();
+            await refreshReimbursementLprPanel();
             setReimbursementDraftStatus(`Draft saved (${payload.rows_saved || rows.length} rows)`, 'ok');
             return true;
         } catch (error) {
@@ -3360,6 +3381,81 @@ async function saveReimbursementDraft(silent) {
         } finally {
             setReimbursementButtonsBusy(false);
         }
+    }
+
+    function reimbursementOfficeFieldTotal(rows) {
+        return (rows || []).reduce(function(total, row) {
+            const amounts = normalizeReimbursementAmounts(row.amounts || {});
+            return total + Number(amounts.office_supplies || 0);
+        }, 0);
+    }
+
+    async function refreshReimbursementLprPanel() {
+        const panel = document.getElementById('reimLprPanel');
+        const body = document.getElementById('reimLprPanelBody');
+        const actions = document.getElementById('reimLprPanelActions');
+        if (!panel || !body || !actions) return;
+        if (!currentReimbursementId) {
+            panel.style.display = 'none';
+            body.innerHTML = '';
+            actions.innerHTML = '';
+            return;
+        }
+        try {
+            const response = await fetch(`/get_parent_lprs/reimbursement/${encodeURIComponent(currentReimbursementId)}`, {
+                credentials: 'same-origin', cache: 'no-store', headers: {'Accept': 'application/json'}
+            });
+            const payload = await parseReimbursementJsonResponse(response, 'Unable to load attached LPR.');
+            const item = Array.isArray(payload.items) ? payload.items[0] : null;
+            if (!item) {
+                panel.style.display = 'none';
+                body.innerHTML = '';
+                actions.innerHTML = '';
+                return;
+            }
+            panel.style.display = '';
+            body.innerHTML = `<strong>${reimEscape(item.lpr_no || 'LPR')}</strong> &middot; ${reimEscape(item.status || 'Draft')} &middot; PHP ${Number(item.total_requested || 0).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2})} &middot; ${Number(item.item_count || 0)} item(s)`;
+            const canEdit = reimbursementIsEditable();
+            actions.innerHTML = `
+                ${canEdit ? '<button type="button" class="reim-btn reim-btn-secondary" onclick="openReimbursementLprForReview(false)"><i class="fa-solid fa-pen"></i> Review LPR</button>' : ''}
+                <a class="reim-btn reim-btn-secondary" href="${reimEscape(item.preview_url || '#')}" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Preview</a>
+                <a class="reim-btn reim-btn-secondary" href="${reimEscape(item.download_url || '#')}"><i class="fa-solid fa-download"></i> Download</a>
+                ${canEdit ? `<button type="button" class="reim-btn reim-btn-danger-outline" onclick="deleteReimbursementLinkedLpr(${Number(item.id || 0)})"><i class="fa-solid fa-trash"></i> Delete</button>` : ''}
+            `;
+        } catch (error) {
+            console.warn('[Reimbursement] Attached LPR panel unavailable', error);
+        }
+    }
+
+    async function deleteReimbursementLinkedLpr(lprId) {
+        if (!lprId || !reimbursementIsEditable()) return;
+        const confirmed = await reimConfirmDialog({
+            title: 'Delete Attached LPR?',
+            message: 'Permanently remove this LPR and its supporting attachments?',
+            confirmText: 'Delete LPR', cancelText: 'Cancel', tone: 'danger', icon: 'trash'
+        });
+        if (!confirmed) return;
+        try {
+            const response = await fetch(`/delete_embedded_lpr/${encodeURIComponent(lprId)}`, {
+                method: 'POST', headers: {'Accept': 'application/json', 'X-CSRFToken': getReimbursementCsrfToken()}
+            });
+            const payload = await parseReimbursementJsonResponse(response, 'Unable to delete attached LPR.');
+            if (!response.ok || !payload.success) throw new Error(payload.error || 'Unable to delete attached LPR.');
+            await refreshReimbursementLprPanel();
+            setReimbursementDraftStatus('Attached LPR deleted.', 'ok');
+        } catch (error) {
+            reimAlert(error.message || 'Unable to delete attached LPR.');
+        }
+    }
+
+    async function openReimbursementLprForReview(continueSubmit) {
+        if (!currentReimbursementId || typeof window.openReimbursementLprReview !== 'function') {
+            reimAlert('Save the reimbursement draft before reviewing its LPR.');
+            return false;
+        }
+        const confirmed = await window.openReimbursementLprReview(currentReimbursementId, !!continueSubmit);
+        await refreshReimbursementLprPanel();
+        return confirmed;
     }
 
     async function submitReimbursement() {
@@ -3399,6 +3495,15 @@ async function saveReimbursementDraft(silent) {
             setReimbursementSubmitNotice(msg, 'warn');
             reimAlert(msg);
             return;
+        }
+
+        if (reimbursementOfficeFieldTotal(rowsForSubmit) > 0.005) {
+            setReimbursementSubmitNotice('Review and confirm the LPR for Office/Field Items.', 'warn');
+            const lprConfirmed = await openReimbursementLprForReview(true);
+            if (!lprConfirmed) {
+                setReimbursementSubmitNotice('Draft saved. Reimbursement submission is waiting for LPR confirmation.', 'warn');
+                return;
+            }
         }
 
         const signatureReady = await ensureReimbursementSignatureBeforeSubmit();
@@ -3444,6 +3549,7 @@ async function saveReimbursementDraft(silent) {
             updateReimbursementLifecycleFromPayload(payload);
             refreshReimbursementReceiptCells();
             applyReimbursementStatusUi();
+            await refreshReimbursementLprPanel();
 
             const message = payload.message || 'Reimbursement submitted for manager review.';
             setReimbursementDraftStatus(message, 'ok');
@@ -3568,6 +3674,7 @@ async function saveReimbursementDraft(silent) {
             updateReimbursementLifecycleFromPayload(draft);
             renderReimbursementRows(mergedRows);
             await fetchReimbursementReceipts(range.start, range.end);
+            await refreshReimbursementLprPanel();
         }
         return draft;
     }
@@ -3689,6 +3796,8 @@ async function saveReimbursementDraft(silent) {
                     }
                     setReimbursementDraftStatus(`${currentReimbursementStatus} reimbursement loaded`, 'ok');
                 } else {
+                    currentReimbursementId = null;
+                    window.currentReimbursementId = null;
                     setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
                     setReimbursementDraftStatus('No saved draft yet.', '');
                 }
@@ -3708,6 +3817,7 @@ async function saveReimbursementDraft(silent) {
                 receiptWarningMessage = receiptWarningMessage || ' Receipt attachments could not be loaded, but saved rows are available.';
                 setReimbursementDraftStatus('Rows loaded. Receipt attachments could not be loaded.', 'error');
             }
+            await refreshReimbursementLprPanel();
             const excludedMessage = Number(payload.excluded_count || 0) > 0
                 ? ' Previously submitted/approved reimbursement schedule rows were excluded.'
                 : '';
@@ -4379,4 +4489,5 @@ async function dismissReimbursementNotification(event, notificationId) {
         });
     }
 </script>
+{% if embedded_lpr_enabled %}{% set embedded_lpr_parent_module = 'reimbursement' %}{% include '_embedded_lpr_modal.html' %}{% endif %}
 {% endblock %}

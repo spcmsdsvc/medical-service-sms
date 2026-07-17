@@ -72,8 +72,8 @@
                         <div class="embedded-lpr-field"><label for="embeddedLprInvoiceNo">Invoice No. <span class="embedded-lpr-muted">(optional)</span></label><input id="embeddedLprInvoiceNo"></div>
                         <div class="embedded-lpr-field"><label for="embeddedLprReceivedBy">Received By <span class="embedded-lpr-muted">(optional)</span></label><input id="embeddedLprReceivedBy"></div>
                     </div>
-                    <div class="embedded-lpr-actions" style="margin-top:14px;justify-content:space-between;"><div><strong>Requested Items</strong><div class="embedded-lpr-muted">Items after the official first eight rows continue on additional pages.</div></div><button type="button" class="embedded-lpr-btn secondary" id="embeddedLprAddItemBtn" onclick="addEmbeddedLprItem()"><i class="fa-solid fa-plus"></i> Add Item</button></div>
-                    <div class="embedded-lpr-items-wrap"><table class="embedded-lpr-items"><thead><tr><th>#</th><th>Description</th><th>Qty</th><th>Unit</th><th>Unit Price</th><th>Note</th><th>Line Total</th><th></th></tr></thead><tbody id="embeddedLprItemsBody"></tbody></table></div>
+                    <div class="embedded-lpr-actions" style="margin-top:14px;justify-content:space-between;"><div><strong>Requested Items</strong><div class="embedded-lpr-muted">{% if embedded_lpr_parent_module == 'reimbursement' %}Each source subtotal must match its Office/Field Items amount.{% else %}Items after the official first eight rows continue on additional pages.{% endif %}</div></div><button type="button" class="embedded-lpr-btn secondary" id="embeddedLprAddItemBtn" onclick="addEmbeddedLprItem()"><i class="fa-solid fa-plus"></i> Add Item</button></div>
+                    <div class="embedded-lpr-items-wrap"><table class="embedded-lpr-items"><thead><tr><th>#</th>{% if embedded_lpr_parent_module == 'reimbursement' %}<th>Office/Field Source</th>{% endif %}<th>Description</th><th>Qty</th><th>Unit</th><th>Unit Price</th><th>Note</th><th>Line Total</th><th></th></tr></thead><tbody id="embeddedLprItemsBody"></tbody></table></div>
                     <div class="embedded-lpr-total"><span>Overall Total</span><span id="embeddedLprTotal">PHP 0.00</span></div>
                     <div class="embedded-lpr-attachments">
                         <div class="embedded-lpr-attachments-head"><div><strong>Supporting Attachments</strong><div class="embedded-lpr-muted">Optional PDF or image documents, up to 35MB intake and optimized to 2MB.</div></div><div class="embedded-lpr-actions"><input id="embeddedLprAttachmentInput" type="file" accept=".pdf,.jpg,.jpeg,.png" multiple hidden onchange="uploadEmbeddedLprAttachments(this.files)"><label for="embeddedLprAttachmentInput" class="embedded-lpr-btn secondary" id="embeddedLprUploadLabel"><i class="fa-solid fa-upload"></i> Upload</label><button type="button" class="embedded-lpr-btn danger" id="embeddedLprDeleteAllBtn" onclick="deleteAllEmbeddedLprAttachments()" hidden><i class="fa-solid fa-trash"></i> Delete All</button></div></div>
@@ -82,7 +82,7 @@
                 </section>
             </div>
         </div>
-        <div class="embedded-lpr-foot"><button type="button" class="embedded-lpr-btn secondary" onclick="closeEmbeddedLprModal()">Close</button><button type="button" class="embedded-lpr-btn primary" id="embeddedLprSaveBtn" onclick="saveEmbeddedLpr()"><i class="fa-solid fa-floppy-disk"></i> Save LPR</button></div>
+        <div class="embedded-lpr-foot"><button type="button" class="embedded-lpr-btn secondary" onclick="closeEmbeddedLprModal()">Close</button><button type="button" class="embedded-lpr-btn primary" id="embeddedLprSaveBtn" onclick="saveEmbeddedLpr()"><i class="fa-solid fa-floppy-disk"></i> {% if embedded_lpr_parent_module == 'reimbursement' %}Confirm LPR{% else %}Save LPR{% endif %}</button></div>
     </div>
 </div>
 
@@ -92,26 +92,80 @@
     let embeddedLprCurrent = null;
     let embeddedLprItems = [];
     let embeddedLprAttachments = [];
+    let embeddedLprReimbursementSources = [];
+    let embeddedLprReviewResolver = null;
     const $ = id => document.getElementById(id);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     const money = value => Number(value || 0).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
     const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
-    const parentId = () => embeddedLprParentModule === 'cash_advance' ? ($('cashAdvanceId')?.value || '') : ($('travel-request-id')?.value || '');
-    const parentEditable = () => embeddedLprParentModule === 'cash_advance' ? Boolean(window.isCashAdvanceEditable?.()) : Boolean(window.isCurrentTravelEditable?.());
-    const notify = (message, tone='success') => { if(embeddedLprParentModule === 'cash_advance' && window.cashToast) window.cashToast(message, tone); else if(window.showTravelStatus) window.showTravelStatus(message, tone === 'success' ? 'success' : 'error'); };
+    const parentId = () => embeddedLprParentModule === 'cash_advance'
+        ? ($('cashAdvanceId')?.value || '')
+        : (embeddedLprParentModule === 'travel_request' ? ($('travel-request-id')?.value || '') : (window.currentReimbursementId || ''));
+    const parentEditable = () => embeddedLprParentModule === 'cash_advance'
+        ? Boolean(window.isCashAdvanceEditable?.())
+        : (embeddedLprParentModule === 'travel_request' ? Boolean(window.isCurrentTravelEditable?.()) : Boolean(window.reimbursementIsEditable?.()));
+    const notify = (message, tone='success') => {
+        if(embeddedLprParentModule === 'cash_advance' && window.cashToast) window.cashToast(message, tone);
+        else if(embeddedLprParentModule === 'travel_request' && window.showTravelStatus) window.showTravelStatus(message, tone === 'success' ? 'success' : 'error');
+        else if(window.reimToast) window.reimToast(message, tone === 'success' ? 'ok' : 'error');
+    };
     const setEmbeddedLprNotice = message => { const notice = $('embeddedLprNotice'); if (!notice) return; notice.textContent = message || ''; notice.hidden = !message; };
     async function api(url, options={}) { const res = await fetch(url, {credentials:'same-origin', cache:'no-store', ...options}); const data = await res.json().catch(() => ({})); if(!res.ok || data.success === false) throw new Error(data.error || data.message || 'Request failed.'); return data; }
-    function rowValues(){ return Array.from(document.querySelectorAll('#embeddedLprItemsBody tr')).map(row => ({description:row.querySelector('[data-field="description"]')?.value || '', quantity:row.querySelector('[data-field="quantity"]')?.value || 0, unit_measure:row.querySelector('[data-field="unit_measure"]')?.value || '', unit_price:row.querySelector('[data-field="unit_price"]')?.value || 0, note:row.querySelector('[data-field="note"]')?.value || ''})); }
-    function renderItems(items){ embeddedLprItems = Array.isArray(items) && items.length ? items : [{}]; const body=$('embeddedLprItemsBody'); if(!body)return; body.innerHTML=embeddedLprItems.map((item,index)=>`<tr><td>${index+1}</td><td><input data-field="description" value="${esc(item.description || '')}" placeholder="Item description"></td><td><input data-field="quantity" type="number" min="0" step="any" value="${item.quantity ?? ''}" placeholder="0"></td><td><input data-field="unit_measure" value="${esc(item.unit_measure || '')}" placeholder="pcs"></td><td><input data-field="unit_price" type="number" min="0" step="0.01" value="${item.unit_price ?? ''}" placeholder="0.00"></td><td><input data-field="note" value="${esc(item.note || '')}" placeholder="Optional note"></td><td class="embedded-lpr-line-total">PHP 0.00</td><td><button type="button" class="embedded-lpr-btn danger" title="Remove item" onclick="removeEmbeddedLprItem(this)"><i class="fa-solid fa-trash"></i></button></td></tr>`).join(''); body.querySelectorAll('input').forEach(input => input.addEventListener('input', updateTotals)); updateTotals(); updateEmbeddedLprGate(); }
+    function sourceForKey(key){ return embeddedLprReimbursementSources.find(item => String(item.key) === String(key)) || null; }
+    function rowValues(){ return Array.from(document.querySelectorAll('#embeddedLprItemsBody tr')).map(row => ({description:row.querySelector('[data-field="description"]')?.value || '', quantity:row.querySelector('[data-field="quantity"]')?.value || 0, unit_measure:row.querySelector('[data-field="unit_measure"]')?.value || '', unit_price:row.querySelector('[data-field="unit_price"]')?.value || 0, note:row.querySelector('[data-field="note"]')?.value || '', reimbursement_source_key:row.dataset.sourceKey || ''})); }
+    function renderItems(items){
+        embeddedLprItems = Array.isArray(items) && items.length ? items : [{}];
+        const body=$('embeddedLprItemsBody'); if(!body)return;
+        body.innerHTML=embeddedLprItems.map((item,index)=>{
+            const source = sourceForKey(item.reimbursement_source_key);
+            const sourceCell = embeddedLprParentModule === 'reimbursement'
+                ? `<td style="min-width:210px"><strong>${esc(source?.label || 'Office/Field Item')}</strong><div class="embedded-lpr-muted">Required subtotal: PHP ${money(source?.amount || 0)}</div></td>` : '';
+            const splitButton = embeddedLprParentModule === 'reimbursement'
+                ? '<button type="button" class="embedded-lpr-btn secondary" title="Split this source into another item" onclick="splitEmbeddedLprItem(this)"><i class="fa-solid fa-code-branch"></i></button>' : '';
+            return `<tr data-source-key="${esc(item.reimbursement_source_key || '')}"><td>${index+1}</td>${sourceCell}<td><input data-field="description" value="${esc(item.description || '')}" placeholder="Item description"></td><td><input data-field="quantity" type="number" min="0" step="any" value="${item.quantity ?? ''}" placeholder="0"></td><td><input data-field="unit_measure" value="${esc(item.unit_measure || '')}" placeholder="pcs"></td><td><input data-field="unit_price" type="number" min="0" step="0.01" value="${item.unit_price ?? ''}" placeholder="0.00"></td><td><input data-field="note" value="${esc(item.note || '')}" placeholder="Optional note"></td><td class="embedded-lpr-line-total">PHP 0.00</td><td><div class="embedded-lpr-actions">${splitButton}<button type="button" class="embedded-lpr-btn danger" title="Remove item" onclick="removeEmbeddedLprItem(this)"><i class="fa-solid fa-trash"></i></button></div></td></tr>`;
+        }).join('');
+        body.querySelectorAll('input').forEach(input => input.addEventListener('input', updateTotals)); updateTotals(); updateEmbeddedLprGate();
+    }
     function updateTotals(){ let total=0; document.querySelectorAll('#embeddedLprItemsBody tr').forEach(row=>{ const line=Number(row.querySelector('[data-field="quantity"]')?.value || 0)*Number(row.querySelector('[data-field="unit_price"]')?.value || 0); total += Number.isFinite(line) ? line : 0; const out=row.querySelector('.embedded-lpr-line-total'); if(out)out.textContent=`PHP ${money(line)}`; }); if($('embeddedLprTotal'))$('embeddedLprTotal').textContent=`PHP ${money(total)}`; }
     window.addEmbeddedLprItem = () => { renderItems([...rowValues(), {}]); };
+    window.splitEmbeddedLprItem = button => { const rows=rowValues(); const index=Array.from(document.querySelectorAll('#embeddedLprItemsBody tr')).indexOf(button.closest('tr')); const sourceKey=rows[index]?.reimbursement_source_key || ''; rows.splice(index+1,0,{description:'',quantity:1,unit_measure:'lot',unit_price:0,note:'',reimbursement_source_key:sourceKey}); renderItems(rows); };
     window.removeEmbeddedLprItem = button => { const rows=rowValues(); const index=Array.from(document.querySelectorAll('#embeddedLprItemsBody tr')).indexOf(button.closest('tr')); rows.splice(index,1); renderItems(rows); };
-    function fill(item){ embeddedLprCurrent=item || null; $('embeddedLprId').value=item?.id || ''; $('embeddedLprNo').value=item?.lpr_no || ''; $('embeddedLprDate').value=item?.request_date || new Date().toISOString().slice(0,10); $('embeddedLprCurrency').value='PHP'; $('embeddedLprStatus').value=item?.status || 'Draft'; $('embeddedLprBranch').value=item?.branch_code || ''; $('embeddedLprClass').value=item?.class_code || ''; $('embeddedLprDept').value=item?.dept_code || ''; $('embeddedLprProduct').value=item?.product_code || ''; $('embeddedLprIntendedFor').value=item?.intended_for || ''; $('embeddedLprEquipment').value=item?.equipment || ''; $('embeddedLprPoNo').value=item?.po_no || ''; $('embeddedLprInvoiceNo').value=item?.invoice_no || ''; $('embeddedLprReceivedBy').value=item?.received_by || ''; embeddedLprAttachments=Array.isArray(item?.attachments) ? item.attachments : []; renderItems(item?.items || [{}]); renderAttachments(); updateEmbeddedLprGate(); }
+    function fill(item){ embeddedLprCurrent=item || null; embeddedLprReimbursementSources=Array.isArray(item?.reimbursement_sources)?item.reimbursement_sources:[]; $('embeddedLprId').value=item?.id || ''; $('embeddedLprNo').value=item?.lpr_no || ''; $('embeddedLprDate').value=item?.request_date || new Date().toISOString().slice(0,10); $('embeddedLprCurrency').value='PHP'; $('embeddedLprStatus').value=item?.status || 'Draft'; $('embeddedLprBranch').value=item?.branch_code || ''; $('embeddedLprClass').value=item?.class_code || ''; $('embeddedLprDept').value=item?.dept_code || ''; $('embeddedLprProduct').value=item?.product_code || ''; $('embeddedLprIntendedFor').value=item?.intended_for || ''; $('embeddedLprEquipment').value=item?.equipment || ''; $('embeddedLprPoNo').value=item?.po_no || ''; $('embeddedLprInvoiceNo').value=item?.invoice_no || ''; $('embeddedLprReceivedBy').value=item?.received_by || ''; embeddedLprAttachments=Array.isArray(item?.attachments) ? item.attachments : []; renderItems(item?.items || [{}]); renderAttachments(); updateEmbeddedLprGate(); }
     function collect(){ return {id:$('embeddedLprId').value || null, parent_module:embeddedLprParentModule, parent_id:parentId(), request_date:$('embeddedLprDate').value, branch_code:$('embeddedLprBranch').value, class_code:$('embeddedLprClass').value, dept_code:$('embeddedLprDept').value, product_code:$('embeddedLprProduct').value, intended_for:$('embeddedLprIntendedFor').value, equipment:$('embeddedLprEquipment').value, po_no:$('embeddedLprPoNo').value, invoice_no:$('embeddedLprInvoiceNo').value, received_by:$('embeddedLprReceivedBy').value, items:rowValues()}; }
-    function updateEmbeddedLprGate(){ const editable=parentEditable() && ['Draft','Rejected','Returned'].includes(String($('embeddedLprStatus')?.value || 'Draft')); document.querySelectorAll('#embeddedLprModal input:not([readonly]), #embeddedLprModal select').forEach(el=>el.disabled=!editable); if($('embeddedLprAddItemBtn'))$('embeddedLprAddItemBtn').disabled=!editable; if($('embeddedLprSaveBtn'))$('embeddedLprSaveBtn').disabled=!editable; if($('embeddedLprUploadLabel'))$('embeddedLprUploadLabel').style.display=editable?'inline-flex':'none'; if($('embeddedLprDeleteAllBtn'))$('embeddedLprDeleteAllBtn').hidden=!editable || !embeddedLprAttachments.length; }
+    function updateEmbeddedLprGate(){ const editable=parentEditable() && ['Draft','Rejected','Returned'].includes(String($('embeddedLprStatus')?.value || 'Draft')); document.querySelectorAll('#embeddedLprModal input:not([readonly]), #embeddedLprModal select').forEach(el=>el.disabled=!editable); if($('embeddedLprAddItemBtn')){ $('embeddedLprAddItemBtn').disabled=!editable; $('embeddedLprAddItemBtn').style.display=embeddedLprParentModule==='reimbursement'?'none':'inline-flex'; } if($('embeddedLprSaveBtn'))$('embeddedLprSaveBtn').disabled=!editable; if($('embeddedLprUploadLabel'))$('embeddedLprUploadLabel').style.display=editable?'inline-flex':'none'; if($('embeddedLprDeleteAllBtn'))$('embeddedLprDeleteAllBtn').hidden=!editable || !embeddedLprAttachments.length; }
     function renderAttachments(){ const box=$('embeddedLprAttachmentList'); if(!box)return; const editable=parentEditable() && ['Draft','Rejected','Returned'].includes(String($('embeddedLprStatus')?.value || 'Draft')); if(!embeddedLprAttachments.length){box.innerHTML='<div class="embedded-lpr-muted">No supporting attachments.</div>';return;} box.innerHTML=embeddedLprAttachments.map(item=>{ const deleteButton=editable ? '<button type="button" class="embedded-lpr-btn danger" onclick="deleteEmbeddedLprAttachment(' + (Number(item.id) || 0) + ')"><i class="fa-solid fa-trash"></i> Delete</button>' : ''; return '<div class="embedded-lpr-attachment"><div><strong>' + esc(item.filename || item.original_filename || 'Attachment') + '</strong><div class="embedded-lpr-muted">' + esc(item.content_type || '') + '  -  ' + money((item.file_size || item.size || 0)/1024) + ' KB</div></div><div class="embedded-lpr-attachment-actions"><a class="embedded-lpr-btn secondary" href="' + esc(item.preview_url || '#') + '" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i> Preview</a><a class="embedded-lpr-btn secondary" href="' + esc(item.download_url || '#') + '"><i class="fa-solid fa-download"></i> Download</a>' + deleteButton + '</div></div>'; }).join(''); }
-    window.closeEmbeddedLprModal = () => { $('embeddedLprModal').classList.remove('open'); };
-    window.saveEmbeddedLpr = async () => { try { let id=parentId(); if(!id){ let saved=null; if(embeddedLprParentModule==='cash_advance' && window.saveCashAdvanceDraft) saved=await window.saveCashAdvanceDraft(true); if(embeddedLprParentModule==='travel_request' && window.saveTravelRequestDraft) saved=await window.saveTravelRequestDraft(); id=saved?.item?.id || saved?.cash_advance?.id || saved?.travel_request?.id || saved?.id || $(embeddedLprParentModule==='cash_advance'?'cashAdvanceId':'travel-request-id')?.value || ''; } if(!id){notify('Complete and save this request before attaching an LPR.','warn');return;} const data=await api('/save_embedded_lpr',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({...collect(),parent_id:id})}); fill(data.item); renderEmbeddedLprModalList(data.linked_lprs || [data.item]); notify('LPR saved for this request.','success'); } catch(error){ notify(error.message,'error'); } };
+    function settleReimbursementReview(value){ if(embeddedLprReviewResolver){ const resolve=embeddedLprReviewResolver; embeddedLprReviewResolver=null; resolve(Boolean(value)); } }
+    function validateReimbursementItems(){
+        if(embeddedLprParentModule !== 'reimbursement') return '';
+        const requiredFields=[['embeddedLprBranch','Branch'],['embeddedLprClass','Class'],['embeddedLprDept','Department'],['embeddedLprProduct','Product Code'],['embeddedLprIntendedFor','Intended For'],['embeddedLprEquipment','Equipment']];
+        const missing=requiredFields.filter(([id])=>!String($(id)?.value||'').trim()).map(([,label])=>label);
+        if(missing.length) return 'Complete these LPR fields: ' + missing.join(', ') + '.';
+        const totals={};
+        rowValues().forEach(item=>{ const key=item.reimbursement_source_key||''; totals[key]=(totals[key]||0)+(Number(item.quantity||0)*Number(item.unit_price||0)); });
+        for(const source of embeddedLprReimbursementSources){ if(Math.abs(Number(totals[source.key]||0)-Number(source.amount||0))>0.01) return 'Items for ' + source.label + ' must total PHP ' + money(source.amount) + '.'; }
+        return '';
+    }
+    window.closeEmbeddedLprModal = () => { $('embeddedLprModal').classList.remove('open'); settleReimbursementReview(false); };
+    window.saveEmbeddedLpr = async () => {
+        try {
+            const validationMessage=validateReimbursementItems(); if(validationMessage){notify(validationMessage,'error');setEmbeddedLprNotice(validationMessage);return;}
+            let id=parentId();
+            if(!id){
+                let saved=null;
+                if(embeddedLprParentModule==='cash_advance' && window.saveCashAdvanceDraft) saved=await window.saveCashAdvanceDraft(true);
+                if(embeddedLprParentModule==='travel_request' && window.saveTravelRequestDraft) saved=await window.saveTravelRequestDraft();
+                if(embeddedLprParentModule==='reimbursement' && window.saveReimbursementDraft) await window.saveReimbursementDraft(false);
+                id=saved?.item?.id || saved?.cash_advance?.id || saved?.travel_request?.id || saved?.id || parentId() || $(embeddedLprParentModule==='cash_advance'?'cashAdvanceId':'travel-request-id')?.value || '';
+            }
+            if(!id){notify('Complete and save this request before attaching an LPR.','warn');return;}
+            const data=await api('/save_embedded_lpr',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':csrf()},body:JSON.stringify({...collect(),parent_id:id})});
+            fill(data.item); renderEmbeddedLprModalList(data.linked_lprs || [data.item]); notify('LPR saved for this request.','success');
+            if(embeddedLprParentModule==='reimbursement'){
+                $('embeddedLprModal').classList.remove('open');
+                settleReimbursementReview(true);
+            }
+        } catch(error){ notify(error.message,'error'); setEmbeddedLprNotice(error.message); }
+    };
     window.uploadEmbeddedLprAttachments = async files => {
         if (!files?.length) return;
         const id = $('embeddedLprId')?.value || '';
@@ -169,6 +223,24 @@
                 : (data.items || [])[0];
             if (item) fill(item);
         } catch (error) { notify(error.message, 'error'); }
+    };
+    window.openReimbursementLprReview = async (reimbursementId, continueSubmit) => {
+        if(embeddedLprParentModule !== 'reimbursement' || !reimbursementId) return false;
+        if(embeddedLprReviewResolver) settleReimbursementReview(false);
+        const reviewPromise=new Promise(resolve=>{ embeddedLprReviewResolver=resolve; });
+        $('embeddedLprModal').classList.add('open');
+        $('embeddedLprTitle').innerHTML='<i class="fa-solid fa-file-invoice me-2"></i> Review LPR Before Submission';
+        setEmbeddedLprNotice('Review every item and make sure each source subtotal matches the Office/Field Items amount.');
+        try {
+            const data=await api('/prepare_reimbursement_lpr/' + encodeURIComponent(reimbursementId));
+            fill(data.item);
+            renderEmbeddedLprModalList(data.items || (data.item?.id ? [data.item] : []));
+        } catch(error){
+            $('embeddedLprModal').classList.remove('open');
+            notify(error.message,'error');
+            settleReimbursementReview(false);
+        }
+        return reviewPromise;
     };
     window.editEmbeddedLpr = async id => {
         const parent = parentId();

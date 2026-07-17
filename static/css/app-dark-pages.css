@@ -280,6 +280,29 @@
 }
 :root[data-app-theme="dark"] .travel-money-option.active { background: var(--app-primary) !important; color: #fff !important; }
 
+:root[data-app-theme="dark"] :is(
+    .embedded-lpr-dialog, .embedded-lpr-panel, .embedded-lpr-record,
+    .embedded-lpr-items-wrap, .embedded-lpr-attachments, .embedded-lpr-foot,
+    .reim-additional-receipts-card, .reim-additional-receipts-body
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(.embedded-lpr-panel h3, .embedded-lpr-record-title, .embedded-lpr-field label) {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(.embedded-lpr-field input, .embedded-lpr-field select, .embedded-lpr-items input) {
+    background: var(--dark-input) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .embedded-lpr-items th { background: #24344a !important; color: #dbeafe !important; }
+:root[data-app-theme="dark"] .embedded-lpr-items td { border-color: var(--dark-border) !important; }
+:root[data-app-theme="dark"] .embedded-lpr-muted { color: var(--dark-muted) !important; }
+:root[data-app-theme="dark"] .embedded-lpr-notice { background: #18395f !important; color: #bfdbfe !important; }
+:root[data-app-theme="dark"] .embedded-lpr-total { background: #143d30 !important; color: #a7f3d0 !important; }
+
 /* Dashboard, records, reports, changelog and accounting custom surfaces */
 :root[data-app-theme="dark"] :is(
     .dashboard-whats-new, .dashboard-card, .dashboard-section-card, .dashboard-stat-card,

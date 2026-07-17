@@ -5231,6 +5231,12 @@ Recipient count: ${recipientCount}` : ''),
                 <strong>Additional Receipts:</strong>
                 <div style="margin-top:6px;">${renderApprovalReceiptLinks(data.additional_receipts || [])}</div>
             </div>
+            ${(data.linked_lprs || []).length ? `
+                <div style="margin-top:14px;">
+                    <strong>Attached LPR:</strong>
+                    <div style="margin-top:6px;">${renderApprovalReceiptLinks(data.linked_lprs || [])}</div>
+                </div>
+            ` : ''}
         `;
 
         const remarks = document.getElementById('approvalRemarks');
