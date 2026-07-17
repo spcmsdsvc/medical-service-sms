@@ -10581,7 +10581,8 @@ TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V1 = 'medical-service-tsr-coverage-repair:co
 TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V2 = 'medical-service-tsr-coverage-repair:compact-v2'
 TSR_SCHEDULE_COVERAGE_REPAIR_MARKER = 'medical-service-tsr-coverage-repair:team-footer-v3'
 TSR_HISTORICAL_COVERAGE_REPAIR_MARKER = 'medical-service-tsr-historical-coverage:continuation-v1'
-TSR_SERVICE_DATE_RANGE_REPAIR_MARKER = 'medical-service-tsr-date-range:compact-v1'
+TSR_SERVICE_DATE_RANGE_REPAIR_MARKER_V1 = 'medical-service-tsr-date-range:compact-v1'
+TSR_SERVICE_DATE_RANGE_REPAIR_MARKER = 'medical-service-tsr-date-range:compact-v2-table'
 TSR_VECTOR_PDF_CREATOR = 'Medical Service TSR Vector PDF'
 
 
@@ -11212,20 +11213,60 @@ def repair_tsr_multiday_service_date_range_pdf(pdf_bytes, coverage_rows, service
             raise ValueError('Date of Service cell could not be located safely.')
         date_header = max(date_headers, key=lambda rect: rect.y0)
         time_header = max(time_headers, key=lambda rect: rect.y0)
-        cell = fitz.Rect(
-            max(1, date_header.x0 - 5),
-            date_header.y1 + 2,
-            max(date_header.x1 + 20, time_header.x0 - 5),
-            min(first_page.rect.height - 1, date_header.y1 + 31),
-        )
+        drawing_rects = [drawing.get('rect') for drawing in first_page.get_drawings() if drawing.get('rect')]
+        header_cells = [
+            rect for rect in drawing_rects
+            if rect.x0 <= date_header.x0 <= rect.x1
+            and rect.x0 <= date_header.x1 <= rect.x1
+            and rect.y0 <= date_header.y0 <= rect.y1
+            and rect.y0 <= date_header.y1 <= rect.y1
+            and 40 <= rect.width <= first_page.rect.width * 0.35
+            and 8 <= rect.height <= 40
+        ]
+        header_cell = min(header_cells, key=lambda rect: rect.width * rect.height) if header_cells else None
+        value_cells = [
+            rect for rect in drawing_rects
+            if header_cell
+            and abs(rect.x0 - header_cell.x0) <= 2
+            and abs(rect.x1 - header_cell.x1) <= 2
+            and abs(rect.y0 - header_cell.y1) <= 3
+            and 10 <= rect.height <= 40
+        ]
+        if value_cells:
+            cell = min(value_cells, key=lambda rect: abs(rect.y0 - header_cell.y1))
+        else:
+            cell = fitz.Rect(
+                max(1, date_header.x0 - 5),
+                date_header.y1 + 2,
+                max(date_header.x1 + 20, time_header.x0 - 5),
+                min(first_page.rect.height - 1, date_header.y1 + 24),
+            )
         if cell.width < 55 or cell.height < 14:
             raise ValueError('Date of Service value cell geometry is unsafe.')
 
         first_page.add_redact_annot(
-            fitz.Rect(cell.x0 + 1, cell.y0, cell.x1 - 1, cell.y1 - 1),
+            fitz.Rect(cell.x0 + 1.5, cell.y0 + 1.5, cell.x1 - 1.5, cell.y1 - 1.5),
             fill=(1, 1, 1),
         )
-        first_page.apply_redactions()
+        try:
+            first_page.apply_redactions(graphics=0)
+        except TypeError:
+            first_page.apply_redactions()
+        first_page.draw_rect(cell, color=(0, 0, 0), width=0.55, overlay=True)
+        separator_lines = [
+            rect for rect in drawing_rects
+            if rect.width >= first_page.rect.width * 0.75
+            and rect.height <= 1.5
+            and cell.y1 <= rect.y0 <= cell.y1 + 15
+        ]
+        for separator in separator_lines:
+            first_page.draw_line(
+                fitz.Point(separator.x0, separator.y0),
+                fitz.Point(separator.x1, separator.y0),
+                color=(0, 0, 0),
+                width=0.55,
+                overlay=True,
+            )
         font = fitz.Font(fontname='hebo')
         font_size = 8.4
         while font_size > 5.8 and font.text_length(date_range, fontsize=font_size) > cell.width - 8:
@@ -11241,7 +11282,13 @@ def repair_tsr_multiday_service_date_range_pdf(pdf_bytes, coverage_rows, service
             overlay=True,
         )
 
-        keywords = keywords.replace(TSR_HISTORICAL_COVERAGE_REPAIR_MARKER, '').replace(';;', ';').strip('; ')
+        keywords = (
+            keywords
+            .replace(TSR_HISTORICAL_COVERAGE_REPAIR_MARKER, '')
+            .replace(TSR_SERVICE_DATE_RANGE_REPAIR_MARKER_V1, '')
+            .replace(';;', ';')
+            .strip('; ')
+        )
         metadata['keywords'] = f'{keywords}; {TSR_SERVICE_DATE_RANGE_REPAIR_MARKER}'.strip('; ')
         repaired.set_metadata(metadata)
         compact_bytes = repaired.tobytes(garbage=4, deflate=True, clean=True)
