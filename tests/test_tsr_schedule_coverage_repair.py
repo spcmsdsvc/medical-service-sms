@@ -3,10 +3,15 @@ import unittest
 import fitz
 
 from app import (
+    TSR_HISTORICAL_COVERAGE_REPAIR_MARKER,
     TSR_SCHEDULE_COVERAGE_REPAIR_MARKER,
     TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V1,
     TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V2,
+    TSR_VECTOR_PDF_CREATOR,
+    ensure_authoritative_tsr_coverage_pdf,
+    repair_tsr_multiday_historical_coverage_pdf,
     repair_tsr_single_day_multi_engineer_coverage_pdf,
+    stamp_tsr_single_day_team_footer,
 )
 
 
@@ -124,6 +129,96 @@ class TsrScheduleCoverageRepairTests(unittest.TestCase):
 
         self.assertTrue(second['already_repaired'])
         self.assertEqual(second['pdf_bytes'], first['pdf_bytes'])
+
+    @staticmethod
+    def make_original_vector_pdf(page_count=2):
+        document = fitz.open()
+        for index in range(page_count):
+            page = document.new_page(width=595.28, height=841.89)
+            page.insert_text((30, 45), 'SHIMADZU PHILIPPINES CORPORATION', fontsize=10)
+            page.insert_text((30, 80), 'TECHNICAL SERVICE REPORT', fontsize=12)
+            page.insert_text((440, 80), '20260715-01-AM', fontsize=8)
+            page.insert_text((30, 120), f'ORIGINAL PAGE {index + 1}', fontsize=9)
+            if index == 0:
+                page.insert_text((70, 730), 'SERVICED BY:', fontsize=7)
+                page.insert_text((80, 760), 'ENGINEER ONE', fontsize=8)
+                page.insert_text((24, 815), 'SPC Service TSR 004-2020', fontsize=6)
+        document.set_metadata({'creator': TSR_VECTOR_PDF_CREATOR})
+        raw = document.tobytes()
+        document.close()
+        return raw
+
+    @staticmethod
+    def coverage_rows():
+        return [
+            {
+                'date_iso': '2026-07-13',
+                'date_label': 'Jul 13, 2026',
+                'time_start': '08:00',
+                'time_end': '17:00',
+                'engineer_names': ['Engineer One', 'Engineer Two'],
+                'engineer_ids': [1, 2],
+                'shift_ids': [101],
+            },
+            {
+                'date_iso': '2026-07-14',
+                'date_label': 'Jul 14, 2026',
+                'time_start': '13:00',
+                'time_end': '17:00',
+                'engineer_names': ['Engineer One'],
+                'engineer_ids': [1],
+                'shift_ids': [102],
+            },
+        ]
+
+    def test_multiday_repair_inserts_vector_page_after_first_page(self):
+        result = repair_tsr_multiday_historical_coverage_pdf(
+            self.make_original_vector_pdf(page_count=2),
+            self.coverage_rows(),
+        )
+        repaired = fitz.open(stream=result['pdf_bytes'], filetype='pdf')
+        self.assertEqual(len(repaired), 3)
+        self.assertIn('ORIGINAL PAGE 1', repaired[0].get_text())
+        self.assertIn('SCHEDULE COVERAGE', repaired[1].get_text())
+        self.assertIn('JULY 13, 2026', repaired[1].get_text().upper())
+        self.assertIn('1:00 PM - 5:00 PM', repaired[1].get_text())
+        self.assertIn('ENGINEER TWO', repaired[1].get_text().upper())
+        self.assertIn('ORIGINAL PAGE 2', repaired[2].get_text())
+        self.assertIn(TSR_HISTORICAL_COVERAGE_REPAIR_MARKER, repaired.metadata.get('keywords', ''))
+        repaired.close()
+
+    def test_multiday_repair_is_idempotent(self):
+        first = repair_tsr_multiday_historical_coverage_pdf(
+            self.make_original_vector_pdf(),
+            self.coverage_rows(),
+        )
+        second = repair_tsr_multiday_historical_coverage_pdf(first['pdf_bytes'], self.coverage_rows())
+        self.assertTrue(second['already_repaired'])
+        self.assertEqual(second['pdf_bytes'], first['pdf_bytes'])
+
+    def test_old_single_day_pdf_without_coverage_gets_team_footer(self):
+        result = stamp_tsr_single_day_team_footer(
+            self.make_original_vector_pdf(page_count=1),
+            ['Engineer One', 'Engineer Two'],
+            serviced_by='Engineer One',
+        )
+        repaired = fitz.open(stream=result['pdf_bytes'], filetype='pdf')
+        text = repaired[0].get_text().upper()
+        self.assertIn('OTHER ASSIGNED ENGINEER(S): ENGINEER TWO', text)
+        self.assertNotIn('SCHEDULE COVERAGE', text)
+        repaired.close()
+
+    def test_future_save_guard_adds_missing_multiday_coverage(self):
+        guarded = ensure_authoritative_tsr_coverage_pdf(
+            self.make_original_vector_pdf(page_count=1),
+            self.coverage_rows(),
+            serviced_by='Engineer One',
+        )
+        self.assertTrue(guarded['changed'])
+        repaired = fitz.open(stream=guarded['pdf_bytes'], filetype='pdf')
+        self.assertEqual(len(repaired), 2)
+        self.assertIn('SCHEDULE COVERAGE', repaired[1].get_text())
+        repaired.close()
 
 
 if __name__ == '__main__':

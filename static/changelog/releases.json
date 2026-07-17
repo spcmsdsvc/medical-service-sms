@@ -128,6 +128,16 @@
         {"item_key": "2026-07-16-reimbursement-office-field-items", "category": "Reimbursement", "description": "The Office Supplies reimbursement category is now labeled Office/Field Items for clearer use in the worksheet, approvals, and generated Excel reports.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 80},
         {"item_key": "2026-07-16-tsr-schedule-coverage", "category": "Create TSR", "description": "Multi-day TSRs show complete schedule coverage, while single-day team TSRs list other assigned engineers beneath Serviced By without repeating the service date and time.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 90}
       ]
+    },
+    {
+      "release_key": "2026-07-17",
+      "release_date": "2026-07-17",
+      "title": "TSR Schedule Coverage Reliability",
+      "summary": "Recent and future system-generated TSRs now preserve complete linked schedule coverage.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-17-tsr-coverage-reliability", "category": "Create TSR", "description": "Recent system-generated TSRs now receive missing multi-day schedule coverage or additional assigned-engineer details, and future saves are checked by the server before storage.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10}
+      ]
     }
   ]
 }
