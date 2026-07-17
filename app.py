@@ -10565,7 +10565,8 @@ def repair_tsr_pdf_checkboxes(pdf_bytes, payload):
         document.close()
 
 
-TSR_SCHEDULE_COVERAGE_REPAIR_MARKER = 'medical-service-tsr-coverage-repair:compact-v1'
+TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V1 = 'medical-service-tsr-coverage-repair:compact-v1'
+TSR_SCHEDULE_COVERAGE_REPAIR_MARKER = 'medical-service-tsr-coverage-repair:compact-v2'
 
 
 def _tsr_coverage_repair_engineer_names(coverage_rows):
@@ -10581,9 +10582,11 @@ def _tsr_coverage_repair_engineer_names(coverage_rows):
 def repair_tsr_single_day_multi_engineer_coverage_pdf(pdf_bytes, engineer_names):
     """Replace one-day coverage date/time table with a compact engineer row.
 
-    The repair redacts only the first page's coverage band and redraws the
-    compact row in place. Existing text, logo, signatures, and form geometry
-    outside the coverage band remain untouched and vector-based.
+    The repair redacts the first page's complete coverage band, including the
+    old table line art, then redraws one compact row in place. Existing text,
+    logo, signatures, and form geometry outside the coverage band remain
+    untouched and vector-based. Files repaired by the original v1 routine are
+    intentionally eligible for this v2 cleanup because v1 preserved old lines.
     """
     if not isinstance(pdf_bytes, (bytes, bytearray)) or not pdf_bytes:
         raise ValueError('TSR PDF is empty.')
@@ -10630,8 +10633,25 @@ def repair_tsr_single_day_multi_engineer_coverage_pdf(pdf_bytes, engineer_names)
 
         page_width = source_page.rect.width
         page_height = source_page.rect.height
-        content_left = max(0.0, coverage_rect.x0 - 0.8)
-        content_right = min(page_width, page_width - content_left)
+        coverage_band_drawings = []
+        for drawing in source_page.get_drawings():
+            drawing_rect = drawing.get('rect')
+            if not drawing_rect or drawing_rect.width < page_width * 0.75:
+                continue
+            if drawing_rect.x0 <= 1 or drawing_rect.x1 >= page_width - 1:
+                continue
+            if drawing_rect.y1 < coverage_rect.y0 - 8 or drawing_rect.y0 > complaint_rect.y0 + 2:
+                continue
+            coverage_band_drawings.append(drawing_rect)
+
+        if coverage_band_drawings:
+            content_left = max(0.0, min(rect.x0 for rect in coverage_band_drawings))
+            content_right = min(page_width, max(rect.x1 for rect in coverage_band_drawings))
+        else:
+            # All system-generated vector TSRs use the same A4 form margin.
+            # Keep a safe proportional fallback for any unusual older file.
+            content_left = page_width * 0.04032
+            content_right = page_width - content_left
         section_top = max(0.0, coverage_rect.y0 - 0.8)
         section_bottom = min(page_height, complaint_rect.y0 - 0.8)
         old_height = section_bottom - section_top
@@ -10642,7 +10662,7 @@ def repair_tsr_single_day_multi_engineer_coverage_pdf(pdf_bytes, engineer_names)
         source_page.add_redact_annot(section_rect, fill=(1, 1, 1))
         source_page.apply_redactions(
             images=fitz.PDF_REDACT_IMAGE_NONE,
-            graphics=fitz.PDF_REDACT_LINE_ART_NONE,
+            graphics=fitz.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,
             text=fitz.PDF_REDACT_TEXT_REMOVE,
         )
 
