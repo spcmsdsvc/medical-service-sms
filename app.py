@@ -32320,6 +32320,95 @@ def user_can_view_shift_tsr_archive(shift, scope=None):
     return False
 
 
+def legacy_tsr_replacement_text_is_complete(extracted_text):
+    """Return True when an uploaded TSR can safely replace a blank legacy primary.
+
+    This deliberately requires meaningful service content, not only a TSR title,
+    so ordinary supporting PDFs and empty templates are never promoted.
+    """
+    normalized = re.sub(r'\s+', ' ', extracted_text or '').strip().upper()
+    if len(normalized) < 300 or not text_looks_like_tsr_document(normalized):
+        return False
+    return (
+        'ACTIONS TAKEN' in normalized
+        and any(label in normalized for label in ('EQUIPMENT/MODEL', 'EQUIPMENT / MODEL', 'SERIAL NO'))
+        and any(label in normalized for label in ('DATE OF SERVICE', 'TIME STARTED', 'TIME FINISHED'))
+    )
+
+
+def get_legacy_incomplete_tsr_file_policy(shift):
+    """Identify a blank legacy primary TSR and its complete uploaded replacement.
+
+    Early offline queues could save an image-only blank frontend PDF as the
+    generated primary while also uploading the engineer's completed TSR. Keep
+    both historical files stored, but suppress the incomplete primary from the
+    Archive and Send Email whenever a complete same-schedule TSR is verified.
+    """
+    policy = {
+        'suppressed_primary_ids': set(),
+        'replacement_file_ids': set(),
+        'missing_details': [],
+    }
+    if not shift or not getattr(shift, 'id', None):
+        return policy
+
+    try:
+        ensure_online_tsr_submission_table()
+        submission = get_latest_online_tsr_submission_for_shift(shift.id)
+        payload = parse_online_tsr_payload_json(submission)
+        if not submission or clean_str(payload.get('_tsr_form_version')):
+            return policy
+
+        primary_file_id = clean_int(payload.get('_attached_file_id'))
+        extra_file_ids = [
+            clean_int(file_id)
+            for file_id in (payload.get('_extra_attachment_file_ids') or [])
+            if clean_int(file_id)
+        ]
+        missing_details = get_online_tsr_missing_core_details(shift, payload)
+        if not primary_file_id or not extra_file_ids or not missing_details:
+            return policy
+
+        for extra_file_id in extra_file_ids:
+            file_rec = db.session.get(ShiftFile, extra_file_id)
+            if not file_rec or file_rec.shift_id != shift.id:
+                continue
+            display_name = get_shift_file_display_name(file_rec)
+            disk_name = get_shift_file_disk_name(file_rec)
+            if not disk_name or not clean_str(display_name or disk_name).lower().endswith('.pdf'):
+                continue
+
+            local_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
+            readable_path = None
+            try:
+                readable_path = managed_storage_read_path(STORAGE_PREFIX_REPORTS, local_path)
+                extracted_text = extract_text_from_report_file(
+                    readable_path,
+                    display_name or disk_name,
+                )
+                if legacy_tsr_replacement_text_is_complete(extracted_text):
+                    policy['replacement_file_ids'].add(extra_file_id)
+            except Exception as read_error:
+                print(
+                    f"[TSR-LEGACY] Replacement validation skipped for shift #{shift.id}, "
+                    f"file #{extra_file_id}: {read_error}",
+                    flush=True,
+                )
+            finally:
+                if readable_path and readable_path != local_path:
+                    managed_storage_release_path(readable_path)
+
+        if policy['replacement_file_ids']:
+            policy['suppressed_primary_ids'].add(primary_file_id)
+            policy['missing_details'] = missing_details
+    except Exception as policy_error:
+        print(
+            f"[TSR-LEGACY] Incomplete primary policy skipped for shift #{getattr(shift, 'id', None)}: {policy_error}",
+            flush=True,
+        )
+    return policy
+
+
 def tsr_archive_shift_to_dict(shift):
     """Serialize one shift with TSR files for the archive UI.
 
@@ -32335,7 +32424,13 @@ def tsr_archive_shift_to_dict(shift):
         reverse=True
     )
 
+    legacy_file_policy = get_legacy_incomplete_tsr_file_policy(shift)
+    suppressed_primary_ids = legacy_file_policy.get('suppressed_primary_ids') or set()
+    replacement_file_ids = legacy_file_policy.get('replacement_file_ids') or set()
+
     for file_rec in sorted_files:
+        if clean_int(getattr(file_rec, 'id', None)) in suppressed_primary_ids:
+            continue
         display_name = get_shift_file_display_name(file_rec)
         disk_name = get_shift_file_disk_name(file_rec)
         if not existing_files_have_tsr([display_name, disk_name]):
@@ -32349,13 +32444,17 @@ def tsr_archive_shift_to_dict(shift):
             (disk_name or '').startswith(f'shift_{shift.id}_')
         )
 
+        is_legacy_replacement = clean_int(file_rec.id) in replacement_file_ids
         files.append({
             'id': file_rec.id,
             'name': display_name or disk_name,
             'uploaded_at': file_rec.uploaded_at.strftime('%Y-%m-%d %H:%M') if getattr(file_rec, 'uploaded_at', None) else '',
             'file_type': ext,
             'is_pdf': ext == 'pdf',
-            'source': 'Generated Online TSR' if is_generated_online_tsr else 'Uploaded TSR',
+            'source': (
+                'Complete Uploaded TSR' if is_legacy_replacement else
+                ('Generated Online TSR' if is_generated_online_tsr else 'Uploaded TSR')
+            ),
             'preview_url': url_for('preview_tsr_archive_file', file_id=file_rec.id, scope=archive_scope),
             'download_url': url_for('download_tsr_archive_file', file_id=file_rec.id, scope=archive_scope)
         })
@@ -35498,12 +35597,25 @@ def get_tsr_files_for_shift(shift):
             flush=True
         )
 
+    legacy_suppressed_primary_ids = set()
+    legacy_replacement_file_ids = set()
+    for candidate_shift in candidate_shifts:
+        legacy_file_policy = get_legacy_incomplete_tsr_file_policy(candidate_shift)
+        legacy_suppressed_primary_ids.update(
+            legacy_file_policy.get('suppressed_primary_ids') or set()
+        )
+        legacy_replacement_file_ids.update(
+            legacy_file_policy.get('replacement_file_ids') or set()
+        )
+
     files = []
     seen_file_ids = set()
 
     for candidate_shift in candidate_shifts:
         for file_rec in getattr(candidate_shift, 'files', []) or []:
             if getattr(file_rec, 'id', None) in seen_file_ids:
+                continue
+            if clean_int(getattr(file_rec, 'id', None)) in legacy_suppressed_primary_ids:
                 continue
 
             display_name = get_shift_file_display_name(file_rec)
@@ -35611,8 +35723,12 @@ def get_tsr_files_for_shift(shift):
         for file_info in files:
             file_id = clean_int(file_info.get('id'))
             generated_meta = generated_file_meta.get(file_id)
-            file_info['source_type'] = 'generated' if generated_meta else 'uploaded'
-            file_info['source_label'] = 'Generated TSR' if generated_meta else 'Uploaded TSR'
+            is_legacy_replacement = file_id in legacy_replacement_file_ids
+            file_info['source_type'] = 'uploaded' if is_legacy_replacement else ('generated' if generated_meta else 'uploaded')
+            file_info['source_label'] = (
+                'Complete Uploaded TSR' if is_legacy_replacement else
+                ('Generated TSR' if generated_meta else 'Uploaded TSR')
+            )
             file_info['revision_no'] = generated_meta.get('revision_no') if generated_meta else None
     except Exception as latest_filter_error:
         print(
