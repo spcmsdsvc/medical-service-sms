@@ -828,7 +828,7 @@
                     <div class="mb-3 d-none p-3 border rounded-3 border-primary bg-light" id="file-container">
 
                         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-                            <label class="small fw-bold text-muted text-uppercase mb-0 d-block">Service Reports (TSR Upload)</label>
+                            <label class="small fw-bold text-muted text-uppercase mb-0 d-block">Service Reports & Supporting Files</label>
                             <button type="button" id="desktop-create-tsr-inline-btn" class="btn btn-primary btn-sm fw-bold shadow-sm" onclick="openOfflineTSRDraftFromShiftModal()">
                                 <i class="fa-solid fa-file-pen me-1"></i>Create TSR
                             </button>
@@ -837,12 +837,16 @@
                         <div class="mobile-tsr-upload-help">
                             <i class="fa-solid fa-mobile-screen-button mt-1"></i>
                             <div>
-                                Tap the upload field below to choose from camera, gallery, or files. Filename should contain <strong>TSR</strong> before marking schedule Completed.
+                                Choose PDF or image files from camera, gallery, or storage. Files may be up to 35MB and will be optimized to 2MB. A filename containing <strong>TSR</strong> is still required before completion.
                             </div>
                         </div>
 
                         <!-- Added 'multiple' to support multiple file selections -->
-                        <input type="file" id="f-report" class="form-control mb-2 shadow-none" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,image/*,application/pdf">
+                        <input type="file" id="f-report" class="form-control mb-1 shadow-none" multiple accept=".pdf,.jpg,.jpeg,.png,image/jpeg,image/png,application/pdf">
+                        <div class="d-flex flex-wrap justify-content-between gap-2 xsmall text-muted mb-2">
+                            <span>PDF, JPG, JPEG, or PNG only. Maximum 10 manual uploads across the linked schedule.</span>
+                            <strong id="schedule-upload-count">0 of 10 files uploaded</strong>
+                        </div>
 
                         <div class="tsr-upload-recipient-card d-none" id="tsr-upload-recipient-card">
                             <div class="d-flex align-items-start gap-2">
@@ -861,7 +865,7 @@
                             <!-- Populated via openEditModal -->
                         </div>
 
-                        <p class="xsmall text-muted mt-2 mb-0 italic">Compliance: At least one filename must contain 'TSR'.</p>
+                        <p class="xsmall text-muted mt-2 mb-0 italic">Compliance: Supporting files are included in Send TSR, but at least one recognized TSR is required.</p>
 
                     </div>
                 </div>
@@ -1416,7 +1420,7 @@
                     <div class="tsr-attachment-package-header">
                         <div>
                             <div class="small fw-bold text-uppercase" id="tsr-attachment-package-title">
-                                <i class="fa-solid fa-paperclip me-1"></i>TSR Attachments
+                                <i class="fa-solid fa-paperclip me-1"></i>Email Attachments
                             </div>
                             <div class="xsmall text-muted" id="tsr-attachment-package-summary">Checking files attached to this schedule...</div>
                         </div>
@@ -13196,6 +13200,9 @@ async function loadGrid() {
 
         // Reset file lists for new entries
         document.getElementById('existing-files-list').innerHTML = "";
+        currentScheduleManualUploadCount = 0;
+        currentScheduleHasTSR = false;
+        updateScheduleUploadCount(0);
 
         toggleTaskStatusUI(false);
         toggleCategoryFields();
@@ -13218,8 +13225,9 @@ async function loadGrid() {
 
         const hasFullFileData = Array.isArray(shift.file_details) && shift.file_details.length;
         const hasLegacyFileData = Array.isArray(shift.files) && shift.files.length;
+        const hasManualUploadCount = Object.prototype.hasOwnProperty.call(shift, 'manual_upload_count');
         const needsTravelSuggestionData = isTimelineTravelBlock(shift) && !Array.isArray(shift.travel_schedule_suggestions);
-        if((hasFullFileData || hasLegacyFileData) && !needsTravelSuggestionData){
+        if((hasFullFileData || hasLegacyFileData) && hasManualUploadCount && !needsTravelSuggestionData){
             return shift;
         }
 
@@ -13351,6 +13359,12 @@ if(shift.engineers){
         fileListContainer.innerHTML = "";
 
         const existingFileDetails = getShiftFileDetails(shift);
+        currentScheduleManualUploadCount = Number(shift.manual_upload_count || 0);
+        currentScheduleHasTSR = Boolean(shift.has_linked_tsr) || existingFileDetails.some(fileInfo => {
+            const name = fileInfo.display_name || fileInfo.filename || '';
+            return String(name).toUpperCase().includes('TSR');
+        });
+        updateScheduleUploadCount(0);
 
         if (existingFileDetails.length > 0) {
             existingFileDetails.forEach(fileInfo => {
@@ -13363,10 +13377,10 @@ if(shift.engineers){
                 const previewUrl = getTimelineFilePreviewUrl(fileInfo);
                 const fileLinkHtml = previewUrl
                     ? `<a href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener" class="text-decoration-none text-primary">
-                        <i class="fa-solid fa-file-lines me-1"></i> ${escapeHtml(displayName)}
+                        <i class="fa-solid ${/\.(png|jpe?g)$/i.test(displayName) ? 'fa-file-image' : 'fa-file-lines'} me-1"></i> ${escapeHtml(displayName)}
                     </a>`
                     : `<span class="text-muted">
-                        <i class="fa-solid fa-file-lines me-1"></i> ${escapeHtml(displayName)}
+                        <i class="fa-solid ${/\.(png|jpe?g)$/i.test(displayName) ? 'fa-file-image' : 'fa-file-lines'} me-1"></i> ${escapeHtml(displayName)}
                         <span class="xsmall ms-1">(preview unavailable)</span>
                     </span>`;
 
@@ -13525,6 +13539,50 @@ if(shift.engineers){
     let currentTSRSystemCCEmails = [];
     let currentTSRSenderCopyEmail = '';
     let currentTSRAttachmentManifestSignature = '';
+    let currentScheduleManualUploadCount = 0;
+    let currentScheduleHasTSR = false;
+    const SCHEDULE_MANUAL_UPLOAD_LIMIT = 10;
+    const SCHEDULE_ATTACHMENT_INTAKE_MAX_BYTES = 35 * 1024 * 1024;
+    const SCHEDULE_ATTACHMENT_EXTENSIONS = new Set(['pdf', 'jpg', 'jpeg', 'png']);
+
+    function updateScheduleUploadCount(selectedCount=0){
+        const countEl = document.getElementById('schedule-upload-count');
+        const total = currentScheduleManualUploadCount + Number(selectedCount || 0);
+        if(countEl){
+            countEl.textContent = `${total} of ${SCHEDULE_MANUAL_UPLOAD_LIMIT} files uploaded`;
+            countEl.classList.toggle('text-danger', total > SCHEDULE_MANUAL_UPLOAD_LIMIT);
+        }
+    }
+
+    function validateScheduleUploadSelection(showMessage=true){
+        const input = document.getElementById('f-report');
+        const files = Array.from(input?.files || []);
+        updateScheduleUploadCount(files.length);
+
+        if(currentScheduleManualUploadCount + files.length > SCHEDULE_MANUAL_UPLOAD_LIMIT){
+            if(showMessage){
+                timelineAlert(`This linked schedule allows up to ${SCHEDULE_MANUAL_UPLOAD_LIMIT} manually uploaded files. Remove files or select fewer attachments.`);
+            }
+            return false;
+        }
+
+        for(const file of files){
+            const extension = String(file.name || '').split('.').pop().toLowerCase();
+            if(!SCHEDULE_ATTACHMENT_EXTENSIONS.has(extension)){
+                if(showMessage) timelineAlert(`${file.name}: upload PDF, JPG, JPEG, or PNG files only.`);
+                return false;
+            }
+            if(Number(file.size || 0) > SCHEDULE_ATTACHMENT_INTAKE_MAX_BYTES){
+                if(showMessage) timelineAlert(`${file.name}: maximum upload size is 35MB per file.`);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    document.getElementById('f-report')?.addEventListener('change', () => {
+        validateScheduleUploadSelection(true);
+    });
 
     function normalizeTSRCCEmailList(emailList){
         const seen = new Set();
@@ -13561,24 +13619,29 @@ if(shift.engineers){
         const countEl = document.getElementById('tsr-attachment-count');
         const summaryEl = document.getElementById('tsr-attachment-package-summary');
         const normalizedFiles = Array.isArray(files) ? files : [];
+        const tsrCount = normalizedFiles.filter(file => Boolean(file.is_tsr) || file.attachment_type === 'tsr').length;
+        const supportingCount = Math.max(0, normalizedFiles.length - tsrCount);
 
         if(countEl) countEl.textContent = String(normalizedFiles.length);
         if(summaryEl){
             summaryEl.textContent = normalizedFiles.length
-                ? `${normalizedFiles.length} TSR file${normalizedFiles.length === 1 ? '' : 's'} will be included in this email.`
-                : 'No sendable TSR attachment was found.';
+                ? `${tsrCount} TSR document${tsrCount === 1 ? '' : 's'} and ${supportingCount} supporting file${supportingCount === 1 ? '' : 's'} will be included in this email.`
+                : 'No sendable email attachment was found.';
         }
         if(!listEl) return;
 
         if(!normalizedFiles.length){
-            listEl.innerHTML = '<div class="tsr-attachment-empty text-danger"><i class="fa-solid fa-triangle-exclamation me-1"></i>No TSR files are available to send.</div>';
+            listEl.innerHTML = '<div class="tsr-attachment-empty text-danger"><i class="fa-solid fa-triangle-exclamation me-1"></i>No email attachments are available to send.</div>';
             return;
         }
 
         listEl.innerHTML = normalizedFiles.map(file => {
-            const displayName = file.display_name || file.filename || 'TSR attachment';
+            const displayName = file.display_name || file.filename || 'Email attachment';
             const sourceLabel = file.source_label || (file.source_type === 'generated' ? 'Generated TSR' : 'Uploaded TSR');
             const revisionLabel = file.revision_no && Number(file.revision_no) > 1 ? `REV${Number(file.revision_no)}` : '';
+            const sourceIcon = file.source_type === 'generated'
+                ? 'fa-file-circle-check'
+                : (file.source_type === 'supporting_image' ? 'fa-file-image' : 'fa-file-arrow-up');
             const previewUrl = file.preview_url || (file.id ? `/preview_tsr_archive_file/${encodeURIComponent(file.id)}` : '');
             const previewButton = previewUrl
                 ? `<a class="btn btn-outline-primary btn-sm tsr-attachment-preview-btn" href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener"><i class="fa-solid fa-eye me-1"></i>Preview</a>`
@@ -13589,7 +13652,7 @@ if(shift.engineers){
                     <div class="min-w-0">
                         <div class="tsr-attachment-name">${escapeHtml(displayName)}</div>
                         <div class="tsr-attachment-meta">
-                            <span class="tsr-attachment-source"><i class="fa-solid ${file.source_type === 'generated' ? 'fa-file-circle-check' : 'fa-file-arrow-up'} me-1"></i>${escapeHtml(sourceLabel)}</span>
+                            <span class="tsr-attachment-source"><i class="fa-solid ${sourceIcon} me-1"></i>${escapeHtml(sourceLabel)}</span>
                             ${revisionLabel ? `<span>${escapeHtml(revisionLabel)}</span>` : ''}
                             <span>${escapeHtml(formatTSRAttachmentDate(file.service_date))}</span>
                             <span>${escapeHtml(formatTSRAttachmentSize(file.file_size))}</span>
@@ -13926,8 +13989,18 @@ async function openTSRClientEmailModal(shiftId){
 
             titleEl.innerText = payload.client_name ? `TSR for ${payload.client_name}` : "Technical Service Report";
             currentTSRAttachmentManifestSignature = String(payload.attachment_manifest_signature || '');
-            renderTSREmailAttachmentManifest(payload.tsr_files || []);
-            subtitleEl.innerText = `${payload.service_date || 'Service date unavailable'} • ${payload.tsr_files?.length || 0} TSR file(s) attached`;
+            const emailAttachments = payload.attachments || payload.tsr_files || [];
+            renderTSREmailAttachmentManifest(emailAttachments);
+            const tsrCount = Number(payload.tsr_count ?? (payload.tsr_files || []).length ?? 0);
+            const supportingCount = Number(payload.supporting_count ?? Math.max(0, emailAttachments.length - tsrCount));
+            subtitleEl.innerText = `${payload.service_date || 'Service date unavailable'} | ${tsrCount} TSR document${tsrCount === 1 ? '' : 's'} and ${supportingCount} supporting file${supportingCount === 1 ? '' : 's'}`;
+
+            if(payload.upload_limit_exceeded){
+                const summaryEl = document.getElementById('tsr-attachment-package-summary');
+                if(summaryEl){
+                    summaryEl.textContent += ` This legacy linked schedule has ${payload.manual_upload_count} manual uploads; remove extra files before adding more.`;
+                }
+            }
 
             const previewSystemCc = payload.cc || payload.system_cc || payload.static_cc || payload.cc_emails || [];
             renderTSRSystemCCDisplay(Array.isArray(previewSystemCc) ? previewSystemCc : []);
@@ -14329,9 +14402,14 @@ async function openTSRClientEmailModal(shiftId){
         const reportInput = document.getElementById('f-report');
         const categoryVal = document.getElementById('f-category').value;
 
+        if(!validateScheduleUploadSelection(true)){
+            reportInput?.focus();
+            return;
+        }
+
         // REQUIREMENT: TSR Filename Check for 'Completed' status on SITE VISITS
         if (activeID && categoryVal === "Work" && activeStatus === "Completed") {
-            const alreadyExists = document.getElementById('existing-files-list').innerHTML.includes("fa-file-lines");
+            const alreadyExists = currentScheduleHasTSR;
 
             // Check current input filenames
             let hasTSRInInput = false;
@@ -14575,6 +14653,14 @@ async function openTSRClientEmailModal(shiftId){
 
             if(fileRow){
                 fileRow.remove();
+            }
+
+            if(Number.isFinite(Number(payload.manual_upload_count))){
+                currentScheduleManualUploadCount = Number(payload.manual_upload_count);
+                updateScheduleUploadCount(0);
+            }
+            if(Array.isArray(payload.reverted_status_shift_ids) && payload.reverted_status_shift_ids.length){
+                currentScheduleHasTSR = false;
             }
 
             const fileListContainer = document.getElementById('existing-files-list');

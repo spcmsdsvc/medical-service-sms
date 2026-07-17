@@ -769,6 +769,13 @@ def managed_storage_rollback_new_file(prefix, local_path):
 # SECURITY UPDATE: Allowed file extensions for Technical Service Reports
 ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'docx', 'xlsx', 'csv'}
 
+# Calendar service-report uploads use the same storage limits as accounting
+# supporting documents, without changing the broader legacy allow-list above.
+SCHEDULE_ATTACHMENT_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
+SCHEDULE_ATTACHMENT_INTAKE_MAX_BYTES = 35 * 1024 * 1024
+SCHEDULE_ATTACHMENT_STORED_MAX_BYTES = 2 * 1024 * 1024
+SCHEDULE_MANUAL_UPLOAD_LIMIT = 10
+
 def allowed_file(filename):
     """ Helper: Validates if the file extension is permitted """
     return '.' in filename and \
@@ -780,16 +787,78 @@ def is_tsr_filename(filename):
     return bool(filename and 'TSR' in filename.upper())
 
 
-def validate_uploaded_report_files():
-    """Validate uploaded report files before any database mutation."""
-    invalid = []
-    for file_obj in request.files.getlist('report_file'):
-        if not file_obj or not file_obj.filename:
-            continue
-        if not allowed_file(file_obj.filename):
-            invalid.append(file_obj.filename)
-    if invalid:
-        return False, f"Unsupported report file type: {', '.join(invalid)}"
+def schedule_attachment_extension(filename):
+    if not filename or '.' not in filename:
+        return ''
+    return filename.rsplit('.', 1)[1].lower().strip()
+
+
+def schedule_prepare_attachment_upload(file_obj):
+    """Validate and optimize one manually uploaded calendar attachment."""
+    original_name = secure_filename(os.path.basename(getattr(file_obj, 'filename', '') or ''))
+    if not original_name:
+        raise ValueError('One selected attachment has an invalid filename.')
+
+    ext = schedule_attachment_extension(original_name)
+    if ext not in SCHEDULE_ATTACHMENT_EXTENSIONS:
+        raise ValueError(
+            f'Unsupported schedule attachment: {original_name}. '
+            'Upload PDF, JPG, JPEG, or PNG files only.'
+        )
+
+    try:
+        prepared_bytes, stored_ext, content_type = reimbursement_prepare_receipt_upload_bytes(
+            file_obj,
+            original_name,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        message = message.replace('Receipt file', 'Schedule attachment')
+        message = message.replace('Receipt image', 'Schedule attachment image')
+        message = message.replace('Receipt could not', 'Schedule attachment could not')
+        raise ValueError(message) from exc
+
+    if len(prepared_bytes) > SCHEDULE_ATTACHMENT_STORED_MAX_BYTES:
+        raise ValueError(
+            'Schedule attachment could not be reduced below 2MB. '
+            'Please upload a smaller or clearer file.'
+        )
+
+    return {
+        'original_name': original_name,
+        'stored_ext': stored_ext or ext,
+        'content_type': content_type or clean_str(getattr(file_obj, 'mimetype', None)) or '',
+        'file_bytes': prepared_bytes,
+    }
+
+
+def validate_uploaded_report_files(existing_shift=None):
+    """Validate and prepare report files before any schedule database mutation."""
+    uploaded_files = [
+        file_obj for file_obj in request.files.getlist('report_file')
+        if file_obj and file_obj.filename
+    ]
+    if not uploaded_files:
+        return True, None
+
+    try:
+        existing_count = get_linked_schedule_manual_upload_count(existing_shift) if existing_shift else 0
+        if existing_count + len(uploaded_files) > SCHEDULE_MANUAL_UPLOAD_LIMIT:
+            remaining = max(0, SCHEDULE_MANUAL_UPLOAD_LIMIT - existing_count)
+            raise ValueError(
+                f'This linked schedule can contain up to {SCHEDULE_MANUAL_UPLOAD_LIMIT} manually uploaded files. '
+                f'{existing_count} already exist; you may add {remaining} more.'
+            )
+
+        for file_obj in uploaded_files:
+            prepared = schedule_prepare_attachment_upload(file_obj)
+            setattr(file_obj, '_schedule_prepared_upload', prepared)
+    except ValueError as exc:
+        return False, str(exc)
+    except Exception as exc:
+        print(f'[SCHEDULE-UPLOAD] Attachment preparation failed: {exc}', flush=True)
+        return False, 'Unable to process the selected schedule attachment. Please try a smaller or clearer file.'
+
     return True, None
 
 
@@ -33042,6 +33111,9 @@ def get_shift_details(shift_id):
                 }
                 for file_record in shift.files
             ],
+            'manual_upload_count': get_linked_schedule_manual_upload_count(shift),
+            'manual_upload_limit': SCHEDULE_MANUAL_UPLOAD_LIMIT,
+            'has_linked_tsr': linked_schedule_has_tsr_filename(shift),
             'engineers': assigned_engineer_ids,
             'day_owner_engineer_id': shift.engineer_id,
             'day_owner_engineer_name': shift.engineer.name if shift.engineer else '',
@@ -33710,17 +33782,18 @@ def _resolve_tsr_archive_file_for_preview(file_id):
         )
 
     file_path = found_paths[0]
+    ext_source = display_name or disk_name or file_path
+    ext = ext_source.rsplit('.', 1)[-1].lower() if '.' in ext_source else ''
+    is_supported_schedule_attachment = ext in SCHEDULE_ATTACHMENT_EXTENSIONS
     if (
+        not is_supported_schedule_attachment and
         not existing_files_have_tsr([display_name, disk_name]) and
         not report_file_content_looks_like_tsr(file_path, display_name or disk_name)
     ):
         return None, _tsr_archive_error_response(
-            f'File #{file_id} is not recognized as a TSR file: {display_name or disk_name or "unnamed"}.',
+            f'File #{file_id} is not a supported schedule attachment: {display_name or disk_name or "unnamed"}.',
             400
         )
-
-    ext_source = display_name or disk_name or file_path
-    ext = ext_source.rsplit('.', 1)[-1].lower() if '.' in ext_source else ''
 
     print(f"[TSR-ARCHIVE] Resolved file_id={file_id} to {file_path}", flush=True)
     return {
@@ -35124,6 +35197,94 @@ def should_preserve_existing_schedule_dates(existing_chain, requested_start, req
     return existing_dates[0] == requested_start and existing_dates[-1] == requested_end
 
 
+def get_linked_schedule_file_shifts(shift):
+    """Return every schedule row sharing one logical attachment package."""
+    if not shift:
+        return []
+
+    candidates = []
+    seen_ids = set()
+
+    def add_candidate(candidate):
+        candidate_id = clean_int(getattr(candidate, 'id', None))
+        if not candidate_id or candidate_id in seen_ids:
+            return
+        seen_ids.add(candidate_id)
+        candidates.append(candidate)
+
+    add_candidate(shift)
+    try:
+        for linked_shift in get_tsr_completion_linked_shifts(shift):
+            add_candidate(linked_shift)
+    except Exception as exc:
+        print(f'[SCHEDULE-UPLOAD] Linked schedule lookup fallback: {exc}', flush=True)
+
+    try:
+        if getattr(shift, 'parent_shift_id', None):
+            add_candidate(db.session.get(Shift, shift.parent_shift_id))
+        for child_shift in Shift.query.filter_by(parent_shift_id=shift.id).all():
+            add_candidate(child_shift)
+        if getattr(shift, 'group_id', None):
+            for group_shift in Shift.query.filter_by(group_id=shift.group_id).all():
+                add_candidate(group_shift)
+    except Exception as exc:
+        print(f'[SCHEDULE-UPLOAD] Extended linked schedule lookup fallback: {exc}', flush=True)
+
+    return candidates
+
+
+def get_linked_schedule_generated_file_ids(linked_shifts):
+    """Identify system-generated TSR artifacts, including legacy records."""
+    generated_ids = set()
+    shift_ids = [clean_int(getattr(item, 'id', None)) for item in linked_shifts or []]
+    shift_ids = [item for item in shift_ids if item]
+    if not shift_ids:
+        return generated_ids
+
+    try:
+        ensure_online_tsr_submission_table()
+        submissions = OnlineTsrSubmission.query.filter(
+            OnlineTsrSubmission.shift_id.in_(shift_ids)
+        ).all()
+        for submission in submissions:
+            payload = parse_online_tsr_payload_json(submission)
+            file_id = clean_int(payload.get('_attached_file_id'))
+            if file_id:
+                generated_ids.add(file_id)
+    except Exception as exc:
+        print(f'[SCHEDULE-UPLOAD] Generated TSR lookup fallback: {exc}', flush=True)
+
+    return generated_ids
+
+
+def get_linked_schedule_manual_upload_records(shift):
+    linked_shifts = get_linked_schedule_file_shifts(shift)
+    linked_ids = [clean_int(getattr(item, 'id', None)) for item in linked_shifts]
+    linked_ids = [item for item in linked_ids if item]
+    if not linked_ids:
+        return []
+
+    generated_ids = get_linked_schedule_generated_file_ids(linked_shifts)
+    records = ShiftFile.query.filter(ShiftFile.shift_id.in_(linked_ids)).all()
+    return [
+        record for record in records
+        if not clean_int(getattr(record, 'online_tsr_submission_id', None))
+        and clean_int(getattr(record, 'id', None)) not in generated_ids
+    ]
+
+
+def get_linked_schedule_manual_upload_count(shift):
+    return len(get_linked_schedule_manual_upload_records(shift)) if shift else 0
+
+
+def linked_schedule_has_tsr_filename(shift):
+    for linked_shift in get_linked_schedule_file_shifts(shift):
+        for file_rec in getattr(linked_shift, 'files', []) or []:
+            if is_tsr_filename(get_shift_file_display_name(file_rec) or get_shift_file_disk_name(file_rec)):
+                return True
+    return False
+
+
 def save_uploaded_shift_files(shift):
     """Persist uploaded report files and link them to a Shift record.
 
@@ -35138,32 +35299,33 @@ def save_uploaded_shift_files(shift):
     for file_obj in uploaded_files:
         if not file_obj or not file_obj.filename:
             continue
-        if not allowed_file(file_obj.filename):
-            # Uploads are validated before database changes; this is a final safety guard.
-            continue
+        prepared = getattr(file_obj, '_schedule_prepared_upload', None)
+        if not prepared:
+            prepared = schedule_prepare_attachment_upload(file_obj)
 
-        original_name = secure_filename(file_obj.filename)
-        if not original_name:
-            continue
-
-        unique_name = f"shift_{shift.id}_{secrets.token_hex(8)}_{original_name}"
+        original_name = prepared['original_name']
+        stored_ext = prepared['stored_ext']
+        original_ext = schedule_attachment_extension(original_name)
+        original_stem = os.path.splitext(original_name)[0] or 'attachment'
+        storage_display_name = f'{original_stem}.{stored_ext}'
+        display_name = original_name if stored_ext == original_ext else storage_display_name
+        unique_name = f"shift_{shift.id}_{secrets.token_hex(8)}_{storage_display_name}"
         file_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
-        file_obj.stream.seek(0)
-        file_bytes = file_obj.read()
+        file_bytes = prepared['file_bytes']
         if not file_bytes:
             continue
         managed_storage_write_bytes(
             STORAGE_PREFIX_REPORTS,
             file_path,
             file_bytes,
-            original_filename=original_name,
-            content_type=clean_str(getattr(file_obj, 'mimetype', None)) or '',
+            original_filename=display_name,
+            content_type=prepared['content_type'],
         )
 
         file_rec = ShiftFile(
             shift_id=shift.id,
             filename=unique_name,
-            original_filename=original_name
+            original_filename=display_name
         )
         db.session.add(file_rec)
         db.session.flush()
@@ -36611,47 +36773,12 @@ def get_tsr_files_for_shift(shift):
     if not shift:
         return []
 
-    candidate_shifts = []
-    seen_shift_ids = set()
-
-    def add_candidate_shift(candidate):
-        if not candidate or not getattr(candidate, 'id', None):
-            return
-        if candidate.id in seen_shift_ids:
-            return
-        seen_shift_ids.add(candidate.id)
-        candidate_shifts.append(candidate)
-
-    add_candidate_shift(shift)
-
-    try:
-        for linked_shift in get_tsr_completion_linked_shifts(shift):
-            add_candidate_shift(linked_shift)
-    except Exception as linked_error:
-        print(
-            f"[EMAIL-CLIENT] Linked TSR file scan fallback failed for shift_id={getattr(shift, 'id', None)}: {linked_error}",
-            flush=True
-        )
-
-    # Extra-safe fallback for older records that may not be fully covered by
-    # get_tsr_completion_linked_shifts(), especially parent/child override rows.
-    try:
-        if getattr(shift, 'parent_shift_id', None):
-            add_candidate_shift(db.session.get(Shift, shift.parent_shift_id))
-
-        child_rows = Shift.query.filter_by(parent_shift_id=shift.id).all()
-        for child_shift in child_rows:
-            add_candidate_shift(child_shift)
-
-        if getattr(shift, 'group_id', None):
-            group_rows = Shift.query.filter_by(group_id=shift.group_id).all()
-            for group_shift in group_rows:
-                add_candidate_shift(group_shift)
-    except Exception as fallback_error:
-        print(
-            f"[EMAIL-CLIENT] Fallback linked TSR file scan failed for shift_id={getattr(shift, 'id', None)}: {fallback_error}",
-            flush=True
-        )
+    candidate_shifts = get_linked_schedule_file_shifts(shift)
+    seen_shift_ids = {
+        clean_int(getattr(candidate, 'id', None))
+        for candidate in candidate_shifts
+        if clean_int(getattr(candidate, 'id', None))
+    }
 
     legacy_suppressed_primary_ids = set()
     legacy_replacement_file_ids = set()
@@ -36813,10 +36940,113 @@ def get_tsr_files_for_shift(shift):
     return files
 
 
-def get_tsr_email_attachment_manifest_signature(tsr_files):
-    """Return a stable signature for the exact TSR package shown before send."""
+def get_tsr_email_files_for_shift(shift, tsr_files=None):
+    """Return recognized TSRs plus supported schedule documents for email."""
+    tsr_files = list(tsr_files) if tsr_files is not None else get_tsr_files_for_shift(shift)
+    tsr_file_ids = {
+        clean_int(file_info.get('id')) for file_info in tsr_files
+        if clean_int(file_info.get('id'))
+    }
+    for file_info in tsr_files:
+        file_info['is_tsr'] = True
+        file_info['attachment_type'] = 'tsr'
+
+    candidate_shifts = get_linked_schedule_file_shifts(shift)
+    generated_ids = get_linked_schedule_generated_file_ids(candidate_shifts)
+    suppressed_ids = set()
+    for candidate_shift in candidate_shifts:
+        policy = get_legacy_incomplete_tsr_file_policy(candidate_shift)
+        suppressed_ids.update(policy.get('suppressed_primary_ids') or set())
+
+    supporting_files = []
+    seen_supporting_ids = set()
+    for candidate_shift in candidate_shifts:
+        for file_rec in getattr(candidate_shift, 'files', []) or []:
+            file_id = clean_int(getattr(file_rec, 'id', None))
+            if not file_id or file_id in seen_supporting_ids or file_id in tsr_file_ids:
+                continue
+            if file_id in generated_ids or file_id in suppressed_ids:
+                continue
+
+            display_name = get_shift_file_display_name(file_rec)
+            disk_name = get_shift_file_disk_name(file_rec)
+            ext = schedule_attachment_extension(display_name or disk_name)
+            if ext not in SCHEDULE_ATTACHMENT_EXTENSIONS:
+                continue
+
+            file_path = None
+            if disk_name:
+                try:
+                    file_path = managed_storage_read_path(
+                        STORAGE_PREFIX_REPORTS,
+                        os.path.join(app.config['UPLOAD_FOLDER'], disk_name),
+                    )
+                except (FileNotFoundError, StorageObjectNotFound):
+                    file_path = None
+                except Exception as storage_error:
+                    print(f'[EMAIL-CLIENT] Supporting file read failed for {disk_name}: {storage_error}', flush=True)
+            if not file_path or not os.path.isfile(file_path):
+                continue
+
+            is_image = ext in {'png', 'jpg', 'jpeg'}
+            source_date = getattr(candidate_shift, 'start_time', None)
+            supporting_files.append({
+                'id': file_id,
+                'shift_id': candidate_shift.id,
+                'selected_shift_id': clean_int(getattr(shift, 'id', None)),
+                'filename': disk_name,
+                'display_name': display_name or disk_name,
+                'path': file_path,
+                'detection_method': 'supporting_attachment',
+                'uploaded_at': file_rec.uploaded_at.isoformat() if file_rec.uploaded_at else '',
+                'source_type': 'supporting_image' if is_image else 'supporting_pdf',
+                'source_label': 'Supporting Image' if is_image else 'Supporting PDF',
+                'revision_no': None,
+                'service_date': source_date.strftime('%Y-%m-%d') if source_date else '',
+                'file_size': os.path.getsize(file_path),
+                'preview_url': f'/preview_tsr_archive_file/{file_id}',
+                'is_tsr': False,
+                'attachment_type': 'supporting',
+            })
+            seen_supporting_ids.add(file_id)
+
+    source_rank = {
+        'generated': 0,
+        'uploaded': 1,
+        'supporting_pdf': 2,
+        'supporting_image': 3,
+    }
+    return sorted(
+        tsr_files + supporting_files,
+        key=lambda item: (
+            source_rank.get(clean_str(item.get('source_type')) or '', 9),
+            clean_str(item.get('service_date')) or '',
+            clean_int(item.get('id')) or 0,
+        ),
+    )
+
+
+def serialize_tsr_email_attachment(file_info):
+    return {
+        'id': file_info.get('id'),
+        'filename': file_info.get('filename'),
+        'display_name': file_info.get('display_name') or file_info.get('filename'),
+        'uploaded_at': file_info.get('uploaded_at'),
+        'service_date': file_info.get('service_date'),
+        'source_type': file_info.get('source_type') or 'uploaded',
+        'source_label': file_info.get('source_label') or 'Uploaded TSR',
+        'revision_no': file_info.get('revision_no'),
+        'file_size': clean_int(file_info.get('file_size')) or 0,
+        'preview_url': file_info.get('preview_url') or '',
+        'is_tsr': bool(file_info.get('is_tsr')),
+        'attachment_type': file_info.get('attachment_type') or ('tsr' if file_info.get('is_tsr') else 'supporting'),
+    }
+
+
+def get_tsr_email_attachment_manifest_signature(email_files):
+    """Return a stable signature for the exact email package shown before send."""
     manifest_parts = []
-    for file_info in sorted(tsr_files or [], key=lambda item: clean_int(item.get('id')) or 0):
+    for file_info in sorted(email_files or [], key=lambda item: clean_int(item.get('id')) or 0):
         manifest_parts.append(':'.join([
             str(clean_int(file_info.get('id')) or ''),
             str(clean_int(file_info.get('shift_id')) or ''),
@@ -37140,7 +37370,9 @@ def preview_tsr_client_email(shift_id):
         return denied('You are not authorized to send TSR for this schedule.')
 
     tsr_files = get_tsr_files_for_shift(shift)
-    attachment_manifest_signature = get_tsr_email_attachment_manifest_signature(tsr_files)
+    email_attachments = get_tsr_email_files_for_shift(shift, tsr_files=tsr_files)
+    attachment_manifest_signature = get_tsr_email_attachment_manifest_signature(email_attachments)
+    manual_upload_count = get_linked_schedule_manual_upload_count(shift)
     saved_email_candidates = get_saved_tsr_email_metadata_candidates(tsr_files)
     detected_emails = merge_tsr_email_candidate_lists(
         saved_email_candidates,
@@ -37192,21 +37424,13 @@ def preview_tsr_client_email(shift_id):
         'client_name': shift.client.name if shift.client else '',
         'task': shift.title,
         'service_date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
-        'tsr_files': [
-            {
-                'id': file_info.get('id'),
-                'filename': file_info.get('filename'),
-                'display_name': file_info.get('display_name') or file_info.get('filename'),
-                'uploaded_at': file_info.get('uploaded_at'),
-                'service_date': file_info.get('service_date'),
-                'source_type': file_info.get('source_type') or 'uploaded',
-                'source_label': file_info.get('source_label') or 'Uploaded TSR',
-                'revision_no': file_info.get('revision_no'),
-                'file_size': clean_int(file_info.get('file_size')) or 0,
-                'preview_url': file_info.get('preview_url') or ''
-            }
-            for file_info in tsr_files
-        ],
+        'tsr_files': [serialize_tsr_email_attachment(file_info) for file_info in tsr_files],
+        'attachments': [serialize_tsr_email_attachment(file_info) for file_info in email_attachments],
+        'tsr_count': len(tsr_files),
+        'supporting_count': max(0, len(email_attachments) - len(tsr_files)),
+        'manual_upload_count': manual_upload_count,
+        'manual_upload_limit': SCHEDULE_MANUAL_UPLOAD_LIMIT,
+        'upload_limit_exceeded': manual_upload_count > SCHEDULE_MANUAL_UPLOAD_LIMIT,
         'attachment_manifest_signature': attachment_manifest_signature,
         'detected_emails': detected_emails,
         'saved_recipient_emails': saved_email_candidates,
@@ -37246,11 +37470,12 @@ def send_tsr_client_email(shift_id):
     if not tsr_files:
         return jsonify({'message': 'No attached TSR file found for this schedule.'}), 400
 
-    current_manifest_signature = get_tsr_email_attachment_manifest_signature(tsr_files)
+    email_attachments = get_tsr_email_files_for_shift(shift, tsr_files=tsr_files)
+    current_manifest_signature = get_tsr_email_attachment_manifest_signature(email_attachments)
     previewed_manifest_signature = clean_str(payload.get('attachment_manifest_signature')) or ''
     if previewed_manifest_signature and previewed_manifest_signature != current_manifest_signature:
         return jsonify({
-            'message': 'The TSR attachments have changed. Please reopen Send TSR and review the updated files before sending.',
+            'message': 'The email attachments have changed. Please reopen Send TSR and review the updated files before sending.',
             'attachments_changed': True
         }), 409
 
@@ -37283,7 +37508,7 @@ def send_tsr_client_email(shift_id):
         subject,
         text_body,
         html_body,
-        attachments=tsr_files,
+        attachments=email_attachments,
         cc_emails=static_cc_emails
     )
 
@@ -37323,7 +37548,10 @@ def send_tsr_client_email(shift_id):
         'sender_copy_email': get_current_user_email_for_tsr_cc(),
         'font_key': font_key,
         'font_stack': get_tsr_email_font_stack(font_key),
-        'attachments': [file_info.get('display_name') or file_info.get('filename') for file_info in tsr_files]
+        'attachments': [
+            file_info.get('display_name') or file_info.get('filename')
+            for file_info in email_attachments
+        ]
     })
 
 
@@ -37494,7 +37722,7 @@ def update_shift(id):
 
     payload = get_shift_payload()
 
-    files_ok, files_error = validate_uploaded_report_files()
+    files_ok, files_error = validate_uploaded_report_files(master_shift)
     if not files_ok:
         return jsonify({'message': files_error}), 400
 
@@ -38695,6 +38923,8 @@ def delete_file(filename):
         'status': 'success',
         'filename': safe_filename,
         'removed_links': len(file_recs),
+        'manual_upload_count': get_linked_schedule_manual_upload_count(linked_shifts[0]) if linked_shifts else 0,
+        'manual_upload_limit': SCHEDULE_MANUAL_UPLOAD_LIMIT,
         'reverted_status_shift_ids': reverted_shift_ids,
         'reverted_status_count': len(reverted_shift_ids),
         'status_reverted_to': 'For Continuation' if reverted_shift_ids else None
