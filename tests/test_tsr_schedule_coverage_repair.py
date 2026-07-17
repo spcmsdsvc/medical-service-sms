@@ -9,7 +9,9 @@ from app import (
     TSR_SCHEDULE_COVERAGE_REPAIR_MARKER_V2,
     TSR_VECTOR_PDF_CREATOR,
     ensure_authoritative_tsr_coverage_pdf,
+    format_tsr_service_date_range,
     repair_tsr_multiday_historical_coverage_pdf,
+    repair_tsr_multiday_service_date_range_pdf,
     repair_tsr_single_day_multi_engineer_coverage_pdf,
     stamp_tsr_single_day_team_footer,
 )
@@ -48,6 +50,12 @@ class TsrScheduleCoverageRepairTests(unittest.TestCase):
 
         page.draw_rect(fitz.Rect(24, 560, 571, 680), color=(0, 0, 0), width=0.8)
         page.insert_text((28, 575), 'SUBMITTED ORIGINAL DOCUMENTS', fontsize=7.5)
+        page.draw_rect(fitz.Rect(24, 680, 571, 715), color=(0, 0, 0), width=0.8)
+        page.draw_line(fitz.Point(145, 680), fitz.Point(145, 715), color=(0, 0, 0), width=0.8)
+        page.insert_text((28, 692), 'DATE OF SERVICE', fontsize=7)
+        page.insert_text((150, 692), 'TIME STARTED', fontsize=7)
+        page.insert_text((28, 708), '2026-07-13', fontsize=8)
+        page.insert_text((150, 708), '08:00', fontsize=8)
         page.insert_text((70, 730), 'SERVICED BY:', fontsize=7)
         page.insert_text((80, 760), 'ENGINEER ONE', fontsize=8)
         page.insert_text((360, 730), 'ACKNOWLEDGED BY:', fontsize=7)
@@ -140,6 +148,12 @@ class TsrScheduleCoverageRepairTests(unittest.TestCase):
             page.insert_text((440, 80), '20260715-01-AM', fontsize=8)
             page.insert_text((30, 120), f'ORIGINAL PAGE {index + 1}', fontsize=9)
             if index == 0:
+                page.draw_rect(fitz.Rect(24, 630, 571, 690), color=(0, 0, 0), width=0.8)
+                page.draw_line(fitz.Point(145, 630), fitz.Point(145, 690), color=(0, 0, 0), width=0.8)
+                page.insert_text((28, 646), 'DATE OF SERVICE', fontsize=7)
+                page.insert_text((150, 646), 'TIME STARTED', fontsize=7)
+                page.insert_text((28, 673), '2026-07-13', fontsize=8)
+                page.insert_text((150, 673), '08:00', fontsize=8)
                 page.insert_text((70, 730), 'SERVICED BY:', fontsize=7)
                 page.insert_text((80, 760), 'ENGINEER ONE', fontsize=8)
                 page.insert_text((24, 815), 'SPC Service TSR 004-2020', fontsize=6)
@@ -196,6 +210,59 @@ class TsrScheduleCoverageRepairTests(unittest.TestCase):
         self.assertTrue(second['already_repaired'])
         self.assertEqual(second['pdf_bytes'], first['pdf_bytes'])
 
+    def test_service_date_range_uses_compact_same_month_format(self):
+        self.assertEqual(
+            format_tsr_service_date_range(self.coverage_rows()),
+            'JULY 13-14, 2026',
+        )
+
+    def test_date_range_repair_removes_old_coverage_page(self):
+        legacy = repair_tsr_multiday_historical_coverage_pdf(
+            self.make_original_vector_pdf(page_count=2),
+            self.coverage_rows(),
+        )
+        result = repair_tsr_multiday_service_date_range_pdf(
+            legacy['pdf_bytes'],
+            self.coverage_rows(),
+            serviced_by='Engineer One',
+        )
+        repaired = fitz.open(stream=result['pdf_bytes'], filetype='pdf')
+        all_text = '\n'.join(page.get_text() for page in repaired)
+        self.assertEqual(len(repaired), 2)
+        self.assertNotIn('SCHEDULE COVERAGE', all_text)
+        self.assertIn('JULY 13-14, 2026', repaired[0].get_text())
+        self.assertIn('OTHER ASSIGNED ENGINEER(S): ENGINEER TWO', repaired[0].get_text().upper())
+        self.assertIn('ORIGINAL PAGE 2', repaired[1].get_text())
+        repaired.close()
+
+    def test_date_range_repair_is_idempotent(self):
+        first = repair_tsr_multiday_service_date_range_pdf(
+            self.make_original_vector_pdf(page_count=1),
+            self.coverage_rows(),
+            serviced_by='Engineer One',
+        )
+        second = repair_tsr_multiday_service_date_range_pdf(
+            first['pdf_bytes'],
+            self.coverage_rows(),
+            serviced_by='Engineer One',
+        )
+        self.assertTrue(second['already_repaired'])
+        self.assertEqual(second['pdf_bytes'], first['pdf_bytes'])
+
+    def test_date_range_repair_removes_coverage_from_first_page(self):
+        result = repair_tsr_multiday_service_date_range_pdf(
+            self.make_legacy_team_pdf(marker=''),
+            self.coverage_rows(),
+            serviced_by='Engineer One',
+        )
+        repaired = fitz.open(stream=result['pdf_bytes'], filetype='pdf')
+        text = repaired[0].get_text().upper()
+        self.assertTrue(result['body_coverage_removed'])
+        self.assertNotIn('SCHEDULE COVERAGE', text)
+        self.assertIn('JULY 13-14, 2026', text)
+        self.assertIn('OTHER ASSIGNED ENGINEER(S): ENGINEER TWO', text)
+        repaired.close()
+
     def test_old_single_day_pdf_without_coverage_gets_team_footer(self):
         result = stamp_tsr_single_day_team_footer(
             self.make_original_vector_pdf(page_count=1),
@@ -208,7 +275,7 @@ class TsrScheduleCoverageRepairTests(unittest.TestCase):
         self.assertNotIn('SCHEDULE COVERAGE', text)
         repaired.close()
 
-    def test_future_save_guard_adds_missing_multiday_coverage(self):
+    def test_future_save_guard_uses_compact_date_range(self):
         guarded = ensure_authoritative_tsr_coverage_pdf(
             self.make_original_vector_pdf(page_count=1),
             self.coverage_rows(),
@@ -216,8 +283,11 @@ class TsrScheduleCoverageRepairTests(unittest.TestCase):
         )
         self.assertTrue(guarded['changed'])
         repaired = fitz.open(stream=guarded['pdf_bytes'], filetype='pdf')
-        self.assertEqual(len(repaired), 2)
-        self.assertIn('SCHEDULE COVERAGE', repaired[1].get_text())
+        self.assertEqual(len(repaired), 1)
+        text = repaired[0].get_text().upper()
+        self.assertNotIn('SCHEDULE COVERAGE', text)
+        self.assertIn('JULY 13-14, 2026', text)
+        self.assertIn('OTHER ASSIGNED ENGINEER(S): ENGINEER TWO', text)
         repaired.close()
 
 

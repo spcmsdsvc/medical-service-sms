@@ -1081,9 +1081,7 @@ function shouldShowTSRScheduleCoverage(scheduleOrData){
   return rows.length > 1 || engineerNames.size > 1;
 }
 function shouldRenderTSRScheduleCoverage(scheduleOrData){
-  const rows = getTSRScheduleCoverageRows(scheduleOrData);
-  const dates = new Set(rows.map(row => row.date_iso || row.date_label).filter(Boolean));
-  return rows.length > 1 || dates.size > 1;
+  return false;
 }
 function isCompactTSRScheduleCoverage(scheduleOrData){
   const rows = getTSRScheduleCoverageRows(scheduleOrData);
@@ -1095,7 +1093,6 @@ function normalizeTSREngineerIdentity(value){
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 function getTSROtherAssignedEngineerNames(scheduleOrData){
-  if(!isCompactTSRScheduleCoverage(scheduleOrData)) return [];
   const rows = getTSRScheduleCoverageRows(scheduleOrData);
   const signer = normalizeTSREngineerIdentity(scheduleOrData?.['tsr-serviced-by'] || scheduleOrData?.serviced_by || LOGGED_IN_ENGINEER_NAME);
   const seen = new Set();
@@ -1108,6 +1105,26 @@ function getTSROtherAssignedEngineerNames(scheduleOrData){
     names.push(display);
   });
   return names;
+}
+function formatTSRServiceDateRange(scheduleOrData){
+  const rows = getTSRScheduleCoverageRows(scheduleOrData);
+  const parsed = [...new Set(rows.map(row => String(row.date_iso || '').slice(0,10)).filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value)))]
+    .sort()
+    .map(value => ({ value, date:new Date(`${value}T00:00:00`) }))
+    .filter(item => !Number.isNaN(item.date.getTime()));
+  const fallback = String(scheduleOrData?.['tsr-service-date'] || scheduleOrData?.selectedSchedule?.date_iso || '').trim();
+  if(parsed.length < 2) return fallback || parsed[0]?.value || '';
+  const first = parsed[0].date;
+  const last = parsed[parsed.length - 1].date;
+  const monthLong = date => date.toLocaleDateString('en-US', {month:'long'}).toUpperCase();
+  const monthShort = date => date.toLocaleDateString('en-US', {month:'short'}).toUpperCase();
+  if(first.getFullYear() === last.getFullYear() && first.getMonth() === last.getMonth()){
+    return `${monthLong(first)} ${first.getDate()}-${last.getDate()}, ${first.getFullYear()}`;
+  }
+  if(first.getFullYear() === last.getFullYear()){
+    return `${monthShort(first)} ${first.getDate()} - ${monthShort(last)} ${last.getDate()}, ${first.getFullYear()}`;
+  }
+  return `${monthShort(first)} ${first.getDate()}, ${first.getFullYear()} - ${monthShort(last)} ${last.getDate()}, ${last.getFullYear()}`;
 }
 function formatTSRCoverageDate(row){
   const rawIso = String(row?.date_iso || '').trim();
@@ -5417,10 +5434,7 @@ function tsrSignatureHtml(data, target){
   return src ? `<img src="${src}" alt="${target} signature">` : '';
 }
 function buildTSRScheduleCoverageHTML(data){
-  if(!shouldRenderTSRScheduleCoverage(data)) return '';
-  const rows = getTSRScheduleCoverageRows(data);
-  return `<div class="tsr-print-section-title">Schedule Coverage</div>
-    <table class="tsr-print-coverage-table"><thead><tr><th>Date</th><th>Time</th><th>Assigned Engineer(s)</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHTML(formatTSRCoverageDate(row))}</td><td>${escapeHTML(formatTSRCoverageTime(row))}</td><td>${escapeHTML((row.engineer_names || []).join(', ') || 'Assigned engineer')}</td></tr>`).join('')}</tbody></table>`;
+  return '';
 }
 function buildTSRPrintHTML(data){
   const categoryOther = isTSRCategorySelected(data,'Others') ? `<span class="tsr-print-other-line">${tsrValue(data,'tsr-service-category-other')}</span>` : '<span class="tsr-print-other-line"></span>';
@@ -5475,7 +5489,7 @@ function buildTSRPrintHTML(data){
       </div>
       <div class="tsr-print-section-title">Parts Supplied/Recommended</div>
       <table class="tsr-print-parts"><thead><tr><th style="width:12%">Item No.</th><th style="width:20%">Part Number</th><th>Description</th><th style="width:8%">Qty</th><th style="width:22%">Delivery Receipt</th></tr></thead><tbody>${partRows}</tbody></table>
-      <table class="tsr-print-service-full-table"><thead><tr><th>Date of Service</th><th>Time Started</th><th>Time Finished</th><th>Billing Statement / Sales Invoice</th><th>Purchase Order (P.O.)</th></tr></thead><tbody><tr><td>${tsrValue(data,'tsr-service-date')}</td><td>${tsrValue(data,'tsr-time-started')}</td><td>${tsrValue(data,'tsr-time-finished')}</td><td>${[tsrValue(data,'tsr-billing-statement'), tsrValue(data,'tsr-sales-invoice')].filter(Boolean).join(' / ')}</td><td>${tsrValue(data,'tsr-purchase-order')}</td></tr></tbody></table>
+      <table class="tsr-print-service-full-table"><thead><tr><th>Date of Service</th><th>Time Started</th><th>Time Finished</th><th>Billing Statement / Sales Invoice</th><th>Purchase Order (P.O.)</th></tr></thead><tbody><tr><td>${escapeHTML(formatTSRServiceDateRange(data))}</td><td>${tsrValue(data,'tsr-time-started')}</td><td>${tsrValue(data,'tsr-time-finished')}</td><td>${[tsrValue(data,'tsr-billing-statement'), tsrValue(data,'tsr-sales-invoice')].filter(Boolean).join(' / ')}</td><td>${tsrValue(data,'tsr-purchase-order')}</td></tr></tbody></table>
       <div class="tsr-print-signatures">
         <div class="tsr-print-sign-column"><div class="tsr-print-sign-title">Serviced By:</div><div class="tsr-print-sign-box">${tsrSignatureHtml(data,'serviced')}</div><div class="tsr-print-sign-caption">${tsrUpperValue(data,'tsr-serviced-by','NAME & SIGNATURE')}</div>${otherAssignedEngineerNames.length ? `<div class="tsr-print-other-engineers">Other Assigned Engineer(s): ${escapeHTML(otherAssignedEngineerNames.join(', '))}</div>` : ''}</div>
         <div class="tsr-print-sign-column tsr-print-ack-column"><div class="tsr-print-sign-title">Acknowledged By:</div><div class="tsr-print-sign-box">${tsrSignatureHtml(data,'acknowledged')}</div><div class="tsr-print-sign-caption">${tsrUpperValue(data,'tsr-acknowledged-by','NAME & SIGNATURE')}</div></div>
@@ -6150,15 +6164,6 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
   ctx.fillText(isTSRCategorySelected(data,'Others') ? (data['tsr-service-category-other'] || '') : '', margin + 1060, y + 36);
   y += 56;
 
-  const coverageRows = getTSRScheduleCoverageRows(data);
-  const showCoverage = shouldRenderTSRScheduleCoverage(data);
-  let coverageOverflowRows = [];
-  if(showCoverage){
-    const coverageResult = drawTSRScheduleCoverageTable(ctx, coverageRows, margin, y, pageW, 8);
-    coverageOverflowRows = coverageResult.overflowRows || [];
-    y = coverageResult.nextY + 8;
-  }
-
   drawMultilineBox(ctx, 'COMPLAINT', data['tsr-complaint'], margin, y, pageW, 88, 19);
   y += 88;
 
@@ -6166,7 +6171,7 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
   const visiblePartRows = Math.max(2, Math.min(5, parts.length || 2));
   const remarksHeight = 150;
   const reserveAfterActions = remarksHeight + 140 + (64 + visiblePartRows * 38) + 80 + 247;
-  const actionsHeight = Math.max(showCoverage ? 240 : 420, Math.min(700, canvas.height - y - reserveAfterActions - 40));
+  const actionsHeight = Math.max(420, Math.min(700, canvas.height - y - reserveAfterActions - 40));
   const actionsResult = drawActionsTakenBox(ctx, data['tsr-actions-taken'], margin, y, pageW, actionsHeight, 18);
   y += actionsHeight;
 
@@ -6205,7 +6210,7 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
   const serviceCols = [220, 190, 190, 390, pageW - 220 - 190 - 190 - 390];
   const serviceHeaders = ['DATE OF SERVICE','TIME STARTED','TIME FINISHED','BILLING STATEMENT / SALES INVOICE','PURCHASE ORDER (P.O.)'];
   const billingValue = [data['tsr-billing-statement'], data['tsr-sales-invoice']].filter(Boolean).join(' / ');
-  const serviceVals = [data['tsr-service-date'] || '', data['tsr-time-started'] || '', data['tsr-time-finished'] || '', billingValue, data['tsr-purchase-order'] || ''];
+  const serviceVals = [formatTSRServiceDateRange(data), data['tsr-time-started'] || '', data['tsr-time-finished'] || '', billingValue, data['tsr-purchase-order'] || ''];
   x = margin;
   ctx.font = 'bold 16px Arial';
   serviceHeaders.forEach((h, i) => {
@@ -6225,7 +6230,6 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
 
   await drawTSRSignatureFooter(ctx, data, margin, pageW, y);
   const continuationCanvases = await renderTSRContinuationCanvases(data, [
-    { type:'coverage', title:'SCHEDULE COVERAGE - CONTINUED', note:'Continuation page automatically added because the linked schedule coverage did not fit on the main TSR page.', rows:coverageOverflowRows },
     { title:'ACTIONS TAKEN - CONTINUED', note:'Continuation page automatically added because Actions Taken exceeded the main TSR page.', lines:actionsResult.overflowLines || [] },
     { title:'REMARKS/RECOMMENDATIONS - CONTINUED', note:'Continuation page automatically added because Remarks/Recommendations exceeded the main TSR page.', lines:remarksResult.overflowLines || [] }
   ]);
@@ -6267,7 +6271,7 @@ async function renderTSRContinuationCanvases(data, sections){
     const summaryCols = [150, 360, 150, pageW - 660];
     const summaryRows = [
       ['TSR NO.', data['tsr-number'] || '', 'CUSTOMER', data['tsr-customer-name'] || ''],
-      ['SERVICE DATE', data['tsr-service-date'] || '', 'EQUIPMENT', [data['tsr-equipment-model'], data['tsr-serial-no']].filter(Boolean).join(' / ')]
+      ['SERVICE DATE', formatTSRServiceDateRange(data), 'EQUIPMENT', [data['tsr-equipment-model'], data['tsr-serial-no']].filter(Boolean).join(' / ')]
     ];
     summaryRows.forEach(row => {
       let x = margin;

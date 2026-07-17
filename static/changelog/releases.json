@@ -133,10 +133,10 @@
       "release_key": "2026-07-17",
       "release_date": "2026-07-17",
       "title": "TSR Schedule Coverage Reliability",
-      "summary": "Recent and future system-generated TSRs now preserve complete linked schedule coverage.",
+      "summary": "Multi-day TSRs now present linked service dates in a compact, readable format.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-17-tsr-coverage-reliability", "category": "Create TSR", "description": "Recent system-generated TSRs now receive missing multi-day schedule coverage or additional assigned-engineer details, and future saves are checked by the server before storage.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10}
+        {"item_key": "2026-07-17-tsr-coverage-reliability", "category": "Create TSR", "description": "Multi-day TSRs now show a compact service-date range in the existing Date of Service field, while additional assigned engineers remain listed beneath Serviced By.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10}
       ]
     }
   ]
