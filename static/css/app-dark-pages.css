@@ -8,6 +8,20 @@
     --dark-border: #3b4a5e;
     --dark-text: #f1f5f9;
     --dark-muted: #a8b5c6;
+    --calendar-client: #38bdf8;
+    --calendar-client-bg: #172d3d;
+    --calendar-office: #f472b6;
+    --calendar-office-bg: #382335;
+    --calendar-travel: #a78bfa;
+    --calendar-travel-bg: #292445;
+    --calendar-pullout: #fb923c;
+    --calendar-pullout-bg: #39291d;
+    --calendar-holiday: #c084fc;
+    --calendar-holiday-bg: #302342;
+    --calendar-leave: #fb7185;
+    --calendar-leave-bg: #3b242d;
+    --calendar-internal: #94a3b8;
+    --calendar-internal-bg: #253142;
 }
 
 :root[data-app-theme="dark"] body,
@@ -137,7 +151,31 @@
     border-right-color: #526177 !important;
 }
 :root[data-app-theme="dark"] .timeline-grid-table .row-me > td:first-child {
-    background: #173457 !important;
+    background: color-mix(in srgb, #202d3e 84%, var(--app-primary) 16%) !important;
+}
+:root[data-app-theme="dark"] .timeline-grid-table .row-me > td {
+    border-top-color: color-mix(in srgb, var(--app-primary) 70%, #fff) !important;
+    border-bottom-color: color-mix(in srgb, var(--app-primary) 70%, #fff) !important;
+}
+:root[data-app-theme="dark"] .timeline-grid-table .branch-divider > td {
+    background: #111a27 !important;
+    color: #cbd5e1 !important;
+    border-color: #465569 !important;
+}
+:root[data-app-theme="dark"] .timeline-freeze-toolbar :is(.form-select, .form-control, .input-group-text) {
+    background: #111b29 !important;
+    color: var(--dark-text) !important;
+    border-color: #526177 !important;
+}
+:root[data-app-theme="dark"] .timeline-freeze-toolbar :is(.btn-light, .btn-outline-secondary, .btn-outline-dark) {
+    background: #202d3e !important;
+    color: var(--dark-text) !important;
+    border-color: #526177 !important;
+}
+:root[data-app-theme="dark"] .timeline-freeze-toolbar :is(.btn-light, .btn-outline-secondary, .btn-outline-dark):hover,
+:root[data-app-theme="dark"] .timeline-freeze-toolbar :is(.btn-light, .btn-outline-secondary, .btn-outline-dark):focus-visible {
+    background: #2a394d !important;
+    border-color: var(--app-primary) !important;
 }
 :root[data-app-theme="dark"] .calendar-drop-cell:is(.workload-free, .workload-normal, .workload-busy, .workload-heavy) {
     background: #172231 !important;
@@ -148,29 +186,43 @@
 :root[data-app-theme="dark"] .calendar-drop-cell.drop-saving { background: #3d3520 !important; }
 :root[data-app-theme="dark"] .add-hint { color: #91a0b4 !important; opacity: .42 !important; }
 
-/* Calendar cards: dark body, existing category colors remain as borders/badges/icons. */
-:root[data-app-theme="dark"] .schedule-card,
-:root[data-app-theme="dark"] .schedule-card:is(.schedule-office, .schedule-travel, .schedule-pullout, .schedule-holiday, .schedule-travel-request-block) {
-    background: linear-gradient(180deg, #263549 0%, #202d3e 100%) !important;
+/* Calendar cards keep business categories independent from the selected accent theme. */
+:root[data-app-theme="dark"] .schedule-card {
+    --calendar-card-accent: var(--calendar-client);
+    --calendar-card-bg: var(--calendar-client-bg);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--calendar-card-bg) 82%, #fff 4%) 0%, var(--calendar-card-bg) 100%) !important;
     color: var(--dark-text) !important;
-    border-top-color: #53647a;
-    border-right-color: #53647a;
-    border-bottom-color: #53647a;
-    box-shadow: 0 5px 14px rgba(0,0,0,.32) !important;
+    border-left-color: var(--calendar-card-accent) !important;
+    border-top-color: color-mix(in srgb, var(--calendar-card-accent) 38%, #3f4d61) !important;
+    border-right-color: #425168 !important;
+    border-bottom-color: #425168 !important;
+    box-shadow: 0 6px 16px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.035) !important;
 }
+:root[data-app-theme="dark"] .schedule-card.schedule-office { --calendar-card-accent: var(--calendar-office); --calendar-card-bg: var(--calendar-office-bg); }
+:root[data-app-theme="dark"] .schedule-card:is(.schedule-travel, .schedule-travel-request-block) { --calendar-card-accent: var(--calendar-travel); --calendar-card-bg: var(--calendar-travel-bg); }
+:root[data-app-theme="dark"] .schedule-card.schedule-pullout { --calendar-card-accent: var(--calendar-pullout); --calendar-card-bg: var(--calendar-pullout-bg); }
+:root[data-app-theme="dark"] .schedule-card.schedule-holiday { --calendar-card-accent: var(--calendar-holiday); --calendar-card-bg: var(--calendar-holiday-bg); }
+:root[data-app-theme="dark"] .schedule-card:is(.schedule-leave, .border-danger) { --calendar-card-accent: var(--calendar-leave); --calendar-card-bg: var(--calendar-leave-bg); }
+:root[data-app-theme="dark"] .schedule-card:is(.schedule-internal, .border-secondary) { --calendar-card-accent: var(--calendar-internal); --calendar-card-bg: var(--calendar-internal-bg); }
+:root[data-app-theme="dark"] .schedule-card.border-success { --calendar-card-accent: #4ade80; --calendar-card-bg: #173426; }
+:root[data-app-theme="dark"] .schedule-card.border-warning { --calendar-card-accent: #fbbf24; --calendar-card-bg: #382f1c; }
+:root[data-app-theme="dark"] .schedule-card.border-info { --calendar-card-accent: #22d3ee; --calendar-card-bg: #17333a; }
+:root[data-app-theme="dark"] .schedule-card.border-dark { --calendar-card-accent: #cbd5e1; --calendar-card-bg: #263142; }
 :root[data-app-theme="dark"] .schedule-card:hover,
 :root[data-app-theme="dark"] .schedule-card:focus-within {
-    background: linear-gradient(180deg, #304158 0%, #263549 100%) !important;
-    box-shadow: 0 15px 30px rgba(0,0,0,.45) !important;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--calendar-card-bg) 82%, #fff 10%) 0%, color-mix(in srgb, var(--calendar-card-bg) 92%, #fff 4%) 100%) !important;
+    box-shadow: 0 17px 34px rgba(0,0,0,.48), 0 0 0 1px color-mix(in srgb, var(--calendar-card-accent) 45%, transparent) !important;
 }
 :root[data-app-theme="dark"] .schedule-card[data-linked-schedule-key] {
-    border-top-color: #60a5fa !important;
-    box-shadow: 0 10px 24px rgba(37,99,235,.22), 0 3px 10px rgba(0,0,0,.3) !important;
+    border-top-color: var(--calendar-card-accent) !important;
+    box-shadow: 0 10px 24px color-mix(in srgb, var(--calendar-card-accent) 22%, transparent), 0 3px 10px rgba(0,0,0,.34) !important;
 }
 :root[data-app-theme="dark"] .schedule-card :is(.schedule-title, .schedule-client, .schedule-client-primary, .schedule-task-secondary) { color: var(--dark-text) !important; }
-:root[data-app-theme="dark"] .schedule-card :is(.schedule-product, .schedule-product-tertiary) { color: #8fc2ff !important; }
+:root[data-app-theme="dark"] .schedule-card :is(.schedule-product, .schedule-product-tertiary) { color: color-mix(in srgb, var(--calendar-card-accent) 72%, #fff) !important; }
+:root[data-app-theme="dark"] .schedule-card .schedule-type-icon { color: var(--calendar-card-accent) !important; }
 :root[data-app-theme="dark"] .schedule-card .schedule-time { color: #b7c3d1 !important; }
 :root[data-app-theme="dark"] .schedule-card :is(.schedule-footer, .schedule-card-actions) { border-color: rgba(203,213,225,.18); }
+:root[data-app-theme="dark"] .schedule-card :is(.text-primary, .schedule-files .text-primary) { color: var(--calendar-card-accent) !important; }
 :root[data-app-theme="dark"] .schedule-card-action-btn {
     background: #172231 !important;
     color: #dce5ef !important;
@@ -187,7 +239,7 @@
 :root[data-app-theme="dark"] .schedule-travel-reference { color: #ddd6fe !important; }
 
 :root[data-app-theme="dark"] .calendar-legend { color: var(--dark-muted); }
-:root[data-app-theme="dark"] .legend-pill { background: var(--dark-card) !important; color: var(--dark-text); border-color: #526177; box-shadow: none; }
+:root[data-app-theme="dark"] .legend-pill { background: #202d3e !important; color: var(--dark-text); border-color: #526177; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
 :root[data-app-theme="dark"] :is(.timeline-schedule-hover-summary, .timeline-summary-close-btn) {
     background: var(--dark-card) !important;
     color: var(--dark-text) !important;
@@ -206,11 +258,23 @@
     color: var(--dark-text) !important;
     border-color: var(--dark-border) !important;
 }
-:root[data-app-theme="dark"] .mobile-schedule-card,
-:root[data-app-theme="dark"] .mobile-schedule-card.mobile-travel-request-block {
-    background: linear-gradient(180deg, #263549, #202d3e) !important;
+:root[data-app-theme="dark"] :is(.mobile-schedule-card, .mobile-full-calendar-lite-chip) {
+    --calendar-card-accent: var(--calendar-client);
+    --calendar-card-bg: var(--calendar-client-bg);
+    background: linear-gradient(145deg, color-mix(in srgb, var(--calendar-card-bg) 88%, #fff 5%), var(--calendar-card-bg)) !important;
     color: var(--dark-text) !important;
-    border-color: #526177 !important;
+    border-color: color-mix(in srgb, var(--calendar-card-accent) 50%, #46566c) !important;
+    border-left: 4px solid var(--calendar-card-accent) !important;
+}
+:root[data-app-theme="dark"] :is(.mobile-schedule-card, .mobile-full-calendar-lite-chip).schedule-office { --calendar-card-accent: var(--calendar-office); --calendar-card-bg: var(--calendar-office-bg); }
+:root[data-app-theme="dark"] :is(.mobile-schedule-card, .mobile-full-calendar-lite-chip):is(.schedule-travel, .schedule-travel-request-block) { --calendar-card-accent: var(--calendar-travel); --calendar-card-bg: var(--calendar-travel-bg); }
+:root[data-app-theme="dark"] :is(.mobile-schedule-card, .mobile-full-calendar-lite-chip).schedule-pullout { --calendar-card-accent: var(--calendar-pullout); --calendar-card-bg: var(--calendar-pullout-bg); }
+:root[data-app-theme="dark"] :is(.mobile-schedule-card, .mobile-full-calendar-lite-chip).schedule-holiday { --calendar-card-accent: var(--calendar-holiday); --calendar-card-bg: var(--calendar-holiday-bg); }
+:root[data-app-theme="dark"] :is(.mobile-schedule-card, .mobile-full-calendar-lite-chip).schedule-leave { --calendar-card-accent: var(--calendar-leave); --calendar-card-bg: var(--calendar-leave-bg); }
+:root[data-app-theme="dark"] :is(.mobile-schedule-card, .mobile-full-calendar-lite-chip).schedule-internal { --calendar-card-accent: var(--calendar-internal); --calendar-card-bg: var(--calendar-internal-bg); }
+:root[data-app-theme="dark"] .mobile-schedule-card.mobile-card-selected {
+    border-color: var(--calendar-card-accent) !important;
+    box-shadow: 0 16px 34px rgba(0,0,0,.4), 0 0 0 2px color-mix(in srgb, var(--calendar-card-accent) 42%, transparent) !important;
 }
 :root[data-app-theme="dark"] .mobile-schedule-card :is(.mobile-card-title, .mobile-card-client, .mobile-card-task, .mobile-card-time, .mobile-card-meta) { color: inherit !important; }
 :root[data-app-theme="dark"] .mobile-schedule-card :is(

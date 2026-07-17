@@ -25,7 +25,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('@media print', styles)
 
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
-        self.assertIn('medical-service-pwa-offline-navigation-v22-tsr-date-range', app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v24-calendar-dark-mode', app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
     def test_login_uses_last_device_appearance(self):
@@ -52,6 +52,20 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         ):
             self.assertIn(selector, css)
         self.assertIn('@media print', css)
+
+    def test_calendar_dark_mode_preserves_schedule_categories(self):
+        css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+        timeline = (ROOT / 'templates' / 'timeline.html').read_text(encoding='utf-8')
+        for selector in (
+            '.schedule-card.schedule-office',
+            '.schedule-card:is(.schedule-travel, .schedule-travel-request-block)',
+            '.schedule-card.schedule-pullout',
+            '.schedule-card.schedule-holiday',
+            '.schedule-card:is(.schedule-leave, .border-danger)',
+        ):
+            self.assertIn(selector, css)
+        self.assertIn('getScheduleSemanticClass(shift)', timeline)
+        self.assertIn('--calendar-card-accent', css)
 
 
 if __name__ == '__main__':

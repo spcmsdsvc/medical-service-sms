@@ -138,7 +138,8 @@
       "items": [
         {"item_key": "2026-07-17-tsr-coverage-reliability", "category": "Create TSR", "description": "Multi-day TSRs now show a compact service-date range in the existing Date of Service field, while additional assigned engineers remain listed beneath Serviced By.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10},
         {"item_key": "2026-07-17-tsr-supporting-email-files", "category": "TSR Email", "description": "Send TSR now includes supporting PDF and image files from linked schedules, with uploads up to 35MB optimized to 2MB and limited to 10 manual files per linked job.", "audiences": ["engineers", "admins"], "sort_order": 20},
-        {"item_key": "2026-07-17-reimbursement-auto-lpr", "category": "Reimbursement", "description": "Office/Field Items now generate a required LPR review during reimbursement submission, with reconciled purchase lines, signatures, approval preview, and Accounting package inclusion.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30}
+        {"item_key": "2026-07-17-reimbursement-auto-lpr", "category": "Reimbursement", "description": "Office/Field Items now generate a required LPR review during reimbursement submission, with reconciled purchase lines, signatures, approval preview, and Accounting package inclusion.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30},
+        {"item_key": "2026-07-17-calendar-dark-mode", "category": "Calendar", "description": "Calendar dark mode now keeps schedule types visually distinct, improves grid and card contrast, and applies accent themes only to controls and selections.", "audiences": ["everyone"], "sort_order": 40}
       ]
     }
   ]

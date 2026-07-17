@@ -8709,7 +8709,7 @@ function shouldUseEngineerMobileView(){
         const openTravelRequestButton = getOpenTravelRequestButtonHtml(shift, 'mobile-lite');
 
         return `
-            <button type="button" class="mobile-full-calendar-lite-chip ${isTravelBlock ? 'mobile-travel-request-block' : ''}" data-mobile-lite-shift-id="${escapeHtml(shift?.id || '')}" data-mobile-lite-day="${escapeHtml(day?.iso || '')}" data-mobile-lite-engineer-id="${escapeHtml(engineer?.id || '')}" ${linkedScheduleKey ? `data-linked-schedule-key="${escapeHtml(linkedScheduleKey)}" data-linked-day="${escapeHtml(day?.iso || '')}"` : ''} aria-label="View schedule summary">
+            <button type="button" class="mobile-full-calendar-lite-chip ${getScheduleSemanticClass(shift)} ${isTravelBlock ? 'mobile-travel-request-block' : ''}" data-mobile-lite-shift-id="${escapeHtml(shift?.id || '')}" data-mobile-lite-day="${escapeHtml(day?.iso || '')}" data-mobile-lite-engineer-id="${escapeHtml(engineer?.id || '')}" ${linkedScheduleKey ? `data-linked-schedule-key="${escapeHtml(linkedScheduleKey)}" data-linked-day="${escapeHtml(day?.iso || '')}"` : ''} aria-label="View schedule summary">
                 ${linkedScheduleBadge}
                 ${isTravelBlock ? openTravelRequestButton : ''}
                 <div class="mobile-full-calendar-lite-chip-top">
@@ -10333,7 +10333,7 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
             : '';
 
         return `
-            <div class="mobile-schedule-card ${isApprovedTravelBlock ? 'mobile-travel-request-block' : ''} ${getPureEngineerMobileWorkflowClass(shift, isWork, fileCount)} ${isSelected ? 'mobile-card-selected' : ''}" data-mobile-shift-id="${shift.id}" data-mobile-context-key="${escapeHtml(mobileContextKey)}" ${linkedScheduleKey ? `data-linked-schedule-key="${escapeHtml(linkedScheduleKey)}" data-linked-day="${escapeHtml(day?.iso || '')}"` : ''} onclick="if(!event.target.closest('button,a,input,select,textarea')) setMobileStickyActionContextByKey('${escapeHtml(mobileContextKey)}');">
+            <div class="mobile-schedule-card ${getScheduleSemanticClass(shift)} ${isApprovedTravelBlock ? 'mobile-travel-request-block' : ''} ${getPureEngineerMobileWorkflowClass(shift, isWork, fileCount)} ${isSelected ? 'mobile-card-selected' : ''}" data-mobile-shift-id="${shift.id}" data-mobile-context-key="${escapeHtml(mobileContextKey)}" ${linkedScheduleKey ? `data-linked-schedule-key="${escapeHtml(linkedScheduleKey)}" data-linked-day="${escapeHtml(day?.iso || '')}"` : ''} onclick="if(!event.target.closest('button,a,input,select,textarea')) setMobileStickyActionContextByKey('${escapeHtml(mobileContextKey)}');">
                 ${linkedScheduleBadge}
                 <div class="mobile-schedule-topline">
                     <div>
@@ -10730,6 +10730,20 @@ function collectMobileEngineerSchedules(){
         }
 
         return { category: null, displayTitle: cleanTitle, editTitle: cleanTitle };
+    }
+
+    function getScheduleSemanticClass(shift){
+        if(isTimelineTravelBlock(shift)) return 'schedule-travel-request-block';
+
+        const task = String(shift?.task || shift?.title || '');
+        const typedCategory = parseTypedScheduleTitle(task).category;
+        if(typedCategory === 'Office') return 'schedule-office';
+        if(typedCategory === 'Travel') return 'schedule-travel';
+        if(typedCategory === 'Pullout') return 'schedule-pullout';
+        if(typedCategory === 'Holiday') return 'schedule-holiday';
+        if(HR_CATEGORIES.includes(task)) return 'schedule-leave';
+        if(shift?.client_id) return 'schedule-client-work';
+        return 'schedule-internal';
     }
 
     function formatScheduleTitleForCard(title){
