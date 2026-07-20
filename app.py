@@ -19267,57 +19267,37 @@ def reimbursement_fetch_download_header_from_request():
 
 
 def reimbursement_pcv_line_items(header):
-    """Flatten reimbursement rows into PCV particular rows.
+    """Build compact hybrid PCV particulars for the full reimbursement period.
 
-    Each non-zero expense category becomes one line item. This keeps PCV
-    Particulars as a detailed table rather than a summarized grouping.
+    The PCV is a payment summary, so it shows the period/claimed-day context
+    followed by one total per expense category. The detailed row-level
+    worksheet and receipt compilation remain in the reimbursement package.
     """
-    category_labels = {
-        'representation': 'Representation',
-        'car_repair': 'Car Repair',
-        'toll_fee': 'Toll Fee',
-        'gasoline': 'Gasoline',
-        'transpo': 'Transpo',
-        'office_supplies': 'Office/Field Items',
-        'parking': 'Parking',
-        'per_diem': 'Per Diem',
-        'parking_coding': 'Parking Coding',
-        'others_misc': 'Others / Misc',
+    category_totals = reimbursement_expense_category_totals(header)
+    claimed_dates = {
+        row.row_date
+        for row in (header.rows or [])
+        if row.row_date and reimbursement_row_has_claim_amount(row)
     }
 
-    items = []
-    rows = sorted(header.rows, key=lambda r: (r.row_date or header.start_date, r.id))
-    for row in rows:
-        date_label = row.row_date.strftime('%m/%d/%Y') if row.row_date else ''
-        manual_context = (row.remarks or '').strip()
-        schedule_context = ' / '.join(
-            part for part in [
-                (row.client_name or '').strip(),
-                (row.task_name or '').strip(),
-                (row.product_name or '').strip()
-            ] if part
-        )
+    start_label = header.start_date.strftime('%b %d, %Y') if header.start_date else ''
+    end_label = header.end_date.strftime('%b %d, %Y') if header.end_date else ''
+    if start_label and end_label:
+        period_label = f'{start_label} - {end_label}'
+    else:
+        period_label = start_label or end_label or 'Selected reimbursement period'
 
-        for field in REIMBURSEMENT_EXPENSE_FIELDS:
-            amount = reimbursement_money_value(getattr(row, field, 0))
-            if not amount:
-                continue
-
-            if field == 'others_misc':
-                item_name = (row.task_name or '').strip() or 'Others / Misc'
-                label = item_name if item_name.lower() not in {'manual item', 'others', 'others / misc'} else category_labels[field]
-            else:
-                label = category_labels.get(field, field.replace('_', ' ').title())
-
-            context = manual_context or schedule_context
-            particular = ' - '.join(part for part in [date_label, label] if part)
-            if context:
-                particular = f"{particular} / {context}" if particular else context
-
-            items.append({
-                'particular': particular or label,
-                'amount': round(float(amount), 2)
-            })
+    claimed_day_label = f"{len(claimed_dates)} claimed day{'s' if len(claimed_dates) != 1 else ''}"
+    items = [{
+        'particular': f'Reimbursement Summary: {period_label} ({claimed_day_label})',
+        'amount': 0.0,
+        'is_summary': True
+    }]
+    items.extend({
+        'particular': item.get('label') or 'Reimbursement Expense',
+        'amount': round(float(item.get('amount') or 0), 2),
+        'is_summary': False
+    } for item in category_totals)
     return items
 
 
@@ -19343,7 +19323,7 @@ def build_reimbursement_pcv_pdf(header):
     employee_name = str(employee_name or 'Employee').upper()
 
     items = reimbursement_pcv_line_items(header)
-    total_amount = round(sum(item['amount'] for item in items), 2)
+    total_amount = round(sum(float(item.get('amount') or 0) for item in items), 2)
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -19408,7 +19388,7 @@ def build_reimbursement_pcv_pdf(header):
         for item in items:
             table_rows.append([
                 Paragraph(html.escape(item['particular']), normal),
-                Paragraph(f"P {item['amount']:,.2f}", right_style)
+                Paragraph('' if item.get('is_summary') else f"P {float(item.get('amount') or 0):,.2f}", right_style)
             ])
     else:
         table_rows.append([Paragraph('No reimbursement items encoded.', normal), Paragraph('P 0.00', right_style)])
@@ -19508,7 +19488,7 @@ def reimbursement_prepare_pcv_field_values(header):
     employee_name = str(employee_name or 'Employee').upper()
 
     items = reimbursement_pcv_line_items(header)
-    total_amount = round(sum(item['amount'] for item in items), 2)
+    total_amount = round(sum(float(item.get('amount') or 0) for item in items), 2)
     generated_date = get_manila_time().strftime('%m-%d-%Y')
     amount_words = reimbursement_amount_to_words(total_amount).upper()
 
@@ -19526,7 +19506,9 @@ def reimbursement_prepare_pcv_field_values(header):
     for row_no in range(1, 15):
         item = items[row_no - 1] if row_no <= len(items) else None
         field_values[f'PARTICULARSRow{row_no}'] = (item.get('particular') or '') if item else ''
-        field_values[f'AMOUNTRow{row_no}'] = f"{float(item.get('amount') or 0):,.2f}" if item else ''
+        field_values[f'AMOUNTRow{row_no}'] = (
+            '' if item and item.get('is_summary') else f"{float(item.get('amount') or 0):,.2f}"
+        ) if item else ''
 
     # S12A3B Approval Stamping:
     # Do not fill the official APPROVED BY AcroForm field directly.
@@ -19824,7 +19806,7 @@ def build_reimbursement_pcv_excel_workbook(header):
     employee_name = str(employee_name or 'Employee').upper()
 
     items = reimbursement_pcv_line_items(header)
-    total_amount = round(sum(item['amount'] for item in items), 2)
+    total_amount = round(sum(float(item.get('amount') or 0) for item in items), 2)
     generated_date = get_manila_time().strftime('%m-%d-%Y')
     amount_words = reimbursement_amount_to_words(total_amount)
 
@@ -19918,7 +19900,7 @@ def build_reimbursement_pcv_excel_workbook(header):
             ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=7)
             ws.merge_cells(start_row=current_row, start_column=8, end_row=current_row, end_column=9)
             ws.cell(current_row, 1).value = item.get('particular') or ''
-            ws.cell(current_row, 8).value = float(item.get('amount') or 0)
+            ws.cell(current_row, 8).value = None if item.get('is_summary') else float(item.get('amount') or 0)
             ws.cell(current_row, 8).number_format = '#,##0.00'
             for col in range(1, 10):
                 cell = ws.cell(current_row, col)
