@@ -607,6 +607,22 @@ let paidModalRecordModule = 'reimbursements';
 let accountingActionBusy = false;
 let accountingQueueRequestSeq = 0;
 let accountingModuleRequestSeq = 0;
+const ACCOUNTING_REQUEST_TIMEOUT_MS = 15000;
+
+function fetchAccountingWithTimeout(resource, options={}, timeoutMs=ACCOUNTING_REQUEST_TIMEOUT_MS){
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = window.setTimeout(() => controller?.abort(), timeoutMs);
+    const requestOptions = {...options};
+    if(controller){
+        requestOptions.signal = controller.signal;
+    }
+    return fetch(resource, requestOptions).catch(error => {
+        if(error?.name === 'AbortError'){
+            throw new Error('My Requests is taking too long to respond. Please refresh in a moment.');
+        }
+        throw error;
+    }).finally(() => window.clearTimeout(timer));
+}
 
 function setAccountingActionBusy(isBusy, buttonId='', busyLabel='Processing...'){
     accountingActionBusy = Boolean(isBusy);
@@ -759,7 +775,7 @@ async function loadAccountingModules(options={}){
     const requestSeq = ++accountingModuleRequestSeq;
     const activeBeforeLoad = activeAccountingModule;
     try{
-        const res = await fetch(`/get_accounting_center_modules?_=${Date.now()}`, {
+        const res = await fetchAccountingWithTimeout(`/get_accounting_center_modules?_=${Date.now()}`, {
             headers: { 'Accept': 'application/json' }
         });
         const data = await res.json();
@@ -876,7 +892,7 @@ async function refreshAccountingQueue(forceRefresh=false){
         const statusAtRequest = accountingStatus;
         const moduleAtRequest = activeAccountingModule;
         const separator = endpointAtRequest.includes('?') ? '&' : '?';
-        const res = await fetch(`${endpointAtRequest}${separator}status=${encodeURIComponent(statusAtRequest)}&_=${Date.now()}`, {
+        const res = await fetchAccountingWithTimeout(`${endpointAtRequest}${separator}status=${encodeURIComponent(statusAtRequest)}&_=${Date.now()}`, {
             headers: { 'Accept': 'application/json' }
         });
         const data = await res.json();

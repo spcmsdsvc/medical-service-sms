@@ -31780,7 +31780,17 @@ def get_accounting_cash_advance_queue():
     if denial:
         return denial
 
-    ensure_cash_advance_tables()
+    try:
+        ensure_cash_advance_tables()
+    except Exception as cash_advance_schema_error:
+        print(f"[CashAdvance] My Requests queue unavailable: {cash_advance_schema_error}", flush=True)
+        return jsonify({
+            'success': False,
+            'module': 'accounting_center',
+            'queue': 'cash_advances',
+            'status': 'unavailable',
+            'error': 'Cash Advance records are temporarily unavailable. Please refresh in a moment.'
+        }), 503
 
     requested_status = (request.args.get('status') or 'pending').strip().lower()
     if requested_status not in {'pending', 'processing', 'paid', 'rejected', 'all'}:
@@ -39869,18 +39879,9 @@ def initialize_database():
         ensure_reimbursement_receipt_columns()
         repair_shift_engineer_links()
 
-        # F4A3B: Prepare standalone Cash Advance tables during app startup.
-        # This keeps live migrations out of page rendering and user click flows.
-        try:
-            ensure_cash_advance_tables()
-            # F4A5A: Prepare standalone Cash Advance Liquidation tables during app startup.
-            ensure_cash_advance_liquidation_tables()
-            ensure_lpr_tables()
-        except NameError:
-            # Cash Advance module may not be present in older rollback builds.
-            pass
-        except Exception as cash_advance_startup_error:
-            print(f"[CashAdvance] Startup table ensure skipped: {cash_advance_startup_error}", flush=True)
+        # Prepare deferred workflow schemas during the explicit application
+        # startup path. Gunicorn/Railway uses the WSGI import path below.
+        prepare_deferred_workflow_schemas()
 
         print_bootstrap_credentials(bootstrap_credentials)
 
@@ -40091,6 +40092,8 @@ class CashAdvanceLiquidationReceipt(db.Model):
 
 _cash_advance_tables_ready = False
 _cash_advance_liquidation_tables_ready = False
+_cash_advance_schema_startup_attempted = False
+_cash_advance_schema_startup_error = ''
 
 
 def ensure_cash_advance_tables():
@@ -40099,6 +40102,12 @@ def ensure_cash_advance_tables():
 
     if _cash_advance_tables_ready:
         return
+
+    # A failed startup migration must not be retried inside every page/API
+    # request. That pattern can hold a SQLite lock until Gunicorn kills the
+    # worker, making the entire My Requests page appear to be offline.
+    if _cash_advance_schema_startup_attempted and _cash_advance_schema_startup_error:
+        raise RuntimeError(_cash_advance_schema_startup_error)
 
     try:
         CashAdvanceHeader.__table__.create(db.engine, checkfirst=True)
@@ -40178,24 +40187,9 @@ def ensure_cash_advance_tables():
 
         _cash_advance_tables_ready = True
     except Exception as table_error:
-        # SQLite can temporarily lock during local browser refresh / service worker parallel calls.
-        # If the base Cash Advance tables already exist, allow the page/API to continue and retry
-        # index creation on the next request instead of crashing the page.
-        try:
-            message = str(table_error).lower()
-            with db.engine.connect() as connection:
-                existing_tables = {
-                    row[0] for row in connection.exec_driver_sql(
-                        "SELECT name FROM sqlite_master WHERE type='table'"
-                    ).fetchall()
-                }
-            if 'database is locked' in message and {'cash_advance_header', 'cash_advance_attachment', 'cash_advance_audit'}.issubset(existing_tables):
-                print(f"[CashAdvance] Table ensure deferred because SQLite is locked: {table_error}", flush=True)
-                _cash_advance_tables_ready = True
-                return
-        except Exception:
-            pass
-
+        # Never mark an incomplete schema as ready. The WSGI startup wrapper
+        # records the failure and request paths can return a fast, actionable
+        # response instead of repeatedly waiting on the same SQLite lock.
         print(f"[CashAdvance] Unable to ensure tables: {table_error}", flush=True)
         raise
 
@@ -46953,6 +46947,44 @@ def ensure_lpr_tables():
             time.sleep(0.5 * (attempt + 1))
 
 
+def prepare_deferred_workflow_schemas():
+    """Prepare additive workflow schemas before WSGI requests are served.
+
+    The development entry point already calls initialize_database(), but
+    Railway imports ``app:app`` through Gunicorn and never enters the
+    ``__main__`` block. Keeping this work here prevents the first My Requests
+    click from becoming a long-running SQLite migration.
+    """
+    global _cash_advance_schema_startup_attempted, _cash_advance_schema_startup_error
+
+    if _cash_advance_schema_startup_attempted:
+        return not bool(_cash_advance_schema_startup_error)
+
+    _cash_advance_schema_startup_attempted = True
+    _cash_advance_schema_startup_error = ''
+
+    try:
+        ensure_cash_advance_tables()
+    except Exception as exc:
+        _cash_advance_schema_startup_error = (
+            'Cash Advance records are temporarily unavailable while the system prepares its storage. '
+            'Please refresh in a moment.'
+        )
+        print(f"[CashAdvance] WSGI startup schema preparation failed: {exc}", flush=True)
+
+    try:
+        ensure_cash_advance_liquidation_tables()
+    except Exception as exc:
+        print(f"[CashAdvanceLiquidation] WSGI startup schema preparation failed: {exc}", flush=True)
+
+    try:
+        ensure_lpr_tables()
+    except Exception as exc:
+        print(f"[LPR] WSGI startup schema preparation failed: {exc}", flush=True)
+
+    return not bool(_cash_advance_schema_startup_error)
+
+
 EMBEDDED_LPR_PARENT_MODULES = {'cash_advance', 'travel_request', 'reimbursement'}
 
 
@@ -48360,6 +48392,23 @@ def download_embedded_lpr(lpr_id):
     if error_response:
         return error_response
     return send_file(io.BytesIO(lpr_fill_pdf_bytes(header)), as_attachment=True, download_name=f'{secure_filename(header.lpr_no or "LPR")}.pdf', mimetype='application/pdf', max_age=0)
+
+
+def initialize_wsgi_workflow_schemas():
+    """Run additive workflow migrations for Railway/Gunicorn startup."""
+    if not os.environ.get('RAILWAY_ENVIRONMENT'):
+        return
+    try:
+        with app.app_context():
+            prepare_deferred_workflow_schemas()
+    except Exception as startup_error:
+        # Keep the web process available for existing modules. The guarded
+        # Cash Advance queue will return a fast 503 with a clear message.
+        print(f"[WorkflowSchema] WSGI startup preparation failed: {startup_error}", flush=True)
+
+
+if __name__ != '__main__' and os.environ.get('RAILWAY_ENVIRONMENT'):
+    initialize_wsgi_workflow_schemas()
 
 
 if __name__ == '__main__':
