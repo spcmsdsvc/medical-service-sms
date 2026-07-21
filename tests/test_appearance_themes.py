@@ -25,7 +25,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('@media print', styles)
 
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
-        self.assertIn('medical-service-pwa-offline-navigation-v28-system-dark-surfaces', app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v29-dark-inner-surfaces', app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
     def test_login_uses_last_device_appearance(self):
@@ -79,7 +79,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '[class*="-stat-value"]',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=22", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=23", layout)
 
     def test_dark_mode_covers_native_and_custom_dropdowns(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
@@ -129,6 +129,20 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '.product-confirm-box, .client-confirm-box, .engineer-confirm-box',
             '.email-recipient-form-panel',
             '.schedule-picker-selected',
+        ):
+            self.assertIn(selector, css)
+
+    def test_dark_mode_covers_nested_light_surfaces(self):
+        css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+        for selector in (
+            '#status-container, #file-container, #site-visit-flags-container',
+            '#edit-scope-container, .time-planner-box',
+            '.email-recipient-group-header, .email-template-header',
+            '.email-template-placeholder-wrap, .email-template-preview',
+            '.settings-user-filter-wrap, .settings-user-filter',
+            '.reim-lifecycle-banner.draft',
+            '.reim-table :is(th, td)',
+            '.reim-btn-secondary, .reim-btn-danger-outline',
         ):
             self.assertIn(selector, css)
 

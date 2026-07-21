@@ -345,6 +345,37 @@
 :root[data-app-theme="dark"] :is(.timeline-hover-summary-title, .timeline-hover-summary-sub) { color: inherit !important; }
 :root[data-app-theme="dark"] .timeline-summary-action-close { background: #35445a; color: #fff; border-color: #607087; }
 
+/* Calendar edit modal: page-owned inner panels must match the modal surface. */
+:root[data-app-theme="dark"] #shiftModal :is(
+    #status-container, #file-container, #site-visit-flags-container,
+    #edit-scope-container, .time-planner-box, .tsr-upload-recipient-card,
+    #existing-files-list
+) {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] #shiftModal .time-preset-btn {
+    background: #26374b !important;
+    color: #bfdbfe !important;
+    border-color: #526c8a !important;
+}
+:root[data-app-theme="dark"] #shiftModal .time-preset-btn:hover,
+:root[data-app-theme="dark"] #shiftModal .time-preset-btn:focus-visible {
+    background: #315077 !important;
+    color: #fff !important;
+    border-color: #60a5fa !important;
+}
+:root[data-app-theme="dark"] #shiftModal .time-duration-label {
+    background: #18395f !important;
+    color: #93c5fd !important;
+    border: 1px solid #315f8f;
+}
+:root[data-app-theme="dark"] #shiftModal .modal-footer {
+    background: var(--dark-panel) !important;
+    border-color: var(--dark-border) !important;
+}
+
 /* Calendar mobile */
 :root[data-app-theme="dark"] :is(
     .mobile-add-schedule-card, .mobile-date-section, .mobile-engineer-workflow-strip,
@@ -861,6 +892,90 @@
     .email-template-description, .storage-last-checked
 ) {
     color: var(--dark-muted) !important;
+}
+
+/* Settings inner headers, toolbars and editable template helpers. */
+:root[data-app-theme="dark"] :is(
+    .email-recipient-group-header, .email-template-header,
+    .email-template-placeholder-wrap, .email-template-preview,
+    .settings-user-filter-wrap, .settings-user-filter,
+    .settings-section-panel .card-body, .settings-section-panel .table-responsive,
+    .settings-section-panel .table-light
+) {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .email-template-placeholder-chip {
+    background: #2a2140 !important;
+    color: #d8b4fe !important;
+    border-color: #75529c !important;
+}
+:root[data-app-theme="dark"] .email-template-placeholder-chip:hover,
+:root[data-app-theme="dark"] .email-template-placeholder-chip:focus-visible {
+    background: #6d28d9 !important;
+    color: #fff !important;
+}
+:root[data-app-theme="dark"] :is(
+    .email-template-placeholder-label, .email-template-preview-value,
+    .email-template-default strong
+) { color: #d8b4fe !important; }
+:root[data-app-theme="dark"] :is(
+    .settings-user-filter-count, .email-template-default,
+    .email-template-placeholder-muted
+) { color: var(--dark-muted) !important; }
+:root[data-app-theme="dark"] .settings-section-tab:not(.active) {
+    color: #aebdd0 !important;
+}
+:root[data-app-theme="dark"] .settings-section-tab:not(.active):hover,
+:root[data-app-theme="dark"] .settings-section-tab:not(.active):focus-visible {
+    background: var(--dark-card-hover) !important;
+    color: #fff !important;
+}
+
+/* Reimbursement lifecycle, worksheet and sticky columns. */
+:root[data-app-theme="dark"] .reim-lifecycle-banner.draft {
+    background: #18395f !important;
+    color: #dbeafe !important;
+    border-color: #315f8f !important;
+}
+:root[data-app-theme="dark"] .reim-lifecycle-banner.draft :is(h3, p, .reim-lifecycle-meta) {
+    color: inherit !important;
+}
+:root[data-app-theme="dark"] .reim-table :is(th, td),
+:root[data-app-theme="dark"] .reim-table :is(th, td):nth-child(-n+3) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .reim-table thead th,
+:root[data-app-theme="dark"] .reim-table thead th:nth-child(-n+3) {
+    background: #24344a !important;
+    color: #dbeafe !important;
+}
+:root[data-app-theme="dark"] .reim-table tbody tr:hover td,
+:root[data-app-theme="dark"] .reim-table tbody tr:hover td:nth-child(-n+3) {
+    background: var(--dark-card-hover) !important;
+}
+:root[data-app-theme="dark"] .reim-table tfoot td:not(.reim-grand-total-cell):not(.reim-grand-total-label) {
+    background: #173426 !important;
+    color: #bbf7d0 !important;
+    border-color: #2d6a4f !important;
+}
+:root[data-app-theme="dark"] :is(.reim-btn-secondary, .reim-btn-danger-outline) {
+    background: #2a394c !important;
+    color: #edf2f7 !important;
+    border: 1px solid #53657d !important;
+}
+:root[data-app-theme="dark"] :is(.reim-btn-secondary, .reim-btn-danger-outline):hover,
+:root[data-app-theme="dark"] :is(.reim-btn-secondary, .reim-btn-danger-outline):focus-visible {
+    background: #35475d !important;
+    color: #fff !important;
+}
+:root[data-app-theme="dark"] .reim-chip {
+    background: #173426 !important;
+    color: #bbf7d0 !important;
+    border-color: #2d6a4f !important;
 }
 
 /* Create TSR UI remains dark, but the official PDF/preview remains white. */
