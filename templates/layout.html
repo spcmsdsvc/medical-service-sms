@@ -862,13 +862,13 @@
             <button type="button" class="appearance-header-button" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
                 <i class="appearance-header-icon fa-solid fa-moon" aria-hidden="true"></i>
             </button>
-            <a href="/whats_new"
+            {% if not stock_inventory_only_user %}<a href="/whats_new"
                class="changelog-header-button {{ 'active' if request.path == '/whats_new' }}"
                aria-label="What's New"
                title="What's New">
                 <i class="fa-solid fa-bell" aria-hidden="true"></i>
                 <span class="changelog-header-badge" aria-hidden="true"></span>
-            </a>
+            </a>{% endif %}
             {% endif %}
             <button class="btn btn-outline-light btn-sm mobile-menu-button" onclick="toggleSidebarMobile()">Menu</button>
         </div>
@@ -882,13 +882,13 @@
                 <button type="button" class="appearance-header-button" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
                     <i class="appearance-header-icon fa-solid fa-moon" aria-hidden="true"></i>
                 </button>
-                <a href="/whats_new"
+                {% if not stock_inventory_only_user %}<a href="/whats_new"
                    class="changelog-header-button {{ 'active' if request.path == '/whats_new' }}"
                    aria-label="What's New"
                    title="What's New">
                     <i class="fa-solid fa-bell" aria-hidden="true"></i>
                     <span class="changelog-header-badge" aria-hidden="true"></span>
-                </a>
+                </a>{% endif %}
                 {% endif %}
                 <i class="fa-solid fa-bars toggle-btn" onclick="toggleSidebarDesktop()"></i>
             </div>
@@ -919,6 +919,12 @@
             {% set admin_paths = ['/activity_page', '/settings', '/stock_inventory'] %}
 
             <a href="/" class="{{ 'active' if request.path == '/' }}"><i class="fa-solid fa-chart-line me-2"></i> Dashboard</a>
+
+            {% if stock_inventory_access %}
+                <a href="/stock_inventory" class="{{ 'active' if request.path == '/stock_inventory' }}"><i class="fa-solid fa-barcode me-2"></i> Stock Inventory</a>
+            {% endif %}
+
+            {% if not stock_inventory_only_user %}
 
             {% if not is_approver_only_user %}
                 <div class="sidebar-calendar-row {{ 'active' if request.path in ['/timeline', '/offline-tsr'] }}">
@@ -1029,14 +1035,14 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
                 </button>
                 <div id="admin-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}">
-                    {% if stock_inventory_superadmin %}
-                    <a href="/stock_inventory" class="{{ 'active' if request.path == '/stock_inventory' }}"><i class="fa-solid fa-barcode me-2"></i> Stock Inventory</a>
-                    {% endif %}
                     <a href="/activity_page" class="{{ 'active' if request.path == '/activity_page' }}"><i class="fa-solid fa-clock-rotate-left me-2"></i> Activity Logs</a>
                     <a href="/settings" class="{{ 'active' if request.path == '/settings' }}"><i class="fa-solid fa-gear me-2"></i> System Settings</a>
                 </div>
             {% elif current_user.is_authenticated %}
                 <a href="/settings" class="{{ 'active' if request.path == '/settings' }}"><i class="fa-solid fa-gear me-2"></i> System Settings</a>
+            {% endif %}
+            {% else %}
+                <a href="/settings" class="{{ 'active' if request.path == '/settings' }}"><i class="fa-solid fa-key me-2"></i> Password Settings</a>
             {% endif %}
 
             {% if current_user.is_authenticated %}

@@ -145,12 +145,13 @@
     {
       "release_key": "2026-07-21",
       "release_date": "2026-07-21",
-      "title": "Manila Stock Inventory",
+      "title": "Multi-Branch Stock Inventory",
       "summary": "Superadmins can now manage accountable Manila stock movements using barcode scanning.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-21-stock-inventory", "category": "Administration", "description": "A separate Stock Inventory module now supports exact barcode lookup, whole-piece quantities, and scanner-ready IN and OUT transactions for Manila stock.", "audiences": ["admins"], "sort_order": 10},
-        {"item_key": "2026-07-21-stock-ledger", "category": "Administration", "description": "Every stock change is recorded in an immutable movement history with accountable recipients, purposes, resulting balances, and one-time correction reversals.", "audiences": ["admins"], "sort_order": 20}
+        {"item_key": "2026-07-21-stock-inventory", "category": "Administration", "description": "Stock Inventory now manages separate barcode balances for Manila/Main, Cebu, and Davao with scanner-ready IN and OUT transactions.", "audiences": ["admins"], "sort_order": 10},
+        {"item_key": "2026-07-21-stock-ledger", "category": "Administration", "description": "Every stock movement records the branch, responsible engineer, transaction administrator, resulting balance, and any one-time correction reversal.", "audiences": ["admins"], "sort_order": 20},
+        {"item_key": "2026-07-21-stock-access", "category": "Administration", "description": "Superadmins can assign branch-specific Stock Inventory access or a focused Inventory-only workspace from Approval Routing settings.", "audiences": ["admins"], "sort_order": 30}
       ]
     }
   ]

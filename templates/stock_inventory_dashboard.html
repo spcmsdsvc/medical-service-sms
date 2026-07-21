@@ -1,0 +1,58 @@
+{% extends "layout.html" %}
+{% block title %}Inventory Dashboard{% endblock %}
+{% block content %}
+<style>
+    .inventory-dashboard { max-width:1440px; margin:0 auto; color:var(--app-text); }
+    .inventory-dashboard-header { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:20px; background:var(--app-surface); border:1px solid var(--app-border); border-left:5px solid var(--app-primary); border-radius:8px; }
+    .inventory-dashboard-header h1 { margin:0; font-size:1.7rem; }
+    .inventory-muted { color:var(--app-muted); }
+    .inventory-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:16px 0; }
+    .inventory-stat, .inventory-panel { background:var(--app-surface); border:1px solid var(--app-border); border-radius:8px; }
+    .inventory-stat { padding:16px; }
+    .inventory-stat strong { display:block; font-size:1.7rem; }
+    .inventory-panels { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr); gap:14px; }
+    .inventory-panel header { padding:14px 16px; border-bottom:1px solid var(--app-border); font-weight:800; }
+    .inventory-list { max-height:430px; overflow:auto; }
+    .inventory-row { display:flex; justify-content:space-between; gap:12px; padding:12px 16px; border-bottom:1px solid var(--app-border); }
+    .inventory-scan { display:flex; gap:8px; margin-top:15px; }
+    .inventory-scan input { flex:1; min-width:0; padding:10px 12px; color:var(--app-text); background:var(--app-input); border:1px solid var(--app-border); border-radius:6px; }
+    @media(max-width:900px){.inventory-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.inventory-panels{grid-template-columns:1fr}.inventory-dashboard-header{align-items:flex-start;flex-direction:column}.inventory-scan{width:100%}}
+</style>
+<main class="inventory-dashboard">
+    <section class="inventory-dashboard-header">
+        <div><h1><i class="fa-solid fa-barcode me-2 text-primary"></i>Inventory Dashboard</h1><div class="inventory-muted">{{ stock_branch_code }} - {{ stock_branch_name }}</div></div>
+        <a class="btn btn-primary fw-bold" href="/stock_inventory"><i class="fa-solid fa-boxes-stacked me-2"></i>Open Stock Inventory</a>
+    </section>
+    <form class="inventory-scan" onsubmit="openInventoryBarcode(event)">
+        <input id="dashboardInventoryBarcode" maxlength="128" autocomplete="off" placeholder="Scan or enter barcode">
+        <button class="btn btn-primary fw-bold" type="submit"><i class="fa-solid fa-magnifying-glass me-1"></i>Open</button>
+    </form>
+    <section class="inventory-grid" aria-label="Inventory summary">
+        <div class="inventory-stat"><span class="inventory-muted">Active Items</span><strong id="inventoryDashActive">0</strong></div>
+        <div class="inventory-stat"><span class="inventory-muted">Total Pieces</span><strong id="inventoryDashPieces">0</strong></div>
+        <div class="inventory-stat"><span class="inventory-muted">Out of Stock</span><strong id="inventoryDashOut">0</strong></div>
+        <div class="inventory-stat"><span class="inventory-muted">Movements Today</span><strong id="inventoryDashToday">0</strong></div>
+    </section>
+    <section class="inventory-panels">
+        <article class="inventory-panel"><header>Recent Movements</header><div id="inventoryDashMovements" class="inventory-list"><div class="inventory-row inventory-muted">Loading...</div></div></article>
+        <article class="inventory-panel"><header>Out-of-Stock Items</header><div id="inventoryDashOutItems" class="inventory-list"><div class="inventory-row inventory-muted">Loading...</div></div></article>
+    </section>
+</main>
+<script>
+const inventoryDashboardBranch={{ stock_branch_code|tojson }};
+function inventoryDashboardEscape(value){const node=document.createElement('div');node.textContent=String(value??'');return node.innerHTML;}
+function openInventoryBarcode(event){event.preventDefault();const value=dashboardInventoryBarcode.value.trim();location.href='/stock_inventory'+(value?`?barcode=${encodeURIComponent(value)}`:'');}
+async function loadInventoryDashboard(){
+    try{
+        const query=new URLSearchParams({branch:inventoryDashboardBranch});
+        const [summaryResponse,movementResponse]=await Promise.all([fetch(`/api/stock-inventory/summary?${query}`,{cache:'no-store'}),fetch(`/api/stock-inventory/movements?${query}&limit=12`,{cache:'no-store'})]);
+        const summary=await summaryResponse.json(), movements=await movementResponse.json();
+        if(!summaryResponse.ok||!summary.success)throw new Error(summary.error||'Inventory summary failed.');
+        inventoryDashActive.textContent=summary.summary.active_items;inventoryDashPieces.textContent=summary.summary.total_pieces;inventoryDashOut.textContent=summary.summary.out_of_stock_items;inventoryDashToday.textContent=summary.summary.movements_today;
+        inventoryDashOutItems.innerHTML=(summary.out_of_stock_items||[]).map(item=>`<div class="inventory-row"><strong>${inventoryDashboardEscape(item.item_name)}</strong><span class="inventory-muted">${inventoryDashboardEscape(item.barcode)}</span></div>`).join('')||'<div class="inventory-row inventory-muted">No out-of-stock items.</div>';
+        inventoryDashMovements.innerHTML=(movements.movements||[]).map(row=>`<div class="inventory-row"><div><strong>${inventoryDashboardEscape(row.item_name)}</strong><div class="inventory-muted">${inventoryDashboardEscape(row.engineer_name||row.reason)}</div></div><div class="text-end"><strong>${row.direction} ${row.quantity}</strong><div class="inventory-muted">${inventoryDashboardEscape(row.created_at_display)}</div></div></div>`).join('')||'<div class="inventory-row inventory-muted">No recent movements.</div>';
+    }catch(error){inventoryDashMovements.innerHTML=`<div class="inventory-row text-danger">${inventoryDashboardEscape(error.message)}</div>`;}
+}
+document.addEventListener('DOMContentLoaded',()=>{loadInventoryDashboard();dashboardInventoryBarcode.focus();});
+</script>
+{% endblock %}

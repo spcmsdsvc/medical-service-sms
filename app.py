@@ -1028,6 +1028,8 @@ def inject_feature_flags():
         'lpr_enabled': lpr_enabled(),
         'embedded_lpr_enabled': embedded_lpr_enabled(),
         'stock_inventory_superadmin': is_superadmin_user(),
+        'stock_inventory_access': can_manage_stock_inventory(),
+        'stock_inventory_only_user': is_stock_inventory_only_user(),
     }
 
 
@@ -1207,6 +1209,9 @@ class User(UserMixin, db.Model):
     ui_theme_mode = db.Column(db.String(20), default='light', nullable=False)
     ui_accent_theme = db.Column(db.String(30), default='classic', nullable=False)
     ui_theme_updated_at = db.Column(db.DateTime, nullable=True)
+    can_manage_stock_inventory = db.Column(db.Boolean, default=False, nullable=False)
+    stock_inventory_only = db.Column(db.Boolean, default=False, nullable=False)
+    stock_inventory_branch_code = db.Column(db.String(10), nullable=True)
 
     # v5.4.0: Direct Relationship to Engineer profile
     engineer_rel = db.relationship('Engineer', backref='user_account', uselist=False)
@@ -1947,11 +1952,12 @@ class Product(db.Model):
 
 
 class StockInventoryItem(db.Model):
-    """Manila stock item identified by an exact scanner barcode."""
+    """Branch stock item identified by an exact scanner barcode."""
     __tablename__ = 'stock_inventory_item'
 
     id = db.Column(db.Integer, primary_key=True)
     barcode = db.Column(db.String(128), unique=True, nullable=False, index=True)
+    scan_barcode = db.Column(db.String(128), nullable=True, index=True)
     item_name = db.Column(db.String(180), nullable=False, index=True)
     category = db.Column(db.String(120), nullable=True, index=True)
     storage_location = db.Column(db.String(180), nullable=True)
@@ -1964,6 +1970,10 @@ class StockInventoryItem(db.Model):
     updated_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
     updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False)
+
+    __table_args__ = (
+        db.UniqueConstraint('branch_code', 'scan_barcode', name='uq_stock_inventory_branch_scan_barcode'),
+    )
 
 
 class StockInventoryMovement(db.Model):
@@ -1980,6 +1990,8 @@ class StockInventoryMovement(db.Model):
     purpose = db.Column(db.Text, nullable=True)
     source_or_returned_by = db.Column(db.String(180), nullable=True)
     remarks = db.Column(db.Text, nullable=True)
+    engineer_id = db.Column(db.Integer, db.ForeignKey('engineer.id'), nullable=True, index=True)
+    engineer_name_snapshot = db.Column(db.String(180), nullable=True)
     reversal_of_id = db.Column(
         db.Integer,
         db.ForeignKey('stock_inventory_movement.id'),
@@ -1992,6 +2004,7 @@ class StockInventoryMovement(db.Model):
 
     item = db.relationship('StockInventoryItem', foreign_keys=[item_id], backref=db.backref('movements', lazy=True))
     created_by = db.relationship('User', foreign_keys=[created_by_id])
+    accountable_engineer = db.relationship('Engineer', foreign_keys=[engineer_id])
     reversal_of = db.relationship('StockInventoryMovement', remote_side=[id], foreign_keys=[reversal_of_id])
 
 
@@ -2657,6 +2670,9 @@ def ensure_user_approval_columns():
                 ('ui_theme_mode', "ALTER TABLE user ADD COLUMN ui_theme_mode VARCHAR(20) DEFAULT 'light' NOT NULL"),
                 ('ui_accent_theme', "ALTER TABLE user ADD COLUMN ui_accent_theme VARCHAR(30) DEFAULT 'classic' NOT NULL"),
                 ('ui_theme_updated_at', "ALTER TABLE user ADD COLUMN ui_theme_updated_at DATETIME"),
+                ('can_manage_stock_inventory', "ALTER TABLE user ADD COLUMN can_manage_stock_inventory BOOLEAN DEFAULT 0 NOT NULL"),
+                ('stock_inventory_only', "ALTER TABLE user ADD COLUMN stock_inventory_only BOOLEAN DEFAULT 0 NOT NULL"),
+                ('stock_inventory_branch_code', "ALTER TABLE user ADD COLUMN stock_inventory_branch_code VARCHAR(10)"),
             ]
 
             for column_name, ddl in migrations:
@@ -2761,7 +2777,7 @@ def ensure_reimbursement_payment_columns():
 
 
 def ensure_stock_inventory_tables():
-    """Create the additive Manila stock catalog and immutable movement ledger."""
+    """Create and safely upgrade the branch stock catalog and movement ledger."""
     global _stock_inventory_tables_ready
     if _stock_inventory_tables_ready:
         return
@@ -2769,10 +2785,33 @@ def ensure_stock_inventory_tables():
         StockInventoryItem.__table__.create(db.engine, checkfirst=True)
         StockInventoryMovement.__table__.create(db.engine, checkfirst=True)
         with db.engine.begin() as connection:
+            item_columns = {
+                row[1] for row in connection.exec_driver_sql("PRAGMA table_info(stock_inventory_item)").fetchall()
+            }
+            movement_columns = {
+                row[1] for row in connection.exec_driver_sql("PRAGMA table_info(stock_inventory_movement)").fetchall()
+            }
+            if 'scan_barcode' not in item_columns:
+                connection.exec_driver_sql("ALTER TABLE stock_inventory_item ADD COLUMN scan_barcode VARCHAR(128)")
+            if 'engineer_id' not in movement_columns:
+                connection.exec_driver_sql("ALTER TABLE stock_inventory_movement ADD COLUMN engineer_id INTEGER")
+            if 'engineer_name_snapshot' not in movement_columns:
+                connection.exec_driver_sql("ALTER TABLE stock_inventory_movement ADD COLUMN engineer_name_snapshot VARCHAR(180)")
+
+            connection.exec_driver_sql(
+                "UPDATE stock_inventory_item SET branch_code = 'BC01' "
+                "WHERE branch_code IS NULL OR TRIM(branch_code) = ''"
+            )
+            connection.exec_driver_sql(
+                "UPDATE stock_inventory_item SET scan_barcode = barcode "
+                "WHERE scan_barcode IS NULL OR TRIM(scan_barcode) = ''"
+            )
             for statement in (
                 'CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_inventory_barcode ON stock_inventory_item (barcode)',
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_inventory_branch_scan_barcode ON stock_inventory_item (branch_code, scan_barcode)',
                 'CREATE INDEX IF NOT EXISTS idx_stock_inventory_active_name ON stock_inventory_item (is_active, item_name)',
                 'CREATE INDEX IF NOT EXISTS idx_stock_inventory_branch ON stock_inventory_item (branch_code)',
+                'CREATE INDEX IF NOT EXISTS idx_stock_movement_engineer ON stock_inventory_movement (engineer_id)',
                 'CREATE INDEX IF NOT EXISTS idx_stock_movement_item_date ON stock_inventory_movement (item_id, created_at)',
                 'CREATE INDEX IF NOT EXISTS idx_stock_movement_direction_date ON stock_inventory_movement (direction, created_at)',
                 'CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_movement_reversal ON stock_inventory_movement (reversal_of_id) WHERE reversal_of_id IS NOT NULL',
@@ -3981,6 +4020,47 @@ def is_approver_only_engineer_profile(engineer=None):
         linked_user = db.session.get(User, linked_user_id) if linked_user_id else None
 
     return bool(linked_user and is_approver_only_user(linked_user))
+
+
+STOCK_INVENTORY_BRANCHES = {
+    'BC01': 'Manila/Main',
+    'BC02': 'Cebu',
+    'BC03': 'Davao',
+}
+
+
+def normalize_stock_inventory_branch(value):
+    branch_code = (clean_str(value) or '').strip().upper()
+    return branch_code if branch_code in STOCK_INVENTORY_BRANCHES else ''
+
+
+def can_manage_stock_inventory(user=None):
+    target = user or current_user
+    return bool(
+        target and getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True)) and
+        (is_superadmin_user(target) or bool(getattr(target, 'can_manage_stock_inventory', False)))
+    )
+
+
+def is_stock_inventory_only_user(user=None):
+    target = user or current_user
+    return bool(
+        can_manage_stock_inventory(target) and
+        bool(getattr(target, 'stock_inventory_only', False)) and
+        not is_superadmin_user(target)
+    )
+
+
+def stock_inventory_branch_for_user(user=None, requested_branch=None):
+    target = user or current_user
+    if is_superadmin_user(target):
+        return normalize_stock_inventory_branch(requested_branch) or 'BC01'
+    return normalize_stock_inventory_branch(getattr(target, 'stock_inventory_branch_code', None))
+
+
+def stock_inventory_can_administer(user=None):
+    return is_superadmin_user(user or current_user)
 
 
 def is_approval_center_user(user=None):
@@ -6554,6 +6634,9 @@ def approval_user_to_dict(user):
         'approval_scope': getattr(user, 'approval_scope', '') or '',
         'can_approve_requests': bool(getattr(user, 'can_approve_requests', False)),
         'approver_only': is_approver_only_user(user),
+        'can_manage_stock_inventory': can_manage_stock_inventory(user),
+        'stock_inventory_only': is_stock_inventory_only_user(user),
+        'stock_inventory_branch_code': normalize_stock_inventory_branch(getattr(user, 'stock_inventory_branch_code', None)),
         'is_active': bool(getattr(user, 'is_active', True)),
         'engineer_id': getattr(profile, 'id', None),
         'employee_id': getattr(profile, 'employee_id', '') if profile else '',
@@ -13481,7 +13564,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v31-stock-inventory';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v32-multibranch-stock';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -13780,6 +13863,13 @@ def set_developer_dashboard_view():
 @login_required
 def dashboard_page():
     """Overhauled Overview Hub with capability-based hybrid dashboard flags."""
+    if is_stock_inventory_only_user():
+        branch_code = stock_inventory_branch_for_user()
+        return render_template(
+            'stock_inventory_dashboard.html',
+            stock_branch_code=branch_code,
+            stock_branch_name=STOCK_INVENTORY_BRANCHES.get(branch_code, branch_code),
+        )
     profile = getattr(current_user, 'engineer_profile', None)
     dashboard_caps = get_dashboard_capabilities(current_user)
     return render_template(
@@ -14202,11 +14292,21 @@ def products_page():
 @app.route('/stock_inventory')
 @login_required
 def stock_inventory_page():
-    """Scanner-ready Manila stock ledger, restricted to named superadmins."""
-    if not is_superadmin_user():
+    """Scanner-ready branch stock ledger for authorized inventory users."""
+    if not can_manage_stock_inventory():
         return Response('Access denied.', status=403, mimetype='text/plain')
     ensure_stock_inventory_tables()
-    return render_template('stock_inventory.html')
+    branch_code = stock_inventory_branch_for_user(request.args.get('branch'))
+    if not branch_code:
+        return Response('Inventory branch assignment is required.', status=403, mimetype='text/plain')
+    return render_template(
+        'stock_inventory.html',
+        stock_branches=STOCK_INVENTORY_BRANCHES,
+        stock_branch_code=branch_code,
+        stock_branch_name=STOCK_INVENTORY_BRANCHES.get(branch_code, branch_code),
+        stock_can_switch_branch=is_superadmin_user(),
+        stock_can_administer=stock_inventory_can_administer(),
+    )
 
 
 @app.route('/settings')
@@ -14529,14 +14629,31 @@ def settings_update_approval_user():
         return jsonify({'success': False, 'error': 'User not found.'}), 404
 
     approver_only_requested = bool(payload.get('approver_only'))
-    target_user.can_approve_requests = bool(payload.get('can_approve_requests')) or approver_only_requested
-    target_user.approval_scope = (clean_str(payload.get('approval_scope')) or '')[:50]
-    target_user.approval_title = (clean_str(payload.get('approval_title')) or '')[:100]
-    target_user.is_active = bool(payload.get('is_active', True))
+    stock_inventory_only_requested = bool(payload.get('stock_inventory_only'))
+    stock_inventory_requested = bool(payload.get('can_manage_stock_inventory')) or stock_inventory_only_requested
+    stock_branch_code = normalize_stock_inventory_branch(payload.get('stock_inventory_branch_code'))
+    if approver_only_requested and stock_inventory_requested:
+        return jsonify({'success': False, 'error': 'Approver-only accounts cannot also manage Stock Inventory.'}), 400
+    if stock_inventory_requested and not stock_branch_code and not is_superadmin_user(target_user):
+        return jsonify({'success': False, 'error': 'Select a branch for this Stock Inventory user.'}), 400
 
     target_username = _username_of(target_user)
     target_raw_role = (getattr(target_user, 'role', '') or '').strip().lower()
     protected_business_roles = target_username in (MANAGER_USERNAMES | SCHEDULER_USERNAMES | {DEVELOPER_SUPERADMIN_USERNAME, REGIONAL_ADMIN_USERNAME})
+    if stock_inventory_only_requested and (is_admin_authorized(target_user) or protected_business_roles):
+        return jsonify({
+            'success': False,
+            'error': 'Stock Inventory-only view cannot be applied to protected management, scheduler, regional-admin, or superadmin accounts.'
+        }), 400
+
+    target_user.can_approve_requests = bool(payload.get('can_approve_requests')) or approver_only_requested
+    target_user.approval_scope = (clean_str(payload.get('approval_scope')) or '')[:50]
+    target_user.approval_title = (clean_str(payload.get('approval_title')) or '')[:100]
+    target_user.is_active = bool(payload.get('is_active', True))
+    target_user.can_manage_stock_inventory = stock_inventory_requested
+    target_user.stock_inventory_only = stock_inventory_only_requested
+    target_user.stock_inventory_branch_code = stock_branch_code or None
+
     if approver_only_requested:
         if is_admin_authorized(target_user) or protected_business_roles:
             return jsonify({
@@ -39789,6 +39906,26 @@ def ensure_runtime_sqlite_migrations_before_request():
 
 
 @app.before_request
+def restrict_stock_inventory_only_accounts():
+    """Keep inventory-only accounts inside their intentionally small workspace."""
+    if not current_user.is_authenticated or not is_stock_inventory_only_user():
+        return
+
+    path = request.path or '/'
+    allowed_exact = {
+        '/', '/stock_inventory', '/settings', '/change_password', '/logout',
+        '/api/preferences/appearance', '/manifest.json', '/pwa-icon.svg',
+        '/service-worker.js',
+    }
+    if path in allowed_exact or path.startswith(('/static/', '/api/stock-inventory/')):
+        return
+
+    if request.accept_mimetypes.accept_json or path.startswith('/api/'):
+        return jsonify({'success': False, 'error': 'This account is limited to Stock Inventory.'}), 403
+    return redirect(url_for('dashboard_page'))
+
+
+@app.before_request
 def enforce_password_change():
     if current_user.is_authenticated and getattr(current_user, "must_change_password", False):
         if request.endpoint not in ['force_change_password_api','logout','static']:
@@ -48479,26 +48616,43 @@ def download_embedded_lpr(lpr_id):
     return send_file(io.BytesIO(lpr_fill_pdf_bytes(header)), as_attachment=True, download_name=f'{secure_filename(header.lpr_no or "LPR")}.pdf', mimetype='application/pdf', max_age=0)
 
 
-# --- MANILA STOCK INVENTORY -------------------------------------------------
+# --- MULTI-BRANCH STOCK INVENTORY -------------------------------------------
 
 STOCK_IN_REASONS = {'Return', 'Restock', 'Adjustment'}
 STOCK_OUT_REASON = 'Issue'
 STOCK_INVENTORY_SORT_FIELDS = {
-    'barcode': StockInventoryItem.barcode,
+    'barcode': StockInventoryItem.scan_barcode,
     'name': StockInventoryItem.item_name,
     'category': StockInventoryItem.category,
     'location': StockInventoryItem.storage_location,
     'quantity': StockInventoryItem.current_quantity,
-    'minimum': StockInventoryItem.minimum_stock,
     'updated': StockInventoryItem.updated_at,
 }
 
 
 def stock_inventory_api_guard():
-    if not is_superadmin_user():
-        return jsonify({'success': False, 'error': 'Stock Inventory access is restricted to authorized superadmins.'}), 403
+    if not can_manage_stock_inventory():
+        return jsonify({'success': False, 'error': 'Stock Inventory access is not enabled for this account.'}), 403
     ensure_stock_inventory_tables()
     return None
+
+
+def stock_inventory_request_branch(payload=None):
+    payload = payload or {}
+    requested = request.args.get('branch') or payload.get('branch_code') or payload.get('branch')
+    branch_code = stock_inventory_branch_for_user(current_user, requested)
+    if not branch_code:
+        raise PermissionError('A Stock Inventory branch must be assigned to this account.')
+    return branch_code
+
+
+def stock_inventory_scan_barcode(item):
+    return clean_str(getattr(item, 'scan_barcode', None)) or clean_str(getattr(item, 'barcode', None)) or ''
+
+
+def stock_inventory_storage_barcode(branch_code, scan_barcode):
+    digest = hashlib.sha256(f'{branch_code}\0{scan_barcode}'.encode('utf-8')).hexdigest()
+    return f'stock:{branch_code}:{digest}'
 
 
 def stock_inventory_positive_integer(value, field_label='Quantity'):
@@ -48526,16 +48680,16 @@ def stock_inventory_item_to_dict(item, movement_count=None):
         movement_count = StockInventoryMovement.query.filter_by(item_id=item.id).count()
     return {
         'id': item.id,
-        'barcode': item.barcode,
+        'barcode': stock_inventory_scan_barcode(item),
         'item_name': item.item_name,
         'category': item.category or '',
         'storage_location': item.storage_location or '',
-        'minimum_stock': int(item.minimum_stock or 0),
         'current_quantity': int(item.current_quantity or 0),
         'notes': item.notes or '',
         'branch_code': item.branch_code or 'BC01',
         'is_active': bool(item.is_active),
-        'is_low_stock': bool(item.is_active and int(item.current_quantity or 0) <= int(item.minimum_stock or 0)),
+        'is_out_of_stock': bool(item.is_active and int(item.current_quantity or 0) <= 0),
+        'can_administer': stock_inventory_can_administer(),
         'movement_count': movement_count,
         'created_at': item.created_at.isoformat() if item.created_at else None,
         'updated_at': item.updated_at.isoformat() if item.updated_at else None,
@@ -48548,8 +48702,10 @@ def stock_inventory_movement_to_dict(movement):
     return {
         'id': movement.id,
         'item_id': movement.item_id,
-        'barcode': getattr(movement.item, 'barcode', ''),
+        'barcode': stock_inventory_scan_barcode(movement.item),
         'item_name': getattr(movement.item, 'item_name', ''),
+        'branch_code': getattr(movement.item, 'branch_code', '') or '',
+        'branch_name': STOCK_INVENTORY_BRANCHES.get(getattr(movement.item, 'branch_code', ''), getattr(movement.item, 'branch_code', '')),
         'direction': movement.direction,
         'quantity': movement.quantity,
         'reason': movement.reason,
@@ -48557,10 +48713,12 @@ def stock_inventory_movement_to_dict(movement):
         'recipient': movement.recipient or '',
         'purpose': movement.purpose or '',
         'source_or_returned_by': movement.source_or_returned_by or '',
+        'engineer_id': movement.engineer_id,
+        'engineer_name': movement.engineer_name_snapshot or clean_str(getattr(movement.accountable_engineer, 'name', None)) or '',
         'remarks': movement.remarks or '',
         'reversal_of_id': movement.reversal_of_id,
         'reversed_by_movement_id': reversed_entry.id if reversed_entry else None,
-        'can_reverse': movement.reversal_of_id is None and reversed_entry is None,
+        'can_reverse': stock_inventory_can_administer() and movement.reversal_of_id is None and reversed_entry is None,
         'created_by': actor_name,
         'created_at': movement.created_at.isoformat() if movement.created_at else None,
         'created_at_display': movement.created_at.strftime('%b %d, %Y %I:%M %p') if movement.created_at else '',
@@ -48609,18 +48767,30 @@ def get_stock_inventory_summary():
     now = get_manila_time()
     day_start = datetime.combine(now.date(), datetime.min.time())
     day_end = day_start + timedelta(days=1)
-    active_items = StockInventoryItem.query.filter_by(is_active=True, branch_code='BC01')
+    try:
+        branch_code = stock_inventory_request_branch()
+    except PermissionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 403
+    active_items = StockInventoryItem.query.filter_by(is_active=True, branch_code=branch_code)
+    out_items = active_items.filter(StockInventoryItem.current_quantity <= 0)
+    movements_today = (
+        StockInventoryMovement.query.join(StockInventoryItem)
+        .filter(StockInventoryItem.branch_code == branch_code)
+        .filter(StockInventoryMovement.created_at >= day_start, StockInventoryMovement.created_at < day_end)
+        .count()
+    )
     return jsonify({
         'success': True,
+        'branch_code': branch_code,
+        'branch_name': STOCK_INVENTORY_BRANCHES[branch_code],
+        'can_administer': stock_inventory_can_administer(),
         'summary': {
             'active_items': active_items.count(),
             'total_pieces': int(active_items.with_entities(func.coalesce(func.sum(StockInventoryItem.current_quantity), 0)).scalar() or 0),
-            'low_stock_items': active_items.filter(StockInventoryItem.current_quantity <= StockInventoryItem.minimum_stock).count(),
-            'movements_today': StockInventoryMovement.query.filter(
-                StockInventoryMovement.created_at >= day_start,
-                StockInventoryMovement.created_at < day_end,
-            ).count(),
+            'out_of_stock_items': out_items.count(),
+            'movements_today': movements_today,
         },
+        'out_of_stock_items': [stock_inventory_item_to_dict(item) for item in out_items.order_by(StockInventoryItem.item_name.asc()).limit(20).all()],
     })
 
 
@@ -48630,12 +48800,16 @@ def get_stock_inventory_items():
     denied = stock_inventory_api_guard()
     if denied:
         return denied
-    query = StockInventoryItem.query.filter_by(branch_code='BC01')
+    try:
+        branch_code = stock_inventory_request_branch()
+    except PermissionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 403
+    query = StockInventoryItem.query.filter_by(branch_code=branch_code)
     search = (clean_str(request.args.get('q')) or '').strip()
     if search:
         pattern = f'%{search}%'
         query = query.filter(or_(
-            StockInventoryItem.barcode.ilike(pattern),
+            StockInventoryItem.scan_barcode.ilike(pattern),
             StockInventoryItem.item_name.ilike(pattern),
             StockInventoryItem.category.ilike(pattern),
             StockInventoryItem.storage_location.ilike(pattern),
@@ -48658,6 +48832,9 @@ def get_stock_inventory_items():
         )
     return jsonify({
         'success': True,
+        'branch_code': branch_code,
+        'branch_name': STOCK_INVENTORY_BRANCHES[branch_code],
+        'can_administer': stock_inventory_can_administer(),
         'items': [stock_inventory_item_to_dict(item, movement_counts.get(item.id, 0)) for item in items],
     })
 
@@ -48669,12 +48846,16 @@ def lookup_stock_inventory_barcode():
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
+    try:
+        branch_code = stock_inventory_request_branch(payload)
+    except PermissionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 403
     barcode = str(payload.get('barcode') or '').strip()
     if not barcode:
         return jsonify({'success': False, 'error': 'Scan or enter a barcode first.'}), 400
     if len(barcode) > 128:
         return jsonify({'success': False, 'error': 'Barcode is too long.'}), 400
-    item = StockInventoryItem.query.filter_by(barcode=barcode, branch_code='BC01').first()
+    item = StockInventoryItem.query.filter_by(scan_barcode=barcode, branch_code=branch_code).first()
     return jsonify({'success': True, 'found': bool(item), 'barcode': barcode, 'item': stock_inventory_item_to_dict(item) if item else None})
 
 
@@ -48685,45 +48866,48 @@ def create_stock_inventory_item():
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
+    try:
+        branch_code = stock_inventory_request_branch(payload)
+    except PermissionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 403
     barcode = str(payload.get('barcode') or '').strip()
     item_name = (clean_str(payload.get('item_name')) or '').strip()
     if not barcode or len(barcode) > 128:
         return jsonify({'success': False, 'error': 'A valid barcode is required.'}), 400
     if not item_name:
         return jsonify({'success': False, 'error': 'Item name is required.'}), 400
-    if StockInventoryItem.query.filter_by(barcode=barcode).first():
-        return jsonify({'success': False, 'error': 'This exact barcode is already registered.'}), 409
+    if StockInventoryItem.query.filter_by(scan_barcode=barcode, branch_code=branch_code).first():
+        return jsonify({'success': False, 'error': 'This barcode is already registered in this branch.'}), 409
     try:
-        opening_quantity = stock_inventory_nonnegative_integer(payload.get('opening_quantity'), 'Opening quantity')
-        minimum_stock = stock_inventory_nonnegative_integer(payload.get('minimum_stock'), 'Minimum stock')
+        quantity = stock_inventory_nonnegative_integer(payload.get('quantity'), 'QTY')
         item = StockInventoryItem(
-            barcode=barcode,
+            barcode=stock_inventory_storage_barcode(branch_code, barcode),
+            scan_barcode=barcode,
             item_name=item_name[:180],
             category=(clean_str(payload.get('category')) or '')[:120] or None,
             storage_location=(clean_str(payload.get('storage_location')) or '')[:180] or None,
-            minimum_stock=minimum_stock,
-            current_quantity=0,
+            minimum_stock=0,
+            current_quantity=quantity,
             notes=clean_str(payload.get('notes')),
-            branch_code='BC01',
+            branch_code=branch_code,
             is_active=True,
             created_by_id=current_user.id,
             updated_by_id=current_user.id,
         )
         db.session.add(item)
         db.session.flush()
-        if opening_quantity:
-            item.current_quantity = opening_quantity
+        if quantity:
             db.session.add(StockInventoryMovement(
                 item_id=item.id,
                 direction='IN',
-                quantity=opening_quantity,
-                reason='Opening Stock',
-                resulting_quantity=opening_quantity,
+                quantity=quantity,
+                reason='Adjustment',
+                resulting_quantity=quantity,
                 source_or_returned_by=(clean_str(payload.get('source_or_returned_by')) or '')[:180] or None,
-                remarks='Initial stock recorded during item registration.',
+                remarks='Initial QTY recorded during item registration.',
                 created_by_id=current_user.id,
             ))
-        add_activity_log_entry(f'Stock Inventory registered item: {item.item_name} [{item.barcode}] with opening quantity {opening_quantity}')
+        add_activity_log_entry(f'Stock Inventory {branch_code} registered item: {item.item_name} [{barcode}] with QTY {quantity}')
         db.session.commit()
         return jsonify({'success': True, 'message': 'Stock item registered.', 'item': stock_inventory_item_to_dict(item)}), 201
     except ValueError as exc:
@@ -48732,7 +48916,7 @@ def create_stock_inventory_item():
     except Exception as exc:
         db.session.rollback()
         if 'unique' in str(exc).lower():
-            return jsonify({'success': False, 'error': 'This exact barcode is already registered.'}), 409
+            return jsonify({'success': False, 'error': 'This barcode is already registered in this branch.'}), 409
         print(f'[StockInventory] Registration failed: {exc}', flush=True)
         return jsonify({'success': False, 'error': 'Stock item could not be registered.'}), 500
 
@@ -48748,6 +48932,12 @@ def update_stock_inventory_item(item_id):
         return jsonify({'success': False, 'error': 'Stock item not found.'}), 404
     payload = request.get_json(silent=True) or {}
     try:
+        branch_code = stock_inventory_request_branch(payload)
+    except PermissionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 403
+    if item.branch_code != branch_code:
+        return jsonify({'success': False, 'error': 'Stock item not found in the selected branch.'}), 404
+    try:
         if 'item_name' in payload:
             item_name = (clean_str(payload.get('item_name')) or '').strip()
             if not item_name:
@@ -48757,21 +48947,45 @@ def update_stock_inventory_item(item_id):
             item.category = (clean_str(payload.get('category')) or '')[:120] or None
         if 'storage_location' in payload:
             item.storage_location = (clean_str(payload.get('storage_location')) or '')[:180] or None
-        if 'minimum_stock' in payload:
-            item.minimum_stock = stock_inventory_nonnegative_integer(payload.get('minimum_stock'))
         if 'notes' in payload:
             item.notes = clean_str(payload.get('notes'))
+        if 'quantity' in payload:
+            if not stock_inventory_can_administer():
+                raise PermissionError('Only superadmins can directly adjust QTY.')
+            target_quantity = stock_inventory_nonnegative_integer(payload.get('quantity'), 'QTY')
+            current_quantity = int(item.current_quantity or 0)
+            if target_quantity != current_quantity:
+                adjustment_reason = (clean_str(payload.get('adjustment_reason')) or '').strip()
+                if not adjustment_reason:
+                    raise ValueError('Adjustment reason is required when changing QTY.')
+                direction = 'IN' if target_quantity > current_quantity else 'OUT'
+                delta = abs(target_quantity - current_quantity)
+                item = apply_stock_inventory_balance(item.id, direction, delta)
+                db.session.add(StockInventoryMovement(
+                    item_id=item.id,
+                    direction=direction,
+                    quantity=delta,
+                    reason='Adjustment',
+                    resulting_quantity=int(item.current_quantity or 0),
+                    remarks=adjustment_reason,
+                    created_by_id=current_user.id,
+                ))
         if 'is_active' in payload:
+            if not stock_inventory_can_administer():
+                raise PermissionError('Only superadmins can activate or deactivate stock items.')
             item.is_active = bool(payload.get('is_active'))
         item.updated_by_id = current_user.id
         item.updated_at = get_manila_time()
         action_word = 'reactivated' if item.is_active else 'deactivated'
-        add_activity_log_entry(f'Stock Inventory updated item: {item.item_name} [{item.barcode}] ({action_word})')
+        add_activity_log_entry(f'Stock Inventory {branch_code} updated item: {item.item_name} [{stock_inventory_scan_barcode(item)}] ({action_word})')
         db.session.commit()
         return jsonify({'success': True, 'message': 'Stock item updated.', 'item': stock_inventory_item_to_dict(item)})
     except ValueError as exc:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(exc)}), 400
+    except PermissionError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 403
 
 
 @app.route('/api/stock-inventory/movements')
@@ -48780,7 +48994,20 @@ def get_stock_inventory_movements():
     denied = stock_inventory_api_guard()
     if denied:
         return denied
-    query = StockInventoryMovement.query.options(joinedload(StockInventoryMovement.item), joinedload(StockInventoryMovement.created_by))
+    try:
+        branch_code = stock_inventory_request_branch()
+    except PermissionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 403
+    query = (
+        StockInventoryMovement.query
+        .join(StockInventoryItem)
+        .filter(StockInventoryItem.branch_code == branch_code)
+        .options(
+            joinedload(StockInventoryMovement.item),
+            joinedload(StockInventoryMovement.created_by),
+            joinedload(StockInventoryMovement.accountable_engineer),
+        )
+    )
     item_id = clean_int(request.args.get('item_id'))
     direction = (request.args.get('direction') or '').upper()
     if item_id:
@@ -48792,7 +49019,31 @@ def get_stock_inventory_movements():
     except ValueError:
         limit = 200
     movements = query.order_by(StockInventoryMovement.created_at.desc(), StockInventoryMovement.id.desc()).limit(limit).all()
-    return jsonify({'success': True, 'movements': [stock_inventory_movement_to_dict(movement) for movement in movements]})
+    return jsonify({'success': True, 'branch_code': branch_code, 'movements': [stock_inventory_movement_to_dict(movement) for movement in movements]})
+
+
+@app.route('/api/stock-inventory/engineers')
+@login_required
+def search_stock_inventory_engineers():
+    denied = stock_inventory_api_guard()
+    if denied:
+        return denied
+    search = (clean_str(request.args.get('q')) or '').strip()
+    query = Engineer.query
+    if search:
+        pattern = f'%{search}%'
+        query = query.filter(or_(
+            Engineer.name.ilike(pattern),
+            Engineer.employee_id.ilike(pattern),
+            Engineer.branch.ilike(pattern),
+        ))
+    engineers = [engineer for engineer in query.order_by(Engineer.name.asc()).limit(200).all() if not is_approver_only_engineer_profile(engineer)]
+    return jsonify({'success': True, 'engineers': [{
+        'id': engineer.id,
+        'name': engineer.name,
+        'employee_id': engineer.employee_id,
+        'branch': engineer.branch or '',
+    } for engineer in engineers]})
 
 
 @app.route('/api/stock-inventory/movements', methods=['POST'])
@@ -48802,6 +49053,10 @@ def create_stock_inventory_movement():
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
+    try:
+        branch_code = stock_inventory_request_branch(payload)
+    except PermissionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 403
     item_id = clean_int(payload.get('item_id'))
     direction = (clean_str(payload.get('direction')) or '').upper()
     if direction not in {'IN', 'OUT'}:
@@ -48809,20 +49064,30 @@ def create_stock_inventory_movement():
     item = db.session.get(StockInventoryItem, item_id)
     if not item:
         return jsonify({'success': False, 'error': 'Stock item not found.'}), 404
+    if item.branch_code != branch_code:
+        return jsonify({'success': False, 'error': 'Stock item not found in the selected branch.'}), 404
     try:
         quantity = stock_inventory_positive_integer(payload.get('quantity'))
         reason = (clean_str(payload.get('reason')) or '').strip()
-        recipient = (clean_str(payload.get('recipient')) or '').strip()
         purpose = (clean_str(payload.get('purpose')) or '').strip()
         source = (clean_str(payload.get('source_or_returned_by')) or '').strip()
+        engineer_id = clean_int(payload.get('engineer_id'))
+        engineer = db.session.get(Engineer, engineer_id) if engineer_id else None
+        if engineer_id and not engineer:
+            raise ValueError('Selected engineer was not found.')
         if direction == 'IN' and reason not in STOCK_IN_REASONS:
             raise ValueError('Choose Return, Restock, or Adjustment for an IN transaction.')
         if direction == 'OUT':
             reason = STOCK_OUT_REASON
-            if not recipient:
-                raise ValueError('Recipient or team is required for an OUT transaction.')
+            if not engineer:
+                raise ValueError('Borrowed By engineer is required for an OUT transaction.')
             if not purpose:
                 raise ValueError('Purpose is required for an OUT transaction.')
+        if direction == 'IN' and reason == 'Return' and not engineer:
+            raise ValueError('Returned By engineer is required for a Return transaction.')
+        engineer_name = (engineer.name if engineer else '')[:180]
+        if direction == 'IN' and reason == 'Return' and not source:
+            source = engineer_name
         refreshed_item = apply_stock_inventory_balance(item.id, direction, quantity)
         movement = StockInventoryMovement(
             item_id=item.id,
@@ -48830,14 +49095,17 @@ def create_stock_inventory_movement():
             quantity=quantity,
             reason=reason,
             resulting_quantity=int(refreshed_item.current_quantity or 0),
-            recipient=recipient[:180] or None,
+            recipient=(engineer_name or None) if direction == 'OUT' else None,
             purpose=purpose or None,
             source_or_returned_by=source[:180] or None,
+            engineer_id=engineer.id if engineer else None,
+            engineer_name_snapshot=engineer_name or None,
             remarks=clean_str(payload.get('remarks')),
             created_by_id=current_user.id,
         )
         db.session.add(movement)
-        add_activity_log_entry(f'Stock Inventory {direction}: {quantity} piece(s) of {refreshed_item.item_name} [{refreshed_item.barcode}] - {reason}')
+        accountability = f' - Engineer: {engineer_name}' if engineer_name else ''
+        add_activity_log_entry(f'Stock Inventory {branch_code} {direction}: {quantity} piece(s) of {refreshed_item.item_name} [{stock_inventory_scan_barcode(refreshed_item)}] - {reason}{accountability}')
         db.session.commit()
         return jsonify({
             'success': True,
@@ -48864,6 +49132,8 @@ def reverse_stock_inventory_movement(movement_id):
     denied = stock_inventory_api_guard()
     if denied:
         return denied
+    if not stock_inventory_can_administer():
+        return jsonify({'success': False, 'error': 'Only superadmins can reverse stock movements.'}), 403
     original = db.session.get(StockInventoryMovement, movement_id)
     if not original:
         return jsonify({'success': False, 'error': 'Movement not found.'}), 404
@@ -48884,11 +49154,13 @@ def reverse_stock_inventory_movement(movement_id):
             reason='Correction',
             resulting_quantity=int(item.current_quantity or 0),
             remarks=correction_reason,
+            engineer_id=original.engineer_id,
+            engineer_name_snapshot=original.engineer_name_snapshot,
             reversal_of_id=original.id,
             created_by_id=current_user.id,
         )
         db.session.add(reversal)
-        add_activity_log_entry(f'Stock Inventory reversed movement #{original.id}: {item.item_name} [{item.barcode}] - {correction_reason}')
+        add_activity_log_entry(f'Stock Inventory {item.branch_code} reversed movement #{original.id}: {item.item_name} [{stock_inventory_scan_barcode(item)}] - {correction_reason}')
         db.session.commit()
         return jsonify({
             'success': True,

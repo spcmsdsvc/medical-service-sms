@@ -77,7 +77,7 @@
     <div class="row g-4 settings-section-panel active" data-settings-section="account">
         
         <!-- COLUMN 1: INDIVIDUAL ACCOUNT SECURITY -->
-        <div class="col-12 col-xl-5">
+        <div class="col-12 {{ 'col-xl-6 mx-auto' if stock_inventory_only_user else 'col-xl-5' }}">
             <div class="card shadow-sm border-0 rounded-4 overflow-hidden">
                 
                 <div class="card-header bg-primary text-white py-3 border-0">
@@ -122,6 +122,7 @@
             </div>
         </div>
 
+        {% if not stock_inventory_only_user %}
         <div class="col-12 col-xl-7">
             <div class="card shadow-sm border-0 rounded-4 overflow-hidden mt-4 mt-xl-0 settings-signature-card">
                 <div class="card-header bg-white py-3 border-0 d-flex justify-content-between align-items-center">
@@ -242,6 +243,7 @@
                 </div>
             </section>
         </div>
+        {% endif %}
 
         </div>
 
@@ -1808,6 +1810,9 @@
             const checked = user.can_approve_requests ? 'checked' : '';
             const activeChecked = user.is_active ? 'checked' : '';
             const approverOnlyChecked = user.approver_only ? 'checked' : '';
+            const inventoryChecked = user.can_manage_stock_inventory ? 'checked' : '';
+            const inventoryOnlyChecked = user.stock_inventory_only ? 'checked' : '';
+            const inventoryBranch = user.stock_inventory_branch_code || '';
             return `
                 <div class="approval-user-card" data-user-id="${user.id}">
                     <div class="approval-user-main">
@@ -1835,9 +1840,36 @@
                         </div>
                     </div>
                     <div class="form-check form-switch mt-2">
-                        <input class="form-check-input approval-approver-only-input" type="checkbox" ${approverOnlyChecked} onchange="if(this.checked){const canApprove=this.closest('.approval-user-card')?.querySelector('.approval-can-approve'); if(canApprove){canApprove.checked=true;}}">
+                        <input class="form-check-input approval-approver-only-input" type="checkbox" ${approverOnlyChecked} onchange="toggleApprovalOnlyMode(this)">
                         <label class="form-check-label small fw-bold">Approver-only view</label>
                         <div class="form-text small">Use for executives/approvers who should only see Dashboard, My Requests, Approvals, Settings, and Logout.</div>
+                    </div>
+                    <div class="border rounded-3 p-3 mt-3">
+                        <div class="row g-3 align-items-start">
+                            <div class="col-lg-4">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input stock-inventory-access-input" type="checkbox" ${inventoryChecked}>
+                                    <label class="form-check-label small fw-bold">Can Manage Stock Inventory</label>
+                                </div>
+                                <div class="form-text small">Allows item registration and daily IN/OUT transactions.</div>
+                            </div>
+                            <div class="col-lg-4">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input stock-inventory-only-input" type="checkbox" ${inventoryOnlyChecked} onchange="toggleStockInventoryOnlyMode(this)">
+                                    <label class="form-check-label small fw-bold">Stock Inventory-only view</label>
+                                </div>
+                                <div class="form-text small">Restricts this account to inventory work and password settings.</div>
+                            </div>
+                            <div class="col-lg-4">
+                                <label class="small fw-bold mb-1">Assigned Inventory Branch</label>
+                                <select class="form-select form-select-sm stock-inventory-branch-input">
+                                    <option value="">Select branch</option>
+                                    <option value="BC01" ${inventoryBranch === 'BC01' ? 'selected' : ''}>BC01 - Manila/Main</option>
+                                    <option value="BC02" ${inventoryBranch === 'BC02' ? 'selected' : ''}>BC02 - Cebu</option>
+                                    <option value="BC03" ${inventoryBranch === 'BC03' ? 'selected' : ''}>BC03 - Davao</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
                     <div class="text-end mt-2">
                         <button type="button" class="btn btn-outline-indigo btn-sm fw-bold rounded-3" onclick="saveApprovalUser(${user.id})">
@@ -1988,6 +2020,9 @@
             user_id: userId,
             can_approve_requests: Boolean(card.querySelector('.approval-can-approve')?.checked),
             approver_only: Boolean(card.querySelector('.approval-approver-only-input')?.checked),
+            can_manage_stock_inventory: Boolean(card.querySelector('.stock-inventory-access-input')?.checked),
+            stock_inventory_only: Boolean(card.querySelector('.stock-inventory-only-input')?.checked),
+            stock_inventory_branch_code: card.querySelector('.stock-inventory-branch-input')?.value || '',
             approval_title: card.querySelector('.approval-title-input')?.value || '',
             approval_scope: card.querySelector('.approval-scope-input')?.value || '',
             is_active: Boolean(card.querySelector('.approval-active-input')?.checked)
@@ -2359,6 +2394,26 @@
     function emailRecipientGroupDescription(groupKey) {
         const group = (emailRecipientState.groups || []).find(item => item.key === groupKey);
         return group ? group.description : '';
+    }
+
+    function toggleApprovalOnlyMode(input) {
+        const card = input.closest('.approval-user-card');
+        if (!card || !input.checked) return;
+        const canApprove = card.querySelector('.approval-can-approve');
+        const inventoryAccess = card.querySelector('.stock-inventory-access-input');
+        const inventoryOnly = card.querySelector('.stock-inventory-only-input');
+        if (canApprove) canApprove.checked = true;
+        if (inventoryAccess) inventoryAccess.checked = false;
+        if (inventoryOnly) inventoryOnly.checked = false;
+    }
+
+    function toggleStockInventoryOnlyMode(input) {
+        const card = input.closest('.approval-user-card');
+        if (!card || !input.checked) return;
+        const inventoryAccess = card.querySelector('.stock-inventory-access-input');
+        const approverOnly = card.querySelector('.approval-approver-only-input');
+        if (inventoryAccess) inventoryAccess.checked = true;
+        if (approverOnly) approverOnly.checked = false;
     }
 
     function emailRecipientUsageLabel(groupKey) {

@@ -25,7 +25,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('@media print', styles)
 
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
-        self.assertIn('medical-service-pwa-offline-navigation-v31-stock-inventory', app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v32-multibranch-stock', app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
     def test_login_uses_last_device_appearance(self):
