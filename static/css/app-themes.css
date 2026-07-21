@@ -74,7 +74,12 @@ body, .main-content { background-color: var(--app-bg) !important; }
     outline: 3px solid rgba(var(--app-primary-rgb), .22);
     outline-offset: 1px;
 }
-.sidebar-header .appearance-header-button { width: 36px; min-width: 36px; height: 40px; }
+.sidebar-header .appearance-header-button {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    min-height: 34px;
+}
 
 :root[data-app-theme="dark"] :is(
     .page-header, .content-header, .filter-panel, .toolbar-panel, .form-section, .details-panel,

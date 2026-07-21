@@ -17,7 +17,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('app-dark-pages.css', layout)
         self.assertGreater(layout.index('app-dark-pages.css'), layout.index('{% block content %}'))
         self.assertIn('app-appearance.js', layout)
-        self.assertEqual(layout.count('appearance-header-button'), 2)
+        self.assertEqual(layout.count('onclick="window.appAppearance && window.appAppearance.toggleQuick()"'), 2)
         self.assertIn('data-appearance-mode="system"', settings)
         self.assertIn('data-appearance-accent="shimadzu-red"', settings)
         self.assertIn("app-theme-changed", runtime)
@@ -25,7 +25,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('@media print', styles)
 
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
-        self.assertIn('medical-service-pwa-offline-navigation-v29-dark-inner-surfaces', app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v30-changelog-contrast', app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
     def test_login_uses_last_device_appearance(self):
@@ -79,7 +79,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '[class*="-stat-value"]',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=23", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=24", layout)
 
     def test_dark_mode_covers_native_and_custom_dropdowns(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
@@ -115,7 +115,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '.receipt-pill, .reim-receipt-pill',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-themes.css') }}?v=17", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=18", layout)
 
     def test_dark_mode_covers_system_neutral_surfaces(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
@@ -145,6 +145,22 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '.reim-btn-secondary, .reim-btn-danger-outline',
         ):
             self.assertIn(selector, css)
+
+    def test_changelog_dark_contrast_and_compact_header_controls(self):
+        dark_css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+        theme_css = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
+        layout = (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8')
+        for selector in (
+            '.changelog-title,',
+            '.changelog-subtitle, .changelog-summary',
+            '.changelog-category-title',
+            '.changelog-item',
+        ):
+            self.assertIn(selector, dark_css)
+        self.assertIn('.sidebar-header .appearance-header-button {', theme_css)
+        self.assertIn('.sidebar-header .appearance-header-button,', layout)
+        self.assertIn('.sidebar-header .changelog-header-button {', layout)
+        self.assertIn('width: 34px;', layout)
 
 
 if __name__ == '__main__':

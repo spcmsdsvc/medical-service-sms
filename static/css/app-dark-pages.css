@@ -510,6 +510,29 @@
 :root[data-app-theme="dark"] .dashboard-workflow-card :is(.dashboard-workflow-title, .dashboard-workflow-subtitle, strong, span) { color: inherit !important; }
 :root[data-app-theme="dark"] .dashboard-whats-new :is(h3, p, div) { color: inherit !important; }
 :root[data-app-theme="dark"] .changelog-btn:hover { background: var(--dark-card-hover) !important; }
+:root[data-app-theme="dark"] .changelog-header {
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .changelog-title,
+:root[data-app-theme="dark"] .changelog-release-title {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(.changelog-subtitle, .changelog-summary) {
+    color: #b7c3d1 !important;
+}
+:root[data-app-theme="dark"] .changelog-date span {
+    color: #9fb0c4 !important;
+}
+:root[data-app-theme="dark"] .changelog-category-title {
+    color: #dbe7f4 !important;
+}
+:root[data-app-theme="dark"] .changelog-item {
+    color: #c8d3e0 !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .changelog-release-head {
+    border-color: var(--dark-border) !important;
+}
 :root[data-app-theme="dark"] .travel-notification-panel {
     background: var(--dark-panel) !important;
     color: var(--dark-text) !important;
