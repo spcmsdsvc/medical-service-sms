@@ -25,7 +25,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('@media print', styles)
 
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
-        self.assertIn('medical-service-pwa-offline-navigation-v27-dark-attachments', app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v28-system-dark-surfaces', app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
     def test_login_uses_last_device_appearance(self):
@@ -79,7 +79,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '[class*="-stat-value"]',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=21", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=22", layout)
 
     def test_dark_mode_covers_native_and_custom_dropdowns(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
@@ -116,6 +116,21 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         ):
             self.assertIn(selector, css)
         self.assertIn("filename='css/app-themes.css') }}?v=17", layout)
+
+    def test_dark_mode_covers_system_neutral_surfaces(self):
+        css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+        for selector in (
+            '.cash-signature-box, .travel-signature-box',
+            '.travel-status:not(.success):not(.error)',
+            '.cash-notification-list, .reim-notification-card',
+            '.developer-dashboard-switcher, .manager-executive-dashboard',
+            '[class*="manager-"][class*="-panel"]',
+            '.approval-decision-panel',
+            '.product-confirm-box, .client-confirm-box, .engineer-confirm-box',
+            '.email-recipient-form-panel',
+            '.schedule-picker-selected',
+        ):
+            self.assertIn(selector, css)
 
 
 if __name__ == '__main__':

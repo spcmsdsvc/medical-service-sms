@@ -694,6 +694,175 @@
     border-color: #7f3543 !important;
 }
 
+/* Neutral notices, signatures, loading states and empty states across workflows. */
+:root[data-app-theme="dark"] :is(
+    .cash-signature-box, .travel-signature-box,
+    .travel-status:not(.success):not(.error),
+    .cash-notification-list, .reim-notification-card, .reim-notification-list,
+    .reim-status-window-card, .approval-notification-card,
+    .reim-empty, .approval-empty, .approval-empty-state,
+    .analytics-mobile-empty, .activity-mobile-empty, .reports-empty,
+    .product-mobile-empty, .client-mobile-empty, .engineer-mobile-empty,
+    .dashboard-empty-state, .dashboard-team-empty, .dashboard-mobile-empty-card,
+    .mobile-empty-state
+) {
+    background: var(--dark-card) !important;
+    color: var(--dark-muted) !important;
+    border-color: var(--dark-border) !important;
+}
+
+/* Remaining page-owned light surfaces found by the system-wide audit. */
+:root[data-app-theme="dark"] :is(
+    .cash-card,
+    .travel-card, .travel-visit-card, .travel-equipment-box,
+    .reim-filter-card, .reim-table-card, .reim-dialog,
+    .analytics-filter-card, .analytics-range-label, .analytics-mobile-engineer-card,
+    .reports-mobile-card, .archive-file-entry,
+    .product-mobile-card, .client-mobile-card, .client-mobile-view-contact,
+    .engineer-mobile-card,
+    .approval-module-card, .approval-card, .approval-status-summary-card,
+    .approval-audit-content, .approval-work-meta, .compact-request-remarks,
+    .approval-accounting-warning-card,
+    .approval-work-panel, .approval-user-card, .approval-route-card,
+    .signature-upload-wrap, .settings-mobile-user-card, .settings-dialog,
+    .forcePwCard
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .reports-mobile-card-title, .product-mobile-title, .client-mobile-title,
+    .engineer-mobile-title, .approval-work-panel h3, .approval-user-card strong,
+    .approval-route-card strong, .settings-mobile-user-card strong,
+    .forcePwCard h2, .forcePwCard h3
+) {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .reports-mobile-card-meta, .product-mobile-meta, .client-mobile-meta,
+    .engineer-mobile-meta, .approval-user-card small, .approval-route-card small,
+    .settings-mobile-user-card small
+) {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] :is(.liq-lock-banner, .ca-liq-lock-banner) {
+    background: #18395f !important;
+    color: #bfdbfe !important;
+    border-color: #315f8f !important;
+}
+:root[data-app-theme="dark"] :is(.liq-lock-banner, .ca-liq-lock-banner) .banner-title {
+    color: #bfdbfe !important;
+}
+:root[data-app-theme="dark"] :is(.return-reason-box, .travel-status.warning) {
+    background: #3a3019 !important;
+    color: #fde68a !important;
+    border-color: #7c6420 !important;
+}
+:root[data-app-theme="dark"] .travel-signature-line {
+    color: var(--dark-text) !important;
+    border-color: #7c8ba0 !important;
+}
+:root[data-app-theme="dark"] :is(
+    .travel-approval-signed-name, .reim-notification-title,
+    .approval-notification-title, .approval-notification-item-title
+) {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .travel-approval-signed-title, .travel-approval-signed-date,
+    .reim-notification-message, .reim-notification-time,
+    .approval-notification-item-msg, .approval-notification-item-time
+) {
+    color: var(--dark-muted) !important;
+}
+
+/* Dashboard role previews and operational panels. */
+:root[data-app-theme="dark"] :is(
+    .developer-dashboard-switcher, .manager-executive-dashboard,
+    .scheduler-core-dashboard, .dashboard-engineer-workflow,
+    .dashboard-team-intelligence, .dashboard-quick-admin, .dashboard-needs-attention,
+    [class*="manager-"][class*="-panel"], [class*="scheduler-"][class*="-panel"],
+    [class*="dashboard-"][class*="-panel"], [class*="dashboard-"][class*="-toolbar"]
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    [class*="manager-"][class*="-card"], [class*="manager-"][class*="-row"],
+    [class*="scheduler-"][class*="-card"], [class*="scheduler-"][class*="-row"],
+    [class*="dashboard-"][class*="-card"], [class*="dashboard-"][class*="-row"]
+) {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .developer-dashboard-switcher, .manager-executive-dashboard,
+    .scheduler-core-dashboard, .dashboard-engineer-workflow
+) :is(h1, h2, h3, h4, h5, h6, strong, .text-dark) {
+    color: var(--dark-text) !important;
+}
+
+/* Approval workspaces and modal detail panels. */
+:root[data-app-theme="dark"] :is(
+    .approval-item, .approval-stat, .approval-audit-panel, .approval-audit-item,
+    .approval-decision-panel, .approval-signature-panel, .approval-command-center,
+    .approval-focus-card, .approval-workspace, .approval-tabs, .approval-tab-panel,
+    .approval-work-card, .approval-modal-panel, .compact-panel, .compact-route-card,
+    .compact-info-card, .compact-strip-item, .compact-accordion, .compact-accordion-body,
+    .approval-notification-item, .approval-dialog, .approval-toast
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .approval-title, .approval-focus-title, .approval-work-no,
+    .compact-route-title, .compact-info-value, .compact-summary-value,
+    .approval-signature-name, .approval-audit-action
+) {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .approval-meta, .approval-muted, .approval-focus-subtitle,
+    .compact-route-subtitle, .compact-info-label, .compact-summary-label,
+    .approval-signature-title, .approval-audit-meta, .approval-audit-remarks
+) {
+    color: var(--dark-muted) !important;
+}
+
+/* Record administration and Settings custom cards/dialogs. */
+:root[data-app-theme="dark"] :is(
+    .product-confirm-box, .client-confirm-box, .engineer-confirm-box,
+    .product-alert-toast, .client-alert-toast, .engineer-alert-toast,
+    .email-recipient-form-panel, .email-recipient-group-card, .email-recipient-card,
+    .email-template-card, .email-template-body, .email-template-preview,
+    .storage-meter, .storage-breakdown-row, .storage-recommendation,
+    .settings-mobile-policy-note
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .product-confirm-title, .client-confirm-title, .engineer-confirm-title,
+    .product-alert-title, .client-alert-title, .engineer-alert-title,
+    .email-recipient-group-title, .email-recipient-email-line,
+    .email-template-title, .email-template-preview-value
+) {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .product-confirm-message, .client-confirm-message, .engineer-confirm-message,
+    .product-alert-message, .client-alert-message, .engineer-alert-message,
+    .email-recipient-group-description, .email-recipient-meta,
+    .email-template-description, .storage-last-checked
+) {
+    color: var(--dark-muted) !important;
+}
+
 /* Create TSR UI remains dark, but the official PDF/preview remains white. */
 :root[data-app-theme="dark"] :is(
     .offline-tsr-hero, .offline-tsr-dialog-box, .offline-tsr-storage-health,
@@ -706,6 +875,23 @@
     color: var(--dark-text) !important;
     border-color: var(--dark-border) !important;
 }
+:root[data-app-theme="dark"] :is(
+    .schedule-picker-selected, .tsr-schedule-coverage-panel,
+    .tsr-list-box, .tsr-list-item, .tsr-inline-suggestions,
+    .tsr-saved-signature-panel
+) {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .schedule-picker-title, .tsr-knowledge-quick-header,
+    .tsr-action-text
+) { color: var(--dark-text) !important; }
+:root[data-app-theme="dark"] :is(
+    .schedule-picker-meta, .tsr-knowledge-quick-context,
+    .tsr-schedule-locked-note
+) { color: var(--dark-muted) !important; }
 :root[data-app-theme="dark"] :is(
     .standalone-schedule-client, .standalone-schedule-product, .standalone-schedule-serial,
     .standalone-schedule-meta, .standalone-tsr-draft-title, .standalone-tsr-draft-meta,
