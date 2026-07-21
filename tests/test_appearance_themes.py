@@ -25,7 +25,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('@media print', styles)
 
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
-        self.assertIn('medical-service-pwa-offline-navigation-v25-workflow-dark-contrast', app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v26-dark-dropdowns', app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
     def test_login_uses_last_device_appearance(self):
@@ -79,7 +79,25 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '[class*="-stat-value"]',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=19", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=20", layout)
+
+    def test_dark_mode_covers_native_and_custom_dropdowns(self):
+        css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+        lpr = (ROOT / 'templates' / 'lpr.html').read_text(encoding='utf-8')
+        for selector in (
+            ':root[data-app-theme="dark"] select,',
+            'select option,',
+            'select optgroup',
+            'select:disabled',
+            '[role="listbox"]',
+            '[class*="-dropdown-menu"]',
+            '.search-item, .travel-search-item',
+            '.travel-equipment-toggle',
+            '.tsr-category-menu',
+            '.timeline-travel-suggestion-panel',
+        ):
+            self.assertIn(selector, css)
+        self.assertIn('<select id="lprBranch">', lpr)
 
 
 if __name__ == '__main__':

@@ -44,6 +44,102 @@
     background: var(--dark-card-hover) !important;
     border-color: var(--app-primary) !important;
 }
+
+/* Native and framework dropdowns must share the same dark surface. */
+:root[data-app-theme="dark"] select,
+:root[data-app-theme="dark"] .form-select {
+    background-color: var(--dark-input) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+    color-scheme: dark;
+}
+:root[data-app-theme="dark"] select:has(option[value=""]:checked) {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] select option,
+:root[data-app-theme="dark"] select optgroup {
+    background-color: var(--dark-input) !important;
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] select option[value=""],
+:root[data-app-theme="dark"] select option:disabled {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] select:focus,
+:root[data-app-theme="dark"] .form-select:focus {
+    background-color: var(--dark-input) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--app-primary) !important;
+    box-shadow: 0 0 0 .25rem var(--app-focus) !important;
+}
+:root[data-app-theme="dark"] select:disabled,
+:root[data-app-theme="dark"] .form-select:disabled {
+    background-color: #263344 !important;
+    color: #b7c3d1 !important;
+    border-color: #46566b !important;
+    opacity: .78;
+}
+:root[data-app-theme="dark"] :is(
+    .dropdown-menu, .dropdown-item, [role="listbox"], [role="option"],
+    .search-results, [class*="-dropdown-menu"], [class*="-search-results"]
+) {
+    background-color: var(--dark-input) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(.dropdown-item, [role="option"]):is(:hover, :focus, [aria-selected="true"]) {
+    background-color: var(--dark-card-hover) !important;
+    color: #fff !important;
+}
+:root[data-app-theme="dark"] :is(.search-item, .travel-search-item) {
+    background: var(--dark-input) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(.search-item, .travel-search-item):hover,
+:root[data-app-theme="dark"] :is(.search-item, .travel-search-item):focus-within {
+    background: var(--dark-card-hover) !important;
+    color: #fff !important;
+}
+:root[data-app-theme="dark"] :is(.search-item, .travel-search-item) small {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .travel-equipment-toggle, .travel-equipment-menu, .travel-equipment-box,
+    .travel-equipment-row, .tsr-category-menu
+) {
+    background: var(--dark-input) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(.travel-equipment-row, .tsr-category-menu label):hover {
+    background: var(--dark-card-hover) !important;
+    color: #fff !important;
+}
+:root[data-app-theme="dark"] .travel-equipment-toggle:disabled {
+    background: #263344 !important;
+    color: #b7c3d1 !important;
+}
+:root[data-app-theme="dark"] .tsr-category-menu input[type="checkbox"]:checked + span {
+    color: #86efac !important;
+}
+:root[data-app-theme="dark"] .timeline-travel-suggestion-panel {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: #6d5aaa !important;
+}
+:root[data-app-theme="dark"] .timeline-travel-suggestion-title { color: #c4b5fd !important; }
+:root[data-app-theme="dark"] .timeline-travel-suggestion-sub { color: var(--dark-muted) !important; }
+:root[data-app-theme="dark"] .timeline-travel-suggestion-chip {
+    background: var(--dark-card) !important;
+    color: #ede9fe !important;
+    border-color: #66558f !important;
+}
+:root[data-app-theme="dark"] .timeline-travel-suggestion-chip:hover {
+    background: var(--dark-card-hover) !important;
+    border-color: #a78bfa !important;
+}
+:root[data-app-theme="dark"] .timeline-travel-suggestion-chip-meta { color: var(--dark-muted) !important; }
 :root[data-app-theme="dark"] .btn-outline-dark {
     color: var(--dark-text);
     border-color: #7c8ba0;
