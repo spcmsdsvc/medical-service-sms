@@ -25,7 +25,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('@media print', styles)
 
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
-        self.assertIn('medical-service-pwa-offline-navigation-v24-calendar-dark-mode', app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v25-workflow-dark-contrast', app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
     def test_login_uses_last_device_appearance(self):
@@ -66,6 +66,20 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             self.assertIn(selector, css)
         self.assertIn('getScheduleSemanticClass(shift)', timeline)
         self.assertIn('--calendar-card-accent', css)
+
+    def test_dark_mode_repairs_workflow_contrast(self):
+        css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+        layout = (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8')
+        for selector in (
+            '.accounting-shell .module-tab',
+            '.accounting-shell .module-tab .module-title',
+            '.accounting-shell .module-tab .module-desc',
+            '.accounting-shell :is(.kpi-value',
+            '[class*="-kpi-value"]',
+            '[class*="-stat-value"]',
+        ):
+            self.assertIn(selector, css)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=19", layout)
 
 
 if __name__ == '__main__':

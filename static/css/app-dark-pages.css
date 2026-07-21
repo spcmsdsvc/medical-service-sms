@@ -389,6 +389,160 @@
     border-color: var(--dark-border) !important;
 }
 
+/* Shared workflow contrast. Many pages define light-only KPI and module colors locally. */
+:root[data-app-theme="dark"] :is(
+    .kpi-card, .stat-card, .summary-card, .metric-card,
+    [class*="-kpi-card"], [class*="-stat-card"], [class*="-summary-card"], [class*="-metric-card"]
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .kpi-value, .stat-value, .summary-value, .metric-value,
+    [class*="-kpi-value"], [class*="-stat-value"], [class*="-summary-value"], [class*="-metric-value"]
+) {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .kpi-label, .stat-label, .summary-label, .metric-label,
+    .kpi-sub, .stat-sub, .summary-sub, .metric-sub,
+    [class*="-kpi-label"], [class*="-stat-label"], [class*="-summary-label"], [class*="-metric-label"]
+) {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .card-title, .modal-title, .offcanvas-title, .queue-title,
+    .request-title, .record-title, .section-title
+) {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .card-text, .section-subtitle, .request-subtitle, .record-subtitle,
+    .help-text, .helper-text, .supporting-text, .text-secondary
+) {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] :is(.btn:disabled, .form-control:disabled, .form-select:disabled) {
+    color: #b7c3d1 !important;
+    border-color: #46566b !important;
+    opacity: .78;
+}
+
+/* My Requests / Accounting Center */
+:root[data-app-theme="dark"] .accounting-shell .module-tab {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+    box-shadow: 0 8px 22px rgba(0,0,0,.2) !important;
+}
+:root[data-app-theme="dark"] .accounting-shell .module-tab:hover,
+:root[data-app-theme="dark"] .accounting-shell .module-tab:focus-visible {
+    background: var(--dark-card-hover) !important;
+    border-color: #607087 !important;
+    box-shadow: 0 12px 28px rgba(0,0,0,.3) !important;
+}
+:root[data-app-theme="dark"] .accounting-shell .module-tab.active {
+    background: color-mix(in srgb, var(--app-primary) 24%, #111b29) !important;
+    border-color: color-mix(in srgb, var(--app-primary) 72%, #8ba0ba) !important;
+}
+:root[data-app-theme="dark"] .accounting-shell .module-tab .module-title {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] .accounting-shell .module-tab .module-desc {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] .accounting-shell .module-tab.active .module-desc {
+    color: #c8d3e0 !important;
+}
+:root[data-app-theme="dark"] .accounting-shell .module-badge {
+    background: #33445a !important;
+    color: #f8fafc !important;
+    border: 1px solid #53657d;
+}
+:root[data-app-theme="dark"] .accounting-shell .module-tab.active .module-badge {
+    background: #e8eef6 !important;
+    color: #162235 !important;
+    border-color: #e8eef6;
+}
+:root[data-app-theme="dark"] .accounting-shell :is(.kpi-card, .queue-card) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .accounting-shell :is(.kpi-value, .amount-cell, .liquidation-record-title, .liquidation-trip-title, .liquidation-money-main) {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] .accounting-shell :is(.kpi-label, .liquidation-record-sub, .liquidation-trip-sub, .liquidation-money-sub, .liquidation-action-note, .empty-state) {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] .accounting-shell .table-accounting th {
+    background: #202d3e !important;
+    color: #d9e2ec !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .accounting-shell .liquidation-row td {
+    background: var(--dark-panel) !important;
+}
+:root[data-app-theme="dark"] .accounting-shell .liquidation-balance-card:not(.employee):not(.shimadzu) {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+
+/* Requests and accounting forms with custom, light-only local components. */
+:root[data-app-theme="dark"] :is(
+    .cash-page, .cash-notification-list, .cash-notification-item, .cash-attachment-panel,
+    .cash-attachment-item, .cash-request-item,
+    .travel-history-item, .travel-search-results, .travel-search-item,
+    .travel-notification-item, .travel-attachment-item, .travel-dialog,
+    .travel-equipment-menu, .travel-equipment-row, .travel-participant-chip,
+    .reim-mobile-card, .reim-table-wrap, .reim-sticky-xscroll,
+    .liq-kpi, .ca-liq-kpi, .trip-context-card, .reference-card,
+    .approval-history-meta
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .cash-notification-title, .cash-attachment-name, .cash-request-title,
+    .travel-history-title, .travel-notification-item-title, .travel-attachment-name,
+    .travel-dialog-title, .travel-visit-title, .travel-route-title,
+    .liq-value, .ca-liq-value, .trip-context-value,
+    .liq-kpi .amount, .ca-liq-kpi .amount
+) {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .cash-notification-message, .cash-notification-time, .cash-attachment-meta, .cash-request-meta,
+    .travel-history-meta, .travel-notification-item-message, .travel-notification-item-time,
+    .travel-attachment-meta, .travel-hint, .travel-currency-note, .travel-amount-hint,
+    .reim-muted, .reim-mobile-meta, .mini-help, .trip-context-muted,
+    .reference-card .ref-items, .liq-label, .ca-liq-label
+) {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] :is(.cash-btn-secondary, .travel-btn-secondary) {
+    background: #2a394c !important;
+    color: #edf2f7 !important;
+    border-color: #53657d !important;
+}
+:root[data-app-theme="dark"] :is(.cash-notification-action-btn, .travel-notification-close) {
+    background: var(--dark-card) !important;
+    color: #cfe0f5 !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .approval-status-summary-card small {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] .approval-status-summary-card strong {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] .approval-status-summary-card.pending strong { color: #fcd34d !important; }
+:root[data-app-theme="dark"] .approval-status-summary-card.approved strong { color: #86efac !important; }
+:root[data-app-theme="dark"] .approval-status-summary-card.rejected strong { color: #fda4af !important; }
+
 /* Create TSR UI remains dark, but the official PDF/preview remains white. */
 :root[data-app-theme="dark"] :is(
     .offline-tsr-hero, .offline-tsr-dialog-box, .offline-tsr-storage-health,
