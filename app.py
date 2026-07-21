@@ -1212,6 +1212,7 @@ class User(UserMixin, db.Model):
     can_manage_stock_inventory = db.Column(db.Boolean, default=False, nullable=False)
     stock_inventory_only = db.Column(db.Boolean, default=False, nullable=False)
     stock_inventory_branch_code = db.Column(db.String(10), nullable=True)
+    stock_inventory_permission_initialized = db.Column(db.Boolean, default=True, nullable=False)
 
     # v5.4.0: Direct Relationship to Engineer profile
     engineer_rel = db.relationship('Engineer', backref='user_account', uselist=False)
@@ -2673,12 +2674,28 @@ def ensure_user_approval_columns():
                 ('can_manage_stock_inventory', "ALTER TABLE user ADD COLUMN can_manage_stock_inventory BOOLEAN DEFAULT 0 NOT NULL"),
                 ('stock_inventory_only', "ALTER TABLE user ADD COLUMN stock_inventory_only BOOLEAN DEFAULT 0 NOT NULL"),
                 ('stock_inventory_branch_code', "ALTER TABLE user ADD COLUMN stock_inventory_branch_code VARCHAR(10)"),
+                ('stock_inventory_permission_initialized', "ALTER TABLE user ADD COLUMN stock_inventory_permission_initialized BOOLEAN DEFAULT 0 NOT NULL"),
             ]
 
             for column_name, ddl in migrations:
                 if column_name not in user_columns:
                     connection.exec_driver_sql(ddl)
                     print(f"[DB MIGRATION] Added user.{column_name}", flush=True)
+
+            # Preserve the access that protected superadmin accounts had before
+            # Stock Inventory became an explicit, editable permission. This runs
+            # once per existing account; later administrator choices are retained.
+            connection.exec_driver_sql("""
+                UPDATE user
+                SET can_manage_stock_inventory = 1
+                WHERE stock_inventory_permission_initialized = 0
+                  AND LOWER(username) IN ('jonamar', 'rodito', 'robert', 'diary', 'hanna')
+            """)
+            connection.exec_driver_sql("""
+                UPDATE user
+                SET stock_inventory_permission_initialized = 1
+                WHERE stock_inventory_permission_initialized = 0
+            """)
 
         _user_approval_columns_ready = True
     except Exception as user_approval_error:
@@ -4039,7 +4056,7 @@ def can_manage_stock_inventory(user=None):
     return bool(
         target and getattr(target, 'is_authenticated', False) and
         bool(getattr(target, 'is_active', True)) and
-        (is_superadmin_user(target) or bool(getattr(target, 'can_manage_stock_inventory', False)))
+        bool(getattr(target, 'can_manage_stock_inventory', False))
     )
 
 
@@ -6624,7 +6641,6 @@ def approval_route_to_dict(route):
 
 def approval_user_to_dict(user):
     profile = getattr(user, 'engineer_profile', None) if user else None
-    stock_inventory_access_locked = is_superadmin_user(user)
     return {
         'id': user.id,
         'username': user.username or '',
@@ -6638,7 +6654,6 @@ def approval_user_to_dict(user):
         'can_manage_stock_inventory': can_manage_stock_inventory(user),
         'stock_inventory_only': is_stock_inventory_only_user(user),
         'stock_inventory_branch_code': normalize_stock_inventory_branch(getattr(user, 'stock_inventory_branch_code', None)),
-        'stock_inventory_access_locked': stock_inventory_access_locked,
         'is_active': bool(getattr(user, 'is_active', True)),
         'engineer_id': getattr(profile, 'id', None),
         'employee_id': getattr(profile, 'employee_id', '') if profile else '',
@@ -14661,6 +14676,7 @@ def settings_update_approval_user():
     target_user.can_manage_stock_inventory = stock_inventory_requested
     target_user.stock_inventory_only = stock_inventory_only_requested
     target_user.stock_inventory_branch_code = stock_branch_code or None
+    target_user.stock_inventory_permission_initialized = True
 
     if approver_only_requested:
         if is_admin_authorized(target_user) or protected_business_roles:

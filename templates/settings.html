@@ -1813,11 +1813,6 @@
             const inventoryChecked = user.can_manage_stock_inventory ? 'checked' : '';
             const inventoryOnlyChecked = user.stock_inventory_only ? 'checked' : '';
             const inventoryBranch = user.stock_inventory_branch_code || '';
-            const inventoryAccessLocked = Boolean(user.stock_inventory_access_locked);
-            const inventoryAccessDisabled = inventoryAccessLocked ? 'disabled' : '';
-            const inventoryAccessHelp = inventoryAccessLocked
-                ? 'Superadmins always have Stock Inventory access across all branches.'
-                : 'Allows item registration and daily IN/OUT transactions.';
             return `
                 <div class="approval-user-card" data-user-id="${user.id}">
                     <div class="approval-user-main">
@@ -1853,10 +1848,10 @@
                         <div class="row g-3 align-items-start">
                             <div class="col-lg-4">
                                 <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input stock-inventory-access-input" type="checkbox" ${inventoryChecked} ${inventoryAccessDisabled} onchange="toggleStockInventoryAccess(this)">
+                                    <input class="form-check-input stock-inventory-access-input" type="checkbox" ${inventoryChecked} onchange="toggleStockInventoryAccess(this)">
                                     <label class="form-check-label small fw-bold">Can Manage Stock Inventory</label>
                                 </div>
-                                <div class="form-text small">${inventoryAccessHelp}</div>
+                                <div class="form-text small">Allows item registration and daily IN/OUT transactions.</div>
                             </div>
                             <div class="col-lg-4">
                                 <div class="form-check form-switch mb-0">

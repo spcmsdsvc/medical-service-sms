@@ -72,9 +72,14 @@ class StockInventorySourceTests(unittest.TestCase):
     def test_disabling_inventory_access_clears_inventory_only_mode(self):
         self.assertIn('function toggleStockInventoryAccess(input)', self.settings_source)
         self.assertIn('if (inventoryOnly) inventoryOnly.checked = false;', self.settings_source)
-        self.assertIn("'stock_inventory_access_locked': stock_inventory_access_locked", self.app_source)
         self.assertIn('if not stock_inventory_requested:', self.app_source)
         self.assertIn('stock_inventory_only_requested = False', self.app_source)
+
+    def test_superadmin_inventory_access_is_configurable(self):
+        self.assertIn('stock_inventory_permission_initialized', self.app_source)
+        self.assertIn('target_user.stock_inventory_permission_initialized = True', self.app_source)
+        self.assertIn("bool(getattr(target, 'can_manage_stock_inventory', False))", self.app_source)
+        self.assertNotIn('stock_inventory_access_locked', self.settings_source)
 
     def test_activity_log_has_distinct_stock_category(self):
         self.assertIn("'Stock Inventory': {'icon': 'fa-barcode'", self.app_source)
