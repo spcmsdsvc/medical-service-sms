@@ -25,6 +25,13 @@ ACTIVE_CONFLICT_STATUSES = {'Submitted', 'Approved'}
 MAX_ATTACHMENTS = 10
 
 
+def leave_request_cc_group_for_branch(branch):
+    normalized = str(branch or '').strip().lower()
+    if normalized in {'cebu', 'davao', 'bc02', 'bc03'} or 'cebu' in normalized or 'davao' in normalized:
+        return 'leave_request_cc_cebu_davao', 'Cebu/Davao'
+    return 'leave_request_cc', 'Manila/Main'
+
+
 def register_leave_feature(ctx):
     app = ctx['app']
     db = ctx['db']
@@ -191,6 +198,12 @@ def register_leave_feature(ctx):
         user = db.session.get(User, header.user_id)
         profile = getattr(user, 'engineer_profile', None) if user else None
         return (clean_str(getattr(profile, 'email', None)) or '').lower()
+
+    def requester_leave_cc_route(header):
+        user = db.session.get(User, header.user_id)
+        profile = getattr(user, 'engineer_profile', None) if user else None
+        branch = (clean_str(getattr(profile, 'branch', None)) or '').strip()
+        return leave_request_cc_group_for_branch(branch)
 
     def request_number(application_date):
         prefix = f"LR-{application_date.strftime('%Y%m%d')}-"
@@ -502,7 +515,8 @@ def register_leave_feature(ctx):
                 if not header:
                     return
                 to_emails = list(get_active_email_recipients_by_group('leave_request_hr'))
-                configured_cc = list(get_active_email_recipients_by_group('leave_request_cc'))
+                cc_group_key, cc_branch_label = requester_leave_cc_route(header)
+                configured_cc = list(get_active_email_recipients_by_group(cc_group_key))
                 request_email = requester_email(header)
                 to_emails = list(dict.fromkeys([email.lower() for email in to_emails if email]))
                 cc_emails = list(dict.fromkeys([email.lower() for email in configured_cc + ([request_email] if request_email else []) if email and email.lower() not in to_emails]))
@@ -535,7 +549,7 @@ def register_leave_feature(ctx):
                     )
                     if sent:
                         header.hr_email_status = 'sent'
-                        header.hr_email_remarks = f"Sent to {', '.join(to_emails)}" + (f"; CC: {', '.join(cc_emails)}" if cc_emails else '')
+                        header.hr_email_remarks = f"Sent to {', '.join(to_emails)}; CC route: {cc_branch_label}" + (f"; CC: {', '.join(cc_emails)}" if cc_emails else '')
                         header.hr_email_sent_at = get_manila_time()
                     else:
                         header.hr_email_status = 'failed'

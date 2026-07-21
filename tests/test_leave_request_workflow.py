@@ -2,6 +2,8 @@ import json
 import pathlib
 import unittest
 
+from leave_feature import leave_request_cc_group_for_branch
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -58,11 +60,20 @@ class LeaveRequestSourceTests(unittest.TestCase):
         self.assertNotIn('leave_can_create_for_others', self.page_source)
 
     def test_hr_email_settings_and_requester_cc_are_present(self):
-        for marker in ('leave_request_hr', 'leave_request_cc', 'leave_request_hr_subject'):
+        for marker in ('leave_request_hr', 'leave_request_cc', 'leave_request_cc_cebu_davao', 'leave_request_hr_subject'):
             self.assertIn(marker, self.app_source)
         self.assertIn('requester_email(header)', self.feature_source)
+        self.assertIn('requester_leave_cc_route(header)', self.feature_source)
+        self.assertIn("return 'leave_request_cc_cebu_davao', 'Cebu/Davao'", self.feature_source)
+        self.assertIn("return 'leave_request_cc', 'Manila/Main'", self.feature_source)
         self.assertIn('cc_emails=cc_emails', self.feature_source)
         self.assertIn("leave_request: 'Leave Request'", self.settings_source)
+
+    def test_leave_cc_routing_uses_requester_branch(self):
+        for branch in ('Cebu', 'Davao', 'BC02', 'BC03', 'Cebu Branch', 'Davao Branch'):
+            self.assertEqual(leave_request_cc_group_for_branch(branch)[0], 'leave_request_cc_cebu_davao')
+        for branch in ('Manila', 'Main', 'BC01', '', None):
+            self.assertEqual(leave_request_cc_group_for_branch(branch)[0], 'leave_request_cc')
 
     def test_approval_center_and_my_requests_integration(self):
         self.assertIn("moduleKey !== 'leave_request'", self.approval_source)

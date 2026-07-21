@@ -378,8 +378,12 @@ EMAIL_RECIPIENT_GROUPS = {
         'description': 'Primary HR recipients for approved Leave Request handoff.'
     },
     'leave_request_cc': {
-        'label': 'Leave Request CC',
-        'description': 'Additional recipients copied on approved Leave Request handoff emails.'
+        'label': 'Leave Request CC - Manila',
+        'description': 'Additional recipients copied on approved Leave Requests from Manila/Main employees.'
+    },
+    'leave_request_cc_cebu_davao': {
+        'label': 'Leave Request CC - Cebu/Davao',
+        'description': 'Additional recipients copied on approved Leave Requests from Cebu or Davao employees.'
     }
 }
 
@@ -392,7 +396,8 @@ EMAIL_RECIPIENT_GROUP_ORDER = [
     'reimbursement_accounting',
     'lpr_procurement',
     'leave_request_hr',
-    'leave_request_cc'
+    'leave_request_cc',
+    'leave_request_cc_cebu_davao'
 ]
 
 EMAIL_TEMPLATE_DEFAULTS = {

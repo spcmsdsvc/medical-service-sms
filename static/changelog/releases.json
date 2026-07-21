@@ -152,7 +152,8 @@
         {"item_key": "2026-07-21-stock-inventory", "category": "Administration", "description": "Stock Inventory now manages separate barcode balances for Manila/Main, Cebu, and Davao with scanner-ready IN and OUT transactions.", "audiences": ["admins"], "sort_order": 10},
         {"item_key": "2026-07-21-stock-ledger", "category": "Administration", "description": "Every stock movement records the branch, responsible engineer, transaction administrator, resulting balance, and any one-time correction reversal.", "audiences": ["admins"], "sort_order": 20},
         {"item_key": "2026-07-21-stock-access", "category": "Administration", "description": "Superadmins can assign branch-specific Stock Inventory access or a focused Inventory-only workspace from Approval Routing settings.", "audiences": ["admins"], "sort_order": 30},
-        {"item_key": "2026-07-21-leave-request", "category": "Field Operations", "description": "Leave Request now supports signed planned leave, emergency Sick Leave marked Form to Follow, protected Calendar status updates, manager approval, supporting attachments, and HR email handoff.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40}
+        {"item_key": "2026-07-21-leave-request", "category": "Field Operations", "description": "Leave Request now supports signed planned leave, emergency Sick Leave marked Form to Follow, protected Calendar status updates, manager approval, supporting attachments, and HR email handoff.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40},
+        {"item_key": "2026-07-21-leave-branch-cc", "category": "Field Operations", "description": "Approved Leave Request emails now use separate Manila and Cebu/Davao CC recipient groups based on the requesting employee's personnel branch.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50}
       ]
     }
   ]
