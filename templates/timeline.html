@@ -746,7 +746,12 @@
                         <option value="Emergency Leave">Emergency Leave</option>
                         <option value="Paternity Leave">Paternity Leave</option>
                         <option value="Maternity Leave">Maternity Leave</option>
+                        <option value="Leave Without Pay">Leave Without Pay</option>
                     </select>
+                    <button type="button" class="btn btn-warning fw-bold w-100 mt-2" onclick="openLeaveFormToFollowFromCalendar()">
+                        <i class="fa-solid fa-triangle-exclamation me-1"></i>Record Sick Leave - Form to Follow
+                    </button>
+                    <div class="xsmall text-muted mt-1">Creates a protected provisional leave record. The employee must later sign and submit the formal form.</div>
                 </div>
 
                 <!-- General Task Description (Common to all) -->
@@ -7760,7 +7765,16 @@ async function fetchTimelineDataWithOfflineTimeout(url){
 
 
     // Personnel Categories for grid suppressed badges
-    const HR_CATEGORIES = ["Sick Leave", "Vacation Leave", "Emergency Leave", "Paternity Leave", "Maternity Leave"];
+    const HR_CATEGORIES = ["Sick Leave", "Vacation Leave", "Emergency Leave", "Paternity Leave", "Maternity Leave", "Leave Without Pay"];
+
+    function openLeaveFormToFollowFromCalendar() {
+        const startDate = document.getElementById('f-start-date')?.value || '';
+        const endDate = document.getElementById('f-end-date')?.value || startDate;
+        const params = new URLSearchParams({ provisional: '1' });
+        if (startDate) params.set('start_date', startDate);
+        if (endDate) params.set('end_date', endDate);
+        window.location.href = `/leave_request?${params.toString()}`;
+    }
 
     /**
      * Version 5.1 Personalization Context
@@ -11189,6 +11203,7 @@ function collectMobileEngineerSchedules(){
 
     function canTimelineSummaryManageContext(context){
         if(isTimelineReadOnlyApproverMode()) return false;
+        if(Number(context?.shift?.leave_request_id || 0)) return false;
         const engineerObj = (engineerMaster || []).find(e => String(e.id) === String(context?.engineerId || ''));
         return canManageExistingScheduleForRow(engineerObj, context?.shift || {});
     }
@@ -12679,7 +12694,8 @@ async function loadGrid() {
 
                     shiftList.forEach(function(s) {
                         const isApprovedTravelBlock = isTimelineTravelBlock(s);
-                        const canManageThisSchedule = canManageExistingScheduleForRow(eng, s);
+                        const isManagedLeaveBlock = Number(s.leave_request_id || 0) > 0;
+                        const canManageThisSchedule = !isManagedLeaveBlock && canManageExistingScheduleForRow(eng, s);
                         let isLeave = !isApprovedTravelBlock && HR_CATEGORIES.includes(s.task);
                         let isWork = isApprovedTravelBlock ? false : (s.client_id ? true : false);
                         let isTraining = !isApprovedTravelBlock && !isLeave && !isWork && !parseTypedScheduleTitle(s.task).category;
@@ -12729,7 +12745,9 @@ async function loadGrid() {
                         }
 
                         // REQUIREMENT: REMOVE IN PROGRESS/STATUS DISPLAY FOR TRAINING OR LEAVE
-                        let badgeHtml = (isLeave || isTraining || isOffice || isTravel || isPullout || isHoliday) ? "" : `<span class="badge bg-${bgHex.split(' ')[0]}" style="font-size:0.58rem; opacity: 0.9;">${s.status || 'In Progress'}</span>`;
+                        let badgeHtml = isManagedLeaveBlock
+                            ? `<span class="badge ${String(s.status||'').toLowerCase()==='approved'?'bg-success':String(s.status||'').toLowerCase().includes('rejected')?'bg-danger':'bg-warning text-dark'}" style="font-size:0.58rem; opacity:0.95;">${escapeHtml(s.status || 'Leave')}</span>`
+                            : ((isLeave || isTraining || isOffice || isTravel || isPullout || isHoliday) ? "" : `<span class="badge bg-${bgHex.split(' ')[0]}" style="font-size:0.58rem; opacity: 0.9;">${s.status || 'In Progress'}</span>`);
 
                         let timeRange = (s.time_start && s.time_end)
                             ? `${t12(s.time_start)}–${t12(s.time_end)}`
@@ -15777,7 +15795,7 @@ function buildEngineerList(){
 }
 
 function getPrintColor(s){
-    const leaveTypes = ["Sick Leave","Vacation Leave","Emergency Leave","Paternity Leave","Maternity Leave"];
+    const leaveTypes = ["Sick Leave","Vacation Leave","Emergency Leave","Paternity Leave","Maternity Leave","Leave Without Pay"];
 
     if(leaveTypes.includes(s.task)) return "#dc3545";
     if(s.task === "In Office") return "#ff5fa2";
@@ -15792,7 +15810,7 @@ function getPrintColor(s){
 }
 
 function getPrintTypeLabel(s){
-    const leaveTypes = ["Sick Leave","Vacation Leave","Emergency Leave","Paternity Leave","Maternity Leave"];
+    const leaveTypes = ["Sick Leave","Vacation Leave","Emergency Leave","Paternity Leave","Maternity Leave","Leave Without Pay"];
     if(leaveTypes.includes(s.task)) return "Leave";
     if(s.task === "In Office") return "Office";
     if(s.task === "Traveling to Client") return "Travel";

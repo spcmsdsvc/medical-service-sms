@@ -5556,6 +5556,7 @@ async function dismissApprovalNotification(event, notificationId) {
 // their established workflow while LPR plugs into the same review surface.
 (function () {
     let selectedApprovalLprId = null;
+    let selectedApprovalLeaveId = null;
 
     function lprApprovalModuleId() {
         return Number(selectedApprovalLprId || 0);
@@ -5570,6 +5571,7 @@ async function dismissApprovalNotification(event, notificationId) {
     const originalApprovalCurrentRecordIdForModule = window.approvalCurrentRecordIdForModule;
     window.approvalCurrentRecordIdForModule = function (moduleKey) {
         if (String(moduleKey || '').toLowerCase() === 'lpr') return lprApprovalModuleId();
+        if (String(moduleKey || '').toLowerCase() === 'leave_request') return Number(selectedApprovalLeaveId || 0);
         return originalApprovalCurrentRecordIdForModule(moduleKey);
     };
 
@@ -5613,12 +5615,70 @@ async function dismissApprovalNotification(event, notificationId) {
         </div>`;
     }
 
+    function leaveApprovalItem(moduleKey, item, status) {
+        if (moduleKey !== 'leave_request') return null;
+        const itemStatus = item.status || status || 'Submitted';
+        const pending = String(itemStatus).toLowerCase() === 'submitted';
+        return `<div class="approval-work-card"><div class="approval-work-top"><div>
+            <div class="approval-work-no">${approvalEscape(item.request_no || ('Leave Request #' + item.id))} <span class="approval-status-pill ${statusPillClass(itemStatus)}">${approvalEscape(itemStatus)}</span></div>
+            <div class="approval-meta">Employee: ${approvalEscape(item.requester_name || 'Unknown employee')} &bull; ${approvalEscape(item.leave_type || '')}</div>
+            <div class="approval-meta">Dates: ${approvalEscape(item.date_range || '')} &bull; ${Number(item.weekday_count || 0)} weekday(s)</div>
+            ${item.emergency_form_to_follow ? '<div class="approval-meta"><strong>Emergency Sick Leave / Form to Follow</strong></div>' : ''}
+        </div><div class="approval-actions"><button type="button" class="approval-btn approval-btn-primary" onclick="openLeaveApprovalDetail(${Number(item.id)||0})">${pending ? 'Review' : 'View Details'}</button></div></div></div>`;
+    }
+
     const originalBuildUnifiedApprovalItem = window.buildUnifiedApprovalItem;
     window.buildUnifiedApprovalItem = function (moduleKey, item, status) {
         const lprCard = lprApprovalItem(moduleKey, item, status);
         if (lprCard) return lprCard;
+        const leaveCard = leaveApprovalItem(moduleKey, item, status);
+        if (leaveCard) return leaveCard;
         return originalBuildUnifiedApprovalItem(moduleKey, item, status);
     };
+
+    async function openLeaveApprovalDetail(leaveId) {
+        if (!leaveId) return;
+        const backdrop = document.getElementById('approvalModalBackdrop');
+        const body = document.getElementById('approvalDetailBody');
+        if (backdrop) backdrop.style.display = 'flex';
+        if (body) body.innerHTML = '<div class="approval-empty">Loading Leave Request...</div>';
+        selectedApprovalModule = 'leave_request';
+        selectedApprovalLeaveId = Number(leaveId);
+        selectedApprovalLprId = null;
+        try {
+            const response = await fetch(`/api/leave-requests/${leaveId}?_=${Date.now()}`, {credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+            const payload = await parseApprovalJsonResponse(response, 'Unable to load Leave Request.');
+            renderLeaveApprovalDetail(payload.leave_request || {});
+        } catch(error) { if(body) body.innerHTML=`<div class="approval-empty">${approvalEscape(error.message||'Unable to load Leave Request.')}</div>`; }
+    }
+    window.openLeaveApprovalDetail = openLeaveApprovalDetail;
+
+    function renderLeaveApprovalDetail(data) {
+        const body=document.getElementById('approvalDetailBody'), title=document.getElementById('approvalModalTitle'), subtitle=document.getElementById('approvalModalSubtitle');
+        const approveBtn=document.getElementById('approvalApproveBtn'), rejectBtn=document.getElementById('approvalRejectBtn');
+        const submitted=String(data.status||'').toLowerCase()==='submitted';
+        if(title)title.textContent=`Review ${data.request_no||'Leave Request'}`;
+        if(subtitle)subtitle.textContent=`${data.requester_name||'Employee'} • ${data.leave_type||''}`;
+        if(approveBtn)approveBtn.style.display=submitted?'':'none'; if(rejectBtn)rejectBtn.style.display=submitted?'':'none';
+        if(!body)return;
+        const attachmentLinks=(data.attachments||[]).map(item=>`<a class="approval-btn approval-btn-secondary" href="${approvalEscape(item.preview_url||'#')}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip me-1"></i>${approvalEscape(item.filename||'Attachment')}</a>`).join('')||'<div class="approval-muted">No supporting attachments.</div>';
+        body.innerHTML=`<div class="approval-detail-grid"><div class="approval-stat"><small>Request No.</small><strong>${approvalEscape(data.request_no||'')}</strong></div><div class="approval-stat"><small>Employee</small><strong>${approvalEscape(data.requester_name||'')}</strong></div><div class="approval-stat"><small>Leave Type</small><strong>${approvalEscape(data.leave_type||'')}</strong></div><div class="approval-stat"><small>Status</small><strong>${approvalEscape(data.status||'')}</strong></div></div>
+        <div class="approval-detail-grid"><div class="approval-stat"><small>From</small><strong>${approvalEscape(data.start_date||'')}</strong></div><div class="approval-stat"><small>To</small><strong>${approvalEscape(data.end_date||'')}</strong></div><div class="approval-stat"><small>Weekdays</small><strong>${Number(data.weekday_count||0)}</strong></div><div class="approval-stat"><small>Emergency</small><strong>${data.emergency_form_to_follow?'Form to Follow':'No'}</strong></div></div>
+        <div class="approval-modal-panel full"><h3>Reason</h3><div>${approvalEscape(data.reason||'Not provided')}</div>${data.verbal_approval_notes?`<div class="approval-muted" style="margin-top:8px"><strong>Verbal / Chat Details:</strong> ${approvalEscape(data.verbal_approval_notes)}</div>`:''}</div>
+        <div class="approval-modal-panel full"><h3>Supporting Attachments</h3><div style="display:flex;gap:8px;flex-wrap:wrap">${attachmentLinks}</div></div>
+        <div class="approval-actions" style="justify-content:flex-start"><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.preview_url||'#')}" target="_blank" rel="noopener"><i class="fa-solid fa-eye me-1"></i>Preview Leave Form</a><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.download_url||'#')}"><i class="fa-solid fa-download me-1"></i>Download</a></div>`;
+        const remarks=document.getElementById('approvalRemarks');if(remarks){remarks.value=data.approval_remarks||'';remarks.readOnly=!submitted;remarks.disabled=!submitted;remarks.placeholder=submitted?'Optional for approval. Required for rejection.':'Manager remarks';}
+    }
+
+    async function approveSelectedLeave(){
+        if(!selectedApprovalLeaveId)return;
+        const ok=await approvalConfirmDialog({title:'Approve Leave Request?',message:'This will stamp your signature, update Calendar, and queue the HR handoff.',confirmText:'Approve',cancelText:'Review Again',tone:'success',icon:'check'});if(!ok)return;
+        try{const response=await fetch(`/api/leave-requests/${selectedApprovalLeaveId}/approve`,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':getApprovalCsrfToken()},body:JSON.stringify({remarks:document.getElementById('approvalRemarks')?.value||''})});const payload=await parseApprovalJsonResponseWithPayload(response,'Unable to approve Leave Request.');approvalAlert(payload.message||'Leave Request approved.','success');closeApprovalModal();await refreshAllApprovalCenterLists();await loadApprovalNotifications();}catch(error){if(error?.payload?.requires_signature){showApprovalSignatureRequiredPrompt(error);return}approvalAlert(error.message||'Unable to approve Leave Request.')}
+    }
+    async function rejectSelectedLeave(){
+        if(!selectedApprovalLeaveId)return;const remarks=(document.getElementById('approvalRemarks')?.value||'').trim();if(!remarks){approvalAlert('Enter rejection remarks first.');return}const ok=await approvalConfirmDialog({title:'Reject Leave Request?',message:'Emergency leave remains visible as Unapproved / Rejected for historical accuracy.',confirmText:'Reject',cancelText:'Cancel',tone:'danger',icon:'xmark'});if(!ok)return;
+        try{const response=await fetch(`/api/leave-requests/${selectedApprovalLeaveId}/reject`,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':getApprovalCsrfToken()},body:JSON.stringify({remarks})});const payload=await parseApprovalJsonResponseWithPayload(response,'Unable to reject Leave Request.');approvalAlert(payload.message||'Leave Request rejected.');closeApprovalModal();await refreshAllApprovalCenterLists();await loadApprovalNotifications();}catch(error){approvalAlert(error.message||'Unable to reject Leave Request.')}
+    }
 
     async function fetchLprApprovalItems(status) {
         const response = await fetch(`/get_lpr_approval_items?status=${encodeURIComponent(status)}&_=${Date.now()}`, {credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}});
@@ -5703,21 +5763,24 @@ async function dismissApprovalNotification(event, notificationId) {
     };
 
     const originalApproveSelectedApproval = window.approveSelectedApproval;
-    window.approveSelectedApproval = function () { return selectedApprovalModule === 'lpr' ? window.approveSelectedLpr() : originalApproveSelectedApproval(); };
+    window.approveSelectedApproval = function () { if(selectedApprovalModule==='leave_request')return approveSelectedLeave(); return selectedApprovalModule === 'lpr' ? window.approveSelectedLpr() : originalApproveSelectedApproval(); };
     const originalRejectSelectedApproval = window.rejectSelectedApproval;
-    window.rejectSelectedApproval = function () { return selectedApprovalModule === 'lpr' ? window.rejectSelectedLpr() : originalRejectSelectedApproval(); };
+    window.rejectSelectedApproval = function () { if(selectedApprovalModule==='leave_request')return rejectSelectedLeave(); return selectedApprovalModule === 'lpr' ? window.rejectSelectedLpr() : originalRejectSelectedApproval(); };
 
     const originalOpenApprovalNotification = window.openApprovalNotification;
     window.openApprovalNotification = async function (notificationId, moduleKey, recordId) {
         if (String(moduleKey || '').toLowerCase() === 'lpr' && Number(recordId || 0)) {
             await markApprovalNotificationRead(notificationId); await loadApprovalNotifications(); await openLprApprovalDetail(Number(recordId)); return;
         }
+        if (String(moduleKey || '').toLowerCase() === 'leave_request' && Number(recordId || 0)) {
+            await markApprovalNotificationRead(notificationId); await loadApprovalNotifications(); await openLeaveApprovalDetail(Number(recordId)); return;
+        }
         return originalOpenApprovalNotification(notificationId, moduleKey, recordId);
     };
 
     const originalRefreshAllApprovalCenterLists = window.refreshAllApprovalCenterLists;
     window.refreshAllApprovalCenterLists = async function () {
-        const modules = ['travel_request','reimbursement','cash_advance','cash_advance_liquidation','travel_liquidation','lpr'];
+        const modules = ['travel_request','reimbursement','cash_advance','cash_advance_liquidation','travel_liquidation','lpr','leave_request'];
         const statuses = ['Submitted','Approved','Rejected'];
         const result = {};
         for (const module of modules) { result[module] = {}; for (const status of statuses) { try { const response=await fetch(`/get_approval_center_items?module=${module}&status=${status}&_=${Date.now()}`,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}); const payload=await parseApprovalJsonResponse(response,`Unable to load ${module}.`); result[module][status]=payload.items||[]; } catch(error) { console.error('[Approvals] module load failed',module,status,error); result[module][status]=[]; } } }

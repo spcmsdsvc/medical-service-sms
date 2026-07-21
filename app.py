@@ -372,6 +372,14 @@ EMAIL_RECIPIENT_GROUPS = {
     'lpr_procurement': {
         'label': 'LPR Procurement',
         'description': 'Recipients for approved Local Purchase Requisition procurement handoff.'
+    },
+    'leave_request_hr': {
+        'label': 'Leave Request HR',
+        'description': 'Primary HR recipients for approved Leave Request handoff.'
+    },
+    'leave_request_cc': {
+        'label': 'Leave Request CC',
+        'description': 'Additional recipients copied on approved Leave Request handoff emails.'
     }
 }
 
@@ -382,7 +390,9 @@ EMAIL_RECIPIENT_GROUP_ORDER = [
     'cash_advance_accounting',
     'cash_advance_release',
     'reimbursement_accounting',
-    'lpr_procurement'
+    'lpr_procurement',
+    'leave_request_hr',
+    'leave_request_cc'
 ]
 
 EMAIL_TEMPLATE_DEFAULTS = {
@@ -415,6 +425,12 @@ EMAIL_TEMPLATE_DEFAULTS = {
         'description': 'Subject used when an approved Local Purchase Requisition is emailed to Procurement.',
         'template_type': 'subject',
         'default_template': '[LPR] {lpr_no} | {requester} | PHP {total_requested}'
+    },
+    'leave_request_hr_subject': {
+        'label': 'Leave Request HR Subject',
+        'description': 'Subject used when an approved Leave Request is emailed to HR.',
+        'template_type': 'subject',
+        'default_template': '[LEAVE REQUEST] {request_no} | {requester} | {leave_type} | {date_range}'
     }
 }
 
@@ -423,7 +439,8 @@ EMAIL_TEMPLATE_ORDER = [
     'travel_accounting_subject',
     'cash_advance_accounting_subject',
     'reimbursement_accounting_subject',
-    'lpr_procurement_subject'
+    'lpr_procurement_subject',
+    'leave_request_hr_subject'
 ]
 
 EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS = {
@@ -467,6 +484,14 @@ EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS = {
         'period_start',
         'period_end',
         'grand_total'
+    ],
+    'leave_request_hr_subject': [
+        'request_no',
+        'requester',
+        'leave_type',
+        'date_range',
+        'weekday_count',
+        'approved_by'
     ]
 }
 
@@ -501,7 +526,9 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 # Railway persistent SQLite database support.
 # IMPORTANT: Railway container storage under /app is temporary and is wiped on redeploy.
 # The database must live inside the attached Railway volume at /data.
-if os.environ.get('RAILWAY_ENVIRONMENT'):
+if os.environ.get('MEDICAL_SERVICE_TEST_DB'):
+    DATABASE_PATH = os.path.abspath(os.environ['MEDICAL_SERVICE_TEST_DB'])
+elif os.environ.get('RAILWAY_ENVIRONMENT'):
     os.makedirs('/data', exist_ok=True)
 
     legacy_db_path = os.path.join(basedir, 'scheduler.db')
@@ -577,6 +604,7 @@ STORAGE_PREFIX_CASH_ADVANCES = 'cash_advances'
 STORAGE_PREFIX_TRAVEL_LIQUIDATIONS = 'travel_liquidation_receipts'
 STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS = 'cash_advance_liquidation_receipts'
 STORAGE_PREFIX_LPR = 'lpr'
+STORAGE_PREFIX_LEAVE_REQUESTS = 'leave_requests'
 
 
 def managed_storage_key(prefix, stored_filename):
@@ -1139,7 +1167,8 @@ LEAVE_CATEGORIES = [
     "Vacation Leave", 
     "Emergency Leave", 
     "Paternity Leave", 
-    "Maternity Leave"
+    "Maternity Leave",
+    "Leave Without Pay"
 ]
 
 # --- v5.4.4 TIMEZONE HELPER (PH TIME UTC+8) ---
@@ -2092,6 +2121,7 @@ class Shift(db.Model):
     schedule_type = db.Column(db.String(30), default='service', nullable=True, index=True)
     travel_request_id = db.Column(db.Integer, db.ForeignKey('travel_request.id'), nullable=True, index=True)
     travel_block_status = db.Column(db.String(30), default='active', nullable=True, index=True)
+    leave_request_id = db.Column(db.Integer, db.ForeignKey('leave_request.id'), nullable=True, index=True)
 
 
 class TsrKnowledgeEntry(db.Model):
@@ -3972,7 +4002,7 @@ REGIONAL_ADMIN_BRANCHES = {'Cebu', 'Davao'}
 # are migrated to assigned approver routing. S1 only adds the backend foundation
 # for future Settings-driven routing.
 APPROVAL_CENTER_MANAGER_USERNAME = 'rodito'
-APPROVAL_REQUEST_SCOPES = {'all', 'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'lpr', 'request_for_payment'}
+APPROVAL_REQUEST_SCOPES = {'all', 'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'lpr', 'leave_request', 'request_for_payment'}
 
 
 def available_approval_request_scopes():
@@ -14274,6 +14304,7 @@ def approvals_page():
             {'key': 'reimbursement', 'label': 'Reimbursement', 'status': 'active'},
             {'key': 'cash_advance', 'label': 'Cash Advance', 'status': 'active'},
             {'key': 'lpr', 'label': 'LPR', 'status': 'active'},
+            {'key': 'leave_request', 'label': 'Leave Request', 'status': 'active'},
             {'key': 'request_for_payment', 'label': 'Request For Payment', 'status': 'coming_soon'},
         ]
     )
@@ -15164,6 +15195,7 @@ def managed_storage_roots():
         (STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, travel_liquidation_receipt_folder()),
         (STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, cash_advance_liquidation_receipt_folder()),
         (STORAGE_PREFIX_LPR, lpr_attachment_upload_root()),
+        (STORAGE_PREFIX_LEAVE_REQUESTS, leave_request_attachment_upload_root()),
     ]
 
 
@@ -15951,6 +15983,7 @@ ACTIVITY_CATEGORY_META = {
     'Travel Liquidation': {'icon': 'fa-file-invoice-dollar', 'label': 'Travel Liquidation'},
     'Cash Advance': {'icon': 'fa-money-check-dollar', 'label': 'Cash Advance'},
     'Cash Advance Liquidation': {'icon': 'fa-file-circle-check', 'label': 'Cash Advance Liquidation'},
+    'Leave Request': {'icon': 'fa-calendar-minus', 'label': 'Leave Request'},
     'Approval': {'icon': 'fa-route', 'label': 'Approval'},
     'Accounting': {'icon': 'fa-calculator', 'label': 'Accounting'},
     'Email': {'icon': 'fa-envelope', 'label': 'Email'},
@@ -15989,6 +16022,8 @@ def classify_activity_action(action):
 
     if 'stock inventory' in text:
         return 'Stock Inventory'
+    if 'leave request' in text or 'form to follow' in text or 'lr-' in text:
+        return 'Leave Request'
     if 'password' in text or 'unauthorized' in text or 'denied' in text:
         return 'Security'
     if 'accounting' in text or 'cash advance release' in text or 'marked reimbursement' in text and ('paid' in text or 'processing' in text):
@@ -23330,6 +23365,13 @@ def approval_center_module_catalog():
             'status': 'active',
             'enabled': True,
             'description': 'Submitted travel liquidation drafts routed for manager approval.'
+        },
+        {
+            'key': 'leave_request',
+            'label': 'Leave Request',
+            'status': 'active',
+            'enabled': True,
+            'description': 'Employee Leave Requests routed for manager approval and HR handoff.'
         }
     ]
     if lpr_enabled():
@@ -26382,6 +26424,23 @@ def get_approval_center_summary():
         'pending': 0,
         'total': 0
     }
+    leave_counts = {'draft': 0, 'submitted': 0, 'approved': 0, 'rejected': 0, 'pending': 0, 'total': 0}
+    try:
+        leave_query = apply_assigned_approver_filter(LeaveRequest.query, LeaveRequest, current_user, 'leave_request')
+        for leave_row in leave_query.all():
+            status_key = (clean_str(leave_row.status) or 'Draft').lower()
+            leave_counts['total'] += 1
+            if status_key == 'submitted':
+                leave_counts['submitted'] += 1
+                leave_counts['pending'] += 1
+            elif status_key == 'approved':
+                leave_counts['approved'] += 1
+            elif status_key == 'rejected':
+                leave_counts['rejected'] += 1
+            elif status_key in {'draft', 'form to follow'}:
+                leave_counts['draft'] += 1
+    except Exception as leave_count_error:
+        print(f"[LeaveRequest] Approval summary counts unavailable: {leave_count_error}", flush=True)
     modules = approval_center_module_catalog()
 
     travel_counts = {
@@ -26446,6 +26505,10 @@ def get_approval_center_summary():
             module['status'] = 'active'
             module['enabled'] = True
             module['counts'] = lpr_counts
+        elif module['key'] == 'leave_request':
+            module['status'] = 'active'
+            module['enabled'] = True
+            module['counts'] = leave_counts
         else:
             module['counts'] = {
                 'draft': 0,
@@ -26463,8 +26526,8 @@ def get_approval_center_summary():
         'generated_at': get_manila_time().isoformat(),
         'modules': modules,
         'summary': {
-            'pending_total': reimbursement_counts['pending'] + travel_counts['pending'] + liquidation_counts['pending'] + cash_advance_counts['pending'] + cash_advance_liquidation_counts['pending'] + lpr_counts['pending'],
-            'active_modules': 6 if lpr_enabled() else 5,
+            'pending_total': reimbursement_counts['pending'] + travel_counts['pending'] + liquidation_counts['pending'] + cash_advance_counts['pending'] + cash_advance_liquidation_counts['pending'] + lpr_counts['pending'] + leave_counts['pending'],
+            'active_modules': 7 if lpr_enabled() else 6,
             'coming_soon_modules': 0
         }
     })
@@ -26489,7 +26552,7 @@ def get_approval_center_items():
             'status': 'disabled',
             'message': 'Local Purchase Requisition is not available yet.'
         }), 403
-    if module_key not in {'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'lpr', 'liquidation'}:
+    if module_key not in {'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'lpr', 'leave_request', 'liquidation'}:
         return jsonify({'success': False, 'error': 'Unknown approval module.'}), 400
 
     requested_status = (request.args.get('status') or 'Submitted').strip().lower()
@@ -26556,6 +26619,20 @@ def get_approval_center_items():
             'enabled': True,
             'status': status_filter,
             'items': [lpr_to_dict(item, include_items=False, include_attachments=False) for item in items],
+            'count': len(items)
+        })
+
+    if module_key == 'leave_request':
+        query = apply_assigned_approver_filter(LeaveRequest.query, LeaveRequest, current_user, 'leave_request')
+        if status_filter != 'All':
+            query = query.filter(func.lower(func.trim(LeaveRequest.status)) == status_filter.lower())
+        items = query.order_by(LeaveRequest.updated_at.desc(), LeaveRequest.id.desc()).limit(300).all()
+        return jsonify({
+            'success': True,
+            'module': 'leave_request',
+            'enabled': True,
+            'status': status_filter,
+            'items': [leave_request_to_dict(item, include_attachments=False) for item in items],
             'count': len(items)
         })
 
@@ -27823,6 +27900,15 @@ ACCOUNTING_CENTER_MODULES = [
         'queue_endpoint': '/get_accounting_liquidation_queue',
         'phase': 'S13B',
         'order': 5
+    },
+    {
+        'key': 'leave_requests',
+        'label': 'Leave Requests',
+        'description': 'Your leave drafts, form-to-follow records, submissions, approvals, and returned forms.',
+        'status': 'active',
+        'queue_endpoint': '/get_accounting_leave_request_queue',
+        'phase': 'Leave V1',
+        'order': 6
     }
 ]
 
@@ -33246,6 +33332,7 @@ def get_timeline_data():
                 # S11H1C: Travel Block timeline payload fields.
                 # Existing service schedules remain schedule_type='service'.
                 'schedule_type': schedule_type,
+                'leave_request_id': clean_int(getattr(shift, 'leave_request_id', None)),
                 'is_travel_block': is_travel_block,
                 'travel_request_id': travel_request_id,
                 'travel_block_status': clean_str(getattr(shift, 'travel_block_status', None)) or '',
@@ -33394,6 +33481,7 @@ def get_shift_details(shift_id):
             # S11H2B: suggestion data used by the edit modal when converting
             # an approved Travel Block into a client/equipment schedule.
             'schedule_type': schedule_type,
+            'leave_request_id': clean_int(getattr(shift, 'leave_request_id', None)),
             'is_travel_block': is_travel_block,
             'travel_request_id': travel_request_id,
             'travel_block_status': clean_str(getattr(shift, 'travel_block_status', None)) or '',
@@ -37984,6 +38072,8 @@ def update_shift(id):
     master_shift = db.session.get(Shift, id)
     if not master_shift:
         return jsonify({'message': 'Missing'}), 404
+    if clean_int(getattr(master_shift, 'leave_request_id', None)):
+        return jsonify({'message': 'Leave Request calendar entries are managed from the Leave Request page.'}), 409
 
     payload = get_shift_payload()
 
@@ -38932,6 +39022,8 @@ def delete_shift_rows_with_cleanup(candidates, delete_mode=None, engineer_id=Non
     for shift in candidates or []:
         if not shift or shift.id in seen_ids:
             continue
+        if clean_int(getattr(shift, 'leave_request_id', None)):
+            continue
         seen_ids.add(shift.id)
         unique_candidates.append(shift)
 
@@ -39202,6 +39294,8 @@ def delete_shift(id):
     """Individual technical record removal. Kept for existing frontend compatibility."""
     target = db.session.get(Shift, id)
     if target:
+        if clean_int(getattr(target, 'leave_request_id', None)):
+            return jsonify({'message': 'Leave Request calendar entries cannot be deleted from Calendar.'}), 409
         if not can_modify_schedule_shift(target):
             return denied('You are not authorized to delete this schedule.')
 
@@ -47228,6 +47322,11 @@ def prepare_deferred_workflow_schemas():
     except Exception as exc:
         print(f"[LPR] WSGI startup schema preparation failed: {exc}", flush=True)
 
+    try:
+        ensure_leave_request_tables()
+    except Exception as exc:
+        print(f"[LeaveRequest] WSGI startup schema preparation failed: {exc}", flush=True)
+
     return not bool(_cash_advance_schema_startup_error)
 
 
@@ -49201,6 +49300,10 @@ def reverse_stock_inventory_movement(movement_id):
             return jsonify({'success': False, 'error': 'This movement has already been reversed.'}), 409
         print(f'[StockInventory] Reversal failed: {exc}', flush=True)
         return jsonify({'success': False, 'error': 'Movement could not be reversed.'}), 500
+
+
+from leave_feature import register_leave_feature
+register_leave_feature(globals())
 
 
 def initialize_wsgi_workflow_schemas():

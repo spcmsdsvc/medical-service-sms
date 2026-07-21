@@ -436,7 +436,7 @@
             <div class="table-responsive">
                 <table class="table table-hover table-accounting mb-0">
                     <thead>
-                        <tr>
+                        <tr id="accountingQueueHeaders">
                             <th>Record</th>
                             <th>Engineer</th>
                             <th>Period</th>
@@ -839,9 +839,19 @@ function setAccountingModule(moduleKey){
         btn.classList.toggle('active', btn.dataset.status === accountingStatus);
     });
     renderAccountingModuleTabs();
+    updateAccountingQueueHeaders();
     document.getElementById('activeQueueTitle').textContent = selected.key === 'reimbursements' ? 'My Reimbursements' : `My ${selected.label}`;
     document.getElementById('queueSubtitle').textContent = selected.is_coming_soon ? `${selected.phase || 'Future'} module foundation ready` : 'Loading queue...';
     refreshAccountingQueue(true);
+}
+
+function updateAccountingQueueHeaders(){
+    const row=document.getElementById('accountingQueueHeaders');
+    if(!row)return;
+    const headers=activeAccountingModule==='leave_requests'
+        ? ['Record','Employee','Leave Dates','Leave Type','Weekdays','Status','HR Handoff','Actions']
+        : ['Record','Engineer','Period','Amount','Approved','Request Status','Details / Reference','Actions'];
+    row.innerHTML=headers.map((label,index)=>`<th${index===headers.length-1?' class="text-end"':''}>${esc(label)}</th>`).join('');
 }
 
 function setAccountingTab(status){
@@ -906,6 +916,8 @@ async function refreshAccountingQueue(forceRefresh=false){
         updateSummary(data.summary || {});
         if(data.status === 'coming_soon'){
             renderComingSoonQueue(data);
+        }else if(activeAccountingModule === 'leave_requests' || data.queue === 'leave_requests'){
+            renderLeaveRequestRows(accountingItems);
         }else if(activeAccountingModule === 'travel_requests' || data.queue === 'travel_requests'){
             renderTravelRequestRows(accountingItems);
         }else if(activeAccountingModule === 'liquidations' || data.queue === 'liquidations'){
@@ -952,6 +964,25 @@ function renderComingSoonQueue(data){
             </td>
         </tr>
     `;
+}
+
+function renderLeaveRequestRows(items){
+    const target = document.getElementById('accountingQueueBody');
+    if(!target) return;
+    if(!items.length){
+        target.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">No Leave Requests found.</td></tr>';
+        return;
+    }
+    target.innerHTML = items.map(item => `<tr>
+        <td><strong>${esc(item.request_no || ('LR-' + item.id))}</strong></td>
+        <td>${esc(item.requester_name || '')}</td>
+        <td>${esc(item.date_range || '')}</td>
+        <td>${esc(item.leave_type || '')}</td>
+        <td>${Number(item.weekday_count || 0)} day(s)</td>
+        <td><span class="status-badge ${statusClass(item.status)}">${esc(item.status || '')}</span></td>
+        <td>${esc(item.hr_email_status || '—')}</td>
+        <td><a class="btn btn-sm btn-outline-primary fw-bold" href="/leave_request?open=${Number(item.id)||0}"><i class="fa-solid fa-folder-open me-1"></i>Open</a></td>
+    </tr>`).join('');
 }
 
 function renderReimbursementRows(items){
