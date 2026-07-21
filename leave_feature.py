@@ -213,7 +213,7 @@ def register_leave_feature(ctx):
 
     def can_manage(header, user=None):
         target = user or current_user
-        return bool(target and getattr(target, 'is_authenticated', False) and (header.user_id == target.id or is_management_user(target)))
+        return bool(target and getattr(target, 'is_authenticated', False) and header.user_id == target.id)
 
     def can_approve(header, user=None):
         target = user or current_user
@@ -558,27 +558,17 @@ def register_leave_feature(ctx):
     @login_required
     def leave_request_page():
         profile = getattr(current_user, 'engineer_profile', None)
-        if not profile and not is_management_user():
-            return render_template('leave_request.html', leave_profile_missing=True, leave_can_create_for_others=False, leave_engineers=[])
-        engineers = []
-        if is_management_user():
-            engineers = [{'id': row.id, 'user_id': row.user_id, 'name': row.name, 'branch': row.branch or ''} for row in Engineer.query.order_by(Engineer.name.asc()).all()]
+        if not profile:
+            return render_template('leave_request.html', leave_profile_missing=True)
         return render_template(
             'leave_request.html',
-            leave_profile_missing=not bool(profile),
-            leave_can_create_for_others=is_management_user(),
-            leave_engineers=engineers,
-            leave_current_engineer_id=profile.id if profile else None,
+            leave_profile_missing=False,
         )
 
     @app.route('/api/leave-requests', methods=['GET'])
     @login_required
     def list_leave_requests():
-        query = LeaveRequest.query
-        if is_management_user() and request.args.get('scope') == 'all':
-            pass
-        else:
-            query = query.filter_by(user_id=current_user.id)
+        query = LeaveRequest.query.filter_by(user_id=current_user.id)
         rows = query.order_by(LeaveRequest.updated_at.desc(), LeaveRequest.id.desc()).limit(300).all()
         return jsonify({'success': True, 'items': [to_dict(row, include_attachments=False) for row in rows]})
 
@@ -630,12 +620,9 @@ def register_leave_feature(ctx):
             target_user = current_user
             requested_engineer_id = clean_int(payload.get('engineer_id'))
             if requested_engineer_id and requested_engineer_id != clean_int(getattr(target_engineer, 'id', None)):
-                if not is_management_user():
-                    return jsonify({'success': False, 'error': 'You cannot create leave for another employee.'}), 403
-                target_engineer = db.session.get(Engineer, requested_engineer_id)
-                target_user = db.session.get(User, target_engineer.user_id) if target_engineer and target_engineer.user_id else None
+                return jsonify({'success': False, 'error': 'Leave Requests can only be created for the logged-in employee.'}), 403
             if not target_engineer or not target_user:
-                return jsonify({'success': False, 'error': 'The selected employee is not linked to a system account.'}), 400
+                return jsonify({'success': False, 'error': 'Your account is not linked to an employee profile.'}), 400
             today = get_manila_today()
             header = LeaveRequest(
                 request_no=request_number(today), user_id=target_user.id, engineer_id=target_engineer.id,
@@ -664,7 +651,8 @@ def register_leave_feature(ctx):
     def check_leave_request_conflicts():
         payload = request.get_json(silent=True) or {}
         header = find_header(payload.get('id')) if clean_int(payload.get('id')) else None
-        engineer_id = header.engineer_id if header else clean_int(payload.get('engineer_id') or getattr(getattr(current_user, 'engineer_profile', None), 'id', None))
+        profile = getattr(current_user, 'engineer_profile', None)
+        engineer_id = header.engineer_id if header else clean_int(getattr(profile, 'id', None))
         start_date = parse_date(payload.get('start_date'))
         end_date = parse_date(payload.get('end_date'))
         if not engineer_id or not start_date or not end_date:

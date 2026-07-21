@@ -50,6 +50,13 @@ class LeaveRequestSourceTests(unittest.TestCase):
         self.assertIn('Approval blocked because a new Calendar conflict was found.', self.feature_source)
         self.assertIn("header.user_id != current_user.id", self.feature_source)
 
+    def test_leave_creation_is_strictly_self_service(self):
+        self.assertIn('header.user_id == target.id', self.feature_source)
+        self.assertIn('Leave Requests can only be created for the logged-in employee.', self.feature_source)
+        self.assertIn('LeaveRequest.query.filter_by(user_id=current_user.id)', self.feature_source)
+        self.assertNotIn('leaveEngineer', self.page_source)
+        self.assertNotIn('leave_can_create_for_others', self.page_source)
+
     def test_hr_email_settings_and_requester_cc_are_present(self):
         for marker in ('leave_request_hr', 'leave_request_cc', 'leave_request_hr_subject'):
             self.assertIn(marker, self.app_source)
