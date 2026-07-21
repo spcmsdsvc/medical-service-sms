@@ -1,6 +1,10 @@
 import pathlib
+import os
+import tempfile
 import unittest
 from datetime import date
+
+from sqlalchemy import create_engine
 
 try:
     import app as app_module
@@ -74,6 +78,58 @@ class ReimbursementLPRIntegrationTests(unittest.TestCase):
             lpr.items[1].line_total = 150
             with self.assertRaises(ValueError):
                 app_module.validate_reimbursement_linked_lpr(header, lpr, require_header=True)
+
+    def test_submit_cleanup_refreshes_lpr_loaded_rows(self):
+        if app_module is None:
+            self.skipTest('Application dependencies are unavailable.')
+
+        file_handle, database_path = tempfile.mkstemp(suffix='.db')
+        os.close(file_handle)
+        try:
+            with app_module.app.app_context():
+                extension = app_module.app.extensions['sqlalchemy']
+                engines = extension._app_engines[app_module.app]
+                original_engine = engines[None]
+                test_engine = create_engine(f"sqlite:///{database_path.replace(os.sep, '/')}")
+                try:
+                    engines[None] = test_engine
+                    app_module.db.create_all()
+                    header = app_module.ReimbursementHeader(
+                        user_id=1, engineer_id=1,
+                        start_date=date(2026, 7, 1), end_date=date(2026, 7, 2), status='Draft'
+                    )
+                    app_module.db.session.add(header)
+                    app_module.db.session.flush()
+                    header_id = header.id
+                    app_module.db.session.add_all([
+                        app_module.ReimbursementRow(
+                            reimbursement_id=header_id, row_date=date(2026, 7, 1),
+                            office_supplies=500, row_total=500
+                        ),
+                        app_module.ReimbursementRow(
+                            reimbursement_id=header_id, row_date=date(2026, 7, 2), row_total=0
+                        )
+                    ])
+                    app_module.db.session.commit()
+
+                    header = app_module.db.session.get(app_module.ReimbursementHeader, header_id)
+                    self.assertEqual(len(app_module.reimbursement_lpr_sources(header)), 1)
+                    saved_rows = app_module.ReimbursementRow.query.filter_by(reimbursement_id=header_id).all()
+                    kept_count, removed_count = app_module.reimbursement_prune_zero_rows_for_submit(header, saved_rows)
+                    header.status = 'Submitted'
+                    app_module.db.session.commit()
+
+                    self.assertEqual((kept_count, removed_count), (1, 1))
+                    self.assertEqual(len(header.rows), 1)
+                    self.assertEqual(header.rows[0].row_total, 500)
+                    self.assertEqual(header.status, 'Submitted')
+                finally:
+                    app_module.db.session.remove()
+                    engines[None] = original_engine
+                    test_engine.dispose()
+        finally:
+            if os.path.exists(database_path):
+                os.unlink(database_path)
 
 
 if __name__ == '__main__':

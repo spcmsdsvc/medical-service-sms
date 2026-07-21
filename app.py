@@ -18866,6 +18866,26 @@ def reimbursement_row_has_claim_amount(row):
     )
 
 
+def reimbursement_prune_zero_rows_for_submit(header, saved_rows):
+    """Delete zero-value rows without leaving stale objects on header.rows."""
+    claim_rows = [row for row in (saved_rows or []) if reimbursement_row_has_claim_amount(row)]
+    zero_rows = [row for row in (saved_rows or []) if not reimbursement_row_has_claim_amount(row)]
+
+    if not claim_rows:
+        return 0, 0
+
+    for row in zero_rows:
+        db.session.delete(row)
+
+    if zero_rows:
+        db.session.flush()
+        # LPR validation loads header.rows before cleanup. Expire that cached
+        # collection so later persistence cannot cascade through deleted rows.
+        db.session.expire(header, ['rows'])
+
+    return len(claim_rows), len(zero_rows)
+
+
 def reimbursement_get_personal_profile():
     """Return the logged-in engineer profile required for personal reimbursement."""
     profile = getattr(current_user, 'engineer_profile', None)
@@ -32608,8 +32628,6 @@ def submit_reimbursement():
             }), 428
 
         claim_rows = [row for row in saved_rows if reimbursement_row_has_claim_amount(row)]
-        zero_rows = [row for row in saved_rows if row not in claim_rows]
-        excluded_zero_rows = len(zero_rows)
 
         if not claim_rows:
             return jsonify({
@@ -32635,11 +32653,7 @@ def submit_reimbursement():
         elif linked_lprs:
             delete_linked_lprs_for_parent('reimbursement', header.id)
 
-        for row in zero_rows:
-            db.session.delete(row)
-        if zero_rows:
-            db.session.flush()
-        row_count = len(claim_rows)
+        row_count, excluded_zero_rows = reimbursement_prune_zero_rows_for_submit(header, saved_rows)
 
         now = get_manila_time()
         previous_status = header.status or 'Draft'
@@ -32651,7 +32665,6 @@ def submit_reimbursement():
         header.rejected_by_id = None
         header.approval_remarks = None
         header.updated_at = now
-        db.session.add(header)
         sync_embedded_lpr_parent_signatures('reimbursement', header, 'submitted', actor_user=current_user, signed_at=now)
         record_universal_approval_audit(
             'reimbursement',
