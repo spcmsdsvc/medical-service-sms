@@ -35414,6 +35414,20 @@ def normalize_shift_title(payload):
     return title
 
 
+def is_legacy_calendar_leave_title(title):
+    """Identify old Calendar-created leave rows without affecting Leave Request rows."""
+    return (clean_str(title) or '') in LEAVE_CATEGORIES
+
+
+def block_new_calendar_leave_for_current_or_future(title, start_date):
+    """New leave from today onward must use the signed Leave Request workflow."""
+    return bool(
+        is_legacy_calendar_leave_title(title)
+        and start_date
+        and start_date >= get_manila_today()
+    )
+
+
 # S11H2A — Editable Travel Block backend helpers.
 # Travel Request blocks are real Shift rows. They remain travel blocks while the
 # submitted schedule is still categorized as Travel. If a scheduler/admin changes
@@ -37946,6 +37960,10 @@ def add_shift():
     shift_title = normalize_shift_title(payload)
     if not shift_title:
         return jsonify({'message': 'Task/Purpose is required'}), 400
+    if block_new_calendar_leave_for_current_or_future(shift_title, start_d):
+        return jsonify({
+            'message': 'Leave schedules for today or future dates must be submitted through Leave Request.'
+        }), 400
 
     if not can_create_schedule_for_engineer_ids(engineers):
         return denied('You are not authorized to add schedules for the selected engineer/branch.')
@@ -38103,6 +38121,13 @@ def update_shift(id):
         return jsonify({'message': 'Missing date or time fields'}), 400
     if end_d < start_d:
         return jsonify({'message': 'End date cannot be earlier than start date'}), 400
+    if (
+        not is_legacy_calendar_leave_title(master_shift.title)
+        and block_new_calendar_leave_for_current_or_future(shift_title, start_d)
+    ):
+        return jsonify({
+            'message': 'Leave schedules for today or future dates must be submitted through Leave Request.'
+        }), 400
 
     include_weekends = parse_bool_flag(payload.get('include_weekends'), default=True)
     requested_schedule_dates = get_schedule_dates_between(start_d, end_d, include_weekends=include_weekends)

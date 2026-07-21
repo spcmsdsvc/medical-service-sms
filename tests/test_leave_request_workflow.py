@@ -75,6 +75,12 @@ class LeaveRequestSourceTests(unittest.TestCase):
         self.assertIn('openLeaveFormToFollowFromCalendar', self.timeline_source)
         self.assertIn('leave_request_id', self.timeline_source)
 
+    def test_calendar_legacy_leave_is_historical_only(self):
+        self.assertIn('updateLegacyLeaveOptionForDate', self.timeline_source)
+        self.assertIn("startDate < timelineTodayISO()", self.timeline_source)
+        self.assertIn('block_new_calendar_leave_for_current_or_future', self.app_source)
+        self.assertIn('must be submitted through Leave Request', self.app_source)
+
     def test_release_manifest_contains_leave_request(self):
         manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
         release = next(item for item in manifest['releases'] if item['release_key'] == '2026-07-21')

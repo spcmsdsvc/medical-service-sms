@@ -728,7 +728,7 @@
                     <label class="small fw-bold text-muted text-uppercase mb-1 d-block">📂 Schedule Type</label>
                     <select id="f-category" class="form-select shadow-none" onchange="toggleCategoryFields()">
                         <option value="Work">Medical Center Visit</option>
-                        <option value="Leave">Technical Personnel Leave</option>
+                        <option id="f-category-leave" value="Leave">Technical Personnel Leave</option>
                         <option value="Training">Internal Technical Training</option>
                         <option value="Office">In Office</option>
                         <option value="Travel">Traveling to Client</option>
@@ -881,7 +881,7 @@
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <label class="small fw-bold text-uppercase mb-1 d-block">📅 Start Date</label>
-                        <input type="date" id="f-start-date" class="form-control">
+                        <input type="date" id="f-start-date" class="form-control" onchange="updateLegacyLeaveOptionForDate()">
                     </div>
                     <div class="col-md-6">
                         <label class="small fw-bold text-uppercase mb-1 d-block">📅 End Date</label>
@@ -11780,6 +11780,29 @@ function collectMobileEngineerSchedules(){
 
     // --- UI DYNAMIC CONTROLS ---
 
+    function timelineTodayISO(){
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    }
+
+    function updateLegacyLeaveOptionForDate(){
+        const category = document.getElementById('f-category');
+        const leaveOption = document.getElementById('f-category-leave');
+        const startDate = document.getElementById('f-start-date')?.value || '';
+        const editingExistingLeave = Boolean(document.getElementById('f-id')?.value) && category?.value === 'Leave';
+        const historicalDate = Boolean(startDate && startDate < timelineTodayISO());
+        const allowLegacyLeave = editingExistingLeave || historicalDate;
+        if(!category || !leaveOption) return allowLegacyLeave;
+
+        leaveOption.hidden = !allowLegacyLeave;
+        leaveOption.disabled = !allowLegacyLeave;
+        if(!allowLegacyLeave && category.value === 'Leave'){
+            category.value = 'Work';
+            toggleCategoryFields();
+        }
+        return allowLegacyLeave;
+    }
+
     /**
      * Requirement Implementation:
      * Forcefully removes work-specific fields if Leave or Training is selected.
@@ -13229,6 +13252,7 @@ async function loadGrid() {
         document.getElementById('f-start-time').value = "08:00";
         document.getElementById('f-end-time').value = "17:00";
         updateDurationLabel();
+        updateLegacyLeaveOptionForDate();
 
         // Reset file lists for new entries
         document.getElementById('existing-files-list').innerHTML = "";
@@ -13363,6 +13387,7 @@ if(shift.engineers){
         document.getElementById('f-start-time').value = shift.time_start;
         document.getElementById('f-end-time').value = shift.time_end;
         updateDurationLabel();
+        updateLegacyLeaveOptionForDate();
         document.getElementById('f-status').value = shift.status || "In Progress";
         if (document.getElementById('f-report')) document.getElementById('f-report').value = "";
         const travelEditNote = document.getElementById('timeline-travel-edit-note');
