@@ -6624,6 +6624,7 @@ def approval_route_to_dict(route):
 
 def approval_user_to_dict(user):
     profile = getattr(user, 'engineer_profile', None) if user else None
+    stock_inventory_access_locked = is_superadmin_user(user)
     return {
         'id': user.id,
         'username': user.username or '',
@@ -6637,6 +6638,7 @@ def approval_user_to_dict(user):
         'can_manage_stock_inventory': can_manage_stock_inventory(user),
         'stock_inventory_only': is_stock_inventory_only_user(user),
         'stock_inventory_branch_code': normalize_stock_inventory_branch(getattr(user, 'stock_inventory_branch_code', None)),
+        'stock_inventory_access_locked': stock_inventory_access_locked,
         'is_active': bool(getattr(user, 'is_active', True)),
         'engineer_id': getattr(profile, 'id', None),
         'employee_id': getattr(profile, 'employee_id', '') if profile else '',
@@ -14630,7 +14632,13 @@ def settings_update_approval_user():
 
     approver_only_requested = bool(payload.get('approver_only'))
     stock_inventory_only_requested = bool(payload.get('stock_inventory_only'))
-    stock_inventory_requested = bool(payload.get('can_manage_stock_inventory')) or stock_inventory_only_requested
+    stock_inventory_requested = bool(payload.get('can_manage_stock_inventory'))
+    if not stock_inventory_requested:
+        # Turning inventory access off also removes the restricted inventory-only
+        # view. This avoids silently re-enabling access from a stale dependent flag.
+        stock_inventory_only_requested = False
+    elif stock_inventory_only_requested:
+        stock_inventory_requested = True
     stock_branch_code = normalize_stock_inventory_branch(payload.get('stock_inventory_branch_code'))
     if approver_only_requested and stock_inventory_requested:
         return jsonify({'success': False, 'error': 'Approver-only accounts cannot also manage Stock Inventory.'}), 400
