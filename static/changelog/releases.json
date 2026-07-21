@@ -141,6 +141,17 @@
         {"item_key": "2026-07-17-reimbursement-auto-lpr", "category": "Reimbursement", "description": "Office/Field Items now generate a required LPR review during reimbursement submission, with reconciled purchase lines, signatures, approval preview, and Accounting package inclusion.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30},
         {"item_key": "2026-07-17-calendar-dark-mode", "category": "Calendar", "description": "Calendar dark mode now keeps schedule types visually distinct, improves grid and card contrast, and applies accent themes only to controls and selections.", "audiences": ["everyone"], "sort_order": 40}
       ]
+    },
+    {
+      "release_key": "2026-07-21",
+      "release_date": "2026-07-21",
+      "title": "Manila Stock Inventory",
+      "summary": "Superadmins can now manage accountable Manila stock movements using barcode scanning.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-21-stock-inventory", "category": "Administration", "description": "A separate Stock Inventory module now supports exact barcode lookup, whole-piece quantities, and scanner-ready IN and OUT transactions for Manila stock.", "audiences": ["admins"], "sort_order": 10},
+        {"item_key": "2026-07-21-stock-ledger", "category": "Administration", "description": "Every stock change is recorded in an immutable movement history with accountable recipients, purposes, resulting balances, and one-time correction reversals.", "audiences": ["admins"], "sort_order": 20}
+      ]
     }
   ]
 }

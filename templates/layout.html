@@ -916,7 +916,7 @@
             {% set approval_paths = ['/approvals'] %}
             {% set reports_paths = ['/analytics_page', '/reports_page'] %}
             {% set records_paths = ['/engineers_page', '/clients_page', '/products_page'] %}
-            {% set admin_paths = ['/activity_page', '/settings'] %}
+            {% set admin_paths = ['/activity_page', '/settings', '/stock_inventory'] %}
 
             <a href="/" class="{{ 'active' if request.path == '/' }}"><i class="fa-solid fa-chart-line me-2"></i> Dashboard</a>
 
@@ -1029,6 +1029,9 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
                 </button>
                 <div id="admin-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}">
+                    {% if stock_inventory_superadmin %}
+                    <a href="/stock_inventory" class="{{ 'active' if request.path == '/stock_inventory' }}"><i class="fa-solid fa-barcode me-2"></i> Stock Inventory</a>
+                    {% endif %}
                     <a href="/activity_page" class="{{ 'active' if request.path == '/activity_page' }}"><i class="fa-solid fa-clock-rotate-left me-2"></i> Activity Logs</a>
                     <a href="/settings" class="{{ 'active' if request.path == '/settings' }}"><i class="fa-solid fa-gear me-2"></i> System Settings</a>
                 </div>

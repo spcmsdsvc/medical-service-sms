@@ -1,0 +1,313 @@
+{% extends "layout.html" %}
+{% block title %}Stock Inventory{% endblock %}
+
+{% block content %}
+<style>
+    .stock-shell { max-width: 1680px; margin: 0 auto; color: var(--app-text); }
+    .stock-header { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-bottom:16px; }
+    .stock-title { display:flex; align-items:center; gap:12px; }
+    .stock-title-icon { width:44px; height:44px; display:grid; place-items:center; border-radius:8px; color:#fff; background:var(--app-primary); font-size:1.2rem; }
+    .stock-title h1 { margin:0; font-size:1.65rem; letter-spacing:0; }
+    .stock-title p { margin:2px 0 0; color:var(--app-muted); }
+    .stock-scan-band { display:grid; grid-template-columns:minmax(240px,1fr) auto auto; gap:10px; align-items:end; padding:18px; background:var(--app-surface); border:1px solid var(--app-border); border-left:5px solid var(--app-primary); border-radius:8px; box-shadow:var(--app-shadow); }
+    .stock-label { display:block; margin-bottom:6px; font-weight:800; color:var(--app-text); }
+    .stock-input, .stock-select, .stock-textarea { width:100%; min-height:44px; border:1px solid var(--app-border); border-radius:6px; background:var(--app-input); color:var(--app-text); padding:9px 12px; }
+    .stock-input:focus, .stock-select:focus, .stock-textarea:focus { border-color:var(--app-primary); box-shadow:0 0 0 3px var(--app-focus); outline:0; }
+    .stock-scan-input { font-family:Consolas, monospace; font-size:1.1rem; }
+    .stock-hint { margin:7px 0 0; color:var(--app-muted); font-size:.86rem; }
+    .stock-btn { min-height:44px; border:1px solid var(--app-border); border-radius:6px; padding:9px 15px; display:inline-flex; align-items:center; justify-content:center; gap:8px; font-weight:800; cursor:pointer; white-space:nowrap; }
+    .stock-btn-primary { color:#fff; background:var(--app-primary); border-color:var(--app-primary); }
+    .stock-btn-neutral { color:var(--app-text); background:var(--app-surface-raised); }
+    .stock-btn-danger { color:#fff; background:#c92a3b; border-color:#c92a3b; }
+    .stock-btn:disabled { opacity:.55; cursor:not-allowed; }
+    .stock-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:16px 0; }
+    .stock-kpi { min-height:100px; display:flex; align-items:center; gap:13px; padding:15px; background:var(--app-surface); border:1px solid var(--app-border); border-radius:8px; }
+    .stock-kpi-icon { width:42px; height:42px; flex:0 0 42px; display:grid; place-items:center; border-radius:8px; background:rgba(var(--app-primary-rgb),.14); color:var(--app-primary); }
+    .stock-kpi-label { color:var(--app-muted); font-weight:700; font-size:.82rem; text-transform:uppercase; }
+    .stock-kpi-value { color:var(--app-text); font-size:1.55rem; font-weight:900; line-height:1.1; }
+    .stock-panel { margin-top:14px; background:var(--app-surface); border:1px solid var(--app-border); border-radius:8px; overflow:hidden; }
+    .stock-toolbar { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:14px 16px; border-bottom:1px solid var(--app-border); }
+    .stock-tabs { display:inline-flex; border:1px solid var(--app-border); border-radius:6px; overflow:hidden; }
+    .stock-tab { min-height:40px; border:0; border-right:1px solid var(--app-border); background:var(--app-surface-raised); color:var(--app-text); padding:8px 14px; font-weight:800; }
+    .stock-tab:last-child { border-right:0; }
+    .stock-tab.active { background:var(--app-primary); color:#fff; }
+    .stock-tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .stock-search { min-width:260px; }
+    .stock-table-wrap { overflow:auto; overscroll-behavior:contain; max-height:58vh; }
+    .stock-table { width:100%; border-collapse:separate; border-spacing:0; min-width:1050px; }
+    .stock-table th { position:sticky; top:0; z-index:2; background:var(--app-surface-raised); color:var(--app-text); padding:11px 12px; border-bottom:1px solid var(--app-border); text-align:left; font-size:.78rem; text-transform:uppercase; }
+    .stock-table td { padding:11px 12px; border-bottom:1px solid var(--app-border); color:var(--app-text); vertical-align:middle; }
+    .stock-table tbody tr:hover { background:rgba(var(--app-primary-rgb),.06); }
+    .stock-sort { border:0; background:transparent; color:inherit; font:inherit; font-weight:inherit; text-transform:inherit; padding:0; cursor:pointer; }
+    .stock-barcode { font-family:Consolas, monospace; font-weight:800; }
+    .stock-quantity { font-size:1.1rem; font-weight:900; }
+    .stock-low { color:#c92a3b; }
+    .stock-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border-radius:999px; font-size:.76rem; font-weight:800; background:var(--app-surface-raised); border:1px solid var(--app-border); }
+    .stock-badge-in { color:#087f5b; border-color:#63e6be; background:#e6fcf5; }
+    .stock-badge-out { color:#c92a3b; border-color:#ffa8a8; background:#fff5f5; }
+    .stock-actions { display:flex; gap:6px; }
+    .stock-icon-btn { width:36px; height:36px; display:grid; place-items:center; border:1px solid var(--app-border); border-radius:6px; background:var(--app-surface-raised); color:var(--app-text); }
+    .stock-empty { padding:48px 20px; text-align:center; color:var(--app-muted); }
+    .stock-mobile-list { display:none; padding:10px; }
+    .stock-mobile-card { padding:13px; margin-bottom:9px; border:1px solid var(--app-border); border-left:4px solid var(--app-primary); border-radius:8px; background:var(--app-surface-raised); }
+    .stock-mobile-top { display:flex; justify-content:space-between; gap:10px; }
+    .stock-mobile-meta { margin-top:8px; color:var(--app-muted); font-size:.88rem; }
+    .stock-modal .modal-content { background:var(--app-surface); color:var(--app-text); border-color:var(--app-border); }
+    .stock-modal .modal-header, .stock-modal .modal-footer { border-color:var(--app-border); }
+    .stock-modal .modal-body { overflow-y:auto; }
+    .stock-modal-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:13px; }
+    .stock-field-wide { grid-column:1/-1; }
+    .stock-choice { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .stock-choice button { min-height:58px; border:2px solid var(--app-border); border-radius:6px; background:var(--app-surface-raised); color:var(--app-text); font-weight:900; }
+    .stock-choice button.active { border-color:var(--app-primary); color:var(--app-primary); background:rgba(var(--app-primary-rgb),.1); }
+    .stock-alert { display:none; margin-bottom:12px; padding:11px 13px; border-radius:6px; border:1px solid transparent; }
+    .stock-alert.show { display:block; }
+    .stock-alert-error { background:#fff5f5; border-color:#ffa8a8; color:#a51124; }
+    .stock-alert-success { background:#ebfbee; border-color:#8ce99a; color:#087f5b; }
+    :root[data-app-theme="dark"] .stock-badge-in { color:#8ce99a; background:#103a30; border-color:#2f9e77; }
+    :root[data-app-theme="dark"] .stock-badge-out { color:#ffa8a8; background:#3a1920; border-color:#c92a3b; }
+    :root[data-app-theme="dark"] .stock-alert-error { color:#ffc9c9; background:#3a1920; border-color:#c92a3b; }
+    :root[data-app-theme="dark"] .stock-alert-success { color:#b2f2bb; background:#163923; border-color:#2f9e44; }
+    @media (max-width:900px) {
+        .stock-header { align-items:flex-start; }
+        .stock-scan-band { grid-template-columns:1fr 1fr; }
+        .stock-scan-field { grid-column:1/-1; }
+        .stock-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        .stock-toolbar { align-items:stretch; flex-direction:column; }
+        .stock-tools { width:100%; }
+        .stock-search { flex:1; min-width:180px; }
+        .stock-table-wrap { display:none; }
+        .stock-mobile-list { display:block; }
+    }
+    @media (max-width:560px) {
+        .stock-header { flex-direction:column; align-items:stretch; }
+        .stock-header > .stock-btn { width:100%; }
+        .stock-title h1 { font-size:1.35rem; }
+        .stock-title p { font-size:.86rem; }
+        .stock-scan-band { grid-template-columns:1fr; }
+        .stock-scan-field { grid-column:auto; }
+        .stock-kpis { grid-template-columns:1fr 1fr; gap:8px; }
+        .stock-kpi { min-height:88px; padding:11px; }
+        .stock-kpi-icon { display:none; }
+        .stock-modal-grid { grid-template-columns:1fr; }
+        .stock-field-wide { grid-column:auto; }
+        .stock-tools > * { width:100%; }
+    }
+</style>
+
+<div class="stock-shell">
+    <header class="stock-header">
+        <div class="stock-title">
+            <div class="stock-title-icon"><i class="fa-solid fa-barcode"></i></div>
+            <div><h1>Manila Stock Inventory</h1><p>Scan items and record accountable stock movement for BC01.</p></div>
+        </div>
+        <button class="stock-btn stock-btn-neutral" type="button" onclick="refreshStockInventory()"><i class="fa-solid fa-rotate"></i> Refresh</button>
+    </header>
+
+    <div id="stockPageAlert" class="stock-alert" role="status"></div>
+
+    <section class="stock-scan-band" aria-label="Barcode scanner">
+        <div class="stock-scan-field">
+            <label class="stock-label" for="stockBarcodeInput"><i class="fa-solid fa-barcode me-1"></i> Scan / Enter Barcode</label>
+            <input id="stockBarcodeInput" class="stock-input stock-scan-input" type="text" maxlength="128" autocomplete="off" autofocus placeholder="Scan barcode or type it exactly">
+            <p class="stock-hint">USB barcode scanners work here like a keyboard. Scan and press Enter.</p>
+        </div>
+        <button id="stockLookupButton" class="stock-btn stock-btn-primary" type="button" onclick="lookupScannedBarcode()"><i class="fa-solid fa-magnifying-glass"></i> Look Up</button>
+        <button class="stock-btn stock-btn-neutral" type="button" onclick="openRegisterModal('')"><i class="fa-solid fa-plus"></i> Add Item</button>
+    </section>
+
+    <section class="stock-kpis" aria-label="Stock summary">
+        <div class="stock-kpi"><div class="stock-kpi-icon"><i class="fa-solid fa-boxes-stacked"></i></div><div><div class="stock-kpi-label">Active Items</div><div id="stockKpiActive" class="stock-kpi-value">0</div></div></div>
+        <div class="stock-kpi"><div class="stock-kpi-icon"><i class="fa-solid fa-cubes"></i></div><div><div class="stock-kpi-label">Total Pieces</div><div id="stockKpiPieces" class="stock-kpi-value">0</div></div></div>
+        <div class="stock-kpi"><div class="stock-kpi-icon"><i class="fa-solid fa-triangle-exclamation"></i></div><div><div class="stock-kpi-label">Low Stock</div><div id="stockKpiLow" class="stock-kpi-value">0</div></div></div>
+        <div class="stock-kpi"><div class="stock-kpi-icon"><i class="fa-solid fa-arrow-right-arrow-left"></i></div><div><div class="stock-kpi-label">Movements Today</div><div id="stockKpiToday" class="stock-kpi-value">0</div></div></div>
+    </section>
+
+    <section class="stock-panel">
+        <div class="stock-toolbar">
+            <div class="stock-tabs" role="tablist">
+                <button id="stockItemsTab" class="stock-tab active" type="button" onclick="switchStockTab('items')"><i class="fa-solid fa-box me-1"></i> Items</button>
+                <button id="stockMovementsTab" class="stock-tab" type="button" onclick="switchStockTab('movements')"><i class="fa-solid fa-clock-rotate-left me-1"></i> Movement History</button>
+            </div>
+            <div class="stock-tools">
+                <input id="stockSearchInput" class="stock-input stock-search" type="search" placeholder="Search barcode, item, category, location">
+                <label class="d-flex align-items-center gap-2 mb-0"><input id="stockIncludeInactive" type="checkbox"> Include inactive</label>
+            </div>
+        </div>
+
+        <div id="stockItemsView">
+            <div class="stock-table-wrap">
+                <table class="stock-table">
+                    <thead><tr>
+                        <th><button class="stock-sort" onclick="setStockSort('barcode')">Barcode <span data-sort="barcode"></span></button></th>
+                        <th><button class="stock-sort" onclick="setStockSort('name')">Item Name <span data-sort="name"></span></button></th>
+                        <th><button class="stock-sort" onclick="setStockSort('category')">Category <span data-sort="category"></span></button></th>
+                        <th><button class="stock-sort" onclick="setStockSort('location')">Location <span data-sort="location"></span></button></th>
+                        <th><button class="stock-sort" onclick="setStockSort('quantity')">Quantity <span data-sort="quantity"></span></button></th>
+                        <th><button class="stock-sort" onclick="setStockSort('minimum')">Minimum <span data-sort="minimum"></span></button></th>
+                        <th>Status</th><th>Actions</th>
+                    </tr></thead>
+                    <tbody id="stockItemsBody"></tbody>
+                </table>
+            </div>
+            <div id="stockItemsMobile" class="stock-mobile-list"></div>
+            <div id="stockItemsEmpty" class="stock-empty" hidden><i class="fa-solid fa-box-open fa-2x mb-2"></i><div>No stock items found.</div></div>
+        </div>
+
+        <div id="stockMovementsView" hidden>
+            <div class="stock-table-wrap">
+                <table class="stock-table">
+                    <thead><tr><th>Date / Time</th><th>Item</th><th>Movement</th><th>Reason</th><th>Accountability</th><th>Balance</th><th>Admin</th><th>Action</th></tr></thead>
+                    <tbody id="stockMovementsBody"></tbody>
+                </table>
+            </div>
+            <div id="stockMovementsMobile" class="stock-mobile-list"></div>
+            <div id="stockMovementsEmpty" class="stock-empty" hidden><i class="fa-solid fa-clock-rotate-left fa-2x mb-2"></i><div>No stock movements found.</div></div>
+        </div>
+    </section>
+</div>
+
+<div class="modal fade stock-modal" id="stockRegisterModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><div><h2 class="modal-title fs-5">Register Stock Item</h2><div class="text-muted small">Manila stock / BC01</div></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body">
+            <div id="stockRegisterAlert" class="stock-alert"></div>
+            <div class="stock-modal-grid">
+                <div><label class="stock-label" for="registerBarcode">Barcode</label><input id="registerBarcode" class="stock-input stock-barcode" maxlength="128"></div>
+                <div><label class="stock-label" for="registerItemName">Item Name</label><input id="registerItemName" class="stock-input" maxlength="180"></div>
+                <div><label class="stock-label" for="registerCategory">Category <span class="text-muted">(optional)</span></label><input id="registerCategory" class="stock-input" maxlength="120"></div>
+                <div><label class="stock-label" for="registerLocation">Storage Location <span class="text-muted">(optional)</span></label><input id="registerLocation" class="stock-input" maxlength="180" placeholder="Shelf, cabinet, or room"></div>
+                <div><label class="stock-label" for="registerMinimum">Minimum Stock</label><input id="registerMinimum" class="stock-input" type="number" min="0" step="1" value="0"></div>
+                <div><label class="stock-label" for="registerOpening">Opening Quantity</label><input id="registerOpening" class="stock-input" type="number" min="0" step="1" value="0"></div>
+                <div class="stock-field-wide"><label class="stock-label" for="registerSource">Opening Stock Source <span class="text-muted">(optional)</span></label><input id="registerSource" class="stock-input" maxlength="180"></div>
+                <div class="stock-field-wide"><label class="stock-label" for="registerNotes">Notes <span class="text-muted">(optional)</span></label><textarea id="registerNotes" class="stock-textarea" rows="3"></textarea></div>
+            </div>
+        </div>
+        <div class="modal-footer"><button class="stock-btn stock-btn-neutral" type="button" data-bs-dismiss="modal">Cancel</button><button id="stockRegisterSave" class="stock-btn stock-btn-primary" type="button" onclick="saveRegisteredItem()"><i class="fa-solid fa-floppy-disk"></i> Register Item</button></div>
+    </div></div>
+</div>
+
+<div class="modal fade stock-modal" id="stockMovementModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><div><h2 class="modal-title fs-5">Record Stock Movement</h2><div id="stockMovementSubtitle" class="text-muted small"></div></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div>
+        <div class="modal-body">
+            <div id="stockMovementAlert" class="stock-alert"></div>
+            <div class="mb-3"><div class="stock-choice"><button id="stockInChoice" type="button" onclick="chooseStockDirection('IN')"><i class="fa-solid fa-arrow-down me-1"></i> IN</button><button id="stockOutChoice" type="button" onclick="chooseStockDirection('OUT')"><i class="fa-solid fa-arrow-up me-1"></i> OUT</button></div><div class="stock-hint">Choose the movement direction. No option is selected automatically.</div></div>
+            <div class="stock-modal-grid">
+                <div><label class="stock-label" for="movementQuantity">Quantity</label><input id="movementQuantity" class="stock-input" type="number" min="1" step="1" value="1"></div>
+                <div id="stockInReasonField" hidden><label class="stock-label" for="movementReason">IN Reason</label><select id="movementReason" class="stock-select"><option value="">Select reason</option><option>Return</option><option>Restock</option><option>Adjustment</option></select></div>
+                <div id="stockSourceField" class="stock-field-wide" hidden><label class="stock-label" for="movementSource">Source / Returned By <span class="text-muted">(optional)</span></label><input id="movementSource" class="stock-input" maxlength="180"></div>
+                <div id="stockRecipientField" hidden><label class="stock-label" for="movementRecipient">Recipient / Team</label><input id="movementRecipient" class="stock-input" maxlength="180"></div>
+                <div id="stockPurposeField" hidden><label class="stock-label" for="movementPurpose">Purpose</label><input id="movementPurpose" class="stock-input"></div>
+                <div class="stock-field-wide"><label class="stock-label" for="movementRemarks">Remarks <span class="text-muted">(optional)</span></label><textarea id="movementRemarks" class="stock-textarea" rows="3"></textarea></div>
+            </div>
+        </div>
+        <div class="modal-footer"><button class="stock-btn stock-btn-neutral" type="button" data-bs-dismiss="modal">Cancel</button><button id="stockMovementSave" class="stock-btn stock-btn-primary" type="button" onclick="saveStockMovement()" disabled><i class="fa-solid fa-floppy-disk"></i> Save Movement</button></div>
+    </div></div>
+</div>
+
+<div class="modal fade stock-modal" id="stockEditModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><div><h2 class="modal-title fs-5">Edit Stock Item</h2><div id="stockEditBarcode" class="stock-barcode text-muted small"></div></div><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><div id="stockEditAlert" class="stock-alert"></div><div class="stock-modal-grid">
+            <div><label class="stock-label" for="editItemName">Item Name</label><input id="editItemName" class="stock-input" maxlength="180"></div>
+            <div><label class="stock-label" for="editCategory">Category</label><input id="editCategory" class="stock-input" maxlength="120"></div>
+            <div><label class="stock-label" for="editLocation">Storage Location</label><input id="editLocation" class="stock-input" maxlength="180"></div>
+            <div><label class="stock-label" for="editMinimum">Minimum Stock</label><input id="editMinimum" class="stock-input" type="number" min="0" step="1"></div>
+            <div class="stock-field-wide"><label class="stock-label" for="editNotes">Notes</label><textarea id="editNotes" class="stock-textarea" rows="3"></textarea></div>
+            <label class="stock-field-wide d-flex align-items-center gap-2"><input id="editActive" type="checkbox"> Active and available for stock movement</label>
+        </div></div>
+        <div class="modal-footer"><button class="stock-btn stock-btn-neutral" type="button" data-bs-dismiss="modal">Cancel</button><button id="stockEditSave" class="stock-btn stock-btn-primary" type="button" onclick="saveEditedItem()">Save Changes</button></div>
+    </div></div>
+</div>
+
+<div class="modal fade stock-modal" id="stockReverseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h2 class="modal-title fs-5">Reverse Transaction</h2><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><div id="stockReverseAlert" class="stock-alert"></div><p id="stockReverseSummary"></p><label class="stock-label" for="stockCorrectionReason">Correction Reason</label><textarea id="stockCorrectionReason" class="stock-textarea" rows="3" placeholder="Explain why this transaction must be reversed"></textarea><p class="stock-hint">The original ledger entry remains visible. One equal opposite movement will be created.</p></div>
+        <div class="modal-footer"><button class="stock-btn stock-btn-neutral" type="button" data-bs-dismiss="modal">Cancel</button><button id="stockReverseSave" class="stock-btn stock-btn-danger" type="button" onclick="confirmStockReversal()"><i class="fa-solid fa-rotate-left"></i> Reverse Transaction</button></div>
+    </div></div>
+</div>
+
+<script>
+const stockState = { items: [], movements: [], activeTab: 'items', sort: 'name', direction: 'asc', currentItem: null, editItem: null, reverseMovement: null, scanBusy: false, lastScan: '', lastScanAt: 0 };
+const stockModals = {};
+
+function stockEscape(value){ const node=document.createElement('div'); node.textContent=String(value ?? ''); return node.innerHTML; }
+function stockHeaders(){ return {'Content-Type':'application/json','X-CSRFToken':getCSRFToken(),'Accept':'application/json'}; }
+async function stockJson(url, options={}){
+    const response=await fetch(url,{credentials:'same-origin',cache:'no-store',...options});
+    let data={}; try{ data=await response.json(); }catch(_){ data={error:`Request failed (${response.status}).`}; }
+    if(!response.ok || data.success===false) throw new Error(data.error || data.message || `Request failed (${response.status}).`);
+    return data;
+}
+function showStockAlert(id,message,type='error'){
+    const box=document.getElementById(id); if(!box) return;
+    box.textContent=message || ''; box.className=`stock-alert show stock-alert-${type}`;
+    if(id==='stockPageAlert') setTimeout(()=>box.classList.remove('show'),5000);
+}
+function clearStockAlert(id){ const box=document.getElementById(id); if(box){ box.textContent=''; box.className='stock-alert'; } }
+function refocusScanner(){ setTimeout(()=>{ const input=document.getElementById('stockBarcodeInput'); if(input && !document.querySelector('.modal.show')){ input.focus(); input.select(); } },150); }
+function setBusy(button,busy,label){ if(!button)return; if(!button.dataset.original)button.dataset.original=button.innerHTML; button.disabled=busy; button.innerHTML=busy?`<i class="fa-solid fa-spinner fa-spin"></i> ${label}`:button.dataset.original; }
+
+async function loadStockSummary(){ const data=await stockJson('/api/stock-inventory/summary'); const s=data.summary; stockKpiActive.textContent=s.active_items; stockKpiPieces.textContent=s.total_pieces; stockKpiLow.textContent=s.low_stock_items; stockKpiToday.textContent=s.movements_today; }
+async function loadStockItems(){
+    const params=new URLSearchParams({q:stockSearchInput.value.trim(),sort:stockState.sort,direction:stockState.direction,include_inactive:stockIncludeInactive.checked?'1':'0'});
+    const data=await stockJson(`/api/stock-inventory/items?${params}`); stockState.items=data.items || []; renderStockItems();
+}
+async function loadStockMovements(itemId=null){ const suffix=itemId?`&item_id=${encodeURIComponent(itemId)}`:''; const data=await stockJson(`/api/stock-inventory/movements?limit=300${suffix}`); stockState.movements=data.movements || []; renderStockMovements(); }
+async function refreshStockInventory(){ try{ await Promise.all([loadStockSummary(),loadStockItems(),loadStockMovements()]); }catch(error){ showStockAlert('stockPageAlert',error.message); } finally{ refocusScanner(); } }
+
+function itemActionButtons(item){
+    const disabled=item.is_active?'':'disabled';
+    return `<div class="stock-actions"><button class="stock-icon-btn" title="Record IN or OUT" aria-label="Record movement for ${stockEscape(item.item_name)}" ${disabled} onclick="openMovementModal(${item.id})"><i class="fa-solid fa-arrow-right-arrow-left"></i></button><button class="stock-icon-btn" title="Edit item" aria-label="Edit ${stockEscape(item.item_name)}" onclick="openEditModal(${item.id})"><i class="fa-solid fa-pen"></i></button><button class="stock-icon-btn" title="View history" aria-label="View history for ${stockEscape(item.item_name)}" onclick="showItemHistory(${item.id})"><i class="fa-solid fa-clock-rotate-left"></i></button></div>`;
+}
+function renderStockItems(){
+    const rows=stockState.items.map(item=>`<tr><td class="stock-barcode">${stockEscape(item.barcode)}</td><td><strong>${stockEscape(item.item_name)}</strong></td><td>${stockEscape(item.category || '-')}</td><td>${stockEscape(item.storage_location || '-')}</td><td class="stock-quantity ${item.is_low_stock?'stock-low':''}">${item.current_quantity}</td><td>${item.minimum_stock}</td><td><span class="stock-badge">${item.is_active?'Active':'Inactive'}</span></td><td>${itemActionButtons(item)}</td></tr>`).join('');
+    stockItemsBody.innerHTML=rows;
+    stockItemsMobile.innerHTML=stockState.items.map(item=>`<article class="stock-mobile-card"><div class="stock-mobile-top"><div><strong>${stockEscape(item.item_name)}</strong><div class="stock-barcode">${stockEscape(item.barcode)}</div></div><div class="stock-quantity ${item.is_low_stock?'stock-low':''}">${item.current_quantity}</div></div><div class="stock-mobile-meta">${stockEscape(item.category || 'No category')} &middot; ${stockEscape(item.storage_location || 'No location')} &middot; Min ${item.minimum_stock}</div><div class="mt-2">${itemActionButtons(item)}</div></article>`).join('');
+    stockItemsEmpty.hidden=stockState.items.length>0;
+    document.querySelectorAll('[data-sort]').forEach(el=>el.textContent=el.dataset.sort===stockState.sort?(stockState.direction==='asc'?'▲':'▼'):'');
+}
+function movementAccountability(m){ if(m.direction==='OUT') return `${stockEscape(m.recipient)}<br><span class="text-muted">${stockEscape(m.purpose)}</span>`; return stockEscape(m.source_or_returned_by || '-'); }
+function reversalButton(m){ if(m.reversal_of_id)return '<span class="stock-badge">Correction</span>'; if(m.reversed_by_movement_id)return '<span class="stock-badge">Reversed</span>'; return `<button class="stock-icon-btn" title="Reverse transaction" aria-label="Reverse movement ${m.id}" onclick="openReverseModal(${m.id})"><i class="fa-solid fa-rotate-left"></i></button>`; }
+function renderStockMovements(){
+    stockMovementsBody.innerHTML=stockState.movements.map(m=>`<tr><td>${stockEscape(m.created_at_display)}</td><td><strong>${stockEscape(m.item_name)}</strong><div class="stock-barcode text-muted">${stockEscape(m.barcode)}</div></td><td><span class="stock-badge stock-badge-${m.direction.toLowerCase()}">${m.direction} ${m.quantity}</span></td><td>${stockEscape(m.reason)}${m.remarks?`<div class="text-muted small">${stockEscape(m.remarks)}</div>`:''}</td><td>${movementAccountability(m)}</td><td><strong>${m.resulting_quantity}</strong></td><td>${stockEscape(m.created_by)}</td><td>${reversalButton(m)}</td></tr>`).join('');
+    stockMovementsMobile.innerHTML=stockState.movements.map(m=>`<article class="stock-mobile-card"><div class="stock-mobile-top"><div><strong>${stockEscape(m.item_name)}</strong><div class="stock-barcode">${stockEscape(m.barcode)}</div></div><span class="stock-badge stock-badge-${m.direction.toLowerCase()}">${m.direction} ${m.quantity}</span></div><div class="stock-mobile-meta">${stockEscape(m.created_at_display)} &middot; ${stockEscape(m.reason)} &middot; Balance ${m.resulting_quantity}</div><div class="mt-2 d-flex justify-content-between align-items-end"><div>${movementAccountability(m)}</div>${reversalButton(m)}</div></article>`).join('');
+    stockMovementsEmpty.hidden=stockState.movements.length>0;
+}
+function setStockSort(key){ stockState.direction=stockState.sort===key&&stockState.direction==='asc'?'desc':'asc'; stockState.sort=key; loadStockItems().catch(e=>showStockAlert('stockPageAlert',e.message)); }
+function switchStockTab(tab){ stockState.activeTab=tab; stockItemsView.hidden=tab!=='items'; stockMovementsView.hidden=tab!=='movements'; stockItemsTab.classList.toggle('active',tab==='items'); stockMovementsTab.classList.toggle('active',tab==='movements'); if(tab==='movements')loadStockMovements().catch(e=>showStockAlert('stockPageAlert',e.message)); }
+function showItemHistory(itemId){ stockState.activeTab='movements'; stockItemsView.hidden=true; stockMovementsView.hidden=false; stockItemsTab.classList.remove('active'); stockMovementsTab.classList.add('active'); const item=stockState.items.find(x=>x.id===itemId); loadStockMovements(itemId).then(()=>showStockAlert('stockPageAlert',`Showing recent movements for ${item?.item_name || 'item'}.`,'success')).catch(e=>showStockAlert('stockPageAlert',e.message)); }
+
+async function lookupScannedBarcode(){
+    const input=stockBarcodeInput, barcode=input.value.trim(); if(!barcode){ showStockAlert('stockPageAlert','Scan or enter a barcode first.'); refocusScanner(); return; }
+    const now=Date.now(); if(stockState.scanBusy || (stockState.lastScan===barcode && now-stockState.lastScanAt<700))return;
+    stockState.scanBusy=true; stockState.lastScan=barcode; stockState.lastScanAt=now; setBusy(stockLookupButton,true,'Looking Up');
+    try{ const data=await stockJson('/api/stock-inventory/lookup',{method:'POST',headers:stockHeaders(),body:JSON.stringify({barcode})}); input.value=''; if(data.found)openMovementModal(data.item.id,data.item); else openRegisterModal(data.barcode); }
+    catch(error){ showStockAlert('stockPageAlert',error.message); refocusScanner(); }
+    finally{ stockState.scanBusy=false; setBusy(stockLookupButton,false); }
+}
+function openRegisterModal(barcode){ clearStockAlert('stockRegisterAlert'); registerBarcode.value=barcode||''; registerItemName.value=''; registerCategory.value=''; registerLocation.value=''; registerMinimum.value='0'; registerOpening.value='0'; registerSource.value=''; registerNotes.value=''; stockModals.register.show(); setTimeout(()=>{(barcode?registerItemName:registerBarcode).focus();},250); }
+async function saveRegisteredItem(){ const button=stockRegisterSave; clearStockAlert('stockRegisterAlert'); setBusy(button,true,'Saving'); try{ await stockJson('/api/stock-inventory/items',{method:'POST',headers:stockHeaders(),body:JSON.stringify({barcode:registerBarcode.value,item_name:registerItemName.value,category:registerCategory.value,storage_location:registerLocation.value,minimum_stock:registerMinimum.value,opening_quantity:registerOpening.value,source_or_returned_by:registerSource.value,notes:registerNotes.value})}); stockModals.register.hide(); await refreshStockInventory(); showStockAlert('stockPageAlert','Stock item registered.','success'); }catch(e){showStockAlert('stockRegisterAlert',e.message);}finally{setBusy(button,false);} }
+
+function openMovementModal(itemId,itemData=null){ const item=itemData||stockState.items.find(x=>x.id===itemId); if(!item)return; if(!item.is_active){showStockAlert('stockPageAlert','This item is inactive. Reactivate it before recording a movement.');return;} stockState.currentItem=item; clearStockAlert('stockMovementAlert'); stockMovementSubtitle.textContent=`${item.item_name} • ${item.barcode} • ${item.current_quantity} piece(s) available`; movementQuantity.value='1'; movementReason.value=''; movementSource.value=''; movementRecipient.value=''; movementPurpose.value=''; movementRemarks.value=''; chooseStockDirection(''); stockModals.movement.show(); }
+function chooseStockDirection(direction){ stockState.movementDirection=direction; stockInChoice.classList.toggle('active',direction==='IN'); stockOutChoice.classList.toggle('active',direction==='OUT'); stockInReasonField.hidden=direction!=='IN'; stockSourceField.hidden=direction!=='IN'; stockRecipientField.hidden=direction!=='OUT'; stockPurposeField.hidden=direction!=='OUT'; stockMovementSave.disabled=!direction; }
+async function saveStockMovement(){ const button=stockMovementSave; clearStockAlert('stockMovementAlert'); setBusy(button,true,'Saving'); try{ await stockJson('/api/stock-inventory/movements',{method:'POST',headers:stockHeaders(),body:JSON.stringify({item_id:stockState.currentItem.id,direction:stockState.movementDirection,quantity:movementQuantity.value,reason:movementReason.value,source_or_returned_by:movementSource.value,recipient:movementRecipient.value,purpose:movementPurpose.value,remarks:movementRemarks.value})}); stockModals.movement.hide(); await refreshStockInventory(); showStockAlert('stockPageAlert','Stock movement recorded.','success'); }catch(e){showStockAlert('stockMovementAlert',e.message);}finally{setBusy(button,false);} }
+
+function openEditModal(itemId){ const item=stockState.items.find(x=>x.id===itemId); if(!item)return; stockState.editItem=item; clearStockAlert('stockEditAlert'); stockEditBarcode.textContent=item.barcode; editItemName.value=item.item_name; editCategory.value=item.category; editLocation.value=item.storage_location; editMinimum.value=item.minimum_stock; editNotes.value=item.notes; editActive.checked=item.is_active; stockModals.edit.show(); }
+async function saveEditedItem(){ const b=stockEditSave; clearStockAlert('stockEditAlert'); setBusy(b,true,'Saving'); try{ await stockJson(`/api/stock-inventory/items/${stockState.editItem.id}`,{method:'PATCH',headers:stockHeaders(),body:JSON.stringify({item_name:editItemName.value,category:editCategory.value,storage_location:editLocation.value,minimum_stock:editMinimum.value,notes:editNotes.value,is_active:editActive.checked})}); stockModals.edit.hide(); await refreshStockInventory(); showStockAlert('stockPageAlert','Stock item updated.','success'); }catch(e){showStockAlert('stockEditAlert',e.message);}finally{setBusy(b,false);} }
+
+function openReverseModal(movementId){ const m=stockState.movements.find(x=>x.id===movementId); if(!m)return; stockState.reverseMovement=m; clearStockAlert('stockReverseAlert'); stockCorrectionReason.value=''; stockReverseSummary.textContent=`Reverse ${m.direction} ${m.quantity} for ${m.item_name}?`; stockModals.reverse.show(); setTimeout(()=>stockCorrectionReason.focus(),250); }
+async function confirmStockReversal(){ const b=stockReverseSave; clearStockAlert('stockReverseAlert'); setBusy(b,true,'Reversing'); try{ await stockJson(`/api/stock-inventory/movements/${stockState.reverseMovement.id}/reverse`,{method:'POST',headers:stockHeaders(),body:JSON.stringify({correction_reason:stockCorrectionReason.value})}); stockModals.reverse.hide(); await refreshStockInventory(); showStockAlert('stockPageAlert','Correction movement recorded.','success'); }catch(e){showStockAlert('stockReverseAlert',e.message);}finally{setBusy(b,false);} }
+
+document.addEventListener('DOMContentLoaded',()=>{
+    stockModals.register=new bootstrap.Modal(stockRegisterModal); stockModals.movement=new bootstrap.Modal(stockMovementModal); stockModals.edit=new bootstrap.Modal(stockEditModal); stockModals.reverse=new bootstrap.Modal(stockReverseModal);
+    document.querySelectorAll('.stock-modal').forEach(modal=>modal.addEventListener('hidden.bs.modal',refocusScanner));
+    stockBarcodeInput.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();lookupScannedBarcode();}});
+    let searchTimer; stockSearchInput.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadStockItems().catch(e=>showStockAlert('stockPageAlert',e.message)),250);});
+    stockIncludeInactive.addEventListener('change',()=>loadStockItems().catch(e=>showStockAlert('stockPageAlert',e.message)));
+    refreshStockInventory();
+});
+</script>
+{% endblock %}

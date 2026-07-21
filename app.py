@@ -1026,7 +1026,8 @@ def inject_feature_flags():
     return {
         'new_workflows_enabled': new_workflows_enabled(),
         'lpr_enabled': lpr_enabled(),
-        'embedded_lpr_enabled': embedded_lpr_enabled()
+        'embedded_lpr_enabled': embedded_lpr_enabled(),
+        'stock_inventory_superadmin': is_superadmin_user(),
     }
 
 
@@ -1945,6 +1946,55 @@ class Product(db.Model):
     shifts = db.relationship('Shift', backref='product', lazy=True)
 
 
+class StockInventoryItem(db.Model):
+    """Manila stock item identified by an exact scanner barcode."""
+    __tablename__ = 'stock_inventory_item'
+
+    id = db.Column(db.Integer, primary_key=True)
+    barcode = db.Column(db.String(128), unique=True, nullable=False, index=True)
+    item_name = db.Column(db.String(180), nullable=False, index=True)
+    category = db.Column(db.String(120), nullable=True, index=True)
+    storage_location = db.Column(db.String(180), nullable=True)
+    minimum_stock = db.Column(db.Integer, default=0, nullable=False)
+    current_quantity = db.Column(db.Integer, default=0, nullable=False)
+    notes = db.Column(db.Text, nullable=True)
+    branch_code = db.Column(db.String(10), default='BC01', nullable=False, index=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False, index=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    updated_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False)
+
+
+class StockInventoryMovement(db.Model):
+    """Immutable IN/OUT ledger entry; corrections are opposite linked movements."""
+    __tablename__ = 'stock_inventory_movement'
+
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey('stock_inventory_item.id'), nullable=False, index=True)
+    direction = db.Column(db.String(3), nullable=False, index=True)
+    quantity = db.Column(db.Integer, nullable=False)
+    reason = db.Column(db.String(40), nullable=False, index=True)
+    resulting_quantity = db.Column(db.Integer, nullable=False)
+    recipient = db.Column(db.String(180), nullable=True)
+    purpose = db.Column(db.Text, nullable=True)
+    source_or_returned_by = db.Column(db.String(180), nullable=True)
+    remarks = db.Column(db.Text, nullable=True)
+    reversal_of_id = db.Column(
+        db.Integer,
+        db.ForeignKey('stock_inventory_movement.id'),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    created_by_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
+
+    item = db.relationship('StockInventoryItem', foreign_keys=[item_id], backref=db.backref('movements', lazy=True))
+    created_by = db.relationship('User', foreign_keys=[created_by_id])
+    reversal_of = db.relationship('StockInventoryMovement', remote_side=[id], foreign_keys=[reversal_of_id])
+
+
 class ShiftFile(db.Model):
     """
     Multi-Attachment Repository.
@@ -2085,6 +2135,7 @@ _reimbursement_accounting_columns_ready = False
 _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
 _travel_liquidation_tables_ready = False
+_stock_inventory_tables_ready = False
 
 
 def ensure_tsr_knowledge_entry_table():
@@ -2709,6 +2760,31 @@ def ensure_reimbursement_payment_columns():
         raise
 
 
+def ensure_stock_inventory_tables():
+    """Create the additive Manila stock catalog and immutable movement ledger."""
+    global _stock_inventory_tables_ready
+    if _stock_inventory_tables_ready:
+        return
+    try:
+        StockInventoryItem.__table__.create(db.engine, checkfirst=True)
+        StockInventoryMovement.__table__.create(db.engine, checkfirst=True)
+        with db.engine.begin() as connection:
+            for statement in (
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_inventory_barcode ON stock_inventory_item (barcode)',
+                'CREATE INDEX IF NOT EXISTS idx_stock_inventory_active_name ON stock_inventory_item (is_active, item_name)',
+                'CREATE INDEX IF NOT EXISTS idx_stock_inventory_branch ON stock_inventory_item (branch_code)',
+                'CREATE INDEX IF NOT EXISTS idx_stock_movement_item_date ON stock_inventory_movement (item_id, created_at)',
+                'CREATE INDEX IF NOT EXISTS idx_stock_movement_direction_date ON stock_inventory_movement (direction, created_at)',
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_movement_reversal ON stock_inventory_movement (reversal_of_id) WHERE reversal_of_id IS NOT NULL',
+            ):
+                connection.exec_driver_sql(statement)
+        _stock_inventory_tables_ready = True
+    except Exception as stock_error:
+        _stock_inventory_tables_ready = False
+        print(f'[StockInventory] Unable to ensure stock inventory tables: {stock_error}', flush=True)
+        raise
+
+
 def ensure_changelog_tables():
     """Create additive changelog tables and synchronize tracked release metadata."""
     global _changelog_tables_ready, _changelog_manifest_synced
@@ -3063,6 +3139,7 @@ def ensure_live_engineer_signature_schema_before_routes():
     ensure_email_recipient_setting_table()
     ensure_email_template_setting_table()
     ensure_shift_travel_block_columns()
+    ensure_stock_inventory_tables()
 
     if new_workflows_enabled():
         ensure_universal_approval_audit_table()
@@ -13404,7 +13481,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v30-changelog-contrast';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v31-stock-inventory';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -14120,6 +14197,16 @@ def products_page():
     if is_approver_only_user():
         return redirect(url_for('dashboard_page'))
     return render_template('products.html')
+
+
+@app.route('/stock_inventory')
+@login_required
+def stock_inventory_page():
+    """Scanner-ready Manila stock ledger, restricted to named superadmins."""
+    if not is_superadmin_user():
+        return Response('Access denied.', status=403, mimetype='text/plain')
+    ensure_stock_inventory_tables()
+    return render_template('stock_inventory.html')
 
 
 @app.route('/settings')
@@ -15728,6 +15815,7 @@ ACTIVITY_CATEGORY_META = {
     'Email': {'icon': 'fa-envelope', 'label': 'Email'},
     'Client': {'icon': 'fa-hospital', 'label': 'Client'},
     'Product': {'icon': 'fa-boxes-stacked', 'label': 'Product'},
+    'Stock Inventory': {'icon': 'fa-barcode', 'label': 'Stock Inventory'},
     'Personnel': {'icon': 'fa-user-gear', 'label': 'Personnel'},
     'Export': {'icon': 'fa-file-export', 'label': 'Export'},
     'Security': {'icon': 'fa-shield-halved', 'label': 'Security'},
@@ -15758,6 +15846,8 @@ def classify_activity_action(action):
     """Return a normalized audit category for dashboard badges and filters."""
     text = (action or '').lower()
 
+    if 'stock inventory' in text:
+        return 'Stock Inventory'
     if 'password' in text or 'unauthorized' in text or 'denied' in text:
         return 'Security'
     if 'accounting' in text or 'cash advance release' in text or 'marked reimbursement' in text and ('paid' in text or 'processing' in text):
@@ -48374,6 +48464,434 @@ def download_embedded_lpr(lpr_id):
     if error_response:
         return error_response
     return send_file(io.BytesIO(lpr_fill_pdf_bytes(header)), as_attachment=True, download_name=f'{secure_filename(header.lpr_no or "LPR")}.pdf', mimetype='application/pdf', max_age=0)
+
+
+# --- MANILA STOCK INVENTORY -------------------------------------------------
+
+STOCK_IN_REASONS = {'Return', 'Restock', 'Adjustment'}
+STOCK_OUT_REASON = 'Issue'
+STOCK_INVENTORY_SORT_FIELDS = {
+    'barcode': StockInventoryItem.barcode,
+    'name': StockInventoryItem.item_name,
+    'category': StockInventoryItem.category,
+    'location': StockInventoryItem.storage_location,
+    'quantity': StockInventoryItem.current_quantity,
+    'minimum': StockInventoryItem.minimum_stock,
+    'updated': StockInventoryItem.updated_at,
+}
+
+
+def stock_inventory_api_guard():
+    if not is_superadmin_user():
+        return jsonify({'success': False, 'error': 'Stock Inventory access is restricted to authorized superadmins.'}), 403
+    ensure_stock_inventory_tables()
+    return None
+
+
+def stock_inventory_positive_integer(value, field_label='Quantity'):
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise ValueError(f'{field_label} must be a whole number.')
+    if parsed <= 0:
+        raise ValueError(f'{field_label} must be greater than zero.')
+    return parsed
+
+
+def stock_inventory_nonnegative_integer(value, field_label='Minimum stock'):
+    try:
+        parsed = int(str(value if value is not None else 0).strip() or '0')
+    except (TypeError, ValueError):
+        raise ValueError(f'{field_label} must be a whole number.')
+    if parsed < 0:
+        raise ValueError(f'{field_label} cannot be negative.')
+    return parsed
+
+
+def stock_inventory_item_to_dict(item, movement_count=None):
+    if movement_count is None:
+        movement_count = StockInventoryMovement.query.filter_by(item_id=item.id).count()
+    return {
+        'id': item.id,
+        'barcode': item.barcode,
+        'item_name': item.item_name,
+        'category': item.category or '',
+        'storage_location': item.storage_location or '',
+        'minimum_stock': int(item.minimum_stock or 0),
+        'current_quantity': int(item.current_quantity or 0),
+        'notes': item.notes or '',
+        'branch_code': item.branch_code or 'BC01',
+        'is_active': bool(item.is_active),
+        'is_low_stock': bool(item.is_active and int(item.current_quantity or 0) <= int(item.minimum_stock or 0)),
+        'movement_count': movement_count,
+        'created_at': item.created_at.isoformat() if item.created_at else None,
+        'updated_at': item.updated_at.isoformat() if item.updated_at else None,
+    }
+
+
+def stock_inventory_movement_to_dict(movement):
+    reversed_entry = StockInventoryMovement.query.filter_by(reversal_of_id=movement.id).first()
+    actor_name = clean_str(getattr(movement.created_by, 'username', None)) or 'System'
+    return {
+        'id': movement.id,
+        'item_id': movement.item_id,
+        'barcode': getattr(movement.item, 'barcode', ''),
+        'item_name': getattr(movement.item, 'item_name', ''),
+        'direction': movement.direction,
+        'quantity': movement.quantity,
+        'reason': movement.reason,
+        'resulting_quantity': movement.resulting_quantity,
+        'recipient': movement.recipient or '',
+        'purpose': movement.purpose or '',
+        'source_or_returned_by': movement.source_or_returned_by or '',
+        'remarks': movement.remarks or '',
+        'reversal_of_id': movement.reversal_of_id,
+        'reversed_by_movement_id': reversed_entry.id if reversed_entry else None,
+        'can_reverse': movement.reversal_of_id is None and reversed_entry is None,
+        'created_by': actor_name,
+        'created_at': movement.created_at.isoformat() if movement.created_at else None,
+        'created_at_display': movement.created_at.strftime('%b %d, %Y %I:%M %p') if movement.created_at else '',
+    }
+
+
+def apply_stock_inventory_balance(item_id, direction, quantity):
+    """Apply a conditional atomic balance update and return the refreshed item."""
+    now = get_manila_time()
+    query = StockInventoryItem.query.filter(
+        StockInventoryItem.id == item_id,
+        StockInventoryItem.is_active.is_(True),
+    )
+    if direction == 'OUT':
+        query = query.filter(StockInventoryItem.current_quantity >= quantity)
+        values = {
+            StockInventoryItem.current_quantity: StockInventoryItem.current_quantity - quantity,
+            StockInventoryItem.updated_at: now,
+            StockInventoryItem.updated_by_id: current_user.id,
+        }
+    else:
+        values = {
+            StockInventoryItem.current_quantity: StockInventoryItem.current_quantity + quantity,
+            StockInventoryItem.updated_at: now,
+            StockInventoryItem.updated_by_id: current_user.id,
+        }
+    changed = query.update(values, synchronize_session=False)
+    if changed != 1:
+        existing = db.session.get(StockInventoryItem, item_id)
+        if not existing:
+            raise LookupError('Stock item not found.')
+        if not existing.is_active:
+            raise PermissionError('This stock item is inactive. Reactivate it before recording a movement.')
+        raise ValueError(f'Only {int(existing.current_quantity or 0)} piece(s) are available.')
+    db.session.flush()
+    db.session.expire_all()
+    return db.session.get(StockInventoryItem, item_id)
+
+
+@app.route('/api/stock-inventory/summary')
+@login_required
+def get_stock_inventory_summary():
+    denied = stock_inventory_api_guard()
+    if denied:
+        return denied
+    now = get_manila_time()
+    day_start = datetime.combine(now.date(), datetime.min.time())
+    day_end = day_start + timedelta(days=1)
+    active_items = StockInventoryItem.query.filter_by(is_active=True, branch_code='BC01')
+    return jsonify({
+        'success': True,
+        'summary': {
+            'active_items': active_items.count(),
+            'total_pieces': int(active_items.with_entities(func.coalesce(func.sum(StockInventoryItem.current_quantity), 0)).scalar() or 0),
+            'low_stock_items': active_items.filter(StockInventoryItem.current_quantity <= StockInventoryItem.minimum_stock).count(),
+            'movements_today': StockInventoryMovement.query.filter(
+                StockInventoryMovement.created_at >= day_start,
+                StockInventoryMovement.created_at < day_end,
+            ).count(),
+        },
+    })
+
+
+@app.route('/api/stock-inventory/items')
+@login_required
+def get_stock_inventory_items():
+    denied = stock_inventory_api_guard()
+    if denied:
+        return denied
+    query = StockInventoryItem.query.filter_by(branch_code='BC01')
+    search = (clean_str(request.args.get('q')) or '').strip()
+    if search:
+        pattern = f'%{search}%'
+        query = query.filter(or_(
+            StockInventoryItem.barcode.ilike(pattern),
+            StockInventoryItem.item_name.ilike(pattern),
+            StockInventoryItem.category.ilike(pattern),
+            StockInventoryItem.storage_location.ilike(pattern),
+        ))
+    if (request.args.get('include_inactive') or '').lower() not in {'1', 'true', 'yes'}:
+        query = query.filter(StockInventoryItem.is_active.is_(True))
+    sort_key = (request.args.get('sort') or 'name').lower()
+    sort_column = STOCK_INVENTORY_SORT_FIELDS.get(sort_key, StockInventoryItem.item_name)
+    descending = (request.args.get('direction') or 'asc').lower() == 'desc'
+    query = query.order_by(sort_column.desc() if descending else sort_column.asc(), StockInventoryItem.id.asc())
+    items = query.all()
+    item_ids = [item.id for item in items]
+    movement_counts = {}
+    if item_ids:
+        movement_counts = dict(
+            db.session.query(StockInventoryMovement.item_id, func.count(StockInventoryMovement.id))
+            .filter(StockInventoryMovement.item_id.in_(item_ids))
+            .group_by(StockInventoryMovement.item_id)
+            .all()
+        )
+    return jsonify({
+        'success': True,
+        'items': [stock_inventory_item_to_dict(item, movement_counts.get(item.id, 0)) for item in items],
+    })
+
+
+@app.route('/api/stock-inventory/lookup', methods=['POST'])
+@login_required
+def lookup_stock_inventory_barcode():
+    denied = stock_inventory_api_guard()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    barcode = str(payload.get('barcode') or '').strip()
+    if not barcode:
+        return jsonify({'success': False, 'error': 'Scan or enter a barcode first.'}), 400
+    if len(barcode) > 128:
+        return jsonify({'success': False, 'error': 'Barcode is too long.'}), 400
+    item = StockInventoryItem.query.filter_by(barcode=barcode, branch_code='BC01').first()
+    return jsonify({'success': True, 'found': bool(item), 'barcode': barcode, 'item': stock_inventory_item_to_dict(item) if item else None})
+
+
+@app.route('/api/stock-inventory/items', methods=['POST'])
+@login_required
+def create_stock_inventory_item():
+    denied = stock_inventory_api_guard()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    barcode = str(payload.get('barcode') or '').strip()
+    item_name = (clean_str(payload.get('item_name')) or '').strip()
+    if not barcode or len(barcode) > 128:
+        return jsonify({'success': False, 'error': 'A valid barcode is required.'}), 400
+    if not item_name:
+        return jsonify({'success': False, 'error': 'Item name is required.'}), 400
+    if StockInventoryItem.query.filter_by(barcode=barcode).first():
+        return jsonify({'success': False, 'error': 'This exact barcode is already registered.'}), 409
+    try:
+        opening_quantity = stock_inventory_nonnegative_integer(payload.get('opening_quantity'), 'Opening quantity')
+        minimum_stock = stock_inventory_nonnegative_integer(payload.get('minimum_stock'), 'Minimum stock')
+        item = StockInventoryItem(
+            barcode=barcode,
+            item_name=item_name[:180],
+            category=(clean_str(payload.get('category')) or '')[:120] or None,
+            storage_location=(clean_str(payload.get('storage_location')) or '')[:180] or None,
+            minimum_stock=minimum_stock,
+            current_quantity=0,
+            notes=clean_str(payload.get('notes')),
+            branch_code='BC01',
+            is_active=True,
+            created_by_id=current_user.id,
+            updated_by_id=current_user.id,
+        )
+        db.session.add(item)
+        db.session.flush()
+        if opening_quantity:
+            item.current_quantity = opening_quantity
+            db.session.add(StockInventoryMovement(
+                item_id=item.id,
+                direction='IN',
+                quantity=opening_quantity,
+                reason='Opening Stock',
+                resulting_quantity=opening_quantity,
+                source_or_returned_by=(clean_str(payload.get('source_or_returned_by')) or '')[:180] or None,
+                remarks='Initial stock recorded during item registration.',
+                created_by_id=current_user.id,
+            ))
+        add_activity_log_entry(f'Stock Inventory registered item: {item.item_name} [{item.barcode}] with opening quantity {opening_quantity}')
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Stock item registered.', 'item': stock_inventory_item_to_dict(item)}), 201
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception as exc:
+        db.session.rollback()
+        if 'unique' in str(exc).lower():
+            return jsonify({'success': False, 'error': 'This exact barcode is already registered.'}), 409
+        print(f'[StockInventory] Registration failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Stock item could not be registered.'}), 500
+
+
+@app.route('/api/stock-inventory/items/<int:item_id>', methods=['PATCH'])
+@login_required
+def update_stock_inventory_item(item_id):
+    denied = stock_inventory_api_guard()
+    if denied:
+        return denied
+    item = db.session.get(StockInventoryItem, item_id)
+    if not item:
+        return jsonify({'success': False, 'error': 'Stock item not found.'}), 404
+    payload = request.get_json(silent=True) or {}
+    try:
+        if 'item_name' in payload:
+            item_name = (clean_str(payload.get('item_name')) or '').strip()
+            if not item_name:
+                raise ValueError('Item name is required.')
+            item.item_name = item_name[:180]
+        if 'category' in payload:
+            item.category = (clean_str(payload.get('category')) or '')[:120] or None
+        if 'storage_location' in payload:
+            item.storage_location = (clean_str(payload.get('storage_location')) or '')[:180] or None
+        if 'minimum_stock' in payload:
+            item.minimum_stock = stock_inventory_nonnegative_integer(payload.get('minimum_stock'))
+        if 'notes' in payload:
+            item.notes = clean_str(payload.get('notes'))
+        if 'is_active' in payload:
+            item.is_active = bool(payload.get('is_active'))
+        item.updated_by_id = current_user.id
+        item.updated_at = get_manila_time()
+        action_word = 'reactivated' if item.is_active else 'deactivated'
+        add_activity_log_entry(f'Stock Inventory updated item: {item.item_name} [{item.barcode}] ({action_word})')
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Stock item updated.', 'item': stock_inventory_item_to_dict(item)})
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
+
+
+@app.route('/api/stock-inventory/movements')
+@login_required
+def get_stock_inventory_movements():
+    denied = stock_inventory_api_guard()
+    if denied:
+        return denied
+    query = StockInventoryMovement.query.options(joinedload(StockInventoryMovement.item), joinedload(StockInventoryMovement.created_by))
+    item_id = clean_int(request.args.get('item_id'))
+    direction = (request.args.get('direction') or '').upper()
+    if item_id:
+        query = query.filter(StockInventoryMovement.item_id == item_id)
+    if direction in {'IN', 'OUT'}:
+        query = query.filter(StockInventoryMovement.direction == direction)
+    try:
+        limit = min(max(int(request.args.get('limit') or 200), 1), 500)
+    except ValueError:
+        limit = 200
+    movements = query.order_by(StockInventoryMovement.created_at.desc(), StockInventoryMovement.id.desc()).limit(limit).all()
+    return jsonify({'success': True, 'movements': [stock_inventory_movement_to_dict(movement) for movement in movements]})
+
+
+@app.route('/api/stock-inventory/movements', methods=['POST'])
+@login_required
+def create_stock_inventory_movement():
+    denied = stock_inventory_api_guard()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    item_id = clean_int(payload.get('item_id'))
+    direction = (clean_str(payload.get('direction')) or '').upper()
+    if direction not in {'IN', 'OUT'}:
+        return jsonify({'success': False, 'error': 'Choose IN or OUT.'}), 400
+    item = db.session.get(StockInventoryItem, item_id)
+    if not item:
+        return jsonify({'success': False, 'error': 'Stock item not found.'}), 404
+    try:
+        quantity = stock_inventory_positive_integer(payload.get('quantity'))
+        reason = (clean_str(payload.get('reason')) or '').strip()
+        recipient = (clean_str(payload.get('recipient')) or '').strip()
+        purpose = (clean_str(payload.get('purpose')) or '').strip()
+        source = (clean_str(payload.get('source_or_returned_by')) or '').strip()
+        if direction == 'IN' and reason not in STOCK_IN_REASONS:
+            raise ValueError('Choose Return, Restock, or Adjustment for an IN transaction.')
+        if direction == 'OUT':
+            reason = STOCK_OUT_REASON
+            if not recipient:
+                raise ValueError('Recipient or team is required for an OUT transaction.')
+            if not purpose:
+                raise ValueError('Purpose is required for an OUT transaction.')
+        refreshed_item = apply_stock_inventory_balance(item.id, direction, quantity)
+        movement = StockInventoryMovement(
+            item_id=item.id,
+            direction=direction,
+            quantity=quantity,
+            reason=reason,
+            resulting_quantity=int(refreshed_item.current_quantity or 0),
+            recipient=recipient[:180] or None,
+            purpose=purpose or None,
+            source_or_returned_by=source[:180] or None,
+            remarks=clean_str(payload.get('remarks')),
+            created_by_id=current_user.id,
+        )
+        db.session.add(movement)
+        add_activity_log_entry(f'Stock Inventory {direction}: {quantity} piece(s) of {refreshed_item.item_name} [{refreshed_item.barcode}] - {reason}')
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': f'{direction} transaction recorded.',
+            'item': stock_inventory_item_to_dict(refreshed_item),
+            'movement': stock_inventory_movement_to_dict(movement),
+        }), 201
+    except (ValueError, PermissionError) as exc:
+        db.session.rollback()
+        conflict = isinstance(exc, PermissionError) or str(exc).startswith('Only ')
+        return jsonify({'success': False, 'error': str(exc)}), 409 if conflict else 400
+    except LookupError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 404
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[StockInventory] Movement failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Stock movement could not be recorded.'}), 500
+
+
+@app.route('/api/stock-inventory/movements/<int:movement_id>/reverse', methods=['POST'])
+@login_required
+def reverse_stock_inventory_movement(movement_id):
+    denied = stock_inventory_api_guard()
+    if denied:
+        return denied
+    original = db.session.get(StockInventoryMovement, movement_id)
+    if not original:
+        return jsonify({'success': False, 'error': 'Movement not found.'}), 404
+    if original.reversal_of_id:
+        return jsonify({'success': False, 'error': 'A reversal entry cannot be reversed.'}), 409
+    if StockInventoryMovement.query.filter_by(reversal_of_id=original.id).first():
+        return jsonify({'success': False, 'error': 'This movement has already been reversed.'}), 409
+    correction_reason = (clean_str((request.get_json(silent=True) or {}).get('correction_reason')) or '').strip()
+    if not correction_reason:
+        return jsonify({'success': False, 'error': 'Correction reason is required.'}), 400
+    opposite = 'OUT' if original.direction == 'IN' else 'IN'
+    try:
+        item = apply_stock_inventory_balance(original.item_id, opposite, original.quantity)
+        reversal = StockInventoryMovement(
+            item_id=original.item_id,
+            direction=opposite,
+            quantity=original.quantity,
+            reason='Correction',
+            resulting_quantity=int(item.current_quantity or 0),
+            remarks=correction_reason,
+            reversal_of_id=original.id,
+            created_by_id=current_user.id,
+        )
+        db.session.add(reversal)
+        add_activity_log_entry(f'Stock Inventory reversed movement #{original.id}: {item.item_name} [{item.barcode}] - {correction_reason}')
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': 'Opposite correction movement recorded.',
+            'item': stock_inventory_item_to_dict(item),
+            'movement': stock_inventory_movement_to_dict(reversal),
+        }), 201
+    except (ValueError, PermissionError) as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 409
+    except Exception as exc:
+        db.session.rollback()
+        if 'unique' in str(exc).lower():
+            return jsonify({'success': False, 'error': 'This movement has already been reversed.'}), 409
+        print(f'[StockInventory] Reversal failed: {exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Movement could not be reversed.'}), 500
 
 
 def initialize_wsgi_workflow_schemas():
