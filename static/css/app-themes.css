@@ -6,6 +6,9 @@
     --app-muted: #64748b;
     --app-border: #dbe3ea;
     --app-input: #ffffff;
+    --app-input-bg: var(--app-input);
+    --app-surface-muted: var(--app-surface-raised);
+    --app-muted-text: var(--app-muted);
     --app-primary: #0d6efd;
     --app-primary-rgb: 13, 110, 253;
     --app-focus: rgba(13, 110, 253, .25);

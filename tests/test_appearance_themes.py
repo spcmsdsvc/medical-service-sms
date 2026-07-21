@@ -25,7 +25,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('@media print', styles)
 
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
-        self.assertIn('medical-service-pwa-offline-navigation-v26-dark-dropdowns', app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v27-dark-attachments', app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
     def test_login_uses_last_device_appearance(self):
@@ -79,7 +79,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '[class*="-stat-value"]',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=20", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=21", layout)
 
     def test_dark_mode_covers_native_and_custom_dropdowns(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
@@ -98,6 +98,24 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         ):
             self.assertIn(selector, css)
         self.assertIn('<select id="lprBranch">', lpr)
+
+    def test_dark_mode_covers_attachment_and_receipt_surfaces(self):
+        shared = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
+        css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+        layout = (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8')
+        for token in ('--app-input-bg:', '--app-surface-muted:', '--app-muted-text:'):
+            self.assertIn(token, shared)
+        for selector in (
+            '.lpr-attachments',
+            '.cash-attachment-panel',
+            '.travel-attachment-item',
+            '.reim-additional-receipts-card',
+            '.tsr-attachment-package',
+            '.approval-receipt-preview-modal',
+            '.receipt-pill, .reim-receipt-pill',
+        ):
+            self.assertIn(selector, css)
+        self.assertIn("filename='css/app-themes.css') }}?v=17", layout)
 
 
 if __name__ == '__main__':

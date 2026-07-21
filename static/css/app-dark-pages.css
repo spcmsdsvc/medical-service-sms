@@ -639,6 +639,61 @@
 :root[data-app-theme="dark"] .approval-status-summary-card.approved strong { color: #86efac !important; }
 :root[data-app-theme="dark"] .approval-status-summary-card.rejected strong { color: #fda4af !important; }
 
+/* Attachment and receipt workspaces. Document/image canvases stay white below. */
+:root[data-app-theme="dark"] :is(
+    .lpr-attachments, .lpr-attachment,
+    .cash-attachment-panel, .cash-attachment-item,
+    .travel-attachment-item,
+    .embedded-lpr-attachments, .embedded-lpr-attachment,
+    .reim-additional-receipts-card, .reim-additional-receipts-body,
+    .tsr-attachment-package, .tsr-attachment-package-header,
+    .tsr-attachment-row, .tsr-attachment-empty,
+    .tsr-attachment-item, .tsr-email-suggestion-panel,
+    .approval-receipt-preview-modal, .approval-receipt-preview-footer
+) {
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .lpr-attachment-name, .cash-attachment-name, .travel-attachment-name,
+    .tsr-attachment-name, .reim-additional-receipts-head h3,
+    .embedded-lpr-attachments-head strong
+) {
+    color: var(--dark-text) !important;
+}
+:root[data-app-theme="dark"] :is(
+    .lpr-attachment-meta, .cash-attachment-meta, .travel-attachment-meta,
+    .tsr-attachment-meta, .tsr-attachment-empty, .embedded-lpr-muted
+) {
+    color: var(--dark-muted) !important;
+}
+:root[data-app-theme="dark"] :is(.lpr-btn-secondary, .embedded-lpr-btn.secondary) {
+    background: #2a394c !important;
+    color: #edf2f7 !important;
+    border-color: #53657d !important;
+}
+:root[data-app-theme="dark"] :is(.lpr-btn-secondary, .embedded-lpr-btn.secondary):hover {
+    background: #35475d !important;
+    color: #fff !important;
+}
+:root[data-app-theme="dark"] :is(.lpr-btn:disabled, .embedded-lpr-btn:disabled) {
+    background: #263344 !important;
+    color: #aebccc !important;
+    border-color: #46566b !important;
+    opacity: .72;
+}
+:root[data-app-theme="dark"] :is(.receipt-pill, .reim-receipt-pill) {
+    background: #273654 !important;
+    color: #c7d2fe !important;
+    border-color: #53657d !important;
+}
+:root[data-app-theme="dark"] :is(.receipt-delete-btn, .reim-receipt-btn.danger) {
+    background: #4a2029 !important;
+    color: #fda4af !important;
+    border-color: #7f3543 !important;
+}
+
 /* Create TSR UI remains dark, but the official PDF/preview remains white. */
 :root[data-app-theme="dark"] :is(
     .offline-tsr-hero, .offline-tsr-dialog-box, .offline-tsr-storage-health,
