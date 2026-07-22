@@ -35419,6 +35419,20 @@ def normalize_shift_title(payload):
     return title
 
 
+def validate_shift_billing_tags(title):
+    """Validate dependent P.O. billing markers encoded in schedule titles."""
+    title_text = clean_str(title) or ''
+    has_po = '[With P.O.]' in title_text
+    has_sc = '[SC]' in title_text
+    has_sv = '[SV]' in title_text
+
+    if has_sc and has_sv:
+        return False, 'Select either SC or SV, not both.'
+    if (has_sc or has_sv) and not has_po:
+        return False, 'SC or SV can only be selected together with With P.O.'
+    return True, ''
+
+
 def is_legacy_calendar_leave_title(title):
     """Identify old Calendar-created leave rows without affecting Leave Request rows."""
     return (clean_str(title) or '') in LEAVE_CATEGORIES
@@ -37965,6 +37979,9 @@ def add_shift():
     shift_title = normalize_shift_title(payload)
     if not shift_title:
         return jsonify({'message': 'Task/Purpose is required'}), 400
+    billing_tags_ok, billing_tags_error = validate_shift_billing_tags(shift_title)
+    if not billing_tags_ok:
+        return jsonify({'message': billing_tags_error}), 400
     if block_new_calendar_leave_for_current_or_future(shift_title, start_d):
         return jsonify({
             'message': 'Leave schedules for today or future dates must be submitted through Leave Request.'
@@ -38115,6 +38132,9 @@ def update_shift(id):
     shift_title = normalize_shift_title(payload)
     if not shift_title:
         return jsonify({'message': 'Task/Purpose is required'}), 400
+    billing_tags_ok, billing_tags_error = validate_shift_billing_tags(shift_title)
+    if not billing_tags_ok:
+        return jsonify({'message': billing_tags_error}), 400
 
     new_status = clean_str(payload.get('status')) or master_shift.status
     start_d = parse_date(payload.get('start_date'))

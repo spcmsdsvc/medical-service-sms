@@ -1589,7 +1589,7 @@ function renderStandaloneScheduleCards(){
           ${isMultiDay ? `<div class="standalone-schedule-count-badge mt-1">${items.length} days</div>` : ''}
         </div>
       </div>
-      <div class="standalone-schedule-meta"><i class="fa-solid fa-clock me-1"></i>${escapeHTML(schedule.time_start || '')}-${escapeHTML(schedule.time_end || '')} • ${escapeHTML(schedule.task || 'Service schedule')}</div>
+      <div class="standalone-schedule-meta"><i class="fa-solid fa-clock me-1"></i>${escapeHTML(schedule.time_start || '')}-${escapeHTML(schedule.time_end || '')} • ${escapeHTML(stripScheduleBillingTags(schedule.task) || 'Service schedule')}</div>
       ${engineers ? `<div class="standalone-schedule-meta"><i class="fa-solid fa-user-gear me-1"></i>${escapeHTML(engineers)}</div>` : ''}
       ${isMultiDay ? `<div class="standalone-schedule-meta"><i class="fa-solid fa-circle-info me-1"></i>Multi-day schedule. Tap the card to select the first day, or choose another date below.</div>${dateButtons}` : ''}
     </div>`;
@@ -1682,7 +1682,7 @@ function clearStandaloneTSRWorkFieldsForScheduleChange(){
 }
 function buildComplaintFromSelectedSchedule(schedule){
   if(!schedule) return '';
-  const task = String(schedule.task || schedule.title || schedule.purpose || '').trim();
+  const task = stripScheduleBillingTags(schedule.task || schedule.title || schedule.purpose || '');
   const product = String(schedule.product_name || schedule.product || schedule.equipment_name || '').trim();
   const serial = String(schedule.product_id || schedule.serial_number || schedule.serial || '').trim();
 
@@ -1741,7 +1741,7 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
       <div class="schedule-picker-detail-grid">
         <div><span>Date</span><strong>${selectedDate || 'No date'}</strong></div>
         <div><span>Time</span><strong>${selectedTime || 'No time'}</strong></div>
-        <div><span>Task</span><strong>${escapeHTML(schedule.task || 'Service schedule')}</strong></div>
+        <div><span>Task</span><strong>${escapeHTML(stripScheduleBillingTags(schedule.task) || 'Service schedule')}</strong></div>
         <div><span>Equipment</span><strong>${escapeHTML(getScheduleProductLabel(schedule))}</strong></div>
       </div>
       <div class="tsr-schedule-locked-note"><i class="fa-solid ${isOnlineTSRRevisionMode() || selectedScheduleNeedsEquipmentEntry(schedule) ? 'fa-pen-to-square' : 'fa-lock'} me-1"></i>${isOnlineTSRRevisionMode()
@@ -3304,6 +3304,13 @@ async function resolveQueuedAttachmentDataURL(attachment){
     if(record?.blob) return blobToDataURL(record.blob);
   }
   return '';
+}
+
+function stripScheduleBillingTags(value){
+  return String(value || '')
+    .replace(/\[(?:Warranty|FOC|With\s*P\.?O\.?|SC|SV)\]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function ensureTSRSubmissionToken(existing=''){
