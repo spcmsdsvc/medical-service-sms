@@ -25,24 +25,16 @@
   <div class="card p-3 p-md-4 mb-3 no-print reports-filter-card">
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
       <div>
-        <div class="small fw-bold text-primary text-uppercase">Filters</div>
-        <div class="text-muted small">Adjust date range and search the TSR archive.</div>
+        <div class="small fw-bold text-primary text-uppercase">Archive Search</div>
+        <div class="text-muted small">Search all accessible TSR files without a date limit.</div>
       </div>
       <span id="reports-mode-badge" class="badge bg-primary-subtle text-primary border border-primary-subtle">
         {% if reports_admin_view %}Admin reports{% else %}Engineer TSR archive{% endif %}
       </span>
     </div>
     <div class="row g-2 align-items-end">
-      <div class="col-md-3">
-        <label class="small fw-bold text-muted text-uppercase">Start Date</label>
-        <input id="reports-start-date" type="date" class="form-control">
-      </div>
-      <div class="col-md-3">
-        <label class="small fw-bold text-muted text-uppercase">End Date</label>
-        <input id="reports-end-date" type="date" class="form-control">
-      </div>
       {% if reports_admin_view %}
-      <div class="col-md-3">
+      <div class="col-md-4">
         <label class="small fw-bold text-muted text-uppercase">Branch</label>
         <select id="reports-branch" class="form-select">
           <option value="ALL">All Branches</option>
@@ -53,7 +45,7 @@
       </div>
       {% else %}
       <input id="reports-branch" type="hidden" value="ALL">
-      <div class="col-md-3">
+      <div class="col-md-4">
         <label class="small fw-bold text-muted text-uppercase">Archive Scope</label>
         <select id="reports-scope" class="form-select">
           <option value="my" selected>My TSRs</option>
@@ -61,7 +53,7 @@
         </select>
       </div>
       {% endif %}
-      <div class="col-md-{{ '3' if reports_admin_view else '6' }}">
+      <div class="col-md-8">
         <label class="small fw-bold text-muted text-uppercase">Search TSR Archive</label>
         <div class="input-group">
           <span class="input-group-text bg-white"><i class="fa-solid fa-magnifying-glass text-primary"></i></span>
@@ -81,25 +73,56 @@
         <h5 class="fw-bold mb-1"><i class="fa-solid fa-folder-open text-primary me-2"></i>TSR Archive</h5>
         <div class="small text-muted">
           {% if reports_admin_view %}
-            Search and download TSR files across the selected report range.
+            Search and download TSR files across all available history.
           {% else %}
             Search and download TSR files from schedules assigned to you.
           {% endif %}
         </div>
       </div>
-      <span class="badge bg-primary-subtle text-primary border border-primary-subtle"><span id="archive-count">0</span> TSR file(s)</span>
+      <div class="archive-header-actions no-print">
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle"><span id="archive-count">0</span> TSR file(s)</span>
+        <button id="archive-refresh-btn" class="btn btn-sm btn-outline-primary fw-bold" type="button"><i class="fa-solid fa-rotate-right me-1"></i>Refresh</button>
+      </div>
     </div>
 
     <div class="table-responsive reports-table-desktop">
       <table class="table table-sm align-middle mb-0">
-        <thead class="table-light"><tr><th>Date</th><th>Client</th><th>Product</th><th>Task</th><th>Engineer(s)</th><th>Files</th></tr></thead>
+        <thead class="table-light"><tr><th>Date</th><th>Client</th><th>Product</th><th>Task</th><th>Engineer(s)</th><th>TSR File</th></tr></thead>
         <tbody id="tsr-archive-table"><tr><td colspan="6" class="text-muted text-center py-4">No data loaded.</td></tr></tbody>
       </table>
     </div>
     <div id="tsr-archive-mobile" class="reports-mobile-list d-md-none"></div>
+    <div id="archive-pagination" class="archive-pagination no-print" hidden>
+      <div id="archive-page-summary" class="archive-page-summary"></div>
+      <div class="archive-page-controls" aria-label="TSR archive pagination">
+        <button id="archive-prev-page" class="btn btn-outline-primary fw-bold" type="button"><i class="fa-solid fa-chevron-left"></i><span>Previous</span></button>
+        <span id="archive-page-indicator" class="archive-page-indicator">Page 1 of 1</span>
+        <button id="archive-next-page" class="btn btn-outline-primary fw-bold" type="button"><span>Next</span><i class="fa-solid fa-chevron-right"></i></button>
+      </div>
+    </div>
   </div>
 
   {% if reports_admin_view %}
+  <div class="card p-3 p-md-4 mb-3 no-print reports-monitoring-card">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+      <div>
+        <div class="small fw-bold text-primary text-uppercase">Monitoring Range</div>
+        <div class="text-muted small">Controls the summaries, missing TSR queue, email activity, and CSV export below.</div>
+      </div>
+      <button class="btn btn-sm btn-outline-primary fw-bold" type="button" onclick="loadReportsSummary()"><i class="fa-solid fa-chart-column me-1"></i>Refresh Monitoring</button>
+    </div>
+    <div class="row g-2">
+      <div class="col-md-6">
+        <label class="small fw-bold text-muted text-uppercase">Start Date</label>
+        <input id="reports-start-date" type="date" class="form-control">
+      </div>
+      <div class="col-md-6">
+        <label class="small fw-bold text-muted text-uppercase">End Date</label>
+        <input id="reports-end-date" type="date" class="form-control">
+      </div>
+    </div>
+  </div>
+
   <div class="row g-3 mb-3">
     <div class="col-6 col-lg-3"><div class="report-stat-card"><div class="stat-label">Services</div><div id="stat-service" class="stat-value">0</div><div class="stat-sub">selected range</div></div></div>
     <div class="col-6 col-lg-3"><div class="report-stat-card success"><div class="stat-label">TSR Attached</div><div id="stat-tsr" class="stat-value">0</div><div class="stat-sub">with TSR file</div></div></div>
@@ -191,6 +214,9 @@
 
 <style>
 .reports-page{max-width:1180px;margin:0 auto}.reports-hero{display:flex;justify-content:space-between;align-items:center;gap:16px;background:linear-gradient(135deg,#fff,#f8fafc);border-radius:20px;padding:20px 22px;box-shadow:0 8px 24px rgba(15,23,42,.07);border:1px solid #edf2f7}.reports-eyebrow{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.08em}.reports-actions{display:flex;gap:8px;flex-wrap:wrap}.reports-filter-card{border-left:5px solid #0d6efd}.reports-section-card{border:1px solid #eef2f7}.report-stat-card{background:#fff;border-radius:16px;padding:16px;border-left:5px solid #0d6efd;box-shadow:0 6px 20px rgba(15,23,42,.06);height:100%}.report-stat-card.success{border-left-color:#198754}.report-stat-card.danger{border-left-color:#dc3545}.report-stat-card.warning{border-left-color:#ffc107}.stat-label{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#64748b;letter-spacing:.06em}.stat-value{font-size:2rem;font-weight:900;color:#0f172a;line-height:1}.stat-sub{font-size:.8rem;color:#64748b;margin-top:4px}.compact-kpi-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.compact-kpi-row div{border:1px solid #e5e7eb;background:#f8fafc;border-radius:14px;padding:10px}.compact-kpi-row span{display:block;font-size:.72rem;text-transform:uppercase;color:#64748b;font-weight:900}.compact-kpi-row strong{font-size:1.4rem;color:#0f172a}.report-table-list{display:grid;gap:8px}.product-row{border:1px solid #e5e7eb;border-radius:14px;padding:10px;background:#fff}.product-row .top{display:flex;justify-content:space-between;gap:10px}.product-row .name{font-weight:900;color:#0f172a}.product-row .meta{font-size:.82rem;color:#64748b}.product-row .count{font-weight:900;color:#0d6efd;font-size:1.1rem}.archive-file-list{display:grid;gap:8px}.archive-file-entry{display:grid;gap:6px}.archive-file-actions{display:flex;flex-wrap:wrap;gap:6px}.archive-file-name{font-size:.82rem;font-weight:900;color:#334155;word-break:break-word}.archive-file-link,.archive-preview-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;font-weight:800;border-radius:10px;padding:7px 10px;line-height:1.15}.archive-preview-btn{border:1px solid #0d6efd;background:#eef5ff;color:#0d6efd}.archive-preview-btn:hover{background:#0d6efd;color:#fff}.archive-download-btn{border:1px solid #198754;background:#eefaf3;color:#198754}.archive-download-btn:hover{background:#198754;color:#fff}.reports-mobile-card-files .archive-file-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.reports-mobile-card-files .archive-file-link,.reports-mobile-card-files .archive-preview-btn{width:100%;min-height:44px;padding:10px 12px;box-shadow:0 6px 16px rgba(15,23,42,.08)}.reports-mobile-card-files .archive-download-btn{background:#0d6efd;border-color:#0d6efd;color:#fff!important}.reports-mobile-card-files .archive-download-btn:hover{background:#0b5ed7;color:#fff!important}.tsr-preview-frame{width:100%;height:min(72vh,760px);border:0;background:#f8fafc}.reports-preview-modal{border:0;border-radius:18px;overflow:hidden}.table td,.table th{vertical-align:middle}.reports-mobile-list{display:grid;gap:10px}.reports-mobile-card{border:1px solid #e5e7eb;border-radius:16px;padding:12px;background:#fff;box-shadow:0 4px 14px rgba(15,23,42,.05)}.reports-mobile-card-title{font-weight:900;color:#0f172a}.reports-mobile-card-meta{font-size:.82rem;color:#64748b}.reports-mobile-card-files{display:grid;gap:6px;margin-top:10px}.reports-empty{border:1px dashed #cbd5e1;border-radius:16px;padding:18px;text-align:center;color:#64748b;background:#f8fafc;font-weight:800}@media(max-width:768px){.reports-hero{flex-direction:column;align-items:stretch;border-radius:18px;padding:16px}.reports-actions .btn{width:100%}.stat-value{font-size:1.6rem}.reports-page .table th,.reports-page .table td{white-space:nowrap}.reports-table-desktop{display:none!important}.reports-filter-card .input-group-text{border-radius:12px 0 0 12px}.reports-section-card{border-radius:18px!important}}
+.archive-header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.reports-monitoring-card{border-left:5px solid #198754}.reports-table-desktop table{table-layout:fixed}.reports-table-desktop th:nth-child(1){width:10%}.reports-table-desktop th:nth-child(2){width:18%}.reports-table-desktop th:nth-child(3){width:16%}.reports-table-desktop th:nth-child(4){width:17%}.reports-table-desktop th:nth-child(5){width:15%}.reports-table-desktop th:nth-child(6){width:24%}.archive-row td{padding-top:14px;padding-bottom:14px;vertical-align:top!important;white-space:normal;overflow-wrap:anywhere}.archive-file-entry{min-width:0}.archive-file-name{color:var(--app-text);font-size:.86rem;line-height:1.35;overflow-wrap:anywhere;word-break:break-word}.archive-file-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:var(--app-muted);font-size:.72rem;font-weight:700}.archive-file-meta-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border:1px solid var(--app-border);border-radius:999px;background:var(--app-surface-raised);color:var(--app-muted)}.archive-context-primary{color:var(--app-text);font-weight:800;line-height:1.35}.archive-context-secondary{color:var(--app-muted);font-size:.78rem;line-height:1.35;margin-top:3px}.archive-pagination{display:flex;align-items:center;justify-content:space-between;gap:14px;border-top:1px solid var(--app-border);margin-top:16px;padding-top:14px}.archive-page-summary{color:var(--app-muted);font-size:.82rem;font-weight:800}.archive-page-controls{display:flex;align-items:center;gap:10px}.archive-page-controls .btn{display:inline-flex;align-items:center;gap:7px;min-height:40px}.archive-page-indicator{min-width:100px;text-align:center;color:var(--app-text);font-weight:900}.reports-mobile-card-file{margin-top:10px;padding-top:10px;border-top:1px solid var(--app-border)}.reports-mobile-card .archive-file-name{font-size:.88rem}.reports-mobile-card .archive-file-meta{margin-top:6px}.reports-page :is(.reports-filter-card,.reports-monitoring-card,.reports-section-card,.reports-mobile-card,.reports-empty){background:var(--app-surface);color:var(--app-text);border-color:var(--app-border)}.reports-page :is(.archive-preview-btn,.archive-download-btn){transition:background-color .15s ease,color .15s ease,border-color .15s ease}.reports-page .archive-preview-btn{background:color-mix(in srgb,var(--app-primary) 10%,var(--app-surface));border-color:var(--app-primary);color:var(--app-primary)}
+:root[data-app-theme="dark"] .reports-page .archive-download-btn{background:#173b2c;color:#8ce0b2;border-color:#318c5d}:root[data-app-theme="dark"] .reports-page .archive-download-btn:hover{background:#258654;color:#fff}:root[data-app-theme="dark"] .reports-page .archive-file-name{color:#f2f5f8!important}:root[data-app-theme="dark"] .reports-page :is(.archive-context-primary,.archive-page-indicator){color:#f2f5f8}:root[data-app-theme="dark"] .reports-page :is(.archive-file-meta,.archive-context-secondary,.archive-page-summary){color:#a8b4c4}:root[data-app-theme="dark"] .reports-page .archive-file-meta-badge{background:#202c3c;border-color:#3a485b;color:#cbd5e1}
+@media(max-width:768px){.archive-header-actions{width:100%;justify-content:space-between}.archive-pagination{align-items:stretch;flex-direction:column}.archive-page-summary{text-align:center}.archive-page-controls{display:grid;grid-template-columns:1fr auto 1fr}.archive-page-controls .btn{justify-content:center}.reports-mobile-card{border-radius:12px}.reports-mobile-card-files{margin-top:0}.reports-page .archive-file-actions{grid-template-columns:1fr 1fr}}
 </style>
 
 <script>
@@ -211,10 +237,16 @@ function reportParams(){
   params.set('branch', document.getElementById('reports-branch')?.value || 'ALL');
   return params;
 }
-function archiveParams(){
-  const params = reportParams();
+let archiveCurrentPage = 1;
+let archiveTotalPages = 1;
+let archiveRequestController = null;
+function archiveParams(page=archiveCurrentPage){
+  const params = new URLSearchParams();
+  params.set('branch', document.getElementById('reports-branch')?.value || 'ALL');
   params.set('q', document.getElementById('reports-search')?.value || '');
   params.set('scope', document.getElementById('reports-scope')?.value || 'my');
+  params.set('page', String(Math.max(Number(page) || 1, 1)));
+  params.set('per_page', '10');
   return params;
 }
 function currentArchiveScope(){ return document.getElementById('reports-scope')?.value || 'my'; }
@@ -275,7 +307,7 @@ function showStatus(type, message, icon){
 function refreshReportsPage(){
   setDefaultReportDates();
   showStatus('info','Loading reports...','fa-spinner fa-spin');
-  const archivePromise = loadTSRArchive();
+  const archivePromise = loadTSRArchive(archiveCurrentPage);
   const summaryPromise = isReportsAdminView() ? loadReportsSummary(false) : Promise.resolve();
   Promise.allSettled([archivePromise, summaryPromise]).then(results => {
     const rejected = results.find(r => r.status === 'rejected');
@@ -332,29 +364,98 @@ function renderEmailTable(rows){
   if(body) body.innerHTML = sliced.map(r => `<tr><td>${escapeHtml(r.timestamp)}</td><td class="fw-bold">${escapeHtml(r.user)}</td><td>${escapeHtml(r.action)}</td></tr>`).join('');
   if(mobile) mobile.innerHTML = sliced.map(r => `<div class="reports-mobile-card"><div class="reports-mobile-card-title">${escapeHtml(r.user)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.timestamp)}</div><div class="reports-mobile-card-meta">${escapeHtml(r.action)}</div></div>`).join('');
 }
-async function loadTSRArchive(){
-  setDefaultReportDates();
+function formatArchiveFileSize(bytes){
+  const value = Number(bytes);
+  if(!Number.isFinite(value) || value < 0) return '';
+  if(value < 1024) return `${value} B`;
+  if(value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10240 ? 1 : 0)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+function archiveFileMarkup(row, mobile=false){
+  const sizeLabel = formatArchiveFileSize(row.size);
+  const typeLabel = String(row.file_type || 'file').toUpperCase();
+  const meta = [
+    `<span class="archive-file-meta-badge"><i class="fa-solid fa-file-pdf"></i>${escapeHtml(row.source || 'TSR')}</span>`,
+    row.tsr_number ? `<span class="archive-file-meta-badge"><i class="fa-solid fa-hashtag"></i>${escapeHtml(row.tsr_number)}</span>` : '',
+    `<span>${escapeHtml(typeLabel)}</span>`,
+    sizeLabel ? `<span>${escapeHtml(sizeLabel)}</span>` : '',
+    row.uploaded_at ? `<span>Saved ${escapeHtml(row.uploaded_at)}</span>` : ''
+  ].filter(Boolean).join('');
+  return `<div class="archive-file-entry${mobile ? ' reports-mobile-card-file' : ''}">
+    <div class="archive-file-name">${escapeHtml(row.name || 'TSR file')}</div>
+    <div class="archive-file-meta">${meta}</div>
+    <div class="archive-file-actions">
+      <a class="archive-preview-btn" href="${escapeHtml(archivePreviewUrl(row.preview_url || row.download_url))}" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i>Preview</a>
+      <a class="archive-file-link archive-download-btn" href="${escapeHtml(archiveDownloadUrl(row.download_url))}"><i class="fa-solid fa-file-arrow-down"></i>Download</a>
+    </div>
+  </div>`;
+}
+function renderArchivePagination(data){
+  const wrapper = document.getElementById('archive-pagination');
+  const summary = document.getElementById('archive-page-summary');
+  const indicator = document.getElementById('archive-page-indicator');
+  const previous = document.getElementById('archive-prev-page');
+  const next = document.getElementById('archive-next-page');
+  const total = Math.max(Number(data.total ?? data.count) || 0, 0);
+  const perPage = Math.max(Number(data.per_page) || 10, 1);
+  archiveCurrentPage = Math.max(Number(data.page) || 1, 1);
+  archiveTotalPages = Math.max(Number(data.total_pages) || 1, 1);
+  const first = total ? ((archiveCurrentPage - 1) * perPage) + 1 : 0;
+  const last = total ? Math.min(first + perPage - 1, total) : 0;
+  if(summary) summary.textContent = total ? `Showing ${first}-${last} of ${total} TSR files` : 'No TSR files found';
+  if(indicator) indicator.textContent = `Page ${archiveCurrentPage} of ${archiveTotalPages}`;
+  if(previous) previous.disabled = archiveCurrentPage <= 1;
+  if(next) next.disabled = archiveCurrentPage >= archiveTotalPages;
+  if(wrapper) wrapper.hidden = total === 0;
+}
+async function loadTSRArchive(page=archiveCurrentPage){
   const body = document.getElementById('tsr-archive-table');
   const mobile = document.getElementById('tsr-archive-mobile');
+  const refreshButton = document.getElementById('archive-refresh-btn');
+  if(archiveRequestController) archiveRequestController.abort();
+  const requestController = new AbortController();
+  archiveRequestController = requestController;
   if(body) body.innerHTML = '<tr><td colspan="6" class="text-muted text-center py-4"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading TSR archive...</td></tr>';
   if(mobile) mobile.innerHTML = '<div class="reports-empty"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading TSR archive...</div>';
-  const res = await fetch(`/get_tsr_archive?${archiveParams().toString()}`);
-  const data = await res.json().catch(() => ({}));
-  if(!res.ok || data.status !== 'success') throw new Error(data.message || 'Unable to load TSR archive.');
-  setText('archive-count', data.count || 0);
+  if(refreshButton) refreshButton.disabled = true;
+  try{
+    const res = await fetch(`/get_tsr_archive?${archiveParams(page).toString()}`, {signal: requestController.signal});
+    const data = await res.json().catch(() => ({}));
+    if(!res.ok || data.status !== 'success') throw new Error(data.message || 'Unable to load TSR archive.');
+    setText('archive-count', data.total ?? data.count ?? 0);
+    renderArchivePagination(data);
   if(!data.rows || !data.rows.length){
     if(body) body.innerHTML = '<tr><td colspan="6" class="text-muted text-center py-4">No TSR files found.</td></tr>';
-    if(mobile) mobile.innerHTML = '<div class="reports-empty">No TSR files found.</div>';
-    return;
+    if(mobile) mobile.innerHTML = '<div class="reports-empty">No TSR files found. Try a different client, filename, serial number, task, or engineer.</div>';
+    return data;
   }
-  if(body) body.innerHTML = data.rows.map(row => {
-    const files = (row.files || []).map(file => `<div class="archive-file-entry"><div class="archive-file-name">${escapeHtml(file.name)}</div><div class="archive-file-actions"><a class="archive-preview-btn" href="${escapeHtml(archivePreviewUrl(file.preview_url || file.download_url))}" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i>Preview</a><a class="archive-file-link archive-download-btn" href="${escapeHtml(archiveDownloadUrl(file.download_url))}"><i class="fa-solid fa-file-arrow-down"></i>Download</a></div></div>`).join('');
-    return `<tr><td>${escapeHtml(row.date)}</td><td class="fw-bold">${escapeHtml(row.client)}</td><td>${escapeHtml(row.product)}<div class="small text-muted">${escapeHtml(row.serial)}</div></td><td>${escapeHtml(row.task)}</td><td>${escapeHtml(row.engineers)}</td><td><div class="archive-file-list">${files}</div></td></tr>`;
-  }).join('');
-  if(mobile) mobile.innerHTML = data.rows.map(row => {
-    const files = (row.files || []).map(file => `<div class="archive-file-entry"><div class="archive-file-name">${escapeHtml(file.name)}</div><div class="archive-file-actions"><a class="archive-preview-btn" href="${escapeHtml(archivePreviewUrl(file.preview_url || file.download_url))}" target="_blank" rel="noopener"><i class="fa-solid fa-eye"></i>Preview</a><a class="archive-file-link archive-download-btn" href="${escapeHtml(archiveDownloadUrl(file.download_url))}"><i class="fa-solid fa-file-arrow-down"></i>Download</a></div></div>`).join('');
-    return `<div class="reports-mobile-card"><div class="reports-mobile-card-title">${escapeHtml(row.client)}</div><div class="reports-mobile-card-meta">${escapeHtml(row.date)} · ${escapeHtml(row.task)}</div><div class="reports-mobile-card-meta">${escapeHtml(row.product)} ${row.serial ? '('+escapeHtml(row.serial)+')' : ''}</div><div class="reports-mobile-card-meta">${escapeHtml(row.engineers)}</div><div class="reports-mobile-card-files">${files}</div></div>`;
-  }).join('');
+  if(body) body.innerHTML = data.rows.map(row => `<tr class="archive-row">
+    <td><div class="archive-context-primary">${escapeHtml(row.date)}</div></td>
+    <td><div class="archive-context-primary">${escapeHtml(row.client)}</div></td>
+    <td><div class="archive-context-primary">${escapeHtml(row.product)}</div><div class="archive-context-secondary">${escapeHtml(row.serial)}</div></td>
+    <td><div class="archive-context-primary">${escapeHtml(row.task)}</div></td>
+    <td><div class="archive-context-primary">${escapeHtml(row.engineers)}</div></td>
+    <td>${archiveFileMarkup(row)}</td>
+  </tr>`).join('');
+  if(mobile) mobile.innerHTML = data.rows.map(row => `<article class="reports-mobile-card">
+    <div class="reports-mobile-card-title">${escapeHtml(row.client)}</div>
+    <div class="reports-mobile-card-meta">${escapeHtml(row.date)} &middot; ${escapeHtml(row.task)}</div>
+    <div class="reports-mobile-card-meta">${escapeHtml(row.product)}${row.serial ? ' ('+escapeHtml(row.serial)+')' : ''}</div>
+    <div class="reports-mobile-card-meta"><i class="fa-solid fa-user-gear me-1"></i>${escapeHtml(row.engineers)}</div>
+    <div class="reports-mobile-card-files">${archiveFileMarkup(row, true)}</div>
+  </article>`).join('');
+  return data;
+  }catch(error){
+    if(error?.name === 'AbortError') return null;
+    if(body) body.innerHTML = `<tr><td colspan="6" class="text-danger text-center py-4">${escapeHtml(error.message || 'Unable to load TSR archive.')}</td></tr>`;
+    if(mobile) mobile.innerHTML = `<div class="reports-empty text-danger">${escapeHtml(error.message || 'Unable to load TSR archive.')}</div>`;
+    throw error;
+  }finally{
+    if(archiveRequestController === requestController){
+      archiveRequestController = null;
+      if(refreshButton) refreshButton.disabled = false;
+    }
+  }
 }
 function exportReportsSummary(){ setDefaultReportDates(); window.location.href = `/export_reports_summary?${reportParams().toString()}`; }
 
@@ -370,12 +471,42 @@ document.addEventListener('hidden.bs.modal', event => {
 });
 document.addEventListener('DOMContentLoaded', () => {
   setDefaultReportDates();
-  ['reports-start-date','reports-end-date','reports-branch','reports-scope'].forEach(id => {
+  ['reports-start-date','reports-end-date'].forEach(id => {
     const el = document.getElementById(id);
-    if(el) el.addEventListener('change', refreshReportsPage);
+    if(el) el.addEventListener('change', () => loadReportsSummary().catch(error => showStatus('danger', error.message || 'Unable to load monitoring data.', 'fa-triangle-exclamation')));
+  });
+  const branchInput = document.getElementById('reports-branch');
+  if(branchInput) branchInput.addEventListener('change', () => {
+    archiveCurrentPage = 1;
+    const requests = [loadTSRArchive(1)];
+    if(isReportsAdminView()) requests.push(loadReportsSummary(false));
+    Promise.allSettled(requests).then(results => {
+      const failed = results.find(result => result.status === 'rejected');
+      if(failed) showStatus('danger', failed.reason?.message || 'Unable to refresh reports.', 'fa-triangle-exclamation');
+    });
+  });
+  const scopeInput = document.getElementById('reports-scope');
+  if(scopeInput) scopeInput.addEventListener('change', () => {
+    archiveCurrentPage = 1;
+    loadTSRArchive(1).catch(error => showStatus('danger', error.message || 'Unable to load TSR archive.', 'fa-triangle-exclamation'));
   });
   const searchInput = document.getElementById('reports-search');
-  if(searchInput) searchInput.addEventListener('input', function(){ clearTimeout(window.__reportsSearchTimer); window.__reportsSearchTimer = setTimeout(loadTSRArchive, 250); });
+  if(searchInput) searchInput.addEventListener('input', function(){
+    clearTimeout(window.__reportsSearchTimer);
+    archiveCurrentPage = 1;
+    window.__reportsSearchTimer = setTimeout(() => {
+      loadTSRArchive(1).catch(error => showStatus('danger', error.message || 'Unable to search TSR archive.', 'fa-triangle-exclamation'));
+    }, 300);
+  });
+  document.getElementById('archive-prev-page')?.addEventListener('click', () => {
+    if(archiveCurrentPage > 1) loadTSRArchive(archiveCurrentPage - 1).catch(error => showStatus('danger', error.message || 'Unable to load the previous page.', 'fa-triangle-exclamation'));
+  });
+  document.getElementById('archive-next-page')?.addEventListener('click', () => {
+    if(archiveCurrentPage < archiveTotalPages) loadTSRArchive(archiveCurrentPage + 1).catch(error => showStatus('danger', error.message || 'Unable to load the next page.', 'fa-triangle-exclamation'));
+  });
+  document.getElementById('archive-refresh-btn')?.addEventListener('click', () => {
+    loadTSRArchive(archiveCurrentPage).catch(error => showStatus('danger', error.message || 'Unable to refresh the TSR archive.', 'fa-triangle-exclamation'));
+  });
   refreshReportsPage();
 });
 </script>

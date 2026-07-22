@@ -34214,64 +34214,200 @@ def tsr_archive_shift_to_dict(shift):
     }
 
 
+def tsr_archive_file_size(file_rec):
+    """Return one archive file size without downloading the object body."""
+    disk_name = get_shift_file_disk_name(file_rec)
+    if not disk_name:
+        return None
+
+    local_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
+    try:
+        if os.path.isfile(local_path):
+            return os.path.getsize(local_path)
+        if file_storage.bucket_enabled and file_storage.bucket_configured:
+            object_info = file_storage.head(managed_storage_key(STORAGE_PREFIX_REPORTS, disk_name))
+            return object_info.size if object_info else None
+    except Exception as size_error:
+        print(
+            f"[TSR-ARCHIVE] Unable to read size for file #{getattr(file_rec, 'id', None)}: {size_error}",
+            flush=True,
+        )
+    return None
+
+
+def tsr_archive_engineer_names(shift_ids):
+    """Load assigned engineer names for archive rows in one query."""
+    shift_ids = {clean_int(shift_id) for shift_id in (shift_ids or []) if clean_int(shift_id)}
+    if not shift_ids:
+        return {}
+
+    result = {shift_id: [] for shift_id in shift_ids}
+    assignment_rows = (
+        db.session.query(ShiftEngineer.shift_id, Engineer.name)
+        .join(Engineer, Engineer.id == ShiftEngineer.engineer_id)
+        .filter(ShiftEngineer.shift_id.in_(shift_ids))
+        .order_by(Engineer.name.asc())
+        .all()
+    )
+    for shift_id, engineer_name in assignment_rows:
+        clean_name = clean_str(engineer_name)
+        if clean_name and clean_name not in result.setdefault(shift_id, []):
+            result[shift_id].append(clean_name)
+    return result
+
+
+def tsr_archive_assignment_filter(engineer_ids):
+    """Build a legacy-compatible assignment filter for archive metadata queries."""
+    engineer_ids = {clean_int(engineer_id) for engineer_id in (engineer_ids or []) if clean_int(engineer_id)}
+    if not engineer_ids:
+        return Shift.id == -1
+    linked_assignment = db.session.query(ShiftEngineer.id).filter(
+        ShiftEngineer.shift_id == Shift.id,
+        ShiftEngineer.engineer_id.in_(engineer_ids),
+    ).exists()
+    return or_(
+        linked_assignment,
+        Shift.engineer_id.in_(engineer_ids),
+        Shift.override_engineer_id.in_(engineer_ids),
+    )
+
+
 @app.route('/get_tsr_archive')
 @login_required
 def get_tsr_archive():
-    """Searchable TSR archive with engineer/admin access control."""
+    """All-history TSR file archive with server-side search and pagination."""
     if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
         return denied()
 
-    start_date, end_date = analytics_date_bounds()
     search = clean_str(request.args.get('q')) or ''
     scope = tsr_archive_requested_scope()
+    requested_page = max(clean_int(request.args.get('page')) or 1, 1)
+    requested_per_page = clean_int(request.args.get('per_page')) or 10
+    per_page = min(max(requested_per_page, 1), 10)
 
-    query = Shift.query.options(
-        joinedload(Shift.client),
-        joinedload(Shift.product),
-        selectinload(Shift.files)
-    ).filter(
-        func.date(Shift.start_time) >= start_date,
-        func.date(Shift.start_time) <= end_date,
-        Shift.client_id.isnot(None)
+    query = (
+        ShiftFile.query
+        .join(Shift, Shift.id == ShiftFile.shift_id)
+        .options(
+            joinedload(ShiftFile.shift).joinedload(Shift.client),
+            joinedload(ShiftFile.shift).joinedload(Shift.product),
+            joinedload(ShiftFile.shift).joinedload(Shift.engineer),
+            joinedload(ShiftFile.shift).selectinload(Shift.files),
+        )
+        .filter(Shift.client_id.isnot(None))
     )
 
     if is_admin_authorized():
-        query = analytics_scope_query(query)
+        query = query.filter(tsr_archive_assignment_filter(analytics_visible_engineer_ids()))
+    elif scope == 'my':
+        query = query.filter(tsr_archive_assignment_filter([get_current_user_engineer_id()]))
 
-    shifts = list({shift.id: shift for shift in query.order_by(Shift.start_time.desc()).limit(500).all()}.values())
+    file_records = query.order_by(
+        ShiftFile.uploaded_at.desc(),
+        Shift.start_time.desc(),
+        ShiftFile.id.desc(),
+    ).all()
 
+    submission_ids = {
+        clean_int(getattr(file_rec, 'online_tsr_submission_id', None))
+        for file_rec in file_records
+        if clean_int(getattr(file_rec, 'online_tsr_submission_id', None))
+    }
+    submissions = {
+        submission.id: submission
+        for submission in (
+            OnlineTsrSubmission.query.filter(OnlineTsrSubmission.id.in_(submission_ids)).all()
+            if submission_ids else []
+        )
+    }
+    primary_submission_files = {}
+    for submission in submissions.values():
+        attached_file_id = clean_int(parse_online_tsr_payload_json(submission).get('_attached_file_id'))
+        if attached_file_id:
+            primary_submission_files[attached_file_id] = submission
+
+    shift_ids = {file_rec.shift_id for file_rec in file_records if file_rec.shift_id}
+    engineer_name_map = tsr_archive_engineer_names(shift_ids)
+    legacy_policy_map = {}
     rows = []
-    q = search.lower()
-    for shift in shifts:
-        if not user_can_view_shift_tsr_archive(shift, scope):
-            continue
-        if not shift_has_tsr_file(shift):
+    query_text = search.casefold()
+
+    for file_rec in file_records:
+        shift = getattr(file_rec, 'shift', None)
+        if not shift or not user_can_view_shift_tsr_archive(shift, scope):
             continue
 
-        row = tsr_archive_shift_to_dict(shift)
+        if shift.id not in legacy_policy_map:
+            legacy_policy_map[shift.id] = get_legacy_incomplete_tsr_file_policy(shift)
+        legacy_policy = legacy_policy_map[shift.id]
+        file_id = clean_int(file_rec.id)
+        if file_id in (legacy_policy.get('suppressed_primary_ids') or set()):
+            continue
 
-        if q:
+        submission = primary_submission_files.get(file_id)
+        is_legacy_replacement = file_id in (legacy_policy.get('replacement_file_ids') or set())
+        display_name = get_shift_file_display_name(file_rec)
+        disk_name = get_shift_file_disk_name(file_rec)
+        if not submission and not is_legacy_replacement and not existing_files_have_tsr([display_name, disk_name]):
+            continue
+
+        engineer_names = engineer_name_map.get(shift.id) or []
+        if not engineer_names and getattr(shift, 'engineer', None):
+            engineer_names = [clean_str(shift.engineer.name)]
+        engineer_label = ', '.join(name for name in engineer_names if name) or 'N/A'
+        filename = display_name or disk_name or 'TSR file'
+        extension = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
+        tsr_number = clean_str(getattr(submission, 'tsr_number', None)) if submission else ''
+
+        row = {
+            'id': file_rec.id,
+            'shift_id': shift.id,
+            'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
+            'client': shift.client.name if shift.client else 'N/A',
+            'product': shift.product.name if shift.product else 'N/A',
+            'serial': shift.product.serial_number if shift.product else '',
+            'task': shift.title or '',
+            'status': shift.status or '',
+            'engineers': engineer_label,
+            'name': filename,
+            'tsr_number': tsr_number,
+            'uploaded_at': file_rec.uploaded_at.strftime('%Y-%m-%d %H:%M') if file_rec.uploaded_at else '',
+            'file_type': extension,
+            'is_pdf': extension == 'pdf',
+            'source': (
+                'Complete Uploaded TSR' if is_legacy_replacement else
+                ('Generated Online TSR' if submission else 'Uploaded TSR')
+            ),
+            'preview_url': url_for('preview_tsr_archive_file', file_id=file_rec.id, scope=scope),
+            'download_url': url_for('download_tsr_archive_file', file_id=file_rec.id, scope=scope),
+            '_file_rec': file_rec,
+        }
+
+        if query_text:
             haystack = ' '.join([
-                row.get('date', ''),
-                row.get('client', ''),
-                row.get('product', ''),
-                row.get('serial', ''),
-                row.get('task', ''),
-                row.get('status', ''),
-                row.get('engineers', ''),
-                ' '.join([file_row.get('name', '') for file_row in row.get('files', [])])
-            ]).lower()
-            if q not in haystack:
+                row['date'], row['client'], row['product'], row['serial'], row['task'],
+                row['status'], row['engineers'], row['name'], row['tsr_number'], row['source'],
+            ]).casefold()
+            if query_text not in haystack:
                 continue
-
         rows.append(row)
-        if len(rows) >= 100:
-            break
+
+    total = len(rows)
+    total_pages = max((total + per_page - 1) // per_page, 1)
+    page = min(requested_page, total_pages)
+    start_index = (page - 1) * per_page
+    page_rows = rows[start_index:start_index + per_page]
+    for row in page_rows:
+        row['size'] = tsr_archive_file_size(row.pop('_file_rec'))
 
     return jsonify({
         'status': 'success',
-        'rows': rows,
-        'count': len(rows),
+        'rows': page_rows,
+        'count': total,
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': total_pages,
         'scope': scope,
         'admin': is_admin_authorized()
     })
