@@ -61,7 +61,7 @@
             <i class="fa-solid fa-envelope-circle-check"></i><span>Email Recipients</span>
         </button>
         <button type="button" class="settings-section-tab" data-settings-section-target="email-templates" onclick="switchSettingsSection('email-templates')">
-            <i class="fa-solid fa-heading"></i><span>Email Subjects</span>
+            <i class="fa-solid fa-file-signature"></i><span>Templates</span>
         </button>
         {% endif %}
         {% if backup_superadmin %}
@@ -740,23 +740,23 @@
             <div class="card shadow-sm border-0 rounded-4 overflow-hidden mt-0 settings-email-templates-card">
                 <div class="card-header bg-email-templates text-white py-3 border-0 d-flex justify-content-between align-items-center">
                     <h5 class="mb-0 fw-bold">
-                        <i class="fa-solid fa-heading me-2 text-warning"></i>Email Subject Templates
+                        <i class="fa-solid fa-file-signature me-2 text-warning"></i>System Templates
                     </h5>
                     <span class="badge bg-light text-email-templates small fw-bold">Superadmin Only</span>
                 </div>
 
                 <div class="card-body p-4 bg-white">
                     <div class="alert alert-light border small mb-4">
-                        <strong>Purpose:</strong> Edit email subject formats used by outgoing system emails.
-                        Use the placeholder chips shown under each template. Cash Advance Accounting has its own subject template separate from Travel Request and Reimbursement.
+                        <strong>Purpose:</strong> Manage generated TSR filenames and outgoing email subject formats without changing application code.
+                        Use the placeholder chips shown under each template. Changes apply only to newly generated files and future emails.
                     </div>
 
                     <div id="email-template-loading" class="text-muted small fw-bold mb-3">
-                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Loading email subject templates...
+                        <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Loading system templates...
                     </div>
 
                     <div id="email-template-error" class="alert alert-warning small d-none mb-3">
-                        Email subject templates could not be loaded.
+                        System templates could not be loaded.
                     </div>
 
                     <div id="email-template-content" class="d-none">
@@ -2702,7 +2702,7 @@
 
 
     /**
-     * EMAIL SUBJECT TEMPLATE SETTINGS LOGIC:
+     * SYSTEM TEMPLATE SETTINGS LOGIC:
      */
     let emailTemplateState = {
         templates: []
@@ -2723,19 +2723,30 @@
         }).join('');
     }
 
-    function emailTemplateSampleContext(templateKey) {
+    function emailTemplateSampleContext(templateKey, scenario='standard') {
         const shared = {
-            billing_marker: '_BILLING',
+            tsr_number: '20260722-01-JP',
+            billing_marker: '',
             billing_label: 'Billing',
             client_name: 'Sample Medical Center',
             machine_name: 'Mobile X-Ray',
+            product_name: 'Mobile X-Ray',
             service_case: 'Preventive Maintenance',
-            date_mmddyyyy: '06-25-2026',
+            date_mmddyyyy: '07222026',
+            date_yyyymmdd: '20260722',
             date_mmddyy: '06-25-26',
-            service_date: 'June 25, 2026',
+            service_date: '2026-07-22',
             task: 'Preventive Maintenance',
             product: 'Mobile X-Ray',
             serial: 'MXR-12345',
+            serial_number: 'MXR-12345',
+            engineer_initials: 'JP',
+            billing_tags: '',
+            warranty: '',
+            foc: '',
+            with_po: '',
+            sc: '',
+            sv: '',
             shift_id: '1001',
             tsr_count: '1',
             request_no: 'TR-2026-001',
@@ -2755,14 +2766,34 @@
             period_end: 'June 15, 2026',
             grand_total: '8,500.00'
         };
+        const scenarios = {
+            standard: {},
+            warranty: { warranty: 'Warranty', billing_tags: 'Warranty' },
+            foc: { foc: 'FOC', billing_tags: 'FOC' },
+            po: { billing_marker: 'B', with_po: 'With PO', billing_tags: 'With_PO' },
+            po_sc: { billing_marker: 'B', with_po: 'With PO', sc: 'SC', billing_tags: 'With_PO_SC' },
+            po_sv: { billing_marker: 'B', with_po: 'With PO', sv: 'SV', billing_tags: 'With_PO_SV' }
+        };
+        Object.assign(shared, scenarios[scenario] || scenarios.standard);
         return shared;
     }
 
-    function previewEmailTemplateSubject(templateKey, templateValue) {
-        const context = emailTemplateSampleContext(templateKey);
-        return String(templateValue || '').replace(/\{([a-zA-Z0-9_]+)\}/g, function(match, key) {
+    function sanitizeTSRFilenamePreview(value) {
+        let result = String(value || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ');
+        result = result.replace(/\s+/g, ' ').trim().replace(/_+/g, '_');
+        result = result.replace(/\s*_\s*/g, '_').replace(/_+([).])/g, '$1').replace(/\(_*\)/g, '');
+        result = result.replace(/^[-_. ]+|[-_. ]+$/g, '');
+        result = result.replace(/\.pdf$/i, '').replace(/^[-_. ]+|[-_. ]+$/g, '').slice(0, 195);
+        return `${result || 'TSR'}.pdf`;
+    }
+
+    function previewEmailTemplateSubject(templateKey, templateValue, scenario='standard') {
+        const context = emailTemplateSampleContext(templateKey, scenario);
+        let rendered = String(templateValue || '').replace(/\{([a-zA-Z0-9_]+)\}/g, function(match, key) {
             return Object.prototype.hasOwnProperty.call(context, key) ? context[key] : match;
         });
+        if (templateKey === 'tsr_pdf_filename') rendered = sanitizeTSRFilenamePreview(rendered);
+        return rendered;
     }
 
     function updateEmailTemplatePreview(templateKey) {
@@ -2770,7 +2801,8 @@
         const input = card?.querySelector('.email-template-input');
         const preview = card?.querySelector('.email-template-preview-value');
         if (!input || !preview) return;
-        preview.textContent = previewEmailTemplateSubject(templateKey, input.value);
+        const scenario = card?.querySelector('.email-template-scenario')?.value || 'standard';
+        preview.textContent = previewEmailTemplateSubject(templateKey, input.value, scenario);
     }
 
     function renderEmailTemplates() {
@@ -2786,6 +2818,21 @@
         container.innerHTML = templates.map(template => {
             const templateKey = emailTemplateEscape(template.template_key || '');
             const isActiveChecked = template.is_active ? 'checked' : '';
+            const isFilename = template.template_type === 'filename';
+            const fieldLabel = isFilename ? 'Filename Template' : 'Subject Template';
+            const saveLabel = isFilename ? 'Save Filename' : 'Save Subject';
+            const scenarioPicker = isFilename ? `
+                <div class="email-template-scenario-wrap mt-2">
+                    <label class="small fw-bold text-muted text-uppercase mb-1">Preview Scenario</label>
+                    <select class="form-select form-select-sm rounded-3 email-template-scenario" onchange="updateEmailTemplatePreview('${templateKey}')">
+                        <option value="standard">Standard</option>
+                        <option value="warranty">Warranty</option>
+                        <option value="foc">FOC</option>
+                        <option value="po">With P.O.</option>
+                        <option value="po_sc">With P.O. + SC</option>
+                        <option value="po_sv">With P.O. + SV</option>
+                    </select>
+                </div>` : '';
             return `
                 <div class="email-template-card" data-template-key="${templateKey}">
                     <div class="email-template-header">
@@ -2797,7 +2844,7 @@
                     </div>
 
                     <div class="email-template-body">
-                        <label class="small fw-bold text-muted text-uppercase mb-1">Subject Template</label>
+                        <label class="small fw-bold text-muted text-uppercase mb-1">${fieldLabel}</label>
                         <input type="text"
                                class="form-control form-control-sm rounded-3 email-template-input"
                                value="${emailTemplateEscape(template.template_value || '')}"
@@ -2815,14 +2862,16 @@
                             <strong>Default:</strong> ${emailTemplateEscape(template.default_template || '')}
                         </div>
 
+                        ${scenarioPicker}
+
                         <div class="email-template-preview mt-2">
                             <strong>Preview:</strong>
-                            <span class="email-template-preview-value">${emailTemplateEscape(previewEmailTemplateSubject(template.template_key, template.template_value || template.default_template || ''))}</span>
+                            <span class="email-template-preview-value">${emailTemplateEscape(previewEmailTemplateSubject(template.template_key, template.template_value || template.default_template || '', 'standard'))}</span>
                         </div>
 
                         <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
                             <button type="button" class="btn btn-email-templates btn-sm fw-bold rounded-3" onclick="saveEmailTemplate('${templateKey}')">
-                                <i class="fa-solid fa-floppy-disk me-1"></i>Save Subject
+                                <i class="fa-solid fa-floppy-disk me-1"></i>${saveLabel}
                             </button>
                             <button type="button" class="btn btn-outline-email-templates btn-sm fw-bold rounded-3" onclick="resetEmailTemplate('${templateKey}')">
                                 <i class="fa-solid fa-rotate-left me-1"></i>Reset Default
@@ -2852,6 +2901,7 @@
         try {
             input.setSelectionRange(cursorPos, cursorPos);
         } catch (err) {}
+        updateEmailTemplatePreview(templateKey);
     }
 
     async function loadEmailTemplates(silent=false) {
@@ -2872,7 +2922,7 @@
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.success) {
-                throw new Error(data.error || data.message || 'Email template request failed.');
+                throw new Error(data.error || data.message || 'Template request failed.');
             }
 
             emailTemplateState = {
@@ -2882,9 +2932,9 @@
             renderEmailTemplates();
             content.classList.remove('d-none');
         } catch (err) {
-            console.error('Email templates load failed:', err);
+            console.error('System templates load failed:', err);
             if (error) {
-                error.textContent = err.message || 'Email subject templates could not be loaded.';
+                error.textContent = err.message || 'System templates could not be loaded.';
                 error.classList.remove('d-none');
             }
         } finally {
@@ -2903,7 +2953,7 @@
         };
 
         if (!payload.template_value.trim()) {
-            settingsAlert('Email subject template cannot be blank.');
+            settingsAlert('Template value cannot be blank.');
             return;
         }
 
@@ -2925,7 +2975,7 @@
             }
 
             await loadEmailTemplates(true);
-            settingsAlert(data.message || 'Email subject template saved.', 'success');
+            settingsAlert(data.message || 'Template saved.', 'success');
         } catch (err) {
             settingsAlert('Error: ' + (err.message || 'Email template save failed.'));
         }
@@ -2933,8 +2983,8 @@
 
     async function resetEmailTemplate(templateKey) {
         const shouldReset = await settingsConfirmDialog({
-            title: 'Reset Subject Template?',
-            message: 'This will restore the default subject format for this email template.',
+            title: 'Reset Template?',
+            message: 'This will restore the default value for this template.',
             confirmText: 'Reset Default',
             cancelText: 'Cancel',
             tone: 'warning',

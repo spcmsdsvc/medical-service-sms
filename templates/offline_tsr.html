@@ -496,6 +496,8 @@
 <script>
 const STANDALONE_TSR_KEY = 'medicalServiceStandaloneTSRDraftV1';
 const STANDALONE_TSR_SCHEDULES_KEY = 'medicalServiceStandaloneTSRScheduleOptionsV1';
+const TSR_FILENAME_TEMPLATE_CACHE_KEY = 'medicalServiceTSRFilenameTemplateV1';
+const DEFAULT_TSR_FILENAME_TEMPLATE = {{ tsr_filename_template|tojson }};
 const TIMELINE_OFFLINE_SNAPSHOT_KEY = 'timelineOfflineSnapshot';
 const TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY = 'timelineOfflineSnapshots';
 const LEGACY_TIMELINE_OFFLINE_SNAPSHOT_KEY = 'medicalServiceTimelineOfflineSnapshotV1';
@@ -503,6 +505,20 @@ const LEGACY_TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY = 'medicalServiceTimelineOfflineS
 const LOGGED_IN_ENGINEER_NAME = "{{ (current_user.engineer_profile.name if current_user.engineer_profile else current_user.username)|e }}";
 const LOGGED_IN_ENGINEER_INITIALS = "{{ (current_user.engineer_profile.initials if current_user.engineer_profile and current_user.engineer_profile.initials else '')|e }}";
 const OFFLINE_TSR_STORAGE_HEALTH_ADMIN = String("{{ 'true' if offline_storage_health_admin else 'false' }}").toLowerCase() === 'true';
+let activeTSRFilenameTemplate = (() => {
+  try{
+    return String(localStorage.getItem(TSR_FILENAME_TEMPLATE_CACHE_KEY) || DEFAULT_TSR_FILENAME_TEMPLATE || '').trim();
+  }catch(err){
+    return String(DEFAULT_TSR_FILENAME_TEMPLATE || '').trim();
+  }
+})();
+
+function cacheTSRFilenameTemplate(templateValue){
+  const normalized = String(templateValue || DEFAULT_TSR_FILENAME_TEMPLATE || '').trim();
+  if(!normalized) return;
+  activeTSRFilenameTemplate = normalized;
+  try{ localStorage.setItem(TSR_FILENAME_TEMPLATE_CACHE_KEY, normalized); }catch(err){}
+}
 
 function offlineTSRDialog(options={}){
   return new Promise(resolve => {
@@ -1622,6 +1638,7 @@ async function refreshStandaloneScheduleOptions(manual=false){
         const data = await res.json();
         schedules = Array.isArray(data.schedules) ? data.schedules : [];
         source = 'live system data';
+        cacheTSRFilenameTemplate(data.tsr_filename_template);
         cacheStandaloneScheduleOptions(schedules);
       }
     }catch(err){ console.warn('[Offline TSR] Schedule picker live fetch failed', err); }
@@ -2370,7 +2387,8 @@ function collectTSRData(){
     original_schedule_time_end:selectedSchedule?.time_end || '',
     _draft_id:standaloneCurrentDraftId,
     savedAt:new Date().toISOString(),
-    _tsr_form_version:'vector-pdf-v2'
+    _tsr_form_version:'vector-pdf-v2',
+    _tsr_filename_template:activeTSRFilenameTemplate
   };
   document.querySelectorAll('.tsr-field').forEach(el=>data[el.id]=el.value);
   data._equipment_inventory_create_requested = Boolean(
@@ -4344,7 +4362,11 @@ async function uploadQueuedOfflineTSR(item, numberRetryCount=0){
     let filename = item?.pdf_filename || payload?.pdf_filename || payload?.download_filename || 'Online_TSR.pdf';
     let pdfBlob = null;
     if(isVectorQueue){
-      filename = buildTSRPDFFilename(finalizedPayload);
+      // New queues carry the template snapshot and may be regenerated after the
+      // server confirms the final TSR number. Legacy queues keep their original name.
+      if(String(payload?._tsr_filename_template || '').trim()){
+        filename = buildTSRPDFFilename(finalizedPayload);
+      }
       const vectorPdf = await buildVectorTSRPDFBlob(finalizedPayload, filename.replace(/\.pdf$/i, ''));
       pdfBlob = vectorPdf.blob;
     }else{
@@ -5519,7 +5541,7 @@ function sanitizeTSRFilenamePart(value, fallback='NA'){
 }
 function compactTaskNameForFilename(task){
   return sanitizeTSRFilenamePart(String(task || 'Service')
-    .replace(/\[(FOC|Warranty|With\s*P\.?O\.?)\]/gi, ' ')
+    .replace(/\[(FOC|Warranty|With\s*P\.?O\.?|SC|SV)\]/gi, ' ')
     .replace(/\bFOC\b/gi, ' ')
     .replace(/\bWarranty\b/gi, ' ')
     .replace(/\bWith\s*P\.?O\.?\b/gi, ' '), 'Service');
@@ -5546,17 +5568,67 @@ function isTSRBilledService(data){
   const text = selectedScheduleBillingText(data);
   return /with\s*p\.?\s*o\.?|\[\s*with\s*p\.?\s*o\.?\s*\]|purchase\s*order/.test(text);
 }
+function getTSRFilenameBillingContext(data){
+  const text = selectedScheduleBillingText(data);
+  const warranty = /\bwarranty\b/.test(text);
+  const foc = /\bfoc\b/.test(text);
+  const withPO = isTSRBilledService(data);
+  const sc = withPO && /(?:\[|\b)sc(?:\]|\b)/i.test(text);
+  const sv = withPO && /(?:\[|\b)sv(?:\]|\b)/i.test(text);
+  const tags = [];
+  if(warranty) tags.push('Warranty');
+  if(foc) tags.push('FOC');
+  if(withPO) tags.push('With PO');
+  if(sc) tags.push('SC');
+  if(sv) tags.push('SV');
+  return { warranty, foc, withPO, sc, sv, tags };
+}
+function yyyymmddFromISO(value){
+  const iso = String(value || todayISO()).slice(0,10);
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[1]}${match[2]}${match[3]}` : yyyymmdd();
+}
+function sanitizeRenderedTSRFilename(value){
+  let filename = String(value || '').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ');
+  filename = filename.replace(/\s+/g, ' ').trim().replace(/_+/g, '_');
+  filename = filename.replace(/\s*_\s*/g, '_').replace(/_+([).])/g, '$1').replace(/\(_*\)/g, '');
+  filename = filename.replace(/^[-_. ]+|[-_. ]+$/g, '');
+  filename = filename.replace(/\.pdf$/i, '').replace(/^[-_. ]+|[-_. ]+$/g, '').slice(0,195);
+  return `${filename || 'TSR'}.pdf`;
+}
 function buildTSRPDFFilename(data){
   const schedule = data.selectedSchedule || getSelectedStandaloneSchedule() || {};
-  const billed = isTSRBilledService(data);
-  const prefix = billed ? 'NCS_TSR_B_Shimadzu' : 'NCS_TSR_Shimadzu';
+  const billing = getTSRFilenameBillingContext(data);
   const client = sanitizeTSRFilenamePart(data['tsr-customer-name'] || schedule.client_name || 'Client', 'Client');
   const product = sanitizeTSRFilenamePart(data['tsr-equipment-model'] || schedule.product_name || 'Product', 'Product');
   const serial = sanitizeTSRFilenamePart(data['tsr-serial-no'] || schedule.product_id || 'Serial', 'Serial');
   const rawTask = schedule.task || data['tsr-service-category-other'] || data['tsr-service-category'] || 'Service';
   const task = compactTaskNameForFilename(rawTask);
-  const date = mmddyyyyFromISO(data['tsr-service-date'] || schedule.date_iso || todayISO());
-  return `${prefix}_${client}_${product}(${serial})_${task}_${date}.pdf`;
+  const serviceDate = String(data['tsr-service-date'] || schedule.date_iso || todayISO()).slice(0,10);
+  const context = {
+    tsr_number:String(data['tsr-number'] || '').trim(),
+    client_name:client,
+    product_name:product,
+    machine_name:product,
+    serial_number:serial,
+    serial:serial,
+    task:task,
+    service_case:task,
+    service_date:serviceDate,
+    date_mmddyyyy:mmddyyyyFromISO(serviceDate),
+    date_yyyymmdd:yyyymmddFromISO(serviceDate),
+    engineer_initials:String(schedule.serviced_by_initials || LOGGED_IN_ENGINEER_INITIALS || '').trim(),
+    billing_marker:billing.withPO ? 'B' : '',
+    billing_tags:billing.tags.join('_'),
+    warranty:billing.warranty ? 'Warranty' : '',
+    foc:billing.foc ? 'FOC' : '',
+    with_po:billing.withPO ? 'With PO' : '',
+    sc:billing.sc ? 'SC' : '',
+    sv:billing.sv ? 'SV' : ''
+  };
+  const template = String(data._tsr_filename_template || activeTSRFilenameTemplate || DEFAULT_TSR_FILENAME_TEMPLATE || '').trim();
+  const rendered = template.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => Object.prototype.hasOwnProperty.call(context, key) ? context[key] : '');
+  return sanitizeRenderedTSRFilename(rendered);
 }
 function waitForImageLoad(img){
   return new Promise(resolve => {

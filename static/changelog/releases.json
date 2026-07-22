@@ -163,7 +163,8 @@
       "summary": "Schedules with a purchase order can now record the applicable SC or SV classification.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-22-schedule-sc-sv-tags", "category": "Calendar", "description": "With P.O. schedules can now optionally be classified as either SC or SV, with the selected billing tag shown clearly on Calendar cards.", "audiences": ["engineers", "admins"], "sort_order": 10}
+        {"item_key": "2026-07-22-schedule-sc-sv-tags", "category": "Calendar", "description": "With P.O. schedules can now optionally be classified as either SC or SV, with the selected billing tag shown clearly on Calendar cards.", "audiences": ["engineers", "admins"], "sort_order": 10},
+        {"item_key": "2026-07-22-tsr-filename-template", "category": "Create TSR", "description": "Superadmins can now manage newly generated TSR PDF filenames from Settings using safe placeholders and live billing-scenario previews.", "audiences": ["engineers", "admins"], "sort_order": 20}
       ]
     }
   ]

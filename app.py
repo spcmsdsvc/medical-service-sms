@@ -401,6 +401,12 @@ EMAIL_RECIPIENT_GROUP_ORDER = [
 ]
 
 EMAIL_TEMPLATE_DEFAULTS = {
+    'tsr_pdf_filename': {
+        'label': 'TSR PDF Filename',
+        'description': 'Filename used for newly generated TSR PDF files.',
+        'template_type': 'filename',
+        'default_template': 'NCS_TSR_{billing_marker}_Shimadzu_{client_name}_{product_name}({serial_number})_{task}_{date_mmddyyyy}.pdf'
+    },
     'tsr_client_subject': {
         'label': 'TSR Client Email Subject',
         'description': 'Subject used when sending TSR files to clients.',
@@ -440,6 +446,7 @@ EMAIL_TEMPLATE_DEFAULTS = {
 }
 
 EMAIL_TEMPLATE_ORDER = [
+    'tsr_pdf_filename',
     'tsr_client_subject',
     'travel_accounting_subject',
     'cash_advance_accounting_subject',
@@ -449,6 +456,27 @@ EMAIL_TEMPLATE_ORDER = [
 ]
 
 EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS = {
+    'tsr_pdf_filename': [
+        'tsr_number',
+        'client_name',
+        'product_name',
+        'machine_name',
+        'serial_number',
+        'serial',
+        'task',
+        'service_case',
+        'service_date',
+        'date_mmddyyyy',
+        'date_yyyymmdd',
+        'engineer_initials',
+        'billing_marker',
+        'billing_tags',
+        'warranty',
+        'foc',
+        'with_po',
+        'sc',
+        'sv'
+    ],
     'tsr_client_subject': [
         'billing_marker',
         'billing_label',
@@ -489,6 +517,13 @@ EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS = {
         'period_start',
         'period_end',
         'grand_total'
+    ],
+    'lpr_procurement_subject': [
+        'lpr_no',
+        'requester',
+        'request_date',
+        'total_requested',
+        'approved_by'
     ],
     'leave_request_hr_subject': [
         'request_no',
@@ -2684,6 +2719,140 @@ def render_email_subject_template(template_key, context=None):
         rendered = render_email_template(fallback, context or {})
 
     return (rendered or 'Notification')[:180]
+
+
+def validate_managed_template_value(template_key, template_value):
+    """Validate placeholders and path safety for Settings-managed templates."""
+    template_key = normalize_email_template_key(template_key)
+    template_value = clean_str(template_value) or ''
+    if not template_key:
+        return False, 'Please select a valid template.'
+    if not template_value:
+        return False, 'Template value cannot be blank.'
+
+    allowed = set(EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS.get(template_key, []))
+    placeholders = set(re.findall(r'\{([a-zA-Z0-9_]+)\}', template_value))
+    unknown = sorted(placeholders - allowed)
+    if unknown:
+        return False, f"Unknown placeholder(s): {', '.join('{' + item + '}' for item in unknown)}"
+    unresolved_braces = re.sub(r'\{[a-zA-Z0-9_]+\}', '', template_value)
+    if '{' in unresolved_braces or '}' in unresolved_braces:
+        return False, 'Template contains an invalid placeholder. Use the available placeholder chips.'
+
+    cfg = EMAIL_TEMPLATE_DEFAULTS.get(template_key, {})
+    if cfg.get('template_type') == 'filename':
+        if any(char in template_value for char in ('/', '\\')) or '..' in template_value:
+            return False, 'Filename templates cannot contain folders, path separators, or parent paths.'
+        if re.search(r'[\x00-\x1f]', template_value):
+            return False, 'Filename templates cannot contain control characters.'
+
+    return True, ''
+
+
+def sanitize_tsr_pdf_filename(value, fallback='TSR.pdf'):
+    """Return one safe client-facing PDF filename while preserving readable punctuation."""
+    value = os.path.basename(clean_str(value) or '')
+    value = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', ' ', value)
+    value = re.sub(r'\s+', ' ', value).strip(' ._-')
+    value = re.sub(r'_+', '_', value)
+    value = re.sub(r'(?:_\s*){2,}', '_', value)
+    value = re.sub(r'\s*_\s*', '_', value)
+    value = re.sub(r'_+([).])', r'\1', value)
+    value = re.sub(r'\(_*\)', '', value)
+    value = re.sub(r'([_(\-]){2,}', lambda match: match.group(0)[0], value)
+    value = value.strip(' ._-')
+    if value.lower().endswith('.pdf'):
+        value = value[:-4].rstrip(' ._-')
+    if not value:
+        value = os.path.splitext(fallback or 'TSR.pdf')[0] or 'TSR'
+    value = value[:195].rstrip(' ._-')
+    return f'{value}.pdf'
+
+
+def _parse_tsr_filename_date(value, shift=None):
+    raw_value = clean_str(value) or ''
+    for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y', '%b %d, %Y', '%B %d, %Y'):
+        try:
+            return datetime.strptime(raw_value, fmt).date()
+        except (TypeError, ValueError):
+            pass
+    if getattr(shift, 'start_time', None):
+        return shift.start_time.date()
+    return get_manila_today()
+
+
+def build_tsr_filename_template_context(submission=None, shift=None, tsr_number='', payload=None):
+    """Build normalized TSR filename placeholders from authoritative saved data."""
+    payload = payload if isinstance(payload, dict) else {}
+    selected = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
+
+    def first_value(*keys):
+        for key in keys:
+            value = clean_str(payload.get(key)) or clean_str(selected.get(key))
+            if value:
+                return value
+        return ''
+
+    client_name = first_value('tsr-customer-name', 'client_name') or clean_str(getattr(submission, 'client_name', None)) or 'Client'
+    product_name = first_value('tsr-equipment-model', 'product_name') or clean_str(getattr(submission, 'product_name', None)) or 'Product'
+    serial_number = first_value('tsr-serial-no', 'product_id', 'serial_number') or clean_str(getattr(submission, 'serial_number', None)) or 'Serial'
+    raw_task = first_value('task') or clean_str(getattr(shift, 'title', None)) or first_value('tsr-service-category-other', 'tsr-service-category') or 'Service'
+    task = re.sub(r'\[(?:Warranty|FOC|With\s*P\.?O\.?|SC|SV)\]', ' ', raw_task, flags=re.I)
+    task = re.sub(r'\s+', ' ', task).strip() or 'Service'
+    service_date = _parse_tsr_filename_date(first_value('tsr-service-date', 'date_iso', 'date_label'), shift=shift)
+
+    billing_text = ' '.join(filter(None, [
+        raw_task,
+        first_value('status'),
+        first_value('tsr-service-category', 'service_category'),
+        first_value('tsr-service-category-other'),
+        first_value('tsr-purchase-order', 'purchase_order'),
+        first_value('tsr-billing-statement', 'billing_statement'),
+        first_value('tsr-sales-invoice', 'sales_invoice'),
+    ])).lower()
+    warranty = bool(re.search(r'\bwarranty\b', billing_text))
+    foc = bool(re.search(r'\bfoc\b', billing_text))
+    with_po = bool(re.search(r'with\s*p\.?\s*o\.?|purchase\s*order', billing_text))
+    sc = bool(re.search(r'(?:\[|\b)sc(?:\]|\b)', billing_text)) and with_po
+    sv = bool(re.search(r'(?:\[|\b)sv(?:\]|\b)', billing_text)) and with_po
+    tags = [label for enabled, label in ((warranty, 'Warranty'), (foc, 'FOC'), (with_po, 'With PO'), (sc, 'SC'), (sv, 'SV')) if enabled]
+
+    initials = first_value('engineer_initials')
+    if not initials:
+        initials = clean_str(getattr(submission, 'submitted_by_name', None)) or ''
+        initials = ''.join(part[0] for part in re.findall(r'[A-Za-z0-9]+', initials)[:3]).upper()
+
+    return {
+        'tsr_number': clean_str(tsr_number) or clean_str(getattr(submission, 'tsr_number', None)) or first_value('tsr-number'),
+        'client_name': client_name,
+        'product_name': product_name,
+        'machine_name': product_name,
+        'serial_number': serial_number,
+        'serial': serial_number,
+        'task': task,
+        'service_case': task,
+        'service_date': service_date.strftime('%Y-%m-%d'),
+        'date_mmddyyyy': service_date.strftime('%m%d%Y'),
+        'date_yyyymmdd': service_date.strftime('%Y%m%d'),
+        'engineer_initials': initials,
+        'billing_marker': 'B' if with_po else '',
+        'billing_tags': '_'.join(tags),
+        'warranty': 'Warranty' if warranty else '',
+        'foc': 'FOC' if foc else '',
+        'with_po': 'With PO' if with_po else '',
+        'sc': 'SC' if sc else '',
+        'sv': 'SV' if sv else '',
+    }
+
+
+def render_tsr_pdf_filename(context=None, template_value=None):
+    """Render the active Settings-managed TSR PDF filename."""
+    template_value = clean_str(template_value) or get_email_template_value('tsr_pdf_filename')
+    rendered = render_email_template(template_value, context or {})
+    if not rendered:
+        fallback = EMAIL_TEMPLATE_DEFAULTS['tsr_pdf_filename']['default_template']
+        rendered = render_email_template(fallback, context or {})
+    return sanitize_tsr_pdf_filename(rendered)
 
 
 def ensure_user_approval_columns():
@@ -8694,9 +8863,11 @@ def offline_tsr_page():
     """
     if is_approver_only_user():
         return redirect(url_for('dashboard_page'))
+    filename_template = get_email_template_value('tsr_pdf_filename')
     return render_template(
         'offline_tsr.html',
-        offline_storage_health_admin=is_admin_authorized()
+        offline_storage_health_admin=is_admin_authorized(),
+        tsr_filename_template=filename_template,
     )
 
 
@@ -8807,6 +8978,7 @@ def get_offline_tsr_schedule_options():
     return jsonify({
         'schedules': options,
         'generated_at': get_manila_time().isoformat(),
+        'tsr_filename_template': get_email_template_value('tsr_pdf_filename'),
         'current_engineer': {
             'id': getattr(getattr(current_user, 'engineer_profile', None), 'id', None),
             'name': getattr(getattr(current_user, 'engineer_profile', None), 'name', '') or getattr(current_user, 'username', ''),
@@ -9135,19 +9307,8 @@ def get_tsr_knowledge_quick_picks():
 
 
 def build_online_tsr_pdf_filename(submission, shift, tsr_number='', payload=None):
-    """Build the visible Online TSR PDF filename using the Offline TSR download rule.
-
-    Visible/original filename must match the browser Download PDF filename:
-    - NCS_TSR_Shimadzu_Client_Product(Serial)_Task_MMDDYYYY.pdf
-    - NCS_TSR_B_Shimadzu_Client_Product(Serial)_Task_MMDDYYYY.pdf when billing/PO applies
-
-    The actual stored disk filename is still randomized later by ShiftFile.filename.
-    """
+    """Build a visible TSR filename using the Settings-managed template."""
     payload = payload if isinstance(payload, dict) else {}
-    selected_schedule = payload.get('selectedSchedule') if isinstance(payload.get('selectedSchedule'), dict) else {}
-
-    # If the frontend explicitly supplies its download filename in a future patch,
-    # trust it first so both sides remain perfectly aligned.
     frontend_filename = (
         clean_str(payload.get('pdf_filename')) or
         clean_str(payload.get('download_filename')) or
@@ -9156,80 +9317,15 @@ def build_online_tsr_pdf_filename(submission, shift, tsr_number='', payload=None
     )
 
     if frontend_filename:
-        safe_name = secure_filename(os.path.basename(frontend_filename))
-        if safe_name:
-            if not safe_name.lower().endswith('.pdf'):
-                safe_name = f"{safe_name}.pdf"
-            if 'TSR' not in safe_name.upper():
-                safe_name = f"TSR_{safe_name}"
-            return safe_name
+        return sanitize_tsr_pdf_filename(frontend_filename)
 
-    def first_value(*keys):
-        for key in keys:
-            value = clean_str(payload.get(key))
-            if value:
-                return value
-            value = clean_str(selected_schedule.get(key))
-            if value:
-                return value
-        return ''
-
-    def clean_filename_part(value, fallback):
-        value = clean_str(value) or fallback
-        value = re.sub(r'[^A-Za-z0-9()\-]+', '_', value)
-        value = re.sub(r'_+', '_', value).strip('_')
-        return value or fallback
-
-    def format_tsr_date(value):
-        raw_value = clean_str(value) or ''
-        parsed = None
-        for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y', '%b %d, %Y'):
-            try:
-                parsed = datetime.strptime(raw_value, fmt).date()
-                break
-            except Exception:
-                pass
-        if not parsed and getattr(shift, 'start_time', None):
-            parsed = shift.start_time.date()
-        if not parsed:
-            parsed = get_manila_today()
-        return parsed.strftime('%m%d%Y')
-
-    client_name = first_value('tsr-customer-name', 'client_name') or clean_str(getattr(submission, 'client_name', '')) or 'Client'
-    product_name = first_value('tsr-equipment-model', 'product_name') or clean_str(getattr(submission, 'product_name', '')) or 'Product'
-    serial_number = first_value('tsr-serial-no', 'product_id', 'serial_number') or clean_str(getattr(submission, 'serial_number', ''))
-    task_name = first_value('task') or clean_str(getattr(shift, 'title', '')) or 'Service'
-    service_date = first_value('tsr-service-date', 'date_iso', 'date_label')
-
-    product_label = clean_filename_part(product_name, 'Product')
-    serial_clean = clean_filename_part(serial_number, '') if serial_number else ''
-    if serial_clean:
-        product_label = f"{product_label}({serial_clean})"
-
-    # Match frontend billing filename condition: add B when billing/PO fields are present.
-    billing_fields = [
-        payload.get('tsr-billing-statement'),
-        payload.get('tsr-purchase-order'),
-        payload.get('billing_statement'),
-        payload.get('purchase_order'),
-    ]
-    billing_flag = any(clean_str(value) for value in billing_fields)
-
-    prefix = 'NCS_TSR_B_Shimadzu' if billing_flag else 'NCS_TSR_Shimadzu'
-    raw_name = "_".join([
-        prefix,
-        clean_filename_part(client_name, 'Client'),
-        product_label,
-        clean_filename_part(task_name, 'Service'),
-        format_tsr_date(service_date)
-    ]) + '.pdf'
-
-    safe_name = secure_filename(raw_name)
-    if not safe_name.lower().endswith('.pdf'):
-        safe_name = f"{safe_name}.pdf"
-    if 'TSR' not in safe_name.upper():
-        safe_name = f"TSR_{safe_name}"
-    return safe_name
+    context = build_tsr_filename_template_context(
+        submission=submission,
+        shift=shift,
+        tsr_number=tsr_number,
+        payload=payload,
+    )
+    return render_tsr_pdf_filename(context)
 
 def generate_online_tsr_submission_pdf(submission, shift, payload):
     """Generate a basic official TSR PDF from the online Offline TSR payload.
@@ -10645,6 +10741,31 @@ def parse_online_tsr_payload_json(submission):
         return payload if isinstance(payload, dict) else {}
     except Exception:
         return {}
+
+
+def is_system_generated_tsr_file(file_rec):
+    """Identify the primary PDF created by Online TSR linkage, independent of its name."""
+    if not file_rec or not clean_int(getattr(file_rec, 'id', None)):
+        return False
+    submission_id = clean_int(getattr(file_rec, 'online_tsr_submission_id', None))
+    if not submission_id:
+        return False
+    try:
+        submission = db.session.get(OnlineTsrSubmission, submission_id)
+        payload = parse_online_tsr_payload_json(submission)
+        return clean_int(payload.get('_attached_file_id')) == clean_int(file_rec.id)
+    except Exception:
+        return False
+
+
+def shift_file_is_recognized_tsr(file_rec):
+    """Recognize generated TSRs by identity and manual/legacy TSRs by filename."""
+    if is_system_generated_tsr_file(file_rec):
+        return True
+    return existing_files_have_tsr([
+        get_shift_file_display_name(file_rec),
+        get_shift_file_disk_name(file_rec),
+    ])
 
 
 TSR_CHECKBOX_REPAIR_MARKER = 'medical-service-tsr-checkbox-repair:v1'
@@ -13616,7 +13737,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v32-multibranch-stock';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v33-tsr-filename-template';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -14431,11 +14552,9 @@ def settings_email_templates_save():
     template_value = clean_str(payload.get('template_value')) or ''
     is_active = bool(payload.get('is_active', True))
 
-    if not template_key:
-        return jsonify({'success': False, 'error': 'Please select a valid email template.'}), 400
-
-    if not template_value:
-        return jsonify({'success': False, 'error': 'Template subject cannot be blank.'}), 400
+    is_valid, validation_error = validate_managed_template_value(template_key, template_value)
+    if not is_valid:
+        return jsonify({'success': False, 'error': validation_error}), 400
 
     cfg = EMAIL_TEMPLATE_DEFAULTS.get(template_key, {})
     template = EmailTemplateSetting.query.filter_by(template_key=template_key).first()
@@ -14459,13 +14578,13 @@ def settings_email_templates_save():
     db.session.add(template)
     db.session.add(ActivityLog(
         user=current_user.username.capitalize(),
-        action=f"Updated email template subject: {template.label}"
+        action=f"Updated managed template: {template.label}"
     ))
     db.session.commit()
 
     return jsonify({
         'success': True,
-        'message': 'Email subject template saved.',
+        'message': f'{template.label} saved.',
         'template': email_template_setting_to_dict(template)
     })
 
@@ -14503,13 +14622,13 @@ def settings_email_templates_reset(template_key):
     db.session.add(template)
     db.session.add(ActivityLog(
         user=current_user.username.capitalize(),
-        action=f"Reset email template subject to default: {template.label}"
+        action=f"Reset managed template to default: {template.label}"
     ))
     db.session.commit()
 
     return jsonify({
         'success': True,
-        'message': 'Email subject template reset to default.',
+        'message': f'{template.label} reset to default.',
         'template': email_template_setting_to_dict(template)
     })
 
@@ -33317,7 +33436,7 @@ def get_timeline_data():
                         'filename': get_shift_file_display_name(file_record) or file_record.filename,
                         'disk_filename': file_record.filename,
                         'display_name': get_shift_file_display_name(file_record),
-                        'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if is_tsr_filename(get_shift_file_display_name(file_record) or file_record.filename) else '',
+                        'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if shift_file_is_recognized_tsr(file_record) else '',
                         'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else ''
                     }
                     for file_record in shift.files
@@ -33463,7 +33582,7 @@ def get_shift_details(shift_id):
                     'filename': get_shift_file_display_name(file_record) or file_record.filename,
                     'disk_filename': file_record.filename,
                     'display_name': get_shift_file_display_name(file_record),
-                    'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if is_tsr_filename(get_shift_file_display_name(file_record) or file_record.filename) else '',
+                    'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if shift_file_is_recognized_tsr(file_record) else '',
                     'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else ''
                 }
                 for file_record in shift.files
@@ -33739,11 +33858,10 @@ def get_analytics_summary():
 
 def shift_has_tsr_file(shift):
     """Return True when a shift has at least one TSR attachment."""
-    filenames = []
     for file_rec in getattr(shift, 'files', []) or []:
-        filenames.append(get_shift_file_display_name(file_rec))
-        filenames.append(get_shift_file_disk_name(file_rec))
-    return existing_files_have_tsr(filenames)
+        if shift_file_is_recognized_tsr(file_rec):
+            return True
+    return False
 
 
 def tsr_archive_requested_scope():
@@ -33890,16 +34008,12 @@ def tsr_archive_shift_to_dict(shift):
             continue
         display_name = get_shift_file_display_name(file_rec)
         disk_name = get_shift_file_disk_name(file_rec)
-        if not existing_files_have_tsr([display_name, disk_name]):
+        if not shift_file_is_recognized_tsr(file_rec):
             continue
 
         filename_for_ext = display_name or disk_name or ''
         ext = filename_for_ext.rsplit('.', 1)[-1].lower() if '.' in filename_for_ext else ''
-        is_generated_online_tsr = bool(
-            ext == 'pdf' and
-            (display_name or '').upper().startswith('TSR_') and
-            (disk_name or '').startswith(f'shift_{shift.id}_')
-        )
+        is_generated_online_tsr = bool(ext == 'pdf' and is_system_generated_tsr_file(file_rec))
 
         is_legacy_replacement = clean_int(file_rec.id) in replacement_file_ids
         files.append({
@@ -34501,11 +34615,7 @@ def get_reports_summary():
     completed_service_shifts = [shift for shift in service_shifts if (shift.status or '') == 'Completed']
 
     def has_tsr_file(shift):
-        filenames = []
-        for file_rec in getattr(shift, 'files', []) or []:
-            filenames.append(get_shift_file_display_name(file_rec))
-            filenames.append(get_shift_file_disk_name(file_rec))
-        return existing_files_have_tsr(filenames)
+        return shift_has_tsr_file(shift)
 
     tsr_attached = [shift for shift in service_shifts if has_tsr_file(shift)]
     missing_tsr = [shift for shift in completed_service_shifts if not has_tsr_file(shift)]
@@ -34679,7 +34789,7 @@ def export_reports_summary():
             shift.product.serial_number if shift.product else '',
             shift.title or '',
             shift.status or '',
-            'Yes' if existing_files_have_tsr(filenames) else 'No',
+            'Yes' if shift_has_tsr_file(shift) else 'No',
             ', '.join([eng.name for eng in engineers])
         ])
 
@@ -35666,7 +35776,7 @@ def get_linked_schedule_manual_upload_count(shift):
 def linked_schedule_has_tsr_filename(shift):
     for linked_shift in get_linked_schedule_file_shifts(shift):
         for file_rec in getattr(linked_shift, 'files', []) or []:
-            if is_tsr_filename(get_shift_file_display_name(file_rec) or get_shift_file_disk_name(file_rec)):
+            if shift_file_is_recognized_tsr(file_rec):
                 return True
     return False
 
@@ -37189,7 +37299,7 @@ def get_tsr_files_for_shift(shift):
 
             display_name = get_shift_file_display_name(file_rec)
             disk_name = get_shift_file_disk_name(file_rec)
-            filename_detected = existing_files_have_tsr([display_name, disk_name])
+            filename_detected = shift_file_is_recognized_tsr(file_rec)
 
             candidate_paths = get_tsr_archive_file_candidate_paths(disk_name, display_name)
             found_paths = []
@@ -37219,7 +37329,7 @@ def get_tsr_files_for_shift(shift):
                 continue
 
             file_path = found_paths[0]
-            detection_method = 'filename'
+            detection_method = 'generated_linkage' if is_system_generated_tsr_file(file_rec) else 'filename'
 
             if not filename_detected:
                 scan_name = display_name or disk_name or os.path.basename(file_path)
@@ -38321,7 +38431,7 @@ def update_shift(id):
         is_work_schedule = bool(clean_int(payload.get('client_id')))
         preserved_files = [file_rec.filename for file_rec in day_shift.files]
         if is_work_schedule and new_status == 'Completed':
-            has_existing_tsr = existing_files_have_tsr(preserved_files)
+            has_existing_tsr = shift_has_tsr_file(day_shift)
             has_uploaded_tsr = uploaded_files_have_tsr()
             if not has_existing_tsr and not has_uploaded_tsr:
                 return jsonify({'message': 'A TSR file is required before marking this schedule as Completed.'}), 400
@@ -38482,7 +38592,7 @@ def update_shift(id):
 
             is_work_schedule = bool(clean_int(payload.get('client_id')))
             if is_work_schedule and new_status == 'Completed':
-                has_existing_tsr = existing_files_have_tsr(preserved_files)
+                has_existing_tsr = any(shift_has_tsr_file(item) for item in existing_chain_for_fast_update)
                 has_uploaded_tsr = uploaded_files_have_tsr()
                 if not has_existing_tsr and not has_uploaded_tsr:
                     return jsonify({'message': 'A TSR file is required before marking this schedule as Completed.'}), 400
@@ -38595,7 +38705,7 @@ def update_shift(id):
 
     is_work_schedule = bool(clean_int(payload.get('client_id')))
     if is_work_schedule and new_status == 'Completed':
-        has_existing_tsr = existing_files_have_tsr(preserved_files)
+        has_existing_tsr = any(shift_has_tsr_file(item) for item in old_chain)
         has_uploaded_tsr = uploaded_files_have_tsr()
         if not has_existing_tsr and not has_uploaded_tsr:
             return jsonify({'message': 'A TSR file is required before marking this schedule as Completed.'}), 400
@@ -39259,12 +39369,8 @@ def enforce_completed_schedule_tsr_after_file_delete(linked_shifts, deleted_file
         if not is_work_schedule or current_status != 'Completed':
             continue
 
-        remaining_filenames = [
-            file_rec.filename
-            for file_rec in ShiftFile.query.filter_by(shift_id=shift.id).all()
-        ]
-
-        if existing_files_have_tsr(remaining_filenames):
+        remaining_files = ShiftFile.query.filter_by(shift_id=shift.id).all()
+        if any(shift_file_is_recognized_tsr(file_rec) for file_rec in remaining_files):
             continue
 
         shift.status = 'For Continuation'
