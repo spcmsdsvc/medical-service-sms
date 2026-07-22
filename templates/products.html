@@ -70,11 +70,14 @@
             </div>
             
             <div class="col-md-4">
-                <label class="small fw-bold text-muted text-uppercase">Warranty Status</label>
+                <label class="small fw-bold text-muted text-uppercase">Product Status</label>
                 <select id="filter-status" class="form-select form-select-sm" onchange="applyFilters()">
                     <option value="">All Statuses</option>
                     <option value="Under Warranty">Active Warranty</option>
-                    <option value="Expired">Expired Warranty</option>
+                    <option value="Expired - Under Contract">Expired - Under Contract</option>
+                    <option value="Expired - No Contract">Expired - No Contract</option>
+                    <option value="No Expiry Set - Under Contract">No Expiry Set - Under Contract</option>
+                    <option value="No Expiry Set - No Contract">No Expiry Set - No Contract</option>
                 </select>
             </div>
             
@@ -112,13 +115,17 @@
                     <i class="fa-solid fa-shield-check me-1"></i>
                     <span id="product-active-count">0 active</span>
                 </span>
+                <span class="count-chip bg-white border text-warning-emphasis">
+                    <i class="fa-solid fa-file-shield me-1"></i>
+                    <span id="product-expired-contract-count">0 expired + contract</span>
+                </span>
                 <span class="count-chip bg-white border text-danger">
-                    <i class="fa-solid fa-circle-xmark me-1"></i>
-                    <span id="product-expired-count">0 expired</span>
+                    <i class="fa-solid fa-file-circle-xmark me-1"></i>
+                    <span id="product-expired-no-contract-count">0 expired + no contract</span>
                 </span>
                 <span class="count-chip bg-white border text-secondary">
                     <i class="fa-solid fa-circle-question me-1"></i>
-                    <span id="product-na-count">0 N/A</span>
+                    <span id="product-no-expiry-count">0 no expiry</span>
                 </span>
                 <span class="count-chip bg-white border text-primary">
                     <i class="fa-solid fa-filter me-1"></i>
@@ -165,13 +172,21 @@
 
                 <div class="row">
                     <div class="col-md-6">
-                        <label class="small fw-bold text-muted text-uppercase">Warranty Start</label>
+                        <label class="small fw-bold text-muted text-uppercase">Start Date</label>
                         <input type="date" id="p-w-start" class="form-control">
                     </div>
                     <div class="col-md-6">
-                        <label class="small fw-bold text-muted text-uppercase">Warranty End</label>
+                        <label class="small fw-bold text-muted text-uppercase">End Date</label>
                         <input type="date" id="p-w-end" class="form-control">
                     </div>
+                </div>
+
+                <div class="product-contract-control mt-3">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" role="switch" id="p-under-contract">
+                        <label class="form-check-label fw-bold" for="p-under-contract">Contract</label>
+                    </div>
+                    <div class="small text-muted mt-1">Turn on when this product is covered by an active service contract.</div>
                 </div>
             </div>
             
@@ -302,7 +317,17 @@
     let productsData = [];
     let masterClients = [];
     let nameCounts = {}; // Detects duplicate names in the medical database
-    let productSummary = { total_products: 0, active_warranty: 0, expired_warranty: 0, na_warranty: 0, linked_products: 0 };
+    let productSummary = {
+        total_products: 0,
+        active_warranty: 0,
+        expired_warranty: 0,
+        na_warranty: 0,
+        expired_under_contract: 0,
+        expired_no_contract: 0,
+        no_expiry_under_contract: 0,
+        no_expiry_no_contract: 0,
+        linked_products: 0
+    };
     let productSortState = { key: '', direction: 'asc' };
     const PRODUCT_SORT_STORAGE_KEY = 'medicalServiceProductSortV1';
     const PRODUCT_SORT_KEYS = ['serial', 'name', 'owner', 'start', 'end', 'status'];
@@ -514,11 +539,15 @@ function highlightAndScroll(serial){
 
     function getProductWarrantyStatus(p) {
         const today = new Date().setHours(0,0,0,0);
+        const underContract = Boolean(p.under_contract);
 
-        if (!p.end_warranty) return "N/A";
+        if (!p.end_warranty) {
+            return underContract ? "No Expiry Set - Under Contract" : "No Expiry Set - No Contract";
+        }
 
         const end = new Date(p.end_warranty).setHours(0,0,0,0);
-        return today <= end ? "Under Warranty" : "Expired";
+        if(today <= end) return "Under Warranty";
+        return underContract ? "Expired - Under Contract" : "Expired - No Contract";
     }
 
     function updateProductCountFooter(filteredData){
@@ -528,10 +557,11 @@ function highlightAndScroll(serial){
         const counts = filteredData.reduce((acc, p) => {
             const status = p.computed_status || getProductWarrantyStatus(p);
             if(status === "Under Warranty") acc.active++;
-            else if(status === "Expired") acc.expired++;
-            else acc.na++;
+            else if(status === "Expired - Under Contract") acc.expiredContract++;
+            else if(status === "Expired - No Contract") acc.expiredNoContract++;
+            else acc.noExpiry++;
             return acc;
-        }, { active: 0, expired: 0, na: 0 });
+        }, { active: 0, expiredContract: 0, expiredNoContract: 0, noExpiry: 0 });
 
         const hasFilter = Boolean(
             document.getElementById('search-text')?.value.trim() ||
@@ -541,14 +571,16 @@ function highlightAndScroll(serial){
 
         const label = document.getElementById('product-count-label');
         const active = document.getElementById('product-active-count');
-        const expired = document.getElementById('product-expired-count');
-        const na = document.getElementById('product-na-count');
+        const expiredContract = document.getElementById('product-expired-contract-count');
+        const expiredNoContract = document.getElementById('product-expired-no-contract-count');
+        const noExpiry = document.getElementById('product-no-expiry-count');
         const state = document.getElementById('product-filter-state');
 
         if(label) label.innerText = `Showing ${shown} of ${total} products`;
         if(active) active.innerText = `${counts.active} active`;
-        if(expired) expired.innerText = `${counts.expired} expired`;
-        if(na) na.innerText = `${counts.na} N/A`;
+        if(expiredContract) expiredContract.innerText = `${counts.expiredContract} expired + contract`;
+        if(expiredNoContract) expiredNoContract.innerText = `${counts.expiredNoContract} expired + no contract`;
+        if(noExpiry) noExpiry.innerText = `${counts.noExpiry} no expiry`;
         if(state) state.innerText = hasFilter ? 'Filtered results' : 'No active filter';
     }
 
@@ -564,7 +596,8 @@ function highlightAndScroll(serial){
 
 function getWarrantyBadgeClass(status){
     if(status === 'Under Warranty') return 'product-mobile-badge-active';
-    if(status === 'Expired') return 'product-mobile-badge-expired';
+    if(status === 'Expired - Under Contract') return 'product-mobile-badge-contract';
+    if(status === 'Expired - No Contract') return 'product-mobile-badge-expired';
     return 'product-mobile-badge-na';
 }
 
@@ -618,14 +651,19 @@ function renderProductMobileCards(data){
 
                 <div class="product-mobile-dates">
                     <div class="product-mobile-date-box">
-                        <label>Warranty Start</label>
+                        <label>Start Date</label>
                         <span>${escapeHtml(startWarranty)}</span>
                     </div>
 
                     <div class="product-mobile-date-box">
-                        <label>Warranty End</label>
+                        <label>End Date</label>
                         <span>${escapeHtml(endWarranty)}</span>
                     </div>
+                </div>
+
+                <div class="product-mobile-contract ${p.under_contract ? 'is-active' : ''}">
+                    <i class="fa-solid fa-file-contract"></i>
+                    ${p.under_contract ? 'Under Contract' : 'No Contract'}
                 </div>
 
                 <div class="product-mobile-actions">
@@ -751,11 +789,13 @@ function renderTable(data) {
         data.forEach(p => {
             const status = p.computed_status || getProductWarrantyStatus(p);
 
-            let sBadge = `<span class="badge bg-secondary">N/A</span>`;
+            let sBadge = `<span class="badge product-status-badge bg-secondary">${escapeHtml(status)}</span>`;
             if(status === 'Under Warranty'){
-                sBadge = `<span class="badge bg-success">Under Warranty</span>`;
-            } else if(status === 'Expired'){
-                sBadge = `<span class="badge bg-danger">Expired</span>`;
+                sBadge = `<span class="badge product-status-badge bg-success">Under Warranty</span>`;
+            } else if(status === 'Expired - Under Contract'){
+                sBadge = `<span class="badge product-status-badge bg-warning text-dark">Expired - Under Contract</span>`;
+            } else if(status === 'Expired - No Contract'){
+                sBadge = `<span class="badge product-status-badge bg-danger">Expired - No Contract</span>`;
             }
 
             const ownerDisplay = escapeHtml(p.client_name || '-');
@@ -816,6 +856,7 @@ function renderTable(data) {
         
         // Reset all input fields
         document.querySelectorAll('.modal-body input').forEach(i => i.value = ""); 
+        document.getElementById('p-under-contract').checked = false;
         
         prodModal.show(); 
     }
@@ -848,6 +889,7 @@ function renderTable(data) {
         
         document.getElementById('p-w-start').value = p.start_warranty; 
         document.getElementById('p-w-end').value = p.end_warranty; 
+        document.getElementById('p-under-contract').checked = Boolean(p.under_contract);
         
         prodModal.show(); 
     }
@@ -862,7 +904,8 @@ function renderTable(data) {
             name: document.getElementById('p-name').value, 
             client_id: document.getElementById('p-cli-id').value,
             start_warranty: document.getElementById('p-w-start').value, 
-            end_warranty: document.getElementById('p-w-end').value 
+            end_warranty: document.getElementById('p-w-end').value,
+            under_contract: document.getElementById('p-under-contract').checked
         }; 
         
         data.serial_number = (data.serial_number || '').trim().toUpperCase();
@@ -1195,6 +1238,25 @@ function renderTable(data) {
         white-space: nowrap;
     }
 
+    .product-contract-control {
+        border: 1px solid var(--app-border, #d8e0ea);
+        background: var(--app-surface-raised, #f8fafc);
+        color: var(--app-text, #0f172a);
+        border-radius: 8px;
+        padding: 0.8rem 0.9rem;
+    }
+
+    .product-contract-control .form-check-input {
+        cursor: pointer;
+    }
+
+    .product-status-badge {
+        max-width: 11rem;
+        white-space: normal;
+        line-height: 1.25;
+        text-align: center;
+    }
+
     @media print {
         .inventory-count-footer,
         .product-mobile-list {
@@ -1259,7 +1321,9 @@ function renderTable(data) {
         padding: 0.38rem 0.6rem;
         font-size: 0.64rem;
         font-weight: 900;
-        white-space: nowrap;
+        max-width: 10rem;
+        text-align: center;
+        line-height: 1.25;
     }
 
     .product-mobile-badge-active {
@@ -1270,6 +1334,11 @@ function renderTable(data) {
     .product-mobile-badge-expired {
         background: #fee2e2;
         color: #991b1b;
+    }
+
+    .product-mobile-badge-contract {
+        background: #fef3c7;
+        color: #854d0e;
     }
 
     .product-mobile-badge-na {
@@ -1304,6 +1373,29 @@ function renderTable(data) {
         color: #0f172a;
         font-size: 0.76rem;
         font-weight: 800;
+    }
+
+    .product-mobile-contract {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        margin-top: 0.7rem;
+        color: var(--app-muted, #64748b);
+        font-size: 0.74rem;
+        font-weight: 850;
+    }
+
+    .product-mobile-contract.is-active {
+        color: #b7791f;
+    }
+
+    :root[data-app-theme="dark"] .product-mobile-badge-contract {
+        background: #4a3612;
+        color: #fde68a;
+    }
+
+    :root[data-app-theme="dark"] .product-contract-control {
+        background: var(--app-surface-raised, #182536);
     }
 
     .product-mobile-actions {

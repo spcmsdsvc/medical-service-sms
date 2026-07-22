@@ -2137,9 +2137,67 @@ class Product(db.Model):
     start_warranty_date = db.Column(db.Date)
     
     end_warranty_date = db.Column(db.Date)
+
+    # Product-level service contract coverage. Warranty dates remain separate;
+    # this flag explains the support path after the warranty period expires.
+    under_contract = db.Column(db.Boolean, default=False, nullable=False)
     
     # History of technical visits for this asset
     shifts = db.relationship('Shift', backref='product', lazy=True)
+
+
+_product_contract_column_ready = False
+
+
+def ensure_product_contract_column():
+    """Add the product contract flag safely to existing SQLite databases."""
+    global _product_contract_column_ready
+
+    if _product_contract_column_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            table_exists = connection.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='product'"
+            ).fetchone()
+            if not table_exists:
+                _product_contract_column_ready = True
+                return
+
+            product_columns = {
+                row[1] for row in connection.exec_driver_sql("PRAGMA table_info(product)").fetchall()
+            }
+            if 'under_contract' not in product_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE product ADD COLUMN under_contract BOOLEAN DEFAULT 0 NOT NULL"
+                )
+                print("[DB MIGRATION] Added product.under_contract", flush=True)
+
+            connection.exec_driver_sql(
+                "UPDATE product SET under_contract = 0 WHERE under_contract IS NULL"
+            )
+
+        _product_contract_column_ready = True
+    except Exception as product_contract_error:
+        print(f"[Product] Contract column migration failed: {product_contract_error}", flush=True)
+        raise
+
+
+def product_contract_status(product=None, end_date=None, under_contract=None, today=None):
+    """Return the shared warranty/contract status used throughout the system."""
+    if product is not None:
+        end_date = getattr(product, 'end_warranty_date', None)
+        under_contract = bool(getattr(product, 'under_contract', False))
+
+    contract_enabled = bool(under_contract)
+    if not end_date:
+        return f"No Expiry Set - {'Under Contract' if contract_enabled else 'No Contract'}"
+
+    reference_date = today or get_manila_today()
+    if end_date >= reference_date:
+        return 'Under Warranty'
+    return f"Expired - {'Under Contract' if contract_enabled else 'No Contract'}"
 
 
 class StockInventoryItem(db.Model):
@@ -10677,7 +10735,8 @@ def correct_product_from_tsr_revision(shift, payload):
             name=new_name,
             client_id=getattr(product_rec, 'client_id', None),
             start_warranty_date=getattr(product_rec, 'start_warranty_date', None),
-            end_warranty_date=getattr(product_rec, 'end_warranty_date', None)
+            end_warranty_date=getattr(product_rec, 'end_warranty_date', None),
+            under_contract=bool(getattr(product_rec, 'under_contract', False)),
         )
         db.session.add(replacement)
         db.session.flush()
@@ -13906,7 +13965,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v35-tsr-email-preview-cc';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v36-product-contract-status';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -16981,6 +17040,7 @@ def quick_add_timeline_client():
 @login_required
 def get_products():
     """ Inventory Retrieval API featuring machine ownership mapping """
+    ensure_product_contract_column()
     products = Product.query.all()
     results = []
 
@@ -16991,10 +17051,50 @@ def get_products():
             'client_id': p.client_id,
             'client_name': p.owner.name if p.owner else "N/A",
             'start_warranty': p.start_warranty_date.isoformat() if p.start_warranty_date else "",
-            'end_warranty': p.end_warranty_date.isoformat() if p.end_warranty_date else ""
+            'end_warranty': p.end_warranty_date.isoformat() if p.end_warranty_date else "",
+            'under_contract': bool(p.under_contract),
+            'computed_status': product_contract_status(p)
         })
 
     return jsonify(results)
+
+
+@app.route('/get_products_summary')
+@login_required
+def get_products_summary():
+    """Return contract-aware product counts while preserving legacy keys."""
+    ensure_product_contract_column()
+    products = Product.query.all()
+    counts = {
+        'total_products': len(products),
+        'active_warranty': 0,
+        'expired_warranty': 0,
+        'na_warranty': 0,
+        'expired_under_contract': 0,
+        'expired_no_contract': 0,
+        'no_expiry_under_contract': 0,
+        'no_expiry_no_contract': 0,
+        'linked_products': sum(1 for product in products if product.client_id),
+    }
+
+    for product in products:
+        status = product_contract_status(product)
+        if status == 'Under Warranty':
+            counts['active_warranty'] += 1
+        elif status == 'Expired - Under Contract':
+            counts['expired_warranty'] += 1
+            counts['expired_under_contract'] += 1
+        elif status == 'Expired - No Contract':
+            counts['expired_warranty'] += 1
+            counts['expired_no_contract'] += 1
+        elif status == 'No Expiry Set - Under Contract':
+            counts['na_warranty'] += 1
+            counts['no_expiry_under_contract'] += 1
+        else:
+            counts['na_warranty'] += 1
+            counts['no_expiry_no_contract'] += 1
+
+    return jsonify(counts)
 
 
 @app.route('/get_open_tasks')
@@ -34989,6 +35089,10 @@ def get_reports_summary():
     warranty_active = 0
     warranty_expired = 0
     warranty_expiring = 0
+    expired_under_contract = 0
+    expired_no_contract = 0
+    no_expiry_under_contract = 0
+    no_expiry_no_contract = 0
     products_without_service = 0
 
     for product in all_products:
@@ -34999,6 +35103,14 @@ def get_reports_summary():
                     warranty_expiring += 1
             else:
                 warranty_expired += 1
+                if product.under_contract:
+                    expired_under_contract += 1
+                else:
+                    expired_no_contract += 1
+        elif product.under_contract:
+            no_expiry_under_contract += 1
+        else:
+            no_expiry_no_contract += 1
         if not product.shifts:
             products_without_service += 1
 
@@ -35043,6 +35155,10 @@ def get_reports_summary():
             'warranty_active': warranty_active,
             'warranty_expired': warranty_expired,
             'warranty_expiring': warranty_expiring,
+            'expired_under_contract': expired_under_contract,
+            'expired_no_contract': expired_no_contract,
+            'no_expiry_under_contract': no_expiry_under_contract,
+            'no_expiry_no_contract': no_expiry_no_contract,
             'without_service': products_without_service,
             'repeat_service_count': len(repeat_service_products),
             'high_maintenance': high_maintenance[:15]
@@ -35210,13 +35326,22 @@ def export_engineers():
 @app.route('/export_products')
 @login_required
 def export_products():
-    """ Machine Inventory CSV dump with warranty metadata """
+    """Machine inventory CSV dump with warranty and contract metadata."""
     if not is_admin_authorized(): return denied()
+    ensure_product_contract_column()
     products = Product.query.all()
     output = io.StringIO(); writer = csv.writer(output)
-    writer.writerow(['Serial Number', 'Description', 'Current Owner', 'Start Date', 'Expiry Date'])
+    writer.writerow(['Serial Number', 'Description', 'Current Owner', 'Start Date', 'End Date', 'Contract', 'Status'])
     for p in products:
-        writer.writerow([p.serial_number, p.name, p.owner.name if p.owner else "N/A", p.start_warranty_date, p.end_warranty_date])
+        writer.writerow([
+            p.serial_number,
+            p.name,
+            p.owner.name if p.owner else "N/A",
+            p.start_warranty_date,
+            p.end_warranty_date,
+            'Yes' if p.under_contract else 'No',
+            product_contract_status(p),
+        ])
     output.seek(0)
     log_activity("Exported the Product Inventory")
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-disposition": "attachment; filename=inventory.csv"})
@@ -35388,21 +35513,22 @@ def export_client_excel(client_id):
     row += 1
     ws.cell(row=row, column=1, value="Serial")
     ws.cell(row=row, column=2, value="Name")
-    ws.cell(row=row, column=3, value="Warranty Start")
-    ws.cell(row=row, column=4, value="Warranty End")
-    ws.cell(row=row, column=5, value="Status")
+    ws.cell(row=row, column=3, value="Start Date")
+    ws.cell(row=row, column=4, value="End Date")
+    ws.cell(row=row, column=5, value="Contract")
+    ws.cell(row=row, column=6, value="Status")
     row += 1
 
     from datetime import datetime
     today = datetime.today().date()
 
     for p in products:
-        status = "Active" if p.end_warranty_date and p.end_warranty_date >= today else "Expired"
         ws.cell(row=row, column=1, value=p.serial_number)
         ws.cell(row=row, column=2, value=p.name)
         ws.cell(row=row, column=3, value=str(p.start_warranty_date))
         ws.cell(row=row, column=4, value=str(p.end_warranty_date))
-        ws.cell(row=row, column=5, value=status)
+        ws.cell(row=row, column=5, value="Yes" if p.under_contract else "No")
+        ws.cell(row=row, column=6, value=product_contract_status(p, today=today))
         row += 1
 
     output = io.BytesIO()
@@ -40346,6 +40472,7 @@ def add_product():
     if not (is_admin_authorized() or current_user.role == 'engineer'):
         return jsonify({'message': 'Denied'}), 403
 
+    ensure_product_contract_column()
     d = request.get_json() or {}
 
     serial_number = clean_str(d.get('serial_number')).upper()
@@ -40371,7 +40498,8 @@ def add_product():
         name=product_name,
         client_id=clean_int(d.get('client_id')),
         start_warranty_date=parse_date(d.get('start_warranty')),
-        end_warranty_date=parse_date(d.get('end_warranty'))
+        end_warranty_date=parse_date(d.get('end_warranty')),
+        under_contract=parse_bool_flag(d.get('under_contract')),
     )
 
     try:
@@ -40391,7 +40519,8 @@ def add_product():
         print(f"[PRODUCT] Add product failed for {serial_number}: {product_error}", flush=True)
         return jsonify({'message': 'Unable to add product. Please try again.'}), 500
 
-    log_activity(f"Added equipment: {new_p.serial_number}")
+    contract_label = 'Under Contract' if new_p.under_contract else 'No Contract'
+    log_activity(f"Added equipment: {new_p.serial_number} ({contract_label})")
     return jsonify({'status': 'success'})
 
 
@@ -40407,6 +40536,7 @@ def update_product(serial_number):
     if not (is_admin_authorized() or current_user.role == 'engineer'):
         return jsonify({'message': 'Denied'}), 403
 
+    ensure_product_contract_column()
     d = request.get_json() or {}
     old_serial = clean_str(serial_number)
     p = db.session.get(Product, old_serial)
@@ -40428,10 +40558,12 @@ def update_product(serial_number):
     old_client_id = p.client_id
     old_start = p.start_warranty_date
     old_end = p.end_warranty_date
+    old_contract = bool(p.under_contract)
 
     new_client_id = clean_int(d.get('client_id'))
     new_start = parse_date(d.get('start_warranty'))
     new_end = parse_date(d.get('end_warranty'))
+    new_contract = parse_bool_flag(d.get('under_contract'))
 
     try:
         if new_serial != old_serial:
@@ -40451,7 +40583,8 @@ def update_product(serial_number):
                 name=product_name,
                 client_id=new_client_id,
                 start_warranty_date=new_start,
-                end_warranty_date=new_end
+                end_warranty_date=new_end,
+                under_contract=new_contract,
             )
             db.session.add(replacement)
             db.session.flush()
@@ -40466,7 +40599,8 @@ def update_product(serial_number):
 
             log_activity(
                 f"Changed product serial number for {product_name} from {old_serial} to {new_serial} "
-                f"({linked_schedule_count} linked schedule(s) updated)"
+                f"({linked_schedule_count} linked schedule(s) updated; "
+                f"{'Under Contract' if new_contract else 'No Contract'})"
             )
 
             return jsonify({
@@ -40481,6 +40615,7 @@ def update_product(serial_number):
         p.client_id = new_client_id
         p.start_warranty_date = new_start
         p.end_warranty_date = new_end
+        p.under_contract = new_contract
         db.session.commit()
 
         changed_fields = []
@@ -40490,6 +40625,8 @@ def update_product(serial_number):
             changed_fields.append('owner')
         if old_start != new_start or old_end != new_end:
             changed_fields.append('warranty dates')
+        if old_contract != new_contract:
+            changed_fields.append('contract status')
 
         field_note = f" ({', '.join(changed_fields)})" if changed_fields else ''
         log_activity(f"Updated product details: {p.serial_number}{field_note}")
@@ -40539,6 +40676,18 @@ def csv_get(row, *names):
             return normalized[key]
 
     return None
+
+
+def csv_has_header(fieldnames, *names):
+    """Return True when a CSV contains any case/spacing-tolerant header name."""
+    normalized_headers = {
+        str(header or '').strip().lower().replace('_', ' ').replace('-', ' ')
+        for header in (fieldnames or [])
+    }
+    return any(
+        str(name or '').strip().lower().replace('_', ' ').replace('-', ' ') in normalized_headers
+        for name in names
+    )
 
 
 def csv_find_client_id(owner_name):
@@ -40684,6 +40833,8 @@ def import_products():
     if not is_admin_authorized():
         return jsonify({'message': 'Denied'}), 403
 
+    ensure_product_contract_column()
+
     file = request.files.get('file')
     if not file or not file.filename:
         return jsonify({'message': 'No CSV file selected.'}), 400
@@ -40697,6 +40848,11 @@ def import_products():
         if not reader.fieldnames:
             return jsonify({'message': 'CSV file is empty or missing headers.'}), 400
 
+        has_contract_column = csv_has_header(
+            reader.fieldnames,
+            'Contract', 'Under Contract', 'Contract Status'
+        )
+
         created_count = 0
         updated_count = 0
         skipped_count = 0
@@ -40708,6 +40864,9 @@ def import_products():
             owner_name = clean_str(csv_get(row, 'Current Owner', 'Owner', 'Client', 'Client Name', 'Medical Center'))
             start_date = parse_date(csv_get(row, 'Start Date', 'Warranty Start', 'Start Warranty', 'Start Warranty Date'))
             end_date = parse_date(csv_get(row, 'Expiry Date', 'End Date', 'Warranty End', 'End Warranty', 'End Warranty Date'))
+            contract_value = parse_bool_flag(
+                csv_get(row, 'Contract', 'Under Contract', 'Contract Status')
+            ) if has_contract_column else None
 
             if not serial or not product_name:
                 skipped_count += 1
@@ -40723,6 +40882,8 @@ def import_products():
                 product.client_id = client_id
                 product.start_warranty_date = start_date
                 product.end_warranty_date = end_date
+                if has_contract_column:
+                    product.under_contract = contract_value
                 updated_count += 1
             else:
                 db.session.add(Product(
@@ -40730,7 +40891,8 @@ def import_products():
                     name=product_name,
                     client_id=client_id,
                     start_warranty_date=start_date,
-                    end_warranty_date=end_date
+                    end_warranty_date=end_date,
+                    under_contract=bool(contract_value) if has_contract_column else False,
                 ))
                 created_count += 1
 
@@ -40778,6 +40940,7 @@ def ensure_runtime_sqlite_migrations_before_request():
     ensure_emergency_superadmin_from_env()
 
     ensure_shift_file_original_filename_column()
+    ensure_product_contract_column()
     ensure_schedule_delete_indexes()
     ensure_approval_routing_schema()
     ensure_default_approval_routes()
@@ -40972,6 +41135,7 @@ def initialize_database():
         ensure_engineer_signature_column()
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()
+        ensure_product_contract_column()
         ensure_schedule_delete_indexes()
         ensure_approval_routing_schema()
         migrate_hierarchy_accounts()

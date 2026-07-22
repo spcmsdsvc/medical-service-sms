@@ -166,7 +166,8 @@
         {"item_key": "2026-07-22-schedule-sc-sv-tags", "category": "Calendar", "description": "With P.O. schedules can now optionally be classified as either SC or SV, with the selected billing tag shown clearly on Calendar cards.", "audiences": ["engineers", "admins"], "sort_order": 10},
         {"item_key": "2026-07-22-tsr-filename-template", "category": "Create TSR", "description": "Superadmins can now manage newly generated TSR PDF filenames from Settings using safe placeholders and live billing-scenario previews.", "audiences": ["engineers", "admins"], "sort_order": 20},
         {"item_key": "2026-07-22-tsr-subject-scenarios", "category": "TSR Email", "description": "TSR client email subjects now use independently managed Standard, Warranty, FOC, P.O., SC, SV, and Installation templates, with a clear choice for mixed TSR packages.", "audiences": ["engineers", "admins"], "sort_order": 30},
-        {"item_key": "2026-07-22-tsr-email-preview-cc", "category": "TSR Email", "description": "Send TSR now supports account-remembered Additional CC recipients and a read-only preview of the exact outgoing recipients, subject, message, and attachments.", "audiences": ["engineers", "admins"], "sort_order": 40}
+        {"item_key": "2026-07-22-tsr-email-preview-cc", "category": "TSR Email", "description": "Send TSR now supports account-remembered Additional CC recipients and a read-only preview of the exact outgoing recipients, subject, message, and attachments.", "audiences": ["engineers", "admins"], "sort_order": 40},
+        {"item_key": "2026-07-22-product-contract-status", "category": "Products", "description": "Products now distinguish active warranties, expired products under contract, expired products without a contract, and records without an expiry date.", "audiences": ["engineers", "admins"], "sort_order": 50}
       ]
     }
   ]

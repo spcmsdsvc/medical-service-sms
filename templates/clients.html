@@ -520,13 +520,12 @@ function openProductModal(id){
 
         if(!p) return;
 
-        const today = new Date();
-        const end = p.end_warranty ? new Date(p.end_warranty) : null;
-        const isActive = end && end >= today;
-
-        const badge = isActive 
-            ? '<span class="badge bg-success">Active</span>'
-            : '<span class="badge bg-danger">Expired</span>';
+        const status = p.computed_status || 'No Expiry Set - No Contract';
+        let badgeClass = 'bg-secondary';
+        if(status === 'Under Warranty') badgeClass = 'bg-success';
+        else if(status === 'Expired - Under Contract') badgeClass = 'bg-warning text-dark';
+        else if(status === 'Expired - No Contract') badgeClass = 'bg-danger';
+        const badge = `<span class="badge ${badgeClass}">${escapeHtml(status)}</span>`;
 
         document.getElementById('product-view-content').innerHTML = `
             <div class="p-2">
@@ -547,11 +546,15 @@ function openProductModal(id){
                 </div>
 
                 <div class="mb-2">
-                    <strong>Warranty Start:</strong> ${p.start_warranty || '-'}
+                    <strong>Start Date:</strong> ${p.start_warranty || '-'}
                 </div>
 
                 <div class="mb-3">
-                    <strong>Warranty End:</strong> ${p.end_warranty || '-'}
+                    <strong>End Date:</strong> ${p.end_warranty || '-'}
+                </div>
+
+                <div class="mb-3">
+                    <strong>Contract:</strong> ${p.under_contract ? 'Under Contract' : 'No Contract'}
                 </div>
 
                 <div class="d-flex gap-2 mt-3">
@@ -1147,15 +1150,13 @@ async function viewContacts(id){
         html += `<div class="text-muted text-center p-3">No products linked</div>`;
     } else {
         clientProducts.forEach(p=>{
-            const today = new Date();
-            const end = p.end_warranty ? new Date(p.end_warranty) : null;
-            const status = end && end >= today ? "Active" : "Expired";
+            const status = p.computed_status || 'No Expiry Set - No Contract';
 
             html += `
             <div class="list-group-item p-2" style="cursor:pointer" onclick="openProductModal('${p.serial_number}')">
                 <div class="fw-bold text-dark">${p.name || '-'}</div>
                 <div class="small"><strong>Serial Number:</strong> ${p.serial_number || '-'}</div>
-                <div class="small"><strong>Warranty:</strong> ${status}</div>
+                <div class="small"><strong>Status:</strong> ${escapeHtml(status)}</div>
             </div>`;
         });
     }
