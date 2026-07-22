@@ -1418,13 +1418,15 @@
                         <i class="fa-solid fa-paper-plane me-2"></i>
                         Send TSR to Client
                     </h5>
-                    <div class="small opacity-75 mt-1">Review client recipients and Settings-managed system CC before sending.</div>
+                    <div class="small opacity-75 mt-1">Review recipients, CC, message, and attachments before sending.</div>
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
 
             <div class="modal-body p-4">
                 <input type="hidden" id="tsr-email-shift-id">
+
+                <div id="tsr-email-compose-view">
 
                 <div class="tsr-email-context-card mb-3">
                     <div class="tsr-email-context-icon">
@@ -1523,6 +1525,42 @@
                     </div>
                 </div>
 
+                <div class="mb-3 tsr-manual-cc-section">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+                        <label class="small fw-bold text-muted text-uppercase mb-0 d-block">
+                            Additional CC
+                            <span class="tsr-remembered-badge ms-1">Account remembered</span>
+                        </label>
+                        <button type="button" class="btn btn-outline-danger btn-sm tsr-forget-cc-btn d-none" id="tsr-forget-remembered-cc-btn" onclick="clearRememberedTSRCC()">
+                            <i class="fa-solid fa-trash-can me-1"></i>Clear Remembered CC
+                        </button>
+                    </div>
+
+                    <div class="tsr-recipient-composer tsr-cc-composer" id="tsr-manual-cc-composer">
+                        <div id="tsr-manual-cc-chips" class="tsr-recipient-chips"></div>
+                        <input
+                            type="text"
+                            id="tsr-manual-cc-input"
+                            class="tsr-recipient-input"
+                            placeholder="Type CC email then press Enter or comma"
+                            autocomplete="off"
+                        >
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-2">
+                        <button type="button" class="btn btn-outline-primary btn-sm tsr-mini-action" onclick="addTypedTSRManualCC()">
+                            <i class="fa-solid fa-plus me-1"></i>Add CC
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm tsr-mini-action" onclick="clearCurrentTSRManualCC()">
+                            <i class="fa-solid fa-eraser me-1"></i>Clear Current CC
+                        </button>
+                    </div>
+
+                    <div class="xsmall text-muted mt-2">
+                        New CC addresses are remembered on your account after a successful send. Removing a chip affects this email only.
+                    </div>
+                </div>
+
                 <div class="tsr-system-cc-card mb-3" id="tsr-static-cc-display">
                     <div class="tsr-system-cc-icon">
                         <i class="fa-solid fa-envelope-circle-check"></i>
@@ -1555,7 +1593,7 @@
                     <div>
                         <div class="fw-bold">Auto-generated email subject and client notice</div>
                         <div>The subject is created automatically using the task, equipment, client, and service date.</div>
-                        <div>This email will include a note at the bottom: “This is an auto-generated message. Please do not reply.”</div>
+                        <div>This email includes the note: "This is an auto-generated message. Please do not reply."</div>
                     </div>
                 </div>
 
@@ -1563,11 +1601,53 @@
                     <i class="fa-solid fa-circle-info me-1"></i>
                     Review the recipients before sending. You can add or remove email addresses manually.
                 </div>
+                </div>
+
+                <div class="d-none tsr-email-preview-view" id="tsr-email-preview-view" aria-live="polite">
+                    <div class="tsr-email-preview-heading mb-3">
+                        <div class="tsr-email-preview-heading-icon"><i class="fa-solid fa-eye"></i></div>
+                        <div>
+                            <div class="fw-bold">Complete Email Preview</div>
+                            <div class="small text-muted">Read-only preview of the exact message prepared by the server.</div>
+                        </div>
+                    </div>
+
+                    <div class="tsr-email-preview-envelope mb-3">
+                        <div class="tsr-email-preview-field"><span>To</span><div id="tsr-preview-to"></div></div>
+                        <div class="tsr-email-preview-field"><span>CC</span><div id="tsr-preview-cc"></div></div>
+                        <div class="tsr-email-preview-field"><span>Subject</span><div id="tsr-preview-subject"></div></div>
+                    </div>
+
+                    <div class="tsr-email-preview-cc-sources mb-3" id="tsr-preview-cc-sources"></div>
+
+                    <div class="tsr-email-preview-canvas mb-3">
+                        <iframe id="tsr-email-preview-frame" title="Read-only TSR email body preview" sandbox=""></iframe>
+                    </div>
+
+                    <section class="tsr-attachment-package" aria-labelledby="tsr-preview-attachment-title">
+                        <div class="tsr-attachment-package-header">
+                            <div>
+                                <div class="small fw-bold text-uppercase" id="tsr-preview-attachment-title">
+                                    <i class="fa-solid fa-paperclip me-1"></i>Previewed Attachments
+                                </div>
+                                <div class="xsmall text-muted" id="tsr-preview-attachment-summary">No preview loaded.</div>
+                            </div>
+                            <span class="tsr-attachment-count" id="tsr-preview-attachment-count">0</span>
+                        </div>
+                        <div class="tsr-attachment-list" id="tsr-preview-attachment-list"></div>
+                    </section>
+                </div>
             </div>
 
             <div class="modal-footer border-0 p-4 pt-0 d-flex flex-column flex-sm-row gap-2">
                 <div class="xsmall text-success fw-bold w-100 d-none" id="tsr-send-confirm-note"></div>
-                <button type="button" class="btn btn-outline-secondary btn-sm px-4 w-100" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm px-4 w-100 tsr-compose-footer-action" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-primary btn-sm px-4 fw-bold w-100 tsr-compose-footer-action" id="tsr-preview-email-btn" onclick="previewTSRClientEmailMessage()">
+                    <i class="fa-solid fa-eye me-1"></i>Preview Email
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm px-4 fw-bold w-100 d-none tsr-preview-footer-action" id="tsr-back-to-email-btn" onclick="showTSREmailComposeView()">
+                    <i class="fa-solid fa-arrow-left me-1"></i>Back to Edit
+                </button>
                 <button type="button" class="btn btn-success btn-sm px-4 fw-bold w-100" id="tsr-send-client-btn" onclick="sendTSRClientEmail()">
                     <i class="fa-solid fa-paper-plane me-1"></i>
                     Send TSR
@@ -2948,6 +3028,275 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     font-weight: 700;
 }
 
+/* Send TSR uses native Bootstrap modal scrolling; only its visual surfaces are themed. */
+#tsrClientEmailModal .modal-content,
+#tsrClientEmailModal .modal-body,
+#tsrClientEmailModal .modal-footer {
+    background: var(--app-bg, #f8fafc);
+    color: var(--app-text, #172033);
+}
+
+#tsrClientEmailModal .modal-body {
+    overscroll-behavior: contain;
+}
+
+#tsrClientEmailModal .modal-footer {
+    border-top: 1px solid var(--app-border, #d9e2ec) !important;
+    box-shadow: 0 -8px 18px rgba(15, 23, 42, 0.08);
+}
+
+#tsrClientEmailModal .tsr-email-context-card,
+#tsrClientEmailModal .tsr-system-cc-card,
+#tsrClientEmailModal .tsr-sender-copy-card,
+#tsrClientEmailModal .tsr-auto-generated-note,
+#tsrClientEmailModal .tsr-attachment-package,
+#tsrClientEmailModal .tsr-email-suggestion-panel,
+#tsrClientEmailModal .tsr-subject-scenario-card,
+#tsrClientEmailModal .tsr-email-preview-envelope,
+#tsrClientEmailModal .tsr-email-preview-cc-sources {
+    background: var(--app-surface, #ffffff);
+    color: var(--app-text, #172033);
+    border-color: var(--app-border, #d9e2ec);
+    box-shadow: none;
+}
+
+#tsrClientEmailModal .tsr-attachment-package-header,
+#tsrClientEmailModal .tsr-email-suggestion-toggle,
+#tsrClientEmailModal .tsr-subject-preview {
+    background: var(--app-surface-raised, #f1f5f9);
+    color: var(--app-text, #172033);
+    border-color: var(--app-border, #d9e2ec);
+}
+
+#tsrClientEmailModal .tsr-email-suggestion-toggle:hover,
+#tsrClientEmailModal .tsr-email-suggestion-toggle:focus {
+    background: var(--app-surface-raised, #e9eef5);
+}
+
+#tsrClientEmailModal .tsr-recipient-composer {
+    background: var(--app-input-bg, var(--app-surface, #ffffff));
+    border-color: var(--app-border, #cbd5e1);
+    color: var(--app-text, #172033);
+}
+
+#tsrClientEmailModal .tsr-recipient-input {
+    background: transparent;
+    color: var(--app-text, #172033);
+}
+
+#tsrClientEmailModal .tsr-recipient-input::placeholder {
+    color: var(--app-muted, #64748b);
+    opacity: 1;
+}
+
+#tsrClientEmailModal .text-muted,
+#tsrClientEmailModal .tsr-email-suggestion-sub,
+#tsrClientEmailModal .tsr-attachment-meta,
+#tsrClientEmailModal .tsr-attachment-empty,
+#tsrClientEmailModal .tsr-system-cc-muted {
+    color: var(--app-muted, #64748b) !important;
+}
+
+#tsrClientEmailModal .tsr-attachment-name,
+#tsrClientEmailModal .tsr-email-suggestion-title {
+    color: var(--app-text, #172033);
+}
+
+#tsrClientEmailModal .tsr-attachment-row,
+#tsrClientEmailModal .tsr-email-chip-container {
+    border-color: var(--app-border, #e2e8f0);
+}
+
+.tsr-manual-cc-section {
+    padding: 0.85rem;
+    border: 1px solid var(--app-border, #d9e2ec);
+    border-radius: 0.95rem;
+    background: var(--app-surface, #ffffff);
+}
+
+.tsr-remembered-badge,
+.tsr-chip-source {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.12rem 0.42rem;
+    font-size: 0.62rem;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.tsr-remembered-badge {
+    border: 1px solid #c4b5fd;
+    background: #f5f3ff;
+    color: #6d28d9;
+}
+
+.tsr-chip-source {
+    background: rgba(255, 255, 255, 0.62);
+    color: inherit;
+}
+
+.tsr-manual-cc-chip {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+}
+
+.tsr-manual-cc-chip-remembered {
+    background: #f5f3ff;
+    border-color: #c4b5fd;
+    color: #6d28d9;
+}
+
+.tsr-forget-cc-btn {
+    min-height: 34px;
+    font-weight: 800;
+}
+
+.tsr-email-preview-heading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.tsr-email-preview-heading-icon {
+    width: 2.4rem;
+    height: 2.4rem;
+    border-radius: 0.65rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: #0d6efd;
+    background: #dbeafe;
+}
+
+.tsr-email-preview-envelope {
+    display: grid;
+    border: 1px solid var(--app-border, #d9e2ec);
+    border-radius: 0.85rem;
+    overflow: hidden;
+}
+
+.tsr-email-preview-field {
+    display: grid;
+    grid-template-columns: 5rem minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.72rem 0.85rem;
+    border-bottom: 1px solid var(--app-border, #d9e2ec);
+    overflow-wrap: anywhere;
+}
+
+.tsr-email-preview-field:last-child { border-bottom: 0; }
+.tsr-email-preview-field > span {
+    color: var(--app-muted, #64748b);
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.tsr-email-preview-field > div { font-size: 0.84rem; font-weight: 750; }
+
+.tsr-email-preview-cc-sources {
+    display: grid;
+    gap: 0.65rem;
+    padding: 0.85rem;
+    border: 1px solid var(--app-border, #d9e2ec);
+    border-radius: 0.85rem;
+}
+
+.tsr-preview-cc-source-group {
+    display: grid;
+    grid-template-columns: 8rem minmax(0, 1fr);
+    align-items: start;
+    gap: 0.7rem;
+}
+
+.tsr-preview-cc-source-label {
+    color: var(--app-muted, #64748b);
+    font-size: 0.72rem;
+    font-weight: 900;
+}
+
+.tsr-preview-address-chip {
+    display: inline-flex;
+    margin: 0 0.3rem 0.3rem 0;
+    padding: 0.24rem 0.48rem;
+    border: 1px solid var(--app-border, #cbd5e1);
+    border-radius: 999px;
+    color: var(--app-text, #172033);
+    background: var(--app-surface-raised, #f1f5f9);
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.tsr-email-preview-canvas {
+    overflow: hidden;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.85rem;
+    background: #ffffff;
+    box-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
+}
+
+#tsr-email-preview-frame {
+    display: block;
+    width: 100%;
+    height: min(48vh, 520px);
+    min-height: 360px;
+    border: 0;
+    background: #ffffff;
+}
+
+:root[data-app-theme="dark"] #tsrClientEmailModal .tsr-recipient-chip {
+    background: #123c2a;
+    border-color: #287553;
+    color: #9ee6bd;
+}
+
+:root[data-app-theme="dark"] #tsrClientEmailModal .tsr-manual-cc-chip,
+:root[data-app-theme="dark"] #tsrClientEmailModal .tsr-manual-cc-chip-remembered {
+    background: #252244;
+    border-color: #6559a7;
+    color: #d8d2ff;
+}
+
+:root[data-app-theme="dark"] #tsrClientEmailModal .tsr-system-cc-chip,
+:root[data-app-theme="dark"] #tsrClientEmailModal .tsr-managed-badge {
+    background: #123c2a;
+    border-color: #287553;
+    color: #9ee6bd;
+}
+
+:root[data-app-theme="dark"] #tsrClientEmailModal .tsr-email-chip {
+    background: #123c2a;
+    border-color: #287553;
+    color: #9ee6bd;
+}
+
+:root[data-app-theme="dark"] #tsrClientEmailModal .tsr-email-chip-fallback {
+    background: #152d4f;
+    border-color: #31598e;
+    color: #b9d7ff;
+}
+
+:root[data-app-theme="dark"] #tsrClientEmailModal .alert-info {
+    background: #12304a;
+    color: #b9ddff;
+    border: 1px solid #315d82 !important;
+}
+
+:root[data-app-theme="dark"] #tsrClientEmailModal .btn-outline-secondary {
+    color: #d7e0ea;
+    border-color: #718096;
+}
+
+:root[data-app-theme="dark"] #tsrClientEmailModal .btn-outline-secondary:hover,
+:root[data-app-theme="dark"] #tsrClientEmailModal .btn-outline-secondary:focus {
+    color: #ffffff;
+    background: #344256;
+    border-color: #92a2b7;
+}
+
 
 @media (max-width: 768px) {
     #tsrClientEmailModal .modal-dialog {
@@ -2982,6 +3331,17 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     .tsr-attachment-preview-btn {
         width: 100%;
         min-height: 42px;
+    }
+
+    .tsr-email-preview-field,
+    .tsr-preview-cc-source-group {
+        grid-template-columns: 1fr;
+        gap: 0.25rem;
+    }
+
+    #tsr-email-preview-frame {
+        min-height: 320px;
+        height: 46vh;
     }
 }
 
@@ -13694,6 +14054,9 @@ if(shift.engineers){
 
     let currentTSRSystemCCEmails = [];
     let currentTSRSenderCopyEmail = '';
+    let tsrManualCCEmails = [];
+    let tsrRememberedCCEmails = [];
+    let currentTSREmailPreviewSignature = '';
     let currentTSRAttachmentManifestSignature = '';
     let currentTSRSubjectScenarioRequired = false;
     let currentTSRSubjectScenarios = [];
@@ -13749,6 +14112,7 @@ if(shift.engineers){
             preview.textContent = option?.subject || 'Select a scenario to preview the email subject.';
         }
         resetTSRSendConfirmState();
+        invalidateTSREmailPreview();
         const sendBtn = document.getElementById('tsr-send-client-btn');
         if(sendBtn){
             sendBtn.disabled = !currentTSRAttachmentManifestSignature || (currentTSRSubjectScenarioRequired && !selected);
@@ -13824,10 +14188,10 @@ if(shift.engineers){
         return parsed.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
-    function renderTSREmailAttachmentManifest(files){
-        const listEl = document.getElementById('tsr-attachment-list');
-        const countEl = document.getElementById('tsr-attachment-count');
-        const summaryEl = document.getElementById('tsr-attachment-package-summary');
+    function renderTSREmailAttachmentManifest(files, options={}){
+        const listEl = document.getElementById(options.listId || 'tsr-attachment-list');
+        const countEl = document.getElementById(options.countId || 'tsr-attachment-count');
+        const summaryEl = document.getElementById(options.summaryId || 'tsr-attachment-package-summary');
         const normalizedFiles = Array.isArray(files) ? files : [];
         const tsrCount = normalizedFiles.filter(file => Boolean(file.is_tsr) || file.attachment_type === 'tsr').length;
         const supportingCount = Math.max(0, normalizedFiles.length - tsrCount);
@@ -13911,7 +14275,7 @@ if(shift.engineers){
     }
 
     function getDisplayedTSRCCEmails(){
-        const ccEmails = [...(currentTSRSystemCCEmails || [])];
+        const ccEmails = [...(currentTSRSystemCCEmails || []), ...(tsrManualCCEmails || [])];
         const senderEmail = currentTSRSenderCopyEmail || getCurrentTSRSenderCopyEmail();
 
         if(senderEmail){
@@ -13972,6 +14336,160 @@ if(shift.engineers){
         }).join('');
     }
 
+    function invalidateTSREmailPreview(){
+        currentTSREmailPreviewSignature = '';
+        const previewBtn = document.getElementById('tsr-preview-email-btn');
+        if(previewBtn && !previewBtn.disabled){
+            previewBtn.innerHTML = '<i class="fa-solid fa-eye me-1"></i>Preview Email';
+        }
+    }
+
+    function showTSREmailComposeView(){
+        document.getElementById('tsr-email-compose-view')?.classList.remove('d-none');
+        document.getElementById('tsr-email-preview-view')?.classList.add('d-none');
+        document.querySelectorAll('#tsrClientEmailModal .tsr-compose-footer-action').forEach(el => el.classList.remove('d-none'));
+        document.querySelectorAll('#tsrClientEmailModal .tsr-preview-footer-action').forEach(el => el.classList.add('d-none'));
+        const body = document.querySelector('#tsrClientEmailModal .modal-body');
+        if(body) body.scrollTop = 0;
+    }
+
+    function showTSREmailPreviewView(){
+        document.getElementById('tsr-email-compose-view')?.classList.add('d-none');
+        document.getElementById('tsr-email-preview-view')?.classList.remove('d-none');
+        document.querySelectorAll('#tsrClientEmailModal .tsr-compose-footer-action').forEach(el => el.classList.add('d-none'));
+        document.querySelectorAll('#tsrClientEmailModal .tsr-preview-footer-action').forEach(el => el.classList.remove('d-none'));
+        const body = document.querySelector('#tsrClientEmailModal .modal-body');
+        if(body) body.scrollTop = 0;
+    }
+
+    function renderTSRManualCCChips(){
+        const chipsContainer = document.getElementById('tsr-manual-cc-chips');
+        const clearRememberedBtn = document.getElementById('tsr-forget-remembered-cc-btn');
+        if(clearRememberedBtn){
+            clearRememberedBtn.classList.toggle('d-none', !tsrRememberedCCEmails.length);
+        }
+        if(!chipsContainer) return;
+
+        const remembered = new Set(tsrRememberedCCEmails);
+        chipsContainer.innerHTML = tsrManualCCEmails.map(email => `
+            <span class="tsr-recipient-chip tsr-manual-cc-chip ${remembered.has(email) ? 'tsr-manual-cc-chip-remembered' : ''}">
+                <i class="fa-solid ${remembered.has(email) ? 'fa-clock-rotate-left' : 'fa-at'}"></i>
+                <span>${escapeHtml(email)}</span>
+                ${remembered.has(email) ? '<span class="tsr-chip-source">Remembered</span>' : ''}
+                <button type="button" class="tsr-recipient-remove" onclick="removeTSRManualCC('${escapeHtml(email)}')" title="Exclude from this email" aria-label="Exclude ${escapeHtml(email)} from this email">&times;</button>
+            </span>
+        `).join('');
+    }
+
+    function addTSRManualCC(rawValue, showWarning=true){
+        const parsedEmails = parseTSRRecipientText(rawValue);
+        const invalidText = String(rawValue || '').trim();
+        let addedCount = 0;
+
+        parsedEmails.forEach(email => {
+            if(!isValidEmailForClientSend(email) || tsrManualCCEmails.includes(email)) return;
+            tsrManualCCEmails.push(email);
+            addedCount++;
+        });
+        tsrManualCCEmails = normalizeTSRCCEmailList(tsrManualCCEmails);
+        renderTSRManualCCChips();
+        if(addedCount){
+            resetTSRSendConfirmState();
+            invalidateTSREmailPreview();
+        }
+        if(showWarning && invalidText && !parsedEmails.length){
+            timelineAlert('Please enter a valid CC email address.');
+        }
+        return addedCount;
+    }
+
+    function addTypedTSRManualCC(){
+        const input = document.getElementById('tsr-manual-cc-input');
+        if(!input) return;
+        const value = input.value;
+        const added = addTSRManualCC(value, true);
+        if(added || parseTSRRecipientText(value).length) input.value = '';
+        input.focus();
+    }
+
+    function removeTSRManualCC(email){
+        const normalized = normalizeTSRRecipientEmail(email);
+        tsrManualCCEmails = tsrManualCCEmails.filter(item => item !== normalized);
+        renderTSRManualCCChips();
+        resetTSRSendConfirmState();
+        invalidateTSREmailPreview();
+    }
+
+    function clearCurrentTSRManualCC(){
+        tsrManualCCEmails = [];
+        const input = document.getElementById('tsr-manual-cc-input');
+        if(input) input.value = '';
+        renderTSRManualCCChips();
+        resetTSRSendConfirmState();
+        invalidateTSREmailPreview();
+    }
+
+    function getTSRManualCCForSend(){
+        const input = document.getElementById('tsr-manual-cc-input');
+        if(input?.value.trim()){
+            addTSRManualCC(input.value, false);
+            input.value = '';
+        }
+        return normalizeTSRCCEmailList(tsrManualCCEmails);
+    }
+
+    function initTSRManualCCInputBehavior(){
+        const input = document.getElementById('tsr-manual-cc-input');
+        if(!input || input.dataset.boundMultiEmail === '1') return;
+        input.dataset.boundMultiEmail = '1';
+        input.addEventListener('keydown', event => {
+            if(event.key === 'Enter' || event.key === ',' || event.key === ';' || event.key === 'Tab'){
+                if(input.value.trim()){
+                    event.preventDefault();
+                    addTypedTSRManualCC();
+                }
+            }
+            if(event.key === 'Backspace' && !input.value && tsrManualCCEmails.length){
+                tsrManualCCEmails.pop();
+                renderTSRManualCCChips();
+                resetTSRSendConfirmState();
+                invalidateTSREmailPreview();
+            }
+        });
+        input.addEventListener('paste', () => {
+            setTimeout(() => {
+                if(parseTSRRecipientText(input.value).length > 1 || /[,;\n\r]/.test(input.value)) addTypedTSRManualCC();
+            }, 0);
+        });
+    }
+
+    async function clearRememberedTSRCC(){
+        const confirmed = await timelineConfirmDialog({
+            title: 'Clear Remembered CC?',
+            message: 'This permanently removes all remembered TSR CC addresses from your account. Current email chips will remain until you remove them.',
+            confirmText: 'Clear Remembered CC',
+            cancelText: 'Keep Addresses',
+            tone: 'danger',
+            icon: 'trash-can',
+            confirmClass: 'btn-danger'
+        });
+        if(!confirmed) return;
+
+        try{
+            const response = await fetch('/api/preferences/tsr-client-remembered-cc/clear', {
+                method: 'POST',
+                headers: {'X-CSRFToken': getCSRFToken(), 'Accept': 'application/json'}
+            });
+            const payload = await response.json().catch(() => ({}));
+            if(!response.ok) throw new Error(payload.message || 'Unable to clear remembered CC.');
+            tsrRememberedCCEmails = [];
+            renderTSRManualCCChips();
+            timelineAlert('Remembered TSR CC addresses cleared.', 'success');
+        }catch(error){
+            timelineAlert(error.message || 'Unable to clear remembered CC.');
+        }
+    }
+
     function addTSRRecipients(rawValue, showWarning=true){
         const parsedEmails = parseTSRRecipientText(rawValue);
         const invalidText = String(rawValue || '').trim();
@@ -13988,6 +14506,7 @@ if(shift.engineers){
         renderTSRRecipientChips();
         if(addedCount){
             resetTSRSendConfirmState();
+            invalidateTSREmailPreview();
         }
 
         if(showWarning && invalidText && !parsedEmails.length){
@@ -14016,6 +14535,7 @@ if(shift.engineers){
         tsrRecipientEmails = tsrRecipientEmails.filter(item => item !== normalized);
         renderTSRRecipientChips();
         resetTSRSendConfirmState();
+        invalidateTSREmailPreview();
     }
 
     function clearTSRRecipients(){
@@ -14024,6 +14544,7 @@ if(shift.engineers){
         if(input) input.value = "";
         renderTSRRecipientChips();
         resetTSRSendConfirmState();
+        invalidateTSREmailPreview();
     }
 
     function resetTSRSendConfirmState(){
@@ -14070,6 +14591,8 @@ if(shift.engineers){
             if(event.key === 'Backspace' && !input.value && tsrRecipientEmails.length){
                 tsrRecipientEmails.pop();
                 renderTSRRecipientChips();
+                resetTSRSendConfirmState();
+                invalidateTSREmailPreview();
             }
         });
 
@@ -14158,7 +14681,9 @@ async function openTSRClientEmailModal(shiftId){
         const sendBtn = document.getElementById('tsr-send-client-btn');
 
 
+        showTSREmailComposeView();
         resetTSRSendConfirmState();
+        invalidateTSREmailPreview();
         resetTSRSubjectScenarioPanel();
         currentTSRAttachmentManifestSignature = '';
         renderTSREmailAttachmentManifest([]);
@@ -14172,8 +14697,14 @@ async function openTSRClientEmailModal(shiftId){
 
         shiftInput.value = shiftId;
         clearTSRRecipients();
+        tsrManualCCEmails = [];
+        tsrRememberedCCEmails = [];
+        renderTSRManualCCChips();
         initTSRRecipientInputBehavior();
+        initTSRManualCCInputBehavior();
         emailInput.value = "";
+        const manualCCInput = document.getElementById('tsr-manual-cc-input');
+        if(manualCCInput) manualCCInput.value = '';
         resetTSREmailSuggestionsPanel('Scanning attached TSR for client email suggestions...', '0');
         titleEl.innerText = "Technical Service Report";
         subtitleEl.innerText = "Scanning attached TSR for client email addresses.";
@@ -14216,6 +14747,9 @@ async function openTSRClientEmailModal(shiftId){
 
             const previewSystemCc = payload.cc || payload.system_cc || payload.static_cc || payload.cc_emails || [];
             renderTSRSystemCCDisplay(Array.isArray(previewSystemCc) ? previewSystemCc : []);
+            tsrRememberedCCEmails = normalizeTSRCCEmailList(payload.remembered_manual_cc || []);
+            tsrManualCCEmails = [...tsrRememberedCCEmails];
+            renderTSRManualCCChips();
             if(payload.sender_copy_email){
                 currentTSRSenderCopyEmail = String(payload.sender_copy_email || '').trim().toLowerCase();
                 const senderCopyDisplayAfterPreview = document.getElementById('tsr-sender-copy-email');
@@ -14287,10 +14821,97 @@ async function openTSRClientEmailModal(shiftId){
         }
     }
 
+    function renderTSREmailPreviewCCSources(payload){
+        const sourceEl = document.getElementById('tsr-preview-cc-sources');
+        if(!sourceEl) return;
+        const groups = [
+            ['Additional CC', payload.manual_cc || [], 'fa-user-plus'],
+            ['Settings CC', payload.system_cc || [], 'fa-gear'],
+            ['Sender Copy', payload.sender_copy || [], 'fa-user-check']
+        ];
+        sourceEl.innerHTML = groups.map(([label, emails, icon]) => `
+            <div class="tsr-preview-cc-source-group">
+                <span class="tsr-preview-cc-source-label"><i class="fa-solid ${icon} me-1"></i>${escapeHtml(label)}</span>
+                <div>${emails.length ? emails.map(email => `<span class="tsr-preview-address-chip">${escapeHtml(email)}</span>`).join('') : '<span class="text-muted small">None</span>'}</div>
+            </div>
+        `).join('');
+    }
+
+    async function previewTSRClientEmailMessage(){
+        const shiftId = document.getElementById('tsr-email-shift-id')?.value;
+        const previewBtn = document.getElementById('tsr-preview-email-btn');
+        const recipients = getTSRRecipientsForSend();
+        const manualCC = getTSRManualCCForSend();
+        const subjectScenario = getSelectedTSRSubjectScenario();
+        if(!shiftId){
+            timelineAlert('Schedule ID missing.');
+            return;
+        }
+        if(!recipients.length){
+            timelineAlert('Please add at least one valid recipient email address.');
+            document.getElementById('tsr-client-email')?.focus();
+            return;
+        }
+        if(currentTSRSubjectScenarioRequired && !subjectScenario){
+            timelineAlert('Please select the email subject scenario for this mixed TSR package.');
+            document.getElementById('tsr-email-subject-scenario')?.focus();
+            return;
+        }
+
+        if(previewBtn){
+            previewBtn.disabled = true;
+            previewBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Preparing...';
+        }
+        try{
+            const response = await fetch(`/preview_tsr_client_email_message/${shiftId}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken(), 'Accept': 'application/json'},
+                body: JSON.stringify({
+                    emails: recipients,
+                    manual_cc: manualCC,
+                    subject_scenario: subjectScenario,
+                    attachment_manifest_signature: currentTSRAttachmentManifestSignature
+                })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if(!response.ok){
+                timelineAlert(payload.message || 'Unable to prepare email preview.');
+                if(payload.attachments_changed) await openTSRClientEmailModal(shiftId);
+                return;
+            }
+
+            document.getElementById('tsr-preview-to').textContent = (payload.to || []).join(', ') || 'None';
+            document.getElementById('tsr-preview-cc').textContent = (payload.cc || []).join(', ') || 'None';
+            document.getElementById('tsr-preview-subject').textContent = payload.subject || '';
+            renderTSREmailPreviewCCSources(payload);
+            const frame = document.getElementById('tsr-email-preview-frame');
+            if(frame){
+                frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>html{background:#fff}body{margin:0;padding:20px;background:#fff;color:#111827;font-family:Arial,sans-serif;line-height:1.5;overflow-wrap:anywhere}table{max-width:100%}img{max-width:100%;height:auto}</style></head><body>${payload.html_body || ''}</body></html>`;
+            }
+            renderTSREmailAttachmentManifest(payload.attachments || [], {
+                listId: 'tsr-preview-attachment-list',
+                countId: 'tsr-preview-attachment-count',
+                summaryId: 'tsr-preview-attachment-summary'
+            });
+            currentTSREmailPreviewSignature = String(payload.message_signature || '');
+            currentTSRAttachmentManifestSignature = String(payload.attachment_manifest_signature || currentTSRAttachmentManifestSignature);
+            showTSREmailPreviewView();
+        }catch(error){
+            console.error(error);
+            timelineAlert('Unexpected error while preparing the email preview.');
+        }finally{
+            if(previewBtn){
+                previewBtn.disabled = false;
+                previewBtn.innerHTML = '<i class="fa-solid fa-eye me-1"></i>Preview Email';
+            }
+        }
+    }
+
     async function sendTSRClientEmail(){
         const shiftId = document.getElementById('tsr-email-shift-id')?.value;
         const sendBtn = document.getElementById('tsr-send-client-btn');
         const recipients = getTSRRecipientsForSend();
+        const manualCC = getTSRManualCCForSend();
         const recipientLabel = recipients.join(', ');
         const ccLabel = getDisplayedTSRCCLabel();
         const subjectScenario = getSelectedTSRSubjectScenario();
@@ -14312,7 +14933,7 @@ async function openTSRClientEmailModal(shiftId){
             return;
         }
 
-        const sendSignature = `${recipientLabel}|${ccLabel}|${currentTSRAttachmentManifestSignature}|${subjectScenario}`;
+        const sendSignature = `${recipientLabel}|${manualCC.join(',')}|${ccLabel}|${currentTSRAttachmentManifestSignature}|${subjectScenario}`;
         if(sendBtn && sendBtn.dataset.confirmReady !== '1'){
             sendBtn.dataset.confirmReady = '1';
             sendBtn.dataset.confirmSignature = sendSignature;
@@ -14352,6 +14973,7 @@ async function openTSRClientEmailModal(shiftId){
                 body: JSON.stringify({
                     email: recipients.join(', '),
                     emails: recipients,
+                    manual_cc: manualCC,
                     attachment_manifest_signature: currentTSRAttachmentManifestSignature,
                     subject_scenario: subjectScenario
                 })
@@ -14368,9 +14990,10 @@ async function openTSRClientEmailModal(shiftId){
             }
 
             const ccEmails = Array.isArray(payload.cc) ? [...payload.cc] : [];
-            if(Array.isArray(payload.cc)){
-                renderTSRSystemCCDisplay(payload.cc);
-            }
+            if(Array.isArray(payload.system_cc)) renderTSRSystemCCDisplay(payload.system_cc);
+            tsrRememberedCCEmails = normalizeTSRCCEmailList(payload.remembered_manual_cc || tsrRememberedCCEmails);
+            tsrManualCCEmails = [...tsrRememberedCCEmails];
+            renderTSRManualCCChips();
             if(payload.sender_copy_email){
                 currentTSRSenderCopyEmail = String(payload.sender_copy_email || '').trim().toLowerCase();
             }

@@ -48,7 +48,7 @@ class TsrFilenameTemplateSourceTests(unittest.TestCase):
 
     def test_release_note_and_cache_bump_are_present(self):
         self.assertIn('2026-07-22-tsr-filename-template', self.changelog_source)
-        self.assertIn('v34-tsr-subject-scenarios', self.app_source)
+        self.assertIn('v35-tsr-email-preview-cc', self.app_source)
 
 
 if __name__ == '__main__':

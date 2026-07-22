@@ -1398,6 +1398,7 @@ class User(UserMixin, db.Model):
     ui_theme_mode = db.Column(db.String(20), default='light', nullable=False)
     ui_accent_theme = db.Column(db.String(30), default='classic', nullable=False)
     ui_theme_updated_at = db.Column(db.DateTime, nullable=True)
+    tsr_client_remembered_cc_json = db.Column(db.Text, default='[]', nullable=False)
     can_manage_stock_inventory = db.Column(db.Boolean, default=False, nullable=False)
     stock_inventory_only = db.Column(db.Boolean, default=False, nullable=False)
     stock_inventory_branch_code = db.Column(db.String(10), nullable=True)
@@ -3012,6 +3013,7 @@ def ensure_user_approval_columns():
                 ('ui_theme_mode', "ALTER TABLE user ADD COLUMN ui_theme_mode VARCHAR(20) DEFAULT 'light' NOT NULL"),
                 ('ui_accent_theme', "ALTER TABLE user ADD COLUMN ui_accent_theme VARCHAR(30) DEFAULT 'classic' NOT NULL"),
                 ('ui_theme_updated_at', "ALTER TABLE user ADD COLUMN ui_theme_updated_at DATETIME"),
+                ('tsr_client_remembered_cc_json', "ALTER TABLE user ADD COLUMN tsr_client_remembered_cc_json TEXT DEFAULT '[]' NOT NULL"),
                 ('can_manage_stock_inventory', "ALTER TABLE user ADD COLUMN can_manage_stock_inventory BOOLEAN DEFAULT 0 NOT NULL"),
                 ('stock_inventory_only', "ALTER TABLE user ADD COLUMN stock_inventory_only BOOLEAN DEFAULT 0 NOT NULL"),
                 ('stock_inventory_branch_code', "ALTER TABLE user ADD COLUMN stock_inventory_branch_code VARCHAR(10)"),
@@ -7797,6 +7799,36 @@ def get_tsr_client_cc_emails_for_current_sender():
         cc_emails.append(sender_email)
 
     return normalize_email_list(cc_emails)
+
+
+def get_user_remembered_tsr_client_cc_emails(user=None):
+    """Return account-synced manual CC recipients for Send TSR."""
+    target = user or current_user
+    if not target or not getattr(target, 'is_authenticated', False):
+        return []
+
+    raw_value = getattr(target, 'tsr_client_remembered_cc_json', None)
+    if not raw_value:
+        return []
+
+    try:
+        decoded = json.loads(raw_value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        decoded = raw_value
+
+    return parse_manual_recipient_emails(decoded)
+
+
+def remember_tsr_client_cc_emails(email_addresses, user=None):
+    """Accumulate valid manual CC addresses on the sending account."""
+    target = user or current_user
+    if not target or not getattr(target, 'is_authenticated', False):
+        return []
+
+    remembered = get_user_remembered_tsr_client_cc_emails(target)
+    merged = normalize_email_list(remembered + parse_manual_recipient_emails(email_addresses))
+    target.tsr_client_remembered_cc_json = json.dumps(merged, ensure_ascii=True)
+    return merged
 
 
 def no_store_jsonify(payload, status_code=200):
@@ -13874,7 +13906,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v34-tsr-subject-scenarios';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v35-tsr-email-preview-cc';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -38092,10 +38124,135 @@ def build_tsr_client_email_bodies(shift, sender_name, font_key=None):
         </table>
         <p style="margin-top:16px;">Thank you.</p>
         <p>Medical Service Team</p>
+        <p style="margin-top:20px;padding-top:12px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px;">This is an auto-generated message. Please do not reply.</p>
     </div>
     """
 
+    text_lines.extend([
+        "",
+        "This is an auto-generated message. Please do not reply."
+    ])
+
     return "\n".join(text_lines), html_body
+
+
+def append_tsr_email_correction_notice(shift, text_body, html_body):
+    """Append the active TSR revision notice to both email body formats."""
+    latest_submission = get_latest_online_tsr_submission_for_shift(shift.id)
+    revision_no = clean_int(getattr(latest_submission, 'revision_no', None)) if latest_submission else None
+    if not latest_submission or (revision_no or 1) <= 1:
+        return text_body, html_body
+
+    revision_no = revision_no or 1
+    revision_reason = clean_str(getattr(latest_submission, 'revision_reason', None)) or 'Corrected TSR details'
+    text_body += (
+        f"\n\nCorrection notice: Please see the corrected TSR attached as REV{revision_no}. "
+        "This revised copy supersedes the previous TSR sent earlier. "
+        f"Correction reason: {revision_reason}"
+    )
+    html_body += (
+        "<div style=\"margin-top:16px;padding:12px;border-left:4px solid #f59e0b;background:#fffbeb;color:#92400e;\">"
+        f"<strong>Correction notice:</strong> Please see the corrected TSR attached as REV{revision_no}. "
+        "This revised copy supersedes the previous TSR sent earlier.<br>"
+        f"<strong>Correction reason:</strong> {html.escape(revision_reason)}"
+        "</div>"
+    )
+    return text_body, html_body
+
+
+def prepare_tsr_client_email_message(shift, payload):
+    """Build and validate the exact TSR client email used by preview and send."""
+    payload = payload or {}
+    recipient_emails = parse_manual_recipient_emails(payload.get('emails') or payload.get('email'))
+    if not recipient_emails:
+        return None, 'Please provide at least one valid recipient email address.', 400
+
+    tsr_files = get_tsr_files_for_shift(shift)
+    if not tsr_files:
+        return None, 'No attached TSR file found for this schedule.', 400
+
+    email_attachments = get_tsr_email_files_for_shift(shift, tsr_files=tsr_files)
+    current_manifest_signature = get_tsr_email_attachment_manifest_signature(email_attachments)
+    previewed_manifest_signature = clean_str(payload.get('attachment_manifest_signature')) or ''
+    if previewed_manifest_signature and previewed_manifest_signature != current_manifest_signature:
+        return None, (
+            'The email attachments have changed. Please reopen Send TSR and review the updated files before sending.'
+        ), 409
+
+    subject_package = get_tsr_subject_package_metadata(tsr_files)
+    requested_subject_scenario = normalize_tsr_subject_scenario(payload.get('subject_scenario'))
+    if subject_package['mixed']:
+        if not requested_subject_scenario:
+            return None, 'Please select the email subject scenario for this mixed TSR package.', 400
+        if requested_subject_scenario not in subject_package['scenarios']:
+            return None, 'The selected email subject scenario is not part of the reviewed TSR package.', 400
+        subject_scenario = requested_subject_scenario
+    else:
+        subject_scenario = subject_package['scenarios'][0] if subject_package['scenarios'] else 'standard'
+
+    subject = build_tsr_client_email_subject(
+        shift,
+        subject_scenario=subject_scenario,
+        tsr_files=tsr_files,
+    )
+    sender_name = current_user.username.capitalize() if current_user and current_user.is_authenticated else 'Scheduler'
+    font_key = clean_str(payload.get('font_key')) or DEFAULT_TSR_EMAIL_FONT_KEY
+    text_body, html_body = build_tsr_client_email_bodies(shift, sender_name, font_key=font_key)
+    text_body, html_body = append_tsr_email_correction_notice(shift, text_body, html_body)
+
+    recipient_keys = {email_addr.lower() for email_addr in recipient_emails}
+    system_cc = [
+        email_addr for email_addr in normalize_email_list(get_tsr_client_system_cc_emails())
+        if email_addr.lower() not in recipient_keys
+    ]
+    system_keys = {email_addr.lower() for email_addr in system_cc}
+
+    sender_copy_email = get_current_user_email_for_tsr_cc()
+    sender_copy = []
+    if sender_copy_email:
+        sender_key = sender_copy_email.lower()
+        if sender_key not in recipient_keys and sender_key not in system_keys:
+            sender_copy = [sender_copy_email]
+
+    protected_cc_keys = recipient_keys | system_keys | {email_addr.lower() for email_addr in sender_copy}
+    requested_manual_cc = parse_manual_recipient_emails(payload.get('manual_cc') or [])
+    manual_cc = [
+        email_addr for email_addr in requested_manual_cc
+        if email_addr.lower() not in protected_cc_keys
+    ]
+    final_cc = normalize_email_list(system_cc + sender_copy + manual_cc)
+
+    signature_payload = {
+        'to': recipient_emails,
+        'cc': final_cc,
+        'subject': subject,
+        'text_body': text_body,
+        'attachment_manifest_signature': current_manifest_signature,
+        'subject_scenario': subject_scenario,
+    }
+    message_signature = hashlib.sha256(
+        json.dumps(signature_payload, ensure_ascii=True, sort_keys=True).encode('utf-8')
+    ).hexdigest()
+
+    return {
+        'recipient_emails': recipient_emails,
+        'manual_cc': manual_cc,
+        'system_cc': system_cc,
+        'sender_copy': sender_copy,
+        'final_cc': final_cc,
+        'subject': subject,
+        'subject_scenario': subject_scenario,
+        'font_key': font_key,
+        'font_stack': get_tsr_email_font_stack(font_key),
+        'text_body': text_body,
+        'html_body': html_body,
+        'tsr_files': tsr_files,
+        'email_attachments': email_attachments,
+        'attachment_manifest_signature': current_manifest_signature,
+        'message_signature': message_signature,
+        'attachments': [serialize_tsr_email_attachment(item) for item in email_attachments],
+        'sender_name': sender_name,
+    }, None, 200
 
 
 def filter_tsr_client_suggestion_emails(candidates):
@@ -38210,6 +38367,7 @@ def preview_tsr_client_email(shift_id):
         'cc': system_cc_emails,
         'system_cc': system_cc_emails,
         'sender_copy_email': sender_copy_email,
+        'remembered_manual_cc': get_user_remembered_tsr_client_cc_emails(),
         'font_options': [
             {'key': key, 'label': key.title() if key != 'tenorite' else 'Tenorite'}
             for key in TSR_EMAIL_FONT_STACKS.keys()
@@ -38227,6 +38385,57 @@ def preview_tsr_client_email(shift_id):
     })
 
 
+@app.route('/preview_tsr_client_email_message/<int:shift_id>', methods=['POST'])
+@login_required
+def preview_tsr_client_email_message(shift_id):
+    """Return the complete, read-only message that Send TSR would deliver."""
+    shift = db.session.get(Shift, shift_id)
+    if not shift:
+        return no_store_jsonify({'message': 'Schedule not found.'}, 404)
+    if not can_work_on_existing_schedule_shift(shift):
+        return denied('You are not authorized to send TSR for this schedule.')
+
+    message, error_message, status_code = prepare_tsr_client_email_message(
+        shift,
+        request.get_json(silent=True) or {},
+    )
+    if not message:
+        response_payload = {'message': error_message or 'Unable to prepare email preview.'}
+        if status_code == 409:
+            response_payload['attachments_changed'] = True
+        return no_store_jsonify(response_payload, status_code)
+
+    return no_store_jsonify({
+        'status': 'success',
+        'to': message['recipient_emails'],
+        'manual_cc': message['manual_cc'],
+        'system_cc': message['system_cc'],
+        'sender_copy': message['sender_copy'],
+        'cc': message['final_cc'],
+        'subject': message['subject'],
+        'subject_scenario': message['subject_scenario'],
+        'text_body': message['text_body'],
+        'html_body': message['html_body'],
+        'attachments': message['attachments'],
+        'attachment_manifest_signature': message['attachment_manifest_signature'],
+        'message_signature': message['message_signature'],
+    })
+
+
+@app.route('/api/preferences/tsr-client-remembered-cc/clear', methods=['POST'])
+@login_required
+def clear_tsr_client_remembered_cc():
+    """Clear the logged-in account's remembered Send TSR CC list."""
+    ensure_user_approval_columns()
+    current_user.tsr_client_remembered_cc_json = '[]'
+    db.session.add(ActivityLog(
+        user=current_user.username,
+        action='Cleared remembered TSR client email CC recipients'
+    ))
+    db.session.commit()
+    return no_store_jsonify({'status': 'success', 'remembered_manual_cc': []})
+
+
 @app.route('/send_tsr_client_email/<int:shift_id>', methods=['POST'])
 @login_required
 def send_tsr_client_email(shift_id):
@@ -38239,118 +38448,75 @@ def send_tsr_client_email(shift_id):
         return denied('You are not authorized to send TSR for this schedule.')
 
     payload = request.get_json(silent=True) or {}
-    recipient_emails = parse_manual_recipient_emails(payload.get('email'))
-    if not recipient_emails:
-        return jsonify({
-            'message': 'Please provide at least one valid recipient email address.'
-        }), 400
-
-    tsr_files = get_tsr_files_for_shift(shift)
-    if not tsr_files:
-        return jsonify({'message': 'No attached TSR file found for this schedule.'}), 400
-
-    email_attachments = get_tsr_email_files_for_shift(shift, tsr_files=tsr_files)
-    current_manifest_signature = get_tsr_email_attachment_manifest_signature(email_attachments)
-    previewed_manifest_signature = clean_str(payload.get('attachment_manifest_signature')) or ''
-    if previewed_manifest_signature and previewed_manifest_signature != current_manifest_signature:
-        return jsonify({
-            'message': 'The email attachments have changed. Please reopen Send TSR and review the updated files before sending.',
-            'attachments_changed': True
-        }), 409
-
-    subject_package = get_tsr_subject_package_metadata(tsr_files)
-    requested_subject_scenario = normalize_tsr_subject_scenario(payload.get('subject_scenario'))
-    if subject_package['mixed']:
-        if not requested_subject_scenario:
-            return jsonify({
-                'message': 'Please select the email subject scenario for this mixed TSR package.'
-            }), 400
-        if requested_subject_scenario not in subject_package['scenarios']:
-            return jsonify({
-                'message': 'The selected email subject scenario is not part of the reviewed TSR package.'
-            }), 400
-        subject_scenario = requested_subject_scenario
-    else:
-        subject_scenario = subject_package['scenarios'][0] if subject_package['scenarios'] else 'standard'
-
-    subject = build_tsr_client_email_subject(
-        shift,
-        subject_scenario=subject_scenario,
-        tsr_files=tsr_files,
-    )
-    sender_name = current_user.username.capitalize() if current_user and current_user.is_authenticated else 'Scheduler'
-    font_key = clean_str(payload.get('font_key')) or DEFAULT_TSR_EMAIL_FONT_KEY
-    text_body, html_body = build_tsr_client_email_bodies(shift, sender_name, font_key=font_key)
-    latest_submission_for_email = get_latest_online_tsr_submission_for_shift(shift.id)
-    if latest_submission_for_email and (clean_int(getattr(latest_submission_for_email, 'revision_no', None)) or 1) > 1:
-        revision_no = clean_int(getattr(latest_submission_for_email, 'revision_no', None)) or 1
-        revision_reason = clean_str(getattr(latest_submission_for_email, 'revision_reason', None)) or 'Corrected TSR details'
-        correction_text = (
-            f"\n\nCorrection notice: Please see the corrected TSR attached as REV{revision_no}. "
-            f"This revised copy supersedes the previous TSR sent earlier. "
-            f"Correction reason: {revision_reason}"
-        )
-        text_body += correction_text
-        html_body += (
-            "<div style=\"margin-top:16px;padding:12px;border-left:4px solid #f59e0b;background:#fffbeb;color:#92400e;\">"
-            f"<strong>Correction notice:</strong> Please see the corrected TSR attached as REV{revision_no}. "
-            "This revised copy supersedes the previous TSR sent earlier.<br>"
-            f"<strong>Correction reason:</strong> {html.escape(revision_reason)}"
-            "</div>"
-        )
-
-    static_cc_emails = get_tsr_client_cc_emails_for_current_sender()
+    message, error_message, status_code = prepare_tsr_client_email_message(shift, payload)
+    if not message:
+        response_payload = {'message': error_message or 'Unable to prepare TSR email.'}
+        if status_code == 409:
+            response_payload['attachments_changed'] = True
+        return jsonify(response_payload), status_code
 
     email_sent, email_message = send_email_with_attachments(
-        recipient_emails,
-        subject,
-        text_body,
-        html_body,
-        attachments=email_attachments,
-        cc_emails=static_cc_emails
+        message['recipient_emails'],
+        message['subject'],
+        message['text_body'],
+        message['html_body'],
+        attachments=message['email_attachments'],
+        cc_emails=message['final_cc']
     )
 
     if not email_sent:
         return jsonify({'message': email_message or 'Unable to send TSR email.'}), 500
 
-    save_tsr_email_metadata_for_file_infos(tsr_files, recipient_emails, source='sent_tsr_email')
+    save_tsr_email_metadata_for_file_infos(
+        message['tsr_files'],
+        message['recipient_emails'],
+        source='sent_tsr_email'
+    )
+    remember_warning = ''
     try:
         latest_submission = get_latest_online_tsr_submission_for_shift(shift.id)
         if latest_submission:
             latest_payload = parse_online_tsr_payload_json(latest_submission)
             latest_payload['_last_emailed_at'] = get_manila_time().isoformat()
-            latest_payload['_sent_recipient_emails'] = recipient_emails
+            latest_payload['_sent_recipient_emails'] = message['recipient_emails']
+            latest_payload['_sent_cc_emails'] = message['final_cc']
             latest_submission.payload_json = json.dumps(latest_payload, ensure_ascii=False)
+        remembered_cc = remember_tsr_client_cc_emails(message['manual_cc'])
     except Exception as email_meta_error:
+        db.session.rollback()
+        remembered_cc = get_user_remembered_tsr_client_cc_emails()
+        remember_warning = ' Email sent, but remembered CC could not be updated.'
         print(
             f"[EMAIL-CLIENT] Online TSR email metadata update skipped for shift_id={shift.id}: {email_meta_error}",
             flush=True
         )
 
-    recipients_label = ', '.join(recipient_emails)
-    cc_log = f" | CC: {', '.join(static_cc_emails)}" if static_cc_emails else ""
+    recipients_label = ', '.join(message['recipient_emails'])
+    cc_log = f" | CC: {', '.join(message['final_cc'])}" if message['final_cc'] else ""
     db.session.add(ActivityLog(
-        user=sender_name,
-        action=f"Sent TSR to client: {recipients_label}{cc_log} | Font: {font_key} | {shift.title}"
+        user=message['sender_name'],
+        action=f"Sent TSR to client: {recipients_label}{cc_log} | Font: {message['font_key']} | {shift.title}"
     ))
     db.session.commit()
 
-    recipients_label = ', '.join(recipient_emails)
     return jsonify({
         'status': 'success',
-        'message': f'TSR sent to {recipients_label}.',
+        'message': f'TSR sent to {recipients_label}.{remember_warning}',
         'email': recipients_label,
-        'emails': recipient_emails,
-        'recipient_count': len(recipient_emails),
-        'cc': static_cc_emails,
+        'emails': message['recipient_emails'],
+        'recipient_count': len(message['recipient_emails']),
+        'cc': message['final_cc'],
+        'manual_cc': message['manual_cc'],
+        'system_cc': message['system_cc'],
+        'remembered_manual_cc': remembered_cc,
         'sender_copy_email': get_current_user_email_for_tsr_cc(),
-        'subject_scenario': subject_scenario,
-        'subject': subject,
-        'font_key': font_key,
-        'font_stack': get_tsr_email_font_stack(font_key),
+        'subject_scenario': message['subject_scenario'],
+        'subject': message['subject'],
+        'font_key': message['font_key'],
+        'font_stack': message['font_stack'],
         'attachments': [
             file_info.get('display_name') or file_info.get('filename')
-            for file_info in email_attachments
+            for file_info in message['email_attachments']
         ]
     })
 
