@@ -1451,6 +1451,23 @@
                     </div>
                 </section>
 
+                <section class="tsr-subject-scenario-card mb-3 d-none" id="tsr-subject-scenario-panel" aria-labelledby="tsr-subject-scenario-title">
+                    <div class="d-flex align-items-start gap-2 mb-2">
+                        <div class="tsr-subject-scenario-icon"><i class="fa-solid fa-heading"></i></div>
+                        <div>
+                            <div class="small fw-bold text-uppercase" id="tsr-subject-scenario-title">Email Subject Scenario</div>
+                            <div class="xsmall text-muted">The attached TSRs use different scenarios. Select which Settings-managed subject should be used.</div>
+                        </div>
+                    </div>
+                    <select class="form-select form-select-sm" id="tsr-email-subject-scenario" onchange="updateTSRSubjectScenarioPreview()">
+                        <option value="">Select subject scenario...</option>
+                    </select>
+                    <div class="tsr-subject-preview mt-2">
+                        <span class="xsmall fw-bold text-uppercase">Subject Preview</span>
+                        <div class="small" id="tsr-email-subject-preview">Select a scenario to preview the email subject.</div>
+                    </div>
+                </section>
+
                 <div class="mb-3 tsr-email-suggestion-panel">
                     <button
                         class="tsr-email-suggestion-toggle collapsed"
@@ -2709,6 +2726,39 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+}
+
+.tsr-subject-scenario-card {
+    border: 1px solid var(--app-border, #cbd5e1);
+    border-radius: 0.95rem;
+    background: var(--app-surface-raised, #f8fafc);
+    color: var(--app-text, #172033);
+    padding: 0.9rem;
+}
+
+.tsr-subject-scenario-icon {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.55rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    color: #7c3aed;
+    background: #ede9fe;
+}
+
+.tsr-subject-preview {
+    border-left: 3px solid #7c3aed;
+    background: var(--app-surface, #ffffff);
+    border-radius: 0.45rem;
+    padding: 0.55rem 0.7rem;
+    overflow-wrap: anywhere;
+}
+
+:root[data-app-theme="dark"] .tsr-subject-scenario-icon {
+    color: #c4b5fd;
+    background: #35265a;
 }
 
 .tsr-attachment-package {
@@ -13645,11 +13695,65 @@ if(shift.engineers){
     let currentTSRSystemCCEmails = [];
     let currentTSRSenderCopyEmail = '';
     let currentTSRAttachmentManifestSignature = '';
+    let currentTSRSubjectScenarioRequired = false;
+    let currentTSRSubjectScenarios = [];
     let currentScheduleManualUploadCount = 0;
     let currentScheduleHasTSR = false;
     const SCHEDULE_MANUAL_UPLOAD_LIMIT = 10;
     const SCHEDULE_ATTACHMENT_INTAKE_MAX_BYTES = 35 * 1024 * 1024;
     const SCHEDULE_ATTACHMENT_EXTENSIONS = new Set(['pdf', 'jpg', 'jpeg', 'png']);
+
+    function resetTSRSubjectScenarioPanel(){
+        currentTSRSubjectScenarioRequired = false;
+        currentTSRSubjectScenarios = [];
+        const panel = document.getElementById('tsr-subject-scenario-panel');
+        const select = document.getElementById('tsr-email-subject-scenario');
+        const preview = document.getElementById('tsr-email-subject-preview');
+        panel?.classList.add('d-none');
+        if(select) select.innerHTML = '<option value="">Select subject scenario...</option>';
+        if(preview) preview.textContent = 'Select a scenario to preview the email subject.';
+    }
+
+    function renderTSRSubjectScenarioPanel(payload){
+        currentTSRSubjectScenarioRequired = Boolean(payload?.subject_scenario_required);
+        currentTSRSubjectScenarios = Array.isArray(payload?.subject_scenarios) ? payload.subject_scenarios : [];
+        const panel = document.getElementById('tsr-subject-scenario-panel');
+        const select = document.getElementById('tsr-email-subject-scenario');
+        if(!panel || !select) return;
+
+        if(!currentTSRSubjectScenarioRequired){
+            panel.classList.add('d-none');
+            select.innerHTML = '<option value="">Select subject scenario...</option>';
+            return;
+        }
+
+        panel.classList.remove('d-none');
+        select.innerHTML = `
+            <option value="">Select subject scenario...</option>
+            ${currentTSRSubjectScenarios.map(item => `
+                <option value="${escapeHtml(item.key || '')}">${escapeHtml(item.label || item.key || 'Scenario')}</option>
+            `).join('')}
+        `;
+        updateTSRSubjectScenarioPreview();
+    }
+
+    function getSelectedTSRSubjectScenario(){
+        return String(document.getElementById('tsr-email-subject-scenario')?.value || '').trim();
+    }
+
+    function updateTSRSubjectScenarioPreview(){
+        const selected = getSelectedTSRSubjectScenario();
+        const option = currentTSRSubjectScenarios.find(item => item.key === selected);
+        const preview = document.getElementById('tsr-email-subject-preview');
+        if(preview){
+            preview.textContent = option?.subject || 'Select a scenario to preview the email subject.';
+        }
+        resetTSRSendConfirmState();
+        const sendBtn = document.getElementById('tsr-send-client-btn');
+        if(sendBtn){
+            sendBtn.disabled = !currentTSRAttachmentManifestSignature || (currentTSRSubjectScenarioRequired && !selected);
+        }
+    }
 
     function updateScheduleUploadCount(selectedCount=0){
         const countEl = document.getElementById('schedule-upload-count');
@@ -14055,6 +14159,7 @@ async function openTSRClientEmailModal(shiftId){
 
 
         resetTSRSendConfirmState();
+        resetTSRSubjectScenarioPanel();
         currentTSRAttachmentManifestSignature = '';
         renderTSREmailAttachmentManifest([]);
         if(sendBtn) sendBtn.disabled = true;
@@ -14097,6 +14202,7 @@ async function openTSRClientEmailModal(shiftId){
             currentTSRAttachmentManifestSignature = String(payload.attachment_manifest_signature || '');
             const emailAttachments = payload.attachments || payload.tsr_files || [];
             renderTSREmailAttachmentManifest(emailAttachments);
+            renderTSRSubjectScenarioPanel(payload);
             const tsrCount = Number(payload.tsr_count ?? (payload.tsr_files || []).length ?? 0);
             const supportingCount = Number(payload.supporting_count ?? Math.max(0, emailAttachments.length - tsrCount));
             subtitleEl.innerText = `${payload.service_date || 'Service date unavailable'} | ${tsrCount} TSR document${tsrCount === 1 ? '' : 's'} and ${supportingCount} supporting file${supportingCount === 1 ? '' : 's'}`;
@@ -14168,7 +14274,7 @@ async function openTSRClientEmailModal(shiftId){
                 updateTSREmailSuggestionsSummary(0, 'No attached TSR file found for this schedule.');
                 if(sendBtn) sendBtn.disabled = true;
             }else if(sendBtn){
-                sendBtn.disabled = false;
+                sendBtn.disabled = currentTSRSubjectScenarioRequired && !getSelectedTSRSubjectScenario();
             }
 
         }catch(err){
@@ -14176,6 +14282,7 @@ async function openTSRClientEmailModal(shiftId){
             detectedContainer.innerHTML = '<div class="alert alert-danger small mb-0">Unable to open TSR email preview.</div>';
             updateTSREmailSuggestionsSummary(0, 'Unable to load suggestions. Type the recipient manually.');
             renderTSREmailAttachmentManifest([]);
+            resetTSRSubjectScenarioPanel();
             if(sendBtn) sendBtn.disabled = true;
         }
     }
@@ -14186,6 +14293,7 @@ async function openTSRClientEmailModal(shiftId){
         const recipients = getTSRRecipientsForSend();
         const recipientLabel = recipients.join(', ');
         const ccLabel = getDisplayedTSRCCLabel();
+        const subjectScenario = getSelectedTSRSubjectScenario();
 
         if(!shiftId){
             timelineAlert("Schedule ID missing.");
@@ -14198,7 +14306,13 @@ async function openTSRClientEmailModal(shiftId){
             return;
         }
 
-        const sendSignature = `${recipientLabel}|${ccLabel}|${currentTSRAttachmentManifestSignature}`;
+        if(currentTSRSubjectScenarioRequired && !subjectScenario){
+            timelineAlert('Please select the email subject scenario for this mixed TSR package.');
+            document.getElementById('tsr-email-subject-scenario')?.focus();
+            return;
+        }
+
+        const sendSignature = `${recipientLabel}|${ccLabel}|${currentTSRAttachmentManifestSignature}|${subjectScenario}`;
         if(sendBtn && sendBtn.dataset.confirmReady !== '1'){
             sendBtn.dataset.confirmReady = '1';
             sendBtn.dataset.confirmSignature = sendSignature;
@@ -14238,7 +14352,8 @@ async function openTSRClientEmailModal(shiftId){
                 body: JSON.stringify({
                     email: recipients.join(', '),
                     emails: recipients,
-                    attachment_manifest_signature: currentTSRAttachmentManifestSignature
+                    attachment_manifest_signature: currentTSRAttachmentManifestSignature,
+                    subject_scenario: subjectScenario
                 })
             });
 
@@ -14275,7 +14390,9 @@ async function openTSRClientEmailModal(shiftId){
         }finally{
             if(sendBtn){
                 const attachmentCount = Number(document.getElementById('tsr-attachment-count')?.textContent || 0);
-                sendBtn.disabled = !currentTSRAttachmentManifestSignature || attachmentCount < 1;
+                sendBtn.disabled = !currentTSRAttachmentManifestSignature
+                    || attachmentCount < 1
+                    || (currentTSRSubjectScenarioRequired && !getSelectedTSRSubjectScenario());
                 resetTSRSendConfirmState();
             }
         }

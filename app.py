@@ -400,6 +400,51 @@ EMAIL_RECIPIENT_GROUP_ORDER = [
     'leave_request_cc_cebu_davao'
 ]
 
+TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE = 'NCS_TSR{billing_marker}_Shimadzu_{client_name}_{machine_name}_{service_case}_{date_mmddyyyy} - TSR'
+
+TSR_CLIENT_SUBJECT_SCENARIOS = {
+    'standard': {
+        'template_key': 'tsr_client_subject',
+        'label': 'Standard',
+        'priority': 0,
+    },
+    'warranty': {
+        'template_key': 'tsr_client_subject_warranty',
+        'label': 'Warranty',
+        'priority': 2,
+    },
+    'foc': {
+        'template_key': 'tsr_client_subject_foc',
+        'label': 'FOC',
+        'priority': 1,
+    },
+    'with_po': {
+        'template_key': 'tsr_client_subject_with_po',
+        'label': 'With P.O.',
+        'priority': 3,
+    },
+    'po_sc': {
+        'template_key': 'tsr_client_subject_po_sc',
+        'label': 'With P.O. + SC',
+        'priority': 5,
+    },
+    'po_sv': {
+        'template_key': 'tsr_client_subject_po_sv',
+        'label': 'With P.O. + SV',
+        'priority': 4,
+    },
+    'installation': {
+        'template_key': 'tsr_client_subject_installation',
+        'label': 'Installation',
+        'priority': 6,
+    },
+}
+
+TSR_CLIENT_SUBJECT_TEMPLATE_KEYS = {
+    details['template_key']: scenario
+    for scenario, details in TSR_CLIENT_SUBJECT_SCENARIOS.items()
+}
+
 EMAIL_TEMPLATE_DEFAULTS = {
     'tsr_pdf_filename': {
         'label': 'TSR PDF Filename',
@@ -411,7 +456,70 @@ EMAIL_TEMPLATE_DEFAULTS = {
         'label': 'TSR Client Email Subject',
         'description': 'Subject used when sending TSR files to clients.',
         'template_type': 'subject',
-        'default_template': 'NCS_TSR{billing_marker}_Shimadzu_{client_name}_{machine_name}_{service_case}_{date_mmddyyyy} - TSR'
+        'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
+        'scenario_group': 'tsr_client_subject',
+        'scenario_key': 'standard',
+        'scenario_label': 'Standard',
+    },
+    'tsr_client_subject_warranty': {
+        'label': 'TSR Client Email Subject - Warranty',
+        'description': 'Subject used for Warranty TSR files sent to clients.',
+        'template_type': 'subject',
+        'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
+        'scenario_group': 'tsr_client_subject',
+        'scenario_key': 'warranty',
+        'scenario_label': 'Warranty',
+        'seed_from_template_key': 'tsr_client_subject',
+    },
+    'tsr_client_subject_foc': {
+        'label': 'TSR Client Email Subject - FOC',
+        'description': 'Subject used for FOC TSR files sent to clients.',
+        'template_type': 'subject',
+        'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
+        'scenario_group': 'tsr_client_subject',
+        'scenario_key': 'foc',
+        'scenario_label': 'FOC',
+        'seed_from_template_key': 'tsr_client_subject',
+    },
+    'tsr_client_subject_with_po': {
+        'label': 'TSR Client Email Subject - With P.O.',
+        'description': 'Subject used for TSR files with a P.O. sent to clients.',
+        'template_type': 'subject',
+        'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
+        'scenario_group': 'tsr_client_subject',
+        'scenario_key': 'with_po',
+        'scenario_label': 'With P.O.',
+        'seed_from_template_key': 'tsr_client_subject',
+    },
+    'tsr_client_subject_po_sc': {
+        'label': 'TSR Client Email Subject - With P.O. + SC',
+        'description': 'Subject used for SC TSR files with a P.O. sent to clients.',
+        'template_type': 'subject',
+        'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
+        'scenario_group': 'tsr_client_subject',
+        'scenario_key': 'po_sc',
+        'scenario_label': 'With P.O. + SC',
+        'seed_from_template_key': 'tsr_client_subject',
+    },
+    'tsr_client_subject_po_sv': {
+        'label': 'TSR Client Email Subject - With P.O. + SV',
+        'description': 'Subject used for SV TSR files with a P.O. sent to clients.',
+        'template_type': 'subject',
+        'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
+        'scenario_group': 'tsr_client_subject',
+        'scenario_key': 'po_sv',
+        'scenario_label': 'With P.O. + SV',
+        'seed_from_template_key': 'tsr_client_subject',
+    },
+    'tsr_client_subject_installation': {
+        'label': 'TSR Client Email Subject - Installation',
+        'description': 'Subject used when Installation is selected in Create TSR.',
+        'template_type': 'subject',
+        'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
+        'scenario_group': 'tsr_client_subject',
+        'scenario_key': 'installation',
+        'scenario_label': 'Installation',
+        'seed_from_template_key': 'tsr_client_subject',
     },
     'travel_accounting_subject': {
         'label': 'Travel Request Accounting Subject',
@@ -448,6 +556,12 @@ EMAIL_TEMPLATE_DEFAULTS = {
 EMAIL_TEMPLATE_ORDER = [
     'tsr_pdf_filename',
     'tsr_client_subject',
+    'tsr_client_subject_warranty',
+    'tsr_client_subject_foc',
+    'tsr_client_subject_with_po',
+    'tsr_client_subject_po_sc',
+    'tsr_client_subject_po_sv',
+    'tsr_client_subject_installation',
     'travel_accounting_subject',
     'cash_advance_accounting_subject',
     'reimbursement_accounting_subject',
@@ -534,6 +648,12 @@ EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS = {
         'approved_by'
     ]
 }
+
+for _tsr_subject_template_key in TSR_CLIENT_SUBJECT_TEMPLATE_KEYS:
+    EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS.setdefault(
+        _tsr_subject_template_key,
+        list(EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS['tsr_client_subject'])
+    )
 
 
 # Approved email-safe font stacks for TSR client emails.
@@ -2613,13 +2733,27 @@ def seed_default_email_templates():
         if existing:
             continue
 
+        seed_template = None
+        seed_from_template_key = clean_str(cfg.get('seed_from_template_key')) or ''
+        if seed_from_template_key:
+            seed_template = EmailTemplateSetting.query.filter_by(
+                template_key=seed_from_template_key
+            ).first()
+
         db.session.add(EmailTemplateSetting(
             template_key=template_key,
             template_type=cfg.get('template_type') or 'subject',
             label=cfg.get('label') or template_key,
             description=cfg.get('description') or '',
-            template_value=cfg.get('default_template') or '',
-            is_active=True,
+            template_value=(
+                clean_str(getattr(seed_template, 'template_value', None))
+                or cfg.get('default_template')
+                or ''
+            ),
+            is_active=(
+                bool(getattr(seed_template, 'is_active', True))
+                if seed_template is not None else True
+            ),
             created_at=get_manila_time(),
             updated_at=get_manila_time()
         ))
@@ -2666,6 +2800,9 @@ def email_template_setting_to_dict(template):
         'default_template': cfg.get('default_template') or '',
         'is_active': bool(template.is_active),
         'allowed_placeholders': EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS.get(template.template_key or '', []),
+        'scenario_group': cfg.get('scenario_group') or '',
+        'scenario_key': cfg.get('scenario_key') or '',
+        'scenario_label': cfg.get('scenario_label') or '',
         'created_at': template.created_at.isoformat() if getattr(template, 'created_at', None) else None,
         'updated_at': template.updated_at.isoformat() if getattr(template, 'updated_at', None) else None
     }
@@ -13737,7 +13874,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v33-tsr-filename-template';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v34-tsr-subject-scenarios';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -37701,6 +37838,104 @@ def clean_tsr_subject_part(value, fallback=''):
     return value or fallback or ''
 
 
+def normalize_tsr_subject_scenario(value):
+    """Return one supported TSR email-subject scenario key."""
+    scenario = (clean_str(value) or '').strip().lower()
+    return scenario if scenario in TSR_CLIENT_SUBJECT_SCENARIOS else ''
+
+
+def get_tsr_subject_scenario_label(scenario):
+    scenario = normalize_tsr_subject_scenario(scenario) or 'standard'
+    return TSR_CLIENT_SUBJECT_SCENARIOS[scenario]['label']
+
+
+def get_tsr_client_subject_template_value(scenario):
+    """Use an active scenario template, then Standard, then the built-in default."""
+    ensure_email_template_setting_table()
+    scenario = normalize_tsr_subject_scenario(scenario) or 'standard'
+    template_key = TSR_CLIENT_SUBJECT_SCENARIOS[scenario]['template_key']
+    template = EmailTemplateSetting.query.filter_by(template_key=template_key).first()
+    if template and template.is_active and clean_str(template.template_value):
+        return clean_str(template.template_value) or ''
+
+    if scenario != 'standard':
+        standard = EmailTemplateSetting.query.filter_by(template_key='tsr_client_subject').first()
+        if standard and standard.is_active and clean_str(standard.template_value):
+            return clean_str(standard.template_value) or ''
+
+    return TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE
+
+
+def get_tsr_subject_payload_metadata(payload):
+    """Resolve one generated TSR's scenario from its saved Create TSR payload."""
+    payload = payload if isinstance(payload, dict) else {}
+    filename_context = build_tsr_filename_template_context(payload=payload)
+    installation = _tsr_repair_selected_category(payload, 'Installation')
+    with_po = bool(filename_context.get('with_po'))
+    sc = bool(filename_context.get('sc')) and with_po
+    sv = bool(filename_context.get('sv')) and with_po
+    warranty = bool(filename_context.get('warranty'))
+    foc = bool(filename_context.get('foc'))
+
+    if installation:
+        scenario = 'installation'
+    elif sc:
+        scenario = 'po_sc'
+    elif sv:
+        scenario = 'po_sv'
+    elif with_po:
+        scenario = 'with_po'
+    elif warranty:
+        scenario = 'warranty'
+    elif foc:
+        scenario = 'foc'
+    else:
+        scenario = 'standard'
+
+    return {
+        'scenario': scenario,
+        'with_po': with_po,
+    }
+
+
+def get_tsr_subject_package_metadata(tsr_files):
+    """Return distinct generated-TSR scenarios for one reviewed email package."""
+    scenarios = []
+    any_with_po = False
+    seen_submission_ids = set()
+
+    for file_info in tsr_files or []:
+        file_id = clean_int(file_info.get('id') if isinstance(file_info, dict) else getattr(file_info, 'id', None))
+        if not file_id:
+            continue
+        file_rec = db.session.get(ShiftFile, file_id)
+        submission_id = clean_int(getattr(file_rec, 'online_tsr_submission_id', None))
+        if not submission_id or submission_id in seen_submission_ids:
+            continue
+        submission = db.session.get(OnlineTsrSubmission, submission_id)
+        if not submission:
+            continue
+        seen_submission_ids.add(submission_id)
+        metadata = get_tsr_subject_payload_metadata(parse_online_tsr_payload_json(submission))
+        scenario = normalize_tsr_subject_scenario(metadata.get('scenario')) or 'standard'
+        if scenario not in scenarios:
+            scenarios.append(scenario)
+        any_with_po = any_with_po or bool(metadata.get('with_po'))
+
+    if not scenarios:
+        scenarios = ['standard']
+
+    scenarios.sort(
+        key=lambda item: TSR_CLIENT_SUBJECT_SCENARIOS[item]['priority'],
+        reverse=True,
+    )
+    return {
+        'scenarios': scenarios,
+        'mixed': len(scenarios) > 1,
+        'any_with_po': any_with_po,
+    }
+
+
 def detect_tsr_billing_marker_from_shift(shift, tsr_files=None):
     """Return _B when attached/generated TSR appears to be billed.
 
@@ -37725,7 +37960,7 @@ def detect_tsr_billing_marker_from_shift(shift, tsr_files=None):
     return ''
 
 
-def get_tsr_subject_context_for_shift(shift):
+def get_tsr_subject_context_for_shift(shift, tsr_files=None, subject_scenario=None):
     """Build Settings-template context for TSR client email subjects."""
     client_name = shift.client.name if shift and getattr(shift, 'client', None) else 'Client'
     service_date_obj = shift.start_time.date() if shift and getattr(shift, 'start_time', None) else get_manila_today()
@@ -37734,13 +37969,16 @@ def get_tsr_subject_context_for_shift(shift):
     product_name = shift.product.name if shift and getattr(shift, 'product', None) else ''
     serial = shift.product.serial_number if shift and getattr(shift, 'product', None) else (getattr(shift, 'product_id', '') if shift else '')
 
-    tsr_files = []
-    try:
-        tsr_files = get_tsr_files_for_shift(shift) if shift else []
-    except Exception:
-        tsr_files = []
+    if tsr_files is None:
+        try:
+            tsr_files = get_tsr_files_for_shift(shift) if shift else []
+        except Exception:
+            tsr_files = []
 
     billing_marker = detect_tsr_billing_marker_from_shift(shift, tsr_files)
+    package_metadata = get_tsr_subject_package_metadata(tsr_files)
+    if package_metadata.get('any_with_po'):
+        billing_marker = '_B'
     machine_name = product_name or 'Machine'
     if serial:
         machine_name = f"{machine_name}({serial})" if product_name else serial
@@ -37762,17 +38000,37 @@ def get_tsr_subject_context_for_shift(shift):
     }
 
 
-def build_tsr_client_email_subject(shift):
+def build_tsr_client_email_subject(shift, subject_scenario=None, tsr_files=None):
     """Build TSR client email subject from Settings-managed template.
 
     Default output mirrors the existing TSR filename convention:
     - NCS_TSR_Shimadzu_Client_Machine_ServiceCase_MMDDYYYY - TSR
     - NCS_TSR_B_Shimadzu_Client_Machine_ServiceCase_MMDDYYYY - TSR
     """
-    return render_email_subject_template(
-        'tsr_client_subject',
-        get_tsr_subject_context_for_shift(shift)
+    if tsr_files is None:
+        try:
+            tsr_files = get_tsr_files_for_shift(shift) if shift else []
+        except Exception:
+            tsr_files = []
+    package_metadata = get_tsr_subject_package_metadata(tsr_files)
+    scenario = normalize_tsr_subject_scenario(subject_scenario)
+    if not scenario:
+        scenario = package_metadata['scenarios'][0] if package_metadata['scenarios'] else 'standard'
+    template_value = get_tsr_client_subject_template_value(scenario)
+    rendered = render_email_template(
+        template_value,
+        get_tsr_subject_context_for_shift(
+            shift,
+            tsr_files=tsr_files,
+            subject_scenario=scenario,
+        )
     )
+    if not rendered:
+        rendered = render_email_template(
+            TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
+            get_tsr_subject_context_for_shift(shift, tsr_files=tsr_files)
+        )
+    return (rendered or 'Technical Service Report')[:180]
 
 
 def build_tsr_client_email_bodies(shift, sender_name, font_key=None):
@@ -37911,6 +38169,24 @@ def preview_tsr_client_email(shift_id):
     # its own blue "Sender Copy" card instead of mixing it with system CC.
     system_cc_emails = get_static_tsr_client_cc_emails()
     sender_copy_email = get_current_user_email_for_tsr_cc()
+    subject_package = get_tsr_subject_package_metadata(tsr_files)
+    subject_scenario_options = [
+        {
+            'key': scenario,
+            'label': get_tsr_subject_scenario_label(scenario),
+            'subject': build_tsr_client_email_subject(
+                shift,
+                subject_scenario=scenario,
+                tsr_files=tsr_files,
+            ),
+        }
+        for scenario in subject_package['scenarios']
+    ]
+    automatic_subject_scenario = (
+        subject_package['scenarios'][0]
+        if not subject_package['mixed'] and subject_package['scenarios']
+        else ''
+    )
 
     return no_store_jsonify({
         'status': 'success',
@@ -37939,6 +38215,13 @@ def preview_tsr_client_email(shift_id):
             for key in TSR_EMAIL_FONT_STACKS.keys()
         ],
         'default_font_key': DEFAULT_TSR_EMAIL_FONT_KEY,
+        'subject_scenario_required': bool(subject_package['mixed']),
+        'subject_scenario': automatic_subject_scenario,
+        'subject_scenarios': subject_scenario_options,
+        'subject_preview': (
+            subject_scenario_options[0]['subject']
+            if automatic_subject_scenario and subject_scenario_options else ''
+        ),
         'can_send': bool(tsr_files),
         'note': preview_note
     })
@@ -37975,7 +38258,26 @@ def send_tsr_client_email(shift_id):
             'attachments_changed': True
         }), 409
 
-    subject = clean_str(payload.get('subject')) or build_tsr_client_email_subject(shift)
+    subject_package = get_tsr_subject_package_metadata(tsr_files)
+    requested_subject_scenario = normalize_tsr_subject_scenario(payload.get('subject_scenario'))
+    if subject_package['mixed']:
+        if not requested_subject_scenario:
+            return jsonify({
+                'message': 'Please select the email subject scenario for this mixed TSR package.'
+            }), 400
+        if requested_subject_scenario not in subject_package['scenarios']:
+            return jsonify({
+                'message': 'The selected email subject scenario is not part of the reviewed TSR package.'
+            }), 400
+        subject_scenario = requested_subject_scenario
+    else:
+        subject_scenario = subject_package['scenarios'][0] if subject_package['scenarios'] else 'standard'
+
+    subject = build_tsr_client_email_subject(
+        shift,
+        subject_scenario=subject_scenario,
+        tsr_files=tsr_files,
+    )
     sender_name = current_user.username.capitalize() if current_user and current_user.is_authenticated else 'Scheduler'
     font_key = clean_str(payload.get('font_key')) or DEFAULT_TSR_EMAIL_FONT_KEY
     text_body, html_body = build_tsr_client_email_bodies(shift, sender_name, font_key=font_key)
@@ -38042,6 +38344,8 @@ def send_tsr_client_email(shift_id):
         'recipient_count': len(recipient_emails),
         'cc': static_cc_emails,
         'sender_copy_email': get_current_user_email_for_tsr_cc(),
+        'subject_scenario': subject_scenario,
+        'subject': subject,
         'font_key': font_key,
         'font_stack': get_tsr_email_font_stack(font_key),
         'attachments': [

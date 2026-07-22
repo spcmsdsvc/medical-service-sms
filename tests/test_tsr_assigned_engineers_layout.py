@@ -48,7 +48,7 @@ class TsrAssignedEngineersLayoutTests(unittest.TestCase):
         self.assertIn("content_version = hashlib.sha256(pdf_bytes).hexdigest()[:20]", app_source)
         self.assertIn('`&v=${{fingerprint}}&preview_ts=${{Date.now()}}`', app_source)
         self.assertIn("'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'", app_source)
-        self.assertIn("medical-service-pwa-offline-navigation-v33-tsr-filename-template", app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v34-tsr-subject-scenarios", app_source)
 
 
 if __name__ == '__main__':

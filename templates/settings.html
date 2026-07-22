@@ -2707,19 +2707,29 @@
     let emailTemplateState = {
         templates: []
     };
+    let tsrSubjectSelectedTemplateKey = 'tsr_client_subject';
+
+    function getEmailTemplateByKey(templateKey) {
+        return (emailTemplateState.templates || []).find(template => template.template_key === templateKey) || null;
+    }
+
+    function getTSRSubjectScenarioTemplates() {
+        return (emailTemplateState.templates || []).filter(template => template.scenario_group === 'tsr_client_subject');
+    }
 
     function emailTemplateEscape(value) {
         return settingsEscape(value);
     }
 
-    function renderEmailTemplatePlaceholders(template) {
+    function renderEmailTemplatePlaceholders(template, cardTemplateKey=null) {
         const placeholders = template.allowed_placeholders || [];
         if (!placeholders.length) {
             return `<div class="email-template-placeholder-muted">No placeholders configured.</div>`;
         }
 
         return placeholders.map(key => {
-            return `<button type="button" class="email-template-placeholder-chip" onclick="insertEmailTemplatePlaceholder('${emailTemplateEscape(template.template_key)}', '${emailTemplateEscape(key)}')">{${emailTemplateEscape(key)}}</button>`;
+            const targetKey = cardTemplateKey || template.template_key;
+            return `<button type="button" class="email-template-placeholder-chip" onclick="insertEmailTemplatePlaceholder('${emailTemplateEscape(targetKey)}', '${emailTemplateEscape(key)}')">{${emailTemplateEscape(key)}}</button>`;
         }).join('');
     }
 
@@ -2771,8 +2781,10 @@
             warranty: { warranty: 'Warranty', billing_tags: 'Warranty' },
             foc: { foc: 'FOC', billing_tags: 'FOC' },
             po: { billing_marker: 'B', with_po: 'With PO', billing_tags: 'With_PO' },
+            with_po: { billing_marker: 'B', with_po: 'With PO', billing_tags: 'With_PO' },
             po_sc: { billing_marker: 'B', with_po: 'With PO', sc: 'SC', billing_tags: 'With_PO_SC' },
-            po_sv: { billing_marker: 'B', with_po: 'With PO', sv: 'SV', billing_tags: 'With_PO_SV' }
+            po_sv: { billing_marker: 'B', with_po: 'With PO', sv: 'SV', billing_tags: 'With_PO_SV' },
+            installation: { service_case: 'System Installation', task: 'System Installation' }
         };
         Object.assign(shared, scenarios[scenario] || scenarios.standard);
         return shared;
@@ -2801,8 +2813,15 @@
         const input = card?.querySelector('.email-template-input');
         const preview = card?.querySelector('.email-template-preview-value');
         if (!input || !preview) return;
-        const scenario = card?.querySelector('.email-template-scenario')?.value || 'standard';
-        preview.textContent = previewEmailTemplateSubject(templateKey, input.value, scenario);
+        const activeTemplateKey = card.dataset.activeTemplateKey || templateKey;
+        const activeTemplate = getEmailTemplateByKey(activeTemplateKey);
+        const scenario = card?.querySelector('.email-template-scenario')?.value || activeTemplate?.scenario_key || 'standard';
+        preview.textContent = previewEmailTemplateSubject(activeTemplateKey, input.value, scenario);
+    }
+
+    function switchTSRSubjectScenario(templateKey) {
+        tsrSubjectSelectedTemplateKey = templateKey || 'tsr_client_subject';
+        renderEmailTemplates();
     }
 
     function renderEmailTemplates() {
@@ -2815,16 +2834,29 @@
             return;
         }
 
-        container.innerHTML = templates.map(template => {
-            const templateKey = emailTemplateEscape(template.template_key || '');
+        const displayTemplates = templates.filter(template => (
+            template.scenario_group !== 'tsr_client_subject' || template.scenario_key === 'standard'
+        ));
+
+        container.innerHTML = displayTemplates.map(baseTemplate => {
+            const isTSRSubjectGroup = baseTemplate.scenario_group === 'tsr_client_subject';
+            const scenarioTemplates = isTSRSubjectGroup ? getTSRSubjectScenarioTemplates() : [];
+            if (isTSRSubjectGroup && !scenarioTemplates.some(template => template.template_key === tsrSubjectSelectedTemplateKey)) {
+                tsrSubjectSelectedTemplateKey = 'tsr_client_subject';
+            }
+            const template = isTSRSubjectGroup
+                ? (getEmailTemplateByKey(tsrSubjectSelectedTemplateKey) || baseTemplate)
+                : baseTemplate;
+            const cardTemplateKey = emailTemplateEscape(baseTemplate.template_key || '');
+            const activeTemplateKey = emailTemplateEscape(template.template_key || '');
             const isActiveChecked = template.is_active ? 'checked' : '';
             const isFilename = template.template_type === 'filename';
             const fieldLabel = isFilename ? 'Filename Template' : 'Subject Template';
             const saveLabel = isFilename ? 'Save Filename' : 'Save Subject';
-            const scenarioPicker = isFilename ? `
+            const filenameScenarioPicker = isFilename ? `
                 <div class="email-template-scenario-wrap mt-2">
                     <label class="small fw-bold text-muted text-uppercase mb-1">Preview Scenario</label>
-                    <select class="form-select form-select-sm rounded-3 email-template-scenario" onchange="updateEmailTemplatePreview('${templateKey}')">
+                    <select class="form-select form-select-sm rounded-3 email-template-scenario" onchange="updateEmailTemplatePreview('${cardTemplateKey}')">
                         <option value="standard">Standard</option>
                         <option value="warranty">Warranty</option>
                         <option value="foc">FOC</option>
@@ -2833,28 +2865,41 @@
                         <option value="po_sv">With P.O. + SV</option>
                     </select>
                 </div>` : '';
+            const subjectScenarioPicker = isTSRSubjectGroup ? `
+                <div class="email-template-scenario-wrap mb-3">
+                    <label class="small fw-bold text-muted text-uppercase mb-1">Subject Scenario</label>
+                    <select class="form-select form-select-sm rounded-3 tsr-subject-template-scenario" onchange="switchTSRSubjectScenario(this.value)">
+                        ${scenarioTemplates.map(item => `
+                            <option value="${emailTemplateEscape(item.template_key)}" ${item.template_key === template.template_key ? 'selected' : ''}>
+                                ${emailTemplateEscape(item.scenario_label || item.label || item.template_key)}
+                            </option>
+                        `).join('')}
+                    </select>
+                    <div class="xsmall text-muted mt-1">Each scenario keeps its own saved subject and Active setting.</div>
+                </div>` : '';
             return `
-                <div class="email-template-card" data-template-key="${templateKey}">
+                <div class="email-template-card" data-template-key="${cardTemplateKey}" data-active-template-key="${activeTemplateKey}">
                     <div class="email-template-header">
                         <div>
-                            <div class="email-template-title">${emailTemplateEscape(template.label || template.template_key)}</div>
+                            <div class="email-template-title">${emailTemplateEscape(baseTemplate.label || baseTemplate.template_key)}</div>
                             <div class="email-template-description">${emailTemplateEscape(template.description || '')}</div>
                         </div>
                         <span class="email-template-type-badge">${emailTemplateEscape(template.template_type || 'subject')}</span>
                     </div>
 
                     <div class="email-template-body">
+                        ${subjectScenarioPicker}
                         <label class="small fw-bold text-muted text-uppercase mb-1">${fieldLabel}</label>
                         <input type="text"
                                class="form-control form-control-sm rounded-3 email-template-input"
                                value="${emailTemplateEscape(template.template_value || '')}"
                                placeholder="${emailTemplateEscape(template.default_template || '')}"
-                               oninput="updateEmailTemplatePreview('${templateKey}')">
+                               oninput="updateEmailTemplatePreview('${cardTemplateKey}')">
 
                         <div class="email-template-placeholder-wrap mt-2">
                             <div class="email-template-placeholder-label">Available placeholders</div>
                             <div class="email-template-placeholder-list">
-                                ${renderEmailTemplatePlaceholders(template)}
+                                ${renderEmailTemplatePlaceholders(template, cardTemplateKey)}
                             </div>
                         </div>
 
@@ -2862,18 +2907,18 @@
                             <strong>Default:</strong> ${emailTemplateEscape(template.default_template || '')}
                         </div>
 
-                        ${scenarioPicker}
+                        ${filenameScenarioPicker}
 
                         <div class="email-template-preview mt-2">
                             <strong>Preview:</strong>
-                            <span class="email-template-preview-value">${emailTemplateEscape(previewEmailTemplateSubject(template.template_key, template.template_value || template.default_template || '', 'standard'))}</span>
+                            <span class="email-template-preview-value">${emailTemplateEscape(previewEmailTemplateSubject(template.template_key, template.template_value || template.default_template || '', template.scenario_key || 'standard'))}</span>
                         </div>
 
                         <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
-                            <button type="button" class="btn btn-email-templates btn-sm fw-bold rounded-3" onclick="saveEmailTemplate('${templateKey}')">
+                            <button type="button" class="btn btn-email-templates btn-sm fw-bold rounded-3" onclick="saveEmailTemplate('${cardTemplateKey}')">
                                 <i class="fa-solid fa-floppy-disk me-1"></i>${saveLabel}
                             </button>
-                            <button type="button" class="btn btn-outline-email-templates btn-sm fw-bold rounded-3" onclick="resetEmailTemplate('${templateKey}')">
+                            <button type="button" class="btn btn-outline-email-templates btn-sm fw-bold rounded-3" onclick="resetEmailTemplate('${cardTemplateKey}')">
                                 <i class="fa-solid fa-rotate-left me-1"></i>Reset Default
                             </button>
                             <div class="form-check form-switch ms-sm-auto">
@@ -2946,8 +2991,10 @@
         const card = document.querySelector(`.email-template-card[data-template-key="${templateKey}"]`);
         if (!card) return;
 
+        const activeTemplateKey = card.dataset.activeTemplateKey || templateKey;
+
         const payload = {
-            template_key: templateKey,
+            template_key: activeTemplateKey,
             template_value: card.querySelector('.email-template-input')?.value || '',
             is_active: Boolean(card.querySelector('.email-template-active')?.checked)
         };
@@ -2982,6 +3029,8 @@
     }
 
     async function resetEmailTemplate(templateKey) {
+        const card = document.querySelector(`.email-template-card[data-template-key="${templateKey}"]`);
+        const activeTemplateKey = card?.dataset.activeTemplateKey || templateKey;
         const shouldReset = await settingsConfirmDialog({
             title: 'Reset Template?',
             message: 'This will restore the default value for this template.',
@@ -2993,7 +3042,7 @@
         if (!shouldReset) return;
 
         try {
-            const res = await fetch(`/settings/email-templates-reset/${templateKey}`, {
+            const res = await fetch(`/settings/email-templates-reset/${activeTemplateKey}`, {
                 method: 'POST',
                 credentials: 'same-origin',
                 cache: 'no-store',
