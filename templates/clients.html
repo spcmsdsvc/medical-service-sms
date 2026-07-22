@@ -523,6 +523,7 @@ function openProductModal(id){
         const status = p.computed_status || 'No Expiry Set - No Contract';
         let badgeClass = 'bg-secondary';
         if(status === 'Under Warranty') badgeClass = 'bg-success';
+        else if(status === 'Under Contract') badgeClass = 'bg-warning text-dark';
         else if(status === 'Expired - Under Contract') badgeClass = 'bg-warning text-dark';
         else if(status === 'Expired - No Contract') badgeClass = 'bg-danger';
         const badge = `<span class="badge ${badgeClass}">${escapeHtml(status)}</span>`;

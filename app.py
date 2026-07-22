@@ -2196,7 +2196,7 @@ def product_contract_status(product=None, end_date=None, under_contract=None, to
 
     reference_date = today or get_manila_today()
     if end_date >= reference_date:
-        return 'Under Warranty'
+        return 'Under Contract' if contract_enabled else 'Under Warranty'
     return f"Expired - {'Under Contract' if contract_enabled else 'No Contract'}"
 
 
@@ -13965,7 +13965,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v36-product-contract-status';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v37-contract-priority-status';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -17079,7 +17079,7 @@ def get_products_summary():
 
     for product in products:
         status = product_contract_status(product)
-        if status == 'Under Warranty':
+        if status in {'Under Warranty', 'Under Contract'}:
             counts['active_warranty'] += 1
         elif status == 'Expired - Under Contract':
             counts['expired_warranty'] += 1

@@ -74,6 +74,7 @@
                 <select id="filter-status" class="form-select form-select-sm" onchange="applyFilters()">
                     <option value="">All Statuses</option>
                     <option value="Under Warranty">Active Warranty</option>
+                    <option value="Under Contract">Under Contract</option>
                     <option value="Expired - Under Contract">Expired - Under Contract</option>
                     <option value="Expired - No Contract">Expired - No Contract</option>
                     <option value="No Expiry Set - Under Contract">No Expiry Set - Under Contract</option>
@@ -546,7 +547,7 @@ function highlightAndScroll(serial){
         }
 
         const end = new Date(p.end_warranty).setHours(0,0,0,0);
-        if(today <= end) return "Under Warranty";
+        if(today <= end) return underContract ? "Under Contract" : "Under Warranty";
         return underContract ? "Expired - Under Contract" : "Expired - No Contract";
     }
 
@@ -556,7 +557,7 @@ function highlightAndScroll(serial){
 
         const counts = filteredData.reduce((acc, p) => {
             const status = p.computed_status || getProductWarrantyStatus(p);
-            if(status === "Under Warranty") acc.active++;
+            if(status === "Under Warranty" || status === "Under Contract") acc.active++;
             else if(status === "Expired - Under Contract") acc.expiredContract++;
             else if(status === "Expired - No Contract") acc.expiredNoContract++;
             else acc.noExpiry++;
@@ -596,6 +597,7 @@ function highlightAndScroll(serial){
 
 function getWarrantyBadgeClass(status){
     if(status === 'Under Warranty') return 'product-mobile-badge-active';
+    if(status === 'Under Contract') return 'product-mobile-badge-contract';
     if(status === 'Expired - Under Contract') return 'product-mobile-badge-contract';
     if(status === 'Expired - No Contract') return 'product-mobile-badge-expired';
     return 'product-mobile-badge-na';
@@ -792,6 +794,8 @@ function renderTable(data) {
             let sBadge = `<span class="badge product-status-badge bg-secondary">${escapeHtml(status)}</span>`;
             if(status === 'Under Warranty'){
                 sBadge = `<span class="badge product-status-badge bg-success">Under Warranty</span>`;
+            } else if(status === 'Under Contract'){
+                sBadge = `<span class="badge product-status-badge bg-warning text-dark">Under Contract</span>`;
             } else if(status === 'Expired - Under Contract'){
                 sBadge = `<span class="badge product-status-badge bg-warning text-dark">Expired - Under Contract</span>`;
             } else if(status === 'Expired - No Contract'){

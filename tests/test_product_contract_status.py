@@ -16,7 +16,7 @@ class ProductContractStatusTests(unittest.TestCase):
 
         self.assertEqual(
             app_module.product_contract_status(end_date=future, under_contract=True, today=today),
-            'Under Warranty',
+            'Under Contract',
         )
         self.assertEqual(
             app_module.product_contract_status(end_date=today, under_contract=False, today=today),
@@ -48,6 +48,7 @@ class ProductContractStatusTests(unittest.TestCase):
         source = (ROOT / 'templates' / 'products.html').read_text(encoding='utf-8')
 
         self.assertIn('id="p-under-contract"', source)
+        self.assertIn('Under Contract', source)
         self.assertIn('Expired - Under Contract', source)
         self.assertIn('Expired - No Contract', source)
         self.assertIn('No Expiry Set - Under Contract', source)
