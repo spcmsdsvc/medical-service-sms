@@ -795,6 +795,13 @@
                         <input type="text" id="f-prod-search" class="form-control" placeholder="Search machine serial..." autocomplete="off">
                         <input type="hidden" id="f-prod-id">
                         <div id="prod-results" class="search-results shadow border-0 rounded-3"></div>
+                        <div id="product-coverage-status" class="timeline-product-coverage d-none mt-2" role="status" aria-live="polite">
+                            <div class="timeline-product-coverage-label">
+                                <i class="fa-solid fa-shield-halved"></i>
+                                <span>Product Coverage</span>
+                            </div>
+                            <span id="product-coverage-badge" class="timeline-product-coverage-badge"></span>
+                        </div>
                     </div>
 
                     <!-- Site Visit Billing / Commercial Flags (Optional) -->
@@ -11127,6 +11134,58 @@ function collectMobileEngineerSchedules(){
         return serial || name || "";
     }
 
+    function getProductCoverageStatus(product){
+        if(!product) return "";
+        if(product.computed_status) return String(product.computed_status);
+
+        const underContract = Boolean(product.under_contract);
+        const endDate = String(product.end_warranty || product.end_warranty_date || "").trim();
+        if(!endDate){
+            return underContract ? "No Expiry Set - Under Contract" : "No Expiry Set - No Contract";
+        }
+
+        const end = new Date(`${endDate}T00:00:00`);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if(!Number.isNaN(end.getTime()) && end >= today){
+            return underContract ? "Under Contract" : "Under Warranty";
+        }
+        return underContract ? "Expired - Under Contract" : "Expired - No Contract";
+    }
+
+    function productCoverageStatusClass(status){
+        const classes = {
+            "Under Warranty": "is-warranty",
+            "Under Contract": "is-contract",
+            "Expired - Under Contract": "is-expired-contract",
+            "Expired - No Contract": "is-expired-no-contract",
+            "No Expiry Set - Under Contract": "is-no-expiry-contract",
+            "No Expiry Set - No Contract": "is-no-expiry-no-contract"
+        };
+        return classes[status] || "is-no-expiry-no-contract";
+    }
+
+    function renderProductCoverageStatus(productOrSerial){
+        const panel = document.getElementById('product-coverage-status');
+        const badge = document.getElementById('product-coverage-badge');
+        if(!panel || !badge) return;
+
+        const product = typeof productOrSerial === "string"
+            ? (masterProducts || []).find(item => String(item.serial_number || "") === String(productOrSerial))
+            : productOrSerial;
+        const status = getProductCoverageStatus(product);
+        if(!product || !status){
+            panel.classList.add('d-none');
+            badge.textContent = "";
+            badge.className = "timeline-product-coverage-badge";
+            return;
+        }
+
+        badge.textContent = status;
+        badge.className = `timeline-product-coverage-badge ${productCoverageStatusClass(status)}`;
+        panel.classList.remove('d-none');
+    }
+
     const SITE_VISIT_FLAG_TAGS = [
         { key: 'warranty', label: 'Warranty', token: '[Warranty]', inputId: 'f-flag-warranty', className: 'bg-success' },
         { key: 'foc', label: 'FOC', token: '[FOC]', inputId: 'f-flag-foc', className: 'bg-info text-dark' },
@@ -11940,6 +11999,9 @@ function collectMobileEngineerSchedules(){
             const display = formatProductDisplay(masterProduct) || suggestion.product_label || (productName ? `${productId} / ${productName}` : productId);
             if(prodField) prodField.value = display;
             if(prodResults) prodResults.innerHTML = '';
+            renderProductCoverageStatus(masterProduct);
+        }else{
+            renderProductCoverageStatus(null);
         }
 
         const categoryDropdown = document.getElementById('f-category');
@@ -12220,6 +12282,7 @@ function collectMobileEngineerSchedules(){
             prodField.placeholder = message || "Select a client first...";
         }
         if(prodResults) prodResults.innerHTML = "";
+        renderProductCoverageStatus(null);
     }
 
     function updateProductInputState(){
@@ -12308,6 +12371,7 @@ if (selectedVal === "Leave") {
             document.getElementById('f-cli-search').value = "";
             document.getElementById('f-prod-id').value = "";
             document.getElementById('f-prod-search').value = "";
+            renderProductCoverageStatus(null);
         } else if (selectedVal === "Training" || selectedVal === "Office" || selectedVal === "Travel" || selectedVal === "Pullout" || selectedVal === "Holiday") {
             // Internal Training / Office / Travel / Pull-out Logic
             workArea.classList.add('d-none');
@@ -12322,6 +12386,7 @@ if (selectedVal === "Leave") {
             document.getElementById('f-cli-search').value = "";
             document.getElementById('f-prod-id').value = "";
             document.getElementById('f-prod-search').value = "";
+            renderProductCoverageStatus(null);
         } else {
             // Technical Site Visit (Work)
             workArea.classList.remove('d-none');
@@ -13529,6 +13594,14 @@ async function loadGrid() {
         field.addEventListener('input', function() {
             const val = field.value.toLowerCase();
             resultsDiv.innerHTML = "";
+            if(isClientSearch){
+                hiddenInp.value = "";
+                resetProductSelection("Select a client first...");
+                updateProductInputState();
+            }else if(inputId === 'f-prod-search'){
+                hiddenInp.value = "";
+                renderProductCoverageStatus(null);
+            }
             if (!val) return;
 
             let listToFilter = dataArray;
@@ -13569,7 +13642,16 @@ async function loadGrid() {
                     textLabel = formatProductDisplay(m);
                 }
 
-                element.innerHTML = `<strong>${textLabel}</strong>`;
+                if(isClientSearch){
+                    element.innerHTML = `<strong>${escapeHtml(textLabel)}</strong>`;
+                }else{
+                    const coverageStatus = getProductCoverageStatus(m);
+                    element.innerHTML = `
+                        <div class="timeline-product-search-row">
+                            <strong>${escapeHtml(textLabel)}</strong>
+                            <span class="timeline-product-search-status ${productCoverageStatusClass(coverageStatus)}">${escapeHtml(coverageStatus)}</span>
+                        </div>`;
+                }
 
                 element.onclick = function(ev) {
                     ev.preventDefault();
@@ -13581,6 +13663,8 @@ async function loadGrid() {
                     if (isClientSearch) {
                         resetProductSelection("Search linked machine serial / product name...");
                         updateProductInputState();
+                    }else{
+                        renderProductCoverageStatus(m);
                     }
                 };
                 resultsDiv.appendChild(element);
@@ -13839,6 +13923,7 @@ if(shift.engineers){
 
         document.getElementById('f-prod-id').value = shift.product_id;
         document.getElementById('f-prod-search').value = getProductDisplayBySerial(shift.product_id) || shift.product_name || "";
+        renderProductCoverageStatus(shift.product_id || null);
         document.getElementById('f-start-date').value = shift.start_date || date;
         document.getElementById('f-end-date').value = shift.end_date || shift.start_date || date;
         document.getElementById('f-original-start-date').value = shift.start_date || date;
@@ -18244,6 +18329,174 @@ document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
         padding: 10px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 0.85rem;
     }
     .search-item:hover { background: #f0f7ff; color: #0d6efd; }
+
+    .timeline-product-coverage {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        min-height: 2.65rem;
+        padding: 0.55rem 0.7rem;
+        border: 1px solid var(--app-border, #d8e0ea);
+        border-radius: 0.7rem;
+        background: var(--app-surface-raised, #f8fafc);
+        color: var(--app-text, #0f172a);
+    }
+
+    .timeline-product-coverage.d-none {
+        display: none !important;
+    }
+
+    .timeline-product-coverage-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        min-width: 0;
+        font-size: 0.75rem;
+        font-weight: 850;
+    }
+
+    .timeline-product-coverage-label i {
+        color: var(--app-accent, #2563eb);
+    }
+
+    .timeline-product-coverage-badge,
+    .timeline-product-search-status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: fit-content;
+        max-width: 100%;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        padding: 0.3rem 0.55rem;
+        font-size: 0.67rem;
+        font-weight: 900;
+        line-height: 1.2;
+        text-align: center;
+        white-space: normal;
+    }
+
+    .timeline-product-search-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.65rem;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .timeline-product-search-row strong {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .timeline-product-search-status {
+        flex: 0 0 auto;
+        max-width: 10.5rem;
+    }
+
+    .timeline-product-coverage-badge.is-warranty,
+    .timeline-product-search-status.is-warranty {
+        background: #dcfce7;
+        border-color: #86efac;
+        color: #166534;
+    }
+
+    .timeline-product-coverage-badge.is-contract,
+    .timeline-product-search-status.is-contract {
+        background: #fef3c7;
+        border-color: #fcd34d;
+        color: #854d0e;
+    }
+
+    .timeline-product-coverage-badge.is-expired-contract,
+    .timeline-product-search-status.is-expired-contract {
+        background: #ffedd5;
+        border-color: #fdba74;
+        color: #9a3412;
+    }
+
+    .timeline-product-coverage-badge.is-expired-no-contract,
+    .timeline-product-search-status.is-expired-no-contract {
+        background: #fee2e2;
+        border-color: #fca5a5;
+        color: #991b1b;
+    }
+
+    .timeline-product-coverage-badge.is-no-expiry-contract,
+    .timeline-product-search-status.is-no-expiry-contract {
+        background: #dbeafe;
+        border-color: #93c5fd;
+        color: #1e40af;
+    }
+
+    .timeline-product-coverage-badge.is-no-expiry-no-contract,
+    .timeline-product-search-status.is-no-expiry-no-contract {
+        background: #e2e8f0;
+        border-color: #cbd5e1;
+        color: #334155;
+    }
+
+    :root[data-app-theme="dark"] .timeline-product-coverage {
+        background: #182536;
+        border-color: #405168;
+        color: #f8fafc;
+    }
+
+    :root[data-app-theme="dark"] .timeline-product-coverage-badge.is-warranty,
+    :root[data-app-theme="dark"] .timeline-product-search-status.is-warranty {
+        background: #123d2a;
+        border-color: #258558;
+        color: #bbf7d0;
+    }
+
+    :root[data-app-theme="dark"] .timeline-product-coverage-badge.is-contract,
+    :root[data-app-theme="dark"] .timeline-product-search-status.is-contract {
+        background: #493812;
+        border-color: #9a7418;
+        color: #fde68a;
+    }
+
+    :root[data-app-theme="dark"] .timeline-product-coverage-badge.is-expired-contract,
+    :root[data-app-theme="dark"] .timeline-product-search-status.is-expired-contract {
+        background: #492510;
+        border-color: #9a4d1d;
+        color: #fed7aa;
+    }
+
+    :root[data-app-theme="dark"] .timeline-product-coverage-badge.is-expired-no-contract,
+    :root[data-app-theme="dark"] .timeline-product-search-status.is-expired-no-contract {
+        background: #4a1d25;
+        border-color: #9f3547;
+        color: #fecaca;
+    }
+
+    :root[data-app-theme="dark"] .timeline-product-coverage-badge.is-no-expiry-contract,
+    :root[data-app-theme="dark"] .timeline-product-search-status.is-no-expiry-contract {
+        background: #172f55;
+        border-color: #315d9a;
+        color: #bfdbfe;
+    }
+
+    :root[data-app-theme="dark"] .timeline-product-coverage-badge.is-no-expiry-no-contract,
+    :root[data-app-theme="dark"] .timeline-product-search-status.is-no-expiry-no-contract {
+        background: #283548;
+        border-color: #53647a;
+        color: #e2e8f0;
+    }
+
+    @media (max-width: 576px) {
+        .timeline-product-coverage,
+        .timeline-product-search-row {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .timeline-product-search-status {
+            max-width: 100%;
+        }
+    }
 
     /* INTERACTIVE GRID ELEMENTS */
     .add-hint { transition: 0.3s; }

@@ -169,6 +169,16 @@
         {"item_key": "2026-07-22-tsr-email-preview-cc", "category": "TSR Email", "description": "Send TSR now supports account-remembered Additional CC recipients and a read-only preview of the exact outgoing recipients, subject, message, and attachments.", "audiences": ["engineers", "admins"], "sort_order": 40},
         {"item_key": "2026-07-22-product-contract-status", "category": "Products", "description": "Products now show Under Contract whenever active contract coverage is selected, while retaining clear expired-contract and no-expiry classifications.", "audiences": ["engineers", "admins"], "sort_order": 50}
       ]
+    },
+    {
+      "release_key": "2026-07-23",
+      "release_date": "2026-07-23",
+      "title": "Product Coverage in Schedule Planning",
+      "summary": "Warranty and contract status is now visible while selecting equipment for a schedule.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-23-schedule-product-coverage", "category": "Calendar", "description": "Add/Edit Schedule now shows each selected product's current warranty or contract status without requiring a separate visit to the Products page.", "audiences": ["engineers", "admins"], "sort_order": 10}
+      ]
     }
   ]
 }
