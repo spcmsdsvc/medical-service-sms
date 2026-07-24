@@ -34508,6 +34508,7 @@ def get_tsr_archive():
         'page': page,
         'per_page': per_page,
         'total_pages': total_pages,
+        'sort': 'recently_added',
         'scope': scope,
         'admin': is_admin_authorized()
     })

@@ -14,6 +14,10 @@ class ReportsArchivePaginationSourceTests(unittest.TestCase):
 
         self.assertNotIn('analytics_date_bounds()', route)
         self.assertIn('per_page = min(max(requested_per_page, 1), 10)', route)
+        self.assertIn('ShiftFile.uploaded_at.desc()', route)
+        self.assertIn('Shift.start_time.desc()', route)
+        self.assertIn('ShiftFile.id.desc()', route)
+        self.assertIn("'sort': 'recently_added'", route)
         self.assertIn("'total_pages': total_pages", route)
         self.assertIn("'rows': page_rows", route)
 
