@@ -183,11 +183,12 @@
     {
       "release_key": "2026-07-28",
       "release_date": "2026-07-28",
-      "title": "Half-Day Leave Requests",
-      "summary": "Employees can now request AM or PM half-day leave with accurate Calendar availability and HR forms.",
+      "title": "Leave and Approval Workflow Improvements",
+      "summary": "Half-day leave and clearer Approval Center wording make request review more accurate and dependable.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-28-half-day-leave", "category": "Field Operations", "description": "Leave Requests now support 0.5-day AM or PM periods for every leave type, with time-aware conflict checks, Calendar blocks, approvals, and HR form output.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10}
+        {"item_key": "2026-07-28-half-day-leave", "category": "Field Operations", "description": "Leave Requests now support 0.5-day AM or PM periods for every leave type, with time-aware conflict checks, Calendar blocks, approvals, and HR form output.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10},
+        {"item_key": "2026-07-28-approval-wording", "category": "Approvals", "description": "Approval Center review dialogs now keep the correct request type, requester context, action wording, and history labels even when a request cannot be opened.", "audiences": ["approvers", "admins"], "sort_order": 20}
       ]
     }
   ]

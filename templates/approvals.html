@@ -2008,7 +2008,7 @@
             <div class="approval-focus-title">
                 <div>
                     <h2>Approval Work Queue</h2>
-                    <div class="approval-focus-subtitle">Review what needs attention first. Travel Requests, Reimbursements, Cash Advances, and Liquidations are combined into one queue.</div>
+                    <div class="approval-focus-subtitle">Review assigned requests from every active approval workflow in one queue.</div>
                 </div>
                 <button type="button" class="approval-btn approval-btn-secondary" onclick="refreshAllApprovalCenterLists()">
                     <i class="fa-solid fa-rotate me-1"></i>Refresh
@@ -2041,12 +2041,12 @@
                     <small>Active workflow</small>
                 </div>
                 <div class="approval-module-mini">
-                    <strong>CA Liquidation</strong>
+                    <strong>Cash Advance Liquidation</strong>
                     <span id="approvalCashAdvanceLiquidationPendingCount">0</span>
                     <small>Active workflow</small>
                 </div>
                 <div class="approval-module-mini">
-                    <strong>Liquidation</strong>
+                    <strong>Travel Liquidation</strong>
                     <span id="approvalLiquidationPendingCount">0</span>
                     <small>Active workflow</small>
                 </div>
@@ -2055,6 +2055,11 @@
                     <span id="approvalLprPendingCount">0</span>
                     <small>Active workflow</small>
                 </div>{% endif %}
+                <div class="approval-module-mini">
+                    <strong>Leave Request</strong>
+                    <span id="approvalLeavePendingCount">0</span>
+                    <small>Active workflow</small>
+                </div>
             </div>
         </div>
     </section>
@@ -2082,7 +2087,7 @@
             <div class="approval-head">
                 <div>
                     <h2>Approved History</h2>
-                    <div class="approval-muted">Approved Travel Requests, Reimbursements, Cash Advances, and Liquidations.</div>
+                    <div class="approval-muted">Approved requests from every active workflow.</div>
                 </div>
             </div>
             <div class="approval-unified-list" id="approvalUnifiedApprovedList">
@@ -2094,7 +2099,7 @@
             <div class="approval-head">
                 <div>
                     <h2>Returned / Rejected History</h2>
-                    <div class="approval-muted">Requests returned for correction with approver remarks.</div>
+                    <div class="approval-muted">Requests returned for correction or rejected with approver remarks.</div>
                 </div>
             </div>
             <div class="approval-unified-list" id="approvalUnifiedRejectedList">
@@ -2108,23 +2113,23 @@
     <div class="approval-modal">
         <div class="approval-head">
             <div>
-                <h2 id="approvalModalTitle">Reimbursement Review</h2>
-                <div class="approval-muted" id="approvalModalSubtitle">Review submitted expenses and receipts.</div>
+                <h2 id="approvalModalTitle">Request Review</h2>
+                <div class="approval-muted" id="approvalModalSubtitle">Loading request details...</div>
             </div>
             <button type="button" class="approval-btn approval-btn-secondary" onclick="closeApprovalModal()">Close</button>
         </div>
         <div id="approvalDetailBody">
-            <div class="approval-empty">Loading reimbursement details...</div>
+            <div class="approval-empty">Loading request details...</div>
         </div>
         <div style="margin-top:12px;">
-            <label style="font-weight:900;color:#334155;">Manager Remarks</label>
-            <textarea class="approval-remarks" id="approvalRemarks" placeholder="Optional for approval. Required for rejection."></textarea>
+            <label id="approvalRemarksLabel" style="font-weight:900;color:#334155;">Approver Remarks</label>
+            <textarea class="approval-remarks" id="approvalRemarks" placeholder="Optional for approval."></textarea>
         </div>
         <div class="approval-actions" style="justify-content:flex-end;margin-top:12px;">
             <button type="button" class="approval-btn approval-btn-secondary" id="approvalResendEmailBtn" style="display:none;" onclick="resendSelectedApprovedRequestEmail()">
                 <i class="fa-solid fa-paper-plane me-1"></i>Resend Email
             </button>
-            <button type="button" class="approval-btn approval-btn-danger" id="approvalRejectBtn" onclick="rejectSelectedApproval()">Reject / Return</button>
+            <button type="button" class="approval-btn approval-btn-danger" id="approvalRejectBtn" onclick="rejectSelectedApproval()">Return for Correction</button>
             <button type="button" class="approval-btn approval-btn-success" id="approvalApproveBtn" onclick="approveSelectedApproval()">Approve</button>
         </div>
     </div>
@@ -2167,6 +2172,112 @@
     let selectedApprovalCashAdvanceId = null;
     let selectedApprovalCashAdvanceLiquidationId = null;
     let selectedApprovalModule = 'reimbursement';
+    let approvalModalLoadSequence = 0;
+
+    const approvalModuleCopy = Object.freeze({
+        reimbursement: {
+            label: 'Reimbursement',
+            negativeAction: 'Return for Correction',
+            pendingRemarks: 'Optional for approval. Required when returning for correction.'
+        },
+        travel_request: {
+            label: 'Travel Request',
+            negativeAction: 'Return for Correction',
+            pendingRemarks: 'Optional for approval. Required when returning for correction.'
+        },
+        travel_liquidation: {
+            label: 'Travel Liquidation',
+            negativeAction: 'Return for Revision',
+            pendingRemarks: 'Optional for approval. Required when returning for revision.'
+        },
+        cash_advance: {
+            label: 'Cash Advance',
+            negativeAction: 'Return for Correction',
+            pendingRemarks: 'Optional for approval. Required when returning for correction.'
+        },
+        cash_advance_liquidation: {
+            label: 'Cash Advance Liquidation',
+            negativeAction: 'Return for Revision',
+            pendingRemarks: 'Optional for approval. Required when returning for revision.'
+        },
+        lpr: {
+            label: 'LPR',
+            negativeAction: 'Return for Correction',
+            pendingRemarks: 'Optional for approval. Required when returning for correction.'
+        },
+        leave_request: {
+            label: 'Leave Request',
+            negativeAction: 'Reject',
+            pendingRemarks: 'Optional for approval. Required for rejection.'
+        }
+    });
+
+    function getApprovalModuleCopy(moduleKey) {
+        return approvalModuleCopy[String(moduleKey || '').toLowerCase()] || {
+            label: 'Request',
+            negativeAction: 'Return',
+            pendingRemarks: 'Optional for approval. Required when returning the request.'
+        };
+    }
+
+    function applyApprovalModuleWording(moduleKey, isSubmitted) {
+        const copy = getApprovalModuleCopy(moduleKey);
+        const rejectBtn = document.getElementById('approvalRejectBtn');
+        const remarksLabel = document.getElementById('approvalRemarksLabel');
+        const remarks = document.getElementById('approvalRemarks');
+        if (rejectBtn) rejectBtn.textContent = copy.negativeAction;
+        if (remarksLabel) remarksLabel.textContent = 'Approver Remarks';
+        if (remarks) {
+            remarks.placeholder = isSubmitted ? copy.pendingRemarks : 'Approver remarks';
+        }
+    }
+
+    function beginApprovalModalLoad(moduleKey) {
+        const key = String(moduleKey || '').toLowerCase();
+        const copy = getApprovalModuleCopy(key);
+        const loadToken = ++approvalModalLoadSequence;
+        const backdrop = document.getElementById('approvalModalBackdrop');
+        const modal = document.querySelector('#approvalModalBackdrop .approval-modal');
+        const title = document.getElementById('approvalModalTitle');
+        const subtitle = document.getElementById('approvalModalSubtitle');
+        const body = document.getElementById('approvalDetailBody');
+        const remarks = document.getElementById('approvalRemarks');
+        const approveBtn = document.getElementById('approvalApproveBtn');
+        const rejectBtn = document.getElementById('approvalRejectBtn');
+
+        selectedApprovalModule = key;
+        if (backdrop) backdrop.style.display = 'flex';
+        if (modal) modal.classList.remove('compact-travel-modal');
+        if (title) title.textContent = `Review ${copy.label}`;
+        if (subtitle) subtitle.textContent = `Loading ${copy.label} details...`;
+        if (body) body.innerHTML = `<div class="approval-empty">Loading ${approvalEscape(copy.label)} details...</div>`;
+        if (remarks) {
+            remarks.value = '';
+            remarks.readOnly = false;
+            remarks.disabled = false;
+        }
+        if (approveBtn) approveBtn.style.display = 'none';
+        if (rejectBtn) rejectBtn.style.display = 'none';
+        updateApprovalResendButton(null);
+        applyApprovalModuleWording(key, true);
+        return loadToken;
+    }
+
+    function approvalModalLoadIsCurrent(loadToken, moduleKey) {
+        return loadToken === approvalModalLoadSequence
+            && String(selectedApprovalModule || '').toLowerCase() === String(moduleKey || '').toLowerCase();
+    }
+
+    function showApprovalModalLoadError(loadToken, moduleKey, error, fallbackMessage) {
+        if (!approvalModalLoadIsCurrent(loadToken, moduleKey)) return;
+        const copy = getApprovalModuleCopy(moduleKey);
+        const title = document.getElementById('approvalModalTitle');
+        const subtitle = document.getElementById('approvalModalSubtitle');
+        const body = document.getElementById('approvalDetailBody');
+        if (title) title.textContent = `Unable to Review ${copy.label}`;
+        if (subtitle) subtitle.textContent = `${copy.label} details could not be opened.`;
+        if (body) body.innerHTML = `<div class="approval-empty">${approvalEscape(error?.message || fallbackMessage || `Unable to load ${copy.label} details.`)}</div>`;
+    }
 
     const reimbursementExpenseKeys = [
         'representation',
@@ -2554,6 +2665,7 @@
     }
 
     function closeApprovalModal() {
+        approvalModalLoadSequence += 1;
         const backdrop = document.getElementById('approvalModalBackdrop');
         if (backdrop) backdrop.style.display = 'none';
         const modal = document.querySelector('#approvalModalBackdrop .approval-modal');
@@ -2563,6 +2675,8 @@
         selectedApprovalLiquidationId = null;
         selectedApprovalCashAdvanceId = null;
         selectedApprovalCashAdvanceLiquidationId = null;
+        selectedApprovalLprId = null;
+        selectedApprovalLeaveId = null;
         selectedApprovalModule = 'reimbursement';
         updateApprovalResendButton(null);
     }
@@ -2621,7 +2735,7 @@
         if (key === 'travel_request') return 'Resend Travel Accounting Email';
         if (key === 'travel_liquidation') return 'Resend Liquidation Accounting Email';
         if (key === 'cash_advance') return 'Resend Cash Advance Accounting Email';
-        if (key === 'cash_advance_liquidation') return 'Resend CA Liquidation Accounting Email';
+        if (key === 'cash_advance_liquidation') return 'Resend Cash Advance Liquidation Accounting Email';
         if (key === 'reimbursement') return 'Resend Reimbursement Accounting Email';
         return 'Resend Email';
     }
@@ -2726,6 +2840,16 @@ Recipient count: ${recipientCount}` : ''),
         return item?.submitted_at || item?.updated_at || item?.approved_at || item?.rejected_at || '';
     }
 
+    function approvalHistoryActionLabel(moduleKey, status) {
+        const key = String(moduleKey || '').toLowerCase();
+        const normalizedStatus = String(status || '').toLowerCase();
+        if (normalizedStatus === 'approved') return 'Approved';
+        if (key === 'leave_request') return 'Rejected';
+        if (key === 'travel_liquidation' || key === 'cash_advance_liquidation') return 'Returned for Revision';
+        if (['travel_request', 'reimbursement', 'cash_advance', 'lpr'].includes(key)) return 'Returned for Correction';
+        return normalizedStatus === 'returned' ? 'Returned' : 'Rejected';
+    }
+
     function buildUnifiedApprovalItem(moduleKey, item, status) {
         const normalizedStatus = String(item?.status || status || '').toLowerCase();
         const isPending = normalizedStatus === 'submitted';
@@ -2738,18 +2862,18 @@ Recipient count: ${recipientCount}` : ''),
             : (isLiquidation ? 'openLiquidationApprovalDetail' : (isCashAdvance ? 'openCashAdvanceApprovalDetail' : (isCashAdvanceLiquidation ? 'openCashAdvanceLiquidationApprovalDetail' : 'openReimbursementApprovalDetail')));
         const typeLabel = isTravel
             ? 'Travel Request'
-            : (isLiquidation ? 'Liquidation' : (isCashAdvance ? 'Cash Advance' : (isCashAdvanceLiquidation ? 'CA Liquidation' : 'Reimbursement')));
+            : (isLiquidation ? 'Travel Liquidation' : (isCashAdvance ? 'Cash Advance' : (isCashAdvanceLiquidation ? 'Cash Advance Liquidation' : 'Reimbursement')));
         const typeClass = isTravel
             ? 'travel'
             : (isLiquidation ? 'liquidation' : (isCashAdvance ? 'cash_advance' : (isCashAdvanceLiquidation ? 'cash_advance_liquidation' : 'reimbursement')));
         const title = isTravel
             ? (item.request_no || ('Travel Request #' + item.id))
             : (isLiquidation
-                ? (item.liquidation_no || ('Liquidation #' + item.id))
+                ? (item.liquidation_no || ('Travel Liquidation #' + item.id))
                 : (isCashAdvance
                     ? (item.cash_advance_no || item.request_no || ('Cash Advance #' + item.id))
                     : (isCashAdvanceLiquidation
-                        ? (item.liquidation_no || ('CA Liquidation #' + item.id))
+                        ? (item.liquidation_no || ('Cash Advance Liquidation #' + item.id))
                         : (item.request_no || ('Reimbursement #' + item.id)))));
         const requester = isTravel
             ? (item.requester_name || item.engineer_name || 'Unknown requester')
@@ -2808,7 +2932,7 @@ Recipient count: ${recipientCount}` : ''),
                 </div>
 
                 ${!isPending ? `<div class="approval-history-meta">
-                    ${approvalEscape(normalizedStatus === 'approved' ? 'Approved' : 'Rejected / Returned')}: ${approvalEscape(formatApprovalDateTime(actionDate) || '—')}
+                    ${approvalEscape(approvalHistoryActionLabel(moduleKey, normalizedStatus))}: ${approvalEscape(formatApprovalDateTime(actionDate) || '—')}
                     ${actionBy ? `<br>By: ${approvalEscape(actionBy)}` : ''}
                     ${remarks ? `<br>Remarks: ${approvalEscape(remarks)}` : ''}
                 </div>` : ''}
@@ -2875,7 +2999,7 @@ Recipient count: ${recipientCount}` : ''),
                         <div class="approval-meta">Travel: ${approvalEscape(formatHumanDateRange(item.departure_date || '', item.return_date || '') || '—')}</div>
                         <div class="approval-meta">Submitted: ${approvalEscape(formatApprovalDateTime(item.submitted_at) || '—')}</div>
                         ${!isPending ? `<div class="approval-history-meta">
-                            ${approvalEscape(String(statusText).toLowerCase() === 'approved' ? 'Approved' : 'Rejected / Returned')}: ${approvalEscape(formatApprovalDateTime(actionDate) || '—')}
+                            ${approvalEscape(approvalHistoryActionLabel('travel_request', statusText))}: ${approvalEscape(formatApprovalDateTime(actionDate) || '—')}
                             ${actionBy ? `<br>By: ${approvalEscape(actionBy)}` : ''}
                             ${remarks ? `<br>Remarks: ${approvalEscape(remarks)}` : ''}
                         </div>` : ''}
@@ -3204,6 +3328,7 @@ Recipient count: ${recipientCount}` : ''),
         const isSubmitted = (data.status || '') === 'Submitted';
         if (approveBtn) approveBtn.style.display = isSubmitted ? '' : 'none';
         if (rejectBtn) rejectBtn.style.display = isSubmitted ? '' : 'none';
+        applyApprovalModuleWording('travel_request', isSubmitted);
         updateApprovalResendButton(data);
 
         const decisionStatus = String(data.status || '').toLowerCase();
@@ -3215,12 +3340,12 @@ Recipient count: ${recipientCount}` : ''),
             : (decisionStatus === 'rejected' ? (data.rejected_by || '') : '');
         const decisionTitle = decisionStatus === 'approved'
             ? 'Approval History'
-            : (decisionStatus === 'rejected' ? 'Rejection / Return History' : '');
+            : (decisionStatus === 'rejected' ? 'Return History' : '');
         const decisionPanel = decisionTitle ? `
             <div class="approval-decision-panel ${approvalEscape(decisionStatus)}">
                 <h3>${approvalEscape(decisionTitle)}</h3>
                 <div>
-                    ${decisionStatus === 'approved' ? 'Approved' : 'Rejected / Returned'} by: ${approvalEscape(decisionBy || '—')}<br>
+                    ${decisionStatus === 'approved' ? 'Approved' : 'Returned for Correction'} by: ${approvalEscape(decisionBy || '—')}<br>
                     Date: ${approvalEscape(formatApprovalDateTime(decisionDate) || '—')}<br>
                     Remarks: ${approvalEscape(data.approval_remarks || 'No remarks entered.')}
                     ${renderApprovalSignatureSnapshot(data)}
@@ -3329,16 +3454,14 @@ Recipient count: ${recipientCount}` : ''),
             remarks.value = data.approval_remarks || '';
             remarks.readOnly = !isSubmitted;
             remarks.disabled = !isSubmitted;
-            remarks.placeholder = isSubmitted ? 'Optional for approval. Required for rejection.' : 'Approver remarks';
+            remarks.placeholder = isSubmitted ? getApprovalModuleCopy('travel_request').pendingRemarks : 'Approver remarks';
         }
     }
 
     async function openTravelApprovalDetail(travelRequestId) {
         if (!travelRequestId) return;
-        const backdrop = document.getElementById('approvalModalBackdrop');
+        const loadToken = beginApprovalModalLoad('travel_request');
         const body = document.getElementById('approvalDetailBody');
-        if (backdrop) backdrop.style.display = 'flex';
-        if (body) body.innerHTML = '<div class="approval-empty">Loading travel request details...</div>';
         selectedApprovalModule = 'travel_request';
         selectedApprovalTravelRequestId = travelRequestId;
         selectedApprovalReimbursementId = null;
@@ -3362,10 +3485,11 @@ Recipient count: ${recipientCount}` : ''),
                 console.warn('[Approvals] Travel audit trail unavailable', auditError);
                 travelData.audit_trail = travelData.audit_trail || [];
             }
+            if (!approvalModalLoadIsCurrent(loadToken, 'travel_request')) return;
             renderTravelApprovalDetail(travelData);
         } catch (error) {
             console.error(error);
-            if (body) body.innerHTML = `<div class="approval-empty">${approvalEscape(error.message || 'Unable to load travel request details.')}</div>`;
+            showApprovalModalLoadError(loadToken, 'travel_request', error, 'Unable to load Travel Request details.');
         }
     }
 
@@ -3416,8 +3540,8 @@ Recipient count: ${recipientCount}` : ''),
         }
         const shouldReject = await approvalConfirmDialog({
             title: 'Return Travel Request?',
-            message: 'This will reject/return the travel request to the requester for correction.',
-            confirmText: 'Reject / Return',
+            message: 'This will return the Travel Request to the requester for correction.',
+            confirmText: 'Return for Correction',
             cancelText: 'Cancel',
             tone: 'danger',
             icon: 'rotate-left'
@@ -3470,7 +3594,7 @@ Recipient count: ${recipientCount}` : ''),
             const remarks = item.approval_remarks || '';
             const statusText = item.status || status || '';
             const isPending = String(statusText).toLowerCase() === 'submitted';
-            const actionLabel = isPending ? 'Submitted' : (String(statusText).toLowerCase() === 'approved' ? 'Approved' : 'Rejected / Returned');
+            const actionLabel = isPending ? 'Submitted' : approvalHistoryActionLabel('reimbursement', statusText);
             const buttonText = isPending ? 'Review' : 'View Details';
 
             return `
@@ -3975,10 +4099,11 @@ Recipient count: ${recipientCount}` : ''),
         const travelPeriod = liquidationDisplayDateRange(data);
         const isSubmitted = String(data.status || '').toLowerCase() === 'submitted';
 
-        if (title) title.textContent = `Review ${data.liquidation_no || ('Liquidation #' + data.id)}`;
+        if (title) title.textContent = `Review ${data.liquidation_no || ('Travel Liquidation #' + data.id)}`;
         if (subtitle) subtitle.textContent = `${engineer} • ${travelRequestNo} • ${travelPeriod}`;
         if (approveBtn) approveBtn.style.display = isSubmitted ? '' : 'none';
         if (rejectBtn) rejectBtn.style.display = isSubmitted ? '' : 'none';
+        applyApprovalModuleWording('travel_liquidation', isSubmitted);
         updateApprovalResendButton(data);
 
         const decisionStatus = String(data.status || '').toLowerCase();
@@ -3990,7 +4115,7 @@ Recipient count: ${recipientCount}` : ''),
             : (decisionStatus === 'rejected' ? (data.rejected_by || '') : '');
         const decisionTitle = decisionStatus === 'approved'
             ? 'Approval History'
-            : (decisionStatus === 'rejected' ? 'Return / Rejection History' : '');
+            : (decisionStatus === 'rejected' ? 'Return History' : '');
         const decisionPanel = decisionTitle ? `
             <div class="approval-decision-panel ${approvalEscape(decisionStatus)}">
                 <h3>${approvalEscape(decisionTitle)}</h3>
@@ -4048,7 +4173,7 @@ Recipient count: ${recipientCount}` : ''),
             remarks.value = data.approval_remarks || '';
             remarks.readOnly = !isSubmitted;
             remarks.disabled = !isSubmitted;
-            remarks.placeholder = isSubmitted ? 'Optional for approval. Required when returning for revision.' : 'Manager remarks';
+            remarks.placeholder = isSubmitted ? getApprovalModuleCopy('travel_liquidation').pendingRemarks : 'Approver remarks';
         }
 
         loadLiquidationApprovalPackage(data.id).catch(function(error) {
@@ -4058,10 +4183,8 @@ Recipient count: ${recipientCount}` : ''),
 
     async function openLiquidationApprovalDetail(liquidationId) {
         if (!liquidationId) return;
-        const backdrop = document.getElementById('approvalModalBackdrop');
+        const loadToken = beginApprovalModalLoad('travel_liquidation');
         const body = document.getElementById('approvalDetailBody');
-        if (backdrop) backdrop.style.display = 'flex';
-        if (body) body.innerHTML = '<div class="approval-empty">Loading liquidation details...</div>';
         selectedApprovalModule = 'travel_liquidation';
         selectedApprovalLiquidationId = liquidationId;
         selectedApprovalTravelRequestId = null;
@@ -4085,10 +4208,11 @@ Recipient count: ${recipientCount}` : ''),
                 console.warn('[Approvals] Liquidation audit trail unavailable', auditError);
                 liquidationData.audit_trail = liquidationData.audit_trail || [];
             }
+            if (!approvalModalLoadIsCurrent(loadToken, 'travel_liquidation')) return;
             renderLiquidationApprovalDetail(liquidationData);
         } catch (error) {
             console.error(error);
-            if (body) body.innerHTML = `<div class="approval-empty">${approvalEscape(error.message || 'Unable to load liquidation details.')}</div>`;
+            showApprovalModalLoadError(loadToken, 'travel_liquidation', error, 'Unable to load Travel Liquidation details.');
         }
     }
 
@@ -4138,8 +4262,8 @@ Recipient count: ${recipientCount}` : ''),
             return;
         }
         const shouldReject = await approvalConfirmDialog({
-            title: 'Return Liquidation?',
-            message: 'This will return the liquidation to the requester for revision.',
+            title: 'Return Travel Liquidation?',
+            message: 'This will return the Travel Liquidation to the requester for revision.',
             confirmText: 'Return for Revision',
             cancelText: 'Cancel',
             tone: 'danger',
@@ -4195,7 +4319,7 @@ Recipient count: ${recipientCount}` : ''),
     function cashAdvanceDecisionStatusLabel(status) {
         const normalized = String(status || '').toLowerCase();
         if (normalized === 'approved') return 'Approved';
-        if (normalized === 'rejected') return 'Rejected / Returned';
+        if (normalized === 'rejected') return 'Returned for Correction';
         return 'Submitted';
     }
 
@@ -4229,12 +4353,13 @@ Recipient count: ${recipientCount}` : ''),
             : (decisionStatus === 'rejected' ? (data.rejected_by || '') : '');
         const decisionTitle = decisionStatus === 'approved'
             ? 'Approval History'
-            : (decisionStatus === 'rejected' ? 'Rejection / Return History' : '');
+            : (decisionStatus === 'rejected' ? 'Return History' : '');
 
         if (title) title.textContent = `Review ${requestNo}`;
         if (subtitle) subtitle.textContent = `${requester} • Needed ${formatHumanDate(data.needed_date || '', { shortMonth: true }) || data.needed_date || '—'}`;
         if (approveBtn) approveBtn.style.display = isSubmitted ? '' : 'none';
         if (rejectBtn) rejectBtn.style.display = isSubmitted ? '' : 'none';
+        applyApprovalModuleWording('cash_advance', isSubmitted);
         updateApprovalResendButton(data);
 
         const decisionPanel = decisionTitle ? `
@@ -4285,16 +4410,14 @@ Recipient count: ${recipientCount}` : ''),
             remarks.value = data.approval_remarks || '';
             remarks.readOnly = !isSubmitted;
             remarks.disabled = !isSubmitted;
-            remarks.placeholder = isSubmitted ? 'Optional for approval. Required for rejection.' : 'Manager remarks';
+            remarks.placeholder = isSubmitted ? getApprovalModuleCopy('cash_advance').pendingRemarks : 'Approver remarks';
         }
     }
 
     async function openCashAdvanceApprovalDetail(cashAdvanceId) {
         if (!cashAdvanceId) return;
-        const backdrop = document.getElementById('approvalModalBackdrop');
+        const loadToken = beginApprovalModalLoad('cash_advance');
         const body = document.getElementById('approvalDetailBody');
-        if (backdrop) backdrop.style.display = 'flex';
-        if (body) body.innerHTML = '<div class="approval-empty">Loading cash advance details...</div>';
         selectedApprovalModule = 'cash_advance';
         selectedApprovalCashAdvanceId = cashAdvanceId;
         selectedApprovalReimbursementId = null;
@@ -4319,10 +4442,11 @@ Recipient count: ${recipientCount}` : ''),
                 console.warn('[Approvals] Cash Advance audit trail unavailable', auditError);
                 cashAdvanceData.audit_trail = cashAdvanceData.audit_trail || [];
             }
+            if (!approvalModalLoadIsCurrent(loadToken, 'cash_advance')) return;
             renderCashAdvanceApprovalDetail(cashAdvanceData);
         } catch (error) {
             console.error(error);
-            if (body) body.innerHTML = `<div class="approval-empty">${approvalEscape(error.message || 'Unable to load cash advance details.')}</div>`;
+            showApprovalModalLoadError(loadToken, 'cash_advance', error, 'Unable to load Cash Advance details.');
         }
     }
 
@@ -4373,8 +4497,8 @@ Recipient count: ${recipientCount}` : ''),
         }
         const shouldReject = await approvalConfirmDialog({
             title: 'Return Cash Advance?',
-            message: 'This will reject/return the cash advance to the requester for correction.',
-            confirmText: 'Reject / Return',
+            message: 'This will return the Cash Advance to the requester for correction.',
+            confirmText: 'Return for Correction',
             cancelText: 'Cancel',
             tone: 'danger',
             icon: 'rotate-left'
@@ -4393,15 +4517,15 @@ Recipient count: ${recipientCount}` : ''),
                 },
                 body: JSON.stringify({ remarks })
             });
-            const payload = await parseApprovalJsonResponseWithPayload(res, 'Unable to reject cash advance.');
-            approvalAlert(payload.message || 'Cash advance rejected and returned for correction.');
+            const payload = await parseApprovalJsonResponseWithPayload(res, 'Unable to return Cash Advance.');
+            approvalAlert(payload.message || 'Cash Advance returned for correction.');
             closeApprovalModal();
             await refreshAllApprovalCenterLists();
             await loadApprovalNotifications();
         } catch (error) {
             console.error(error);
             if (error?.payload?.requires_signature || error?.payload?.signature_required) { showApprovalSignatureRequiredPrompt(error); return; }
-            approvalAlert(error.message || 'Unable to reject cash advance.');
+            approvalAlert(error.message || 'Unable to return Cash Advance.');
         }
     }
 
@@ -4444,7 +4568,7 @@ Recipient count: ${recipientCount}` : ''),
         selectedApprovalLiquidationId = null;
 
         const requester = data.requester_name || data.engineer_name || data.username || 'Unknown requester';
-        const liquidationNo = data.liquidation_no || ('CA Liquidation #' + data.id);
+        const liquidationNo = data.liquidation_no || ('Cash Advance Liquidation #' + data.id);
         const cashAdvanceNo = data.cash_advance_no || data.request_no || '—';
         const isSubmitted = String(data.status || '').toLowerCase() === 'submitted';
         const decisionStatus = String(data.status || '').toLowerCase();
@@ -4462,6 +4586,7 @@ Recipient count: ${recipientCount}` : ''),
         if (subtitle) subtitle.textContent = `${requester} • ${cashAdvanceNo}`;
         if (approveBtn) approveBtn.style.display = isSubmitted ? '' : 'none';
         if (rejectBtn) rejectBtn.style.display = isSubmitted ? '' : 'none';
+        applyApprovalModuleWording('cash_advance_liquidation', isSubmitted);
         updateApprovalResendButton(data);
 
         const reference = data.approved_request_reference || {};
@@ -4532,7 +4657,7 @@ Recipient count: ${recipientCount}` : ''),
             remarks.value = data.approval_remarks || '';
             remarks.readOnly = !isSubmitted;
             remarks.disabled = !isSubmitted;
-            remarks.placeholder = isSubmitted ? 'Optional for approval. Required when returning for revision.' : 'Manager remarks';
+            remarks.placeholder = isSubmitted ? getApprovalModuleCopy('cash_advance_liquidation').pendingRemarks : 'Approver remarks';
         }
 
         loadCashAdvanceLiquidationApprovalPackage(data.id, data.approval_package).catch(function(error) {
@@ -4542,10 +4667,8 @@ Recipient count: ${recipientCount}` : ''),
 
     async function openCashAdvanceLiquidationApprovalDetail(liquidationId) {
         if (!liquidationId) return;
-        const backdrop = document.getElementById('approvalModalBackdrop');
+        const loadToken = beginApprovalModalLoad('cash_advance_liquidation');
         const body = document.getElementById('approvalDetailBody');
-        if (backdrop) backdrop.style.display = 'flex';
-        if (body) body.innerHTML = '<div class="approval-empty">Loading cash advance liquidation details...</div>';
         selectedApprovalModule = 'cash_advance_liquidation';
         selectedApprovalCashAdvanceLiquidationId = liquidationId;
         selectedApprovalCashAdvanceId = null;
@@ -4571,10 +4694,11 @@ Recipient count: ${recipientCount}` : ''),
                 console.warn('[Approvals] Cash Advance Liquidation audit trail unavailable', auditError);
                 liquidationData.audit_trail = liquidationData.audit_trail || [];
             }
+            if (!approvalModalLoadIsCurrent(loadToken, 'cash_advance_liquidation')) return;
             renderCashAdvanceLiquidationApprovalDetail(liquidationData);
         } catch (error) {
             console.error(error);
-            if (body) body.innerHTML = `<div class="approval-empty">${approvalEscape(error.message || 'Unable to load cash advance liquidation details.')}</div>`;
+            showApprovalModalLoadError(loadToken, 'cash_advance_liquidation', error, 'Unable to load Cash Advance Liquidation details.');
         }
     }
 
@@ -4779,7 +4903,7 @@ Recipient count: ${recipientCount}` : ''),
         try {
             reimbursementRejectedItems = await loadReimbursementApprovalStatus('Rejected');
         } catch (error) {
-            console.error('[Approvals] Reimbursement rejected history failed', error);
+                console.error('[Approvals] Reimbursement returned history failed', error);
             reimbursementRejectedItems = [];
         }
 
@@ -5133,12 +5257,13 @@ Recipient count: ${recipientCount}` : ''),
         selectedApprovalLiquidationId = null;
         const engineer = data.engineer_name || data.username || 'Unknown user';
         const period = `${formatExpenseDate(data.start || '')} to ${formatExpenseDate(data.end || '')}`;
-        if (title) title.textContent = `Review Reimbursement #${data.id}`;
+        if (title) title.textContent = `Review ${data.request_no || ('Reimbursement #' + data.id)}`;
         if (subtitle) subtitle.textContent = `${engineer} • ${period}`;
 
         const isSubmitted = (data.status || '') === 'Submitted';
         if (approveBtn) approveBtn.style.display = isSubmitted ? '' : 'none';
         if (rejectBtn) rejectBtn.style.display = isSubmitted ? '' : 'none';
+        applyApprovalModuleWording('reimbursement', isSubmitted);
         updateApprovalResendButton(data);
 
         const rows = Array.isArray(data.rows) ? data.rows : [];
@@ -5190,12 +5315,12 @@ Recipient count: ${recipientCount}` : ''),
             : (decisionStatus === 'rejected' ? (data.rejected_by || 'Rodito') : '');
         const decisionTitle = decisionStatus === 'approved'
             ? 'Approval History'
-            : (decisionStatus === 'rejected' ? 'Rejection / Return History' : '');
+            : (decisionStatus === 'rejected' ? 'Return History' : '');
         const decisionPanel = decisionTitle ? `
             <div class="approval-decision-panel ${approvalEscape(decisionStatus)}">
                 <h3>${approvalEscape(decisionTitle)}</h3>
                 <div>
-                    ${decisionStatus === 'approved' ? 'Approved' : 'Rejected / Returned'} by: ${approvalEscape(decisionBy || '—')}<br>
+                    ${decisionStatus === 'approved' ? 'Approved' : 'Returned for Correction'} by: ${approvalEscape(decisionBy || '—')}<br>
                     Date: ${approvalEscape(formatApprovalDateTime(decisionDate) || '—')}<br>
                     Remarks: ${approvalEscape(data.approval_remarks || 'No remarks entered.')}
                     ${renderApprovalSignatureSnapshot(data)}
@@ -5244,16 +5369,14 @@ Recipient count: ${recipientCount}` : ''),
             remarks.value = data.approval_remarks || '';
             remarks.readOnly = !isSubmitted;
             remarks.disabled = !isSubmitted;
-            remarks.placeholder = isSubmitted ? 'Optional for approval. Required for rejection.' : 'Manager remarks';
+            remarks.placeholder = isSubmitted ? getApprovalModuleCopy('reimbursement').pendingRemarks : 'Approver remarks';
         }
     }
 
     async function openReimbursementApprovalDetail(reimbursementId) {
         if (!reimbursementId) return;
-        const backdrop = document.getElementById('approvalModalBackdrop');
+        const loadToken = beginApprovalModalLoad('reimbursement');
         const body = document.getElementById('approvalDetailBody');
-        if (backdrop) backdrop.style.display = 'flex';
-        if (body) body.innerHTML = '<div class="approval-empty">Loading reimbursement details...</div>';
         selectedApprovalModule = 'reimbursement';
         selectedApprovalReimbursementId = reimbursementId;
         selectedApprovalTravelRequestId = null;
@@ -5277,10 +5400,11 @@ Recipient count: ${recipientCount}` : ''),
                 console.warn('[Approvals] Audit trail unavailable', auditError);
                 reimbursementData.audit_trail = payload.audit_trail || [];
             }
+            if (!approvalModalLoadIsCurrent(loadToken, 'reimbursement')) return;
             renderReimbursementApprovalDetail(reimbursementData);
         } catch (error) {
             console.error(error);
-            if (body) body.innerHTML = `<div class="approval-empty">${approvalEscape(error.message || 'Unable to load reimbursement details.')}</div>`;
+            showApprovalModalLoadError(loadToken, 'reimbursement', error, 'Unable to load Reimbursement details.');
         }
     }
 
@@ -5325,13 +5449,13 @@ Recipient count: ${recipientCount}` : ''),
         if (!selectedApprovalReimbursementId) return;
         const remarks = (document.getElementById('approvalRemarks')?.value || '').trim();
         if (!remarks) {
-            approvalAlert('Please enter rejection remarks before returning this reimbursement.');
+            approvalAlert('Please enter return remarks before returning this Reimbursement.');
             return;
         }
         const shouldReject = await approvalConfirmDialog({
             title: 'Return Reimbursement?',
-            message: 'This will reject/return the reimbursement to the requester for correction.',
-            confirmText: 'Reject / Return',
+            message: 'This will return the Reimbursement to the requester for correction.',
+            confirmText: 'Return for Correction',
             cancelText: 'Cancel',
             tone: 'danger',
             icon: 'rotate-left'
@@ -5350,15 +5474,15 @@ Recipient count: ${recipientCount}` : ''),
                 },
                 body: JSON.stringify({ remarks })
             });
-            const payload = await parseApprovalJsonResponseWithPayload(res, 'Unable to reject reimbursement.');
-            approvalAlert(payload.message || 'Reimbursement rejected.');
+            const payload = await parseApprovalJsonResponseWithPayload(res, 'Unable to return Reimbursement.');
+            approvalAlert(payload.message || 'Reimbursement returned for correction.');
             closeReimbursementApprovalModal();
             await refreshAllApprovalCenterLists();
             await loadApprovalNotifications();
         } catch (error) {
             console.error(error);
             if (error?.payload?.requires_signature || error?.payload?.signature_required) { showApprovalSignatureRequiredPrompt(error); return; }
-            approvalAlert(error.message || 'Unable to reject reimbursement.');
+            approvalAlert(error.message || 'Unable to return Reimbursement.');
         }
     }
 
@@ -5590,7 +5714,7 @@ async function dismissApprovalNotification(event, notificationId) {
     function lprApprovalStatusLabel(status) {
         const normalized = String(status || '').toLowerCase();
         if (normalized === 'approved') return 'Approved';
-        if (normalized === 'rejected') return 'Rejected / Returned';
+        if (normalized === 'rejected') return 'Returned for Correction';
         return 'Submitted';
     }
 
@@ -5638,18 +5762,17 @@ async function dismissApprovalNotification(event, notificationId) {
 
     async function openLeaveApprovalDetail(leaveId) {
         if (!leaveId) return;
-        const backdrop = document.getElementById('approvalModalBackdrop');
+        const loadToken = beginApprovalModalLoad('leave_request');
         const body = document.getElementById('approvalDetailBody');
-        if (backdrop) backdrop.style.display = 'flex';
-        if (body) body.innerHTML = '<div class="approval-empty">Loading Leave Request...</div>';
         selectedApprovalModule = 'leave_request';
         selectedApprovalLeaveId = Number(leaveId);
         selectedApprovalLprId = null;
         try {
             const response = await fetch(`/api/leave-requests/${leaveId}?_=${Date.now()}`, {credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
             const payload = await parseApprovalJsonResponse(response, 'Unable to load Leave Request.');
+            if (!approvalModalLoadIsCurrent(loadToken, 'leave_request')) return;
             renderLeaveApprovalDetail(payload.leave_request || {});
-        } catch(error) { if(body) body.innerHTML=`<div class="approval-empty">${approvalEscape(error.message||'Unable to load Leave Request.')}</div>`; }
+        } catch(error) { showApprovalModalLoadError(loadToken, 'leave_request', error, 'Unable to load Leave Request details.'); }
     }
     window.openLeaveApprovalDetail = openLeaveApprovalDetail;
 
@@ -5660,6 +5783,7 @@ async function dismissApprovalNotification(event, notificationId) {
         if(title)title.textContent=`Review ${data.request_no||'Leave Request'}`;
         if(subtitle)subtitle.textContent=`${data.requester_name||'Employee'} • ${data.leave_type||''}`;
         if(approveBtn)approveBtn.style.display=submitted?'':'none'; if(rejectBtn)rejectBtn.style.display=submitted?'':'none';
+        applyApprovalModuleWording('leave_request', submitted);
         if(!body)return;
         const attachmentLinks=(data.attachments||[]).map(item=>`<a class="approval-btn approval-btn-secondary" href="${approvalEscape(item.preview_url||'#')}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip me-1"></i>${approvalEscape(item.filename||'Attachment')}</a>`).join('')||'<div class="approval-muted">No supporting attachments.</div>';
         body.innerHTML=`<div class="approval-detail-grid"><div class="approval-stat"><small>Request No.</small><strong>${approvalEscape(data.request_no||'')}</strong></div><div class="approval-stat"><small>Employee</small><strong>${approvalEscape(data.requester_name||'')}</strong></div><div class="approval-stat"><small>Leave Type</small><strong>${approvalEscape(data.leave_type||'')}</strong></div><div class="approval-stat"><small>Status</small><strong>${approvalEscape(data.status||'')}</strong></div></div>
@@ -5667,7 +5791,7 @@ async function dismissApprovalNotification(event, notificationId) {
         <div class="approval-modal-panel full"><h3>Reason</h3><div>${approvalEscape(data.reason||'Not provided')}</div>${data.verbal_approval_notes?`<div class="approval-muted" style="margin-top:8px"><strong>Verbal / Chat Details:</strong> ${approvalEscape(data.verbal_approval_notes)}</div>`:''}</div>
         <div class="approval-modal-panel full"><h3>Supporting Attachments</h3><div style="display:flex;gap:8px;flex-wrap:wrap">${attachmentLinks}</div></div>
         <div class="approval-actions" style="justify-content:flex-start"><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.preview_url||'#')}" target="_blank" rel="noopener"><i class="fa-solid fa-eye me-1"></i>Preview Leave Form</a><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.download_url||'#')}"><i class="fa-solid fa-download me-1"></i>Download</a></div>`;
-        const remarks=document.getElementById('approvalRemarks');if(remarks){remarks.value=data.approval_remarks||'';remarks.readOnly=!submitted;remarks.disabled=!submitted;remarks.placeholder=submitted?'Optional for approval. Required for rejection.':'Manager remarks';}
+        const remarks=document.getElementById('approvalRemarks');if(remarks){remarks.value=data.approval_remarks||'';remarks.readOnly=!submitted;remarks.disabled=!submitted;remarks.placeholder=submitted?getApprovalModuleCopy('leave_request').pendingRemarks:'Approver remarks';}
     }
 
     async function approveSelectedLeave(){
@@ -5688,10 +5812,8 @@ async function dismissApprovalNotification(event, notificationId) {
 
     async function openLprApprovalDetail(lprId) {
         if (!lprId) return;
-        const backdrop = document.getElementById('approvalModalBackdrop');
+        const loadToken = beginApprovalModalLoad('lpr');
         const body = document.getElementById('approvalDetailBody');
-        if (backdrop) backdrop.style.display = 'flex';
-        if (body) body.innerHTML = '<div class="approval-empty">Loading LPR details...</div>';
         selectedApprovalModule = 'lpr';
         selectedApprovalLprId = Number(lprId);
         selectedApprovalReimbursementId = null;
@@ -5702,9 +5824,10 @@ async function dismissApprovalNotification(event, notificationId) {
         try {
             const response = await fetch(`/get_lpr_approval_detail/${encodeURIComponent(lprId)}?_=${Date.now()}`, {credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}});
             const payload = await parseApprovalJsonResponse(response, 'Unable to load LPR details.');
+            if (!approvalModalLoadIsCurrent(loadToken, 'lpr')) return;
             renderLprApprovalDetail(payload.lpr || {});
         } catch (error) {
-            if (body) body.innerHTML = `<div class="approval-empty">${approvalEscape(error.message || 'Unable to load LPR details.')}</div>`;
+            showApprovalModalLoadError(loadToken, 'lpr', error, 'Unable to load LPR details.');
         }
     }
     window.openLprApprovalDetail = openLprApprovalDetail;
@@ -5721,6 +5844,7 @@ async function dismissApprovalNotification(event, notificationId) {
         if (subtitle) subtitle.textContent = `${data.requester_name || 'Requester'} • ${data.intended_for || 'Local purchase requisition'}`;
         if (approveBtn) approveBtn.style.display = submitted ? '' : 'none';
         if (rejectBtn) rejectBtn.style.display = submitted ? '' : 'none';
+        applyApprovalModuleWording('lpr', submitted);
         updateApprovalResendButton(data);
         const rows = (data.items || []).map(item => `<tr><td>${Number(item.row_index || 0) + 1}</td><td>${approvalEscape(item.description || '')}</td><td>${approvalEscape(item.quantity || '')}</td><td>${approvalEscape(item.unit_measure || '')}</td><td style="text-align:right">PHP ${formatMoney(item.unit_price || 0)}</td><td style="text-align:right">PHP ${formatMoney(item.line_total || 0)}</td><td>${approvalEscape(item.note || '')}</td></tr>`).join('') || '<tr><td colspan="7" class="approval-empty">No items found.</td></tr>';
         body.innerHTML = `<div class="approval-detail-grid">
@@ -5735,7 +5859,7 @@ async function dismissApprovalNotification(event, notificationId) {
         <div class="approval-actions" style="justify-content:flex-start"><a class="approval-btn approval-btn-secondary" href="/preview_lpr/${Number(data.id)}" target="_blank" rel="noopener"><i class="fa-solid fa-eye me-1"></i>Preview LPR</a><a class="approval-btn approval-btn-secondary" href="/download_lpr/${Number(data.id)}"><i class="fa-solid fa-download me-1"></i>Download LPR</a></div>
         ${renderApprovalAuditTrail(data.audit_trail || [], 'lpr', data.id)}`;
         const remarks = document.getElementById('approvalRemarks');
-        if (remarks) { remarks.value = data.approval_remarks || ''; remarks.readOnly = !submitted; remarks.disabled = !submitted; remarks.placeholder = submitted ? 'Optional for approval. Required for return.' : 'Manager remarks'; }
+        if (remarks) { remarks.value = data.approval_remarks || ''; remarks.readOnly = !submitted; remarks.disabled = !submitted; remarks.placeholder = submitted ? getApprovalModuleCopy('lpr').pendingRemarks : 'Approver remarks'; }
     }
 
     window.approveSelectedLpr = async function () {
@@ -5785,6 +5909,7 @@ async function dismissApprovalNotification(event, notificationId) {
         const result = {};
         for (const module of modules) { result[module] = {}; for (const status of statuses) { try { const response=await fetch(`/get_approval_center_items?module=${module}&status=${status}&_=${Date.now()}`,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}); const payload=await parseApprovalJsonResponse(response,`Unable to load ${module}.`); result[module][status]=payload.items||[]; } catch(error) { console.error('[Approvals] module load failed',module,status,error); result[module][status]=[]; } } }
         const lprPending = document.getElementById('approvalLprPendingCount'); if (lprPending) lprPending.textContent=String(result.lpr.Submitted.length);
+        const leavePending = document.getElementById('approvalLeavePendingCount'); if (leavePending) leavePending.textContent=String(result.leave_request.Submitted.length);
         const countMap = {reimbursement:'approvalReimbursementPendingCount', travel_request:'approvalTravelPendingCount', travel_liquidation:'approvalLiquidationPendingCount', cash_advance:'approvalCashAdvancePendingCount', cash_advance_liquidation:'approvalCashAdvanceLiquidationPendingCount'};
         Object.entries(countMap).forEach(([module,id])=>{const el=document.getElementById(id);if(el)el.textContent=String(result[module].Submitted.length);});
         const pending = [], approved = [], rejected = [];

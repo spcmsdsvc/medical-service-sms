@@ -1,6 +1,16 @@
 # Project Change Log
 
 codex changes - 2026-07-28
+- Replaced the Approval Center's Reimbursement-specific default modal heading with a neutral request-review state so failed Travel Request, Liquidation, Cash Advance, LPR, and Leave Request loads cannot display stale Reimbursement wording.
+- Added centralized module-specific Approval Center wording for Reimbursement, Travel Request, Travel Liquidation, Cash Advance, Cash Advance Liquidation, LPR, and Leave Request.
+- Added a modal load sequence guard that ignores stale asynchronous responses when approvers switch quickly between request cards or modules.
+- Added module-specific failure headings and subtitles so authorization or loading errors identify the request type that actually failed.
+- Standardized correction workflows on `Return for Correction` or `Return for Revision`, while preserving `Reject` specifically for Leave Requests.
+- Renamed shared `Manager Remarks` wording to `Approver Remarks` and aligned each remarks placeholder with its module's Return or Reject behavior.
+- Replaced ambiguous `Liquidation` and `CA Liquidation` labels with `Travel Liquidation` and `Cash Advance Liquidation`.
+- Updated Approval Center queue and history descriptions to include every active workflow, and added Leave Request to the Active Modules summary.
+- Updated Reimbursement review headings to use the request number when available instead of displaying only the database record ID.
+- Added Approval Center wording regression tests, a What's New entry, and a service-worker cache bump for immediate frontend delivery.
 - Added Full Day and Half Day duration controls to Leave Request, with a required AM or PM selection for half-day requests.
 - Restricted half-day Leave Requests to one weekday and synchronized the From and To dates automatically in the form and backend validation.
 - Added additive `duration_type` and `half_day_period` Leave Request fields while preserving the existing integer weekday count for historical compatibility.
