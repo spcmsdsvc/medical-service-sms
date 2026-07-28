@@ -978,7 +978,7 @@ function renderLeaveRequestRows(items){
         <td>${esc(item.requester_name || '')}</td>
         <td>${esc(item.date_range || '')}</td>
         <td>${esc(item.leave_type || '')}</td>
-        <td>${Number(item.weekday_count || 0)} day(s)</td>
+        <td>${esc(item.duration_label || `${Number(item.weekday_count || 0)} day(s)`)}</td>
         <td><span class="status-badge ${statusClass(item.status)}">${esc(item.status || '')}</span></td>
         <td>${esc(item.hr_email_status || '—')}</td>
         <td><a class="btn btn-sm btn-outline-primary fw-bold" href="/leave_request?open=${Number(item.id)||0}"><i class="fa-solid fa-folder-open me-1"></i>Open</a></td>

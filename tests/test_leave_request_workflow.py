@@ -102,6 +102,49 @@ class LeaveRequestSourceTests(unittest.TestCase):
         self.assertIn("'Leave Request': {'icon': 'fa-calendar-minus'", self.app_source)
         self.assertIn("if 'leave request' in text or 'form to follow' in text or 'lr-' in text", self.app_source)
 
+    def test_half_day_schema_and_validation_are_additive(self):
+        for marker in (
+            "duration_type = db.Column(db.String(20), default='full_day', nullable=False)",
+            "half_day_period = db.Column(db.String(2), nullable=True)",
+            "ALTER TABLE leave_request ADD COLUMN duration_type",
+            "ALTER TABLE leave_request ADD COLUMN half_day_period",
+            "Half-day leave must use the same From and To date.",
+            "Select AM or PM for a half-day leave.",
+        ):
+            self.assertIn(marker, self.feature_source)
+
+    def test_half_day_calendar_and_conflict_intervals(self):
+        for marker in (
+            "datetime.strptime('08:00', '%H:%M').time(), datetime.strptime('12:00', '%H:%M').time()",
+            "datetime.strptime('13:00', '%H:%M').time(), datetime.strptime('17:00', '%H:%M').time()",
+            "shift.start_time < request_end and shift.end_time > request_start",
+            "request_start_time < row_end_time and request_end_time > row_start_time",
+            "Half Day - {period}",
+        ):
+            self.assertIn(marker, self.feature_source)
+
+    def test_half_day_pdf_email_and_ui_output(self):
+        for marker in (
+            '0.5 Day (',
+            "'weekday_count': effective_day_count(header)",
+            "'duration_label': duration_label(header)",
+        ):
+            self.assertIn(marker, self.feature_source)
+        for marker in (
+            'leaveDurationHalf',
+            'leavePeriodAM',
+            'leavePeriodPM',
+            '0.5 day',
+            'duration_label',
+        ):
+            self.assertIn(marker, self.page_source)
+        self.assertIn('duration_label', self.approval_source)
+
+    def test_release_manifest_contains_half_day_leave(self):
+        manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
+        release = next(item for item in manifest['releases'] if item['release_key'] == '2026-07-28')
+        self.assertTrue(any(item['item_key'] == '2026-07-28-half-day-leave' for item in release['items']))
+
 
 if __name__ == '__main__':
     unittest.main()

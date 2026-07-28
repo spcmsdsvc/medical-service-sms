@@ -179,6 +179,16 @@
       "items": [
         {"item_key": "2026-07-23-schedule-product-coverage", "category": "Calendar", "description": "Add/Edit Schedule now shows each selected product's current warranty or contract status without requiring a separate visit to the Products page.", "audiences": ["engineers", "admins"], "sort_order": 10}
       ]
+    },
+    {
+      "release_key": "2026-07-28",
+      "release_date": "2026-07-28",
+      "title": "Half-Day Leave Requests",
+      "summary": "Employees can now request AM or PM half-day leave with accurate Calendar availability and HR forms.",
+      "is_published": true,
+      "items": [
+        {"item_key": "2026-07-28-half-day-leave", "category": "Field Operations", "description": "Leave Requests now support 0.5-day AM or PM periods for every leave type, with time-aware conflict checks, Calendar blocks, approvals, and HR form output.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10}
+      ]
     }
   ]
 }

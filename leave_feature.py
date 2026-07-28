@@ -20,6 +20,8 @@ from sqlalchemy import inspect, text, or_
 
 
 LEAVE_TYPES = ('Vacation Leave', 'Sick Leave', 'Maternity Leave', 'Leave Without Pay')
+LEAVE_DURATION_TYPES = {'full_day', 'half_day'}
+LEAVE_HALF_DAY_PERIODS = {'AM', 'PM'}
 EDITABLE_STATUSES = {'Draft', 'Form to Follow', 'Rejected'}
 ACTIVE_CONFLICT_STATUSES = {'Submitted', 'Approved'}
 MAX_ATTACHMENTS = 10
@@ -76,6 +78,8 @@ def register_leave_feature(ctx):
         start_date = db.Column(db.Date, nullable=False, index=True)
         end_date = db.Column(db.Date, nullable=False, index=True)
         weekday_count = db.Column(db.Integer, default=0, nullable=False)
+        duration_type = db.Column(db.String(20), default='full_day', nullable=False)
+        half_day_period = db.Column(db.String(2), nullable=True)
         reason = db.Column(db.Text, nullable=True)
         emergency_form_to_follow = db.Column(db.Boolean, default=False, nullable=False, index=True)
         verbal_approval_notes = db.Column(db.Text, nullable=True)
@@ -144,6 +148,13 @@ def register_leave_feature(ctx):
             return
         db.create_all()
         inspector = inspect(db.engine)
+        leave_columns = {column['name'] for column in inspector.get_columns('leave_request')}
+        if 'duration_type' not in leave_columns:
+            db.session.execute(text("ALTER TABLE leave_request ADD COLUMN duration_type VARCHAR(20) DEFAULT 'full_day' NOT NULL"))
+            db.session.commit()
+        if 'half_day_period' not in leave_columns:
+            db.session.execute(text('ALTER TABLE leave_request ADD COLUMN half_day_period VARCHAR(2)'))
+            db.session.commit()
         shift_columns = {column['name'] for column in inspector.get_columns('shift')}
         if 'leave_request_id' not in shift_columns:
             db.session.execute(text('ALTER TABLE shift ADD COLUMN leave_request_id INTEGER'))
@@ -187,6 +198,42 @@ def register_leave_feature(ctx):
                 result.append(current)
             current += timedelta(days=1)
         return result
+
+    def normalized_duration(duration_type=None, half_day_period=None):
+        duration = (clean_str(duration_type) or 'full_day').lower()
+        period = (clean_str(half_day_period) or '').upper()
+        if duration not in LEAVE_DURATION_TYPES:
+            raise ValueError('Select Full Day or Half Day.')
+        if duration == 'half_day':
+            if period not in LEAVE_HALF_DAY_PERIODS:
+                raise ValueError('Select AM or PM for a half-day leave.')
+            return duration, period
+        return 'full_day', None
+
+    def header_duration(header):
+        return normalized_duration(
+            getattr(header, 'duration_type', None) or 'full_day',
+            getattr(header, 'half_day_period', None),
+        )
+
+    def effective_day_count(header):
+        duration, _period = header_duration(header)
+        return 0.5 if duration == 'half_day' else int(header.weekday_count or 0)
+
+    def duration_label(header):
+        duration, period = header_duration(header)
+        if duration == 'half_day':
+            return f'0.5 day ({period})'
+        count = int(header.weekday_count or 0)
+        return f"{count} day{'s' if count != 1 else ''}"
+
+    def leave_time_range(duration_type='full_day', half_day_period=None):
+        duration, period = normalized_duration(duration_type, half_day_period)
+        if duration == 'half_day' and period == 'AM':
+            return datetime.strptime('08:00', '%H:%M').time(), datetime.strptime('12:00', '%H:%M').time()
+        if duration == 'half_day' and period == 'PM':
+            return datetime.strptime('13:00', '%H:%M').time(), datetime.strptime('17:00', '%H:%M').time()
+        return datetime.strptime('08:00', '%H:%M').time(), datetime.strptime('17:00', '%H:%M').time()
 
     def requester_name(header):
         if clean_str(header.requester_name_snapshot):
@@ -269,7 +316,11 @@ def register_leave_feature(ctx):
             'start_date': header.start_date.isoformat(),
             'end_date': header.end_date.isoformat(),
             'date_range': header.start_date.strftime('%b %d, %Y') if header.start_date == header.end_date else f"{header.start_date.strftime('%b %d, %Y')} - {header.end_date.strftime('%b %d, %Y')}",
-            'weekday_count': int(header.weekday_count or 0),
+            'weekday_count': effective_day_count(header),
+            'calendar_weekday_count': int(header.weekday_count or 0),
+            'duration_type': header_duration(header)[0],
+            'half_day_period': header_duration(header)[1] or '',
+            'duration_label': duration_label(header),
             'reason': header.reason or '',
             'emergency_form_to_follow': bool(header.emergency_form_to_follow),
             'verbal_approval_notes': header.verbal_approval_notes or '',
@@ -302,15 +353,22 @@ def register_leave_feature(ctx):
         direct = [row.id for row in Shift.query.filter(or_(Shift.engineer_id == engineer_id, Shift.override_engineer_id == engineer_id)).all()]
         return set(linked + direct)
 
-    def conflicts(engineer_id, start_date, end_date, exclude_leave_id=None):
+    def conflicts(engineer_id, start_date, end_date, exclude_leave_id=None, duration_type='full_day', half_day_period=None):
         dates = weekdays(start_date, end_date)
         if not dates:
             return {'blocking_schedules': [], 'overlapping_leave_requests': []}
+        request_start_time, request_end_time = leave_time_range(duration_type, half_day_period)
         shift_ids = assigned_shift_ids(engineer_id)
         schedules = []
         if shift_ids:
             for shift in Shift.query.filter(Shift.id.in_(shift_ids)).filter(Shift.start_time >= datetime.combine(dates[0], datetime.min.time())).filter(Shift.start_time < datetime.combine(dates[-1] + timedelta(days=1), datetime.min.time())).all():
                 if exclude_leave_id and clean_int(getattr(shift, 'leave_request_id', None)) == exclude_leave_id:
+                    continue
+                if shift.start_time.date() not in dates:
+                    continue
+                request_start = datetime.combine(shift.start_time.date(), request_start_time)
+                request_end = datetime.combine(shift.start_time.date(), request_end_time)
+                if not (shift.start_time < request_end and shift.end_time > request_start):
                     continue
                 schedules.append({
                     'id': shift.id,
@@ -321,7 +379,22 @@ def register_leave_feature(ctx):
         query = LeaveRequest.query.filter_by(engineer_id=engineer_id).filter(LeaveRequest.status.in_(ACTIVE_CONFLICT_STATUSES)).filter(LeaveRequest.start_date <= end_date).filter(LeaveRequest.end_date >= start_date)
         if exclude_leave_id:
             query = query.filter(LeaveRequest.id != exclude_leave_id)
-        overlaps = [{'id': row.id, 'request_no': row.request_no, 'date_range': f'{row.start_date.isoformat()} to {row.end_date.isoformat()}', 'status': row.status} for row in query.all()]
+        overlaps = []
+        requested_dates = set(dates)
+        for row in query.all():
+            shared_dates = requested_dates.intersection(weekdays(row.start_date, row.end_date))
+            if not shared_dates:
+                continue
+            row_duration, row_period = header_duration(row)
+            row_start_time, row_end_time = leave_time_range(row_duration, row_period)
+            if request_start_time < row_end_time and request_end_time > row_start_time:
+                overlaps.append({
+                    'id': row.id,
+                    'request_no': row.request_no,
+                    'date_range': f'{row.start_date.isoformat()} to {row.end_date.isoformat()}',
+                    'status': row.status,
+                    'duration_label': duration_label(row),
+                })
         return {'blocking_schedules': schedules, 'overlapping_leave_requests': overlaps}
 
     def update_calendar(header, state):
@@ -336,13 +409,16 @@ def register_leave_feature(ctx):
             'Approved': 'Approved',
             'Unapproved / Rejected': 'Unapproved / Rejected',
         }
+        duration, period = header_duration(header)
+        start_time, end_time = leave_time_range(duration, period)
+        calendar_title = header.leave_type if duration == 'full_day' else f'{header.leave_type} (Half Day - {period})'
         for leave_date in expected_dates:
-            start_at = datetime.combine(leave_date, datetime.strptime('08:00', '%H:%M').time())
-            end_at = datetime.combine(leave_date, datetime.strptime('17:00', '%H:%M').time())
+            start_at = datetime.combine(leave_date, start_time)
+            end_at = datetime.combine(leave_date, end_time)
             row = existing.get(leave_date)
             if not row:
                 row = Shift(
-                    title=header.leave_type,
+                    title=calendar_title,
                     start_time=start_at,
                     end_time=end_at,
                     engineer_id=header.engineer_id,
@@ -356,7 +432,7 @@ def register_leave_feature(ctx):
                 db.session.flush()
                 db.session.add(ShiftEngineer(shift_id=row.id, engineer_id=header.engineer_id))
             else:
-                row.title = header.leave_type
+                row.title = calendar_title
                 row.start_time = start_at
                 row.end_time = end_at
                 row.status = status_map.get(state, state)
@@ -380,6 +456,12 @@ def register_leave_feature(ctx):
         leave_days = weekdays(start_date, end_date)
         if not leave_days:
             raise ValueError('The selected range contains no weekdays.')
+        duration, period = normalized_duration(payload.get('duration_type'), payload.get('half_day_period'))
+        if duration == 'half_day':
+            if start_date != end_date:
+                raise ValueError('Half-day leave must use the same From and To date.')
+            if len(leave_days) != 1:
+                raise ValueError('Half-day leave must be scheduled on one weekday.')
         emergency = bool(payload.get('emergency_form_to_follow'))
         if emergency and leave_type != 'Sick Leave':
             raise ValueError('Form to Follow is available only for Sick Leave.')
@@ -387,6 +469,8 @@ def register_leave_feature(ctx):
         header.start_date = start_date
         header.end_date = end_date
         header.weekday_count = len(leave_days)
+        header.duration_type = duration
+        header.half_day_period = period
         header.reason = clean_str(payload.get('reason')) or ''
         header.emergency_form_to_follow = emergency
         header.verbal_approval_notes = clean_str(payload.get('verbal_approval_notes')) or ''
@@ -427,7 +511,7 @@ def register_leave_feature(ctx):
             'Name': requester_name(header),
             'From': header.start_date.strftime('%m/%d/%Y'),
             'to': header.end_date.strftime('%m/%d/%Y'),
-            'Inclusive': str(header.weekday_count),
+            'Inclusive': f"0.5 Day ({header_duration(header)[1]})" if header_duration(header)[0] == 'half_day' else str(header.weekday_count),
             'Textfield': (header.reason or '')[:120],
             'Textfield1': (header.reason or '')[120:260],
             'Textfield-0': '',
@@ -504,7 +588,7 @@ def register_leave_feature(ctx):
             'requester': requester_name(header),
             'leave_type': header.leave_type,
             'date_range': f'{header.start_date.isoformat()} to {header.end_date.isoformat()}',
-            'weekday_count': header.weekday_count,
+            'weekday_count': effective_day_count(header),
             'approved_by': header.approval_name_snapshot or '',
         })
 
@@ -648,6 +732,10 @@ def register_leave_feature(ctx):
             audit(header, 'draft_created')
         try:
             apply_payload(header, payload)
+            if header.status == 'Form to Follow':
+                update_calendar(header, 'Form to Follow')
+            elif header.status == 'Rejected' and header.emergency_form_to_follow:
+                update_calendar(header, 'Unapproved / Rejected')
             audit(header, 'draft_saved')
             db.session.add(ActivityLog(user=current_user.username, action=f'Leave Request Draft Saved: {header.request_no}'))
             db.session.commit()
@@ -671,7 +759,13 @@ def register_leave_feature(ctx):
         end_date = parse_date(payload.get('end_date'))
         if not engineer_id or not start_date or not end_date:
             return jsonify({'success': False, 'error': 'Employee and leave dates are required.'}), 400
-        result = conflicts(engineer_id, start_date, end_date, header.id if header else None)
+        try:
+            duration, period = normalized_duration(payload.get('duration_type'), payload.get('half_day_period'))
+            if duration == 'half_day' and (start_date != end_date or len(weekdays(start_date, end_date)) != 1):
+                raise ValueError('Half-day leave must use one weekday for both From and To.')
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        result = conflicts(engineer_id, start_date, end_date, header.id if header else None, duration, period)
         result['success'] = True
         result['has_conflicts'] = bool(result['blocking_schedules'] or result['overlapping_leave_requests'])
         return jsonify(result)
@@ -684,7 +778,8 @@ def register_leave_feature(ctx):
             return jsonify({'success': False, 'error': 'Editable Leave Request not found.'}), 404
         if header.leave_type != 'Sick Leave':
             return jsonify({'success': False, 'error': 'Form to Follow is available only for Sick Leave.'}), 400
-        result = conflicts(header.engineer_id, header.start_date, header.end_date, header.id)
+        duration, period = header_duration(header)
+        result = conflicts(header.engineer_id, header.start_date, header.end_date, header.id, duration, period)
         if result['blocking_schedules'] or result['overlapping_leave_requests']:
             return jsonify({'success': False, 'error': 'The requested dates conflict with an existing commitment.', **result}), 409
         header.emergency_form_to_follow = True
@@ -711,7 +806,8 @@ def register_leave_feature(ctx):
             return jsonify({'success': False, 'error': 'Only the employee can formally submit and sign this Leave Request.'}), 403
         if not signature:
             return jsonify({'success': False, 'error': 'Your saved signature is required. Add it in Settings before submitting.', 'requires_signature': True}), 400
-        result = conflicts(header.engineer_id, header.start_date, header.end_date, header.id)
+        duration, period = header_duration(header)
+        result = conflicts(header.engineer_id, header.start_date, header.end_date, header.id, duration, period)
         if result['blocking_schedules'] or result['overlapping_leave_requests']:
             return jsonify({'success': False, 'error': 'Submission blocked by an existing Calendar commitment or active Leave Request.', **result}), 409
         approvers = get_assigned_approvers_for_requester(header.user_id, 'leave_request')
@@ -759,7 +855,8 @@ def register_leave_feature(ctx):
         signature = get_user_signature_snapshot(current_user)
         if not signature:
             return jsonify({'success': False, 'error': 'Your saved signature is required before approval.', 'requires_signature': True}), 400
-        result = conflicts(header.engineer_id, header.start_date, header.end_date, header.id)
+        duration, period = header_duration(header)
+        result = conflicts(header.engineer_id, header.start_date, header.end_date, header.id, duration, period)
         if result['blocking_schedules'] or result['overlapping_leave_requests']:
             return jsonify({'success': False, 'error': 'Approval blocked because a new Calendar conflict was found.', **result}), 409
         payload = request.get_json(silent=True) or {}
