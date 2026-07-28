@@ -13966,7 +13966,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v41-row-deletion';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v42-reimbursement-range-reuse';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -21301,7 +21301,7 @@ def reimbursement_rfp_filename(header, engineer_name=''):
 
 
 def reimbursement_find_header(start_date, end_date, create=False):
-    """Find or optionally create the current user's reimbursement header for a date range."""
+    """Legacy range lookup for callers that do not yet carry a record ID."""
     profile = reimbursement_get_personal_profile()
     if not profile:
         return None
@@ -21333,6 +21333,118 @@ def reimbursement_find_header(start_date, end_date, create=False):
     return header
 
 
+def reimbursement_find_editable_header(start_date, end_date):
+    """Find the latest editable reimbursement for a range, never a locked record."""
+    profile = reimbursement_get_personal_profile()
+    if not profile:
+        return None
+
+    normalized_status = func.lower(func.trim(func.coalesce(ReimbursementHeader.status, 'Draft')))
+    return (
+        ReimbursementHeader.query
+        .filter(
+            ReimbursementHeader.user_id == current_user.id,
+            ReimbursementHeader.engineer_id == profile.id,
+            ReimbursementHeader.start_date == start_date,
+            ReimbursementHeader.end_date == end_date,
+            normalized_status.in_(['draft', 'rejected'])
+        )
+        .order_by(ReimbursementHeader.updated_at.desc(), ReimbursementHeader.id.desc())
+        .first()
+    )
+
+
+def reimbursement_find_owned_header_by_id(reimbursement_id, profile=None):
+    """Return an exact reimbursement only when it belongs to the current engineer."""
+    header_id = clean_int(reimbursement_id)
+    profile = profile or reimbursement_get_personal_profile()
+    if not header_id or not profile:
+        return None
+
+    header = db.session.get(ReimbursementHeader, header_id)
+    if (
+        not header or
+        header.user_id != current_user.id or
+        header.engineer_id != profile.id
+    ):
+        return None
+    return header
+
+
+def reimbursement_resolve_editable_header(start_date, end_date, reimbursement_id=None, create=False):
+    """Resolve the active editable record by ID or editable range discovery."""
+    profile = reimbursement_get_personal_profile()
+    if not profile:
+        return None
+
+    header_id = clean_int(reimbursement_id)
+    if header_id:
+        header = reimbursement_find_owned_header_by_id(header_id, profile=profile)
+        if not header:
+            return None
+        if header.start_date != start_date or header.end_date != end_date:
+            return None
+        return header
+
+    header = reimbursement_find_editable_header(start_date, end_date)
+    if header or not create:
+        return header
+
+    header = ReimbursementHeader(
+        user_id=current_user.id,
+        engineer_id=profile.id,
+        start_date=start_date,
+        end_date=end_date,
+        status='Draft'
+    )
+    db.session.add(header)
+    db.session.flush()
+    return header
+
+
+def reimbursement_claim_conflicts_for_rows(profile, rows, exclude_header_id=None):
+    """Return claimed schedule IDs that still carry amounts in the current worksheet."""
+    amount_shift_ids = {
+        clean_int(getattr(row, 'shift_id', None))
+        for row in (rows or [])
+        if clean_int(getattr(row, 'shift_id', None)) and reimbursement_row_has_claim_amount(row)
+    }
+    amount_shift_ids.discard(None)
+    if not amount_shift_ids:
+        return set()
+
+    row_dates = [getattr(row, 'row_date', None) for row in (rows or []) if getattr(row, 'row_date', None)]
+    if not row_dates:
+        return set()
+
+    claimed_scope = reimbursement_claimed_schedule_scope_for_user(
+        profile,
+        min(row_dates),
+        max(row_dates),
+        exclude_header_id=exclude_header_id
+    )
+    return amount_shift_ids.intersection(claimed_scope.get('shift_ids') or set())
+
+
+def reimbursement_lock_claim_schedules(rows):
+    """Serialize final claims for the same schedules on databases that support row locks."""
+    shift_ids = sorted({
+        clean_int(getattr(row, 'shift_id', None))
+        for row in (rows or [])
+        if clean_int(getattr(row, 'shift_id', None)) and reimbursement_row_has_claim_amount(row)
+    })
+    if not shift_ids:
+        return
+
+    (
+        db.session.query(Shift.id)
+        .filter(Shift.id.in_(shift_ids))
+        .order_by(Shift.id.asc())
+        .with_for_update()
+        .all()
+    )
+
+
 def reimbursement_shift_allowed_for_current_user(shift, profile, start_date=None, end_date=None):
     """Validate that a shift can be used on the current user's personal reimbursement."""
     if not shift or not profile:
@@ -21351,9 +21463,10 @@ def reimbursement_shift_allowed_for_current_user(shift, profile, start_date=None
 def reimbursement_claimed_schedule_scope_for_user(profile, start_date, end_date, exclude_header_id=None):
     """Return exact schedule rows already claimed by submitted/approved/paid reimbursements.
 
-    A submitted monthly worksheet may contain saved schedule rows with no
-    amount and no receipt. Date-level blocking is also too broad because one
-    claimed item on a day should not hide every other valid schedule on that day.
+    A submitted monthly worksheet may contain saved zero-value schedule rows.
+    Those rows and package/legacy row receipts do not claim a schedule. Date-level
+    blocking is also too broad because one claimed item on a day should not hide
+    every other valid schedule on that day.
     """
     if not profile or not start_date or not end_date:
         return {'shift_ids': set(), 'dates': set()}
@@ -21362,22 +21475,6 @@ def reimbursement_claimed_schedule_scope_for_user(profile, start_date, end_date,
         func.coalesce(getattr(ReimbursementRow, field), 0) > 0
         for field in REIMBURSEMENT_EXPENSE_FIELDS
     ]
-    receipt_claim_exists = (
-        db.session.query(ReimbursementReceipt.id)
-        .filter(ReimbursementReceipt.reimbursement_id == ReimbursementRow.reimbursement_id)
-        .filter(or_(
-            and_(
-                ReimbursementRow.shift_id.isnot(None),
-                ReimbursementReceipt.shift_id == ReimbursementRow.shift_id
-            ),
-            and_(
-                ReimbursementRow.shift_id.is_(None),
-                ReimbursementReceipt.shift_id == -ReimbursementRow.id
-            )
-        ))
-        .exists()
-    )
-
     query = (
         db.session.query(ReimbursementRow.shift_id, ReimbursementRow.row_date)
         .join(ReimbursementHeader, ReimbursementRow.reimbursement_id == ReimbursementHeader.id)
@@ -21388,8 +21485,7 @@ def reimbursement_claimed_schedule_scope_for_user(profile, start_date, end_date,
         .filter(func.lower(func.trim(ReimbursementHeader.status)).in_(['submitted', 'approved', 'paid']))
         .filter(or_(
             ReimbursementRow.row_total > 0,
-            *amount_claim_filters,
-            receipt_claim_exists
+            *amount_claim_filters
         ))
     )
     if clean_int(exclude_header_id):
@@ -21759,6 +21855,7 @@ def get_reimbursement_schedule_rows():
 
         rows = []
         excluded_dates_seen = set()
+        excluded_shift_ids_seen = set()
         row_warnings = []
         for shift in shifts:
             try:
@@ -21770,8 +21867,10 @@ def get_reimbursement_schedule_rows():
                     continue
 
                 shift_date = shift.start_time.date() if shift.start_time else None
-                if clean_int(getattr(shift, 'id', None)) in claimed_shift_ids:
+                shift_id = clean_int(getattr(shift, 'id', None))
+                if shift_id in claimed_shift_ids:
                     excluded_dates_seen.add(shift_date)
+                    excluded_shift_ids_seen.add(shift_id)
                     continue
 
                 row_engineers = [getattr(profile, 'name', '') or getattr(current_user, 'username', '') or '']
@@ -21789,13 +21888,15 @@ def get_reimbursement_schedule_rows():
             'success': True,
             'rows': rows,
             'count': len(rows),
+            'available_count': len(rows),
             'start': start_date.isoformat(),
             'end': end_date.isoformat(),
             'excluded_dates': excluded_date_labels,
-            'excluded_count': len(excluded_date_labels),
+            'excluded_date_count': len(excluded_date_labels),
+            'excluded_count': len(excluded_shift_ids_seen),
             'claimed_dates': claimed_date_labels,
             'claimed_date_count': len(claimed_date_labels),
-            'excluded_shift_ids': sorted(claimed_shift_ids),
+            'excluded_shift_ids': sorted(excluded_shift_ids_seen),
             'warnings': row_warnings,
             'warning_count': len(row_warnings),
             'scope': 'own',
@@ -22516,11 +22617,16 @@ def reimbursement_all_receipts_filename(header, engineer_name=''):
     return f"All_Receipts_{safe_name}_{period}.pdf"
 
 
-def reimbursement_find_owned_header_or_404(start_date, end_date, create=False):
+def reimbursement_find_owned_header_or_404(start_date, end_date, create=False, reimbursement_id=None):
     profile = reimbursement_get_personal_profile()
     if not profile:
         return None, jsonify({'success': False, 'error': 'Your account is not linked to an engineer profile.'}), 403
-    header = reimbursement_find_header(start_date, end_date, create=create)
+    header = reimbursement_resolve_editable_header(
+        start_date,
+        end_date,
+        reimbursement_id=reimbursement_id,
+        create=create
+    )
     if not header:
         return None, jsonify({'success': False, 'error': 'Reimbursement draft was not found.'}), 404
     if header.user_id != current_user.id or header.engineer_id != profile.id:
@@ -22532,16 +22638,7 @@ def reimbursement_find_owned_header_or_404(start_date, end_date, create=False):
 @app.route('/get_reimbursement_draft')
 @login_required
 def get_reimbursement_draft():
-    """Step 3: Reload a saved reimbursement draft/submission for the selected date range."""
-    try:
-        start_date = reimbursement_parse_date(request.args.get('start'), 'start')
-        end_date = reimbursement_parse_date(request.args.get('end'), 'end')
-    except ValueError as exc:
-        return jsonify({'success': False, 'error': str(exc)}), 400
-
-    if end_date < start_date:
-        return jsonify({'success': False, 'error': 'End date must be after start date'}), 400
-
+    """Reload an exact owned record or discover only editable work for a range."""
     profile = reimbursement_get_personal_profile()
     if not profile:
         return jsonify({
@@ -22552,7 +22649,25 @@ def get_reimbursement_draft():
             'message': 'No engineer profile linked to this account.'
         })
 
-    header = reimbursement_find_header(start_date, end_date, create=False)
+    header_id = clean_int(request.args.get('id') or request.args.get('reimbursement_id'))
+    header = reimbursement_find_owned_header_by_id(header_id, profile=profile) if header_id else None
+    if header_id and not header:
+        return jsonify({'success': False, 'error': 'Reimbursement record not found or access denied.'}), 404
+
+    if header:
+        start_date = header.start_date
+        end_date = header.end_date
+    else:
+        try:
+            start_date = reimbursement_parse_date(request.args.get('start'), 'start')
+            end_date = reimbursement_parse_date(request.args.get('end'), 'end')
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+
+        if end_date < start_date:
+            return jsonify({'success': False, 'error': 'End date must be after start date'}), 400
+        header = reimbursement_find_editable_header(start_date, end_date)
+
     if not header:
         return jsonify({
             'success': True,
@@ -22576,6 +22691,7 @@ def get_reimbursement_draft():
         'exists': True,
         'id': header.id,
         'status': header.status,
+        'opened_by_id': bool(header_id),
         'additional_receipts': receipts_by_shift.get('additional', []),
         'start': header.start_date.isoformat(),
         'end': header.end_date.isoformat(),
@@ -22738,9 +22854,18 @@ def save_reimbursement_draft():
         return jsonify({'success': False, 'error': 'Removed rows must be a list.'}), 400
 
     try:
-        header = reimbursement_find_header(start_date, end_date, create=True)
+        requested_header_id = clean_int(payload.get('id') or payload.get('reimbursement_id'))
+        header = reimbursement_resolve_editable_header(
+            start_date,
+            end_date,
+            reimbursement_id=requested_header_id,
+            create=True
+        )
         if not header:
-            return jsonify({'success': False, 'error': 'Unable to create reimbursement draft.'}), 400
+            return jsonify({
+                'success': False,
+                'error': 'Reimbursement draft was not found or its date range no longer matches. Reload schedules and try again.'
+            }), 404
 
         if not reimbursement_header_is_editable(header):
             return reimbursement_edit_lock_response(header, 'edited as draft')
@@ -22836,6 +22961,24 @@ def save_reimbursement_draft():
             }), 400
 
         db.session.flush()
+        saved_rows = ReimbursementRow.query.filter_by(reimbursement_id=header.id).all()
+        claimed_conflicts = reimbursement_claim_conflicts_for_rows(
+            profile,
+            saved_rows,
+            exclude_header_id=header.id
+        )
+        if claimed_conflicts:
+            db.session.rollback()
+            return jsonify({
+                'success': False,
+                'claim_conflict': True,
+                'conflicting_shift_ids': sorted(claimed_conflicts),
+                'error': (
+                    f"{len(claimed_conflicts)} schedule row(s) were already submitted in another reimbursement. "
+                    "Reload schedules to continue with the remaining unclaimed rows."
+                )
+            }), 409
+
         db.session.expire(header, ['rows'])
         reconciled_lpr_count = reconcile_reimbursement_linked_lpr_drafts(header)
 
@@ -22919,7 +23062,15 @@ def upload_reimbursement_receipt():
     )
     receipt_group_id = None
 
-    header, err_resp, err_code = reimbursement_find_owned_header_or_404(start_date, end_date, create=True)
+    requested_header_id = clean_int(
+        request.form.get('id') or request.form.get('reimbursement_id')
+    )
+    header, err_resp, err_code = reimbursement_find_owned_header_or_404(
+        start_date,
+        end_date,
+        create=True,
+        reimbursement_id=requested_header_id
+    )
     if err_resp:
         return err_resp, err_code
 
@@ -23049,6 +23200,7 @@ def upload_reimbursement_receipt():
             message = f'{len(saved)} receipt(s) uploaded.'
         return jsonify({
             'success': True,
+            'reimbursement_id': header.id,
             'receipts': receipt_dicts,
             'message': message,
             'uploaded_count': len(saved),
@@ -23067,13 +23219,7 @@ def upload_reimbursement_receipt():
 @app.route('/get_reimbursement_receipts')
 @login_required
 def get_reimbursement_receipts():
-    """Step 4: List receipts for a personal reimbursement date range."""
-    try:
-        start_date = reimbursement_parse_date(request.args.get('start'), 'start')
-        end_date = reimbursement_parse_date(request.args.get('end'), 'end')
-    except ValueError as exc:
-        return jsonify({'success': False, 'error': str(exc)}), 400
-
+    """List receipts for an exact owned reimbursement or editable range."""
     profile = reimbursement_get_personal_profile()
     if not profile:
         return jsonify({
@@ -23083,7 +23229,19 @@ def get_reimbursement_receipts():
             'all_receipts': []
         })
 
-    header = reimbursement_find_header(start_date, end_date, create=False)
+    header_id = clean_int(request.args.get('id') or request.args.get('reimbursement_id'))
+    if header_id:
+        header = reimbursement_find_owned_header_by_id(header_id, profile=profile)
+        if not header:
+            return jsonify({'success': False, 'error': 'Reimbursement record not found or access denied.'}), 404
+    else:
+        try:
+            start_date = reimbursement_parse_date(request.args.get('start'), 'start')
+            end_date = reimbursement_parse_date(request.args.get('end'), 'end')
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        header = reimbursement_find_editable_header(start_date, end_date)
+
     if not header:
         return jsonify({
             'success': True,
@@ -23355,7 +23513,16 @@ def delete_all_reimbursement_receipts():
         return jsonify({'success': False, 'error': str(exc)}), 400
 
     profile = reimbursement_get_personal_profile()
-    header = reimbursement_find_header(start_date, end_date, create=False) if profile else None
+    requested_header_id = clean_int(payload.get('id') or payload.get('reimbursement_id'))
+    header = (
+        reimbursement_resolve_editable_header(
+            start_date,
+            end_date,
+            reimbursement_id=requested_header_id,
+            create=False
+        )
+        if profile else None
+    )
     if not header or header.user_id != current_user.id or header.engineer_id != profile.id:
         return jsonify({'success': False, 'error': 'Reimbursement draft not found.'}), 404
     if not reimbursement_header_is_editable(header):
@@ -23728,7 +23895,13 @@ def clear_reimbursement_draft():
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
-    header, err_resp, err_code = reimbursement_find_owned_header_or_404(start_date, end_date, create=False)
+    requested_header_id = clean_int(payload.get('id') or payload.get('reimbursement_id'))
+    header, err_resp, err_code = reimbursement_find_owned_header_or_404(
+        start_date,
+        end_date,
+        create=False,
+        reimbursement_id=requested_header_id
+    )
     if err_resp:
         # Treat missing draft as already clear so the frontend can safely reset.
         if err_code == 404:
@@ -33419,7 +33592,13 @@ def submit_reimbursement():
         return jsonify({'success': False, 'error': 'Your account is not linked to an engineer profile.'}), 403
 
     try:
-        header = reimbursement_find_header(start_date, end_date, create=False)
+        requested_header_id = clean_int(payload.get('id') or payload.get('reimbursement_id'))
+        header = reimbursement_resolve_editable_header(
+            start_date,
+            end_date,
+            reimbursement_id=requested_header_id,
+            create=False
+        )
         if not header:
             print(f"[Reimbursement] Submit blocked: no draft for user={current_user.id} engineer={profile.id} range={start_date}..{end_date}", flush=True)
             return jsonify({'success': False, 'error': 'Please save a draft before submitting.'}), 404
@@ -33459,6 +33638,23 @@ def submit_reimbursement():
                 'excluded_zero_rows': 0,
                 'rows_submitted': 0
             }), 400
+
+        reimbursement_lock_claim_schedules(claim_rows)
+        claimed_conflicts = reimbursement_claim_conflicts_for_rows(
+            profile,
+            claim_rows,
+            exclude_header_id=header.id
+        )
+        if claimed_conflicts:
+            return jsonify({
+                'success': False,
+                'claim_conflict': True,
+                'conflicting_shift_ids': sorted(claimed_conflicts),
+                'error': (
+                    f"{len(claimed_conflicts)} schedule row(s) were already submitted in another reimbursement. "
+                    "Reload schedules and review the remaining unclaimed rows before submitting."
+                )
+            }), 409
 
         office_field_sources = reimbursement_lpr_sources(header)
         linked_lprs = linked_lpr_records('reimbursement', header.id)

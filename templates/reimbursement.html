@@ -2738,6 +2738,9 @@ function renderReimbursementRows(rows) {
         formData.append('start', start);
         formData.append('end', end);
         formData.append('additional_receipt', 'true');
+        if (currentReimbursementId) {
+            formData.append('reimbursement_id', String(currentReimbursementId));
+        }
 
         validation.files.forEach(function(file) {
             formData.append('receipt_files', file);
@@ -2764,6 +2767,10 @@ function renderReimbursementRows(rows) {
                 throw new Error(payload.error || 'Unable to upload receipt.');
             }
 
+            if (Number(payload.reimbursement_id || 0) > 0) {
+                currentReimbursementId = Number(payload.reimbursement_id);
+                window.currentReimbursementId = currentReimbursementId;
+            }
             await fetchReimbursementReceipts(start, end);
             setReimbursementDraftStatus(payload.message || 'Receipt uploaded.', 'ok');
             return true;
@@ -2789,6 +2796,9 @@ function renderReimbursementRows(rows) {
 
     async function fetchReimbursementReceipts(start, end) {
         const params = new URLSearchParams({ start, end });
+        if (currentReimbursementId) {
+            params.set('reimbursement_id', String(currentReimbursementId));
+        }
         const response = await fetch(`/get_reimbursement_receipts?${params.toString()}`, {
             credentials: 'same-origin',
             cache: 'no-store',
@@ -2844,6 +2854,9 @@ function renderReimbursementRows(rows) {
         const formData = new FormData();
         formData.append('start', start);
         formData.append('end', end);
+        if (currentReimbursementId) {
+            formData.append('reimbursement_id', String(currentReimbursementId));
+        }
 
         if (rowKey.indexOf('manual_') === 0) {
             formData.append('manual_row_id', rowKey.replace('manual_', ''));
@@ -2938,7 +2951,11 @@ function renderReimbursementRows(rows) {
                     'Accept': 'application/json',
                     'X-CSRFToken': getReimbursementCsrfToken()
                 },
-                body: JSON.stringify({ start, end })
+                body: JSON.stringify({
+                    start,
+                    end,
+                    reimbursement_id: currentReimbursementId || null
+                })
             });
             const payload = await response.json().catch(() => ({}));
             if (!response.ok || !payload.success) throw new Error(payload.error || 'Unable to delete receipts.');
@@ -3118,8 +3135,13 @@ function renderReimbursementRows(rows) {
         return sortReimbursementRows(merged.concat(unmatchedSavedRows, manualRows));
     }
 
-    async function fetchReimbursementDraft(start, end) {
-        const params = new URLSearchParams({ start, end });
+    async function fetchReimbursementDraft(start, end, reimbursementId) {
+        const params = new URLSearchParams();
+        if (start) params.set('start', start);
+        if (end) params.set('end', end);
+        if (Number(reimbursementId || 0) > 0) {
+            params.set('reimbursement_id', String(Number(reimbursementId)));
+        }
         const response = await fetch(`/get_reimbursement_draft?${params.toString()}`, {
             credentials: 'same-origin',
             cache: 'no-store',
@@ -3441,7 +3463,11 @@ function showReimbursementDeleteDraftConfirm() {
                     'Accept': 'application/json',
                     'X-CSRFToken': getReimbursementCsrfToken()
                 },
-                body: JSON.stringify({ start: range.start, end: range.end })
+                body: JSON.stringify({
+                    start: range.start,
+                    end: range.end,
+                    reimbursement_id: currentReimbursementId || null
+                })
             });
 
             const payload = await parseReimbursementJsonResponse(response, 'Unable to delete reimbursement draft.');
@@ -3450,6 +3476,8 @@ function showReimbursementDeleteDraftConfirm() {
             currentReimbursementExcludedRows = [];
             reimbursementReceiptsByShift = {};
             reimbursementAdditionalReceipts = [];
+            currentReimbursementId = null;
+            window.currentReimbursementId = null;
             setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
             setReimbursementDraftStatus(payload.message || 'Reimbursement draft deleted.', 'ok');
             setReimbursementSubmitNotice('', '');
@@ -3501,7 +3529,11 @@ function showReimbursementDeleteDraftConfirm() {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': getReimbursementCsrfToken()
                 },
-                body: JSON.stringify({ start, end })
+                body: JSON.stringify({
+                    start,
+                    end,
+                    reimbursement_id: currentReimbursementId || null
+                })
             });
 
             const payload = await response.json().catch(() => ({}));
@@ -3513,6 +3545,8 @@ function showReimbursementDeleteDraftConfirm() {
             currentReimbursementExcludedRows = [];
             reimbursementReceiptsByShift = {};
             reimbursementAdditionalReceipts = [];
+            currentReimbursementId = null;
+            window.currentReimbursementId = null;
             setReimbursementDraftStatus('Form cleared.', 'ok');
 
             await loadReimbursementRows();
@@ -3558,6 +3592,9 @@ async function downloadReimbursementExcel() {
             }
 
             const params = new URLSearchParams({ start, end });
+            if (currentReimbursementId) {
+                params.set('reimbursement_id', String(currentReimbursementId));
+            }
             const query = params.toString();
 
             // Download Form now generates one ZIP package containing:
@@ -3614,6 +3651,7 @@ async function saveReimbursementDraft(silent) {
                 body: JSON.stringify({
                     start,
                     end,
+                    reimbursement_id: currentReimbursementId || null,
                     rows,
                     excluded_rows: currentReimbursementExcludedRows
                 })
@@ -3804,7 +3842,11 @@ async function saveReimbursementDraft(silent) {
                     'Accept': 'application/json',
                     'X-CSRFToken': getReimbursementCsrfToken()
                 },
-                body: JSON.stringify({ start, end })
+                body: JSON.stringify({
+                    start,
+                    end,
+                    reimbursement_id: currentReimbursementId || null
+                })
             });
 
             const payload = await parseReimbursementJsonResponse(response, 'Unable to submit reimbursement.');
@@ -3929,7 +3971,11 @@ async function saveReimbursementDraft(silent) {
 
     async function reloadCurrentReimbursementDraftOnly() {
         const range = getDateRangeValues();
-        const draft = await fetchReimbursementDraft(range.start, range.end);
+        const draft = await fetchReimbursementDraft(
+            range.start,
+            range.end,
+            currentReimbursementId
+        );
         if (draft.exists) {
             const scheduleRows = currentReimbursementRows.filter(function(row) { return !row.manual; });
             currentReimbursementExcludedRows = Array.isArray(draft.excluded_rows) ? draft.excluded_rows : [];
@@ -4024,57 +4070,99 @@ async function saveReimbursementDraft(silent) {
     }
 
 
-    async function loadReimbursementRows() {
+    async function loadReimbursementRows(options) {
         hideReimbursementDeleteDraftConfirm();
-        const start = document.getElementById('reimStartDate').value;
-        const end = document.getElementById('reimEndDate').value;
+        const requestedReimbursementId = Number(options && options.reimbursementId || 0);
+        const startInput = document.getElementById('reimStartDate');
+        const endInput = document.getElementById('reimEndDate');
+        let start = startInput.value;
+        let end = endInput.value;
         const status = document.getElementById('reimStatusText');
 
-        if (!start || !end) {
+        if (!requestedReimbursementId && (!start || !end)) {
             reimAlert('Please select start and end date.');
             return;
         }
 
-        status.textContent = 'Loading schedules...';
+        if (!requestedReimbursementId) {
+            currentReimbursementId = null;
+            window.currentReimbursementId = null;
+            currentReimbursementExcludedRows = [];
+            setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
+        }
+
+        status.textContent = requestedReimbursementId
+            ? 'Opening reimbursement record...'
+            : 'Loading eligible schedules...';
 
         try {
-            const params = new URLSearchParams({ start, end });
-            params.set('_', Date.now().toString());
-            const response = await fetch(`/get_reimbursement_schedule_rows?${params.toString()}`, {
-                credentials: 'same-origin',
-                cache: 'no-store',
-                headers: { 'Accept': 'application/json' }
-            });
-            const payload = await parseReimbursementJsonResponse(response, 'Unable to load reimbursement rows.');
+            const draft = await fetchReimbursementDraft(start, end, requestedReimbursementId);
+            if (draft.exists) {
+                start = draft.start || start;
+                end = draft.end || end;
+                startInput.value = start;
+                endInput.value = end;
+                updateReimbursementLifecycleFromPayload(draft);
+            }
 
-            let rows = payload.rows || [];
+            const openingLockedRecord = !!(
+                requestedReimbursementId &&
+                draft.exists &&
+                !reimbursementIsEditable()
+            );
+            let payload = {
+                rows: [],
+                count: 0,
+                available_count: 0,
+                excluded_count: 0,
+                warning_count: 0,
+                start,
+                end
+            };
+            if (!openingLockedRecord) {
+                const params = new URLSearchParams({ start, end });
+                params.set('_', Date.now().toString());
+                const response = await fetch(`/get_reimbursement_schedule_rows?${params.toString()}`, {
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    headers: { 'Accept': 'application/json' }
+                });
+                payload = await parseReimbursementJsonResponse(response, 'Unable to load reimbursement rows.');
+            }
+
+            let rows = openingLockedRecord ? (draft.rows || []) : (payload.rows || []);
             let draftMessage = '';
             let receiptWarningMessage = '';
 
-            try {
-                const draft = await fetchReimbursementDraft(start, end);
-                if (draft.exists) {
-                    currentReimbursementExcludedRows = Array.isArray(draft.excluded_rows) ? draft.excluded_rows : [];
+            if (draft.exists) {
+                currentReimbursementExcludedRows = Array.isArray(draft.excluded_rows) ? draft.excluded_rows : [];
+                if (!openingLockedRecord) {
                     const excludedKeys = new Set(currentReimbursementExcludedRows.map(reimbursementExcludedRowKey));
-                    rows = mergeReimbursementDraftRows(rows, draft.rows || []).filter(function(row) {
+                    const claimedShiftIds = new Set(
+                        (payload.excluded_shift_ids || []).map(function(value) {
+                            return String(Number(value || 0));
+                        })
+                    );
+                    const eligibleDraftRows = (draft.rows || []).filter(function(row) {
+                        return !row.shift_id || !claimedShiftIds.has(String(Number(row.shift_id)));
+                    });
+                    rows = mergeReimbursementDraftRows(rows, eligibleDraftRows).filter(function(row) {
                         return !excludedKeys.has(reimbursementExcludedRowKey(row));
                     });
-                    updateReimbursementLifecycleFromPayload(draft);
-                    draftMessage = ` Saved ${currentReimbursementStatus} reloaded.`;
-                    if (draft.receipt_warning) {
-                        receiptWarningMessage = ` ${draft.receipt_warning}`;
-                    }
-                    setReimbursementDraftStatus(`${currentReimbursementStatus} reimbursement loaded`, 'ok');
-                } else {
-                    currentReimbursementExcludedRows = [];
-                    currentReimbursementId = null;
-                    window.currentReimbursementId = null;
-                    setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
-                    setReimbursementDraftStatus('No saved draft yet.', '');
                 }
-            } catch (draftError) {
-                console.warn(draftError);
-                setReimbursementDraftStatus('Schedules loaded. Saved draft was not loaded.', 'error');
+                draftMessage = openingLockedRecord
+                    ? ` Historical ${currentReimbursementStatus} record opened by ID.`
+                    : ` Saved ${currentReimbursementStatus} reloaded.`;
+                if (draft.receipt_warning) {
+                    receiptWarningMessage = ` ${draft.receipt_warning}`;
+                }
+                setReimbursementDraftStatus(`${currentReimbursementStatus} reimbursement loaded`, 'ok');
+            } else {
+                currentReimbursementExcludedRows = [];
+                currentReimbursementId = null;
+                window.currentReimbursementId = null;
+                setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
+                setReimbursementDraftStatus('Fresh reimbursement worksheet ready.', '');
             }
 
             renderReimbursementRows(rows);
@@ -4089,16 +4177,17 @@ async function saveReimbursementDraft(silent) {
                 setReimbursementDraftStatus('Rows loaded. Receipt attachments could not be loaded.', 'error');
             }
             await refreshReimbursementLprPanel();
-            const excludedMessage = Number(payload.excluded_count || 0) > 0
-                ? ' Previously submitted/approved reimbursement schedule rows were excluded.'
-                : '';
+            const availableCount = Number(payload.available_count ?? payload.count ?? rows.length);
+            const excludedCount = Number(payload.excluded_count || 0);
             const warningMessage = payload.warning_count ? ` ${payload.warning_count} schedule row(s) were skipped due to incomplete data.` : '';
-            if (!rows.length && Number(payload.excluded_count || 0) > 0) {
-                status.textContent = `No unclaimed schedule rows found from ${payload.start} to ${payload.end}. ${payload.excluded_count} previously claimed schedule row(s) were excluded.${warningMessage}${receiptWarningMessage}`;
+            if (openingLockedRecord) {
+                status.textContent = `Opened reimbursement #${currentReimbursementId} as a read-only ${currentReimbursementStatus} record with ${rows.length} row(s).${receiptWarningMessage}`;
+            } else if (!rows.length && excludedCount > 0) {
+                status.textContent = `No unclaimed schedule rows found from ${payload.start} to ${payload.end}. Available: ${availableCount}. Excluded as previously claimed: ${excludedCount}.${warningMessage}${receiptWarningMessage}`;
             } else if (!rows.length) {
-                status.textContent = `No reimbursement schedule rows found from ${payload.start} to ${payload.end}.${warningMessage}${receiptWarningMessage}`;
+                status.textContent = `No eligible reimbursement schedules found from ${payload.start} to ${payload.end}. Available: 0. Excluded as previously claimed: ${excludedCount}.${warningMessage}${receiptWarningMessage}`;
             } else {
-                status.textContent = `Loaded schedules from ${payload.start} to ${payload.end}.${draftMessage}${excludedMessage}${warningMessage}${receiptWarningMessage}`;
+                status.textContent = `Loaded eligible schedules from ${payload.start} to ${payload.end}. Available: ${availableCount}. Excluded as previously claimed: ${excludedCount}.${draftMessage}${warningMessage}${receiptWarningMessage}`;
             }
             applyReimbursementStatusUi();
         } catch (error) {
@@ -4139,6 +4228,7 @@ async function saveReimbursementDraft(silent) {
         }
 
         container.innerHTML = list.map(function(item) {
+            const reimbursementId = Number(item.id || item.reimbursement_id || 0);
             const status = item.status || 'Draft';
             const start = item.start || item.start_date || '';
             const end = item.end || item.end_date || '';
@@ -4161,7 +4251,7 @@ async function saveReimbursementDraft(silent) {
                         ${remarks ? `<br>Remarks: ${reimEscape(remarks)}` : ''}
                     </div>
                     <div class="reim-status-window-actions">
-                        <button type="button" class="reim-btn reim-btn-secondary" onclick="openReimbursementStatusRange('${reimEscape(start)}', '${reimEscape(end)}')">Open / Load</button>
+                        <button type="button" class="reim-btn reim-btn-secondary" onclick="openReimbursementStatusRecord(${reimbursementId}, '${reimEscape(start)}', '${reimEscape(end)}')">Open Record</button>
                     </div>
                 </div>
             `;
@@ -4190,18 +4280,18 @@ async function saveReimbursementDraft(silent) {
         }
     }
 
-    async function openReimbursementStatusRange(start, end) {
-        if (!start || !end) {
-            reimAlert('This reimbursement record has no valid date range.');
+    async function openReimbursementStatusRecord(reimbursementId, start, end) {
+        if (!Number(reimbursementId || 0)) {
+            reimAlert('This reimbursement record has no valid record ID.');
             return;
         }
 
         const startInput = document.getElementById('reimStartDate');
         const endInput = document.getElementById('reimEndDate');
-        if (startInput) startInput.value = start;
-        if (endInput) endInput.value = end;
+        if (startInput && start) startInput.value = start;
+        if (endInput && end) endInput.value = end;
 
-        await loadReimbursementRows();
+        await loadReimbursementRows({ reimbursementId: Number(reimbursementId) });
 
         const worksheet = document.querySelector('.reim-table-card');
         if (worksheet) {
@@ -4211,6 +4301,16 @@ async function saveReimbursementDraft(silent) {
                 worksheet.scrollIntoView();
             }
         }
+    }
+
+    async function openLegacyReimbursementRange(start, end) {
+        if (!start || !end) return false;
+        const startInput = document.getElementById('reimStartDate');
+        const endInput = document.getElementById('reimEndDate');
+        if (startInput) startInput.value = start;
+        if (endInput) endInput.value = end;
+        await loadReimbursementRows();
+        return true;
     }
 
 
@@ -4719,11 +4819,21 @@ async function dismissReimbursementNotification(event, notificationId) {
             const payload = await parseReimbursementJsonResponse(response, 'Unable to load notification details.');
             const item = (payload.items || []).find(function(entry) { return Number(entry.id) === Number(notificationId); });
             const meta = item && item.metadata ? item.metadata : {};
+            const reimbursementId = Number(
+                meta.reimbursement_id ||
+                meta.record_id ||
+                (item && item.record_id) ||
+                0
+            );
             const start = meta.start || meta.start_date || '';
             const end = meta.end || meta.end_date || '';
 
-            if (start && end) {
-                await openReimbursementStatusRange(start, end);
+            if (reimbursementId) {
+                await openReimbursementStatusRecord(reimbursementId, start, end);
+                return;
+            }
+
+            if (await openLegacyReimbursementRange(start, end)) {
                 return;
             }
 
@@ -4745,8 +4855,18 @@ async function dismissReimbursementNotification(event, notificationId) {
         }
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        setReimbursementThisMonth();
+    document.addEventListener('DOMContentLoaded', async function() {
+        const query = new URLSearchParams(window.location.search);
+        const requestedReimbursementId = Number(
+            query.get('reimbursement_id') ||
+            query.get('id') ||
+            0
+        );
+        if (requestedReimbursementId) {
+            await openReimbursementStatusRecord(requestedReimbursementId, '', '');
+        } else {
+            setReimbursementThisMonth();
+        }
         syncReimbursementHorizontalScroll();
         applyReimbursementStatusUi();
         loadMyReimbursementStatuses();

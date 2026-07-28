@@ -1,6 +1,15 @@
 # Project Change Log
 
 codex changes - 2026-07-28
+- Changed Reimbursement Load Schedules behavior so matching Submitted, Approved, and Paid date ranges no longer reopen or lock the worksheet; only an existing Draft or Rejected record is resumed automatically.
+- Added exact `reimbursement_id` record loading throughout Reimbursement history, notifications, draft save, submit, deletion, clearing, receipt management, LPR review, and package downloads so multiple requests can safely share the same start and end dates.
+- Kept locked Reimbursement records as immutable historical snapshots that open only through their specific history or notification record, with their original rows, receipts, linked LPR, approvals, and generated forms.
+- Refined claimed-schedule filtering to exclude only exact schedule IDs with positive reimbursement amounts in Submitted, Approved, or Paid records; zero-value rows, broad header ranges, package receipts, and legacy row receipts no longer claim unrelated schedules.
+- Filtered stale Draft/Rejected rows against the latest claimed schedule IDs during reload so a schedule claimed in another locked request cannot reappear from older editable worksheet data.
+- Added available and excluded schedule counts to Reimbursement schedule-load responses and status messaging, while preserving independent schedules that occur on the same date.
+- Added server-side claimed-schedule revalidation during Save Draft and Submit, plus ordered schedule-row locking during final submission, to prevent stale or simultaneous browser tabs from claiming the same schedule.
+- Added focused regression coverage proving that a locked monthly record cannot replace an editable record with the same range and that zero-value rows do not claim their schedules.
+- Added a July 28 What's New entry for reusable reimbursement ranges and bumped the service-worker cache to `v42-reimbursement-range-reuse`.
 - Added visible Delete controls to every editable Reimbursement schedule row and manual item on desktop and mobile, with confirmation that Calendar schedules and package-level receipts remain untouched.
 - Added a persistent Removed Rows panel to Reimbursement with removed-row counts, individual Restore, and Restore All actions that preserve each row's prior amounts and remarks.
 - Added an additive `reimbursement_header.excluded_rows_json` field and controlled runtime migration so removed schedule rows remain excluded after draft save, page navigation, and reload without replacing the database.
