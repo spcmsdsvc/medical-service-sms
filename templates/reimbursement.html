@@ -766,6 +766,76 @@
         color: #0f172a;
     }
 
+    .reim-removed-panel {
+        display: none;
+        margin: 0 0 10px;
+        padding: 10px 12px;
+        border: 1px solid #f5c2c7;
+        border-radius: 10px;
+        background: #fff5f5;
+    }
+
+    .reim-removed-panel.show {
+        display: block;
+    }
+
+    .reim-removed-head,
+    .reim-removed-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .reim-removed-list {
+        display: grid;
+        gap: 7px;
+        margin-top: 8px;
+    }
+
+    .reim-removed-item {
+        padding: 8px 10px;
+        border: 1px solid #fecaca;
+        border-radius: 8px;
+        background: #fff;
+    }
+
+    .reim-row-delete-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border: 1px solid #dc3545;
+        border-radius: 8px;
+        background: transparent;
+        color: #dc3545;
+        cursor: pointer;
+    }
+
+    .reim-row-delete-btn:hover,
+    .reim-row-delete-btn:focus-visible {
+        background: #dc3545;
+        color: #fff;
+    }
+
+    .reim-mobile-row-actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 10px;
+    }
+
+    [data-app-theme="dark"] .reim-removed-panel {
+        background: #2a181c;
+        border-color: #7f1d2d;
+    }
+
+    [data-app-theme="dark"] .reim-removed-item {
+        background: var(--app-surface, #182536);
+        border-color: #7f1d2d;
+    }
+
     .reim-btn-download {
         background: #0f766e;
         color: #fff;
@@ -1575,6 +1645,17 @@
             <button type="button" class="reim-btn reim-btn-secondary" id="reimAddManualBtn" onclick="openManualReimbursementModal()">Add Another Item</button>
         </div>
 
+        <div class="reim-removed-panel" id="reimRemovedRowsPanel">
+            <div class="reim-removed-head">
+                <div>
+                    <strong><i class="fa-solid fa-trash-can-arrow-up"></i> Removed Rows</strong>
+                    <span class="reim-muted" id="reimRemovedRowsCount">0 rows</span>
+                </div>
+                <button type="button" class="reim-btn reim-btn-secondary" id="reimRestoreAllRowsBtn" onclick="restoreAllReimbursementRows()">Restore All</button>
+            </div>
+            <div class="reim-removed-list" id="reimRemovedRowsList"></div>
+        </div>
+
         <div class="reim-table-wrap" id="reimTableWrap">
             <table class="reim-table" id="reimExpenseTable">
                 <thead>
@@ -1594,11 +1675,12 @@
                         <th>Others</th>
                         <th>Row Total</th>
                         <th>Remarks / Purpose</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="reimTableBody">
                     <tr>
-                        <td colspan="15" class="reim-empty">No rows loaded yet.</td>
+                        <td colspan="16" class="reim-empty">No rows loaded yet.</td>
                     </tr>
                 </tbody>
                 <tfoot id="reimTotalsFoot">
@@ -1615,6 +1697,7 @@
                         <td class="reim-category-total" data-total-expense="coding">0.00</td>
                         <td class="reim-category-total" data-total-expense="others">0.00</td>
                         <td class="reim-total-cell reim-grand-total-cell" id="reimGrandTotal">0.00</td>
+                        <td></td>
                         <td></td>
                     </tr>
                 </tfoot>
@@ -1758,6 +1841,8 @@
     ];
 
     let currentReimbursementRows = [];
+    let currentReimbursementExcludedRows = [];
+    let reimbursementRowChangeBusy = false;
     let currentReimbursementId = null;
     window.currentReimbursementId = null;
     let currentReimbursementStatus = 'Draft';
@@ -2162,10 +2247,11 @@ function renderReimbursementRows(rows) {
         countLabel.textContent = `${rows.length} row${rows.length === 1 ? '' : 's'}`;
 
         if (!rows.length) {
-            body.innerHTML = '<tr><td colspan="15" class="reim-empty">No schedules found for this date range.</td></tr>';
-            mobile.innerHTML = '<div class="reim-empty">No schedules found for this date range.</div>';
+            body.innerHTML = '<tr><td colspan="16" class="reim-empty">No active reimbursement rows for this date range.</td></tr>';
+            mobile.innerHTML = '<div class="reim-empty">No active reimbursement rows for this date range.</div>';
             recalculateReimbursementTotals();
             syncReimbursementHorizontalScroll();
+            renderRemovedReimbursementRows();
             return;
         }
 
@@ -2190,6 +2276,7 @@ function renderReimbursementRows(rows) {
                     ${buildExpenseInputs(row)}
                     <td class="reim-total-cell">₱ <span data-row-total="${reimEscape(rowKey)}">0.00</span></td>
                     <td><textarea class="reim-remarks" rows="5" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)">${reimEscape(row.remarks || '')}</textarea></td>
+                    <td><button type="button" class="reim-row-delete-btn" data-row-key="${reimEscape(rowKey)}" onclick="removeReimbursementRow(this.dataset.rowKey)" title="Delete row" aria-label="Delete ${reimEscape(row.task || 'reimbursement row')}"><i class="fa-solid fa-trash"></i></button></td>
                 </tr>
             `;
         }).join('');
@@ -2208,6 +2295,9 @@ function renderReimbursementRows(rows) {
                         <textarea class="reim-remarks" rows="5" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)" placeholder="Purpose / remarks">${reimEscape(row.remarks || '')}</textarea>
                     </div>
                     ${buildMobileExpenseInputs(row)}
+                    <div class="reim-mobile-row-actions">
+                        <button type="button" class="reim-row-delete-btn" data-row-key="${reimEscape(rowKey)}" onclick="removeReimbursementRow(this.dataset.rowKey)" title="Delete row" aria-label="Delete ${reimEscape(row.task || 'reimbursement row')}"><i class="fa-solid fa-trash"></i></button>
+                    </div>
                 </div>
             `;
         }).join('');
@@ -2215,6 +2305,7 @@ function renderReimbursementRows(rows) {
         syncReimbursementHorizontalScroll();
         refreshReimbursementReceiptCells();
         applyReimbursementStatusUi();
+        renderRemovedReimbursementRows();
     }
 
     function syncReimbursementHorizontalScroll() {
@@ -2458,7 +2549,10 @@ function renderReimbursementRows(rows) {
         }
         if (deleteBtn) {
             const range = getDateRangeValues();
-            const showDelete = editable && !!range.start && !!range.end && (currentReimbursementRows || []).length > 0;
+            const showDelete = editable && !!range.start && !!range.end && (
+                (currentReimbursementRows || []).length > 0 ||
+                (currentReimbursementExcludedRows || []).length > 0
+            );
             deleteBtn.disabled = !showDelete;
             deleteBtn.style.display = showDelete ? '' : 'none';
             deleteBtn.title = showDelete ? '' : 'Delete is available only for saved Draft or Rejected reimbursement records.';
@@ -2480,6 +2574,11 @@ function renderReimbursementRows(rows) {
                 input.title = '';
             }
         });
+        document.querySelectorAll('.reim-row-delete-btn').forEach(function(button) {
+            button.disabled = !editable;
+            button.style.display = editable ? '' : 'none';
+        });
+        renderRemovedReimbursementRows();
 
         document.querySelectorAll('#reimManualItemModal input, #reimManualItemModal button').forEach(function(el) {
             el.disabled = !editable;
@@ -3099,6 +3198,153 @@ function renderReimbursementRows(rows) {
         });
     }
 
+    function reimbursementExcludedRowKey(row) {
+        if (!row || typeof row !== 'object') return '';
+        if (Number(row.shift_id || 0)) return String(Number(row.shift_id));
+        return String(row.manual_key || row.local_manual_key || '');
+    }
+
+    function reimbursementRowLabel(row) {
+        const dateLabel = formatExpenseDate(row?.date || '');
+        const detail = row?.task || row?.client || (row?.manual ? 'Manual item' : 'Schedule');
+        return [dateLabel, detail].filter(Boolean).join(' - ');
+    }
+
+    function renderRemovedReimbursementRows() {
+        const panel = document.getElementById('reimRemovedRowsPanel');
+        const list = document.getElementById('reimRemovedRowsList');
+        const count = document.getElementById('reimRemovedRowsCount');
+        const restoreAll = document.getElementById('reimRestoreAllRowsBtn');
+        if (!panel || !list || !count || !restoreAll) return;
+
+        const rows = Array.isArray(currentReimbursementExcludedRows)
+            ? currentReimbursementExcludedRows
+            : [];
+        panel.classList.toggle('show', rows.length > 0);
+        count.textContent = `${rows.length} row${rows.length === 1 ? '' : 's'}`;
+        restoreAll.disabled = !reimbursementIsEditable() || !rows.length;
+        list.innerHTML = rows.map(function(row) {
+            const key = reimbursementExcludedRowKey(row);
+            return `<div class="reim-removed-item">
+                <div>
+                    <strong>${reimEscape(reimbursementRowLabel(row))}</strong>
+                    <div class="reim-muted">${row.manual ? 'Manual item' : 'Schedule row'}${Number(row.row_total || 0) > 0 ? ` • ₱ ${Number(row.row_total).toFixed(2)}` : ''}</div>
+                </div>
+                <button type="button" class="reim-btn reim-btn-secondary" data-row-key="${reimEscape(key)}" onclick="restoreReimbursementRow(this.dataset.rowKey)" ${reimbursementIsEditable() ? '' : 'disabled'}><i class="fa-solid fa-rotate-left"></i> Restore</button>
+            </div>`;
+        }).join('');
+    }
+
+    async function persistReimbursementRowChange(previousRows, previousExcludedRows, successMessage) {
+        if (reimbursementRowChangeBusy) return false;
+        reimbursementRowChangeBusy = true;
+        renderReimbursementRows(currentReimbursementRows);
+        const saved = await saveReimbursementDraft(true);
+        if (!saved) {
+            currentReimbursementRows = previousRows;
+            currentReimbursementExcludedRows = previousExcludedRows;
+            renderReimbursementRows(currentReimbursementRows);
+            reimbursementRowChangeBusy = false;
+            applyReimbursementStatusUi();
+            reimAlert('The row change was not saved. Your worksheet has been restored.', 'error');
+            return false;
+        }
+        await refreshReimbursementLprPanel();
+        setReimbursementDraftStatus(successMessage, 'ok');
+        reimAlert(successMessage, 'success');
+        reimbursementRowChangeBusy = false;
+        applyReimbursementStatusUi();
+        return true;
+    }
+
+    async function removeReimbursementRow(rowKey) {
+        if (reimbursementRowChangeBusy) return;
+        if (!guardReimbursementEditableAction('delete this row')) return;
+        const worksheetRows = snapshotCurrentReimbursementWorksheetRows();
+        const row = worksheetRows.find(function(item) {
+            return getReimbursementRowKey(item) === String(rowKey);
+        });
+        if (!row) {
+            reimAlert('The reimbursement row could not be found. Please reload the worksheet.', 'error');
+            return;
+        }
+
+        const confirmed = await reimConfirmDialog({
+            title: 'Delete Reimbursement Row?',
+            message: `${reimbursementRowLabel(row)} will be removed from this reimbursement draft. Calendar schedules and package receipts will not be deleted.`,
+            confirmText: 'Delete Row',
+            cancelText: 'Cancel',
+            tone: 'danger'
+        });
+        if (!confirmed) return;
+
+        const previousRows = worksheetRows.slice();
+        const previousExcludedRows = currentReimbursementExcludedRows.slice();
+        currentReimbursementRows = worksheetRows.filter(function(item) {
+            return getReimbursementRowKey(item) !== String(rowKey);
+        });
+        const excludedKey = reimbursementExcludedRowKey(row);
+        currentReimbursementExcludedRows = currentReimbursementExcludedRows
+            .filter(function(item) { return reimbursementExcludedRowKey(item) !== excludedKey; })
+            .concat([row]);
+        await persistReimbursementRowChange(
+            previousRows,
+            previousExcludedRows,
+            'Reimbursement row removed. You can restore it from Removed Rows.'
+        );
+    }
+
+    async function restoreReimbursementRow(rowKey) {
+        if (reimbursementRowChangeBusy) return;
+        if (!guardReimbursementEditableAction('restore this row')) return;
+        const row = currentReimbursementExcludedRows.find(function(item) {
+            return reimbursementExcludedRowKey(item) === String(rowKey);
+        });
+        if (!row) return;
+
+        const activeRows = snapshotCurrentReimbursementWorksheetRows();
+        const previousRows = activeRows.slice();
+        const previousExcludedRows = currentReimbursementExcludedRows.slice();
+        currentReimbursementExcludedRows = currentReimbursementExcludedRows.filter(function(item) {
+            return reimbursementExcludedRowKey(item) !== String(rowKey);
+        });
+        currentReimbursementRows = sortReimbursementRows(activeRows.concat([row]));
+        await persistReimbursementRowChange(
+            previousRows,
+            previousExcludedRows,
+            'Reimbursement row restored.'
+        );
+    }
+
+    async function restoreAllReimbursementRows() {
+        if (reimbursementRowChangeBusy) return;
+        if (!guardReimbursementEditableAction('restore removed rows')) return;
+        if (!currentReimbursementExcludedRows.length) return;
+        const confirmed = await reimConfirmDialog({
+            title: 'Restore All Removed Rows?',
+            message: `Restore all ${currentReimbursementExcludedRows.length} removed reimbursement rows with their saved amounts and remarks?`,
+            confirmText: 'Restore All',
+            cancelText: 'Cancel',
+            tone: 'primary'
+        });
+        if (!confirmed) return;
+
+        const activeRows = snapshotCurrentReimbursementWorksheetRows();
+        const previousRows = activeRows.slice();
+        const previousExcludedRows = currentReimbursementExcludedRows.slice();
+        const activeKeys = new Set(activeRows.map(getReimbursementRowKey));
+        const restored = currentReimbursementExcludedRows.filter(function(row) {
+            return !activeKeys.has(getReimbursementRowKey(row));
+        });
+        currentReimbursementRows = sortReimbursementRows(activeRows.concat(restored));
+        currentReimbursementExcludedRows = [];
+        await persistReimbursementRowChange(
+            previousRows,
+            previousExcludedRows,
+            `${restored.length} reimbursement row${restored.length === 1 ? '' : 's'} restored.`
+        );
+    }
+
     function getReimbursementPayloadRowTotal(row) {
         if (!row || typeof row !== 'object') return 0;
         const amounts = row.amounts && typeof row.amounts === 'object' ? row.amounts : {};
@@ -3140,7 +3386,10 @@ function showReimbursementDeleteDraftConfirm() {
             reimAlert('Only Draft or Rejected reimbursements can be deleted.');
             return;
         }
-        if (!currentReimbursementRows || !currentReimbursementRows.length) {
+        if (
+            (!currentReimbursementRows || !currentReimbursementRows.length) &&
+            (!currentReimbursementExcludedRows || !currentReimbursementExcludedRows.length)
+        ) {
             reimAlert('No loaded reimbursement draft to delete.');
             return;
         }
@@ -3198,6 +3447,7 @@ function showReimbursementDeleteDraftConfirm() {
             const payload = await parseReimbursementJsonResponse(response, 'Unable to delete reimbursement draft.');
 
             hideReimbursementDeleteDraftConfirm();
+            currentReimbursementExcludedRows = [];
             reimbursementReceiptsByShift = {};
             reimbursementAdditionalReceipts = [];
             setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
@@ -3260,6 +3510,7 @@ function showReimbursementDeleteDraftConfirm() {
             }
 
             setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
+            currentReimbursementExcludedRows = [];
             reimbursementReceiptsByShift = {};
             reimbursementAdditionalReceipts = [];
             setReimbursementDraftStatus('Form cleared.', 'ok');
@@ -3345,7 +3596,7 @@ async function saveReimbursementDraft(silent) {
         }
 
         const rows = collectReimbursementRowsForSave();
-        if (!rows.length) {
+        if (!rows.length && !currentReimbursementExcludedRows.length) {
             reimAlert('No reimbursement rows to save.');
             return false;
         }
@@ -3360,7 +3611,12 @@ async function saveReimbursementDraft(silent) {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': getReimbursementCsrfToken()
                 },
-                body: JSON.stringify({ start, end, rows })
+                body: JSON.stringify({
+                    start,
+                    end,
+                    rows,
+                    excluded_rows: currentReimbursementExcludedRows
+                })
             });
 
             const payload = await parseReimbursementJsonResponse(response, 'Unable to save reimbursement draft.');
@@ -3368,10 +3624,16 @@ async function saveReimbursementDraft(silent) {
                 throw new Error(payload.error || 'Unable to save reimbursement draft.');
             }
 
+            currentReimbursementExcludedRows = Array.isArray(payload.excluded_rows)
+                ? payload.excluded_rows
+                : currentReimbursementExcludedRows;
             updateReimbursementLifecycleFromPayload(payload);
             applyReimbursementStatusUi();
             await refreshReimbursementLprPanel();
-            setReimbursementDraftStatus(`Draft saved (${payload.rows_saved || rows.length} rows)`, 'ok');
+            setReimbursementDraftStatus(
+                `Draft saved (${Number(payload.rows_saved ?? rows.length)} active, ${currentReimbursementExcludedRows.length} removed)`,
+                'ok'
+            );
             return true;
         } catch (error) {
             console.error(error);
@@ -3670,7 +3932,11 @@ async function saveReimbursementDraft(silent) {
         const draft = await fetchReimbursementDraft(range.start, range.end);
         if (draft.exists) {
             const scheduleRows = currentReimbursementRows.filter(function(row) { return !row.manual; });
-            const mergedRows = mergeReimbursementDraftRows(scheduleRows, draft.rows || []);
+            currentReimbursementExcludedRows = Array.isArray(draft.excluded_rows) ? draft.excluded_rows : [];
+            const excludedKeys = new Set(currentReimbursementExcludedRows.map(reimbursementExcludedRowKey));
+            const mergedRows = mergeReimbursementDraftRows(scheduleRows, draft.rows || []).filter(function(row) {
+                return !excludedKeys.has(reimbursementExcludedRowKey(row));
+            });
             updateReimbursementLifecycleFromPayload(draft);
             renderReimbursementRows(mergedRows);
             await fetchReimbursementReceipts(range.start, range.end);
@@ -3788,7 +4054,11 @@ async function saveReimbursementDraft(silent) {
             try {
                 const draft = await fetchReimbursementDraft(start, end);
                 if (draft.exists) {
-                    rows = mergeReimbursementDraftRows(rows, draft.rows || []);
+                    currentReimbursementExcludedRows = Array.isArray(draft.excluded_rows) ? draft.excluded_rows : [];
+                    const excludedKeys = new Set(currentReimbursementExcludedRows.map(reimbursementExcludedRowKey));
+                    rows = mergeReimbursementDraftRows(rows, draft.rows || []).filter(function(row) {
+                        return !excludedKeys.has(reimbursementExcludedRowKey(row));
+                    });
                     updateReimbursementLifecycleFromPayload(draft);
                     draftMessage = ` Saved ${currentReimbursementStatus} reloaded.`;
                     if (draft.receipt_warning) {
@@ -3796,6 +4066,7 @@ async function saveReimbursementDraft(silent) {
                     }
                     setReimbursementDraftStatus(`${currentReimbursementStatus} reimbursement loaded`, 'ok');
                 } else {
+                    currentReimbursementExcludedRows = [];
                     currentReimbursementId = null;
                     window.currentReimbursementId = null;
                     setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
@@ -3833,6 +4104,7 @@ async function saveReimbursementDraft(silent) {
         } catch (error) {
             console.error(error);
             status.textContent = error.message || 'Unable to load reimbursement rows.';
+            currentReimbursementExcludedRows = [];
             renderReimbursementRows([]);
         }
     }

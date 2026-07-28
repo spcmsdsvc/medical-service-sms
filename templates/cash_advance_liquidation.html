@@ -386,7 +386,9 @@ function openDeleteRowModal(rowId){
     const row=rowById(rowId);
     if(!row){showLiqAlert('Row not found.', 'warning');return;}
     document.getElementById('deleteRowId').value=row.id;
-    document.getElementById('deleteRowLabel').textContent=`This will remove: ${row.particulars || 'Expense Row'}`;
+    const receiptCount=Array.isArray(row.receipts) ? row.receipts.length : 0;
+    document.getElementById('deleteRowLabel').textContent=
+        `This will permanently remove ${row.particulars || 'this expense row'}${receiptCount ? ` and ${receiptCount} linked receipt${receiptCount === 1 ? '' : 's'}` : ''}. Liquidation totals will be recalculated.`;
     deleteModalInstance=deleteModalInstance || new bootstrap.Modal(document.getElementById('deleteModal'));
     deleteModalInstance.show();
 }
@@ -400,7 +402,10 @@ async function deleteRowConfirmed(){
         if(!res.ok || !data.success) throw new Error(data.error || 'Unable to delete row.');
         if(deleteModalInstance) deleteModalInstance.hide();
         renderLiquidation(data.liquidation);
-        showLiqAlert(data.message || 'Row deleted.', 'success');
+        showLiqAlert(
+            `${data.message || 'Row deleted.'}${data.cleanup_warning ? ' ' + data.cleanup_warning : ''}`,
+            data.cleanup_warning ? 'warning' : 'success'
+        );
     }catch(err){showLiqAlert(err.message || String(err), 'danger');}
     finally{setButtonBusy('deleteRowBtn',false);}
 }

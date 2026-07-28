@@ -1,6 +1,17 @@
 # Project Change Log
 
 codex changes - 2026-07-28
+- Added visible Delete controls to every editable Reimbursement schedule row and manual item on desktop and mobile, with confirmation that Calendar schedules and package-level receipts remain untouched.
+- Added a persistent Removed Rows panel to Reimbursement with removed-row counts, individual Restore, and Restore All actions that preserve each row's prior amounts and remarks.
+- Added an additive `reimbursement_header.excluded_rows_json` field and controlled runtime migration so removed schedule rows remain excluded after draft save, page navigation, and reload without replacing the database.
+- Added server-side validation that removed schedule rows belong to the logged-in engineer and selected reimbursement date range, while limiting stored snapshots to safe worksheet data required for restoration.
+- Updated Reimbursement draft save/load APIs to persist active rows and excluded snapshots atomically, report removed-row counts, and prevent the same schedule from being both active and excluded.
+- Added Reimbursement approval-audit and Activity Log details for worksheet row removal/restoration, while keeping deletion and restoration unavailable on Submitted, Approved, Paid, and other locked records.
+- Reconciled editable auto-generated Reimbursement LPRs during row deletion and restoration so Office/Field Items source lines and totals follow the active worksheet rows.
+- Standardized Travel and Cash Advance Liquidation row deletion confirmation text, duplicate-click protection, result feedback, and linked-receipt counts across desktop, mobile, and dark mode.
+- Changed both Liquidation row deletion paths to commit row and receipt-record removal before cleaning bucket or legacy files, then return a clear administrator-cleanup warning if physical storage deletion fails.
+- Added Liquidation row-deletion Activity Logs while retaining universal approval-audit entries and automatic recalculation of totals, due-to-company, and due-to-employee balances.
+- Added July 28 What's New entries for Reimbursement row restoration and safer Liquidation row cleanup, and bumped the service-worker cache to `v41-row-deletion`.
 - Replaced the Approval Center's Reimbursement-specific default modal heading with a neutral request-review state so failed Travel Request, Liquidation, Cash Advance, LPR, and Leave Request loads cannot display stale Reimbursement wording.
 - Added centralized module-specific Approval Center wording for Reimbursement, Travel Request, Travel Liquidation, Cash Advance, Cash Advance Liquidation, LPR, and Leave Request.
 - Added a modal load sequence guard that ignores stale asynchronous responses when approvers switch quickly between request cards or modules.

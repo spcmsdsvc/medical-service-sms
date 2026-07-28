@@ -934,7 +934,10 @@ function openDeleteModal(rowId){
     if(!isDraftLiquidation()){showLiqAlert('This liquidation is already submitted and cannot be edited.','warning');return;}
     const row=rowById(rowId);
     document.getElementById('deleteRowId').value=rowId;
-    document.getElementById('deleteRowLabel').textContent=row ? `Delete ${row.particulars || 'this row'} from the liquidation draft.` : 'This will remove the row from the liquidation draft.';
+    const receiptCount=Array.isArray(row?.receipts) ? row.receipts.length : 0;
+    document.getElementById('deleteRowLabel').textContent=row
+        ? `This will permanently remove ${row.particulars || 'this expense row'}${receiptCount ? ` and ${receiptCount} linked receipt${receiptCount === 1 ? '' : 's'}` : ''}. Liquidation totals will be recalculated.`
+        : 'This will permanently remove the expense row and its linked receipts.';
     deleteModalInstance=deleteModalInstance || new bootstrap.Modal(document.getElementById('deleteModal'));
     deleteModalInstance.show();
 }
@@ -949,7 +952,10 @@ async function deleteRowConfirmed(){
         if(!res.ok || !data.success){throw new Error(data.error || data.message || 'Unable to delete row.');}
         if(deleteModalInstance) deleteModalInstance.hide();
         renderLiquidation(data.liquidation || currentLiquidation || {});
-        showLiqAlert(data.message || 'Liquidation row deleted.','success');
+        showLiqAlert(
+            `${data.message || 'Liquidation row deleted.'}${data.cleanup_warning ? ' ' + data.cleanup_warning : ''}`,
+            data.cleanup_warning ? 'warning' : 'success'
+        );
     }catch(err){
         showLiqAlert(err.message || String(err),'danger');
     }finally{

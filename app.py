@@ -1739,6 +1739,7 @@ class ReimbursementHeader(db.Model):
     payment_reference = db.Column(db.String(150), nullable=True)
     payment_method = db.Column(db.String(80), nullable=True)
     payment_remarks = db.Column(db.Text, nullable=True)
+    excluded_rows_json = db.Column(db.Text, nullable=True)
 
     rows = db.relationship(
         'ReimbursementRow',
@@ -13965,7 +13966,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v40-approval-wording';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v41-row-deletion';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -21434,6 +21435,120 @@ def reimbursement_row_to_dict(row, receipts_by_shift=None):
     }
 
 
+def reimbursement_excluded_row_key(row):
+    if not isinstance(row, dict):
+        return ''
+    shift_id = clean_int(row.get('shift_id'))
+    if shift_id:
+        return f'shift:{shift_id}'
+    manual_key = (clean_str(row.get('manual_key')) or clean_str(row.get('local_manual_key')) or '').strip()
+    return f'manual:{manual_key}' if manual_key else ''
+
+
+def reimbursement_get_excluded_rows(header):
+    raw_value = clean_str(getattr(header, 'excluded_rows_json', None)) if header else ''
+    if not raw_value:
+        return []
+    try:
+        decoded = json.loads(raw_value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return decoded if isinstance(decoded, list) else []
+
+
+def reimbursement_sanitize_excluded_rows(rows_payload, profile, start_date, end_date):
+    """Validate removable worksheet snapshots without changing Calendar schedules."""
+    if not isinstance(rows_payload, list):
+        return []
+
+    sanitized = []
+    seen_keys = set()
+    for raw_row in rows_payload[:300]:
+        if not isinstance(raw_row, dict):
+            continue
+
+        amounts_payload = raw_row.get('amounts') if isinstance(raw_row.get('amounts'), dict) else {}
+        frontend_amounts = {
+            'representation': reimbursement_money_value(amounts_payload.get('representation')),
+            'car_repair': reimbursement_money_value(amounts_payload.get('car_repair')),
+            'toll_fee': reimbursement_money_value(amounts_payload.get('toll_fee')),
+            'gasoline': reimbursement_money_value(amounts_payload.get('gasoline')),
+            'transpo': reimbursement_money_value(amounts_payload.get('transpo')),
+            'office_supplies': reimbursement_money_value(amounts_payload.get('office_supplies')),
+            'parking': reimbursement_money_value(amounts_payload.get('parking')),
+            'per_diem': reimbursement_money_value(amounts_payload.get('per_diem')),
+            'coding': reimbursement_money_value(
+                amounts_payload.get('coding') if amounts_payload.get('coding') is not None
+                else amounts_payload.get('parking_coding')
+            ),
+            'others': reimbursement_money_value(
+                amounts_payload.get('others') if amounts_payload.get('others') is not None
+                else amounts_payload.get('others_misc')
+            )
+        }
+
+        shift_id = clean_int(raw_row.get('shift_id'))
+        if shift_id:
+            shift = db.session.get(Shift, shift_id)
+            if not reimbursement_shift_allowed_for_current_user(shift, profile, start_date, end_date):
+                continue
+            row = reimbursement_shift_row(
+                shift,
+                display_engineer_names=[
+                    getattr(profile, 'name', '') or getattr(current_user, 'username', '') or ''
+                ]
+            )
+            row.update({
+                'manual': False,
+                'amounts': frontend_amounts,
+                'remarks': (clean_str(raw_row.get('remarks')) or '')[:4000],
+                'row_total': round(sum(frontend_amounts.values()), 2)
+            })
+        else:
+            try:
+                row_date = reimbursement_parse_date(
+                    raw_row.get('date') or raw_row.get('row_date'), 'date'
+                )
+            except ValueError:
+                continue
+            if row_date < start_date or row_date > end_date:
+                continue
+            manual_key = (
+                clean_str(raw_row.get('manual_key')) or
+                clean_str(raw_row.get('local_manual_key')) or
+                f"removed_{row_date.strftime('%Y%m%d')}_{len(sanitized) + 1}"
+            )[:120]
+            task_name = (
+                clean_str(raw_row.get('task')) or
+                clean_str(raw_row.get('item_name')) or
+                clean_str(raw_row.get('description')) or
+                'Manual reimbursement item'
+            )[:150]
+            row = {
+                'shift_id': None,
+                'manual': True,
+                'manual_key': manual_key,
+                'date': row_date.isoformat(),
+                'start_time': '',
+                'end_time': '',
+                'client': '',
+                'product': '',
+                'serial_number': '',
+                'task': task_name,
+                'engineers': [getattr(profile, 'name', '')] if getattr(profile, 'name', '') else [],
+                'amounts': frontend_amounts,
+                'remarks': (clean_str(raw_row.get('remarks')) or '')[:4000],
+                'row_total': round(sum(frontend_amounts.values()), 2)
+            }
+
+        row_key = reimbursement_excluded_row_key(row)
+        if not row_key or row_key in seen_keys:
+            continue
+        seen_keys.add(row_key)
+        sanitized.append(row)
+    return sanitized
+
+
 def reimbursement_is_manual_row_payload(row_payload):
     """Return True when the frontend is saving an extra/manual reimbursement item."""
     if not isinstance(row_payload, dict):
@@ -22469,6 +22584,7 @@ def get_reimbursement_draft():
         'submitted_at': header.submitted_at.isoformat() if header.submitted_at else None,
         **reimbursement_header_approval_meta(header),
         'rows': rows,
+        'excluded_rows': reimbursement_get_excluded_rows(header),
         'grand_total': round(sum(reimbursement_money_value(row.row_total) for row in header.rows), 2)
     }
     if receipt_warning:
@@ -22617,6 +22733,9 @@ def save_reimbursement_draft():
     rows_payload = payload.get('rows') or []
     if not isinstance(rows_payload, list):
         return jsonify({'success': False, 'error': 'Rows must be a list.'}), 400
+    excluded_rows_payload = payload.get('excluded_rows') or []
+    if not isinstance(excluded_rows_payload, list):
+        return jsonify({'success': False, 'error': 'Removed rows must be a list.'}), 400
 
     try:
         header = reimbursement_find_header(start_date, end_date, create=True)
@@ -22631,6 +22750,23 @@ def save_reimbursement_draft():
         if reimbursement_normalize_status(header.status) == 'Draft':
             header.status = 'Draft'
         header.updated_at = get_manila_time()
+        previous_excluded_rows = reimbursement_get_excluded_rows(header)
+        sanitized_excluded_rows = reimbursement_sanitize_excluded_rows(
+            excluded_rows_payload, profile, start_date, end_date
+        )
+        active_schedule_ids = {
+            clean_int(item.get('shift_id'))
+            for item in rows_payload
+            if isinstance(item, dict) and clean_int(item.get('shift_id'))
+        }
+        sanitized_excluded_rows = [
+            item for item in sanitized_excluded_rows
+            if not clean_int(item.get('shift_id')) or clean_int(item.get('shift_id')) not in active_schedule_ids
+        ]
+        header.excluded_rows_json = (
+            json.dumps(sanitized_excluded_rows, ensure_ascii=False, separators=(',', ':'))
+            if sanitized_excluded_rows else None
+        )
 
         manual_receipts_by_key = {}
         for existing_row in ReimbursementRow.query.filter_by(reimbursement_id=header.id, shift_id=None).all():
@@ -22699,11 +22835,50 @@ def save_reimbursement_draft():
                 'error': 'No valid reimbursement rows were saved. Please reload schedules and try again.'
             }), 400
 
+        db.session.flush()
+        db.session.expire(header, ['rows'])
+        reconciled_lpr_count = reconcile_reimbursement_linked_lpr_drafts(header)
+
+        previous_excluded_keys = {
+            reimbursement_excluded_row_key(item) for item in previous_excluded_rows
+            if reimbursement_excluded_row_key(item)
+        }
+        current_excluded_keys = {
+            reimbursement_excluded_row_key(item) for item in sanitized_excluded_rows
+            if reimbursement_excluded_row_key(item)
+        }
+        removed_keys = sorted(current_excluded_keys - previous_excluded_keys)
+        restored_keys = sorted(previous_excluded_keys - current_excluded_keys)
+        if removed_keys or restored_keys:
+            action_parts = []
+            if removed_keys:
+                action_parts.append(f"Removed {len(removed_keys)} worksheet row(s)")
+            if restored_keys:
+                action_parts.append(f"Restored {len(restored_keys)} worksheet row(s)")
+            record_universal_approval_audit(
+                'reimbursement',
+                header.id,
+                'worksheet_rows_updated',
+                actor_user=current_user,
+                status_from=header.status,
+                status_to=header.status,
+                remarks='; '.join(action_parts),
+                metadata={
+                    'removed_row_keys': removed_keys,
+                    'restored_row_keys': restored_keys,
+                    'active_row_count': saved_count
+                }
+            )
+
         db.session.commit()
         print(f"[Reimbursement] Draft saved header #{header.id}; status={header.status}; rows={saved_count}", flush=True)
 
         try:
-            log_activity(f"Saved reimbursement draft {start_date.isoformat()} to {end_date.isoformat()} ({saved_count} rows)")
+            exclusion_note = f", {len(sanitized_excluded_rows)} removed" if sanitized_excluded_rows else ''
+            log_activity(
+                f"Saved reimbursement draft {start_date.isoformat()} to {end_date.isoformat()} "
+                f"({saved_count} rows{exclusion_note})"
+            )
         except Exception as log_err:
             print(f"[Reimbursement] Activity log skipped: {log_err}")
 
@@ -22712,6 +22887,9 @@ def save_reimbursement_draft():
             'id': header.id,
             'status': reimbursement_normalize_status(header.status),
             'rows_saved': saved_count,
+            'excluded_rows': sanitized_excluded_rows,
+            'excluded_row_count': len(sanitized_excluded_rows),
+            'reconciled_lpr_count': reconciled_lpr_count,
             'message': 'Reimbursement draft saved.',
             **reimbursement_header_approval_meta(header)
         })
@@ -31938,7 +32116,13 @@ def delete_travel_liquidation_row(row_id):
     try:
         row_label = clean_str(getattr(row, 'particulars', None)) or f'Row #{row.id}'
         receipt_rows = TravelLiquidationReceipt.query.filter_by(row_id=row.id).all()
+        receipt_file_paths = []
         for receipt in receipt_rows:
+            stored_filename = os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or '')
+            if stored_filename:
+                receipt_file_paths.append(
+                    os.path.join(travel_liquidation_receipt_folder(), stored_filename)
+                )
             db.session.delete(receipt)
         db.session.delete(row)
         db.session.flush()
@@ -31963,9 +32147,28 @@ def delete_travel_liquidation_row(row_id):
         )
         db.session.commit()
 
+        cleanup_warnings = []
+        for file_path in receipt_file_paths:
+            try:
+                managed_storage_delete(STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, file_path)
+            except Exception as delete_error:
+                cleanup_warnings.append(clean_str(delete_error) or 'Stored receipt cleanup failed.')
+                print(f"[TravelLiquidation] Receipt file delete skipped: {delete_error}", flush=True)
+        try:
+            log_activity(
+                f"Deleted Travel Liquidation row {row_label} "
+                f"with {len(receipt_rows)} linked receipt(s)"
+            )
+        except Exception as log_error:
+            print(f"[TravelLiquidation] Delete-row activity log skipped: {log_error}", flush=True)
+
         return jsonify({
             'success': True,
             'message': 'Liquidation row deleted.',
+            'cleanup_warning': (
+                'The row was deleted, but one or more stored receipt files could not be cleaned up.'
+                if cleanup_warnings else ''
+            ),
             'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
         })
     except Exception as exc:
@@ -36508,6 +36711,7 @@ def ensure_reimbursement_approval_columns():
             ('payment_reference', "ALTER TABLE reimbursement_header ADD COLUMN payment_reference VARCHAR(150)"),
             ('payment_method', "ALTER TABLE reimbursement_header ADD COLUMN payment_method VARCHAR(80)"),
             ('payment_remarks', "ALTER TABLE reimbursement_header ADD COLUMN payment_remarks TEXT"),
+            ('excluded_rows_json', "ALTER TABLE reimbursement_header ADD COLUMN excluded_rows_json TEXT"),
         ]
         changed = False
         for column_name, sql in migrations:
@@ -44560,14 +44764,13 @@ def delete_cash_advance_liquidation_row(row_id):
     try:
         row_label = clean_str(getattr(row, 'particulars', None)) or f'Row #{row.id}'
         receipts = CashAdvanceLiquidationReceipt.query.filter_by(row_id=row.id).all()
+        receipt_file_paths = []
         for receipt in receipts:
             stored_filename = os.path.basename(clean_str(getattr(receipt, 'stored_filename', None)) or '')
             if stored_filename:
-                file_path = os.path.join(cash_advance_liquidation_receipt_folder(), stored_filename)
-                try:
-                    managed_storage_delete(STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, file_path)
-                except Exception as delete_error:
-                    print(f"[CashAdvanceLiquidation] Receipt file delete skipped: {delete_error}", flush=True)
+                receipt_file_paths.append(
+                    os.path.join(cash_advance_liquidation_receipt_folder(), stored_filename)
+                )
             db.session.delete(receipt)
         db.session.delete(row)
         db.session.flush()
@@ -44583,7 +44786,29 @@ def delete_cash_advance_liquidation_row(row_id):
             metadata={'cash_advance_id': liquidation.cash_advance_id, 'liquidation_no': liquidation.liquidation_no, 'deleted_row_id': clean_int(row_id)}
         )
         db.session.commit()
-        return jsonify({'success': True, 'message': 'Cash Advance Liquidation row deleted.', 'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)})
+        cleanup_warnings = []
+        for file_path in receipt_file_paths:
+            try:
+                managed_storage_delete(STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, file_path)
+            except Exception as delete_error:
+                cleanup_warnings.append(clean_str(delete_error) or 'Stored receipt cleanup failed.')
+                print(f"[CashAdvanceLiquidation] Receipt file delete skipped: {delete_error}", flush=True)
+        try:
+            log_activity(
+                f"Deleted Cash Advance Liquidation row {row_label} "
+                f"with {len(receipts)} linked receipt(s)"
+            )
+        except Exception as log_error:
+            print(f"[CashAdvanceLiquidation] Delete-row activity log skipped: {log_error}", flush=True)
+        return jsonify({
+            'success': True,
+            'message': 'Cash Advance Liquidation row deleted.',
+            'cleanup_warning': (
+                'The row was deleted, but one or more stored receipt files could not be cleaned up.'
+                if cleanup_warnings else ''
+            ),
+            'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)
+        })
     except Exception as exc:
         db.session.rollback()
         print(f"[CashAdvanceLiquidation] Delete row failed: {exc}", flush=True)
@@ -48434,6 +48659,28 @@ def prepared_reimbursement_lpr_payload(header, lpr_header=None):
     payload['total_requested'] = lpr_money(sum(item['amount'] for item in sources))
     payload['reimbursement_sources'] = sources
     return payload
+
+
+def reconcile_reimbursement_linked_lpr_drafts(header):
+    """Keep an editable reimbursement LPR aligned with active Office/Field rows."""
+    if not embedded_lpr_enabled() or not header:
+        return 0
+    reconciled = 0
+    for lpr_header in linked_lpr_records('reimbursement', header.id):
+        if (clean_str(getattr(lpr_header, 'status', None)) or 'Draft').strip().lower() not in {
+            'draft', 'rejected', 'returned'
+        }:
+            continue
+        prepared = prepared_reimbursement_lpr_payload(header, lpr_header)
+        if prepared.get('items'):
+            lpr_apply_payload(lpr_header, prepared, require_items=True)
+        else:
+            lpr_header.items.clear()
+            lpr_header.total_requested = 0
+            lpr_header.updated_at = get_manila_time()
+        lpr_add_audit(lpr_header, 'reimbursement_sources_reconciled', 'Updated from active Office/Field Items rows.')
+        reconciled += 1
+    return reconciled
 
 
 def validate_reimbursement_linked_lpr(header, lpr_header, require_header=False):

@@ -188,7 +188,9 @@
       "is_published": true,
       "items": [
         {"item_key": "2026-07-28-half-day-leave", "category": "Field Operations", "description": "Leave Requests now support 0.5-day AM or PM periods for every leave type, with time-aware conflict checks, Calendar blocks, approvals, and HR form output.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10},
-        {"item_key": "2026-07-28-approval-wording", "category": "Approvals", "description": "Approval Center review dialogs now keep the correct request type, requester context, action wording, and history labels even when a request cannot be opened.", "audiences": ["approvers", "admins"], "sort_order": 20}
+        {"item_key": "2026-07-28-approval-wording", "category": "Approvals", "description": "Approval Center review dialogs now keep the correct request type, requester context, action wording, and history labels even when a request cannot be opened.", "audiences": ["approvers", "admins"], "sort_order": 20},
+        {"item_key": "2026-07-28-reimbursement-row-removal", "category": "Reimbursement", "description": "Editable reimbursements now let engineers remove incorrect schedule or manual rows, keep them excluded after reopening, and restore one or all removed rows before submission.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30},
+        {"item_key": "2026-07-28-liquidation-row-cleanup", "category": "Liquidation", "description": "Travel and Cash Advance Liquidation row deletion now gives clearer confirmation, recalculates balances, and cleans up linked receipt files more safely.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40}
       ]
     }
   ]
