@@ -1,5 +1,127 @@
 # Project Change Log
 
+claude changes - 2026-07-29 (dashboard phase 3)
+
+## Manager dashboard rebuilt around decisions and direction
+
+* Established the design difference first, as in phase 2: an engineer asks *what do I do
+  today*, a scheduler asks *what is unstaffed or stuck*, and a manager asks **what needs my
+  decision, and is this getting better or worse**. The old view answered neither.
+* **The headline finding: `templates/dashboard.html` contained the string "approval" zero
+  times.** Yet `rodito` is `APPROVAL_CENTER_MANAGER_USERNAME`, and
+  `is_legacy_reimbursement_approval_user()` makes `apply_assigned_approver_filter()` return
+  the **unfiltered** query for him — every Reimbursement, Travel Request, Travel
+  Liquidation, Cash Advance, CA Liquidation, LPR and Leave Request in the system waits on
+  him. His dashboard showed shift counts and TSR *filename* heuristics instead.
+* **Nothing in the codebase measured direction.** Not one query buckets by date — every
+  `group_by` groups by status or id. The view compensated for having no trend by showing
+  more numbers: 13 numeric readouts, **four separate risk badges**, 10 lists and 5
+  collapsible bodies in one section, with each badge computing "stable / watch / critical"
+  against its own thresholds, so the word meant four different things at once.
+* Added `/get_manager_approvals`: pending count and oldest-waiting age per module, plus a
+  "waiting more than 5 days" headline. Ages come from `submitted_at`, which **every
+  approval model already stores and nothing previously read** — no schema change. Driven
+  from `approval_center_module_catalog()` rather than a fourth hardcoded module list
+  (`app.py`, `approvals_page()` and the nav badge each keep their own copy, and they
+  disagree). Built on `apply_assigned_approver_filter()` so routing rules and the legacy
+  bypass are honoured, with the per-module try/except from `get_nav_pending_summary()` so
+  one unavailable module cannot zero the panel.
+* **Gated the approvals block on `is_approval_center_user()`, not on the manager-dashboard
+  flag.** `is_manager_dashboard_user()` also admits the regional admin and the developer
+  account; without this they would get a panel of permanent zeros, which reads as "nothing
+  is waiting" rather than "this is not yours". Verified in the browser as `kevin`: manager
+  sections render, approvals panel is `d-none`, endpoint reports `is_approver: false`.
+* Added `/get_manager_overview`, replacing four endpoints with one shift scan. The old four
+  each ran a near-identical scan of up to 2000 shifts, and **billing visibility and
+  executive watchlist used the identical window and identical limit** — the same rows
+  fetched and processed twice per page load. Engineers and TSR state are now resolved once
+  per shift instead of repeatedly across four passes.
+* **Only flow metrics carry a change figure, and this is the correctness crux.** Flow means
+  events inside a window (visits completed, visits scheduled, TSR completion rate), so two
+  windows are comparable. Stock means state as of now (currently overdue, pending TSR) — a
+  shift that was overdue last week and has since been completed has left the overdue set,
+  so any "overdue a week ago" reconstructed today is systematically undercounted. That
+  would be a wrong number wearing an authoritative arrow. Stock totals are shown without a
+  comparison and the UI says why.
+* Consolidated four panels into one de-duplicated watchlist keyed by entity. The same
+  equipment previously appeared in the TSR panel at a `>=3` threshold and again in the
+  watchlist at `>=4` under a different label. Verified in the browser: a seeded visit that
+  is both severely overdue and blocked on parts appears **once**, under the higher-ranked
+  reason, while a merely-blocked visit still appears separately.
+* **Resolved three incompatible definitions of "Waiting P.O" into one.** There were the
+  status set `{'Waiting for P.O', 'Waiting for Parts'}`, a filename text heuristic, and an
+  exact lowercase status match — so the billing tile and the watchlist chip could disagree
+  about the same schedule on the same screen. Also removed the duplicate `pending_tsr`,
+  which was rendered **twice under near-identical labels from different windows** (90-day
+  beside 180-day): two different numbers for one idea.
+* **Dropped the Billing Visibility percentages, and this is a deliberate removal worth the
+  owner's attention.** Despite the name they carried no money at all —
+  `manager_infer_shift_billing_type()` string-matched shift status, title and **TSR
+  filenames** to produce `billed_signal_rate` and `non_billed_exposure`. A filename guess
+  presented as a billing rate is the kind of number that gets quoted in a meeting. The
+  useful part, P.O. and parts blockers, survives inside the watchlist. Real spend reporting
+  was deferred to its own task by decision; the amounts exist on every approval model but
+  nothing aggregates across documents today.
+* Deleted a large dead payload along with the old endpoints: no JS read `priority_alerts`
+  (20 rows), `overdue_rows` (12), `pending_tsr_rows` (12), `waiting_rows` (12),
+  `signals.billed`, `signals.status_mix`, the watchlist's entire `counts` block,
+  `top_repeat_equipment` or `top_high_risk_clients` — roughly 56 serialized shift rows built
+  and shipped per request to be discarded. `standard_rows` was accumulated for up to 2000
+  shifts and never even returned. Also removed `ensure_tsr_knowledge_entry_table()` from the
+  watchlist path, which never touched that table, and an O(n²) `shift in list` membership
+  test over up to 2000 shifts across four lists, now set membership.
+* Net effect in `app.py`: 966 lines of manager endpoints became 481. Four fetches on page
+  load became two — verified in the server log as zero hits on all four retired routes.
+* Rebuilt the view as three sections: `manager-executive` (decisions, then one risk verdict
+  and the operational strip), new `manager-direction`, and new `manager-watchlist` with the
+  branch and utilization drill-downs folded in. Both new ids registered in
+  `DASHBOARD_SECTION_IDS`, or the layout API would reject them.
+* Added `tests/test_dashboard_manager.py` (19 tests). Source coverage: the guarded section
+  id survives, new ids are registered, approvals actually reach the template, the approvals
+  block is gated on being an approver, four endpoints became two, the filename heuristic is
+  gone, one waiting definition, one risk verdict. Functional: retired endpoints 404, a
+  non-manager is refused, **approval counts respect routing** (legacy manager sees all, a
+  configured approver with no routing rows sees zero) **with a positive control** asserting
+  the fixture really holds pending requests so the zero case cannot pass vacuously, oldest
+  age comes from `submitted_at`, direction exposes a change only for flow metrics, the
+  completed delta matches the seeded weeks exactly, and the watchlist holds one row per
+  entity with a positive control proving the entity qualified twice.
+* **Corrected a wrong test premise rather than the code.** The first version used an
+  approver-only account as "a manager who is not an approver"; it returned 403, because an
+  approver-only account is not a manager-dashboard user at all. The real case is the
+  regional admin, who reaches the dashboard through `is_admin_authorized()` without
+  approving anything. Rewritten to use that account.
+* **Found and fixed a cross-module test defect this work exposed.** Every test module pins
+  `MEDICAL_SERVICE_TEST_DB` with `os.environ.setdefault`, so under `unittest discover` the
+  first module to import wins and all modules share one database and one Flask app. Seeding
+  an account named `APPROVAL_CENTER_MANAGER_USERNAME` makes `ensure_default_approval_routes()`
+  write an `ApprovalRouting` row for every user; those rows have a NOT NULL
+  `requester_user_id`, and sibling modules that recreate users then trip the constraint —
+  **16 unrelated tests went red**. The module now restores the config flag and deletes both
+  the routing rows and its own accounts in `tearDownClass`; deleting the rows alone was not
+  enough, because the app rebuilds them on the next request while that username exists.
+  Confirmed green on a fresh database and again on the persisted one.
+* Suite green at **288 tests** (was 269). `py_compile` clean, `node --check` clean.
+* Browser-verified on an isolated database, port 5056, explicit `MEDICAL_SERVICE_TEST_DB`,
+  never port 5000. **Every figure was hand-computed before it was read back** and matched:
+  6 pending (3 reimbursement / 2 cash advance / 1 travel), oldest 14 days, 3 waiting over
+  five days, per-module ages 14d / 9d / 3d, completed 3 this period vs 1 previous (+2),
+  scheduled 5 vs 3 (+2). Watchlist 8 items, all distinct.
+* Contrast measured in both themes: light min **4.76**, dark min **5.44**, all AA. No
+  horizontal overflow at 375 px, no element escaping the manager sections, approval cards
+  and watchlist rows all ≥44 px, console clean.
+* `scheduler.db` untouched — still last written 2026-07-23. Verification server stopped and
+  port 5056 confirmed free.
+* Noted, not changed: `/get_engineer_dashboard_summary` has **zero callers** in any JS or
+  template, the same dead-route shape as the scheduler endpoint activated in phase 2. It
+  belongs to the engineer view, so it is out of scope here.
+* Also noted: a manager account that additionally has an engineer profile still renders the
+  engineer sections beneath the manager ones. That is the hybrid case and pre-existing
+  behaviour, unchanged by this phase — it is what phase 4 is for.
+* Not verified: Edge and Brave, and the offline path against a real service worker.
+
+---
+
 claude changes - 2026-07-29 (dashboard phase 2)
 
 ## Scheduler dashboard rebuilt as a dispatch workbench

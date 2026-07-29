@@ -65,6 +65,7 @@
     // Global Dataset Context
     let allOpenTasksRaw = []; 
     let currentSortMode = 'scheduled_latest'; 
+    let managerOverviewData = null;
     let schedulerCoordinationData = null;
     let schedulerDispatchData = null;
     let schedulerBranchFilter = 'ALL';
@@ -602,26 +603,11 @@
         });
     }
 
-    function managerRiskBadgeClass(level) {
-        const value = String(level || '').toLowerCase();
-        if (value === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
-        if (value === 'watch') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
-        return 'badge bg-success rounded-pill px-3 py-2';
-    }
-
     function managerUtilizationBadgeClass(level) {
         const value = String(level || '').toLowerCase();
         if (value === 'high') return 'bg-danger';
         if (value === 'watch') return 'bg-warning text-dark';
         return 'bg-success';
-    }
-
-    function managerPriorityBadgeClass(severity) {
-        const value = String(severity || '').toLowerCase();
-        if (value === 'danger') return 'bg-danger';
-        if (value === 'warning') return 'bg-warning text-dark';
-        if (value === 'info') return 'bg-info text-dark';
-        return 'bg-secondary';
     }
 
     function renderManagerBranchOverview(rows) {
@@ -673,313 +659,199 @@
         `).join('');
     }
 
-    function managerTsrRiskBadgeClass(level) {
-        const value = String(level || '').toLowerCase();
-        if (value === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
-        if (value === 'watch') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
-        return 'badge bg-success rounded-pill px-3 py-2';
-    }
+    /**
+     * The approvals block is hidden entirely unless the account is an approver.
+     * is_manager_dashboard_user() also admits regional admins and the developer account,
+     * and a panel of permanent zeros reads as "nothing is waiting" rather than
+     * "this is not yours".
+     */
+    function renderManagerApprovals(data) {
+        const panel = document.getElementById('manager-approvals');
+        if (!panel) return;
 
-    function renderManagerTsrAgingRows(rows) {
-        const container = document.getElementById('manager-tsr-aging-list');
-        if (!container) return;
+        if (!data || data.is_approver !== true || data.workflows_enabled !== true) {
+            panel.classList.add('d-none');
+            return;
+        }
+        panel.classList.remove('d-none');
 
-        if (!Array.isArray(rows) || !rows.length) {
-            renderTeamEmpty('manager-tsr-aging-list', 'No aged pending TSR items.');
+        const counts = data.counts || {};
+        const modules = Array.isArray(data.modules) ? data.modules : [];
+        setTextIfPresent('manager-approvals-total', counts.pending_total || 0);
+
+        const aging = document.getElementById('manager-approvals-aging');
+        if (aging) {
+            const agingTotal = Number(counts.aging_total || 0);
+            const threshold = Number(data.aging_threshold_days || 5);
+            if (agingTotal) {
+                aging.textContent = `${agingTotal} waiting more than ${threshold} days — oldest ${counts.oldest_days || 0} days`;
+                aging.className = 'manager-approvals-aging is-aging';
+            } else if (Number(counts.pending_total || 0)) {
+                aging.textContent = `Nothing older than ${threshold} days`;
+                aging.className = 'manager-approvals-aging';
+            } else {
+                aging.textContent = 'Your approval queue is clear';
+                aging.className = 'manager-approvals-aging is-clear';
+            }
+        }
+
+        const grid = document.getElementById('manager-approvals-grid');
+        if (!grid) return;
+
+        const waiting = modules.filter(row => Number(row.pending || 0) > 0);
+        if (!waiting.length) {
+            grid.innerHTML = '<div class="manager-approvals-empty">No requests are waiting on you right now.</div>';
             return;
         }
 
-        container.innerHTML = rows.slice(0, 5).map(row => `
-            <div class="dashboard-team-row manager-tsr-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 'No engineer assigned')}</div>
-                </div>
-                <span class="badge ${managerPriorityBadgeClass(row.severity)}">${escapeHtml(row.signal_label || row.reason || 'Missing TSR')}</span>
-            </div>
+        grid.innerHTML = waiting.map(row => `
+            <a class="manager-approval-card${Number(row.aging || 0) ? ' is-aging' : ''}" href="${escapeHtml(row.href || '/approvals')}">
+                <span class="manager-approval-count">${escapeHtml(row.pending || 0)}</span>
+                <span class="manager-approval-label">${escapeHtml(row.label || 'Requests')}</span>
+                <span class="manager-approval-age">${Number(row.oldest_days || 0)
+                    ? `oldest ${escapeHtml(row.oldest_days)}d`
+                    : 'just in'}</span>
+            </a>
         `).join('');
     }
 
-    function renderManagerTsrRepeatRows(rows) {
-        const container = document.getElementById('manager-tsr-repeat-list');
-        if (!container) return;
-
-        if (!Array.isArray(rows) || !rows.length) {
-            renderTeamEmpty('manager-tsr-repeat-list', 'No repeat-service signals.');
-            return;
-        }
-
-        container.innerHTML = rows.slice(0, 5).map(row => `
-            <div class="dashboard-team-row manager-tsr-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.product || 'Equipment')} ${row.serial ? '(' + escapeHtml(row.serial) + ')' : ''}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.tasks || '')}</div>
-                </div>
-                <span class="badge bg-primary">${escapeHtml(row.signal_label || 'Repeat')}</span>
-            </div>
-        `).join('');
-    }
-
-    function renderManagerTsrIssueRows(rows) {
-        const container = document.getElementById('manager-tsr-issues-list');
-        if (!container) return;
-
-        if (!Array.isArray(rows) || !rows.length) {
-            renderTeamEmpty('manager-tsr-issues-list', 'No frequent issue signals.');
-            return;
-        }
-
-        container.innerHTML = rows.slice(0, 5).map(row => `
-            <div class="dashboard-team-row manager-tsr-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.issue || 'Service issue')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.clients || 'Multiple / unspecified clients')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.products || '')}</div>
-                </div>
-                <span class="badge bg-dark">${escapeHtml(row.signal_label || 'Frequent')}</span>
-            </div>
-        `).join('');
-    }
-
-    async function loadManagerTsrIntelligence() {
+    async function loadManagerApprovals() {
         if (!dashboardManagerView || dashboardSchedulerOnly) return;
 
         try {
-            const data = await fetchJsonOrThrow('/get_manager_tsr_intelligence');
-            const counts = data.counts || {};
-            const signals = data.signals || {};
-
-            setTextIfPresent('manager-tsr-completion-rate', `${counts.tsr_completion_rate ?? 0}%`);
-            setTextIfPresent('manager-tsr-pending-count', counts.pending_tsr || 0);
-            setTextIfPresent('manager-tsr-repeat-count', counts.repeat_equipment_signals || 0);
-
-            const riskBadge = document.getElementById('manager-tsr-risk-badge');
-            if (riskBadge) {
-                riskBadge.className = managerTsrRiskBadgeClass(data.risk && data.risk.level);
-                riskBadge.innerText = (data.risk && data.risk.label) || 'TSR Stable';
-            }
-
-            renderManagerTsrAgingRows(signals.aged_pending_tsr || []);
-            renderManagerTsrRepeatRows(signals.repeat_equipment || []);
-            renderManagerTsrIssueRows(signals.frequent_issues || []);
-        } catch (tsrError) {
-            console.warn('Manager TSR intelligence could not be loaded:', tsrError);
-            renderTeamEmpty('manager-tsr-aging-list', 'TSR aging could not be loaded.');
-            renderTeamEmpty('manager-tsr-repeat-list', 'Repeat service signals could not be loaded.');
-            renderTeamEmpty('manager-tsr-issues-list', 'Frequent issue signals could not be loaded.');
+            renderManagerApprovals(await fetchJsonOrThrow('/get_manager_approvals'));
+        } catch (approvalsError) {
+            console.warn('Manager approvals could not be loaded:', approvalsError);
+            const panel = document.getElementById('manager-approvals');
+            if (panel) panel.classList.add('d-none');
         }
     }
 
-    function managerBillingRiskBadgeClass(level) {
-        const value = String(level || '').toLowerCase();
-        if (value === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
-        if (value === 'watch') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
-        return 'badge bg-success rounded-pill px-3 py-2';
+    function renderManagerRisk(data) {
+        const box = document.getElementById('manager-risk');
+        if (!box) return;
+        const risk = (data || {}).risk || {};
+        box.className = `manager-risk mb-3 is-${String(risk.level || 'stable')}`;
+        setTextIfPresent('manager-risk-label', risk.label || 'Operations stable');
     }
 
-    function renderManagerBillingShiftRows(containerId, rows, emptyMessage) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
+    /**
+     * Only flow metrics reach this renderer -- the server sends nothing else. A change
+     * figure on a current-state total would be wrong: a shift that was overdue last week
+     * and has since been completed has left the overdue set, so the historical figure
+     * would be systematically low.
+     */
+    function renderManagerDirection(data) {
+        const grid = document.getElementById('manager-direction-grid');
+        if (!grid) return;
 
-        if (!Array.isArray(rows) || !rows.length) {
-            renderTeamEmpty(containerId, emptyMessage || 'No billing signals.');
+        const direction = (data || {}).direction || {};
+        const metrics = Array.isArray(direction.metrics) ? direction.metrics : [];
+
+        const caption = document.getElementById('manager-direction-caption');
+        if (caption && direction.current_from) {
+            caption.textContent = `${direction.current_from} to ${direction.current_to}, compared with ${direction.previous_from} to ${direction.previous_to}`;
+        }
+
+        if (!metrics.length) {
+            grid.innerHTML = '<div class="manager-approvals-empty">No activity in this period.</div>';
             return;
         }
 
-        container.innerHTML = rows.slice(0, 5).map(row => `
-            <div class="dashboard-team-row manager-billing-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.product || '')} ${row.serial ? '(' + escapeHtml(row.serial) + ')' : ''}</div>
-                </div>
-                <span class="badge ${managerPriorityBadgeClass(row.severity)}">${escapeHtml(row.signal_label || 'Review')}</span>
-            </div>
-        `).join('');
-    }
-
-    function renderManagerBillingServiceMix(rows) {
-        const container = document.getElementById('manager-billing-service-mix-list');
-        if (!container) return;
-
-        if (!Array.isArray(rows) || !rows.length) {
-            renderTeamEmpty('manager-billing-service-mix-list', 'No service mix data.');
-            return;
-        }
-
-        container.innerHTML = rows.slice(0, 5).map(row => `
-            <div class="dashboard-team-row manager-billing-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.label || 'Service')}</div>
-                    <div class="dashboard-team-row-sub">Service category / task mix</div>
-                </div>
-                <span class="badge bg-success">${escapeHtml(row.count || 0)}</span>
-            </div>
-        `).join('');
-    }
-
-    async function loadManagerBillingVisibility() {
-        if (!dashboardManagerView || dashboardSchedulerOnly) return;
-
-        try {
-            const data = await fetchJsonOrThrow('/get_manager_billing_visibility');
-            const counts = data.counts || {};
-            const signals = data.signals || {};
-
-            setTextIfPresent('manager-billing-rate', `${counts.billed_signal_rate ?? 0}%`);
-            setTextIfPresent('manager-non-billed-count', counts.non_billed_exposure || 0);
-            setTextIfPresent('manager-waiting-po-count', counts.waiting_po || 0);
-
-            const riskBadge = document.getElementById('manager-billing-risk-badge');
-            if (riskBadge) {
-                riskBadge.className = managerBillingRiskBadgeClass(data.risk && data.risk.level);
-                riskBadge.innerText = (data.risk && data.risk.label) || 'Billing Stable';
+        grid.innerHTML = metrics.map(metric => {
+            const change = Number(metric.change || 0);
+            const better = metric.higher_is_better !== false;
+            let tone = 'is-flat';
+            let arrow = '&rarr;';
+            if (change > 0) {
+                tone = better ? 'is-good' : 'is-neutral';
+                arrow = '&uarr;';
+            } else if (change < 0) {
+                tone = better ? 'is-bad' : 'is-neutral';
+                arrow = '&darr;';
             }
+            const unit = escapeHtml(metric.unit || '');
+            const changeText = change === 0
+                ? 'no change'
+                : `${change > 0 ? '+' : ''}${escapeHtml(change)}${unit} vs previous`;
 
-            renderManagerBillingShiftRows('manager-billing-po-list', signals.waiting_po || [], 'No P.O follow-up signals.');
-            renderManagerBillingShiftRows('manager-billing-non-billed-list', signals.non_billed || [], 'No warranty / FOC exposure signals.');
-            renderManagerBillingServiceMix(signals.service_mix || []);
-        } catch (billingError) {
-            console.warn('Manager billing visibility could not be loaded:', billingError);
-            renderTeamEmpty('manager-billing-po-list', 'Billing P.O follow-ups could not be loaded.');
-            renderTeamEmpty('manager-billing-non-billed-list', 'Non-billed exposure could not be loaded.');
-            renderTeamEmpty('manager-billing-service-mix-list', 'Service mix could not be loaded.');
-        }
+            return `
+            <div class="manager-direction-metric">
+                <span class="manager-direction-value">${escapeHtml(metric.value)}${unit}</span>
+                <span class="manager-direction-label">${escapeHtml(metric.label || '')}</span>
+                <span class="manager-direction-change ${tone}">
+                    <span aria-hidden="true">${arrow}</span> ${changeText}
+                </span>
+            </div>`;
+        }).join('');
     }
 
-    function managerWatchlistRiskBadgeClass(level) {
-        const value = String(level || '').toLowerCase();
-        if (value === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
-        if (value === 'watch') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
-        return 'badge bg-success rounded-pill px-3 py-2';
+    function managerWatchlistTypeLabel(type) {
+        const labels = {
+            severe_overdue: 'Severely overdue',
+            aged_tsr: 'TSR missing',
+            waiting: 'Blocked',
+            repeat_equipment: 'Repeat equipment',
+            high_risk_client: 'Client at risk'
+        };
+        return labels[String(type || '')] || 'Attention';
     }
 
-    function managerWatchlistChipClass(tone) {
-        const value = String(tone || '').toLowerCase();
-        if (value === 'critical') return 'manager-watchlist-chip manager-watchlist-chip-critical';
-        if (value === 'watch') return 'manager-watchlist-chip manager-watchlist-chip-watch';
-        if (value === 'info') return 'manager-watchlist-chip manager-watchlist-chip-info';
-        return 'manager-watchlist-chip manager-watchlist-chip-stable';
-    }
-
-    function managerWatchlistBadgeClass(tone) {
-        const value = String(tone || '').toLowerCase();
-        if (value === 'critical') return 'bg-danger';
-        if (value === 'watch') return 'bg-warning text-dark';
-        if (value === 'info') return 'bg-info text-dark';
-        return 'bg-success';
-    }
-
-    function renderManagerWatchlistChips(chips) {
-        const container = document.getElementById('manager-watchlist-chip-strip');
+    function renderManagerWatchlist(data) {
+        const container = document.getElementById('manager-watchlist-list');
         if (!container) return;
 
-        const rows = Array.isArray(chips) ? chips : [];
+        const rows = Array.isArray((data || {}).watchlist) ? data.watchlist : [];
+        const total = Number((data || {}).watchlist_total || rows.length);
+        setTextIfPresent('manager-watchlist-count', `${total} item${total === 1 ? '' : 's'}`);
+
+        const caption = document.getElementById('manager-watchlist-caption');
+        if (caption && total > rows.length) {
+            caption.textContent = `Showing the ${rows.length} most pressing of ${total}`;
+        }
+
         if (!rows.length) {
             container.innerHTML = `
-                <div class="manager-watchlist-chip manager-watchlist-chip-stable">
-                    <span>No executive chips</span>
-                    <strong>0</strong>
+                <div class="manager-watchlist-clear">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    <span>Nothing needs management attention right now.</span>
                 </div>`;
             return;
         }
 
-        container.innerHTML = rows.slice(0, 4).map(chip => `
-            <div class="${managerWatchlistChipClass(chip.tone)}">
-                <span>${escapeHtml(chip.label || 'Signal')}</span>
-                <strong>${escapeHtml(chip.value ?? 0)}</strong>
+        container.innerHTML = rows.map(row => `
+            <div class="manager-watchlist-row">
+                <span class="manager-watchlist-accent is-${escapeHtml(row.tone || 'watch')}" aria-hidden="true"></span>
+                <span class="manager-watchlist-body">
+                    <span class="manager-watchlist-title">${escapeHtml(row.title || '')}</span>
+                    <span class="manager-watchlist-hint">${escapeHtml(row.subtitle || '')} • ${escapeHtml(row.detail || '')}</span>
+                </span>
+                <span class="manager-watchlist-tag">${escapeHtml(managerWatchlistTypeLabel(row.type))}</span>
             </div>
         `).join('');
     }
 
-    function renderManagerExecutiveWatchlistRows(rows) {
-        const container = document.getElementById('manager-watchlist-main-list');
-        if (!container) return;
-
-        if (!Array.isArray(rows) || !rows.length) {
-            renderTeamEmpty('manager-watchlist-main-list', 'No executive watchlist items right now.');
-            return;
-        }
-
-        container.innerHTML = rows.slice(0, 5).map(row => `
-            <div class="dashboard-team-row manager-watchlist-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.title || 'Watchlist item')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.subtitle || '')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.detail || '')}</div>
-                </div>
-                <span class="badge ${managerWatchlistBadgeClass(row.tone)}">${escapeHtml(row.meta || row.type || 'Review')}</span>
-            </div>
-        `).join('');
-    }
-
-    function renderManagerExecutiveTsrRows(rows) {
-        const container = document.getElementById('manager-watchlist-tsr-list');
-        if (!container) return;
-
-        if (!Array.isArray(rows) || !rows.length) {
-            renderTeamEmpty('manager-watchlist-tsr-list', 'No severe aged TSR items.');
-            return;
-        }
-
-        container.innerHTML = rows.slice(0, 5).map(row => `
-            <div class="dashboard-team-row manager-watchlist-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 'No engineer assigned')}</div>
-                </div>
-                <span class="badge ${managerPriorityBadgeClass(row.severity)}">${escapeHtml(row.signal_label || row.reason || 'Aged TSR')}</span>
-            </div>
-        `).join('');
-    }
-
-    async function loadManagerExecutiveWatchlist() {
+    async function loadManagerOverview() {
         if (!dashboardManagerView || dashboardSchedulerOnly) return;
 
         try {
-            const data = await fetchJsonOrThrow('/get_manager_executive_watchlist');
-            const riskBadge = document.getElementById('manager-watchlist-risk-badge');
-
-            if (riskBadge) {
-                riskBadge.className = managerWatchlistRiskBadgeClass(data.risk && data.risk.level);
-                riskBadge.innerText = (data.risk && data.risk.label) || 'Executive Stable';
-            }
-
-            renderManagerWatchlistChips(data.chips || []);
-            renderManagerExecutiveWatchlistRows(data.watchlist || []);
-            renderManagerExecutiveTsrRows(data.severe_tsr_rows || []);
-        } catch (watchlistError) {
-            console.warn('Manager executive watchlist could not be loaded:', watchlistError);
-            renderTeamEmpty('manager-watchlist-main-list', 'Executive watchlist could not be loaded.');
-            renderTeamEmpty('manager-watchlist-tsr-list', 'Aged TSR focus could not be loaded.');
-        }
-    }
-
-    async function loadManagerDashboardSummary() {
-        if (!dashboardManagerView || dashboardSchedulerOnly) return;
-
-        try {
-            const data = await fetchJsonOrThrow('/get_manager_dashboard_summary');
-            const counts = data.counts || {};
+            const data = await fetchJsonOrThrow('/get_manager_overview');
+            managerOverviewData = data || {};
+            const counts = managerOverviewData.counts || {};
             setTextIfPresent('manager-open-count', counts.open_schedules || 0);
             setTextIfPresent('manager-overdue-count', counts.overdue_schedules || 0);
             setTextIfPresent('manager-pending-tsr-count', counts.pending_tsr || 0);
+            setTextIfPresent('manager-waiting-count', counts.waiting_items || 0);
 
-            const riskBadge = document.getElementById('manager-risk-badge');
-            if (riskBadge) {
-                riskBadge.className = managerRiskBadgeClass(data.risk && data.risk.level);
-                riskBadge.innerText = (data.risk && data.risk.label) || 'Stable';
-            }
-
-            renderManagerBranchOverview(data.branch_summary || []);
-            renderManagerEngineerUtilization(data.engineer_utilization || []);
+            renderManagerRisk(managerOverviewData);
+            renderManagerDirection(managerOverviewData);
+            renderManagerWatchlist(managerOverviewData);
+            renderManagerBranchOverview(managerOverviewData.branch_summary || []);
+            renderManagerEngineerUtilization(managerOverviewData.engineer_utilization || []);
         } catch (managerError) {
-            console.warn('Manager dashboard summary could not be loaded:', managerError);
-            renderTeamEmpty('manager-branch-list', 'Manager branch overview could not be loaded.');
-            renderTeamEmpty('manager-engineer-utilization-list', 'Manager utilization snapshot could not be loaded.');
+            console.warn('Manager overview could not be loaded:', managerError);
+            setTextIfPresent('manager-risk-label', 'Operational status could not be loaded.');
+            renderTeamEmpty('manager-watchlist-list', 'Watchlist could not be loaded.');
         }
     }
 
@@ -1622,10 +1494,10 @@
             }
 
             if (dashboardManagerView && !dashboardSchedulerOnly) {
-                loadManagerDashboardSummary();
-                loadManagerTsrIntelligence();
-                loadManagerBillingVisibility();
-                loadManagerExecutiveWatchlist();
+                // Two requests where there were four. The watchlist payload rides along
+                // with the overview rather than needing its own round-trip.
+                loadManagerApprovals();
+                loadManagerOverview();
             }
 
             if (dashboardAdminView && !dashboardSchedulerOnly && !dashboardManagerView) {

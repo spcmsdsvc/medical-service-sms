@@ -24,264 +24,239 @@
         padding: 1rem;
     }
 
-    .manager-kpi-card {
-        min-height: 128px;
-        border-left: 4px solid rgba(15, 23, 42, 0.25) !important;
+    /* ---------------------------------------------------------------------------
+       MANAGER DASHBOARD -- DECISIONS, DIRECTION, WATCHLIST
+
+       Shares the token vocabulary with the engineer "Today First" strip and the
+       scheduler queue further down, so the three role views read as one system.
+       --------------------------------------------------------------------------- */
+
+    .manager-approvals {
+        border: 1px solid var(--app-border, #e2e8f0);
+        border-radius: 0.9rem;
+        background: var(--app-surface, #ffffff);
+        padding: 0.85rem;
     }
 
-    .manager-kpi-row {
-        max-width: 980px;
+    .manager-approvals-head {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        margin-bottom: 0.75rem;
     }
 
-    .manager-kpi-urgent {
-        background: linear-gradient(135deg, #ffffff, #fff5f5) !important;
+    .manager-approvals-total {
+        font-size: 1.6rem;
+        font-weight: 900;
+        line-height: 1;
+        color: var(--app-text, #0f172a);
     }
 
-    .manager-drilldown-panel {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 1rem;
-        padding: 0.9rem;
+    .manager-approvals-total-label {
+        font-size: 0.78rem;
+        font-weight: 800;
+        color: var(--app-muted, #6b7280);
     }
 
-    .manager-tsr-intelligence-panel {
-        background: #ffffff;
-        border: 1px solid #fde68a;
-        border-radius: 1rem;
-        padding: 0.9rem;
-        border-left: 4px solid rgba(245, 158, 11, 0.35);
+    .manager-approvals-aging {
+        font-size: 0.74rem;
+        font-weight: 800;
+        color: var(--app-muted, #6b7280);
     }
 
-    .manager-tsr-signal-strip {
+    .manager-approvals-aging.is-aging { color: #b45309; }
+    .manager-approvals-aging.is-clear { color: #15803d; }
+
+    .manager-approvals-grid {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+        gap: 0.6rem;
     }
 
-    .manager-tsr-signal-card {
-        background: #fffbeb;
-        border: 1px solid #fde68a;
-        border-radius: 0.95rem;
-        padding: 0.8rem;
+    .manager-approval-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        min-height: 74px;
+        padding: 0.6rem 0.7rem;
+        border: 1px solid var(--app-border, #e2e8f0);
+        border-left: 4px solid var(--app-primary, #0d6efd);
+        border-radius: 0.75rem;
+        background: var(--app-surface, #ffffff);
+        text-decoration: none;
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
     }
 
-    .manager-tsr-signal-card span {
-        display: block;
-        color: #92400e;
-        font-size: 0.68rem;
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
+    .manager-approval-card:hover,
+    .manager-approval-card:focus-visible {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
     }
 
-    .manager-tsr-signal-card strong {
-        display: block;
-        color: #0f172a;
-        font-size: 1.3rem;
-        font-weight: 900;
-        line-height: 1.1;
-        margin-top: 0.25rem;
-    }
+    .manager-approval-card.is-aging { border-left-color: #f59e0b; }
 
-    .manager-tsr-list {
-        max-height: 320px;
-        overflow-y: auto;
-    }
-
-    .manager-tsr-row {
-        background: #ffffff;
-    }
-
-
-    .manager-billing-visibility-panel {
-        background: #ffffff;
-        border: 1px solid #bbf7d0;
-        border-radius: 1rem;
-        padding: 0.9rem;
-        border-left: 4px solid rgba(34, 197, 94, 0.35);
-    }
-
-    .manager-billing-signal-strip {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 0.75rem;
-    }
-
-    .manager-billing-signal-card {
-        background: #f0fdf4;
-        border: 1px solid #bbf7d0;
-        border-radius: 0.95rem;
-        padding: 0.8rem;
-    }
-
-    .manager-billing-signal-card span {
-        display: block;
-        color: #166534;
-        font-size: 0.68rem;
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-    }
-
-    .manager-billing-signal-card strong {
-        display: block;
-        color: #0f172a;
-        font-size: 1.3rem;
-        font-weight: 900;
-        line-height: 1.1;
-        margin-top: 0.25rem;
-    }
-
-    .manager-billing-list {
-        max-height: 320px;
-        overflow-y: auto;
-    }
-
-    .manager-billing-row {
-        background: #ffffff;
-    }
-
-
-    .manager-executive-watchlist-panel {
-        background: #ffffff;
-        border: 1px solid #fecaca;
-        border-radius: 1rem;
-        padding: 0.9rem;
-        border-left: 4px solid rgba(220, 53, 69, 0.35);
-    }
-
-    .manager-watchlist-chip-strip {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 0.65rem;
-    }
-
-    .manager-watchlist-chip {
-        border-radius: 0.95rem;
-        padding: 0.75rem;
-        border: 1px solid #e2e8f0;
-        background: #ffffff;
-    }
-
-    .manager-watchlist-chip span {
-        display: block;
-        color: #64748b;
-        font-size: 0.66rem;
-        font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-    }
-
-    .manager-watchlist-chip strong {
-        display: block;
-        color: #0f172a;
+    .manager-approval-count {
         font-size: 1.25rem;
         font-weight: 900;
-        line-height: 1.1;
-        margin-top: 0.25rem;
+        line-height: 1.05;
+        color: var(--app-text, #0f172a);
     }
 
-    .manager-watchlist-chip-critical {
-        background: #fff1f2;
-        border-color: #fecdd3;
+    .manager-approval-label {
+        font-size: 0.74rem;
+        font-weight: 800;
+        line-height: 1.2;
+        color: var(--app-text, #0f172a);
     }
 
-    .manager-watchlist-chip-critical span {
-        color: #be123c;
+    .manager-approval-age {
+        font-size: 0.66rem;
+        font-weight: 700;
+        color: var(--app-muted, #6b7280);
     }
 
-    .manager-watchlist-chip-watch {
-        background: #fffbeb;
-        border-color: #fde68a;
+    .manager-approvals-empty {
+        padding: 0.75rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: var(--app-muted, #6b7280);
     }
 
-    .manager-watchlist-chip-watch span {
-        color: #92400e;
+    /* One verdict, replacing four independently-thresholded badges. */
+    .manager-risk {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.65rem 0.9rem;
+        border-radius: 0.85rem;
+        border: 1px solid var(--app-border, #e2e8f0);
+        background: var(--app-surface, #ffffff);
     }
 
-    .manager-watchlist-chip-info {
-        background: #eff6ff;
-        border-color: #bfdbfe;
+    .manager-risk-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex: 0 0 auto;
+        background: #22c55e;
     }
 
-    .manager-watchlist-chip-info span {
-        color: #1d4ed8;
+    .manager-risk-label {
+        font-weight: 800;
+        font-size: 0.88rem;
+        color: var(--app-text, #0f172a);
     }
 
-    .manager-watchlist-chip-stable {
-        background: #f0fdf4;
-        border-color: #bbf7d0;
+    .manager-risk.is-watch { border-color: rgba(245, 158, 11, 0.55); }
+    .manager-risk.is-watch .manager-risk-dot { background: #f59e0b; }
+    .manager-risk.is-critical { border-color: rgba(220, 53, 69, 0.55); }
+    .manager-risk.is-critical .manager-risk-dot { background: #dc3545; }
+
+    .manager-direction-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 0.85rem;
     }
 
-    .manager-watchlist-chip-stable span {
-        color: #166534;
+    .manager-direction-metric {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
     }
 
-    .manager-watchlist-list {
-        max-height: 320px;
+    .manager-direction-value {
+        font-size: 1.7rem;
+        font-weight: 900;
+        line-height: 1;
+        color: var(--app-text, #0f172a);
+    }
+
+    .manager-direction-label {
+        font-size: 0.76rem;
+        font-weight: 800;
+        color: var(--app-muted, #6b7280);
+    }
+
+    .manager-direction-change {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: var(--app-muted, #6b7280);
+    }
+
+    .manager-direction-change.is-good { color: #15803d; }
+    .manager-direction-change.is-bad { color: #b91c1c; }
+
+    .manager-watchlist {
+        max-height: 460px;
         overflow-y: auto;
     }
 
     .manager-watchlist-row {
-        background: #ffffff;
-    }
-
-
-    .manager-action-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 0.85rem;
+        grid-template-columns: 4px 1fr auto;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.65rem 1rem;
+        border-bottom: 1px solid var(--app-border, #f1f5f9);
+        background: var(--app-surface, #ffffff);
     }
 
-    .manager-action-card {
-        display: flex;
-        flex-direction: column;
-        gap: 0.35rem;
-        min-height: 112px;
-        padding: 1rem;
-        background: #fff;
-        border: 1px solid #e2e8f0;
-        border-radius: 1rem;
-        color: #334155;
-        text-decoration: none;
-        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
-        transition: 0.22s ease;
+    .manager-watchlist-row:last-child { border-bottom: 0; }
+
+    .manager-watchlist-accent {
+        width: 4px;
+        align-self: stretch;
+        min-height: 32px;
+        border-radius: 2px;
+        background: #94a3b8;
     }
 
-    .manager-action-card:hover {
-        transform: translateY(-3px);
-        color: #0f172a;
-        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+    .manager-watchlist-accent.is-critical { background: #dc3545; }
+    .manager-watchlist-accent.is-watch { background: #f59e0b; }
+
+    .manager-watchlist-body {
+        display: block;
+        min-width: 0;
     }
 
-    .manager-action-card i {
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
-        display: grid;
-        place-items: center;
-        background: #f1f5f9;
-        color: #0f172a;
-        font-size: 1rem;
+    .manager-watchlist-title {
+        display: block;
+        font-weight: 800;
+        font-size: 0.85rem;
+        line-height: 1.2;
+        color: var(--app-text, #0f172a);
     }
 
-    .manager-action-card strong {
-        color: #0f172a;
-        font-size: 0.9rem;
-        line-height: 1.15;
-    }
-
-    .manager-action-card span {
-        color: #64748b;
+    .manager-watchlist-hint {
+        display: block;
+        margin-top: 0.12rem;
         font-size: 0.72rem;
         font-weight: 700;
-        line-height: 1.25;
+        line-height: 1.3;
+        color: var(--app-muted, #6b7280);
     }
 
-    .manager-action-primary {
-        border-color: rgba(15, 23, 42, 0.25);
-        background: linear-gradient(135deg, #ffffff, #f8fafc);
+    .manager-watchlist-tag {
+        font-size: 0.66rem;
+        font-weight: 900;
+        white-space: nowrap;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        color: var(--app-muted, #6b7280);
     }
+
+    .manager-watchlist-clear {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 1.1rem 1rem;
+        font-size: 0.82rem;
+        font-weight: 700;
+        color: var(--app-muted, #6b7280);
+    }
+
+    .manager-watchlist-clear i { color: #22c55e; }
 
     .manager-branch-list,
     .manager-utilization-list {
@@ -1233,21 +1208,20 @@
         .scheduler-core-dashboard,
         .scheduler-coordination-panel { padding: 0.85rem; }
 
-        .manager-tsr-signal-strip,
-        .manager-billing-signal-strip,
-        .manager-watchlist-chip-strip {
+        .manager-approvals-grid,
+        .manager-direction-grid {
             grid-template-columns: 1fr;
             gap: 0.5rem;
         }
 
-        .manager-action-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.6rem;
+        .manager-watchlist-row {
+            grid-template-columns: 4px 1fr;
+            row-gap: 0.3rem;
         }
 
-        .manager-action-card {
-            min-height: 108px;
-            padding: 0.85rem;
+        .manager-watchlist-tag {
+            grid-column: 2;
+            justify-self: start;
         }
 
         .scheduler-availability-strip {
@@ -1547,9 +1521,23 @@
    per-element rules in app-themes.css that do not cover these. Measured 2.93 (queue hint)
    and 3.36 (risk detail) against the dark card without this; 5.46 and 6.6 with it. */
 :root[data-app-theme="dark"] .scheduler-queue-hint,
-:root[data-app-theme="dark"] .scheduler-risk-detail {
+:root[data-app-theme="dark"] .scheduler-risk-detail,
+:root[data-app-theme="dark"] .manager-watchlist-hint,
+:root[data-app-theme="dark"] .manager-watchlist-tag,
+:root[data-app-theme="dark"] .manager-direction-label,
+:root[data-app-theme="dark"] .manager-direction-change,
+:root[data-app-theme="dark"] .manager-approvals-total-label,
+:root[data-app-theme="dark"] .manager-approvals-aging,
+:root[data-app-theme="dark"] .manager-approval-age,
+:root[data-app-theme="dark"] .manager-approvals-empty {
     color: #94a3b8;
 }
+
+/* Severity colours chosen for the light card fall below 4.5:1 on the dark one. */
+:root[data-app-theme="dark"] .manager-approvals-aging.is-aging { color: #fbbf24; }
+:root[data-app-theme="dark"] .manager-approvals-aging.is-clear { color: #4ade80; }
+:root[data-app-theme="dark"] .manager-direction-change.is-good { color: #4ade80; }
+:root[data-app-theme="dark"] .manager-direction-change.is-bad { color: #f87171; }
 
 /* The queue row and the risk line sit on the dark card in dark mode; the light-mode
    hover tint and green check both wash out against it. */

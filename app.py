@@ -1157,10 +1157,8 @@ PERFORMANCE_LOG_PATHS = {
     '/get_hybrid_dashboard_smart_monitoring',
     '/get_scheduler_dispatch_intelligence',
     '/get_scheduler_coordination_tools',
-    '/get_manager_dashboard_summary',
-    '/get_manager_tsr_intelligence',
-    '/get_manager_billing_visibility',
-    '/get_manager_executive_watchlist',
+    '/get_manager_overview',
+    '/get_manager_approvals',
     '/get_accounting_center_modules',
     '/get_accounting_reimbursement_queue',
     '/get_accounting_travel_request_queue',
@@ -14402,7 +14400,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v46-scheduler-dispatch';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v47-manager-decisions';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -17142,6 +17140,8 @@ DASHBOARD_SECTION_IDS = {
     'scheduler-dispatch',
     'scheduler-coordination',
     'manager-executive',
+    'manager-direction',
+    'manager-watchlist',
     'engineer-summary',
     'engineer-today',
     'admin-counters',
@@ -19569,48 +19569,172 @@ def scheduler_quick_reschedule_shift():
 
 
 
-# --- MANAGER DASHBOARD PHASE M1: EXECUTIVE FOUNDATION ---
+# --- MANAGER DASHBOARD: DECISIONS, DIRECTION, WATCHLIST ---
 
-def manager_shift_priority_row(shift, reason='', severity='info'):
-    """Serialize a schedule row for manager executive dashboard alerts."""
-    row = dashboard_team_shift_row(shift)
-    row['reason'] = reason
-    row['severity'] = severity
-    if shift and getattr(shift, 'start_time', None):
-        row['days_old'] = max((get_manila_today() - shift.start_time.date()).days, 0)
-    else:
-        row['days_old'] = 0
-    return row
+MANAGER_APPROVAL_AGING_DAYS = 5
+
+# Explicit status set for blocked work. There were three different definitions of this in
+# the manager endpoints -- this set, a filename text heuristic, and an exact 'waiting for
+# p.o' match -- so the billing tile and the watchlist chip could disagree about the same
+# schedule on the same screen. This is now the only one.
+MANAGER_WAITING_STATUSES = {'Waiting for P.O', 'Waiting for Parts'}
+
+MANAGER_SEVERE_AGE_DAYS = 7
+MANAGER_REPEAT_SERVICE_THRESHOLD = 4
 
 
-@app.route('/get_manager_dashboard_summary')
+def manager_approval_queue_models():
+    """(key, label, model, scope) per approval queue, ordered by the module catalog.
+
+    Driven from approval_center_module_catalog() rather than a fourth hardcoded module
+    list -- app.py, approvals_page() and the nav badge already keep their own copies, and
+    the catalog is the one that decides whether LPR is enabled.
+    """
+    known = {
+        'travel_request': (TravelRequest, 'travel_request'),
+        'reimbursement': (ReimbursementHeader, 'reimbursement'),
+        'cash_advance': (CashAdvanceHeader, 'cash_advance'),
+        'cash_advance_liquidation': (CashAdvanceLiquidationHeader, 'cash_advance_liquidation'),
+        'travel_liquidation': (TravelLiquidationHeader, 'travel_liquidation'),
+        'leave_request': (LeaveRequest, 'leave_request'),
+        'lpr': (LPRHeader, 'lpr'),
+    }
+
+    queues = []
+    for module in approval_center_module_catalog():
+        key = module.get('key')
+        if key in known and module.get('enabled'):
+            model_cls, scope_key = known[key]
+            queues.append((key, module.get('label') or key, model_cls, scope_key))
+    return queues
+
+
+@app.route('/get_manager_approvals')
 @login_required
-def get_manager_dashboard_summary():
-    """Manager Dashboard Phase M1 backend summary.
+def get_manager_approvals():
+    """The manager's decision queue: what is waiting, and how long it has waited.
 
-    Executive foundation endpoint:
-    - company-wide operational KPIs
-    - branch workload summary
-    - engineer utilization snapshot
-    - priority alerts for overdue, missing TSR, waiting P.O/parts, and unassigned work
+    Counts and waiting time only. Approving stays on /approvals, where the whole request
+    is visible -- a money-carrying request should not be decided from a number on a
+    dashboard.
 
-    This is read-only and uses existing Shift/Engineer/Client/Product data only.
-    No database schema changes.
+    Waiting time comes from submitted_at, which every approval model already stores and
+    which nothing previously read. No schema change.
     """
     if not can_view_manager_dashboard():
-        return denied('Manager dashboard summary is only available to manager-authorized accounts.')
+        return denied('Manager approvals are only available to manager-authorized accounts.')
+
+    # A manager-dashboard account is not necessarily an approver: is_manager_dashboard_user()
+    # also admits regional admins and the developer account. Reporting is_approver lets the
+    # page hide the block rather than show a panel of permanent zeros.
+    is_approver = is_approval_center_user()
+    payload = {
+        'status': 'success',
+        'generated_at': get_manila_time().isoformat(),
+        'is_approver': is_approver,
+        'workflows_enabled': new_workflows_enabled(),
+        'aging_threshold_days': MANAGER_APPROVAL_AGING_DAYS,
+        'modules': [],
+        'counts': {'pending_total': 0, 'aging_total': 0, 'oldest_days': 0}
+    }
+
+    if not is_approver or not new_workflows_enabled():
+        return jsonify(payload)
+
+    now = as_naive_datetime(get_manila_time())
+    pending_total = 0
+    aging_total = 0
+    oldest_days = 0
+
+    for key, label, model_cls, scope_key in manager_approval_queue_models():
+        try:
+            query = apply_assigned_approver_filter(
+                db.session.query(model_cls.id, model_cls.submitted_at),
+                model_cls, current_user, scope_key
+            )
+            rows = query.filter(model_cls.status == 'Submitted').all()
+        except Exception as module_error:
+            # One unavailable module must not zero the whole panel, matching the pattern in
+            # get_nav_pending_summary().
+            print(f"[Manager] Approval counts unavailable for {scope_key}: {module_error}", flush=True)
+            continue
+
+        module_oldest = 0
+        module_aging = 0
+        for _row_id, submitted_at in rows:
+            submitted = as_naive_datetime(submitted_at)
+            if not submitted:
+                # Submitted with no timestamp: counted as pending, but it cannot claim an
+                # age, and guessing one would inflate the headline.
+                continue
+            waited_days = max((now - submitted).days, 0)
+            module_oldest = max(module_oldest, waited_days)
+            if waited_days >= MANAGER_APPROVAL_AGING_DAYS:
+                module_aging += 1
+
+        pending_total += len(rows)
+        aging_total += module_aging
+        oldest_days = max(oldest_days, module_oldest)
+
+        payload['modules'].append({
+            'key': key,
+            'label': label,
+            'pending': len(rows),
+            'aging': module_aging,
+            'oldest_days': module_oldest,
+            # Matches the URL shape leave_feature.py already uses for its notifications.
+            'href': f'/approvals?module={key}'
+        })
+
+    payload['modules'].sort(key=lambda row: (-row['aging'], -row['pending'], row['label']))
+    payload['counts'] = {
+        'pending_total': pending_total,
+        'aging_total': aging_total,
+        'oldest_days': oldest_days
+    }
+    return jsonify(payload)
+
+
+def manager_watchlist_entry(key, entry_type, title, subtitle, detail, meta, tone, rank):
+    """One consolidated watchlist row. `key` is what de-duplication is done on."""
+    return {
+        'key': key,
+        'type': entry_type,
+        'title': title,
+        'subtitle': subtitle,
+        'detail': detail,
+        'meta': meta,
+        'tone': tone,
+        'rank': rank
+    }
+
+
+@app.route('/get_manager_overview')
+@login_required
+def get_manager_overview():
+    """Operational state, direction, and one consolidated watchlist -- from one shift scan.
+
+    Replaces four endpoints that each ran a near-identical scan of up to 2000 shifts; two
+    of them used the identical window and limit, so the same rows were fetched twice per
+    page load.
+
+    On direction: only *flow* metrics carry a change figure. Flow means events inside a
+    window (visits completed, visits scheduled), so two windows are comparable. Stock means
+    state as of now (currently overdue, currently pending TSR) -- a shift that was overdue
+    last week and has since been completed has left the overdue set, so any "overdue a week
+    ago" reconstructed today is systematically undercounted. Those get no delta on purpose.
+    """
+    if not can_view_manager_dashboard():
+        return denied('Manager overview is only available to manager-authorized accounts.')
 
     ensure_shift_file_original_filename_column()
 
     today = get_manila_today()
-    month_start = today.replace(day=1)
-    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
-    lookback_start = today - timedelta(days=90)
+    lookback_start = today - timedelta(days=180)
     lookahead_end = today + timedelta(days=60)
     start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
 
     invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
-    waiting_statuses = {'Waiting for P.O', 'Waiting for Parts'}
 
     base_query = (
         Shift.query
@@ -19624,116 +19748,136 @@ def get_manager_dashboard_summary():
         .filter(Shift.start_time < end_dt)
         .order_by(Shift.start_time.desc())
     )
-
     base_query = analytics_scope_query(base_query)
-
     service_shifts = list({shift.id: shift for shift in base_query.limit(2000).all()}.values())
 
-    open_shifts = [
-        shift for shift in service_shifts
-        if (shift.status or '') not in invalid_dashboard_categories
-    ]
+    # Resolve each shift's engineers and TSR state once. The old endpoints called
+    # get_shift_engineer_records() and shift_has_tsr_file() repeatedly per shift across four
+    # separate passes.
+    resolved = {}
+    for shift in service_shifts:
+        status = shift.status or ''
+        shift_date = shift.start_time.date() if shift.start_time else None
+        resolved[shift.id] = {
+            'shift': shift,
+            'status': status,
+            'date': shift_date,
+            'engineers': get_shift_engineer_records(shift),
+            'has_tsr': shift_has_tsr_file(shift),
+            'is_open': status not in invalid_dashboard_categories,
+            'is_completed': status == 'Completed',
+        }
 
+    open_shifts = [row['shift'] for row in resolved.values() if row['is_open']]
     overdue_shifts = [
-        shift for shift in open_shifts
-        if shift.start_time and shift.start_time.date() < today
+        row['shift'] for row in resolved.values()
+        if row['is_open'] and row['date'] and row['date'] < today
     ]
-
     waiting_shifts = [
-        shift for shift in open_shifts
-        if (shift.status or '') in waiting_statuses
+        row['shift'] for row in resolved.values()
+        if row['is_open'] and row['status'] in MANAGER_WAITING_STATUSES
     ]
-
-    completed_this_month = [
-        shift for shift in service_shifts
-        if (
-            (shift.status or '') == 'Completed' and
-            shift.start_time and
-            month_start <= shift.start_time.date() < next_month
-        )
-    ]
-
     pending_tsr_shifts = [
-        shift for shift in service_shifts
-        if (shift.status or '') == 'Completed' and not shift_has_tsr_file(shift)
+        row['shift'] for row in resolved.values()
+        if row['is_completed'] and not row['has_tsr']
     ]
-
     unassigned_shifts = [
-        shift for shift in open_shifts
-        if not get_shift_engineer_records(shift)
+        row['shift'] for row in resolved.values()
+        if row['is_open'] and not row['engineers']
     ]
 
+    # ---- Direction: flow metrics only ----------------------------------------------
+    period_days = 7
+    current_start = today - timedelta(days=period_days - 1)
+    previous_start = current_start - timedelta(days=period_days)
+
+    def window_rows(window_start, window_end_exclusive):
+        return [
+            row for row in resolved.values()
+            if row['date'] and window_start <= row['date'] < window_end_exclusive
+        ]
+
+    def flow_metrics(rows):
+        completed = [row for row in rows if row['is_completed']]
+        completed_with_tsr = [row for row in completed if row['has_tsr']]
+        return {
+            'scheduled': len(rows),
+            'completed': len(completed),
+            'tsr_rate': round(len(completed_with_tsr) / len(completed) * 100, 1) if completed else 0.0
+        }
+
+    current_flow = flow_metrics(window_rows(current_start, today + timedelta(days=1)))
+    previous_flow = flow_metrics(window_rows(previous_start, current_start))
+
+    def direction_row(label, key, unit=''):
+        current_value = current_flow[key]
+        previous_value = previous_flow[key]
+        return {
+            'key': key,
+            'label': label,
+            'unit': unit,
+            'value': current_value,
+            'previous': previous_value,
+            'change': round(current_value - previous_value, 1),
+            # Higher completion and a higher TSR rate are good; volume is neutral.
+            'higher_is_better': key != 'scheduled'
+        }
+
+    direction = {
+        'period_days': period_days,
+        'current_from': current_start.strftime('%Y-%m-%d'),
+        'current_to': today.strftime('%Y-%m-%d'),
+        'previous_from': previous_start.strftime('%Y-%m-%d'),
+        'previous_to': (current_start - timedelta(days=1)).strftime('%Y-%m-%d'),
+        'metrics': [
+            direction_row('Visits completed', 'completed'),
+            direction_row('Visits scheduled', 'scheduled'),
+            direction_row('TSR completion', 'tsr_rate', unit='%')
+        ]
+    }
+
+    # ---- Branch and engineer drill-down ---------------------------------------------
     branch_summary = {}
     engineer_load = {}
 
     def ensure_branch(branch_name):
         branch_name = branch_name or 'Unassigned'
         branch_summary.setdefault(branch_name, {
-            'branch': branch_name,
-            'open_tasks': 0,
-            'overdue': 0,
-            'waiting_items': 0,
-            'pending_tsr': 0,
-            'engineers': 0
+            'branch': branch_name, 'open_tasks': 0, 'overdue': 0,
+            'waiting_items': 0, 'pending_tsr': 0, 'engineers': 0
         })
         return branch_summary[branch_name]
 
-    for shift in open_shifts:
-        engineers = get_shift_engineer_records(shift)
-        if not engineers:
+    for row in resolved.values():
+        if not row['is_open']:
+            continue
+        is_overdue = bool(row['date'] and row['date'] < today)
+        is_waiting = row['status'] in MANAGER_WAITING_STATUSES
+
+        if not row['engineers']:
             branch_row = ensure_branch('Unassigned')
             branch_row['open_tasks'] += 1
-            if shift.start_time and shift.start_time.date() < today:
-                branch_row['overdue'] += 1
-            if (shift.status or '') in waiting_statuses:
-                branch_row['waiting_items'] += 1
+            branch_row['overdue'] += 1 if is_overdue else 0
+            branch_row['waiting_items'] += 1 if is_waiting else 0
             continue
 
-        for engineer in engineers:
+        for engineer in row['engineers']:
             branch = engineer.branch or 'Unassigned'
             branch_row = ensure_branch(branch)
             branch_row['open_tasks'] += 1
-            if shift.start_time and shift.start_time.date() < today:
-                branch_row['overdue'] += 1
-            if (shift.status or '') in waiting_statuses:
-                branch_row['waiting_items'] += 1
+            branch_row['overdue'] += 1 if is_overdue else 0
+            branch_row['waiting_items'] += 1 if is_waiting else 0
 
-            if engineer.id not in engineer_load:
-                engineer_load[engineer.id] = {
-                    'engineer_id': engineer.id,
-                    'name': engineer.name,
-                    'branch': branch,
-                    'open_tasks': 0,
-                    'overdue': 0,
-                    'waiting_items': 0,
-                    'completed_this_month': 0,
-                    'utilization_level': 'normal'
-                }
-
-            row = engineer_load[engineer.id]
-            row['open_tasks'] += 1
-            if shift.start_time and shift.start_time.date() < today:
-                row['overdue'] += 1
-            if (shift.status or '') in waiting_statuses:
-                row['waiting_items'] += 1
-
-    for shift in completed_this_month:
-        for engineer in get_shift_engineer_records(shift):
-            if engineer.id not in engineer_load:
-                engineer_load[engineer.id] = {
-                    'engineer_id': engineer.id,
-                    'name': engineer.name,
-                    'branch': engineer.branch or 'Unassigned',
-                    'open_tasks': 0,
-                    'overdue': 0,
-                    'waiting_items': 0,
-                    'completed_this_month': 0,
-                    'utilization_level': 'normal'
-                }
-            engineer_load[engineer.id]['completed_this_month'] += 1
+            load_row = engineer_load.setdefault(engineer.id, {
+                'engineer_id': engineer.id, 'name': engineer.name, 'branch': branch,
+                'open_tasks': 0, 'overdue': 0, 'waiting_items': 0, 'utilization_level': 'normal'
+            })
+            load_row['open_tasks'] += 1
+            load_row['overdue'] += 1 if is_overdue else 0
+            load_row['waiting_items'] += 1 if is_waiting else 0
 
     for shift in pending_tsr_shifts:
-        engineers = get_shift_engineer_records(shift)
+        engineers = resolved[shift.id]['engineers']
         if not engineers:
             ensure_branch('Unassigned')['pending_tsr'] += 1
             continue
@@ -19751,801 +19895,162 @@ def get_manager_dashboard_summary():
                 row['utilization_level'] = 'high'
             elif row['overdue'] >= 1 or row['waiting_items'] >= 2 or row['open_tasks'] >= max(4, avg_open * 1.3):
                 row['utilization_level'] = 'watch'
+    engineer_rows.sort(key=lambda row: (-row['overdue'], -row['open_tasks'], row['name']))
 
-    engineer_rows.sort(key=lambda row: (-row['overdue'], -row['open_tasks'], -row['completed_this_month'], row['name']))
+    # ---- One consolidated, de-duplicated watchlist ----------------------------------
+    # The old view split this across four panels, so the same equipment appeared in the TSR
+    # panel at a >=3 threshold and again in the watchlist at >=4 under a different label.
+    severe_overdue = [
+        shift for shift in overdue_shifts
+        if resolved[shift.id]['date'] and (today - resolved[shift.id]['date']).days >= MANAGER_SEVERE_AGE_DAYS
+    ]
+    severe_tsr = [
+        shift for shift in pending_tsr_shifts
+        if resolved[shift.id]['date'] and (today - resolved[shift.id]['date']).days >= MANAGER_SEVERE_AGE_DAYS
+    ]
 
-    priority_alerts = []
-    priority_alerts.extend([
-        manager_shift_priority_row(
-            shift,
-            f"Overdue by {max((today - shift.start_time.date()).days, 0)} day(s)" if shift.start_time else 'Overdue schedule',
-            'danger'
-        )
-        for shift in sorted(overdue_shifts, key=lambda s: s.start_time or datetime.min)[:8]
-    ])
-    priority_alerts.extend([
-        manager_shift_priority_row(shift, 'Completed schedule missing TSR', 'warning')
-        for shift in sorted(pending_tsr_shifts, key=lambda s: s.start_time or datetime.min)[:8]
-    ])
-    priority_alerts.extend([
-        manager_shift_priority_row(shift, shift.status or 'Waiting item', 'info')
-        for shift in sorted(waiting_shifts, key=lambda s: s.start_time or datetime.min)[:6]
-    ])
-    priority_alerts.extend([
-        manager_shift_priority_row(shift, 'No engineer assigned', 'danger')
-        for shift in sorted(unassigned_shifts, key=lambda s: s.start_time or datetime.max)[:6]
-    ])
+    entries = []
+    for shift in sorted(severe_overdue, key=lambda s: s.start_time or datetime.min):
+        row = resolved[shift.id]
+        days = (today - row['date']).days
+        entries.append(manager_watchlist_entry(
+            f'shift:{shift.id}', 'severe_overdue',
+            row['shift'].client.name if row['shift'].client else 'No client',
+            row['shift'].title or 'Untitled',
+            f'Overdue by {days} day(s)',
+            ', '.join(engineer.name for engineer in row['engineers']) or 'Unassigned',
+            'critical', 400 + days
+        ))
 
-    operational_risk_score = (
+    for shift in sorted(severe_tsr, key=lambda s: s.start_time or datetime.min):
+        row = resolved[shift.id]
+        days = (today - row['date']).days
+        entries.append(manager_watchlist_entry(
+            f'shift:{shift.id}', 'aged_tsr',
+            row['shift'].client.name if row['shift'].client else 'No client',
+            row['shift'].title or 'Untitled',
+            f'Completed {days} day(s) ago, still no TSR',
+            ', '.join(engineer.name for engineer in row['engineers']) or 'Unassigned',
+            'critical' if days >= 14 else 'watch', 300 + days
+        ))
+
+    for shift in sorted(waiting_shifts, key=lambda s: s.start_time or datetime.min):
+        row = resolved[shift.id]
+        entries.append(manager_watchlist_entry(
+            f'shift:{shift.id}', 'waiting',
+            row['shift'].client.name if row['shift'].client else 'No client',
+            row['shift'].title or 'Untitled',
+            row['status'],
+            ', '.join(engineer.name for engineer in row['engineers']) or 'Unassigned',
+            'watch', 200
+        ))
+
+    repeat_map = {}
+    for row in resolved.values():
+        shift = row['shift']
+        if not row['date'] or not shift.product_id:
+            continue
+        serial_label = shift.product.serial_number if shift.product else (shift.product_id or '')
+        key = f"{shift.client_id or 'no-client'}::{serial_label or shift.product_id}"
+        entry = repeat_map.setdefault(key, {
+            'client': shift.client.name if shift.client else 'N/A',
+            'product': shift.product.name if shift.product else (shift.product_id or 'Unknown Equipment'),
+            'serial': serial_label,
+            'service_count': 0
+        })
+        entry['service_count'] += 1
+
+    for key, entry in repeat_map.items():
+        if entry['service_count'] < MANAGER_REPEAT_SERVICE_THRESHOLD:
+            continue
+        entries.append(manager_watchlist_entry(
+            f'equipment:{key}', 'repeat_equipment',
+            entry['product'] or 'Repeat equipment', entry['client'],
+            f"{entry['service_count']} services in 180 days",
+            entry['serial'], 'critical' if entry['service_count'] >= 6 else 'watch',
+            100 + entry['service_count']
+        ))
+
+    client_risk = {}
+    severe_overdue_ids = {shift.id for shift in severe_overdue}
+    severe_tsr_ids = {shift.id for shift in severe_tsr}
+    waiting_ids = {shift.id for shift in waiting_shifts}
+    for row in resolved.values():
+        shift = row['shift']
+        if not shift.client:
+            continue
+        entry = client_risk.setdefault(shift.client.name, {
+            'client': shift.client.name, 'overdue': 0, 'pending_tsr': 0, 'waiting': 0, 'open': 0
+        })
+        # Set membership rather than `shift in list`, which was O(n^2) over up to 2000
+        # shifts across four lists.
+        entry['open'] += 1 if row['is_open'] else 0
+        entry['overdue'] += 1 if shift.id in severe_overdue_ids else 0
+        entry['pending_tsr'] += 1 if shift.id in severe_tsr_ids else 0
+        entry['waiting'] += 1 if shift.id in waiting_ids else 0
+
+    for name, entry in client_risk.items():
+        score = (entry['overdue'] * 3) + (entry['pending_tsr'] * 2) + (entry['waiting'] * 2) + entry['open']
+        if score < 5:
+            continue
+        entries.append(manager_watchlist_entry(
+            f'client:{name}', 'high_risk_client', name, 'Client watch signal',
+            f"{entry['open']} open - {entry['overdue']} severe overdue - {entry['pending_tsr']} aged TSR",
+            f'Score {score}', 'critical' if score >= 10 else 'watch', score
+        ))
+
+    # One row per entity. A schedule can qualify as both severely overdue and blocked on
+    # parts; the highest-ranked reason is the one shown.
+    entries.sort(key=lambda row: -row['rank'])
+    watchlist = []
+    seen_keys = set()
+    for entry in entries:
+        if entry['key'] in seen_keys:
+            continue
+        seen_keys.add(entry['key'])
+        watchlist.append(entry)
+
+    watchlist_total = len(watchlist)
+    watchlist_counts = {}
+    for entry in watchlist:
+        watchlist_counts[entry['type']] = watchlist_counts.get(entry['type'], 0) + 1
+
+    # ---- One risk verdict, replacing four independently-thresholded badges ----------
+    risk_score = (
         (len(overdue_shifts) * 3) +
         (len(pending_tsr_shifts) * 2) +
         (len(waiting_shifts) * 2) +
         (len(unassigned_shifts) * 3) +
         len([row for row in engineer_rows if row.get('utilization_level') == 'high'])
     )
-
-    if operational_risk_score >= 24:
-        risk_level = 'critical'
-        risk_label = 'Critical operational attention'
-    elif operational_risk_score >= 10:
-        risk_level = 'watch'
-        risk_label = 'Management watch needed'
+    if risk_score >= 24:
+        risk_level, risk_label = 'critical', 'Critical operational attention'
+    elif risk_score >= 10:
+        risk_level, risk_label = 'watch', 'Management watch needed'
     else:
-        risk_level = 'stable'
-        risk_label = 'Operations stable'
+        risk_level, risk_label = 'stable', 'Operations stable'
 
     return jsonify({
         'status': 'success',
-        'phase': 'manager-phase-m1-executive-foundation',
         'generated_at': get_manila_time().isoformat(),
-        'manager': {
-            'username': getattr(current_user, 'username', ''),
-            'display_role': get_display_role(current_user)
-        },
-        'risk': {
-            'score': operational_risk_score,
-            'level': risk_level,
-            'label': risk_label
-        },
+        'risk': {'score': risk_score, 'level': risk_level, 'label': risk_label},
         'counts': {
             'open_schedules': len(open_shifts),
             'overdue_schedules': len(overdue_shifts),
             'pending_tsr': len(pending_tsr_shifts),
             'waiting_items': len(waiting_shifts),
-            'completed_this_month': len(completed_this_month),
-            'unassigned_schedules': len(unassigned_shifts),
-            'active_engineers': len(engineer_rows),
-            'clients': Client.query.count(),
-            'products': Product.query.count()
+            'unassigned_schedules': len(unassigned_shifts)
         },
+        'direction': direction,
+        'watchlist': watchlist[:20],
+        'watchlist_total': watchlist_total,
+        'watchlist_counts': watchlist_counts,
         'branch_summary': sorted(
             branch_summary.values(),
             key=lambda row: (-row.get('open_tasks', 0), row.get('branch') or '')
         ),
-        'engineer_utilization': engineer_rows[:20],
-        'priority_alerts': priority_alerts[:20],
-        'overdue_rows': [
-            manager_shift_priority_row(shift, 'Overdue schedule', 'danger')
-            for shift in sorted(overdue_shifts, key=lambda s: s.start_time or datetime.min)[:12]
-        ],
-        'pending_tsr_rows': [
-            manager_shift_priority_row(shift, 'Completed schedule missing TSR', 'warning')
-            for shift in sorted(pending_tsr_shifts, key=lambda s: s.start_time or datetime.min)[:12]
-        ],
-        'waiting_rows': [
-            manager_shift_priority_row(shift, shift.status or 'Waiting item', 'info')
-            for shift in sorted(waiting_shifts, key=lambda s: s.start_time or datetime.min)[:12]
-        ]
+        'engineer_utilization': engineer_rows[:20]
     })
-
-
-
-
-
-# --- MANAGER DASHBOARD PHASE M2: CLEAN TSR INTELLIGENCE ---
-
-def manager_tsr_signal_row(shift, signal_label='', severity='warning'):
-    """Compact TSR intelligence row for manager dashboard."""
-    row = manager_shift_priority_row(shift, signal_label, severity)
-    # Keep manager TSR rows compact and frontend-safe.
-    row['signal_label'] = signal_label
-    row['severity'] = severity
-    return row
-
-
-@app.route('/get_manager_tsr_intelligence')
-@login_required
-def get_manager_tsr_intelligence():
-    """Manager Dashboard Phase M2 backend: clean TSR intelligence.
-
-    Intentionally compact:
-    - Pending TSR aging
-    - Repeat equipment/client service signals
-    - Frequent complaint/service issue signals from TSR knowledge base
-    - top 5 rows only per signal
-
-    No schema changes. No large tables.
-    """
-    if not can_view_manager_dashboard():
-        return denied('Manager TSR intelligence is only available to manager-authorized accounts.')
-
-    ensure_shift_file_original_filename_column()
-    ensure_tsr_knowledge_entry_table()
-
-    today = get_manila_today()
-    lookback_start = today - timedelta(days=180)
-    lookahead_end = today + timedelta(days=30)
-    start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
-
-    service_query = (
-        Shift.query
-        .options(
-            joinedload(Shift.client),
-            joinedload(Shift.product),
-            selectinload(Shift.files)
-        )
-        .filter(Shift.client_id.isnot(None))
-        .filter(Shift.start_time >= start_dt)
-        .filter(Shift.start_time < end_dt)
-        .order_by(Shift.start_time.desc())
-    )
-    service_query = analytics_scope_query(service_query)
-    service_shifts = list({shift.id: shift for shift in service_query.limit(2000).all()}.values())
-
-    completed_shifts = [
-        shift for shift in service_shifts
-        if (shift.status or '') == 'Completed'
-    ]
-
-    pending_tsr_shifts = [
-        shift for shift in completed_shifts
-        if not shift_has_tsr_file(shift)
-    ]
-
-    pending_tsr_shifts.sort(
-        key=lambda shift: shift.start_time or datetime.min
-    )
-
-    aged_pending_tsr_rows = [
-        manager_tsr_signal_row(
-            shift,
-            f"No TSR for {max((today - shift.start_time.date()).days, 0)} day(s)" if shift.start_time else 'Missing TSR',
-            'danger' if shift.start_time and (today - shift.start_time.date()).days >= 7 else 'warning'
-        )
-        for shift in pending_tsr_shifts[:5]
-    ]
-
-    completed_with_tsr = [
-        shift for shift in completed_shifts
-        if shift_has_tsr_file(shift)
-    ]
-    completion_total = len(completed_shifts)
-    completion_rate = round((len(completed_with_tsr) / completion_total) * 100, 1) if completion_total else 100.0
-
-    # Repeat equipment/client service signal.
-    repeat_map = {}
-    for shift in service_shifts:
-        if not shift.start_time or not shift.product_id:
-            continue
-
-        serial = shift.product.serial_number if shift.product else (shift.product_id or '')
-        product_name = shift.product.name if shift.product else (shift.product_id or 'Unknown Equipment')
-        client_name = shift.client.name if shift.client else 'N/A'
-        key = f"{shift.client_id or 'no-client'}::{serial or shift.product_id}"
-
-        if key not in repeat_map:
-            repeat_map[key] = {
-                'client': client_name,
-                'product': product_name,
-                'serial': serial,
-                'service_count': 0,
-                'last_service': '',
-                'latest_date': None,
-                'tasks': set()
-            }
-
-        row = repeat_map[key]
-        row['service_count'] += 1
-        row['tasks'].add(shift.title or '')
-        if not row['latest_date'] or shift.start_time > row['latest_date']:
-            row['latest_date'] = shift.start_time
-            row['last_service'] = shift.start_time.strftime('%Y-%m-%d')
-
-    repeat_equipment_rows = []
-    for row in repeat_map.values():
-        if row['service_count'] < 3:
-            continue
-        repeat_equipment_rows.append({
-            'client': row['client'],
-            'product': row['product'],
-            'serial': row['serial'],
-            'service_count': row['service_count'],
-            'last_service': row['last_service'],
-            'signal_label': f"{row['service_count']} services in 180 days",
-            'tasks': ', '.join(sorted([task for task in row['tasks'] if task])[:3])
-        })
-
-    repeat_equipment_rows.sort(key=lambda row: (-row['service_count'], row['client'], row['product']))
-
-    # Frequent issue signal from TSR Knowledge Base.
-    knowledge_start_dt = datetime.combine(lookback_start, datetime.min.time())
-    knowledge_entries = (
-        TsrKnowledgeEntry.query
-        .filter(TsrKnowledgeEntry.created_at >= knowledge_start_dt)
-        .order_by(TsrKnowledgeEntry.created_at.desc())
-        .limit(500)
-        .all()
-    )
-
-    issue_map = {}
-    for entry in knowledge_entries:
-        complaint = clean_str(getattr(entry, 'complaint', None)) or ''
-        if not complaint:
-            continue
-
-        # Compact grouping: normalize first 90 chars to avoid huge text blocks.
-        issue_key = re.sub(r'\s+', ' ', complaint.strip().lower())[:90]
-        if not issue_key:
-            continue
-
-        if issue_key not in issue_map:
-            issue_map[issue_key] = {
-                'issue': complaint[:180],
-                'count': 0,
-                'latest': getattr(entry, 'created_at', None),
-                'clients': set(),
-                'products': set()
-            }
-
-        row = issue_map[issue_key]
-        row['count'] += 1
-        if getattr(entry, 'client_name', None):
-            row['clients'].add(entry.client_name)
-        if getattr(entry, 'product_name', None):
-            row['products'].add(entry.product_name)
-        if getattr(entry, 'created_at', None) and (not row['latest'] or entry.created_at > row['latest']):
-            row['latest'] = entry.created_at
-
-    frequent_issue_rows = []
-    for row in issue_map.values():
-        if row['count'] < 2:
-            continue
-        frequent_issue_rows.append({
-            'issue': row['issue'],
-            'count': row['count'],
-            'latest': row['latest'].strftime('%Y-%m-%d') if row['latest'] else '',
-            'clients': ', '.join(sorted(row['clients'])[:3]),
-            'products': ', '.join(sorted(row['products'])[:3]),
-            'signal_label': f"{row['count']} similar TSR complaint(s)"
-        })
-
-    frequent_issue_rows.sort(key=lambda row: (-row['count'], row['issue']))
-
-    risk_score = (
-        len([shift for shift in pending_tsr_shifts if shift.start_time and (today - shift.start_time.date()).days >= 7]) * 3 +
-        len([shift for shift in pending_tsr_shifts if shift.start_time and (today - shift.start_time.date()).days >= 3]) +
-        len(repeat_equipment_rows) * 2 +
-        len(frequent_issue_rows)
-    )
-
-    if risk_score >= 12:
-        risk_level = 'critical'
-        risk_label = 'TSR attention needed'
-    elif risk_score >= 5:
-        risk_level = 'watch'
-        risk_label = 'TSR watchlist'
-    else:
-        risk_level = 'stable'
-        risk_label = 'TSR stable'
-
-    return jsonify({
-        'status': 'success',
-        'phase': 'manager-phase-m2-clean-tsr-intelligence',
-        'generated_at': get_manila_time().isoformat(),
-        'risk': {
-            'score': risk_score,
-            'level': risk_level,
-            'label': risk_label
-        },
-        'counts': {
-            'completed_services': completion_total,
-            'completed_with_tsr': len(completed_with_tsr),
-            'pending_tsr': len(pending_tsr_shifts),
-            'tsr_completion_rate': completion_rate,
-            'repeat_equipment_signals': len(repeat_equipment_rows),
-            'frequent_issue_signals': len(frequent_issue_rows)
-        },
-        'signals': {
-            'aged_pending_tsr': aged_pending_tsr_rows,
-            'repeat_equipment': repeat_equipment_rows[:5],
-            'frequent_issues': frequent_issue_rows[:5]
-        }
-    })
-
-
-
-
-
-# --- MANAGER DASHBOARD PHASE M4: CLEAN BILLING & SERVICE VISIBILITY ---
-
-def manager_billing_shift_row(shift, signal_label='', severity='info'):
-    """Compact billing/service visibility row for manager dashboard."""
-    row = manager_shift_priority_row(shift, signal_label, severity)
-    row['signal_label'] = signal_label
-    row['severity'] = severity
-    row['billing_type'] = manager_infer_shift_billing_type(shift)
-    return row
-
-
-def manager_infer_shift_billing_type(shift):
-    """Infer billing visibility from existing schedule status/title/attached TSR filename.
-
-    This intentionally avoids schema changes. It uses current operational fields:
-    - Waiting for P.O => PO / billable follow-up signal
-    - Warranty / FOC text => non-billed exposure
-    - TSR_B / billed filename convention => billed
-    """
-    status_text = (getattr(shift, 'status', '') or '').strip().lower()
-    title_text = (getattr(shift, 'title', '') or '').strip().lower()
-    combined = f"{status_text} {title_text}"
-
-    file_names = []
-    for file_rec in getattr(shift, 'files', []) or []:
-        file_names.append((get_shift_file_display_name(file_rec) or '').lower())
-        file_names.append((getattr(file_rec, 'filename', '') or '').lower())
-    file_text = " ".join(file_names)
-    combined_all = f"{combined} {file_text}"
-
-    if 'waiting for p.o' in status_text or 'waiting for po' in status_text or ' purchase order' in combined_all or ' po ' in f" {combined_all} ":
-        return 'po_followup'
-    if 'warranty' in combined_all:
-        return 'warranty'
-    if 'foc' in combined_all or 'free of charge' in combined_all:
-        return 'foc'
-    if 'ncs_tsr_b' in combined_all or '_b_shimadzu' in combined_all or 'billable' in combined_all or 'billed' in combined_all:
-        return 'billed'
-    return 'standard'
-
-
-@app.route('/get_manager_billing_visibility')
-@login_required
-def get_manager_billing_visibility():
-    """Manager Dashboard Phase M4 backend: clean billing and service visibility.
-
-    Intentionally compact:
-    - billed vs non-billed signals
-    - warranty / FOC exposure
-    - waiting P.O jobs
-    - service category mix via schedule title/status
-    - top 5 rows only per signal
-
-    No database schema changes.
-    """
-    if not can_view_manager_dashboard():
-        return denied('Manager billing visibility is only available to manager-authorized accounts.')
-
-    ensure_shift_file_original_filename_column()
-
-    today = get_manila_today()
-    lookback_start = today - timedelta(days=180)
-    lookahead_end = today + timedelta(days=60)
-    start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
-
-    service_query = (
-        Shift.query
-        .options(
-            joinedload(Shift.client),
-            joinedload(Shift.product),
-            selectinload(Shift.files)
-        )
-        .filter(Shift.client_id.isnot(None))
-        .filter(Shift.start_time >= start_dt)
-        .filter(Shift.start_time < end_dt)
-        .order_by(Shift.start_time.desc())
-    )
-    service_query = analytics_scope_query(service_query)
-    service_shifts = list({shift.id: shift for shift in service_query.limit(2000).all()}.values())
-
-    open_status_exclusions = ['Completed', 'Training'] + LEAVE_CATEGORIES
-    open_shifts = [
-        shift for shift in service_shifts
-        if (shift.status or '') not in open_status_exclusions
-    ]
-
-    completed_shifts = [
-        shift for shift in service_shifts
-        if (shift.status or '') == 'Completed'
-    ]
-
-    billing_rows = []
-    warranty_rows = []
-    foc_rows = []
-    po_waiting_rows = []
-    standard_rows = []
-
-    billing_counts = {
-        'billed_signals': 0,
-        'standard_services': 0,
-        'warranty': 0,
-        'foc': 0,
-        'waiting_po': 0
-    }
-
-    service_mix = {}
-    status_mix = {}
-
-    for shift in service_shifts:
-        billing_type = manager_infer_shift_billing_type(shift)
-
-        if billing_type == 'billed':
-            billing_counts['billed_signals'] += 1
-            billing_rows.append(manager_billing_shift_row(shift, 'Billed TSR / billable signal', 'success'))
-        elif billing_type == 'warranty':
-            billing_counts['warranty'] += 1
-            warranty_rows.append(manager_billing_shift_row(shift, 'Warranty service exposure', 'warning'))
-        elif billing_type == 'foc':
-            billing_counts['foc'] += 1
-            foc_rows.append(manager_billing_shift_row(shift, 'FOC / non-billed exposure', 'warning'))
-        elif billing_type == 'po_followup':
-            billing_counts['waiting_po'] += 1
-            po_waiting_rows.append(manager_billing_shift_row(shift, 'Waiting for P.O follow-up', 'danger'))
-        else:
-            billing_counts['standard_services'] += 1
-            standard_rows.append(manager_billing_shift_row(shift, 'Standard service', 'info'))
-
-        task_label = clean_str(getattr(shift, 'title', None)) or 'Unspecified Service'
-        service_mix[task_label] = service_mix.get(task_label, 0) + 1
-
-        status_label = clean_str(getattr(shift, 'status', None)) or 'No Status'
-        status_mix[status_label] = status_mix.get(status_label, 0) + 1
-
-    non_billed_exposure = billing_counts['warranty'] + billing_counts['foc']
-    total_visibility_rows = len(service_shifts)
-    billed_signal_rate = round((billing_counts['billed_signals'] / total_visibility_rows) * 100, 1) if total_visibility_rows else 0.0
-    non_billed_rate = round((non_billed_exposure / total_visibility_rows) * 100, 1) if total_visibility_rows else 0.0
-
-    # Keep service category mix compact and useful.
-    service_mix_rows = [
-        {'label': label, 'count': count}
-        for label, count in sorted(service_mix.items(), key=lambda item: (-item[1], item[0]))[:5]
-    ]
-    status_mix_rows = [
-        {'label': label, 'count': count}
-        for label, count in sorted(status_mix.items(), key=lambda item: (-item[1], item[0]))[:5]
-    ]
-
-    risk_score = (
-        billing_counts['waiting_po'] * 3 +
-        non_billed_exposure * 2 +
-        len([shift for shift in open_shifts if manager_infer_shift_billing_type(shift) == 'po_followup'])
-    )
-
-    if risk_score >= 15:
-        risk_level = 'critical'
-        risk_label = 'Billing attention needed'
-    elif risk_score >= 6:
-        risk_level = 'watch'
-        risk_label = 'Billing watchlist'
-    else:
-        risk_level = 'stable'
-        risk_label = 'Billing stable'
-
-    return jsonify({
-        'status': 'success',
-        'phase': 'manager-phase-m4-clean-billing-service-visibility',
-        'generated_at': get_manila_time().isoformat(),
-        'risk': {
-            'score': risk_score,
-            'level': risk_level,
-            'label': risk_label
-        },
-        'counts': {
-            'service_rows_reviewed': total_visibility_rows,
-            'open_services': len(open_shifts),
-            'completed_services': len(completed_shifts),
-            'billed_signals': billing_counts['billed_signals'],
-            'standard_services': billing_counts['standard_services'],
-            'non_billed_exposure': non_billed_exposure,
-            'warranty': billing_counts['warranty'],
-            'foc': billing_counts['foc'],
-            'waiting_po': billing_counts['waiting_po'],
-            'billed_signal_rate': billed_signal_rate,
-            'non_billed_rate': non_billed_rate
-        },
-        'signals': {
-            'waiting_po': sorted(po_waiting_rows, key=lambda row: row.get('date') or '')[:5],
-            'non_billed': (warranty_rows + foc_rows)[:5],
-            'billed': billing_rows[:5],
-            'service_mix': service_mix_rows,
-            'status_mix': status_mix_rows
-        }
-    })
-
-
-
-
-
-# --- MANAGER DASHBOARD PHASE M5: LIGHTWEIGHT EXECUTIVE WATCHLIST ---
-
-def manager_watchlist_chip(label, value, tone='stable'):
-    """Small executive insight chip for manager dashboard.
-
-    Tones: stable, watch, critical, info
-    """
-    return {
-        'label': label,
-        'value': value,
-        'tone': tone
-    }
-
-
-@app.route('/get_manager_executive_watchlist')
-@login_required
-def get_manager_executive_watchlist():
-    """Manager Dashboard Phase M5 backend: lightweight executive watchlist.
-
-    Final manager backend polish:
-    - no noisy alert center
-    - only top executive-level signals
-    - top 5 watchlist rows maximum
-    - insight chips instead of large tables
-    - reuses existing Shift/TSR data only
-    """
-    if not can_view_manager_dashboard():
-        return denied('Manager executive watchlist is only available to manager-authorized accounts.')
-
-    ensure_shift_file_original_filename_column()
-    ensure_tsr_knowledge_entry_table()
-
-    today = get_manila_today()
-    lookback_start = today - timedelta(days=180)
-    lookahead_end = today + timedelta(days=60)
-    start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
-
-    invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
-    waiting_statuses = {'Waiting for P.O', 'Waiting for Parts'}
-
-    service_query = (
-        Shift.query
-        .options(
-            joinedload(Shift.client),
-            joinedload(Shift.product),
-            selectinload(Shift.files)
-        )
-        .filter(Shift.client_id.isnot(None))
-        .filter(Shift.start_time >= start_dt)
-        .filter(Shift.start_time < end_dt)
-        .order_by(Shift.start_time.desc())
-    )
-    service_query = analytics_scope_query(service_query)
-    service_shifts = list({shift.id: shift for shift in service_query.limit(2000).all()}.values())
-
-    open_shifts = [
-        shift for shift in service_shifts
-        if (shift.status or '') not in invalid_dashboard_categories
-    ]
-
-    overdue_shifts = [
-        shift for shift in open_shifts
-        if shift.start_time and shift.start_time.date() < today
-    ]
-
-    severe_overdue_shifts = [
-        shift for shift in overdue_shifts
-        if shift.start_time and (today - shift.start_time.date()).days >= 7
-    ]
-
-    pending_tsr_shifts = [
-        shift for shift in service_shifts
-        if (shift.status or '') == 'Completed' and not shift_has_tsr_file(shift)
-    ]
-
-    severe_tsr_aging_shifts = [
-        shift for shift in pending_tsr_shifts
-        if shift.start_time and (today - shift.start_time.date()).days >= 7
-    ]
-
-    waiting_po_shifts = [
-        shift for shift in open_shifts
-        if (shift.status or '').strip().lower() in {'waiting for p.o', 'waiting for po'}
-    ]
-
-    waiting_blocker_shifts = [
-        shift for shift in open_shifts
-        if (shift.status or '') in waiting_statuses
-    ]
-
-    # Critical repeat equipment: same client + same product/serial with many visits.
-    repeat_map = {}
-    for shift in service_shifts:
-        if not shift.start_time or not shift.product_id:
-            continue
-
-        product_label = shift.product.name if shift.product else (shift.product_id or 'Unknown Equipment')
-        serial_label = shift.product.serial_number if shift.product else (shift.product_id or '')
-        client_label = shift.client.name if shift.client else 'N/A'
-        key = f"{shift.client_id or 'no-client'}::{serial_label or shift.product_id}"
-
-        if key not in repeat_map:
-            repeat_map[key] = {
-                'client': client_label,
-                'product': product_label,
-                'serial': serial_label,
-                'service_count': 0,
-                'last_service': '',
-                'latest_date': None,
-                'tasks': set()
-            }
-
-        row = repeat_map[key]
-        row['service_count'] += 1
-        row['tasks'].add(shift.title or '')
-        if not row['latest_date'] or shift.start_time > row['latest_date']:
-            row['latest_date'] = shift.start_time
-            row['last_service'] = shift.start_time.strftime('%Y-%m-%d')
-
-    critical_repeat_equipment = []
-    for row in repeat_map.values():
-        if row['service_count'] >= 4:
-            critical_repeat_equipment.append({
-                'type': 'repeat_equipment',
-                'title': row['product'] or 'Repeat equipment',
-                'subtitle': row['client'],
-                'detail': f"{row['service_count']} services in 180 days",
-                'meta': row['serial'] or row['last_service'],
-                'tone': 'critical' if row['service_count'] >= 6 else 'watch',
-                'count': row['service_count']
-            })
-
-    critical_repeat_equipment.sort(key=lambda row: (-row['count'], row['subtitle'], row['title']))
-
-    # High-risk clients: many overdue / pending TSR / waiting blockers.
-    client_risk = {}
-    for shift in service_shifts:
-        if not shift.client:
-            continue
-        client_name = shift.client.name
-        if client_name not in client_risk:
-            client_risk[client_name] = {
-                'client': client_name,
-                'overdue': 0,
-                'pending_tsr': 0,
-                'waiting': 0,
-                'open': 0,
-                'score': 0,
-                'latest_date': None
-            }
-
-        row = client_risk[client_name]
-        if shift.start_time and (not row['latest_date'] or shift.start_time > row['latest_date']):
-            row['latest_date'] = shift.start_time
-
-        if shift in open_shifts:
-            row['open'] += 1
-        if shift in severe_overdue_shifts:
-            row['overdue'] += 1
-        if shift in severe_tsr_aging_shifts:
-            row['pending_tsr'] += 1
-        if shift in waiting_blocker_shifts:
-            row['waiting'] += 1
-
-    high_risk_clients = []
-    for row in client_risk.values():
-        row['score'] = (row['overdue'] * 3) + (row['pending_tsr'] * 2) + (row['waiting'] * 2) + row['open']
-        if row['score'] < 5:
-            continue
-
-        high_risk_clients.append({
-            'type': 'high_risk_client',
-            'title': row['client'],
-            'subtitle': 'Client watch signal',
-            'detail': f"{row['open']} open • {row['overdue']} severe overdue • {row['pending_tsr']} aged TSR",
-            'meta': f"Score {row['score']}",
-            'tone': 'critical' if row['score'] >= 10 else 'watch',
-            'count': row['score']
-        })
-
-    high_risk_clients.sort(key=lambda row: (-row['count'], row['title']))
-
-    # Severe TSR pattern summary, compact only.
-    severe_tsr_rows = [
-        manager_tsr_signal_row(
-            shift,
-            f"TSR overdue {max((today - shift.start_time.date()).days, 0)} day(s)" if shift.start_time else 'TSR overdue',
-            'danger'
-        )
-        for shift in sorted(severe_tsr_aging_shifts, key=lambda s: s.start_time or datetime.min)[:5]
-    ]
-
-    # Build one compact watchlist: highest executive value first.
-    watchlist = []
-    watchlist.extend(critical_repeat_equipment[:3])
-    watchlist.extend(high_risk_clients[:3])
-
-    for shift in severe_overdue_shifts[:3]:
-        watchlist.append({
-            'type': 'severe_overdue',
-            'title': shift.client.name if shift.client else 'Overdue schedule',
-            'subtitle': shift.title or '',
-            'detail': f"Open for {max((today - shift.start_time.date()).days, 0)} day(s)" if shift.start_time else 'Severe overdue',
-            'meta': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
-            'tone': 'critical',
-            'count': max((today - shift.start_time.date()).days, 0) if shift.start_time else 0
-        })
-
-    watchlist.sort(key=lambda row: (
-        0 if row.get('tone') == 'critical' else 1,
-        -int(row.get('count') or 0),
-        row.get('title') or ''
-    ))
-    watchlist = watchlist[:5]
-
-    chips = [
-        manager_watchlist_chip(
-            'Repeat equipment',
-            len(critical_repeat_equipment),
-            'critical' if len(critical_repeat_equipment) >= 3 else ('watch' if critical_repeat_equipment else 'stable')
-        ),
-        manager_watchlist_chip(
-            'High-risk clients',
-            len(high_risk_clients),
-            'critical' if len(high_risk_clients) >= 3 else ('watch' if high_risk_clients else 'stable')
-        ),
-        manager_watchlist_chip(
-            'Aged TSR',
-            len(severe_tsr_aging_shifts),
-            'critical' if len(severe_tsr_aging_shifts) >= 5 else ('watch' if severe_tsr_aging_shifts else 'stable')
-        ),
-        manager_watchlist_chip(
-            'Waiting P.O',
-            len(waiting_po_shifts),
-            'watch' if waiting_po_shifts else 'stable'
-        )
-    ]
-
-    executive_score = (
-        len(critical_repeat_equipment) * 3 +
-        len(high_risk_clients) * 3 +
-        len(severe_tsr_aging_shifts) * 2 +
-        len(severe_overdue_shifts) * 2 +
-        len(waiting_po_shifts)
-    )
-
-    if executive_score >= 18:
-        risk_level = 'critical'
-        risk_label = 'Executive attention needed'
-    elif executive_score >= 7:
-        risk_level = 'watch'
-        risk_label = 'Executive watchlist'
-    else:
-        risk_level = 'stable'
-        risk_label = 'Executive view stable'
-
-    return jsonify({
-        'status': 'success',
-        'phase': 'manager-phase-m5-lightweight-executive-watchlist',
-        'generated_at': get_manila_time().isoformat(),
-        'risk': {
-            'score': executive_score,
-            'level': risk_level,
-            'label': risk_label
-        },
-        'chips': chips,
-        'counts': {
-            'watchlist_items': len(watchlist),
-            'critical_repeat_equipment': len(critical_repeat_equipment),
-            'high_risk_clients': len(high_risk_clients),
-            'severe_overdue': len(severe_overdue_shifts),
-            'aged_tsr': len(severe_tsr_aging_shifts),
-            'waiting_po': len(waiting_po_shifts)
-        },
-        'watchlist': watchlist,
-        'top_repeat_equipment': critical_repeat_equipment[:5],
-        'top_high_risk_clients': high_risk_clients[:5],
-        'severe_tsr_rows': severe_tsr_rows
-    })
-
-
 
 
 

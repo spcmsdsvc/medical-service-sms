@@ -316,303 +316,151 @@
     {% endif %}
 
     {% if dashboard_effective_manager_view and not dashboard_effective_scheduler_only %}
-    <!-- MANAGER PHASE M1.5: EXECUTIVE CLEANUP -->
-    <div class="manager-executive-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="manager-executive" data-dashboard-title="Manager Executive Dashboard">
+    {#
+        MANAGER DASHBOARD -- DECISIONS, DIRECTION, WATCHLIST
+
+        A manager is a decision bottleneck, so this view leads with what is waiting on
+        them. It used to lead with shift counts and never mentioned approvals at all,
+        even though every request in the system routes through this role.
+
+          manager-executive   what needs your decision, then the operational state
+          manager-direction   is this getting better or worse
+          manager-watchlist   what needs attention, one list, loaded on expand
+
+        One risk verdict, not four. The old view carried four independently-thresholded
+        "stable / watch / critical" badges on one screen.
+    #}
+    <div class="manager-executive-dashboard mb-4 dashboard-sortable-section" data-dashboard-section="manager-executive" data-dashboard-title="Needs Your Decision">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div>
                 <h5 class="mb-0 fw-bold text-dark">
                     <i class="fa-solid fa-briefcase me-2 text-dark"></i>
-                    Manager Executive Dashboard
+                    Needs Your Decision
                 </h5>
-                <p class="text-muted small mb-0">Clean executive view: status, TSR intelligence, and management drill-downs only</p>
+                <p class="text-muted small mb-0">Requests waiting on you, and how the operation stands today</p>
             </div>
             <div class="d-flex gap-2 flex-wrap">
-                <span id="manager-risk-badge" class="badge bg-success rounded-pill px-3 py-2">Stable</span>
                 <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-executive-body', this)">
                     <i class="fa-solid fa-chevron-up me-1"></i>Hide
                 </button>
-                <button type="button" class="btn btn-sm btn-outline-dark fw-bold" onclick="loadManagerDashboardSummary()">
+                <button type="button" class="btn btn-sm btn-outline-dark fw-bold" onclick="loadManagerOverview()">
                     <i class="fa-solid fa-rotate me-1"></i>Refresh
                 </button>
             </div>
         </div>
 
         <div id="manager-executive-body" class="dashboard-collapsible-body">
-            <div class="row g-3 mb-3 manager-kpi-row">
-                <div class="col-md-4 col-sm-6">
-                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card">
-                        <div class="dashboard-team-label">Open Schedules</div>
-                        <div class="dashboard-team-value text-primary" id="manager-open-count">0</div>
-                        <div class="dashboard-team-hint">Active service work</div>
-                    </div>
-                </div>
-                <div class="col-md-4 col-sm-6">
-                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card manager-kpi-urgent">
-                        <div class="dashboard-team-label">Overdue</div>
-                        <div class="dashboard-team-value text-danger" id="manager-overdue-count">0</div>
-                        <div class="dashboard-team-hint">Needs management attention</div>
-                    </div>
-                </div>
-                <div class="col-md-4 col-sm-6">
-                    <div class="card p-3 bg-white border-0 shadow-sm rounded-4 manager-kpi-card">
-                        <div class="dashboard-team-label">Pending TSR</div>
-                        <div class="dashboard-team-value text-warning" id="manager-pending-tsr-count">0</div>
-                        <div class="dashboard-team-hint">Completed, no TSR</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- MANAGER PHASE M2: CLEAN TSR INTELLIGENCE -->
-            <div class="manager-tsr-intelligence-panel mt-3 mb-3">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            {#
+                Hidden unless the account is actually an approver. is_manager_dashboard_user()
+                also admits regional admins and the developer account, who would otherwise
+                get a panel of permanent zeros.
+            #}
+            <div id="manager-approvals" class="manager-approvals mb-3 d-none">
+                <div class="manager-approvals-head">
                     <div>
-                        <h6 class="mb-0 fw-bold text-dark">
-                            <i class="fa-solid fa-file-circle-check me-2 text-warning"></i>TSR Intelligence
-                        </h6>
-                        <div class="xsmall text-muted mt-1">Collapsed by default. Shows only top TSR risks and repeat-service signals.</div>
+                        <span class="manager-approvals-total" id="manager-approvals-total">0</span>
+                        <span class="manager-approvals-total-label">waiting for you</span>
                     </div>
-                    <div class="d-flex gap-2 flex-wrap">
-                        <span id="manager-tsr-risk-badge" class="badge bg-success rounded-pill px-3 py-2">TSR Stable</span>
-                        <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-tsr-intelligence-body', this)">
-                            <i class="fa-solid fa-chevron-down me-1"></i>Show
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-warning fw-bold" onclick="loadManagerTsrIntelligence()">
-                            <i class="fa-solid fa-rotate me-1"></i>Refresh
-                        </button>
-                    </div>
+                    <span class="manager-approvals-aging" id="manager-approvals-aging" role="status" aria-live="polite"></span>
+                    <a href="/approvals" class="btn btn-sm btn-dark fw-bold ms-auto">
+                        <i class="fa-solid fa-stamp me-1"></i>Open Approvals
+                    </a>
                 </div>
-
-                <div id="manager-tsr-intelligence-body" class="dashboard-collapsible-body d-none mt-3">
-                    <div class="manager-tsr-signal-strip mb-3">
-                        <div class="manager-tsr-signal-card">
-                            <span>TSR Completion</span>
-                            <strong id="manager-tsr-completion-rate">0%</strong>
-                        </div>
-                        <div class="manager-tsr-signal-card">
-                            <span>Pending TSR</span>
-                            <strong id="manager-tsr-pending-count">0</strong>
-                        </div>
-                        <div class="manager-tsr-signal-card">
-                            <span>Repeat Equipment</span>
-                            <strong id="manager-tsr-repeat-count">0</strong>
-                        </div>
-                    </div>
-
-                    <div class="row g-3">
-                        <div class="col-lg-4">
-                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                                <div class="card-header bg-white border-bottom py-3">
-                                    <h6 class="mb-0 fw-bold text-warning">
-                                        <i class="fa-solid fa-hourglass-half me-2"></i>Pending TSR Aging
-                                    </h6>
-                                </div>
-                                <div id="manager-tsr-aging-list" class="dashboard-team-list manager-tsr-list"></div>
-                            </div>
-                        </div>
-                        <div class="col-lg-4">
-                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                                <div class="card-header bg-white border-bottom py-3">
-                                    <h6 class="mb-0 fw-bold text-primary">
-                                        <i class="fa-solid fa-repeat me-2"></i>Repeat Service
-                                    </h6>
-                                </div>
-                                <div id="manager-tsr-repeat-list" class="dashboard-team-list manager-tsr-list"></div>
-                            </div>
-                        </div>
-                        <div class="col-lg-4">
-                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                                <div class="card-header bg-white border-bottom py-3">
-                                    <h6 class="mb-0 fw-bold text-dark">
-                                        <i class="fa-solid fa-comments me-2"></i>Frequent Issues
-                                    </h6>
-                                </div>
-                                <div id="manager-tsr-issues-list" class="dashboard-team-list manager-tsr-list"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <div class="manager-approvals-grid" id="manager-approvals-grid"></div>
             </div>
 
-            <!-- MANAGER PHASE M4: CLEAN BILLING & SERVICE VISIBILITY -->
-            <div class="manager-billing-visibility-panel mt-3 mb-3">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div>
-                        <h6 class="mb-0 fw-bold text-dark">
-                            <i class="fa-solid fa-receipt me-2 text-success"></i>Billing & Service Visibility
-                        </h6>
-                        <div class="xsmall text-muted mt-1">Collapsed by default. Tracks billed signals, non-billed exposure, and P.O follow-ups.</div>
-                    </div>
-                    <div class="d-flex gap-2 flex-wrap">
-                        <span id="manager-billing-risk-badge" class="badge bg-success rounded-pill px-3 py-2">Billing Stable</span>
-                        <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-billing-visibility-body', this)">
-                            <i class="fa-solid fa-chevron-down me-1"></i>Show
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="loadManagerBillingVisibility()">
-                            <i class="fa-solid fa-rotate me-1"></i>Refresh
-                        </button>
-                    </div>
-                </div>
-
-                <div id="manager-billing-visibility-body" class="dashboard-collapsible-body d-none mt-3">
-                    <div class="manager-billing-signal-strip mb-3">
-                        <div class="manager-billing-signal-card">
-                            <span>Billed Signal Rate</span>
-                            <strong id="manager-billing-rate">0%</strong>
-                        </div>
-                        <div class="manager-billing-signal-card">
-                            <span>Non-billed Exposure</span>
-                            <strong id="manager-non-billed-count">0</strong>
-                        </div>
-                        <div class="manager-billing-signal-card">
-                            <span>Waiting P.O</span>
-                            <strong id="manager-waiting-po-count">0</strong>
-                        </div>
-                    </div>
-
-                    <div class="row g-3">
-                        <div class="col-lg-4">
-                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                                <div class="card-header bg-white border-bottom py-3">
-                                    <h6 class="mb-0 fw-bold text-danger">
-                                        <i class="fa-solid fa-file-invoice me-2"></i>P.O Follow-ups
-                                    </h6>
-                                </div>
-                                <div id="manager-billing-po-list" class="dashboard-team-list manager-billing-list"></div>
-                            </div>
-                        </div>
-                        <div class="col-lg-4">
-                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                                <div class="card-header bg-white border-bottom py-3">
-                                    <h6 class="mb-0 fw-bold text-warning">
-                                        <i class="fa-solid fa-shield-heart me-2"></i>Warranty / FOC
-                                    </h6>
-                                </div>
-                                <div id="manager-billing-non-billed-list" class="dashboard-team-list manager-billing-list"></div>
-                            </div>
-                        </div>
-                        <div class="col-lg-4">
-                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                                <div class="card-header bg-white border-bottom py-3">
-                                    <h6 class="mb-0 fw-bold text-success">
-                                        <i class="fa-solid fa-chart-simple me-2"></i>Service Mix
-                                    </h6>
-                                </div>
-                                <div id="manager-billing-service-mix-list" class="dashboard-team-list manager-billing-list"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <div id="manager-risk" class="manager-risk mb-3" role="status" aria-live="polite">
+                <span class="manager-risk-dot" aria-hidden="true"></span>
+                <span class="manager-risk-label" id="manager-risk-label">Loading operational status&hellip;</span>
             </div>
 
-            <!-- MANAGER PHASE M5: LIGHTWEIGHT EXECUTIVE WATCHLIST -->
-            <div class="manager-executive-watchlist-panel mt-3 mb-3">
-                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-                    <div>
-                        <h6 class="mb-0 fw-bold text-dark">
-                            <i class="fa-solid fa-eye me-2 text-danger"></i>Executive Watchlist
-                        </h6>
-                        <div class="xsmall text-muted mt-1">Collapsed by default. Shows only top executive-level risks.</div>
-                    </div>
-                    <div class="d-flex gap-2 flex-wrap">
-                        <span id="manager-watchlist-risk-badge" class="badge bg-success rounded-pill px-3 py-2">Executive Stable</span>
-                        <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-executive-watchlist-body', this)">
-                            <i class="fa-solid fa-chevron-down me-1"></i>Show
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-danger fw-bold" onclick="loadManagerExecutiveWatchlist()">
-                            <i class="fa-solid fa-rotate me-1"></i>Refresh
-                        </button>
-                    </div>
+            <div class="dashboard-metric-strip manager-metric-strip">
+                <div class="dashboard-metric">
+                    <span class="dashboard-metric-value" id="manager-open-count">0</span>
+                    <span class="dashboard-metric-label">Open schedules</span>
                 </div>
-
-                <div id="manager-executive-watchlist-body" class="dashboard-collapsible-body d-none mt-3">
-                    <div id="manager-watchlist-chip-strip" class="manager-watchlist-chip-strip mb-3"></div>
-
-                    <div class="row g-3">
-                        <div class="col-lg-7">
-                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                                <div class="card-header bg-white border-bottom py-3">
-                                    <h6 class="mb-0 fw-bold text-danger">
-                                        <i class="fa-solid fa-triangle-exclamation me-2"></i>Top Watchlist
-                                    </h6>
-                                    <div class="xsmall text-muted mt-1">Maximum 5 items only to avoid dashboard clutter</div>
-                                </div>
-                                <div id="manager-watchlist-main-list" class="dashboard-team-list manager-watchlist-list"></div>
-                            </div>
-                        </div>
-                        <div class="col-lg-5">
-                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                                <div class="card-header bg-white border-bottom py-3">
-                                    <h6 class="mb-0 fw-bold text-warning">
-                                        <i class="fa-solid fa-file-circle-exclamation me-2"></i>Aged TSR Focus
-                                    </h6>
-                                    <div class="xsmall text-muted mt-1">Severe TSR items only</div>
-                                </div>
-                                <div id="manager-watchlist-tsr-list" class="dashboard-team-list manager-watchlist-list"></div>
-                            </div>
-                        </div>
-                    </div>
+                <span class="dashboard-metric-divider" aria-hidden="true"></span>
+                <div class="dashboard-metric">
+                    <span class="dashboard-metric-value dashboard-metric-alert" id="manager-overdue-count">0</span>
+                    <span class="dashboard-metric-label">Overdue</span>
                 </div>
+                <span class="dashboard-metric-divider" aria-hidden="true"></span>
+                <div class="dashboard-metric">
+                    <span class="dashboard-metric-value dashboard-metric-warn" id="manager-pending-tsr-count">0</span>
+                    <span class="dashboard-metric-label">Pending TSR</span>
+                </div>
+                <span class="dashboard-metric-divider" aria-hidden="true"></span>
+                <div class="dashboard-metric">
+                    <span class="dashboard-metric-value dashboard-metric-warn" id="manager-waiting-count">0</span>
+                    <span class="dashboard-metric-label">Waiting P.O / parts</span>
+                </div>
+                <a href="/analytics_page" class="dashboard-metric-link">Open analytics &rarr;</a>
             </div>
+        </div>
+    </div>
 
-            <div class="manager-action-grid my-3">
-                <a href="/timeline" class="manager-action-card manager-action-primary">
-                    <i class="fa-solid fa-calendar-days"></i>
-                    <strong>Timeline</strong>
-                    <span>Review operations calendar</span>
-                </a>
-                <a href="/reports_page" class="manager-action-card">
-                    <i class="fa-solid fa-folder-open"></i>
-                    <strong>Reports</strong>
-                    <span>TSR archive and service records</span>
-                </a>
-                <a href="/analytics_page" class="manager-action-card">
-                    <i class="fa-solid fa-chart-pie"></i>
-                    <strong>Analytics</strong>
-                    <span>Service and branch insights</span>
-                </a>
-                <a href="/activity_page" class="manager-action-card">
-                    <i class="fa-solid fa-clock-rotate-left"></i>
-                    <strong>Activity Logs</strong>
-                    <span>Audit recent system actions</span>
-                </a>
+    <div class="manager-direction-panel mb-4 dashboard-sortable-section" data-dashboard-section="manager-direction" data-dashboard-title="Direction">
+        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h5 class="mb-0 fw-bold text-dark">
+                        <i class="fa-solid fa-arrow-trend-up me-2 text-primary"></i>
+                        Direction
+                    </h5>
+                    <div class="xsmall text-muted mt-1" id="manager-direction-caption">Comparing the last 7 days with the 7 before it</div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-direction-body', this)">
+                    <i class="fa-solid fa-chevron-up me-1"></i>Hide
+                </button>
             </div>
+            <div id="manager-direction-body" class="card-body dashboard-collapsible-body">
+                <div class="manager-direction-grid" id="manager-direction-grid"></div>
+                {#
+                    Only metrics that count events inside a window appear here. Current
+                    overdue and pending TSR are states as of now, and a shift that was
+                    overdue last week but has since been completed has left that set, so
+                    any reconstructed "last week" figure would be systematically low.
+                #}
+                <p class="xsmall text-muted mb-0 mt-2">
+                    Overdue and pending TSR are current totals, not period counts, so they carry no comparison.
+                </p>
+            </div>
+        </div>
+    </div>
 
-            <div class="manager-drilldown-panel">
-                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                    <div>
-                        <h6 class="mb-0 fw-bold text-dark">
-                            <i class="fa-solid fa-layer-group me-2 text-secondary"></i>Management Drill-downs
-                        </h6>
-                        <div class="xsmall text-muted mt-1">Collapsed by default to keep the manager view clean</div>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-drilldown-body', this)">
+    <div class="manager-watchlist-panel mb-4 dashboard-sortable-section" data-dashboard-section="manager-watchlist" data-dashboard-title="What Needs Attention">
+        <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+            <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h5 class="mb-0 fw-bold text-dark">
+                        <i class="fa-solid fa-triangle-exclamation me-2 text-warning"></i>
+                        What Needs Attention
+                    </h5>
+                    <div class="xsmall text-muted mt-1" id="manager-watchlist-caption">Severe overdue, aged TSR, blocked jobs, repeat equipment and at-risk clients</div>
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
+                    <span class="badge bg-light text-dark border" id="manager-watchlist-count">0 items</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('manager-watchlist-body', this)">
                         <i class="fa-solid fa-chevron-down me-1"></i>Show
                     </button>
                 </div>
+            </div>
+            <div id="manager-watchlist-body" class="dashboard-collapsible-body d-none">
+                <div id="manager-watchlist-list" class="manager-watchlist" aria-live="polite"></div>
 
-                <div id="manager-drilldown-body" class="dashboard-collapsible-body d-none">
-                    <div class="row g-3">
-                        <div class="col-lg-5">
-                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                                <div class="card-header bg-white border-bottom py-3">
-                                    <h6 class="mb-0 fw-bold text-dark">
-                                        <i class="fa-solid fa-map-location-dot me-2 text-primary"></i>Branch Overview
-                                    </h6>
-                                    <div class="xsmall text-muted mt-1">Branch workload only when deeper review is needed</div>
-                                </div>
-                                <div id="manager-branch-list" class="dashboard-team-list manager-branch-list"></div>
-                            </div>
+                <div class="manager-drilldown border-top">
+                    <div class="row g-3 p-3">
+                        <div class="col-lg-6">
+                            <h6 class="fw-bold text-dark small mb-2">
+                                <i class="fa-solid fa-building me-2"></i>Branch workload
+                            </h6>
+                            <div id="manager-branch-list" class="dashboard-team-list manager-branch-list"></div>
                         </div>
-                        <div class="col-lg-7">
-                            <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
-                                <div class="card-header bg-white border-bottom py-3">
-                                    <h6 class="mb-0 fw-bold text-dark">
-                                        <i class="fa-solid fa-user-gear me-2 text-success"></i>Engineer Utilization
-                                    </h6>
-                                    <div class="xsmall text-muted mt-1">Workload signal for management review</div>
-                                </div>
-                                <div id="manager-engineer-utilization-list" class="dashboard-team-list manager-utilization-list"></div>
-                            </div>
+                        <div class="col-lg-6">
+                            <h6 class="fw-bold text-dark small mb-2">
+                                <i class="fa-solid fa-users-gear me-2"></i>Engineer utilization
+                            </h6>
+                            <div id="manager-engineer-utilization-list" class="dashboard-team-list manager-utilization-list"></div>
                         </div>
                     </div>
                 </div>

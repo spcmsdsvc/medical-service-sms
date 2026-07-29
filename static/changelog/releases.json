@@ -991,6 +991,33 @@
             "admins"
           ],
           "sort_order": 130
+        },
+        {
+          "item_key": "2026-07-29-manager-decision-queue",
+          "category": "Management",
+          "description": "The manager dashboard now opens with the requests waiting on you, broken down by type, with how long the oldest has been waiting and a warning when anything has sat for more than five days. Previously the dashboard showed no approval information at all.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 140
+        },
+        {
+          "item_key": "2026-07-29-manager-direction",
+          "category": "Management",
+          "description": "A new Direction panel compares the last seven days with the seven before it for completed visits, scheduled visits and TSR completion. Current totals such as overdue and pending TSR are shown without a comparison, because a past figure for them cannot be reconstructed accurately.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 150
+        },
+        {
+          "item_key": "2026-07-29-manager-watchlist",
+          "category": "Management",
+          "description": "Severe overdue visits, aged TSRs, blocked jobs, repeat equipment and at-risk clients are now one ranked list instead of four overlapping panels, with each item appearing once. The dashboard also loads faster, replacing four large queries with one.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 160
         }
       ]
     }
