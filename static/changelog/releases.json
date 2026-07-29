@@ -7,15 +7,95 @@
       "summary": "Create TSR became safer and easier to complete, while frequently used records pages gained better sorting.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-08-tsr-signature-required", "category": "Create TSR", "description": "Engineer signatures are now required before a TSR can be saved.", "audiences": ["engineers", "admins"], "sort_order": 10},
-        {"item_key": "2026-07-08-tsr-email-suggestions", "category": "TSR Email", "description": "Client email suggestions are now collapsed to reduce confusion, and internal Shimadzu addresses are excluded from client suggestions.", "audiences": ["engineers", "admins"], "sort_order": 20},
-        {"item_key": "2026-07-08-tsr-detail-reminder", "category": "Create TSR", "description": "A soft reminder now identifies important TSR details that are still blank before final saving.", "audiences": ["engineers", "admins"], "sort_order": 30},
-        {"item_key": "2026-07-08-tsr-status-scroll", "category": "Create TSR", "description": "Save and error notifications automatically scroll into view.", "audiences": ["engineers", "admins"], "sort_order": 40},
-        {"item_key": "2026-07-08-tsr-clean-start", "category": "Create TSR", "description": "Starting a new TSR or opening a new session now clears stale form details.", "audiences": ["engineers", "admins"], "sort_order": 50},
-        {"item_key": "2026-07-08-tsr-visible-drafts", "category": "Create TSR", "description": "Saved TSR drafts are now visible and can be reopened from a dedicated draft list.", "audiences": ["engineers", "admins"], "sort_order": 60},
-        {"item_key": "2026-07-08-tsr-actions-space", "category": "TSR PDF", "description": "The Actions Taken section now uses more of the available first-page space before continuing to another page.", "audiences": ["engineers", "admins"], "sort_order": 70},
-        {"item_key": "2026-07-08-products-sorting", "category": "Inventory", "description": "Product columns can now be sorted, and the selected sort order is remembered.", "audiences": ["engineers", "admins"], "sort_order": 80},
-        {"item_key": "2026-07-08-calendar-card-width", "category": "Calendar", "description": "Long Travel Request schedule cards now retain a readable and consistent width.", "audiences": ["everyone"], "sort_order": 90}
+        {
+          "item_key": "2026-07-08-tsr-signature-required",
+          "category": "Create TSR",
+          "description": "Engineer signatures are now required before a TSR can be saved.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-08-tsr-email-suggestions",
+          "category": "TSR Email",
+          "description": "Client email suggestions are now collapsed to reduce confusion, and internal Shimadzu addresses are excluded from client suggestions.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-08-tsr-detail-reminder",
+          "category": "Create TSR",
+          "description": "A soft reminder now identifies important TSR details that are still blank before final saving.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-08-tsr-status-scroll",
+          "category": "Create TSR",
+          "description": "Save and error notifications automatically scroll into view.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-07-08-tsr-clean-start",
+          "category": "Create TSR",
+          "description": "Starting a new TSR or opening a new session now clears stale form details.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 50
+        },
+        {
+          "item_key": "2026-07-08-tsr-visible-drafts",
+          "category": "Create TSR",
+          "description": "Saved TSR drafts are now visible and can be reopened from a dedicated draft list.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 60
+        },
+        {
+          "item_key": "2026-07-08-tsr-actions-space",
+          "category": "TSR PDF",
+          "description": "The Actions Taken section now uses more of the available first-page space before continuing to another page.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 70
+        },
+        {
+          "item_key": "2026-07-08-products-sorting",
+          "category": "Inventory",
+          "description": "Product columns can now be sorted, and the selected sort order is remembered.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 80
+        },
+        {
+          "item_key": "2026-07-08-calendar-card-width",
+          "category": "Calendar",
+          "description": "Long Travel Request schedule cards now retain a readable and consistent width.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 90
+        }
       ]
     },
     {
@@ -25,16 +105,105 @@
       "summary": "Final TSR review became more dependable, with stronger drafts, better PDF handling, and cleaner operational records.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-09-tsr-remarks-overflow", "category": "TSR PDF", "description": "Multiline Remarks and Recommendations now continue correctly instead of being limited to one printed line.", "audiences": ["engineers", "admins"], "sort_order": 10},
-        {"item_key": "2026-07-09-tsr-department-edit", "category": "Create TSR", "description": "The Department field is editable while Radiology remains the default value.", "audiences": ["engineers", "admins"], "sort_order": 20},
-        {"item_key": "2026-07-09-medical-center-sorting", "category": "Medical Centers", "description": "Medical Center columns can now be sorted for faster record lookup.", "audiences": ["engineers", "admins"], "sort_order": 30},
-        {"item_key": "2026-07-09-calendar-approver-filter", "category": "Calendar", "description": "Personnel with approver-only access are no longer shown as field engineers on the Calendar.", "audiences": ["everyone"], "sort_order": 40},
-        {"item_key": "2026-07-09-reimbursement-zero-rows", "category": "Reimbursement", "description": "Zero-amount schedule rows are excluded during final submission while remaining available in drafts.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50},
-        {"item_key": "2026-07-09-activity-log-upgrade", "category": "Administration", "description": "Activity Logs now classify newer TSR, reimbursement, travel, cash advance, approval, and accounting events more clearly.", "audiences": ["admins"], "sort_order": 60},
-        {"item_key": "2026-07-09-tsr-final-preview", "category": "Create TSR", "description": "Engineers must now review the final TSR PDF before confirming Save TSR.", "audiences": ["engineers", "admins"], "sort_order": 70},
-        {"item_key": "2026-07-09-tsr-preview-layout", "category": "Create TSR", "description": "The final TSR preview was resized for a professional layout with a default 100 percent zoom.", "audiences": ["engineers", "admins"], "sort_order": 80},
-        {"item_key": "2026-07-09-tsr-draft-filter", "category": "Create TSR", "description": "Draft loading now filters out unrelated and empty ghost drafts while preserving legitimate engineer drafts.", "audiences": ["engineers", "admins"], "sort_order": 90},
-        {"item_key": "2026-07-09-tsr-saved-signature", "category": "Create TSR", "description": "Engineers may explicitly apply their saved Settings signature instead of drawing it for every TSR.", "audiences": ["engineers", "admins"], "sort_order": 100}
+        {
+          "item_key": "2026-07-09-tsr-remarks-overflow",
+          "category": "TSR PDF",
+          "description": "Multiline Remarks and Recommendations now continue correctly instead of being limited to one printed line.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-09-tsr-department-edit",
+          "category": "Create TSR",
+          "description": "The Department field is editable while Radiology remains the default value.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-09-medical-center-sorting",
+          "category": "Medical Centers",
+          "description": "Medical Center columns can now be sorted for faster record lookup.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-09-calendar-approver-filter",
+          "category": "Calendar",
+          "description": "Personnel with approver-only access are no longer shown as field engineers on the Calendar.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-07-09-reimbursement-zero-rows",
+          "category": "Reimbursement",
+          "description": "Zero-amount schedule rows are excluded during final submission while remaining available in drafts.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 50
+        },
+        {
+          "item_key": "2026-07-09-activity-log-upgrade",
+          "category": "Administration",
+          "description": "Activity Logs now classify newer TSR, reimbursement, travel, cash advance, approval, and accounting events more clearly.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 60
+        },
+        {
+          "item_key": "2026-07-09-tsr-final-preview",
+          "category": "Create TSR",
+          "description": "Engineers must now review the final TSR PDF before confirming Save TSR.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 70
+        },
+        {
+          "item_key": "2026-07-09-tsr-preview-layout",
+          "category": "Create TSR",
+          "description": "The final TSR preview was resized for a professional layout with a default 100 percent zoom.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 80
+        },
+        {
+          "item_key": "2026-07-09-tsr-draft-filter",
+          "category": "Create TSR",
+          "description": "Draft loading now filters out unrelated and empty ghost drafts while preserving legitimate engineer drafts.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 90
+        },
+        {
+          "item_key": "2026-07-09-tsr-saved-signature",
+          "category": "Create TSR",
+          "description": "Engineers may explicitly apply their saved Settings signature instead of drawing it for every TSR.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 100
+        }
       ]
     },
     {
@@ -44,10 +213,46 @@
       "summary": "Multiple TSR attachments are handled more reliably, and blank or incomplete TSR files are prevented.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-10-multi-tsr-email", "category": "TSR Email", "description": "Schedules with multiple generated or uploaded TSRs now include the complete attachment list when sending email.", "audiences": ["engineers", "admins"], "sort_order": 10},
-        {"item_key": "2026-07-10-tsr-attachment-preview", "category": "TSR Email", "description": "Engineers can review which TSR files will be attached before sending an email.", "audiences": ["engineers", "admins"], "sort_order": 20},
-        {"item_key": "2026-07-10-blank-tsr-protection", "category": "Create TSR", "description": "Additional payload safeguards prevent completed TSR PDFs from being saved with blank engineer-entered details.", "audiences": ["engineers", "admins"], "sort_order": 30},
-        {"item_key": "2026-07-10-equipment-capture", "category": "Create TSR", "description": "Missing equipment and serial information entered in Create TSR is now captured more reliably.", "audiences": ["engineers", "admins"], "sort_order": 40}
+        {
+          "item_key": "2026-07-10-multi-tsr-email",
+          "category": "TSR Email",
+          "description": "Schedules with multiple generated or uploaded TSRs now include the complete attachment list when sending email.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-10-tsr-attachment-preview",
+          "category": "TSR Email",
+          "description": "Engineers can review which TSR files will be attached before sending an email.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-10-blank-tsr-protection",
+          "category": "Create TSR",
+          "description": "Additional payload safeguards prevent completed TSR PDFs from being saved with blank engineer-entered details.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-10-equipment-capture",
+          "category": "Create TSR",
+          "description": "Missing equipment and serial information entered in Create TSR is now captured more reliably.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 40
+        }
       ]
     },
     {
@@ -57,9 +262,39 @@
       "summary": "Reimbursement Excel files now keep system work context separate from user-entered remarks.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-12-reimbursement-work-details", "category": "Reimbursement", "description": "Generated Excel reports now use separate Work Details and Remarks columns.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10},
-        {"item_key": "2026-07-12-reimbursement-blank-remarks", "category": "Reimbursement", "description": "Remarks remain blank by default instead of repeating the client, task, product, and equipment details.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 20},
-        {"item_key": "2026-07-12-reimbursement-no-client", "category": "Reimbursement", "description": "Schedules and manual items without clients now use cleaner Work Details wording.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30}
+        {
+          "item_key": "2026-07-12-reimbursement-work-details",
+          "category": "Reimbursement",
+          "description": "Generated Excel reports now use separate Work Details and Remarks columns.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-12-reimbursement-blank-remarks",
+          "category": "Reimbursement",
+          "description": "Remarks remain blank by default instead of repeating the client, task, product, and equipment details.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-12-reimbursement-no-client",
+          "category": "Reimbursement",
+          "description": "Schedules and manual items without clients now use cleaner Work Details wording.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 30
+        }
       ]
     },
     {
@@ -69,15 +304,96 @@
       "summary": "TSR output quality, Travel Request conflict handling, supporting documents, and system update communication received major improvements.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-13-vector-tsr", "category": "TSR PDF", "description": "Newly generated TSR PDFs now use sharp vector text, lines, and form elements for clearer viewing and zooming.", "audiences": ["engineers", "admins"], "sort_order": 10},
-        {"item_key": "2026-07-13-travel-client-conflicts", "category": "Travel Request", "description": "Urgent or retroactive Travel Requests can proceed when an exact matching client schedule exists within the travel dates.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 20},
-        {"item_key": "2026-07-13-travel-conflict-protection", "category": "Travel Request", "description": "Non-client commitments and overlapping Travel Requests remain protected as real conflicts.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30},
-        {"item_key": "2026-07-13-travel-attachments", "category": "Travel Request", "description": "Travel Requests now support up to 10 optional PDF or image attachments, with files up to 35MB optimized to 2MB when possible.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40},
-        {"item_key": "2026-07-13-travel-attachment-handoff", "category": "Travel Request", "description": "Approvers can preview Travel Request supporting documents, and Accounting receives one compiled supporting-attachments PDF.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50},
-        {"item_key": "2026-07-13-whats-new", "category": "System", "description": "A new What's New page provides readable daily system updates with account-based unread badges and acknowledgements.", "audiences": ["everyone"], "sort_order": 60},
-        {"item_key": "2026-07-13-changelog-acknowledge-all", "category": "System", "description": "The What's New page now lets users acknowledge all of their unread updates at once.", "audiences": ["everyone"], "sort_order": 70},
-        {"item_key": "2026-07-13-changelog-sidebar-display", "category": "System", "description": "The What's New sidebar label and unread badge now display clearly together on desktop and mobile.", "audiences": ["everyone"], "sort_order": 80},
-        {"item_key": "2026-07-13-changelog-header-button", "category": "System", "description": "What's New is now available from a compact bell button in the desktop and mobile headers instead of occupying a full sidebar row.", "audiences": ["everyone"], "sort_order": 90}
+        {
+          "item_key": "2026-07-13-vector-tsr",
+          "category": "TSR PDF",
+          "description": "Newly generated TSR PDFs now use sharp vector text, lines, and form elements for clearer viewing and zooming.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-13-travel-client-conflicts",
+          "category": "Travel Request",
+          "description": "Urgent or retroactive Travel Requests can proceed when an exact matching client schedule exists within the travel dates.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-13-travel-conflict-protection",
+          "category": "Travel Request",
+          "description": "Non-client commitments and overlapping Travel Requests remain protected as real conflicts.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-13-travel-attachments",
+          "category": "Travel Request",
+          "description": "Travel Requests now support up to 10 optional PDF or image attachments, with files up to 35MB optimized to 2MB when possible.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-07-13-travel-attachment-handoff",
+          "category": "Travel Request",
+          "description": "Approvers can preview Travel Request supporting documents, and Accounting receives one compiled supporting-attachments PDF.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 50
+        },
+        {
+          "item_key": "2026-07-13-whats-new",
+          "category": "System",
+          "description": "A new What's New page provides readable daily system updates with account-based unread badges and acknowledgements.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 60
+        },
+        {
+          "item_key": "2026-07-13-changelog-acknowledge-all",
+          "category": "System",
+          "description": "The What's New page now lets users acknowledge all of their unread updates at once.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 70
+        },
+        {
+          "item_key": "2026-07-13-changelog-sidebar-display",
+          "category": "System",
+          "description": "The What's New sidebar label and unread badge now display clearly together on desktop and mobile.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 80
+        },
+        {
+          "item_key": "2026-07-13-changelog-header-button",
+          "category": "System",
+          "description": "What's New is now available from a compact bell button in the desktop and mobile headers instead of occupying a full sidebar row.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 90
+        }
       ]
     },
     {
@@ -87,11 +403,54 @@
       "summary": "Managed system uploads now use private Railway bucket storage with verified migration and protected access.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-14-bucket-storage", "category": "Administration", "description": "TSRs, schedule files, reimbursement receipts, Travel Request attachments, and liquidation receipts now use private bucket storage.", "audiences": ["admins"], "sort_order": 10},
-        {"item_key": "2026-07-14-bucket-verification", "category": "Administration", "description": "All migrated upload files passed size and SHA-256 verification before the production storage cutover.", "audiences": ["admins"], "sort_order": 20},
-        {"item_key": "2026-07-14-storage-settings", "category": "Administration", "description": "Settings now displays private bucket usage, total capacity, remaining space, percentage, connection, verification, region, and active storage mode.", "audiences": ["admins"], "sort_order": 30},
-        {"item_key": "2026-07-14-travel-request-privacy", "category": "Travel Request", "description": "Travel Request details and attachments are now limited to the requester, listed participants, and the specifically assigned approver through their dedicated workflow.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40},
-        {"item_key": "2026-07-14-tsr-sync-reliability", "category": "Create TSR", "description": "Queued TSRs now recover automatically from temporary connection failures, avoid duplicate saves, and resume pending supporting-file uploads safely.", "audiences": ["engineers", "admins"], "sort_order": 50}
+        {
+          "item_key": "2026-07-14-bucket-storage",
+          "category": "Administration",
+          "description": "TSRs, schedule files, reimbursement receipts, Travel Request attachments, and liquidation receipts now use private bucket storage.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-14-bucket-verification",
+          "category": "Administration",
+          "description": "All migrated upload files passed size and SHA-256 verification before the production storage cutover.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-14-storage-settings",
+          "category": "Administration",
+          "description": "Settings now displays private bucket usage, total capacity, remaining space, percentage, connection, verification, region, and active storage mode.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-14-travel-request-privacy",
+          "category": "Travel Request",
+          "description": "Travel Request details and attachments are now limited to the requester, listed participants, and the specifically assigned approver through their dedicated workflow.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-07-14-tsr-sync-reliability",
+          "category": "Create TSR",
+          "description": "Queued TSRs now recover automatically from temporary connection failures, avoid duplicate saves, and resume pending supporting-file uploads safely.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 50
+        }
       ]
     },
     {
@@ -101,14 +460,93 @@
       "summary": "Supporting documents and receipts are easier to manage safely across every accounting workflow.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-15-accounting-attachment-delete", "category": "Accounting", "description": "Editable reimbursements, travel requests, and liquidations now provide clear individual Delete and Delete All controls for uploaded files.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10},
-        {"item_key": "2026-07-15-cash-advance-attachments", "category": "Cash Advance", "description": "Cash Advance requests now support optional PDF and image attachments that approvers can review and Accounting receives with the approved form.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 20},
-        {"item_key": "2026-07-15-attachment-locking", "category": "Accounting", "description": "Attachment deletion remains available for Draft, Rejected, or Returned records and is locked after submission or approval.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30},
-        {"item_key": "2026-07-15-reimbursement-upload-dedup", "category": "Reimbursement", "description": "Repeated receipt uploads are now detected by file content, preventing duplicate copies after double-clicks or upload retries.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40},
-        {"item_key": "2026-07-15-travel-deposit-draft", "category": "Travel Request", "description": "Travel Request drafts now retain the selected check instruction, BPI account number, health condition, and special notes when reopened.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50},
-        {"item_key": "2026-07-15-travel-pdf-currency", "category": "Travel Request", "description": "Generated Travel Request forms now show USD beside every requested amount when International / USD is selected.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 60},
-        {"item_key": "2026-07-15-reimbursement-manual-row-preserve", "category": "Reimbursement", "description": "Adding a manual reimbursement item now preserves all amounts and remarks already entered in the worksheet.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 70},
-        {"item_key": "2026-07-15-tsr-address-wrap", "category": "Create TSR", "description": "Generated TSR forms now wrap long customer addresses and automatically expand the information row so the complete address remains visible.", "audiences": ["engineers", "admins"], "sort_order": 80}
+        {
+          "item_key": "2026-07-15-accounting-attachment-delete",
+          "category": "Accounting",
+          "description": "Editable reimbursements, travel requests, and liquidations now provide clear individual Delete and Delete All controls for uploaded files.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-15-cash-advance-attachments",
+          "category": "Cash Advance",
+          "description": "Cash Advance requests now support optional PDF and image attachments that approvers can review and Accounting receives with the approved form.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-15-attachment-locking",
+          "category": "Accounting",
+          "description": "Attachment deletion remains available for Draft, Rejected, or Returned records and is locked after submission or approval.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-15-reimbursement-upload-dedup",
+          "category": "Reimbursement",
+          "description": "Repeated receipt uploads are now detected by file content, preventing duplicate copies after double-clicks or upload retries.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-07-15-travel-deposit-draft",
+          "category": "Travel Request",
+          "description": "Travel Request drafts now retain the selected check instruction, BPI account number, health condition, and special notes when reopened.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 50
+        },
+        {
+          "item_key": "2026-07-15-travel-pdf-currency",
+          "category": "Travel Request",
+          "description": "Generated Travel Request forms now show USD beside every requested amount when International / USD is selected.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 60
+        },
+        {
+          "item_key": "2026-07-15-reimbursement-manual-row-preserve",
+          "category": "Reimbursement",
+          "description": "Adding a manual reimbursement item now preserves all amounts and remarks already entered in the worksheet.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 70
+        },
+        {
+          "item_key": "2026-07-15-tsr-address-wrap",
+          "category": "Create TSR",
+          "description": "Generated TSR forms now wrap long customer addresses and automatically expand the information row so the complete address remains visible.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 80
+        }
       ]
     },
     {
@@ -118,15 +556,97 @@
       "summary": "The complete system now supports account-synced dark mode and selectable accent themes.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-16-dark-mode", "category": "System", "description": "Light, Dark, and Use Device Setting modes are now available across desktop, mobile, and installed PWA screens.", "audiences": ["everyone"], "sort_order": 10},
-        {"item_key": "2026-07-16-accent-themes", "category": "System", "description": "Classic, Shimadzu Red, Clinical Green, and Corporate Blue accent themes can be selected under Settings > My Account.", "audiences": ["everyone"], "sort_order": 20},
-        {"item_key": "2026-07-16-theme-sync", "category": "System", "description": "Appearance preferences follow each account across devices and remain available during offline work.", "audiences": ["everyone"], "sort_order": 30},
-        {"item_key": "2026-07-16-dark-mode-visual-repair", "category": "System", "description": "Dark mode now uses consistent readable surfaces across Calendar, Activity Logs, workflow pages, forms, tables, and mobile screens.", "audiences": ["everyone"], "sort_order": 40},
-        {"item_key": "2026-07-16-lpr-workflow", "category": "LPR", "description": "Local Purchase Requisition is now available for item purchasing with drafts, approvals, PDF forms, and Procurement handoff.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50},
-        {"item_key": "2026-07-16-embedded-lpr", "category": "LPR", "description": "A Cash Advance or Travel Request can now include one supporting LPR with its own items, documents, preview, and approval signature.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 60},
-        {"item_key": "2026-07-16-lpr-attachment-cleanup", "category": "LPR", "description": "The LPR attachment area is now simpler: use one Attach LPR action beside the request attachments, without extra list panels or confusing parent terminology.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 70},
-        {"item_key": "2026-07-16-reimbursement-office-field-items", "category": "Reimbursement", "description": "The Office Supplies reimbursement category is now labeled Office/Field Items for clearer use in the worksheet, approvals, and generated Excel reports.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 80},
-        {"item_key": "2026-07-16-tsr-schedule-coverage", "category": "Create TSR", "description": "Multi-day TSRs show complete schedule coverage, while single-day team TSRs list other assigned engineers beneath Serviced By without repeating the service date and time.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 90}
+        {
+          "item_key": "2026-07-16-dark-mode",
+          "category": "System",
+          "description": "Light, Dark, and Use Device Setting modes are now available across desktop, mobile, and installed PWA screens.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-16-accent-themes",
+          "category": "System",
+          "description": "Classic, Shimadzu Red, Clinical Green, and Corporate Blue accent themes can be selected under Settings > My Account.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-16-theme-sync",
+          "category": "System",
+          "description": "Appearance preferences follow each account across devices and remain available during offline work.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-16-dark-mode-visual-repair",
+          "category": "System",
+          "description": "Dark mode now uses consistent readable surfaces across Calendar, Activity Logs, workflow pages, forms, tables, and mobile screens.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-07-16-lpr-workflow",
+          "category": "LPR",
+          "description": "Local Purchase Requisition is now available for item purchasing with drafts, approvals, PDF forms, and Procurement handoff.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 50
+        },
+        {
+          "item_key": "2026-07-16-embedded-lpr",
+          "category": "LPR",
+          "description": "A Cash Advance or Travel Request can now include one supporting LPR with its own items, documents, preview, and approval signature.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 60
+        },
+        {
+          "item_key": "2026-07-16-lpr-attachment-cleanup",
+          "category": "LPR",
+          "description": "The LPR attachment area is now simpler: use one Attach LPR action beside the request attachments, without extra list panels or confusing parent terminology.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 70
+        },
+        {
+          "item_key": "2026-07-16-reimbursement-office-field-items",
+          "category": "Reimbursement",
+          "description": "The Office Supplies reimbursement category is now labeled Office/Field Items for clearer use in the worksheet, approvals, and generated Excel reports.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 80
+        },
+        {
+          "item_key": "2026-07-16-tsr-schedule-coverage",
+          "category": "Create TSR",
+          "description": "Multi-day TSRs show complete schedule coverage, while single-day team TSRs list other assigned engineers beneath Serviced By without repeating the service date and time.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 90
+        }
       ]
     },
     {
@@ -136,10 +656,47 @@
       "summary": "Multi-day TSRs now present linked service dates in a compact, readable format.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-17-tsr-coverage-reliability", "category": "Create TSR", "description": "Multi-day TSRs now show a compact service-date range in the existing Date of Service field, while additional assigned engineers remain listed beneath Serviced By.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 10},
-        {"item_key": "2026-07-17-tsr-supporting-email-files", "category": "TSR Email", "description": "Send TSR now includes supporting PDF and image files from linked schedules, with uploads up to 35MB optimized to 2MB and limited to 10 manual files per linked job.", "audiences": ["engineers", "admins"], "sort_order": 20},
-        {"item_key": "2026-07-17-reimbursement-auto-lpr", "category": "Reimbursement", "description": "Office/Field Items now generate a required LPR review during reimbursement submission, with reconciled purchase lines, signatures, approval preview, and Accounting package inclusion.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30},
-        {"item_key": "2026-07-17-calendar-dark-mode", "category": "Calendar", "description": "Calendar dark mode now keeps schedule types visually distinct, improves grid and card contrast, and applies accent themes only to controls and selections.", "audiences": ["everyone"], "sort_order": 40}
+        {
+          "item_key": "2026-07-17-tsr-coverage-reliability",
+          "category": "Create TSR",
+          "description": "Multi-day TSRs now show a compact service-date range in the existing Date of Service field, while additional assigned engineers remain listed beneath Serviced By.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-17-tsr-supporting-email-files",
+          "category": "TSR Email",
+          "description": "Send TSR now includes supporting PDF and image files from linked schedules, with uploads up to 35MB optimized to 2MB and limited to 10 manual files per linked job.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-17-reimbursement-auto-lpr",
+          "category": "Reimbursement",
+          "description": "Office/Field Items now generate a required LPR review during reimbursement submission, with reconciled purchase lines, signatures, approval preview, and Accounting package inclusion.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-17-calendar-dark-mode",
+          "category": "Calendar",
+          "description": "Calendar dark mode now keeps schedule types visually distinct, improves grid and card contrast, and applies accent themes only to controls and selections.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 40
+        }
       ]
     },
     {
@@ -149,11 +706,55 @@
       "summary": "Superadmins can now manage accountable Manila stock movements using barcode scanning.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-21-stock-inventory", "category": "Administration", "description": "Stock Inventory now manages separate barcode balances for Manila/Main, Cebu, and Davao with scanner-ready IN and OUT transactions.", "audiences": ["admins"], "sort_order": 10},
-        {"item_key": "2026-07-21-stock-ledger", "category": "Administration", "description": "Every stock movement records the branch, responsible engineer, transaction administrator, resulting balance, and any one-time correction reversal.", "audiences": ["admins"], "sort_order": 20},
-        {"item_key": "2026-07-21-stock-access", "category": "Administration", "description": "Superadmins can assign branch-specific Stock Inventory access or a focused Inventory-only workspace from Approval Routing settings.", "audiences": ["admins"], "sort_order": 30},
-        {"item_key": "2026-07-21-leave-request", "category": "Field Operations", "description": "Leave Request now supports signed planned leave, emergency Sick Leave marked Form to Follow, protected Calendar status updates, manager approval, supporting attachments, and HR email handoff.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40},
-        {"item_key": "2026-07-21-leave-branch-cc", "category": "Field Operations", "description": "Approved Leave Request emails now use separate Manila and Cebu/Davao CC recipient groups based on the requesting employee's personnel branch.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50}
+        {
+          "item_key": "2026-07-21-stock-inventory",
+          "category": "Administration",
+          "description": "Stock Inventory now manages separate barcode balances for Manila/Main, Cebu, and Davao with scanner-ready IN and OUT transactions.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-21-stock-ledger",
+          "category": "Administration",
+          "description": "Every stock movement records the branch, responsible engineer, transaction administrator, resulting balance, and any one-time correction reversal.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-21-stock-access",
+          "category": "Administration",
+          "description": "Superadmins can assign branch-specific Stock Inventory access or a focused Inventory-only workspace from Approval Routing settings.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-21-leave-request",
+          "category": "Field Operations",
+          "description": "Leave Request now supports signed planned leave, emergency Sick Leave marked Form to Follow, protected Calendar status updates, manager approval, supporting attachments, and HR email handoff.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-07-21-leave-branch-cc",
+          "category": "Field Operations",
+          "description": "Approved Leave Request emails now use separate Manila and Cebu/Davao CC recipient groups based on the requesting employee's personnel branch.",
+          "audiences": [
+            "engineers",
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 50
+        }
       ]
     },
     {
@@ -163,11 +764,56 @@
       "summary": "Schedules with a purchase order can now record the applicable SC or SV classification.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-22-schedule-sc-sv-tags", "category": "Calendar", "description": "With P.O. schedules can now optionally be classified as either SC or SV, with the selected billing tag shown clearly on Calendar cards.", "audiences": ["engineers", "admins"], "sort_order": 10},
-        {"item_key": "2026-07-22-tsr-filename-template", "category": "Create TSR", "description": "Superadmins can now manage newly generated TSR PDF filenames from Settings using safe placeholders and live billing-scenario previews.", "audiences": ["engineers", "admins"], "sort_order": 20},
-        {"item_key": "2026-07-22-tsr-subject-scenarios", "category": "TSR Email", "description": "TSR client email subjects now use independently managed Standard, Warranty, FOC, P.O., SC, SV, and Installation templates, with a clear choice for mixed TSR packages.", "audiences": ["engineers", "admins"], "sort_order": 30},
-        {"item_key": "2026-07-22-tsr-email-preview-cc", "category": "TSR Email", "description": "Send TSR now supports account-remembered Additional CC recipients and a read-only preview of the exact outgoing recipients, subject, message, and attachments.", "audiences": ["engineers", "admins"], "sort_order": 40},
-        {"item_key": "2026-07-22-product-contract-status", "category": "Products", "description": "Products now show Under Contract whenever active contract coverage is selected, while retaining clear expired-contract and no-expiry classifications.", "audiences": ["engineers", "admins"], "sort_order": 50}
+        {
+          "item_key": "2026-07-22-schedule-sc-sv-tags",
+          "category": "Calendar",
+          "description": "With P.O. schedules can now optionally be classified as either SC or SV, with the selected billing tag shown clearly on Calendar cards.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-22-tsr-filename-template",
+          "category": "Create TSR",
+          "description": "Superadmins can now manage newly generated TSR PDF filenames from Settings using safe placeholders and live billing-scenario previews.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-22-tsr-subject-scenarios",
+          "category": "TSR Email",
+          "description": "TSR client email subjects now use independently managed Standard, Warranty, FOC, P.O., SC, SV, and Installation templates, with a clear choice for mixed TSR packages.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-22-tsr-email-preview-cc",
+          "category": "TSR Email",
+          "description": "Send TSR now supports account-remembered Additional CC recipients and a read-only preview of the exact outgoing recipients, subject, message, and attachments.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-07-22-product-contract-status",
+          "category": "Products",
+          "description": "Products now show Under Contract whenever active contract coverage is selected, while retaining clear expired-contract and no-expiry classifications.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 50
+        }
       ]
     },
     {
@@ -177,7 +823,35 @@
       "summary": "Warranty and contract status is now visible while selecting equipment for a schedule.",
       "is_published": true,
       "items": [
-        {"item_key": "2026-07-23-schedule-product-coverage", "category": "Calendar", "description": "Add/Edit Schedule now shows each selected product's current warranty or contract status without requiring a separate visit to the Products page.", "audiences": ["engineers", "admins"], "sort_order": 10}
+        {
+          "item_key": "2026-07-23-schedule-product-coverage",
+          "category": "Calendar",
+          "description": "Add/Edit Schedule now shows each selected product's current warranty or contract status without requiring a separate visit to the Products page.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-07-24",
+      "release_date": "2026-07-24",
+      "title": "TSR Archive Sorting",
+      "summary": "The TSR archive now leads with the reports you filed most recently.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-07-24-tsr-archive-recent-first",
+          "category": "Reports",
+          "description": "The TSR archive now shows the most recently added reports first, so a report you just filed appears at the top instead of being ordered by service date.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 10
+        }
       ]
     },
     {
@@ -192,6 +866,96 @@
         {"item_key": "2026-07-28-reimbursement-row-removal", "category": "Reimbursement", "description": "Editable reimbursements now let engineers remove incorrect schedule or manual rows, keep them excluded after reopening, and restore one or all removed rows before submission.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 30},
         {"item_key": "2026-07-28-liquidation-row-cleanup", "category": "Liquidation", "description": "Travel and Cash Advance Liquidation row deletion now gives clearer confirmation, recalculates balances, and cleans up linked receipt files more safely.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 40},
         {"item_key": "2026-07-28-reimbursement-range-reuse", "category": "Reimbursement", "description": "Engineers can now reuse monthly or custom reimbursement ranges while previously claimed schedules remain excluded and each historical request opens as its own record.", "audiences": ["engineers", "approvers", "admins"], "sort_order": 50}
+      ]
+    },
+    {
+      "release_key": "2026-07-29",
+      "release_date": "2026-07-29",
+      "title": "Sign-In, Navigation, and Dashboard Refresh",
+      "summary": "Signing out now genuinely ends your session, sign-in gained self-service password reset, and the sidebar, engineer dashboard, and What's New page were rebuilt to be easier to read.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-07-29-logout-ends-session",
+          "category": "System",
+          "description": "Logging out now fully ends your session. Previously the sign-in page appeared but the next action could quietly restore the same account, which made switching users unreliable.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-29-password-reset",
+          "category": "System",
+          "description": "A Forgot password? link on the sign-in page now emails a self-service reset link that expires in 30 minutes and can only be used once. Accounts without an email address on file are still reset by an administrator.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-29-sign-in-page",
+          "category": "System",
+          "description": "The sign-in page was redesigned with a show-password button, a Caps Lock warning, an online/offline indicator, and protection against double submissions. It now follows your selected accent theme.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-29-mobile-sign-in-fix",
+          "category": "System",
+          "description": "Usernames typed on a phone are no longer rejected because of automatic capitalisation or a trailing space, and deactivated accounts now receive a clear message instead of looking like a wrong password.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-07-29-sidebar-refresh",
+          "category": "System",
+          "description": "The sidebar is now grouped into Main, Operations, and Records with a clearer active state, an account footer, full keyboard and screen-reader support, and pending counts beside Approvals and My Requests.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 50
+        },
+        {
+          "item_key": "2026-07-29-engineer-dashboard",
+          "category": "Field Operations",
+          "description": "The engineer dashboard now opens with a Needs you today panel covering overdue visits, today's visits, continuation jobs, and parts or P.O. waits, replacing the row of summary tiles.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 60
+        },
+        {
+          "item_key": "2026-07-29-dashboard-layout-sync",
+          "category": "System",
+          "description": "Dashboard sections can be reordered or hidden, and your arrangement now follows your account to any device instead of staying on one browser.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 70
+        },
+        {
+          "item_key": "2026-07-29-whats-new-search",
+          "category": "System",
+          "description": "What's New now supports search, category filtering, and paging through 10 releases at a time, so an earlier update can be found without scrolling the whole history.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 80
+        },
+        {
+          "item_key": "2026-07-29-whats-new-authoring",
+          "category": "Administration",
+          "description": "Administrators can now write, schedule, and target What's New updates directly in the app, preview them exactly as an engineer or approver will see them, and revert an in-app edit.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 90
+        }
       ]
     }
   ]

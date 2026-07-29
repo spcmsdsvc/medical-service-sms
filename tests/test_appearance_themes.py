@@ -2,6 +2,8 @@ import json
 import unittest
 from pathlib import Path
 
+from tests.sw_cache_version import assert_cache_version_at_least
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -25,7 +27,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('@media print', styles)
 
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
-        self.assertIn('medical-service-pwa-offline-navigation-v35-tsr-email-preview-cc', app_source)
+        assert_cache_version_at_least(self, 35, app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
     def test_login_uses_last_device_appearance(self):
@@ -158,9 +160,13 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         ):
             self.assertIn(selector, dark_css)
         self.assertIn('.sidebar-header .appearance-header-button {', theme_css)
-        self.assertIn('.sidebar-header .appearance-header-button,', layout)
-        self.assertIn('.sidebar-header .changelog-header-button {', layout)
-        self.assertIn('width: 34px;', layout)
+        # Shell CSS moved out of layout.html's inline <style> into app-shell.css,
+        # which collapsed three overlapping generations of sidebar rules into one.
+        shell_css = (ROOT / 'static' / 'css' / 'app-shell.css').read_text(encoding='utf-8')
+        self.assertIn('.sidebar-header .appearance-header-button,', shell_css)
+        self.assertIn('.sidebar-header .changelog-header-button {', shell_css)
+        self.assertIn('width: 34px;', shell_css)
+        self.assertIn("css/app-shell.css", layout)
 
 
 if __name__ == '__main__':

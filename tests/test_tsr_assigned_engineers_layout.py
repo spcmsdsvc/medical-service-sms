@@ -2,6 +2,7 @@ from pathlib import Path
 import unittest
 
 from app import get_tsr_other_assigned_engineer_names
+from tests.sw_cache_version import assert_cache_version_at_least
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,7 +49,7 @@ class TsrAssignedEngineersLayoutTests(unittest.TestCase):
         self.assertIn("content_version = hashlib.sha256(pdf_bytes).hexdigest()[:20]", app_source)
         self.assertIn('`&v=${{fingerprint}}&preview_ts=${{Date.now()}}`', app_source)
         self.assertIn("'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0'", app_source)
-        self.assertIn("medical-service-pwa-offline-navigation-v35-tsr-email-preview-cc", app_source)
+        assert_cache_version_at_least(self, 35, app_source)
 
 
 if __name__ == '__main__':

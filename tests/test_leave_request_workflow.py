@@ -20,7 +20,9 @@ class LeaveRequestSourceTests(unittest.TestCase):
 
     def test_page_navigation_and_official_template_exist(self):
         self.assertTrue((ROOT / 'forms' / 'Leave Form.pdf').exists())
-        self.assertIn('href="/leave_request"', (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8'))
+        # Sidebar links render through the nav_link() macro in layout.html, so the
+        # literal href no longer appears in the template source.
+        self.assertIn("nav_link('/leave_request'", (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8'))
         for marker in ('Save Draft', 'Check Conflicts', 'Submit for Approval', 'Record Form to Follow', 'Supporting Attachments'):
             self.assertIn(marker, self.page_source)
 

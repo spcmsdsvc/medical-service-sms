@@ -1,0 +1,385 @@
+/* Shared styling for the signed-out pages: login, forgot password, reset password.
+   Kept in one file so a dark-mode or accent fix lands on all three at once.
+   Depends on the variables defined in app-themes.css. */
+
+/* These pages carry the Shimadzu brand tone by default. When a user has explicitly
+   chosen an accent theme, that choice wins so the sign-in screen matches the app
+   they are about to enter. */
+:root {
+    --login-accent: #c8102e;
+    --login-accent-rgb: 200, 16, 46;
+    --login-page-bg: #0f172a;
+    --login-page-glow: rgba(200, 16, 46, 0.20);
+}
+
+:root[data-accent-theme="shimadzu-red"],
+:root[data-accent-theme="clinical-green"],
+:root[data-accent-theme="corporate-blue"] {
+    --login-accent: var(--app-primary);
+    --login-accent-rgb: var(--app-primary-rgb);
+    --login-page-glow: rgba(var(--app-primary-rgb), 0.20);
+}
+
+:root[data-app-theme="dark"] {
+    --login-page-bg: #080d16;
+}
+
+.auth-page * {
+    -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body.auth-page {
+    min-height: 100%;
+}
+
+body.auth-page {
+    background:
+        radial-gradient(circle at top left, var(--login-page-glow), transparent 38%),
+        linear-gradient(135deg, var(--login-page-bg) 0%, #000000 100%) !important;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding:
+        max(20px, env(safe-area-inset-top))
+        18px
+        max(20px, env(safe-area-inset-bottom))
+        18px;
+    overflow-x: hidden;
+}
+
+.login-shell {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 34px 32px;
+    background: var(--app-surface);
+    color: var(--app-text);
+    border-radius: 20px;
+    border: 1px solid var(--app-border);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+    animation: loginFade 0.35s ease;
+}
+
+@keyframes loginFade {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.brand-tile {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    background: var(--login-accent);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.55rem;
+    margin: 0 auto 12px;
+}
+
+.brand-title {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--app-text);
+    letter-spacing: 0.02em;
+    margin: 0;
+}
+
+.brand-subtitle {
+    font-size: 0.78rem;
+    color: var(--app-muted);
+    margin: 2px 0 0;
+}
+
+.auth-intro {
+    font-size: 0.82rem;
+    color: var(--app-muted);
+    line-height: 1.6;
+    margin-bottom: 18px;
+}
+
+.field-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--app-muted);
+    margin-bottom: 6px;
+    display: block;
+}
+
+/* app-themes.css forces every label inside .login-card to --app-text !important in
+   dark mode. That predates this page and flattens the label/value hierarchy, so the
+   field labels reclaim the muted tone with a more specific rule. */
+:root[data-app-theme="dark"] .login-card .field-label {
+    color: var(--app-muted) !important;
+}
+
+.input-shell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--app-border);
+    background: var(--app-input);
+    border-radius: 12px;
+    padding: 0 12px;
+    min-height: 48px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input-shell:focus-within {
+    border-color: var(--login-accent);
+    box-shadow: 0 0 0 3px rgba(var(--login-accent-rgb), 0.18);
+}
+
+.input-shell > i.field-icon {
+    color: var(--app-muted);
+    font-size: 0.95rem;
+    flex: 0 0 auto;
+}
+
+.input-shell input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--app-text);
+    font-size: 0.95rem;
+    font-weight: 600;
+    padding: 12px 0;
+}
+
+.input-shell input::placeholder {
+    color: var(--app-muted);
+    font-weight: 400;
+    opacity: 0.75;
+}
+
+/* A real button so it can never submit the form and stays keyboard reachable.
+   Sized to a 44px touch target: engineers tap this on phones, often in a hurry. */
+.toggle-visibility {
+    flex: 0 0 auto;
+    border: none;
+    background: transparent;
+    color: var(--app-muted);
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: -6px;
+    border-radius: 8px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.toggle-visibility:hover,
+.toggle-visibility:focus-visible {
+    color: var(--app-text);
+    outline: none;
+}
+
+.hint-row {
+    display: none;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    color: #b45309;
+    margin-top: 7px;
+}
+
+.hint-row.is-visible {
+    display: flex;
+}
+
+:root[data-app-theme="dark"] .hint-row {
+    color: #fbbf24;
+}
+
+.btn-signin {
+    width: 100%;
+    min-height: 50px;
+    border: none;
+    border-radius: 12px;
+    background: var(--login-accent);
+    color: #ffffff;
+    font-size: 0.92rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: filter 0.15s ease, transform 0.15s ease;
+}
+
+.btn-signin:hover:not(:disabled),
+.btn-signin:focus-visible:not(:disabled) {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+}
+
+.btn-signin:disabled {
+    opacity: 0.72;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.forgot-link {
+    display: block;
+    text-align: center;
+    font-size: 0.78rem;
+    color: var(--login-accent);
+    text-decoration: none;
+    margin-top: 14px;
+}
+
+.forgot-link:hover {
+    text-decoration: underline;
+}
+
+/* A saturated accent on the dark card falls below 4.5:1. Lighten the link in dark
+   mode. The plain value is the fallback for browsers without color-mix; only
+   browsers that support it take the tinted version. */
+:root[data-app-theme="dark"] .forgot-link {
+    color: #cbd5e1;
+}
+
+@supports (color: color-mix(in srgb, red 50%, white)) {
+    :root[data-app-theme="dark"] .forgot-link {
+        color: color-mix(in srgb, var(--login-accent) 40%, #ffffff);
+    }
+}
+
+.alert-login {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    font-size: 0.8rem;
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    background: rgba(220, 53, 69, 0.10);
+    border: 1px solid rgba(220, 53, 69, 0.35);
+    color: #b02a37;
+}
+
+:root[data-app-theme="dark"] .alert-login {
+    background: rgba(220, 53, 69, 0.16);
+    color: #f5a3ab;
+}
+
+.offline-banner {
+    display: none;
+    align-items: center;
+    gap: 9px;
+    font-size: 0.8rem;
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 16px;
+    background: rgba(180, 83, 9, 0.10);
+    border: 1px solid rgba(180, 83, 9, 0.35);
+    color: #b45309;
+}
+
+.offline-banner.is-visible {
+    display: flex;
+}
+
+:root[data-app-theme="dark"] .offline-banner {
+    background: rgba(251, 191, 36, 0.14);
+    color: #fbbf24;
+}
+
+.card-footer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--app-border);
+    margin-top: 20px;
+    padding-top: 13px;
+}
+
+.status-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.68rem;
+    color: var(--app-muted);
+}
+
+.status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+    flex: 0 0 auto;
+}
+
+.status-dot.is-offline {
+    background: #f59e0b;
+}
+
+.version-tag {
+    font-size: 0.68rem;
+    color: var(--app-muted);
+}
+
+@media (max-width: 768px) {
+    body.auth-page {
+        align-items: stretch;
+    }
+
+    .login-shell {
+        align-items: center;
+        min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    }
+
+    .login-card {
+        max-width: 100%;
+        padding: 26px 22px;
+        border-radius: 20px;
+    }
+
+    .input-shell {
+        min-height: 54px;
+    }
+
+    .btn-signin {
+        min-height: 54px;
+        font-size: 0.95rem;
+    }
+}
+
+@media (max-width: 420px) {
+    body.auth-page {
+        padding-left: 14px;
+        padding-right: 14px;
+    }
+
+    .login-card {
+        padding: 22px 18px;
+    }
+
+    .brand-tile {
+        width: 46px;
+        height: 46px;
+        font-size: 1.35rem;
+    }
+
+    .brand-title {
+        font-size: 1.05rem;
+    }
+}

@@ -1,0 +1,860 @@
+/* Application shell: sidebar, mobile nav, and shared mobile foundation.
+   Extracted from the inline <style> in layout.html, which had accumulated three
+   overlapping generations of sidebar rules (the original block, the "M2C visual
+   cleanup" block that redefined nearly all of it, and a mobile scroll-polish block).
+   .sidebar-subnav and its children were each declared three times.
+
+   This file is the single source of truth. The M2C generation was the one actually
+   rendering, so its values are preserved here unless the redesign changed them
+   deliberately. Depends on the variables in app-themes.css. */
+
+:root {
+    --sidebar-width: 240px;
+    --sidebar-row-height: 46px;
+    --sidebar-subrow-height: 38px;
+    --mobile-safe-top: env(safe-area-inset-top);
+    --mobile-safe-bottom: env(safe-area-inset-bottom);
+    --mobile-safe-padding: 14px;
+    --mobile-card-radius: 16px;
+    --mobile-touch-height: 44px;
+
+    /* Sidebar surface tokens. Derived from the theme so dark mode stays coherent;
+       previously hover and text were hardcoded and did not follow --app-sidebar. */
+    --sidebar-text: #cbd5e1;
+    --sidebar-text-strong: #ffffff;
+    /* Measured against the light-mode sidebar (#2c3e50): #8a9bb0 gave only 3.87:1,
+       below the 4.5:1 needed for the small uppercase group labels. */
+    --sidebar-text-dim: #a8b6c6;
+    --sidebar-hover: rgba(255, 255, 255, 0.07);
+    --sidebar-divider: rgba(148, 163, 184, 0.14);
+    --sidebar-subnav-bg: rgba(15, 23, 42, 0.28);
+    --sidebar-active-bg: rgba(var(--app-primary-rgb), 0.16);
+}
+
+:root[data-app-theme="dark"] {
+    --sidebar-hover: rgba(255, 255, 255, 0.05);
+    --sidebar-divider: rgba(148, 163, 184, 0.12);
+    --sidebar-subnav-bg: rgba(0, 0, 0, 0.22);
+}
+
+* {
+    -webkit-tap-highlight-color: transparent;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    background-color: #f4f7f6;
+    overflow-x: hidden;
+    font-family: sans-serif;
+    /* Was `transition: all 0.3s`, which animated every property and caused visible
+       jank when switching theme. Only the theme-driven colors need to animate. */
+    transition: background-color 0.3s ease, color 0.3s ease;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* --- Skip link ------------------------------------------------------------ */
+
+.skip-to-content {
+    position: absolute;
+    left: 8px;
+    top: -60px;
+    z-index: 2000;
+    padding: 10px 16px;
+    border-radius: 0 0 8px 8px;
+    background: var(--app-primary);
+    color: #ffffff;
+    font-size: 0.86rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: top 0.15s ease;
+}
+
+.skip-to-content:focus {
+    top: 0;
+    color: #ffffff;
+    outline: 2px solid #ffffff;
+    outline-offset: -4px;
+}
+
+/* --- Sidebar shell -------------------------------------------------------- */
+
+.sidebar {
+    width: var(--sidebar-width);
+    height: 100vh;
+    position: fixed;
+    left: 0;
+    top: 0;
+    background: #2c3e50;
+    color: #ffffff;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: width 0.3s ease, left 0.3s ease;
+}
+
+.sidebar-header {
+    min-height: 72px;
+    padding: 16px 18px;
+    background: #1a252f;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex: 0 0 auto;
+}
+
+.sidebar-header h5 {
+    font-size: 1.05rem;
+    line-height: 1.15;
+    letter-spacing: 0.02em;
+}
+
+.sidebar-nav {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 6px 0 calc(16px + var(--mobile-safe-bottom));
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+    background: rgba(203, 213, 225, 0.32);
+    border-radius: 999px;
+}
+
+/* --- Group labels --------------------------------------------------------- */
+
+.sidebar-group-label {
+    padding: 12px 20px 5px;
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--sidebar-text-dim);
+    user-select: none;
+}
+
+.sidebar-group-label:first-child {
+    padding-top: 6px;
+}
+
+/* --- Rows ----------------------------------------------------------------- */
+
+.sidebar a,
+.sidebar-section-toggle,
+.sidebar-calendar-main {
+    box-sizing: border-box;
+    /* min-height, not a fixed height: long labels must be able to breathe. */
+    min-height: var(--sidebar-row-height);
+    width: 100%;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+    color: var(--sidebar-text);
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--sidebar-divider);
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0.01em;
+    text-align: left;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.sidebar a i,
+.sidebar-section-toggle i:first-child,
+.sidebar-calendar-main i {
+    width: 22px;
+    min-width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 0 !important;
+    font-size: 0.95rem;
+    opacity: 0.95;
+}
+
+.sidebar a span,
+.sidebar-section-toggle span,
+.sidebar-calendar-main span {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar a:hover,
+.sidebar a:focus-visible,
+.sidebar-section-toggle:hover,
+.sidebar-section-toggle:focus-visible,
+.sidebar-calendar-arrow:hover,
+.sidebar-calendar-arrow:focus-visible {
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text-strong);
+    outline: none;
+}
+
+.sidebar a:focus-visible,
+.sidebar-section-toggle:focus-visible,
+.sidebar-calendar-arrow:focus-visible,
+.sidebar-logout:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: -2px;
+}
+
+/* Active state. border-left-color is also set by app-themes.css with !important,
+   which is why the old hardcoded pink here was dead code. */
+.sidebar a.active,
+.sidebar-section-toggle.active,
+.sidebar-calendar-main.active {
+    color: var(--sidebar-text-strong);
+    background: var(--sidebar-active-bg);
+    border-left: 3px solid var(--app-primary);
+    padding-left: 17px;
+}
+
+/* --- Calendar row with its collapse arrow --------------------------------- */
+
+.sidebar-calendar-row {
+    display: grid;
+    grid-template-columns: 1fr 46px;
+    min-height: var(--sidebar-row-height);
+    align-items: stretch;
+    border-bottom: 0;
+}
+
+.sidebar-calendar-row .sidebar-calendar-main {
+    border-bottom: 1px solid var(--sidebar-divider);
+}
+
+.sidebar-calendar-arrow {
+    width: 46px;
+    min-height: var(--sidebar-row-height);
+    border: 0;
+    border-left: 1px solid var(--sidebar-divider);
+    border-bottom: 1px solid var(--sidebar-divider);
+    background: transparent;
+    color: var(--sidebar-text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.sidebar-section-toggle .sidebar-section-arrow,
+.sidebar-calendar-arrow .sidebar-section-arrow {
+    margin-left: auto;
+    width: 18px;
+    min-width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.78rem;
+    opacity: 0.9;
+    transition: transform 0.2s ease;
+}
+
+.sidebar-calendar-arrow .sidebar-section-arrow {
+    margin-left: 0;
+}
+
+.sidebar-section-toggle[aria-expanded="true"] .sidebar-section-arrow,
+.sidebar-calendar-arrow[aria-expanded="true"] .sidebar-section-arrow {
+    transform: rotate(90deg);
+}
+
+/* --- Subnav --------------------------------------------------------------- */
+
+.sidebar-subnav {
+    background: var(--sidebar-subnav-bg);
+    border-bottom: 1px solid var(--sidebar-divider);
+}
+
+.sidebar-subnav a {
+    min-height: var(--sidebar-subrow-height);
+    padding: 0 20px 0 48px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    border-bottom: 0;
+    color: var(--sidebar-text);
+}
+
+.sidebar-subnav a.active {
+    padding-left: 45px;
+}
+
+.sidebar-subnav a.text-muted {
+    color: rgba(203, 213, 225, 0.56) !important;
+}
+
+/* --- Count badges --------------------------------------------------------- */
+
+.sidebar-count-badge {
+    display: none;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--app-primary);
+    color: #ffffff;
+    font-size: 0.66rem;
+    font-weight: 800;
+    line-height: 1;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+
+.sidebar-count-badge.show {
+    display: inline-flex;
+}
+
+/* --- User footer ---------------------------------------------------------- */
+
+.sidebar-user {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 14px calc(11px + var(--mobile-safe-bottom));
+    border-top: 1px solid var(--sidebar-divider);
+    background: rgba(15, 23, 42, 0.30);
+}
+
+.sidebar-user-avatar {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    border-radius: 50%;
+    background: var(--app-primary);
+    color: #ffffff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.74rem;
+    font-weight: 800;
+    flex: 0 0 auto;
+}
+
+.sidebar-user-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+}
+
+.sidebar-user-name {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--sidebar-text-strong);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sidebar-user-role {
+    font-size: 0.66rem;
+    color: var(--sidebar-text-dim);
+}
+
+.sidebar-logout {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #e8a33d;
+    text-decoration: none;
+    flex: 0 0 auto;
+    transition: background-color 0.16s ease, color 0.16s ease;
+}
+
+.sidebar-logout:hover,
+.sidebar-logout:focus-visible {
+    background: rgba(232, 163, 61, 0.16);
+    color: #ffd45f;
+}
+
+/* --- Collapse / main content --------------------------------------------- */
+
+.main-content {
+    margin-left: var(--sidebar-width);
+    padding: 20px;
+    transition: margin-left 0.3s ease;
+}
+
+.main-content:focus {
+    outline: none;
+}
+
+body.sidebar-collapsed .sidebar {
+    width: 0;
+}
+
+body.sidebar-collapsed .main-content {
+    margin-left: 0;
+}
+
+.card {
+    border: none;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+}
+
+.toggle-btn {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    font-size: 1.05rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.toggle-btn:hover,
+.toggle-btn:focus-visible {
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+    outline: none;
+}
+
+/* --- Mobile nav ----------------------------------------------------------- */
+
+.mobile-nav {
+    display: none;
+    background: rgba(44, 62, 80, 0.96);
+    backdrop-filter: blur(12px);
+    color: white;
+    padding: calc(10px + var(--mobile-safe-top)) 20px 10px 20px;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 1001;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-header-actions,
+.mobile-nav-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+}
+
+.sidebar-header-actions {
+    gap: 6px;
+}
+
+.mobile-nav-actions .mobile-menu-button {
+    min-width: 72px;
+}
+
+@media (max-width: 992px) {
+    .sidebar {
+        left: -100%;
+        width: min(82vw, var(--sidebar-width));
+        box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    }
+
+    .sidebar.active {
+        left: 0;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    .main-content {
+        margin-left: 0;
+        padding-top: 12px;
+    }
+
+    .mobile-nav {
+        display: flex !important;
+    }
+
+    body.mobile-sidebar-open {
+        overflow: hidden;
+    }
+
+    .sidebar-nav {
+        padding-bottom: calc(48px + var(--mobile-safe-bottom));
+    }
+}
+
+/* --- Header tool buttons (appearance + What's New) ------------------------ */
+
+.sidebar-header .changelog-header-button,
+.mobile-nav .changelog-header-button {
+    position: relative;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: 1px solid rgba(203, 213, 225, 0.34);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--sidebar-text);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    box-sizing: border-box;
+    transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.sidebar-header .changelog-header-button i,
+.mobile-nav .changelog-header-button i {
+    width: auto;
+    min-width: 0;
+    margin: 0 !important;
+    font-size: 1rem;
+}
+
+/* Compact desktop header tools; mobile keeps the larger touch targets above. */
+.sidebar-header .appearance-header-button,
+.sidebar-header .changelog-header-button {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    min-height: 34px;
+}
+
+.sidebar-header .appearance-header-button i,
+.sidebar-header .changelog-header-button i {
+    width: auto;
+    min-width: 0;
+    margin: 0 !important;
+    font-size: 0.86rem;
+}
+
+.sidebar-header .changelog-header-button:hover,
+.sidebar-header .changelog-header-button:focus-visible,
+.mobile-nav .changelog-header-button:hover,
+.mobile-nav .changelog-header-button:focus-visible,
+.changelog-header-button.active {
+    background: rgba(240, 180, 41, 0.16);
+    border-color: #f0b429;
+    color: #ffd45f;
+    outline: none;
+}
+
+.changelog-header-button.has-unread {
+    background: rgba(240, 180, 41, 0.12);
+    border-color: rgba(240, 180, 41, 0.72);
+    color: #ffd45f;
+}
+
+.changelog-header-badge {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border: 2px solid #1a252f;
+    border-radius: 999px;
+    background: #f0b429;
+    color: #3d2b00;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.66rem;
+    font-weight: 950;
+    line-height: 1;
+    box-sizing: border-box;
+}
+
+.sidebar-header .changelog-header-badge {
+    top: -5px;
+    right: -5px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    border-width: 1px;
+    font-size: 0.56rem;
+}
+
+.mobile-nav .changelog-header-badge {
+    border-color: #2c3e50;
+}
+
+.changelog-header-badge.show {
+    display: inline-flex;
+}
+
+/* --- Offline status ------------------------------------------------------- */
+
+.offline-mode .mobile-nav::after {
+    content: 'OFFLINE';
+    margin-left: 10px;
+    font-size: .68rem;
+    font-weight: 900;
+    letter-spacing: .08em;
+    color: #facc15;
+}
+
+.offline-mode .sidebar-header::after {
+    content: 'OFFLINE';
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 999px;
+    background: rgba(250, 204, 21, .15);
+    color: #facc15;
+    font-size: .6rem;
+    font-weight: 900;
+    letter-spacing: .08em;
+}
+
+@media (max-width: 768px) {
+    .offline-mode .mobile-nav {
+        border-bottom: 2px solid #facc15;
+    }
+}
+
+/* =========================================================
+   SHARED MOBILE FOUNDATION
+   ========================================================= */
+
+@media (max-width: 768px) {
+
+    body {
+        overflow-x: hidden;
+        -webkit-text-size-adjust: 100%;
+        padding-bottom: max(10px, var(--mobile-safe-bottom));
+    }
+
+    .container,
+    .container-fluid,
+    .main-content,
+    .content-wrapper,
+    .page-content {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding-left: var(--mobile-safe-padding) !important;
+        padding-right: var(--mobile-safe-padding) !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        box-sizing: border-box !important;
+    }
+
+    .main-content {
+        padding-top: 14px !important;
+        padding-bottom: 20px !important;
+    }
+
+    h1 { font-size: 1.5rem !important; }
+    h2 { font-size: 1.3rem !important; }
+    h3 { font-size: 1.12rem !important; }
+
+    .card,
+    .dashboard-card,
+    .panel,
+    .stats-card,
+    .mobile-friendly-card {
+        border-radius: var(--mobile-card-radius) !important;
+        overflow: hidden;
+    }
+
+    .card {
+        box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06) !important;
+    }
+
+    /* Sidebar controls are excluded: they own their own sizing above and this
+       rule previously inflated them unevenly. */
+    button:not(.toggle-btn):not(.sidebar-section-toggle):not(.sidebar-calendar-arrow),
+    .btn:not(.toggle-btn),
+    input[type="submit"],
+    input[type="button"] {
+        min-height: var(--mobile-touch-height) !important;
+        border-radius: 12px !important;
+        font-size: 0.95rem !important;
+    }
+
+    input,
+    select,
+    textarea {
+        min-height: 44px !important;
+        font-size: 16px !important;
+        border-radius: 12px !important;
+        max-width: 100% !important;
+    }
+
+    textarea {
+        min-height: 100px !important;
+    }
+
+    table,
+    pre,
+    code {
+        max-width: 100% !important;
+    }
+
+    img {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    .table-responsive,
+    .responsive-table-wrapper {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        border-radius: 14px;
+    }
+
+    .navbar,
+    .topbar,
+    .header,
+    .main-header {
+        padding-left: var(--mobile-safe-padding) !important;
+        padding-right: var(--mobile-safe-padding) !important;
+    }
+
+    .row {
+        margin-left: -6px !important;
+        margin-right: -6px !important;
+    }
+
+    .row > * {
+        padding-left: 6px !important;
+        padding-right: 6px !important;
+    }
+
+    .modal-dialog {
+        margin: 10px auto !important;
+        width: calc(100% - 20px) !important;
+        max-width: 100% !important;
+    }
+
+    .modal-content {
+        border-radius: 18px !important;
+    }
+
+    .modal-dialog-scrollable .modal-body {
+        overscroll-behavior: contain;
+    }
+
+    .mobile-sticky-actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 50;
+        background: #fff;
+        padding: 10px;
+        border-top: 1px solid #e5e7eb;
+    }
+
+    .mobile-nav .btn {
+        min-height: 40px !important;
+        min-width: 82px;
+        font-size: 0.82rem !important;
+    }
+
+    .toast,
+    .alert,
+    .dropdown-menu {
+        border-radius: 14px !important;
+    }
+
+    .table th,
+    .table td {
+        white-space: nowrap;
+    }
+
+    .table td.wrap-mobile {
+        white-space: normal !important;
+    }
+}
+
+/* --- Touch device polish -------------------------------------------------- */
+
+.mobile-device .btn,
+.mobile-device button,
+.mobile-device input,
+.mobile-device select,
+.mobile-device textarea {
+    touch-action: manipulation;
+}
+
+.mobile-device .mobile-nav h4 {
+    font-size: 1rem;
+    font-weight: 900;
+}
+
+.mobile-device .card {
+    overflow: hidden;
+}
+
+.mobile-device .modal {
+    padding-left: 0 !important;
+}
+
+.mobile-device .modal-body {
+    overflow-x: hidden;
+}
+
+.mobile-device .table-responsive {
+    scrollbar-width: thin;
+}
+
+.mobile-device .table-responsive::-webkit-scrollbar {
+    height: 6px;
+}
+
+.mobile-device .table-responsive::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.4);
+    border-radius: 999px;
+}
+
+.mobile-device .form-control:focus,
+.mobile-device .form-select:focus {
+    box-shadow: none;
+}
+
+.mobile-device .btn:active {
+    transform: scale(0.985);
+}
+
+/* --- Print ---------------------------------------------------------------- */
+
+@media print {
+    @page { size: landscape; margin: 10mm; }
+
+    .no-print, .sidebar, .mobile-nav, .skip-to-content, .btn, .btn-group,
+    .form-control, .form-select, .input-group, #show-sidebar-btn, .add-hint,
+    .search-results, .modal {
+        display: none !important;
+    }
+
+    .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; display: block !important; }
+    .card { box-shadow: none !important; border: none !important; padding: 0 !important; width: 100% !important; }
+    body { background-color: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    .table-responsive { display: block !important; overflow: visible !important; width: 100% !important; }
+    table { width: 100% !important; border-collapse: collapse !important; table-layout: auto !important; }
+    th, td { border: 1px solid #333 !important; padding: 8px !important; position: static !important; background-color: transparent !important; color: black !important; }
+    thead.table-dark, .table-dark th { background-color: #212529 !important; color: white !important; }
+}

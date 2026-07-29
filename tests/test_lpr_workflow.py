@@ -31,7 +31,8 @@ class LPRWorkflowTests(unittest.TestCase):
             "@app.route('/delete_all_lpr_attachments/<int:lpr_id>', methods=['POST'])",
         ):
             self.assertIn(route, self.app_source)
-        self.assertIn("href=\"/lpr\"", (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8'))
+        # Sidebar links render through the nav_link() macro in layout.html.
+        self.assertIn("nav_link('/lpr'", (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8'))
         self.assertIn('lpr_procurement', self.app_source)
 
     def test_lpr_form_contains_dynamic_items_and_attachment_controls(self):

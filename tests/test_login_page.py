@@ -1,0 +1,202 @@
+import os
+import pathlib
+import tempfile
+import unittest
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+# Pin an isolated database BEFORE importing app.py. Without this the import would
+# open the real scheduler.db, which must never be touched by the test suite.
+_TEST_DB_PATH = pathlib.Path(tempfile.gettempdir()) / 'medical_service_login_tests.db'
+os.environ.setdefault('MEDICAL_SERVICE_TEST_DB', str(_TEST_DB_PATH))
+
+import app as app_module  # noqa: E402
+from tests.sw_cache_version import assert_cache_version_at_least  # noqa: E402
+
+
+class LoginSourceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        cls.login_source = (ROOT / 'templates' / 'login.html').read_text(encoding='utf-8')
+        cls.forgot_source = (ROOT / 'templates' / 'forgot_password.html').read_text(encoding='utf-8')
+        cls.reset_source = (ROOT / 'templates' / 'reset_password.html').read_text(encoding='utf-8')
+        cls.auth_css = (ROOT / 'static' / 'css' / 'app-auth.css').read_text(encoding='utf-8')
+
+    def test_deactivated_accounts_are_reported_instead_of_failing_silently(self):
+        # login_user() returns False for inactive users. The route must not ignore
+        # that and redirect anyway, which previously looked like a wrong password.
+        self.assertIn('logged_in = login_user(', self.app_source)
+        self.assertIn('if not logged_in:', self.app_source)
+        self.assertIn('This account has been deactivated.', self.app_source)
+
+    def test_username_lookup_is_normalised(self):
+        self.assertIn('def find_user_by_username(username):', self.app_source)
+        self.assertIn('db.func.lower(User.username) == cleaned.lower()', self.app_source)
+        self.assertIn('user_rec = find_user_by_username(username)', self.app_source)
+
+    def test_unknown_usernames_still_run_a_hash_comparison(self):
+        self.assertIn('DUMMY_PASSWORD_HASH', self.app_source)
+        self.assertIn('check_password_hash(DUMMY_PASSWORD_HASH, password)', self.app_source)
+
+    def test_rate_limiting_is_wired_without_a_global_default(self):
+        self.assertIn('from flask_limiter import Limiter', self.app_source)
+        self.assertIn('from flask_limiter.util import get_remote_address', self.app_source)
+        self.assertIn('limiter = Limiter(', self.app_source)
+        self.assertIn("@limiter.limit('10 per minute; 60 per hour', methods=['POST'])", self.app_source)
+        self.assertIn('@app.errorhandler(429)', self.app_source)
+        # A blanket limit across 356 routes would break offline TSR sync retries,
+        # so the Limiter must never be constructed with default_limits.
+        self.assertNotIn('default_limits=', self.app_source)
+
+    def test_last_login_migration_is_additive(self):
+        self.assertIn('last_login_at = db.Column(db.DateTime, nullable=True)', self.app_source)
+        self.assertIn(
+            "('last_login_at', \"ALTER TABLE user ADD COLUMN last_login_at DATETIME\")",
+            self.app_source
+        )
+        self.assertNotIn('DROP COLUMN last_login_at', self.app_source)
+
+    def test_login_inputs_are_mobile_safe(self):
+        for marker in (
+            'autocomplete="username"',
+            'autocomplete="current-password"',
+            'autocapitalize="none"',
+            'autocorrect="off"',
+            'spellcheck="false"',
+        ):
+            self.assertIn(marker, self.login_source)
+
+    def test_password_toggle_is_a_real_button(self):
+        # Per the frontend baseline: a real button, so it can never submit the form
+        # and stays reachable by keyboard.
+        self.assertIn('<button type="button"', self.login_source)
+        self.assertIn('id="toggle-password"', self.login_source)
+        self.assertIn('aria-label="Show password"', self.login_source)
+
+    def test_login_page_has_capslock_offline_and_submit_guard(self):
+        for marker in (
+            'id="capslock-hint"',
+            "getModifierState('CapsLock')",
+            'id="offline-banner"',
+            "window.addEventListener('offline'",
+            'submitButton.disabled = true;',
+        ):
+            self.assertIn(marker, self.login_source)
+
+    def test_login_page_uses_theme_variables_instead_of_hardcoded_pink(self):
+        self.assertNotIn('#d63384', self.login_source)
+        self.assertNotIn('#d63384', self.auth_css)
+        self.assertIn('var(--app-surface)', self.auth_css)
+        self.assertIn('var(--app-text)', self.auth_css)
+        self.assertIn('--login-accent: var(--app-primary)', self.auth_css)
+        self.assertIn(':root[data-app-theme="dark"]', self.auth_css)
+
+    def test_forgot_password_link_and_pages_exist(self):
+        self.assertIn("url_for('forgot_password')", self.login_source)
+        self.assertIn("@app.route('/forgot_password', methods=['GET', 'POST'])", self.app_source)
+        self.assertIn("@app.route('/reset_password/<token>', methods=['GET', 'POST'])", self.app_source)
+        self.assertIn('name="confirm_password"', self.reset_source)
+        self.assertIn('autocomplete="new-password"', self.reset_source)
+        self.assertIn('Back to sign in', self.forgot_source)
+
+    def test_reset_flow_does_not_leak_account_existence(self):
+        self.assertIn('PASSWORD_RESET_GENERIC_CONFIRMATION', self.app_source)
+        self.assertIn('contact your administrator', app_module.PASSWORD_RESET_GENERIC_CONFIRMATION.lower())
+
+    def test_login_redirects_stay_no_store_but_the_page_is_storable(self):
+        # The after_request guard exists to stop a 302 to /login being cached under a
+        # protected URL. That must survive; only the signed-out GET becomes storable.
+        self.assertIn('def prevent_login_redirect_cache(response):', self.app_source)
+        self.assertIn('is_signed_out_login_page', self.app_source)
+        self.assertIn('response.status_code in {301, 302, 303, 307, 308}', self.app_source)
+
+    def test_offline_login_shell_is_cached_and_version_bumped(self):
+        self.assertIn("'/login',", self.app_source)
+        self.assertIn("'/static/css/app-auth.css',", self.app_source)
+        # Offline login shipped at v39. Assert the floor, not the literal, so a later
+        # cache bump does not break this test the way the old v35 literals did.
+        assert_cache_version_at_least(self, 39, self.app_source)
+        # The login document must still never be written to the runtime cache.
+        self.assertIn('function isLoginLikeResponse(request, response)', self.app_source)
+        self.assertIn("const cachedLogin = await shellCache.match('/login');", self.app_source)
+
+
+class PasswordResetTokenTests(unittest.TestCase):
+    """Functional coverage for the reset token helpers against an isolated DB."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+        app_module.db.create_all()
+
+    @classmethod
+    def tearDownClass(cls):
+        app_module.db.session.remove()
+        cls.ctx.pop()
+
+    def _make_user(self, username, password='initial-password', is_active=True):
+        existing = app_module.User.query.filter_by(username=username).first()
+        if existing:
+            app_module.db.session.delete(existing)
+            app_module.db.session.commit()
+
+        user = app_module.User(
+            username=username,
+            password=app_module.generate_password_hash(password),
+            role='engineer',
+            is_active=is_active
+        )
+        app_module.db.session.add(user)
+        app_module.db.session.commit()
+        return user
+
+    def test_username_lookup_tolerates_case_and_whitespace(self):
+        self._make_user('reset_case_user')
+
+        self.assertIsNotNone(app_module.find_user_by_username('reset_case_user'))
+        self.assertIsNotNone(app_module.find_user_by_username('  reset_case_user  '))
+        self.assertIsNotNone(app_module.find_user_by_username('Reset_Case_User'))
+        self.assertIsNone(app_module.find_user_by_username(''))
+        self.assertIsNone(app_module.find_user_by_username(None))
+        self.assertIsNone(app_module.find_user_by_username('no_such_account_here'))
+
+    def test_reset_token_round_trips(self):
+        user = self._make_user('reset_token_user')
+        token = app_module.build_password_reset_token(user)
+        self.assertTrue(token)
+
+        resolved = app_module.load_user_from_password_reset_token(token)
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.id, user.id)
+
+    def test_reset_token_is_single_use(self):
+        user = self._make_user('reset_single_use_user')
+        token = app_module.build_password_reset_token(user)
+        self.assertIsNotNone(app_module.load_user_from_password_reset_token(token))
+
+        # Changing the password changes the embedded hash marker, which retires
+        # any outstanding token without needing a used-token table.
+        user.password = app_module.generate_password_hash('a-brand-new-password')
+        app_module.db.session.commit()
+
+        self.assertIsNone(app_module.load_user_from_password_reset_token(token))
+
+    def test_reset_token_rejects_tampering_and_deactivated_accounts(self):
+        user = self._make_user('reset_tamper_user')
+        token = app_module.build_password_reset_token(user)
+
+        self.assertIsNone(app_module.load_user_from_password_reset_token(token + 'x'))
+        self.assertIsNone(app_module.load_user_from_password_reset_token(''))
+        self.assertIsNone(app_module.load_user_from_password_reset_token(None))
+
+        user.is_active = False
+        app_module.db.session.commit()
+        self.assertIsNone(app_module.load_user_from_password_reset_token(token))
+
+
+if __name__ == '__main__':
+    unittest.main()

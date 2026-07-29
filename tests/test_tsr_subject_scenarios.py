@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import app as app_module
+from tests.sw_cache_version import assert_cache_version_at_least
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -101,7 +102,7 @@ class TsrSubjectScenarioTests(unittest.TestCase):
 
     def test_release_note_and_cache_bump_are_present(self):
         self.assertIn('2026-07-22-tsr-subject-scenarios', self.changelog_source)
-        self.assertIn('v35-tsr-email-preview-cc', self.app_source)
+        assert_cache_version_at_least(self, 35, self.app_source)
 
 
 if __name__ == '__main__':

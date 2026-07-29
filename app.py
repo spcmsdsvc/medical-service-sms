@@ -91,6 +91,8 @@ from datetime import (
 
 # --- NEW SECURITY IMPORTS ---
 from flask_wtf.csrf import CSRFProtect, generate_csrf
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import os
@@ -187,6 +189,11 @@ app.config['SMTP_SENDER_NAME'] = (
     'SPC-Medical Service Scheduler'
 )
 app.config['EMAIL_NOTIFICATIONS_ENABLED'] = os.environ.get('EMAIL_NOTIFICATIONS_ENABLED', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+# What's New digest sending. Deliberately defaults to FALSE and is checked independently
+# of EMAIL_NOTIFICATIONS_ENABLED, which defaults to true -- so a sandbox holding a real
+# Brevo key can never email live engineers just by running the app.
+app.config['CHANGELOG_DIGEST_ENABLED'] = os.environ.get('CHANGELOG_DIGEST_ENABLED', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 app.config['EMAIL_PROVIDER'] = os.environ.get('EMAIL_PROVIDER', 'brevo').strip().lower()
 app.config['BREVO_API_KEY'] = os.environ.get('BREVO_API_KEY')
 app.config['BREVO_API_URL'] = os.environ.get('BREVO_API_URL', 'https://api.brevo.com/v3/smtp/email')
@@ -678,6 +685,39 @@ def get_tsr_email_font_stack(font_key=None):
 
 # Enable Global CSRF Protection
 csrf = CSRFProtect(app)
+
+# --- BRUTE FORCE PROTECTION ---
+# Deliberately no default_limits. This app exposes 356 routes including offline TSR
+# sync, attachment uploads, and calendar polling; a blanket limit would break field
+# retry behaviour. Limits are opted into per sensitive route only.
+#
+# storage_uri is in-memory because Railway runs this as a single web instance.
+# If the service is ever scaled to multiple instances, this must move to shared
+# storage (Redis) or each instance will count attempts separately.
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    storage_uri="memory://",
+    strategy="fixed-window"
+)
+
+
+AUTH_RATE_LIMITED_PATHS = ('/login', '/forgot_password', '/reset_password')
+
+# Self-service password reset links expire after 30 minutes.
+PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS = 30 * 60
+
+
+@app.errorhandler(429)
+def handle_rate_limit_exceeded(error):
+    """Show a friendly throttle message on auth pages instead of a raw 429 page."""
+    path = (request.path or '')
+    if path.startswith(AUTH_RATE_LIMITED_PATHS):
+        flash('Too many attempts. Please wait a minute and try again.')
+        response = Response(render_template('login.html'), mimetype='text/html', status=429)
+        response.headers['Cache-Control'] = 'no-cache, must-revalidate, max-age=0'
+        return response
+    return error
 
 # --- DATABASE ENGINE CONFIGURATION ---
 
@@ -1221,6 +1261,34 @@ def inject_feature_flags():
     }
 
 
+@app.context_processor
+def inject_navigation_access():
+    """Expose the real authorization helpers to the sidebar.
+
+    layout.html used to re-implement these rules inline, and its versions were
+    looser than the server's -- it checked `role in ('superadmin','regional_admin')`
+    without the SUPERADMIN_USERNAMES membership that is_superadmin_user() requires,
+    and omitted the is_active checks that the approver helpers enforce. The sidebar
+    therefore offered links that the route then redirected away from.
+
+    These keys are the same functions the routes guard themselves with, so menu
+    visibility and server authorization can no longer drift apart. Hiding a link is
+    still never the protection -- each route keeps its own check.
+    """
+    authenticated = bool(getattr(current_user, 'is_authenticated', False))
+    role = (getattr(current_user, 'role', '') or '').strip().lower() if authenticated else ''
+
+    return {
+        'nav_authenticated': authenticated,
+        'nav_is_admin': is_admin_authorized(),
+        'nav_is_superadmin': is_superadmin_user(),
+        'nav_is_engineer': authenticated and role == 'engineer',
+        'nav_is_approval_center_user': is_approval_center_user(),
+        'nav_is_approver_only': is_approver_only_user(),
+        'nav_can_access_accounting_center': can_access_accounting_center(),
+    }
+
+
 @app.after_request
 def log_performance_timer(response):
     start_time = getattr(g, '_perf_start', None)
@@ -1242,10 +1310,31 @@ def log_performance_timer(response):
 
 @app.after_request
 def prevent_login_redirect_cache(response):
-    """Avoid PWA/browser caching login redirects as protected pages."""
+    """Avoid PWA/browser caching login redirects as protected pages.
+
+    Redirects stay strictly no-store: the original hazard was a 302 to /login being
+    cached under a protected URL such as /timeline.
+
+    A plain GET /login that renders the signed-out page is treated differently. It
+    contains no account data, and the service worker needs to store it so an engineer
+    whose session drops while offline sees the real login screen instead of a browser
+    error page. no-cache + must-revalidate still forces a fresh copy whenever the
+    network is reachable.
+    """
     try:
-        if request.path == '/login' or response.status_code in {301, 302, 303, 307, 308}:
+        is_redirect = response.status_code in {301, 302, 303, 307, 308}
+        is_signed_out_login_page = (
+            request.path == '/login'
+            and request.method == 'GET'
+            and response.status_code == 200
+        )
+
+        if is_redirect or (request.path == '/login' and not is_signed_out_login_page):
             response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+        elif is_signed_out_login_page:
+            response.headers['Cache-Control'] = 'no-cache, must-revalidate, max-age=0'
             response.headers['Pragma'] = 'no-cache'
             response.headers['Expires'] = '0'
     except Exception:
@@ -1404,6 +1493,14 @@ class User(UserMixin, db.Model):
     stock_inventory_branch_code = db.Column(db.String(10), nullable=True)
     stock_inventory_permission_initialized = db.Column(db.Boolean, default=True, nullable=False)
 
+    # Last successful sign-in. Older accounts stay NULL until their next login.
+    last_login_at = db.Column(db.DateTime, nullable=True)
+
+    # Dashboard section order and hidden sections, as {"order": [...], "hidden": [...]}.
+    # Account-synced so a layout arranged on a laptop follows the user to their phone,
+    # matching how ui_theme_mode/ui_accent_theme already behave.
+    ui_dashboard_layout_json = db.Column(db.Text, nullable=True)
+
     # v5.4.0: Direct Relationship to Engineer profile
     engineer_rel = db.relationship('Engineer', backref='user_account', uselist=False)
 
@@ -1537,6 +1634,11 @@ class ChangelogRelease(db.Model):
     summary = db.Column(db.Text, nullable=True)
     is_published = db.Column(db.Boolean, default=True, nullable=False, index=True)
     admin_edited = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Scheduled visibility. NULL means "visible as soon as published", which is how every
+    # existing release already behaves, so older rows need no backfill.
+    publish_at = db.Column(db.DateTime, nullable=True, index=True)
+
     created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
     updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False)
 
@@ -1557,6 +1659,20 @@ class ChangelogItem(db.Model):
     sort_order = db.Column(db.Integer, default=100, nullable=False)
     is_published = db.Column(db.Boolean, default=True, nullable=False, index=True)
     admin_edited = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Optional branch targeting. Empty/NULL means every branch, which is how all existing
+    # items behave.
+    branches_json = db.Column(db.Text, nullable=True)
+
+    # Minor items are excluded from the acknowledgement hash, so fixing a typo does not
+    # re-flag an entire release as unread for everyone who already read it.
+    is_minor = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Last values seen in releases.json for this key, recorded on every sync whether or
+    # not they were applied. Gives "revert to manifest" something to restore once
+    # admin_edited has locked the row.
+    manifest_snapshot_json = db.Column(db.Text, nullable=True)
+
     created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
     updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False)
 
@@ -3077,6 +3193,8 @@ def ensure_user_approval_columns():
                 ('stock_inventory_only', "ALTER TABLE user ADD COLUMN stock_inventory_only BOOLEAN DEFAULT 0 NOT NULL"),
                 ('stock_inventory_branch_code', "ALTER TABLE user ADD COLUMN stock_inventory_branch_code VARCHAR(10)"),
                 ('stock_inventory_permission_initialized', "ALTER TABLE user ADD COLUMN stock_inventory_permission_initialized BOOLEAN DEFAULT 0 NOT NULL"),
+                ('last_login_at', "ALTER TABLE user ADD COLUMN last_login_at DATETIME"),
+                ('ui_dashboard_layout_json', "ALTER TABLE user ADD COLUMN ui_dashboard_layout_json TEXT"),
             ]
 
             for column_name, ddl in migrations:
@@ -3265,6 +3383,33 @@ def ensure_changelog_tables():
                     'CREATE INDEX IF NOT EXISTS idx_changelog_ack_user_release '
                     'ON changelog_acknowledgement (user_id, release_id)'
                 )
+
+                # Additive columns for scheduling, branch targeting, minor edits, and
+                # manifest revert. All nullable or defaulted, so existing rows keep
+                # behaving exactly as before.
+                release_columns = {
+                    row[1] for row in
+                    connection.exec_driver_sql('PRAGMA table_info(changelog_release)').fetchall()
+                }
+                if 'publish_at' not in release_columns:
+                    connection.exec_driver_sql(
+                        'ALTER TABLE changelog_release ADD COLUMN publish_at DATETIME'
+                    )
+                    print('[DB MIGRATION] Added changelog_release.publish_at', flush=True)
+
+                item_columns = {
+                    row[1] for row in
+                    connection.exec_driver_sql('PRAGMA table_info(changelog_item)').fetchall()
+                }
+                for column_name, ddl in (
+                    ('branches_json', 'ALTER TABLE changelog_item ADD COLUMN branches_json TEXT'),
+                    ('is_minor', 'ALTER TABLE changelog_item ADD COLUMN is_minor BOOLEAN DEFAULT 0 NOT NULL'),
+                    ('manifest_snapshot_json', 'ALTER TABLE changelog_item ADD COLUMN manifest_snapshot_json TEXT'),
+                ):
+                    if column_name not in item_columns:
+                        connection.exec_driver_sql(ddl)
+                        print(f'[DB MIGRATION] Added changelog_item.{column_name}', flush=True)
+
             _changelog_tables_ready = True
         except Exception as changelog_error:
             print(f'[Changelog] Unable to ensure changelog tables: {changelog_error}', flush=True)
@@ -3277,6 +3422,36 @@ def ensure_changelog_tables():
 
 def changelog_manifest_path():
     return os.path.join(basedir, 'static', 'changelog', 'releases.json')
+
+
+# Keys created through the in-app composer use this prefix. The manifest sync never
+# touches them, so a file-based release can never collide with or clobber something the
+# owner published from Settings.
+CHANGELOG_INAPP_KEY_PREFIX = 'app-'
+
+
+def is_inapp_changelog_key(key):
+    return (clean_str(key) or '').startswith(CHANGELOG_INAPP_KEY_PREFIX)
+
+
+def normalize_changelog_branches(value):
+    """Return a clean branch-code list. Empty means every branch."""
+    values = value if isinstance(value, list) else ([value] if value else [])
+    allowed = set(STOCK_INVENTORY_BRANCHES.keys())
+    normalized = []
+    for item in values:
+        code = (clean_str(item) or '').strip().upper()
+        if code in allowed and code not in normalized:
+            normalized.append(code)
+    return normalized
+
+
+def changelog_item_branches(item):
+    try:
+        parsed = json.loads(getattr(item, 'branches_json', None) or '[]')
+    except Exception:
+        parsed = []
+    return normalize_changelog_branches(parsed)
 
 
 def normalize_changelog_audiences(value):
@@ -3313,6 +3488,11 @@ def sync_changelog_release_manifest():
             if not release_key or not release_date:
                 continue
 
+            # In-app releases are owned by the composer, never by the file.
+            if is_inapp_changelog_key(release_key):
+                print(f'[Changelog] Ignoring reserved in-app key in manifest: {release_key}', flush=True)
+                continue
+
             release = ChangelogRelease.query.filter_by(release_key=release_key).first()
             if not release:
                 release = ChangelogRelease(
@@ -3347,8 +3527,26 @@ def sync_changelog_release_manifest():
                 description = clean_str(item_payload.get('description')) or ''
                 if not item_key or not description:
                     continue
+                if is_inapp_changelog_key(item_key):
+                    continue
                 item = ChangelogItem.query.filter_by(item_key=item_key).first()
                 audiences = normalize_changelog_audiences(item_payload.get('audiences'))
+
+                # Record what the file says for this key on every pass, even when the row
+                # is admin-locked. Without this, "revert to manifest" has nothing to
+                # restore once admin_edited is set.
+                manifest_snapshot = json.dumps({
+                    'category': (clean_str(item_payload.get('category')) or 'General')[:80],
+                    'description': description,
+                    'audiences': audiences,
+                    'sort_order': clean_int(item_payload.get('sort_order')) or item_index * 10,
+                    'is_published': bool(item_payload.get('is_published', True)),
+                }, sort_keys=True)
+
+                if item and item.manifest_snapshot_json != manifest_snapshot:
+                    item.manifest_snapshot_json = manifest_snapshot
+                    changed = True
+
                 if not item:
                     db.session.add(ChangelogItem(
                         release_id=release.id,
@@ -3359,6 +3557,7 @@ def sync_changelog_release_manifest():
                         sort_order=clean_int(item_payload.get('sort_order')) or item_index * 10,
                         is_published=bool(item_payload.get('is_published', True)),
                         admin_edited=False,
+                        manifest_snapshot_json=manifest_snapshot,
                         created_at=get_manila_time(),
                         updated_at=get_manila_time()
                     ))
@@ -3866,9 +4065,83 @@ def load_user(user_id):
     return db.session.get(User, int(user_id))
 
 
+# Constant-shape hash compared against when a username does not exist, so that a
+# failed lookup costs the same time as a wrong password and cannot be used to
+# enumerate valid accounts.
+DUMMY_PASSWORD_HASH = generate_password_hash('medical-service-inactive-placeholder')
+
+
+def find_user_by_username(username):
+    """Look up an account tolerantly.
+
+    Field engineers sign in on phones. Mobile keyboards routinely capitalise the
+    first letter and append a trailing space, which previously produced a failed
+    login with entirely correct credentials. Stored usernames are not modified;
+    only the lookup is normalised.
+    """
+    cleaned = (username or '').strip()
+    if not cleaned:
+        return None
+
+    exact = User.query.filter_by(username=cleaned).first()
+    if exact:
+        return exact
+
+    return User.query.filter(db.func.lower(User.username) == cleaned.lower()).first()
+
+
 def get_pwa_login_serializer():
     """Return signer for the extra installed-PWA login restore cookie."""
     return URLSafeTimedSerializer(app.config['SECRET_KEY'], salt='medical-service-pwa-login')
+
+
+def get_password_reset_serializer():
+    """Return signer for self-service password reset links."""
+    return URLSafeTimedSerializer(app.config['SECRET_KEY'], salt='medical-service-password-reset')
+
+
+def build_password_reset_token(user):
+    """Build a signed, single-use password reset token.
+
+    The last 16 characters of the stored password hash are embedded as a marker.
+    Changing the password changes the marker, which invalidates any outstanding
+    token without needing a database table to track used tokens.
+    """
+    if not user or not getattr(user, 'id', None):
+        return ''
+    return get_password_reset_serializer().dumps({
+        'user_id': user.id,
+        'password_marker': (getattr(user, 'password', '') or '')[-16:]
+    })
+
+
+def load_user_from_password_reset_token(token):
+    """Resolve a reset token to a user, or return None when it is invalid."""
+    if not token:
+        return None
+
+    try:
+        payload = get_password_reset_serializer().loads(
+            token,
+            max_age=PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS
+        )
+    except (BadSignature, SignatureExpired):
+        return None
+    except Exception as token_error:
+        print(f"[AUTH] Password reset token rejected: {token_error}", flush=True)
+        return None
+
+    user_rec = db.session.get(User, clean_int(payload.get('user_id')) or 0)
+    if not user_rec:
+        return None
+
+    if payload.get('password_marker') != (getattr(user_rec, 'password', '') or '')[-16:]:
+        return None
+
+    if not bool(getattr(user_rec, 'is_active', True)):
+        return None
+
+    return user_rec
 
 
 def build_pwa_login_cookie_value(user):
@@ -3917,6 +4190,36 @@ def clear_pwa_login_cookie(response):
         )
     except TypeError:
         response.delete_cookie(app.config.get('PWA_LOGIN_COOKIE_NAME', 'medical_service_pwa_login'), path='/')
+    except Exception:
+        pass
+    return response
+
+
+def clear_remember_cookie(response):
+    """Delete Flask-Login's remember-me cookie explicitly.
+
+    logout_user() does not delete this cookie itself. It writes
+    session['_remember'] = 'clear' and leaves the actual deletion to Flask-Login's
+    own after_request handler. The logout route clears the session immediately
+    afterwards, which erased that flag, so the cookie survived and the very next
+    request silently signed the user back in. Deleting it here does not depend on
+    the session, on handler ordering, or on Flask-Login internals.
+    """
+    try:
+        response.delete_cookie(
+            app.config.get('REMEMBER_COOKIE_NAME', 'remember_token'),
+            path=app.config.get('REMEMBER_COOKIE_PATH', '/'),
+            domain=app.config.get('REMEMBER_COOKIE_DOMAIN'),
+            secure=bool(app.config.get('REMEMBER_COOKIE_SECURE')),
+            httponly=bool(app.config.get('REMEMBER_COOKIE_HTTPONLY', True)),
+            samesite=app.config.get('REMEMBER_COOKIE_SAMESITE', 'Lax')
+        )
+    except TypeError:
+        response.delete_cookie(
+            app.config.get('REMEMBER_COOKIE_NAME', 'remember_token'),
+            path=app.config.get('REMEMBER_COOKIE_PATH', '/'),
+            domain=app.config.get('REMEMBER_COOKIE_DOMAIN')
+        )
     except Exception:
         pass
     return response
@@ -8413,32 +8716,67 @@ def ensure_timeline_performance_indexes():
 
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit('10 per minute; 60 per hour', methods=['POST'])
 def login():
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        user_rec = User.query.filter_by(username=username).first()
-        if user_rec and check_password_hash(user_rec.password, password):
+        username = clean_str(request.form.get('username'))
+        password = request.form.get('password') or ''
+        user_rec = find_user_by_username(username)
+
+        # Always run a hash comparison, even for unknown usernames, so response
+        # timing does not reveal which accounts exist.
+        if user_rec:
+            password_matches = check_password_hash(user_rec.password, password)
+        else:
+            check_password_hash(DUMMY_PASSWORD_HASH, password)
+            password_matches = False
+
+        if user_rec and password_matches and not bool(getattr(user_rec, 'is_active', True)):
+            # Flask-Login refuses inactive users and returns False. Without this
+            # branch the redirect below would silently bounce the user back here
+            # with no explanation, which reads as a wrong password.
+            flash('This account has been deactivated. Please contact your administrator.')
+        elif user_rec and password_matches:
             # PWA/mobile convenience: automatically keep users remembered after app close/reopen.
             session.permanent = True
             session.modified = True
-            login_user(user_rec, remember=True, duration=app.config.get('REMEMBER_COOKIE_DURATION'), fresh=True)
+            logged_in = login_user(
+                user_rec,
+                remember=True,
+                duration=app.config.get('REMEMBER_COOKIE_DURATION'),
+                fresh=True
+            )
 
-            if user_rec.must_change_password:
-                session['force_pw_change'] = True
+            if not logged_in:
+                flash('This account cannot sign in right now. Please contact your administrator.')
             else:
-                session.pop('force_pw_change', None)
+                try:
+                    user_rec.last_login_at = datetime.now()
+                    db.session.commit()
+                except Exception as login_stamp_error:
+                    db.session.rollback()
+                    print(f"[AUTH] Unable to record last login: {login_stamp_error}", flush=True)
 
-            if getattr(user_rec, 'role', None) == 'engineer' and is_mobile_request():
-                response = redirect(url_for('timeline_page'))
-            else:
-                response = redirect(url_for('dashboard_page'))
+                if user_rec.must_change_password:
+                    session['force_pw_change'] = True
+                else:
+                    session.pop('force_pw_change', None)
 
-            response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-            return set_pwa_login_cookie(response, user_rec)
-        flash('Invalid Credentials - Access Denied')
+                if getattr(user_rec, 'role', None) == 'engineer' and is_mobile_request():
+                    response = redirect(url_for('timeline_page'))
+                else:
+                    response = redirect(url_for('dashboard_page'))
+
+                response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+                return set_pwa_login_cookie(response, user_rec)
+        else:
+            flash('Invalid Credentials - Access Denied')
+
     response = Response(render_template('login.html'), mimetype='text/html')
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    # no-store is deliberately omitted so the service worker can cache the signed-out
+    # login shell for offline use. must-revalidate still forces a fresh copy whenever
+    # the network is available, and the page itself carries no account data.
+    response.headers['Cache-Control'] = 'no-cache, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
     return response
@@ -8470,7 +8808,100 @@ def logout():
     session.clear()
     response = redirect(url_for('login'))
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    # All three sign-in credentials must go, or the next request re-authenticates:
+    # the session cookie, the remember-me token, and the PWA restore cookie.
+    clear_remember_cookie(response)
     return clear_pwa_login_cookie(response)
+
+
+PASSWORD_RESET_GENERIC_CONFIRMATION = (
+    'If that account exists and has an email address on file, a reset link has been '
+    'sent. The link expires in 30 minutes. If you do not receive it, contact your '
+    'administrator to have your password reset.'
+)
+
+
+@app.route('/forgot_password', methods=['GET', 'POST'])
+@limiter.limit('5 per minute; 20 per hour', methods=['POST'])
+def forgot_password():
+    """Request a self-service password reset link."""
+    if request.method == 'POST':
+        username = clean_str(request.form.get('username'))
+        user_rec = find_user_by_username(username)
+
+        # The confirmation below is deliberately identical whether or not the
+        # account exists, so this page cannot be used to discover usernames.
+        if user_rec and bool(getattr(user_rec, 'is_active', True)):
+            recipient = get_user_email_for_notification(user_rec)
+            if recipient:
+                token = build_password_reset_token(user_rec)
+                reset_url = url_for('reset_password', token=token, _external=True)
+                try:
+                    send_email_notification(
+                        [recipient],
+                        'Medical Service - Password Reset',
+                        (
+                            f"Hello {clean_str(user_rec.username) or 'there'},\n\n"
+                            "A password reset was requested for your Medical Service account.\n\n"
+                            f"Reset your password using this link:\n{reset_url}\n\n"
+                            "This link expires in 30 minutes and can only be used once.\n\n"
+                            "If you did not request this, you can ignore this message. "
+                            "Your password will stay unchanged.\n"
+                        ),
+                        (
+                            f"<p>Hello {clean_str(user_rec.username) or 'there'},</p>"
+                            "<p>A password reset was requested for your Medical Service account.</p>"
+                            f"<p><a href=\"{reset_url}\">Reset your password</a></p>"
+                            f"<p style=\"font-size:12px;color:#666666;\">Or copy this link:<br>{reset_url}</p>"
+                            "<p>This link expires in 30 minutes and can only be used once.</p>"
+                            "<p>If you did not request this, you can ignore this message. "
+                            "Your password will stay unchanged.</p>"
+                        )
+                    )
+                except Exception as reset_email_error:
+                    # Never surface delivery failure here; it would reveal that the
+                    # account exists. Operators can see this in the logs.
+                    print(f"[AUTH] Password reset email failed: {reset_email_error}", flush=True)
+
+        flash(PASSWORD_RESET_GENERIC_CONFIRMATION)
+        return redirect(url_for('login'))
+
+    response = Response(render_template('forgot_password.html'), mimetype='text/html')
+    response.headers['Cache-Control'] = 'no-cache, must-revalidate, max-age=0'
+    return response
+
+
+@app.route('/reset_password/<token>', methods=['GET', 'POST'])
+@limiter.limit('10 per minute; 40 per hour', methods=['POST'])
+def reset_password(token):
+    """Complete a self-service password reset."""
+    user_rec = load_user_from_password_reset_token(token)
+    if not user_rec:
+        flash('That reset link is invalid or has expired. Please request a new one.')
+        return redirect(url_for('forgot_password'))
+
+    if request.method == 'POST':
+        new_password = request.form.get('password') or ''
+        confirm_password = request.form.get('confirm_password') or ''
+
+        if len(new_password) < 8:
+            flash('Password must be at least 8 characters.')
+        elif new_password != confirm_password:
+            flash('Passwords do not match.')
+        else:
+            user_rec.password = generate_password_hash(new_password)
+            user_rec.must_change_password = False
+            db.session.commit()
+            # Changing the hash invalidates this token and any old PWA restore cookie.
+            flash('Your password has been updated. Please sign in.')
+            return redirect(url_for('login'))
+
+    response = Response(
+        render_template('reset_password.html', token=token, username=user_rec.username),
+        mimetype='text/html'
+    )
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    return response
 
 
 
@@ -13966,7 +14397,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v42-reimbursement-range-reuse';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v43-shell-dashboard-changelog';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -13974,11 +14405,18 @@ const APP_SHELL = [
   '/timeline',
   '/offline-tsr',
   '/offline',
+  '/login',
   '/manifest.json',
   '/pwa-icon.svg',
   '/static/css/app-themes.css',
   '/static/css/app-dark-pages.css',
+  '/static/css/app-auth.css',
+  '/static/css/app-shell.css',
+  '/static/css/app-dashboard.css',
+  '/static/css/app-changelog.css',
   '/static/js/app-appearance.js',
+  '/static/js/app-dashboard.js',
+  '/static/js/app-changelog.js',
   '/static/vendor/jspdf/jspdf.umd.min.js',
   '/static/fonts/liberation-sans/LiberationSans-Regular.ttf',
   '/static/fonts/liberation-sans/LiberationSans-Bold.ttf',
@@ -14058,11 +14496,17 @@ async function networkFirst(request) {
 async function fieldNavigationFirst(request) {
   const requestUrl = new URL(request.url);
 
-  // Login must remain network-only. Never show or cache a stale login page.
+  // Login stays network-first and is never written to the runtime cache, so a stale
+  // login page can never be served in place of a protected route. The only offline
+  // fallback is the clean signed-out copy stored in the app shell at install time,
+  // which contains no account data.
   if (requestUrl.pathname === '/login') {
     try {
       return await fetch(request, { cache: 'no-store', credentials: 'same-origin' });
     } catch (err) {
+      const shellCache = await caches.open(APP_SHELL_CACHE);
+      const cachedLogin = await shellCache.match('/login');
+      if (cachedLogin) return cachedLogin;
       return caches.match('/offline');
     }
   }
@@ -14318,17 +14762,71 @@ def changelog_item_audiences(item):
     return normalize_changelog_audiences(parsed)
 
 
-def changelog_visible_items(release, user=None, include_unpublished=False):
-    user_audiences = changelog_user_audiences(user)
+def changelog_user_branch(user=None):
+    """Return the branch code an account belongs to, or '' when it is not branch-scoped."""
+    target = user or current_user
+    code = (clean_str(getattr(target, 'stock_inventory_branch_code', None)) or '').strip().upper()
+    if code:
+        return code
+    profile = getattr(target, 'engineer_profile', None)
+    branch_name = (clean_str(getattr(profile, 'branch', None)) or '').strip().lower()
+    for branch_code, label in STOCK_INVENTORY_BRANCHES.items():
+        if branch_name and branch_name in (label or '').strip().lower():
+            return branch_code
+    return ''
+
+
+def changelog_visible_items(release, user=None, include_unpublished=False,
+                            audiences=None, branch_code=None):
+    """Items one viewer can see.
+
+    `audiences` and `branch_code` are overridable so admins can preview exactly what a
+    given role or branch will get, rather than the admin view's "everything".
+    """
+    user_audiences = set(audiences) if audiences else changelog_user_audiences(user)
+    viewer_branch = branch_code if branch_code is not None else changelog_user_branch(user)
+
     items = sorted(release.items or [], key=lambda item: (item.sort_order or 100, item.id or 0))
-    return [
-        item for item in items
-        if (include_unpublished or item.is_published)
-        and bool(user_audiences.intersection(changelog_item_audiences(item)))
-    ]
+
+    visible = []
+    for item in items:
+        if not (include_unpublished or item.is_published):
+            continue
+        if not user_audiences.intersection(changelog_item_audiences(item)):
+            continue
+        item_branches = changelog_item_branches(item)
+        # Empty branch list means every branch. A viewer with no branch sees everything.
+        if item_branches and viewer_branch and viewer_branch not in item_branches:
+            continue
+        visible.append(item)
+    return visible
+
+
+def as_naive_datetime(value):
+    """Drop tzinfo so stored (naive) and generated (aware) datetimes can be compared.
+
+    get_manila_time() returns an aware datetime, but SQLite hands DATETIME columns back
+    naive. Comparing the two raises TypeError, so both sides are normalised here.
+    """
+    if value is None:
+        return None
+    return value.replace(tzinfo=None) if value.tzinfo is not None else value
+
+
+def changelog_release_is_live(release, now=None):
+    """A release reaches users when published and past its scheduled time."""
+    if not release or not release.is_published:
+        return False
+    publish_at = as_naive_datetime(getattr(release, 'publish_at', None))
+    if not publish_at:
+        return True
+    return publish_at <= as_naive_datetime(now or get_manila_time())
 
 
 def changelog_visible_content_hash(release, items):
+    # Items flagged minor are excluded so a typo correction does not re-flag a release as
+    # unread for everyone who already acknowledged it.
+    hashable = [item for item in items if not getattr(item, 'is_minor', False)]
     content = {
         'release_key': release.release_key,
         'title': release.title or '',
@@ -14340,7 +14838,7 @@ def changelog_visible_content_hash(release, items):
                 'description': item.description,
                 'audiences': changelog_item_audiences(item),
             }
-            for item in items
+            for item in hashable
         ]
     }
     encoded = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
@@ -14353,16 +14851,22 @@ def changelog_acknowledgement_for(release_id, user_id):
     ).first()
 
 
-def changelog_release_to_dict(release, user=None, admin_view=False):
+def changelog_release_to_dict(release, user=None, admin_view=False,
+                              audiences=None, branch_code=None):
     target = user or current_user
-    items = (
-        sorted(release.items or [], key=lambda item: (item.sort_order or 100, item.id or 0))
-        if admin_view else
-        changelog_visible_items(release, target)
-    )
+    previewing = audiences is not None or branch_code is not None
+
+    if admin_view and not previewing:
+        items = sorted(release.items or [], key=lambda item: (item.sort_order or 100, item.id or 0))
+    else:
+        items = changelog_visible_items(release, target, audiences=audiences, branch_code=branch_code)
+
     content_hash = changelog_visible_content_hash(release, items) if items else ''
     acknowledgement = changelog_acknowledgement_for(release.id, getattr(target, 'id', None))
     is_acknowledged = bool(content_hash and acknowledgement and acknowledgement.content_hash == content_hash)
+    is_live = changelog_release_is_live(release)
+    publish_at = getattr(release, 'publish_at', None)
+
     return {
         'id': release.id,
         'release_key': release.release_key,
@@ -14371,8 +14875,11 @@ def changelog_release_to_dict(release, user=None, admin_view=False):
         'summary': release.summary or '',
         'is_published': bool(release.is_published),
         'admin_edited': bool(release.admin_edited),
+        'is_inapp': is_inapp_changelog_key(release.release_key),
+        'publish_at': publish_at.isoformat() if publish_at else '',
+        'is_scheduled': bool(publish_at and not is_live),
         'is_acknowledged': is_acknowledged,
-        'is_unread': bool(content_hash and not is_acknowledged and release.is_published),
+        'is_unread': bool(content_hash and not is_acknowledged and is_live),
         'content_hash': content_hash if admin_view else '',
         'items': [
             {
@@ -14381,43 +14888,227 @@ def changelog_release_to_dict(release, user=None, admin_view=False):
                 'category': item.category or 'General',
                 'description': item.description or '',
                 'audiences': changelog_item_audiences(item),
+                'branches': changelog_item_branches(item),
                 'sort_order': item.sort_order or 100,
                 'is_published': bool(item.is_published),
+                'is_minor': bool(getattr(item, 'is_minor', False)),
                 'admin_edited': bool(item.admin_edited),
+                'is_inapp': is_inapp_changelog_key(item.item_key),
+                'can_revert': bool(item.admin_edited and getattr(item, 'manifest_snapshot_json', None)),
             }
             for item in items
         ]
     }
 
 
-def get_visible_changelog_release_dicts(user=None, admin_view=False):
+def get_visible_changelog_release_dicts(user=None, admin_view=False,
+                                        audiences=None, branch_code=None):
     target = user or current_user
     query = ChangelogRelease.query
     if not admin_view:
         query = query.filter(ChangelogRelease.is_published.is_(True))
     releases = query.order_by(ChangelogRelease.release_date.desc(), ChangelogRelease.id.desc()).all()
+
     result = []
     for release in releases:
-        serialized = changelog_release_to_dict(release, target, admin_view=admin_view)
+        # Scheduled releases stay out of the user-facing feed until their time arrives.
+        # Admins still see them so a schedule can be reviewed or cancelled.
+        if not admin_view and not changelog_release_is_live(release):
+            continue
+        serialized = changelog_release_to_dict(
+            release, target, admin_view=admin_view,
+            audiences=audiences, branch_code=branch_code
+        )
         if serialized['items'] or admin_view:
             result.append(serialized)
     return result
+
+
+def filter_changelog_release_dicts(releases, search='', category=''):
+    """Narrow serialized releases by free text and category, dropping empty releases."""
+    needle = (clean_str(search) or '').strip().lower()
+    wanted_category = (clean_str(category) or '').strip().lower()
+    if not needle and not wanted_category:
+        return releases
+
+    filtered = []
+    for release in releases:
+        items = release['items']
+        if wanted_category:
+            items = [i for i in items if (i['category'] or '').strip().lower() == wanted_category]
+        if needle:
+            items = [
+                i for i in items
+                if needle in (i['description'] or '').lower()
+                or needle in (i['category'] or '').lower()
+            ]
+        title_hit = needle and (
+            needle in (release['title'] or '').lower()
+            or needle in (release['summary'] or '').lower()
+        )
+        if items or title_hit:
+            match = dict(release)
+            match['items'] = items
+            filtered.append(match)
+    return filtered
 
 
 @app.route('/whats_new')
 @login_required
 def whats_new_page():
     ensure_changelog_tables()
-    return render_template('changelog.html', changelog_admin=is_admin_authorized())
+    return render_template(
+        'changelog.html',
+        changelog_admin=is_admin_authorized(),
+        stock_branches=STOCK_INVENTORY_BRANCHES
+    )
+
+
+CHANGELOG_RELEASES_PER_PAGE = 10
 
 
 @app.route('/api/changelog/releases')
 @login_required
 def get_changelog_releases():
+    """Paginated, searchable release feed.
+
+    The page previously rendered every release and item at once. Ten per page matches
+    the Reports archive convention.
+    """
     ensure_changelog_tables()
     admin_view = bool(is_admin_authorized() and str(request.args.get('admin') or '').lower() in {'1', 'true', 'yes'})
-    releases = get_visible_changelog_release_dicts(current_user, admin_view=admin_view)
-    return jsonify({'success': True, 'releases': releases, 'count': len(releases), 'admin_view': admin_view})
+
+    # Preview-as-role: admins can render the feed exactly as a given audience or branch
+    # would receive it, instead of the admin view's "everything".
+    preview_role = (clean_str(request.args.get('preview_role')) or '').strip().lower()
+    preview_branch = (clean_str(request.args.get('preview_branch')) or '').strip().upper()
+    audiences = None
+    branch_code = None
+    if is_admin_authorized() and preview_role:
+        audiences = {'everyone', preview_role} if preview_role != 'everyone' else {'everyone'}
+        admin_view = False
+    if is_admin_authorized() and preview_branch:
+        branch_code = preview_branch if preview_branch in STOCK_INVENTORY_BRANCHES else ''
+        admin_view = False
+
+    releases = get_visible_changelog_release_dicts(
+        current_user, admin_view=admin_view, audiences=audiences, branch_code=branch_code
+    )
+
+    categories = sorted({
+        (item['category'] or 'General')
+        for release in releases for item in release['items']
+    })
+
+    releases = filter_changelog_release_dicts(
+        releases,
+        search=request.args.get('search') or '',
+        category=request.args.get('category') or ''
+    )
+
+    total = len(releases)
+    page = max(clean_int(request.args.get('page')) or 1, 1)
+    per_page = CHANGELOG_RELEASES_PER_PAGE
+    total_pages = max((total + per_page - 1) // per_page, 1)
+    page = min(page, total_pages)
+    start = (page - 1) * per_page
+
+    return jsonify({
+        'success': True,
+        'releases': releases[start:start + per_page],
+        'count': total,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': total_pages,
+        'categories': categories,
+        'unread_count': sum(1 for r in releases if r['is_unread']),
+        'admin_view': admin_view,
+        'preview_role': preview_role if audiences else '',
+        'preview_branch': branch_code or ''
+    })
+
+
+@app.route('/api/nav/pending-summary')
+@login_required
+def get_nav_pending_summary():
+    """Sidebar badge counts.
+
+    Deliberately separate from the Approval Center summary near
+    approval_center_summary(): that route materialises every row across six modules
+    to build a full status breakdown, which is fine for the page itself but far too
+    heavy for something that runs on every page load. This uses .count() only.
+
+    Never raises for an unauthorised user -- it returns zeros, so a sidebar badge can
+    never break navigation. Route-level authorization is unchanged and still enforced
+    by the pages themselves.
+    """
+    summary = {'success': True, 'approvals_pending': 0, 'my_requests_action': 0}
+
+    if not new_workflows_enabled():
+        return jsonify(summary)
+
+    if is_approval_center_user():
+        pending_total = 0
+        approval_models = (
+            (ReimbursementHeader, 'reimbursement'),
+            (TravelRequest, 'travel_request'),
+            (TravelLiquidationHeader, 'travel_liquidation'),
+            (CashAdvanceHeader, 'cash_advance'),
+            (CashAdvanceLiquidationHeader, 'cash_advance_liquidation'),
+        )
+
+        for model_cls, scope_key in approval_models:
+            try:
+                query = apply_assigned_approver_filter(
+                    db.session.query(model_cls.id), model_cls, current_user, scope_key
+                )
+                pending_total += query.filter(model_cls.status == 'Submitted').count()
+            except Exception as count_error:
+                # One unavailable module must not zero out the whole badge.
+                print(f"[Nav] Pending count unavailable for {scope_key}: {count_error}", flush=True)
+
+        if lpr_enabled():
+            try:
+                query = apply_assigned_approver_filter(
+                    db.session.query(LPRHeader.id), LPRHeader, current_user, 'lpr'
+                )
+                pending_total += query.filter(LPRHeader.status == 'Submitted').count()
+            except Exception as count_error:
+                print(f"[Nav] Pending count unavailable for lpr: {count_error}", flush=True)
+
+        try:
+            query = apply_assigned_approver_filter(
+                db.session.query(LeaveRequest.id), LeaveRequest, current_user, 'leave_request'
+            )
+            pending_total += query.filter(LeaveRequest.status == 'Submitted').count()
+        except Exception as count_error:
+            print(f"[Nav] Pending count unavailable for leave_request: {count_error}", flush=True)
+
+        summary['approvals_pending'] = pending_total
+
+    if can_access_accounting_center():
+        # "Needs your attention": returned to the requester to fix and resubmit.
+        returned_total = 0
+        requester_models = (
+            ReimbursementHeader,
+            TravelRequest,
+            TravelLiquidationHeader,
+            CashAdvanceHeader,
+            CashAdvanceLiquidationHeader,
+        )
+
+        for model_cls in requester_models:
+            try:
+                returned_total += db.session.query(model_cls.id).filter(
+                    model_cls.user_id == current_user.id,
+                    model_cls.status.in_(['Rejected', 'Returned'])
+                ).count()
+            except Exception as count_error:
+                print(f"[Nav] Requester count unavailable for {model_cls.__name__}: {count_error}", flush=True)
+
+        summary['my_requests_action'] = returned_total
+
+    return jsonify(summary)
 
 
 @app.route('/api/changelog/unread-summary')
@@ -14509,6 +15200,11 @@ def update_changelog_release(release_id):
         release.summary = clean_str(payload.get('summary')) or ''
     if 'is_published' in payload:
         release.is_published = bool(payload.get('is_published'))
+    if 'publish_at' in payload:
+        publish_at, publish_error = parse_changelog_publish_at(payload.get('publish_at'))
+        if publish_error:
+            return jsonify({'success': False, 'error': publish_error}), 400
+        release.publish_at = publish_at
     release.admin_edited = True
     release.updated_at = get_manila_time()
     add_activity_log_entry(f"Updated What's New release: {release.release_key}")
@@ -14538,6 +15234,10 @@ def update_changelog_item(item_id):
         if not isinstance(raw_audiences, list) or not raw_audiences:
             return jsonify({'success': False, 'error': 'Select at least one audience.'}), 400
         item.audiences_json = json.dumps(normalize_changelog_audiences(raw_audiences))
+    if 'branches' in payload:
+        item.branches_json = json.dumps(normalize_changelog_branches(payload.get('branches')))
+    if 'is_minor' in payload:
+        item.is_minor = bool(payload.get('is_minor'))
     if 'is_published' in payload:
         item.is_published = bool(payload.get('is_published'))
     item.admin_edited = True
@@ -14546,6 +15246,355 @@ def update_changelog_item(item_id):
     add_activity_log_entry(f"Updated What's New item: {item.item_key}")
     db.session.commit()
     return jsonify({'success': True, 'item': changelog_release_to_dict(item.release, current_user, admin_view=True)})
+
+
+# --- WHAT'S NEW IN-APP AUTHORING ---
+# The admin API used to be PUT-only, so nothing could be announced without a code deploy.
+# These add the missing verbs. Keys are minted in the reserved in-app namespace so the
+# manifest sync can never collide with or overwrite them.
+
+def build_inapp_changelog_key(prefix_text, existing_query, max_length):
+    """Mint a unique key in the reserved in-app namespace."""
+    slug = re.sub(r'[^a-z0-9]+', '-', (clean_str(prefix_text) or '').lower()).strip('-')[:40] or 'update'
+    stamp = get_manila_time().strftime('%Y%m%d%H%M%S')
+    candidate = f"{CHANGELOG_INAPP_KEY_PREFIX}{stamp}-{slug}"[:max_length]
+    suffix = 1
+    while existing_query(candidate):
+        candidate = f"{CHANGELOG_INAPP_KEY_PREFIX}{stamp}-{slug}-{suffix}"[:max_length]
+        suffix += 1
+    return candidate
+
+
+def parse_changelog_publish_at(value):
+    """Parse an optional ISO datetime for scheduled publishing."""
+    raw = (clean_str(value) or '').strip()
+    if not raw:
+        return None, None
+    try:
+        # Stored naive so it compares cleanly against SQLite DATETIME values.
+        return as_naive_datetime(datetime.fromisoformat(raw.replace('Z', ''))), None
+    except Exception:
+        return None, 'Schedule must be a valid date and time.'
+
+
+@app.route('/api/changelog/admin/releases', methods=['POST'])
+@login_required
+def create_changelog_release():
+    if not is_admin_authorized():
+        return jsonify({'success': False, 'error': 'Admin access required.'}), 403
+    ensure_changelog_tables()
+
+    payload = request.get_json(silent=True) or {}
+    title = (clean_str(payload.get('title')) or '').strip()
+    if not title:
+        return jsonify({'success': False, 'error': 'Title is required.'}), 400
+
+    publish_at, publish_error = parse_changelog_publish_at(payload.get('publish_at'))
+    if publish_error:
+        return jsonify({'success': False, 'error': publish_error}), 400
+
+    release_date = parse_date(payload.get('release_date')) or get_manila_time().date()
+    release_key = build_inapp_changelog_key(
+        title, lambda k: ChangelogRelease.query.filter_by(release_key=k).first(), 40
+    )
+
+    release = ChangelogRelease(
+        release_key=release_key,
+        release_date=release_date,
+        title=title[:180],
+        summary=clean_str(payload.get('summary')) or '',
+        is_published=bool(payload.get('is_published', True)),
+        publish_at=publish_at,
+        admin_edited=True,
+        created_at=get_manila_time(),
+        updated_at=get_manila_time()
+    )
+    db.session.add(release)
+    db.session.flush()
+
+    add_activity_log_entry(f"Created What's New release: {release_key}")
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'release': changelog_release_to_dict(release, current_user, admin_view=True)
+    }), 201
+
+
+@app.route('/api/changelog/admin/releases/<int:release_id>', methods=['DELETE'])
+@login_required
+def delete_changelog_release(release_id):
+    if not is_admin_authorized():
+        return jsonify({'success': False, 'error': 'Admin access required.'}), 403
+    ensure_changelog_tables()
+
+    release = db.session.get(ChangelogRelease, release_id)
+    if not release:
+        return jsonify({'success': False, 'error': 'Release not found.'}), 404
+
+    if not is_inapp_changelog_key(release.release_key):
+        return jsonify({
+            'success': False,
+            'error': 'Manifest releases cannot be deleted. Unpublish it instead, or remove it from releases.json.'
+        }), 400
+
+    ChangelogAcknowledgement.query.filter_by(release_id=release.id).delete()
+    release_key = release.release_key
+    db.session.delete(release)
+    add_activity_log_entry(f"Deleted What's New release: {release_key}")
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/changelog/admin/releases/<int:release_id>/items', methods=['POST'])
+@login_required
+def create_changelog_item(release_id):
+    if not is_admin_authorized():
+        return jsonify({'success': False, 'error': 'Admin access required.'}), 403
+    ensure_changelog_tables()
+
+    release = db.session.get(ChangelogRelease, release_id)
+    if not release:
+        return jsonify({'success': False, 'error': 'Release not found.'}), 404
+
+    payload = request.get_json(silent=True) or {}
+    description = (clean_str(payload.get('description')) or '').strip()
+    if not description:
+        return jsonify({'success': False, 'error': 'Update description is required.'}), 400
+
+    raw_audiences = payload.get('audiences')
+    if raw_audiences is not None and (not isinstance(raw_audiences, list) or not raw_audiences):
+        return jsonify({'success': False, 'error': 'Select at least one audience.'}), 400
+
+    category = ((clean_str(payload.get('category')) or 'General').strip() or 'General')[:80]
+    item_key = build_inapp_changelog_key(
+        description[:40], lambda k: ChangelogItem.query.filter_by(item_key=k).first(), 120
+    )
+    highest = max([i.sort_order or 0 for i in (release.items or [])] or [0])
+
+    item = ChangelogItem(
+        release_id=release.id,
+        item_key=item_key,
+        category=category,
+        description=description,
+        audiences_json=json.dumps(normalize_changelog_audiences(raw_audiences)),
+        branches_json=json.dumps(normalize_changelog_branches(payload.get('branches'))),
+        sort_order=clean_int(payload.get('sort_order')) or (highest + 10),
+        is_published=bool(payload.get('is_published', True)),
+        is_minor=bool(payload.get('is_minor', False)),
+        admin_edited=True,
+        created_at=get_manila_time(),
+        updated_at=get_manila_time()
+    )
+    db.session.add(item)
+    release.updated_at = get_manila_time()
+
+    add_activity_log_entry(f"Created What's New item: {item_key}")
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'release': changelog_release_to_dict(release, current_user, admin_view=True)
+    }), 201
+
+
+@app.route('/api/changelog/admin/items/<int:item_id>', methods=['DELETE'])
+@login_required
+def delete_changelog_item(item_id):
+    if not is_admin_authorized():
+        return jsonify({'success': False, 'error': 'Admin access required.'}), 403
+    ensure_changelog_tables()
+
+    item = db.session.get(ChangelogItem, item_id)
+    if not item:
+        return jsonify({'success': False, 'error': 'Changelog item not found.'}), 404
+
+    if not is_inapp_changelog_key(item.item_key):
+        return jsonify({
+            'success': False,
+            'error': 'Manifest items cannot be deleted. Unpublish it instead, or remove it from releases.json.'
+        }), 400
+
+    release = item.release
+    item_key = item.item_key
+    db.session.delete(item)
+    release.updated_at = get_manila_time()
+    add_activity_log_entry(f"Deleted What's New item: {item_key}")
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'release': changelog_release_to_dict(release, current_user, admin_view=True)
+    })
+
+
+@app.route('/api/changelog/admin/items/<int:item_id>/revert', methods=['POST'])
+@login_required
+def revert_changelog_item(item_id):
+    """Restore a manifest-sourced item to what releases.json says.
+
+    Editing an item sets admin_edited, which permanently stops the manifest from
+    updating it. That used to be invisible and irreversible; this gives it a way back.
+    """
+    if not is_admin_authorized():
+        return jsonify({'success': False, 'error': 'Admin access required.'}), 403
+    ensure_changelog_tables()
+
+    item = db.session.get(ChangelogItem, item_id)
+    if not item:
+        return jsonify({'success': False, 'error': 'Changelog item not found.'}), 404
+
+    if is_inapp_changelog_key(item.item_key):
+        return jsonify({
+            'success': False,
+            'error': 'This update was written in the app, so there is no manifest version to restore.'
+        }), 400
+
+    snapshot_raw = getattr(item, 'manifest_snapshot_json', None)
+    if not snapshot_raw:
+        return jsonify({
+            'success': False,
+            'error': 'No manifest version has been recorded for this update yet.'
+        }), 400
+
+    try:
+        snapshot = json.loads(snapshot_raw)
+    except Exception:
+        return jsonify({'success': False, 'error': 'Stored manifest version is unreadable.'}), 400
+
+    item.category = (clean_str(snapshot.get('category')) or 'General')[:80]
+    item.description = clean_str(snapshot.get('description')) or item.description
+    item.audiences_json = json.dumps(normalize_changelog_audiences(snapshot.get('audiences')))
+    item.sort_order = clean_int(snapshot.get('sort_order')) or item.sort_order
+    item.is_published = bool(snapshot.get('is_published', True))
+    item.admin_edited = False
+    item.updated_at = get_manila_time()
+    item.release.updated_at = get_manila_time()
+
+    add_activity_log_entry(f"Reverted What's New item to manifest: {item.item_key}")
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'release': changelog_release_to_dict(item.release, current_user, admin_view=True)
+    })
+
+
+# --- WHAT'S NEW EMAIL DIGEST ---
+# Sending is OFF unless CHANGELOG_DIGEST_ENABLED is explicitly turned on.
+# EMAIL_NOTIFICATIONS_ENABLED defaults to true, so it is not a safe guard on its own --
+# a sandbox with a real BREVO_API_KEY would otherwise email actual engineers.
+
+def changelog_digest_sending_enabled():
+    return bool(app.config.get('CHANGELOG_DIGEST_ENABLED'))
+
+
+def build_changelog_digest(audience='everyone', branch_code='', limit=5):
+    """Render the digest for one audience. Pure formatting: sends nothing."""
+    audiences = {'everyone'} if audience == 'everyone' else {'everyone', audience}
+    releases = get_visible_changelog_release_dicts(
+        current_user, admin_view=False,
+        audiences=audiences, branch_code=branch_code or ''
+    )[:max(1, limit)]
+
+    if not releases:
+        return {'subject': '', 'html': '', 'text': '', 'release_count': 0, 'item_count': 0}
+
+    item_count = sum(len(r['items']) for r in releases)
+    subject = f"Medical Service - What's New ({item_count} update{'' if item_count == 1 else 's'})"
+
+    text_lines = ["Here is what changed recently in Medical Service.", '']
+    html_parts = [
+        '<div style="font-family:Segoe UI,Arial,sans-serif;color:#111827;">',
+        '<p>Here is what changed recently in Medical Service.</p>'
+    ]
+
+    for release in releases:
+        text_lines.append(f"{release['release_date']} - {release['title']}")
+        html_parts.append(
+            f'<h3 style="margin:18px 0 4px;font-size:15px;">{html.escape(release["title"])}</h3>'
+            f'<p style="margin:0 0 8px;color:#6b7280;font-size:12px;">{html.escape(release["release_date"])}</p>'
+            '<ul style="margin:0 0 14px;padding-left:18px;">'
+        )
+        for item in release['items']:
+            text_lines.append(f"  - [{item['category']}] {item['description']}")
+            html_parts.append(
+                f'<li style="margin-bottom:5px;font-size:13px;">'
+                f'<strong>{html.escape(item["category"])}:</strong> {html.escape(item["description"])}</li>'
+            )
+        html_parts.append('</ul>')
+        text_lines.append('')
+
+    html_parts.append(
+        '<p style="font-size:12px;color:#6b7280;">Open What\'s New in the app to mark these as read.</p></div>'
+    )
+
+    return {
+        'subject': subject,
+        'html': ''.join(html_parts),
+        'text': '\n'.join(text_lines),
+        'release_count': len(releases),
+        'item_count': item_count
+    }
+
+
+@app.route('/api/changelog/admin/digest/preview')
+@login_required
+def preview_changelog_digest():
+    """Render the digest without sending. Reaches no mail provider by design."""
+    if not is_admin_authorized():
+        return jsonify({'success': False, 'error': 'Admin access required.'}), 403
+    ensure_changelog_tables()
+
+    audience = (clean_str(request.args.get('audience')) or 'everyone').strip().lower()
+    if audience not in {'everyone', 'engineers', 'approvers', 'admins'}:
+        audience = 'everyone'
+    branch_code = (clean_str(request.args.get('branch')) or '').strip().upper()
+    if branch_code and branch_code not in STOCK_INVENTORY_BRANCHES:
+        branch_code = ''
+
+    digest = build_changelog_digest(audience=audience, branch_code=branch_code)
+    return jsonify({
+        'success': True,
+        'audience': audience,
+        'branch': branch_code,
+        'sending_enabled': changelog_digest_sending_enabled(),
+        'digest': digest
+    })
+
+
+@app.route('/api/changelog/admin/digest/send', methods=['POST'])
+@login_required
+def send_changelog_digest():
+    if not is_admin_authorized():
+        return jsonify({'success': False, 'error': 'Admin access required.'}), 403
+    ensure_changelog_tables()
+
+    # Hard stop. Nothing below this line runs while the flag is off.
+    if not changelog_digest_sending_enabled():
+        print("[Changelog] Digest send refused: CHANGELOG_DIGEST_ENABLED is false.", flush=True)
+        return jsonify({
+            'success': False,
+            'sending_enabled': False,
+            'error': 'Digest sending is disabled. Set CHANGELOG_DIGEST_ENABLED=true to enable it.'
+        }), 409
+
+    payload = request.get_json(silent=True) or {}
+    audience = (clean_str(payload.get('audience')) or 'everyone').strip().lower()
+    if audience not in {'everyone', 'engineers', 'approvers', 'admins'}:
+        audience = 'everyone'
+
+    group_key = clean_str(payload.get('recipient_group')) or ''
+    recipients = get_active_email_recipients_by_group(group_key) if group_key else []
+    if not recipients:
+        return jsonify({'success': False, 'error': 'No active recipients in that group.'}), 400
+
+    digest = build_changelog_digest(audience=audience)
+    if not digest['release_count']:
+        return jsonify({'success': False, 'error': 'There is nothing new to send.'}), 400
+
+    sent, message = send_email_notification(
+        recipients, digest['subject'], digest['text'], digest['html']
+    )
+    add_activity_log_entry(f"Sent What's New digest to {group_key} ({digest['item_count']} updates)")
+    db.session.commit()
+    return jsonify({'success': bool(sent), 'message': message, 'recipients': len(recipients)})
 
 
 @app.route('/activity_page')
@@ -15887,6 +16936,86 @@ def appearance_preferences_api():
         print(f"[Appearance] Activity log skipped: {log_error}", flush=True)
 
     return jsonify(appearance_preference_payload(current_user))
+
+
+# Every section id the dashboard can render. Anything outside this set is rejected so a
+# stale or crafted payload cannot persist junk into the account.
+DASHBOARD_SECTION_IDS = {
+    'developer-view-switcher',
+    'scheduler-final-note',
+    'scheduler-core',
+    'scheduler-dispatch',
+    'scheduler-coordination',
+    'manager-executive',
+    'engineer-summary',
+    'engineer-today',
+    'admin-counters',
+    'needs-attention',
+    'team-intelligence',
+    'quick-admin',
+    'mobile-quick-actions',
+    'engineer-workflow',
+    'my-active-tasks',
+    'open-technical-tasks',
+    'recent-activity',
+}
+
+
+def dashboard_layout_payload(user=None):
+    """Return the stored dashboard layout for an account."""
+    target = user or current_user
+    raw = getattr(target, 'ui_dashboard_layout_json', None)
+
+    order, hidden = [], []
+    if raw:
+        try:
+            parsed = json.loads(raw) or {}
+            order = [s for s in (parsed.get('order') or []) if s in DASHBOARD_SECTION_IDS]
+            hidden = [s for s in (parsed.get('hidden') or []) if s in DASHBOARD_SECTION_IDS]
+        except Exception as layout_error:
+            print(f"[Dashboard] Stored layout unreadable, ignoring: {layout_error}", flush=True)
+
+    return {'success': True, 'order': order, 'hidden': hidden}
+
+
+@app.route('/api/preferences/dashboard-layout', methods=['GET', 'POST'])
+@login_required
+def dashboard_layout_preferences_api():
+    """Load or update the current account's dashboard section layout.
+
+    Mirrors appearance_preferences_api() so a layout arranged on one device follows the
+    account, instead of living only in that browser's localStorage.
+    """
+    if request.method == 'GET':
+        response = jsonify(dashboard_layout_payload(current_user))
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        return response
+
+    payload = request.get_json(silent=True) or {}
+    raw_order = payload.get('order')
+    raw_hidden = payload.get('hidden')
+
+    if raw_order is None:
+        raw_order = []
+    if raw_hidden is None:
+        raw_hidden = []
+
+    if not isinstance(raw_order, list) or not isinstance(raw_hidden, list):
+        return jsonify({'success': False, 'error': 'Order and hidden must be lists.'}), 400
+
+    unknown = [s for s in list(raw_order) + list(raw_hidden) if s not in DASHBOARD_SECTION_IDS]
+    if unknown:
+        return jsonify({'success': False, 'error': f'Unknown dashboard section: {unknown[0]}'}), 400
+
+    # De-duplicate while preserving the order the user arranged.
+    seen = set()
+    order = [s for s in raw_order if not (s in seen or seen.add(s))]
+    hidden = sorted(set(raw_hidden))
+
+    current_user.ui_dashboard_layout_json = json.dumps({'order': order, 'hidden': hidden})
+    db.session.commit()
+
+    return jsonify(dashboard_layout_payload(current_user))
 
 
 @app.route('/admin/storage-bucket/verify', methods=['POST'])

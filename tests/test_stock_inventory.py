@@ -22,7 +22,8 @@ class StockInventorySourceTests(unittest.TestCase):
         self.assertIn("__tablename__ = 'stock_inventory_movement'", self.app_source)
         self.assertIn("db.UniqueConstraint('branch_code', 'scan_barcode'", self.app_source)
         self.assertIn('ensure_stock_inventory_tables()', self.app_source)
-        self.assertIn('Stock Inventory</a>', self.layout_source)
+        # Sidebar links render through the nav_link() macro in layout.html.
+        self.assertIn("nav_link('/stock_inventory', 'fa-barcode', 'Stock Inventory')", self.layout_source)
         self.assertIn('{% if stock_inventory_access %}', self.layout_source)
 
     def test_scanner_and_transaction_controls_are_present(self):

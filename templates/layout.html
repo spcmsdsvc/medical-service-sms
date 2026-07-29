@@ -33,817 +33,11 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=18">
-    <style>
-        :root {
-            --sidebar-width: 240px;
-            --mobile-safe-top: env(safe-area-inset-top);
-            --mobile-safe-bottom: env(safe-area-inset-bottom);
-        }
-
-        *{
-            -webkit-tap-highlight-color: transparent;
-        }
-
-        html{
-            scroll-behavior: smooth;
-        }
-
-        body {
-            background-color: #f4f7f6;
-            overflow-x: hidden;
-            font-family: sans-serif;
-            transition: all 0.3s;
-            text-rendering: optimizeLegibility;
-            -webkit-font-smoothing: antialiased;
-        }
-        .sidebar { width: var(--sidebar-width); height: 100vh; position: fixed; left: 0; top: 0; background: #2c3e50; color: white; z-index: 1000; transition: all 0.3s ease; overflow: hidden; }
-        .sidebar-header { min-height: 72px; padding: 18px 18px 18px 20px; background: #1a252f; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-        .sidebar-header h5 { line-height: 1.15; letter-spacing: .01em; }
-        .sidebar nav { padding: 8px 0; }
-        .sidebar a { color: #bdc3c7; text-decoration: none; min-height: 48px; padding: 12px 18px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #34495e; white-space: nowrap; transition: 0.2s; font-weight: 700; line-height: 1.2; }
-        .sidebar a i { width: 22px; min-width: 22px; text-align: center; font-size: 1rem; margin-right: 0 !important; opacity: .95; }
-        .sidebar a:hover { background: #34495e; color: white; }
-        .sidebar a.active { color: white; background: #1a252f; border-left: 4px solid #d63384; padding-left: 14px; }
-        .sidebar-calendar-row {
-            display: grid;
-            grid-template-columns: 1fr 46px;
-            align-items: stretch;
-            border-bottom: 1px solid #34495e;
-        }
-        .sidebar-calendar-row .sidebar-calendar-main {
-            border-bottom: 0;
-        }
-        .sidebar-calendar-row .sidebar-calendar-main.active {
-            border-left: 4px solid #d63384;
-            padding-left: 14px;
-        }
-        .sidebar-calendar-arrow {
-            border: 0;
-            border-left: 1px solid #34495e;
-            background: transparent;
-            color: #bdc3c7;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            transition: 0.2s;
-        }
-        .sidebar-calendar-arrow:hover {
-            background: #34495e;
-            color: #fff;
-        }
-        .sidebar-calendar-arrow .sidebar-section-arrow {
-            transition: transform 0.2s ease;
-        }
-        .sidebar-calendar-arrow[aria-expanded="true"] .sidebar-section-arrow {
-            transform: rotate(90deg);
-        }
-        .sidebar-subnav {
-            background: rgba(26, 37, 47, 0.55);
-            border-bottom: 1px solid #34495e;
-        }
-        .sidebar-subnav a {
-            min-height: 42px;
-            padding: 10px 18px 10px 46px;
-            font-size: 0.92rem;
-            border-bottom: 0;
-        }
-        .sidebar-subnav a.active {
-            padding-left: 42px;
-        }
-        .sidebar-section-toggle {
-            width: 100%;
-            color: #bdc3c7;
-            background: transparent;
-            border: 0;
-            border-bottom: 1px solid #34495e;
-            min-height: 48px;
-            padding: 12px 18px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            font-weight: 800;
-            text-align: left;
-            transition: 0.2s;
-        }
-        .sidebar-section-toggle:hover,
-        .sidebar-section-toggle.active {
-            background: #34495e;
-            color: #fff;
-        }
-        .sidebar-section-toggle i:first-child {
-            width: 22px;
-            min-width: 22px;
-            text-align: center;
-        }
-        .sidebar-section-toggle .sidebar-section-arrow {
-            margin-left: auto;
-            transition: transform 0.2s ease;
-        }
-        .sidebar-section-toggle[aria-expanded="true"] .sidebar-section-arrow {
-            transform: rotate(90deg);
-        }
-        .sidebar-subnav {
-            background: rgba(26, 37, 47, 0.55);
-            border-bottom: 1px solid #34495e;
-        }
-        .sidebar-subnav a {
-            min-height: 42px;
-            padding: 10px 18px 10px 46px;
-            font-size: 0.92rem;
-            border-bottom: 0;
-        }
-        .sidebar-subnav a.active {
-            padding-left: 42px;
-        }
-        .sidebar a.text-warning { color: #facc15 !important; }
-        .sidebar a.text-warning:hover { color: #fff3cd !important; }
-        .main-content { margin-left: var(--sidebar-width); padding: 20px; transition: all 0.3s ease; }
-        body.sidebar-collapsed .sidebar { width: 0; }
-        body.sidebar-collapsed .main-content { margin-left: 0; }
-        @media (max-width: 992px) {
-            .sidebar {
-                left: -100%;
-                width: min(82vw, var(--sidebar-width));
-                box-shadow: 0 0 0 rgba(0,0,0,0);
-            }
-
-            .sidebar.active {
-                left: 0;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.45);
-            }
-
-            .main-content {
-                margin-left: 0;
-                padding-top: 12px;
-            }
-
-            .mobile-nav {
-                display: flex !important;
-            }
-
-            body.mobile-sidebar-open {
-                overflow: hidden;
-            }
-        }
-
-        .mobile-nav {
-            display: none;
-            background: rgba(44,62,80,0.96);
-            backdrop-filter: blur(12px);
-            color: white;
-            padding:
-                calc(10px + var(--mobile-safe-top))
-                20px
-                10px
-                20px;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 1001;
-            border-bottom: 1px solid rgba(255,255,255,0.08);
-        }
-        .card { border: none; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
-        .toggle-btn { cursor: pointer; color: #bdc3c7; font-size: 1.2rem; }
-
-        @media print {
-            @page { size: landscape; margin: 10mm; }
-            .no-print, .sidebar, .mobile-nav, .btn, .btn-group, .form-control, .form-select, .input-group, #show-sidebar-btn, .add-hint, .search-results, .modal { 
-                display: none !important; 
-            }
-            .main-content { margin-left: 0 !important; padding: 0 !important; width: 100% !important; display: block !important; }
-            .card { box-shadow: none !important; border: none !important; padding: 0 !important; width: 100% !important; }
-            body { background-color: white !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            .table-responsive { display: block !important; overflow: visible !important; width: 100% !important; }
-            table { width: 100% !important; border-collapse: collapse !important; table-layout: auto !important; }
-            th, td { border: 1px solid #333 !important; padding: 8px !important; position: static !important; background-color: transparent !important; color: black !important; }
-            thead.table-dark, .table-dark th { background-color: #212529 !important; color: white !important; }
-        }
-    
-/* =========================================================
-   MOBILE UPGRADE PHASE 2A — SHARED MOBILE FOUNDATION
-   ========================================================= */
-
-:root{
-    --mobile-safe-padding: 14px;
-    --mobile-card-radius: 16px;
-    --mobile-touch-height: 44px;
-}
-
-/* Global mobile-safe container */
-@media (max-width: 768px){
-
-    body{
-        overflow-x: hidden;
-        -webkit-text-size-adjust: 100%;
-    }
-
-    .container,
-    .container-fluid,
-    .main-content,
-    .content-wrapper,
-    .page-content{
-        width: 100% !important;
-        max-width: 100% !important;
-        padding-left: var(--mobile-safe-padding) !important;
-        padding-right: var(--mobile-safe-padding) !important;
-        margin-left: auto !important;
-        margin-right: auto !important;
-        box-sizing: border-box !important;
-    }
-
-    /* Mobile typography */
-    h1{
-        font-size: 1.5rem !important;
-    }
-
-    h2{
-        font-size: 1.3rem !important;
-    }
-
-    h3{
-        font-size: 1.12rem !important;
-    }
-
-    /* Shared card styling */
-    .card,
-    .dashboard-card,
-    .panel,
-    .stats-card,
-    .mobile-friendly-card{
-        border-radius: var(--mobile-card-radius) !important;
-        overflow: hidden;
-    }
-
-    /* Shared button sizing */
-    button,
-    .btn,
-    input[type="submit"],
-    input[type="button"]{
-        min-height: var(--mobile-touch-height) !important;
-        border-radius: 12px !important;
-        font-size: 0.95rem !important;
-    }
-
-    /* Shared form improvements */
-    input,
-    select,
-    textarea{
-        min-height: 44px !important;
-        font-size: 16px !important;
-        border-radius: 12px !important;
-        max-width: 100% !important;
-    }
-
-    textarea{
-        min-height: 100px !important;
-    }
-
-    /* Prevent horizontal overflow */
-    table,
-    pre,
-    code{
-        max-width: 100% !important;
-    }
-
-    img{
-        max-width: 100% !important;
-        height: auto !important;
-    }
-
-    /* Shared mobile scroll containers */
-    .table-responsive,
-    .responsive-table-wrapper{
-        overflow-x: auto !important;
-        -webkit-overflow-scrolling: touch;
-        border-radius: 14px;
-    }
-
-    /* Navbar / header polish */
-    .navbar,
-    .topbar,
-    .header,
-    .main-header{
-        padding-left: var(--mobile-safe-padding) !important;
-        padding-right: var(--mobile-safe-padding) !important;
-    }
-
-    /* Better spacing */
-    .row{
-        margin-left: -6px !important;
-        margin-right: -6px !important;
-    }
-
-    .row > *{
-        padding-left: 6px !important;
-        padding-right: 6px !important;
-    }
-
-    /* Mobile modal polish */
-    .modal-dialog{
-        margin: 10px auto !important;
-        width: calc(100% - 20px) !important;
-        max-width: 100% !important;
-    }
-
-    .modal-content{
-        border-radius: 18px !important;
-    }
-
-    /* Sticky action footer helper */
-    .mobile-sticky-actions{
-        position: sticky;
-        bottom: 0;
-        z-index: 50;
-        background: #fff;
-        padding: 10px;
-        border-top: 1px solid #e5e7eb;
-    }
-}
-
-
-
-/* =========================================================
-   FINAL GLOBAL MOBILE OPTIMIZATION LAYER
-   ========================================================= */
-
-.mobile-device .btn,
-.mobile-device button,
-.mobile-device input,
-.mobile-device select,
-.mobile-device textarea {
-    touch-action: manipulation;
-}
-
-.mobile-device .sidebar a {
-    min-height: 48px;
-    display: flex;
-    align-items: center;
-    font-weight: 700;
-}
-
-.mobile-device .mobile-nav h4 {
-    font-size: 1rem;
-    font-weight: 900;
-}
-
-.mobile-device .card {
-    overflow: hidden;
-}
-
-.mobile-device .modal {
-    padding-left: 0 !important;
-}
-
-.mobile-device .modal-body {
-    overflow-x: hidden;
-}
-
-.mobile-device .table-responsive {
-    scrollbar-width: thin;
-}
-
-.mobile-device .table-responsive::-webkit-scrollbar {
-    height: 6px;
-}
-
-.mobile-device .table-responsive::-webkit-scrollbar-thumb {
-    background: rgba(100,116,139,0.4);
-    border-radius: 999px;
-}
-
-.mobile-device .form-control:focus,
-.mobile-device .form-select:focus {
-    box-shadow: none;
-}
-
-.mobile-device .btn:active {
-    transform: scale(0.985);
-}
-
-@media (max-width: 768px){
-
-    body{
-        padding-bottom: max(10px, var(--mobile-safe-bottom));
-    }
-
-    .main-content{
-        padding-top: 14px !important;
-        padding-bottom: 20px !important;
-    }
-
-    .sidebar-header{
-        padding-top: calc(20px + var(--mobile-safe-top));
-    }
-
-    .mobile-nav .btn{
-        min-height: 40px !important;
-        min-width: 82px;
-        font-size: 0.82rem !important;
-    }
-
-    .card{
-        box-shadow: 0 6px 20px rgba(15,23,42,0.06) !important;
-    }
-
-    .modal-dialog-scrollable .modal-body{
-        overscroll-behavior: contain;
-    }
-
-    .toast,
-    .alert{
-        border-radius: 14px !important;
-    }
-
-    .dropdown-menu{
-        border-radius: 14px !important;
-    }
-
-    .table th,
-    .table td{
-        white-space: nowrap;
-    }
-
-    .table td.wrap-mobile{
-        white-space: normal !important;
-    }
-}
-
-/* =========================================================
-   PWA OFFLINE STATUS FOUNDATION
-   ========================================================= */
-
-.offline-mode .mobile-nav::after{
-    content: 'OFFLINE';
-    margin-left: 10px;
-    font-size: .68rem;
-    font-weight: 900;
-    letter-spacing: .08em;
-    color: #facc15;
-}
-
-.offline-mode .sidebar-header::after{
-    content: 'OFFLINE MODE';
-    display: inline-block;
-    margin-top: 10px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: rgba(250,204,21,.15);
-    color: #facc15;
-    font-size: .68rem;
-    font-weight: 900;
-    letter-spacing: .08em;
-}
-
-@media (max-width:768px){
-    .offline-mode .mobile-nav{
-        border-bottom: 2px solid #facc15;
-    }
-}
-
-/* =========================================================
-   SIDEBAR VISUAL CLEANUP — M2C
-   Visual-only standardization for sidebar row height, spacing,
-   icon alignment, text sizing, arrows, and active states.
-   ========================================================= */
-
-.sidebar nav {
-    padding: 0;
-}
-
-.sidebar a,
-.sidebar-section-toggle,
-.sidebar-calendar-main,
-.sidebar-calendar-arrow {
-    box-sizing: border-box;
-}
-
-.sidebar a,
-.sidebar-section-toggle,
-.sidebar-calendar-main {
-    min-height: 58px;
-    height: 58px;
-    padding: 0 20px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    color: #cbd5e1;
-    font-size: 0.96rem;
-    font-weight: 800;
-    line-height: 1.15;
-    letter-spacing: 0.01em;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-    white-space: nowrap;
-}
-
-.sidebar a i,
-.sidebar-section-toggle i:first-child,
-.sidebar-calendar-main i {
-    width: 24px;
-    min-width: 24px;
-    height: 24px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 0 !important;
-    font-size: 0.98rem;
-    opacity: 0.95;
-}
-
-.sidebar a span,
-.sidebar-section-toggle span,
-.sidebar-calendar-main span {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.sidebar a:hover,
-.sidebar-section-toggle:hover,
-.sidebar-calendar-arrow:hover {
-    background: #34495e;
-    color: #ffffff;
-}
-
-.sidebar a.active,
-.sidebar-section-toggle.active,
-.sidebar-calendar-main.active {
-    color: #ffffff;
-    background: #1a252f;
-    border-left: 4px solid #d63384;
-    padding-left: 16px;
-}
-
-.sidebar-calendar-row {
-    display: grid;
-    grid-template-columns: 1fr 58px;
-    min-height: 58px;
-    height: 58px;
-    align-items: stretch;
-    border-bottom: 0;
-}
-
-.sidebar-calendar-row .sidebar-calendar-main {
-    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-}
-
-.sidebar-calendar-arrow {
-    width: 58px;
-    min-height: 58px;
-    height: 58px;
-    border: 0;
-    border-left: 1px solid rgba(148, 163, 184, 0.14);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-    background: transparent;
-    color: #cbd5e1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.sidebar-section-toggle .sidebar-section-arrow,
-.sidebar-calendar-arrow .sidebar-section-arrow {
-    margin-left: auto;
-    width: 18px;
-    min-width: 18px;
-    height: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.82rem;
-    opacity: 0.9;
-    transition: transform 0.2s ease;
-}
-
-.sidebar-subnav {
-    background: rgba(15, 23, 42, 0.18);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-}
-
-.sidebar-subnav a {
-    min-height: 46px;
-    height: 46px;
-    padding: 0 20px 0 58px;
-    font-size: 0.88rem;
-    font-weight: 750;
-    border-bottom: 0;
-    color: #cbd5e1;
-}
-
-.sidebar-subnav a.active {
-    padding-left: 54px;
-}
-
-.sidebar-subnav a.text-muted {
-    color: rgba(203, 213, 225, 0.56) !important;
-}
-
-.sidebar a.text-warning {
-    color: #facc15 !important;
-    margin-top: 18px !important;
-    border-top: 1px solid rgba(148, 163, 184, 0.14);
-}
-
-.sidebar a.text-warning:hover {
-    color: #fff3cd !important;
-}
-
-.sidebar-header {
-    min-height: 102px;
-    padding: 22px 24px;
-}
-
-.sidebar-header h5 {
-    font-size: 1.28rem;
-    line-height: 1.08;
-    letter-spacing: 0.02em;
-}
-
-.toggle-btn {
-    width: 28px;
-    min-width: 28px;
-    text-align: center;
-}
-
-.sidebar-header-actions,
-.mobile-nav-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 0 0 auto;
-}
-
-.sidebar-header-actions {
-    gap: 6px;
-}
-
-.sidebar-header .changelog-header-button,
-.mobile-nav .changelog-header-button {
-    position: relative;
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
-    min-height: 40px;
-    padding: 0;
-    border: 1px solid rgba(203, 213, 225, 0.34);
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.05);
-    color: #cbd5e1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    text-decoration: none;
-    box-sizing: border-box;
-    transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
-}
-
-.sidebar-header .changelog-header-button i,
-.mobile-nav .changelog-header-button i {
-    width: auto;
-    min-width: 0;
-    margin: 0 !important;
-    font-size: 1rem;
-}
-
-/* Compact desktop header tools; mobile keeps the larger touch targets above. */
-.sidebar-header .appearance-header-button,
-.sidebar-header .changelog-header-button {
-    width: 34px;
-    min-width: 34px;
-    height: 34px;
-    min-height: 34px;
-}
-
-.sidebar-header .appearance-header-button i,
-.sidebar-header .changelog-header-button i {
-    width: auto;
-    min-width: 0;
-    margin: 0 !important;
-    font-size: 0.86rem;
-}
-
-.sidebar-header .changelog-header-button:hover,
-.sidebar-header .changelog-header-button:focus-visible,
-.mobile-nav .changelog-header-button:hover,
-.mobile-nav .changelog-header-button:focus-visible,
-.changelog-header-button.active {
-    background: rgba(240, 180, 41, 0.16);
-    border-color: #f0b429;
-    color: #ffd45f;
-    outline: none;
-}
-
-.changelog-header-button.has-unread {
-    background: rgba(240, 180, 41, 0.12);
-    border-color: rgba(240, 180, 41, 0.72);
-    color: #ffd45f;
-}
-
-.changelog-header-badge {
-    position: absolute;
-    top: -7px;
-    right: -7px;
-    min-width: 20px;
-    height: 20px;
-    padding: 0 5px;
-    border: 2px solid #1a252f;
-    border-radius: 999px;
-    background: #f0b429;
-    color: #3d2b00;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.66rem;
-    font-weight: 950;
-    line-height: 1;
-    box-sizing: border-box;
-}
-
-.sidebar-header .changelog-header-badge {
-    top: -5px;
-    right: -5px;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 3px;
-    border-width: 1px;
-    font-size: 0.56rem;
-}
-
-.mobile-nav .changelog-header-badge {
-    border-color: #2c3e50;
-}
-
-.changelog-header-badge.show {
-    display: inline-flex;
-}
-
-.mobile-nav-actions .mobile-menu-button {
-    min-width: 72px;
-}
-
-/* Keep mobile optimization from inflating sidebar buttons unevenly. */
-@media (max-width: 768px) {
-    .mobile-device .sidebar a,
-    .mobile-device .sidebar-section-toggle,
-    .mobile-device .sidebar-calendar-main {
-        min-height: 58px !important;
-        height: 58px !important;
-        font-size: 0.96rem !important;
-        font-weight: 800 !important;
-        border-radius: 0 !important;
-    }
-
-    .mobile-device .sidebar-calendar-arrow {
-        min-height: 58px !important;
-        height: 58px !important;
-        border-radius: 0 !important;
-    }
-
-    .mobile-device .sidebar-subnav a {
-        min-height: 46px !important;
-        height: 46px !important;
-        font-size: 0.88rem !important;
-        border-radius: 0 !important;
-    }
-}
-
-/* =========================================================
-   S12B5C — MOBILE SIDEBAR SCROLL POLISH
-   Keeps Logout and lower menu items reachable when Field Operations expands.
-   ========================================================= */
-.sidebar{
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-}
-
-.sidebar nav{
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding-bottom: calc(24px + var(--mobile-safe-bottom));
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
-}
-
-.sidebar nav::-webkit-scrollbar{
-    width: 6px;
-}
-
-.sidebar nav::-webkit-scrollbar-thumb{
-    background: rgba(203, 213, 225, 0.32);
-    border-radius: 999px;
-}
-
-@media (max-width: 992px){
-    .sidebar nav{
-        padding-bottom: calc(72px + var(--mobile-safe-bottom));
-    }
-}
-
-</style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=2">
+
+    {# Page-specific stylesheets. Loaded after the shell so a page can override it,
+       and before the dark-page overrides at the end of body so dark mode still wins. #}
+    {% block page_head %}{% endblock %}
 
 
     <!-- PWA FOUNDATION -->
@@ -855,6 +49,8 @@
 
 </head>
 <body>
+    <a href="#main-content" class="skip-to-content">Skip to main content</a>
+
     <div class="mobile-nav no-print">
         <h4 class="m-0">MEDICAL SERVICE</h4>
         <div class="mobile-nav-actions">
@@ -870,7 +66,12 @@
                 <span class="changelog-header-badge" aria-hidden="true"></span>
             </a>{% endif %}
             {% endif %}
-            <button class="btn btn-outline-light btn-sm mobile-menu-button" onclick="toggleSidebarMobile()">Menu</button>
+            <button type="button"
+                    class="btn btn-outline-light btn-sm mobile-menu-button"
+                    id="mobile-menu-button"
+                    onclick="toggleSidebarMobile()"
+                    aria-expanded="false"
+                    aria-controls="sidebar">Menu</button>
         </div>
     </div>
 
@@ -890,46 +91,64 @@
                     <span class="changelog-header-badge" aria-hidden="true"></span>
                 </a>{% endif %}
                 {% endif %}
-                <i class="fa-solid fa-bars toggle-btn" onclick="toggleSidebarDesktop()"></i>
+                <button type="button"
+                        class="toggle-btn"
+                        id="sidebar-toggle-desktop"
+                        onclick="toggleSidebarDesktop()"
+                        aria-label="Hide navigation"
+                        aria-expanded="true"
+                        aria-controls="sidebar">
+                    <i class="fa-solid fa-bars" aria-hidden="true"></i>
+                </button>
             </div>
         </div>
         
-        <nav class="mt-2">
-            {% set username_lc = (current_user.username|lower) if current_user.is_authenticated else '' %}
-            {% set is_management_user = current_user.is_authenticated and current_user.role in ['superadmin', 'regional_admin'] %}
-            {% set is_scheduler_user = current_user.is_authenticated and username_lc in ['hanna', 'diary'] %}
-            {% set is_engineer_only = current_user.is_authenticated and current_user.role == 'engineer' %}
-            {% set is_rodito_manager = current_user.is_authenticated and username_lc == 'rodito' %}
-            {% set is_approver_user = current_user.is_authenticated and (
-                is_rodito_manager or
-                (current_user.can_approve_requests is defined and current_user.can_approve_requests)
-            ) %}
-            {% set is_approver_only_user = current_user.is_authenticated and (
-                current_user.role is defined and (current_user.role|string|lower) == 'approver' and
-                current_user.can_approve_requests is defined and current_user.can_approve_requests
-            ) %}
-            {# S12B4: Accounting Center is now a self-service records center for all logged-in users. #}
-            {% set is_accounting_center_user = current_user.is_authenticated and not is_approver_only_user %}
+        {#- One place that renders a nav link, so the active class and aria-current can
+            never drift apart. Cash Advance previously had neither. -#}
+        {% macro nav_link(href, icon, label, extra_class='', badge_id='') -%}
+            {%- set is_active = (request.path == href) -%}
+            <a href="{{ href }}"
+               class="{{ extra_class }} {{ 'active' if is_active }}"
+               {% if is_active %}aria-current="page"{% endif %}>
+                <i class="fa-solid {{ icon }}" aria-hidden="true"></i>
+                <span>{{ label }}</span>
+                {%- if badge_id %}<span class="sidebar-count-badge" id="{{ badge_id }}" aria-hidden="true"></span>{% endif -%}
+            </a>
+        {%- endmacro %}
+
+        <nav class="sidebar-nav" aria-label="Main">
+            {# Access flags come from inject_navigation_access() in app.py, which calls the
+               same helpers the routes guard themselves with. Do not reintroduce inline
+               role logic or hardcoded usernames here: the previous inline versions were
+               looser than the server and showed links that redirected away. #}
+            {% set is_management_user = nav_is_admin %}
+            {% set is_engineer_only = nav_is_engineer %}
+            {% set is_approver_user = nav_is_approval_center_user %}
+            {% set is_approver_only_user = nav_is_approver_only %}
+            {% set is_accounting_center_user = nav_can_access_accounting_center %}
             {% set is_reports_sidebar_user = is_management_user or is_engineer_only %}
             {% set field_ops_paths = ['/travel_request', '/reimbursement', '/cash_advance', '/leave_request'] %}
             {% if lpr_enabled %}{% set field_ops_paths = field_ops_paths + ['/lpr'] %}{% endif %}
-            {% set approval_paths = ['/approvals'] %}
             {% set reports_paths = ['/analytics_page', '/reports_page'] %}
             {% set records_paths = ['/engineers_page', '/clients_page', '/products_page'] %}
             {% set admin_paths = ['/activity_page', '/settings', '/stock_inventory'] %}
 
-            <a href="/" class="{{ 'active' if request.path == '/' }}"><i class="fa-solid fa-chart-line me-2"></i> Dashboard</a>
+            <div class="sidebar-group-label" aria-hidden="true">Main</div>
+
+            {{ nav_link('/', 'fa-chart-line', 'Dashboard') }}
 
             {% if stock_inventory_access %}
-                <a href="/stock_inventory" class="{{ 'active' if request.path == '/stock_inventory' }}"><i class="fa-solid fa-barcode me-2"></i> Stock Inventory</a>
+                {{ nav_link('/stock_inventory', 'fa-barcode', 'Stock Inventory') }}
             {% endif %}
 
             {% if not stock_inventory_only_user %}
 
             {% if not is_approver_only_user %}
                 <div class="sidebar-calendar-row {{ 'active' if request.path in ['/timeline', '/offline-tsr'] }}">
-                    <a href="/timeline" class="sidebar-calendar-main {{ 'active' if request.path == '/timeline' }}">
-                        <i class="fa-solid fa-calendar-days me-2"></i>
+                    <a href="/timeline"
+                       class="sidebar-calendar-main {{ 'active' if request.path == '/timeline' }}"
+                       {% if request.path == '/timeline' %}aria-current="page"{% endif %}>
+                        <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
                         <span>Calendar</span>
                     </a>
                     <button
@@ -945,8 +164,12 @@
                     </button>
                 </div>
                 <div id="calendar-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path == '/offline-tsr' }}">
-                    <a href="/offline-tsr" class="{{ 'active' if request.path == '/offline-tsr' }}"><i class="fa-solid fa-file-pen me-2"></i> Create TSR</a>
+                    {{ nav_link('/offline-tsr', 'fa-file-pen', 'Create TSR') }}
                 </div>
+            {% endif %}
+
+            {% if new_workflows_enabled or is_accounting_center_user or is_approver_user %}
+            <div class="sidebar-group-label" aria-hidden="true">Operations</div>
             {% endif %}
 
             {% if new_workflows_enabled and current_user.is_authenticated and not is_approver_only_user %}
@@ -963,20 +186,24 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
                 </button>
                 <div id="field-operations-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in field_ops_paths }}">
-                    <a href="/travel_request" class="{{ 'active' if request.path == '/travel_request' }}"><i class="fa-solid fa-plane-departure me-2"></i> Travel Request</a>
-                    <a href="/reimbursement" class="{{ 'active' if request.path == '/reimbursement' }}"><i class="fa-solid fa-file-invoice-dollar me-2"></i> Liquidation</a>
-                    <a href="/cash_advance"><i class="fa-solid fa-money-bill-transfer me-2"></i> Cash Advance</a>
-                    <a href="/leave_request" class="{{ 'active' if request.path == '/leave_request' }}"><i class="fa-solid fa-calendar-check me-2"></i> Leave Request</a>
-                    {% if lpr_enabled %}<a href="/lpr" class="{{ 'active' if request.path == '/lpr' }}"><i class="fa-solid fa-file-invoice me-2"></i> LPR</a>{% endif %}
+                    {{ nav_link('/travel_request', 'fa-plane-departure', 'Travel Request') }}
+                    {{ nav_link('/reimbursement', 'fa-file-invoice-dollar', 'Liquidation') }}
+                    {{ nav_link('/cash_advance', 'fa-money-bill-transfer', 'Cash Advance') }}
+                    {{ nav_link('/leave_request', 'fa-calendar-check', 'Leave Request') }}
+                    {% if lpr_enabled %}{{ nav_link('/lpr', 'fa-file-invoice', 'LPR') }}{% endif %}
                 </div>
             {% endif %}
 
             {% if new_workflows_enabled and is_accounting_center_user %}
-                <a href="/accounting_center" class="{{ 'active' if request.path == '/accounting_center' }}"><i class="fa-solid fa-folder-tree me-2"></i> My Requests</a>
+                {{ nav_link('/accounting_center', 'fa-folder-tree', 'My Requests', badge_id='nav-badge-my-requests') }}
             {% endif %}
 
             {% if new_workflows_enabled and is_approver_user %}
-                <a href="/approvals" class="{{ 'active' if request.path == '/approvals' }}"><i class="fa-solid fa-clipboard-check me-2"></i> Approvals</a>
+                {{ nav_link('/approvals', 'fa-clipboard-check', 'Approvals', badge_id='nav-badge-approvals') }}
+            {% endif %}
+
+            {% if is_reports_sidebar_user or (current_user.is_authenticated and not is_approver_only_user) or is_management_user %}
+            <div class="sidebar-group-label" aria-hidden="true">Records</div>
             {% endif %}
 
             {% if is_reports_sidebar_user %}
@@ -994,9 +221,9 @@
                 </button>
                 <div id="reports-insights-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}">
                     {% if is_management_user %}
-                    <a href="/analytics_page" class="{{ 'active' if request.path == '/analytics_page' }}"><i class="fa-solid fa-chart-pie me-2"></i> Analytics</a>
+                    {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
                     {% endif %}
-                    <a href="/reports_page" class="{{ 'active' if request.path == '/reports_page' }}"><i class="fa-solid fa-file-lines me-2"></i> Reports</a>
+                    {{ nav_link('/reports_page', 'fa-file-lines', 'Reports') }}
                 </div>
             {% endif %}
 
@@ -1015,10 +242,10 @@
                 </button>
                 <div id="records-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in records_paths }}">
                     {% if is_management_user or is_engineer_only %}
-                        <a href="/engineers_page" class="{{ 'active' if request.path == '/engineers_page' }}"><i class="fa-solid fa-user-gear me-2"></i> Personnel</a>
+                        {{ nav_link('/engineers_page', 'fa-user-gear', 'Personnel') }}
                     {% endif %}
-                    <a href="/clients_page" class="{{ 'active' if request.path == '/clients_page' }}"><i class="fa-solid fa-hospital me-2"></i> Medical Centers</a>
-                    <a href="/products_page" class="{{ 'active' if request.path == '/products_page' }}"><i class="fa-solid fa-boxes-stacked me-2"></i> Inventory</a>
+                    {{ nav_link('/clients_page', 'fa-hospital', 'Medical Centers') }}
+                    {{ nav_link('/products_page', 'fa-boxes-stacked', 'Inventory') }}
                 </div>
             {% endif %}
 
@@ -1036,24 +263,46 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
                 </button>
                 <div id="admin-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in admin_paths }}">
-                    <a href="/activity_page" class="{{ 'active' if request.path == '/activity_page' }}"><i class="fa-solid fa-clock-rotate-left me-2"></i> Activity Logs</a>
-                    <a href="/settings" class="{{ 'active' if request.path == '/settings' }}"><i class="fa-solid fa-gear me-2"></i> System Settings</a>
+                    {{ nav_link('/activity_page', 'fa-clock-rotate-left', 'Activity Logs') }}
+                    {{ nav_link('/settings', 'fa-gear', 'System Settings') }}
                 </div>
             {% elif current_user.is_authenticated %}
-                <a href="/settings" class="{{ 'active' if request.path == '/settings' }}"><i class="fa-solid fa-gear me-2"></i> System Settings</a>
+                {{ nav_link('/settings', 'fa-gear', 'System Settings') }}
             {% endif %}
             {% else %}
-                <a href="/settings" class="{{ 'active' if request.path == '/settings' }}"><i class="fa-solid fa-key me-2"></i> Password Settings</a>
+                {{ nav_link('/settings', 'fa-key', 'Password Settings') }}
             {% endif %}
 
-            {% if current_user.is_authenticated %}
-                <a href="/logout" class="text-warning mt-4"><i class="fa-solid fa-right-from-bracket me-2"></i> Logout ({{ current_user.username }})</a>
-            {% endif %}
         </nav>
+
+        {% if current_user.is_authenticated %}
+        <div class="sidebar-user">
+            <span class="sidebar-user-avatar" aria-hidden="true">{{ current_user.username[:2]|upper }}</span>
+            <span class="sidebar-user-meta">
+                <span class="sidebar-user-name">{{ current_user.username }}</span>
+                <span class="sidebar-user-role">
+                    {%- if nav_is_superadmin -%}Superadmin
+                    {%- elif nav_is_admin -%}Regional Admin
+                    {%- elif nav_is_approver_only -%}Approver
+                    {%- elif stock_inventory_only_user -%}Inventory
+                    {%- elif nav_is_engineer -%}Engineer
+                    {%- else -%}Staff{%- endif -%}
+                </span>
+            </span>
+            <a href="/logout" class="sidebar-logout" aria-label="Log out" title="Log out">
+                <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i>
+            </a>
+        </div>
+        {% endif %}
     </div>
 
-    <div class="main-content">
-        <button id="show-sidebar-btn" class="btn btn-dark btn-sm mb-3 d-none no-print" onclick="toggleSidebarDesktop()"><i class="fa-solid fa-bars"></i></button>
+    <div class="main-content" id="main-content" tabindex="-1">
+        <button type="button"
+                id="show-sidebar-btn"
+                class="btn btn-dark btn-sm mb-3 d-none no-print"
+                onclick="toggleSidebarDesktop()"
+                aria-label="Show navigation"
+                aria-controls="sidebar"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
         {% block content %}{% endblock %}
     </div>
 
@@ -1062,14 +311,43 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        function toggleSidebarDesktop() { 
-            document.body.classList.toggle('sidebar-collapsed'); 
-            document.getElementById('show-sidebar-btn').classList.toggle('d-none'); 
+        function toggleSidebarDesktop() {
+            const collapsed = document.body.classList.toggle('sidebar-collapsed');
+            document.getElementById('show-sidebar-btn').classList.toggle('d-none');
+
+            const toggle = document.getElementById('sidebar-toggle-desktop');
+            if (toggle) {
+                toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                toggle.setAttribute('aria-label', collapsed ? 'Show navigation' : 'Hide navigation');
+            }
         }
+
+        function setMobileSidebar(open) {
+            const sidebar = document.getElementById('sidebar');
+            const menuButton = document.getElementById('mobile-menu-button');
+            if (!sidebar) return;
+
+            sidebar.classList.toggle('active', open);
+            document.body.classList.toggle('mobile-sidebar-open', open);
+            if (menuButton) menuButton.setAttribute('aria-expanded', open ? 'true' : 'false');
+
+            if (open) {
+                // Move focus into the drawer so keyboard and screen reader users land
+                // there. Prefer the current page; a selector list would return document
+                // order and land on the header button instead.
+                const target = sidebar.querySelector('.sidebar-nav a.active')
+                    || sidebar.querySelector('.sidebar-nav a')
+                    || sidebar.querySelector('a, button');
+                if (target) target.focus();
+            } else if (menuButton && document.activeElement && sidebar.contains(document.activeElement)) {
+                // Only reclaim focus if it was inside the drawer we just closed.
+                menuButton.focus();
+            }
+        }
+
         function toggleSidebarMobile() {
             const sidebar = document.getElementById('sidebar');
-            sidebar.classList.toggle('active');
-            document.body.classList.toggle('mobile-sidebar-open');
+            setMobileSidebar(!(sidebar && sidebar.classList.contains('active')));
         }
 
         // Global Helper for CSRF Header
@@ -1108,6 +386,66 @@
         }
         window.refreshGlobalChangelogBadge = refreshGlobalChangelogBadge;
         document.addEventListener('DOMContentLoaded', refreshGlobalChangelogBadge);
+
+        // Sidebar pending counts. Same one-shot pattern as the changelog badge above:
+        // fetched once on load, never polled.
+        async function refreshSidebarPendingBadges(){
+            const targets = [
+                {id: 'nav-badge-approvals', key: 'approvals_pending', label: 'pending approval'},
+                {id: 'nav-badge-my-requests', key: 'my_requests_action', label: 'needing attention'}
+            ].map(entry => Object.assign(entry, {node: document.getElementById(entry.id)}))
+             .filter(entry => entry.node);
+
+            if(!targets.length) return;
+
+            try{
+                const response = await fetch('/api/nav/pending-summary', {
+                    credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}
+                });
+                if(!response.ok) return;
+                const data = await response.json();
+
+                targets.forEach(entry => {
+                    const count = Number(data[entry.key] || 0);
+                    entry.node.textContent = count > 99 ? '99+' : String(count || '');
+                    entry.node.classList.toggle('show', count > 0);
+
+                    const link = entry.node.closest('a');
+                    if(link){
+                        const labelSpan = link.querySelector('span:not(.sidebar-count-badge)');
+                        const name = labelSpan ? labelSpan.textContent.trim() : 'Navigation';
+                        link.setAttribute('aria-label', count > 0
+                            ? `${name}, ${count} ${entry.label}`
+                            : name);
+                    }
+                });
+            }catch(error){
+                // A failed badge must never break navigation.
+                console.warn('[Sidebar] Unable to refresh pending counts', error);
+            }
+        }
+        window.refreshSidebarPendingBadges = refreshSidebarPendingBadges;
+        document.addEventListener('DOMContentLoaded', refreshSidebarPendingBadges);
+
+        // Keyboard and focus behaviour for the sidebar.
+        document.addEventListener('DOMContentLoaded', function(){
+            const sidebar = document.getElementById('sidebar');
+            if (!sidebar) return;
+
+            // Bring the active item into view when it sits below the fold.
+            // 'nearest' only, so the page itself never jumps.
+            const active = sidebar.querySelector('a.active');
+            if (active && typeof active.scrollIntoView === 'function') {
+                try { active.scrollIntoView({block: 'nearest'}); } catch (_) {}
+            }
+
+            document.addEventListener('keydown', function(event){
+                if (event.key !== 'Escape') return;
+                if (sidebar.classList.contains('active')) {
+                    setMobileSidebar(false);
+                }
+            });
+        });
     </script>
 
 <!-- GLOBAL DELETE MODAL -->
@@ -1149,8 +487,8 @@
 
             body.classList.toggle('mobile-device', isMobile);
 
-            if(!isMobile && sidebar){
-                sidebar.classList.remove('active');
+            if(!isMobile && sidebar && sidebar.classList.contains('active')){
+                window.setMobileSidebar ? window.setMobileSidebar(false) : sidebar.classList.remove('active');
                 body.classList.remove('mobile-sidebar-open');
             }
         }
@@ -1173,7 +511,7 @@
             const clickedMenuButton = mobileNav && mobileNav.contains(e.target);
 
             if(sidebar.classList.contains('active') && !clickedInsideSidebar && !clickedMenuButton){
-                sidebar.classList.remove('active');
+                window.setMobileSidebar ? window.setMobileSidebar(false) : sidebar.classList.remove('active');
                 body.classList.remove('mobile-sidebar-open');
             }
         });
@@ -1184,6 +522,8 @@
                 if(window.innerWidth <= 768 && sidebar){
                     sidebar.classList.remove('active');
                     body.classList.remove('mobile-sidebar-open');
+                    const menuButton = document.getElementById('mobile-menu-button');
+                    if(menuButton) menuButton.setAttribute('aria-expanded', 'false');
                 }
             });
         });
