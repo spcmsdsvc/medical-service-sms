@@ -1,5 +1,39 @@
 # Project Change Log
 
+claude changes - 2026-07-29 (workspace)
+
+## Moved the working directory to the live repository
+
+* The owner moved the session working directory from
+  `Claude-medical-service-sms-railway` (the sandbox) to
+  `medical-service-sms-railway` (this repository), to work here directly. Recorded
+  because it changes the default git posture: the sandbox rule is *never commit, never
+  push*, while this repository follows the deployment preference in AGENTS.md section 3.
+  There is no longer a free-experimentation area by default.
+* Reason for the move: keeping work in the sandbox made every promotion a merge. Earlier
+  the same day the sandbox turned out to be **5 commits behind** live, and reconciling it
+  consumed a large part of the session. One source of truth removes that class of problem.
+* Verified after the move: correct working directory, `HEAD` in sync with `origin/main`,
+  suite green, own `venv` (Python 3.14.2) and own `.env` — nothing borrowed from the
+  sandbox — and every promoted file present.
+* **Synced the sandbox rather than abandoning it.** It was sitting at `b791a3c` with 37
+  dirty entries, all superseded by work already pushed here, and none of live's newer
+  commits. A future session opening it would have found stale work that had already
+  shipped — the same trap that caused the merge earlier. Reset it to `baefb63`.
+* Before discarding anything, verified live was a strict superset: **all 658 journal
+  content lines and all 86 changelog keys** were already here. The only absent lines were
+  the sandbox file's own title block, dropped deliberately when merging into this file's
+  `# Project Change Log` heading.
+* **The sandbox database was not destroyed.** A hard reset would have replaced its 5.2 MB
+  working copy of `scheduler.db` with the 581 KB committed one, so it was backed up first
+  and restored afterwards.
+* Renamed that backup to `scheduler.backup-2026-07-29.db`. The original name
+  (`scheduler.db.backup-2026-07-29`) did **not** match the `*.db` ignore rule, leaving a
+  5 MB untracked file one `git add -A` away from being committed.
+* Nothing in this repository was changed by the move itself.
+
+---
+
 claude changes - 2026-07-29 (later still)
 
 ## What's New digest — audience-driven recipients and per-send update selection

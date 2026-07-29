@@ -7,7 +7,24 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last filled: 2026-07-29
+Last filled: 2026-07-29 (end of session)
+
+**Where the work lives now:** this repository, `medical-service-sms-railway`. The owner
+moved the working directory here on 2026-07-29. The sandbox at
+`Claude-medical-service-sms-railway` still exists and is kept, synced to `baefb63`, but is
+no longer the default. This repository is push-by-default per AGENTS.md section 3, so there
+is no free-experimentation area — if the sandbox is used again, `git fetch && git reset
+--hard origin/main` there first, since it drifts the moment anything lands here.
+
+**Shipped this session** — all pushed to `origin/main`:
+
+| Commit | What |
+| --- | --- |
+| `baefb63` | Logout fix, plus promotion of login/sidebar/dashboard/What's New from the sandbox |
+| `69c975c` | What's New email digest made usable, sending still disabled |
+| `0447392` | Digest recipients driven by audience, per-send update selection |
+
+Suite green at **252 tests**. Service worker cache at **`v45-digest-audience`**.
 
 ---
 
@@ -35,10 +52,11 @@ None of this is known broken — it simply has not been checked.
 
 | Item | Applies to |
 | --- | --- |
-| **Edge and Brave** | login redesign, sidebar, engineer dashboard, What's New |
+| **Edge and Brave** | login redesign, sidebar, engineer dashboard, What's New, digest modal |
 | **Offline behaviour against a real service worker registration** | login offline shell, dashboard assets, changelog assets — partially exercised on 2026-07-29 (a real worker was registered during logout verification), but the offline path itself was still not tested |
-| **Mobile viewport (375px)** | the new What's New filter/search row |
+| **Mobile viewport (375px)** | the What's New filter/search row. The digest modal *was* checked at 375px on 2026-07-29 and is fine; the filter row above it still has not been |
 | **Skip link visual reveal on real keyboard focus** | layout shell |
+| **A real digest email as received** | the HTML was verified as rendered in the preview pane, never in an actual inbox. Mail clients strip and rewrite CSS; check before sending to an audience |
 | ~~Cross-role browser checks~~ | **unblocked 2026-07-29** — the logout fix restored account switching |
 
 On the skip link: the Browser pane does not composite frames, so CSS transitions never
@@ -49,7 +67,10 @@ proved the element positions correctly, but the actual reveal was never seen.
 
 ## 3. Queued work
 
-### Dashboard — phases 2 to 4
+### Dashboard — phases 2 to 4 — AGREED NEXT TASK
+
+The owner deferred this on 2026-07-29 to finish the What's New digest first, and named it
+as what to return to.
 
 Phase 1 (engineer) is done. The template serves every role from one file, so each phase
 must leave the others untouched; `tests/test_dashboard_engineer.py` already guards that.
@@ -70,17 +91,37 @@ exists server-side.
 **Explicitly deferred by the owner:** lazy fetching of collapsed dashboard sections.
 Phase 1 was "show less, fetch the same" — endpoints and data logic untouched.
 
-### What's New — digest delivery
+### What's New — digest: first real send not yet done — DO THIS CAREFULLY
 
-Built but dormant. `CHANGELOG_DIGEST_ENABLED` defaults to **false** and is checked
-independently of `EMAIL_NOTIFICATIONS_ENABLED` (which defaults to true), so a sandbox
-holding a real Brevo key cannot email live engineers.
+**`CHANGELOG_DIGEST_ENABLED` is now `true` on Railway.** The owner set it on 2026-07-29.
+The buttons are live once `0447392` deploys. No digest has actually been sent to anyone yet.
 
-- Preview renders the exact HTML and calls no sender.
-- `POST /api/changelog/admin/digest/send` returns 409 while disabled.
-- **Not built:** scheduled or recurring delivery. Manual preview only, by design.
-- Before enabling in production: confirm the recipient group, send one test to a
-  controlled address, and only then turn the flag on.
+Before the first real send, in this order:
+
+1. Open What's New → **Email digest** and read the **resolved recipient count** for each
+   audience. That count is the safeguard; nothing else stands between a click and real mail.
+2. **Send test to me** first — it goes only to the requesting admin's own address. Confirm
+   it arrives and reads correctly.
+3. Only then a real audience send, with the count confirmed.
+
+Expect the resolved count to be **higher** than "accounts with a profile email":
+`get_user_email_for_notification()` ends in a hardcoded username-to-email map (`diary`,
+`hanna`, `kevin`, `jonamar`, `robert`, `rodito` → `@shimadzu.com.ph`), so those accounts
+resolve regardless. Accounts with no resolvable address are listed by name in the modal.
+
+**Known limitations, accepted rather than fixed:**
+
+- **No idempotency.** Pressing send twice sends twice. This matters more now that audience
+  mode reaches every matching account rather than a short curated list.
+- **No unsubscribe.**
+- The digest is **the latest 5 releases**, not per-recipient unread — someone who has read
+  everything still receives a full digest. Making it per-recipient is a considerably larger
+  change and is deliberately separate work.
+- **No scheduled or recurring delivery.** Manual only, by design.
+
+Both send paths remain available: audience mode (default) and the Settings-managed
+*What's New Announcements* group. Naming a group without a mode still means the group, so an
+explicit group send cannot be silently widened to the whole audience.
 
 ### Stock inventory barcode scanner — pre-dates this session
 
@@ -99,38 +140,37 @@ Reproduce with keyboard input locally first.
 
 ---
 
-## 4. Promotion to live
+## 4. Committing here — standing rules
 
-Owner decided on 2026-07-29 to promote **everything as one commit**.
+The sandbox-to-live promotion is **done** (`baefb63`, 2026-07-29). Work now happens in this
+repository directly, so every commit is one step from deployment.
 
-**The sandbox was 5 commits behind live** (`b791a3c` vs `e2cae2e`), so this is a merge,
-not a file copy. Live had gained half-day leave, reimbursement row removal/restore,
-reimbursement range reuse and Approval Center wording — 563 lines of `app.py` alone.
+Standing checklist for any commit here:
 
-Validated in a throwaway clone of live `main` before touching the real copy:
-
-- [x] Decide what moves — everything, one commit
-- [x] 13 of 14 files applied cleanly; **one conflict**, both sides having independently
-      bumped the service worker to `v42`. Resolved to **`v43-shell-dashboard-changelog`**;
-      leaving it at v42 would have meant clients already on live's v42 never invalidating
-- [x] Verified line-by-line that neither side lost work: 354 of live's 355 `app.py`
-      additions and 819 of the sandbox's 820 survive, the odd one out on each side being
-      the superseded cache-version line
-- [x] Added the 2026-07-29 `releases.json` entry (9 items). Required — otherwise
+- [ ] `git status --short`, then inspect the diff
+- [ ] Stage **explicitly, file by file** — never `git add -A`
+- [ ] `git diff --cached --check` for whitespace
+- [ ] Confirm the commit contents with `git show --name-only` before pushing
+- [ ] Focused commit message; push `main`
+- [ ] Confirm only known local artifacts remain dirty: `scheduler.db`, `output/`, `tmp/`,
+      and the 2026-07-26 handoff document
+- [ ] A user-facing change needs a `releases.json` entry dated the commit date, or
       `tests/test_changelog_coverage.py` fails the commit
-- [x] The 2026-07-24 backfill entry (TSR archive sort) is carried across
-- [x] Full suite green in the merged tree at **229 tests** (the sandbox's 213 plus live's
-      16), zero failures
-- [ ] Complete the browser verification listed in section 2
-- [ ] Follow the standing push checklist: inspect `git status --short`, inspect the
-      diff, stage explicitly, `git diff --cached --check`, focused commit message, push
-      `main`, confirm only known local artifacts remain dirty
-- [ ] Never stage `scheduler.db`, `output/`, `tmp/`, `.env`
 
-**`scheduler.db` is tracked in both repos.** `.gitignore` lists `*.db`, but that only
-applies to untracked files, so gitignore does **not** protect it. It has to be excluded by
-name at every step. `.env` was likewise never copied into the merge clone — it holds a
-real Brevo API key.
+**`scheduler.db` is tracked.** `.gitignore` lists `*.db`, but that only applies to
+*untracked* files, so **gitignore does not protect it**. Exclude it by name at every step.
+Same for `.env`, which holds a real Brevo API key — it was never copied into the merge
+clone during promotion for that reason.
+
+**Bump the service worker cache version** whenever an `APP_SHELL` entry changes, or field
+devices keep the old copies. Tests use `assert_cache_version_at_least`, so a bump never
+breaks them. Currently `v45-digest-audience`.
+
+**Running the app for verification:** explicit `MEDICAL_SERVICE_TEST_DB`, never port 5000,
+never `preview_start` name-mode, and stop every server afterwards. The Browser pane blocks
+origins it has not registered, so open the app with `preview_start` passing the URL. Note
+`/static/` is `cacheFirst` in the service worker — after changing a static asset, unregister
+the worker and clear caches or you will be looking at the old file.
 
 ---
 
