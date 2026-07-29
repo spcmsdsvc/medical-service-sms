@@ -1,5 +1,132 @@
 # Project Change Log
 
+claude changes - 2026-07-29 (dashboard phase 2)
+
+## Scheduler dashboard rebuilt as a dispatch workbench
+
+* Established the design difference first, because it decided the shape of everything
+  else: an engineer asks *what do I do today*, a manager asks *how are we doing*, but a
+  scheduler asks *what is unstaffed or stuck, and can I fix it here*. The scheduler is the
+  **only role whose dashboard mutates data** — `scheduler_quick_assign_shift` and
+  `scheduler_quick_reschedule_shift` already existed and are conflict-checked server-side —
+  and the old view buried that under three layers of read-only summary.
+* **Found the powerful version already written and switched off.**
+  `/get_scheduler_dispatch_intelligence` (`app.py:19080`) was live, permission-checked and
+  had **zero callers** in any JS or template. It already computed `days_from_today`,
+  `age_days` and `priority_reason` per row, per-engineer workload with `load_level`
+  heuristics, a `dispatch_risk_score` with severity label, and a merged `priority_queue`.
+  Activating it is why this phase needed almost no new backend logic.
+* **Measured the duplication before removing it.** The same shift could render three times:
+  counted in `scheduler-core`, listed in `scheduler-dispatch` (a fixed-order concat of
+  unassigned+today+waiting+TSR, capped at 14 and *not* priority-ordered), and listed again
+  in the coordination Action Queue — from a different endpoint with a different date window
+  (±30d vs −30/+60d). There is now one queue.
+* **Fixed a duplication defect in the endpoint being activated.** `priority_queue` was
+  `overdue_rows + unassigned_rows + waiting_rows + pending_tsr_rows`, and a schedule can
+  legitimately qualify for several buckets — an overdue visit with nobody assigned is in
+  two. It is now de-duplicated by shift id, buckets concatenated in priority order so the
+  most urgent reason is the one displayed, with **unassigned first** since it is the only
+  category nobody but the scheduler can clear. Proven in the browser: the seeded
+  overdue-and-unassigned visit appears exactly once.
+* Added a `category` field per row so the client filters on a value rather than parsing
+  `priority_reason`, which is prose.
+* **Made the counts the controls.** The four Bootstrap KPI tiles became a filter strip
+  reusing the phase-1 `.dashboard-metric-strip` tokens: Overdue, Unassigned, Waiting,
+  Pending TSR, plus a static Next 7 days and an All reset. Each is a real
+  `<button>` with `aria-pressed`, not an `<i onclick>`. Selecting one filters the queue,
+  and it composes with the branch filter.
+* **Corrected a design flaw the browser exposed, not review.** The chips first showed the
+  raw bucket totals, so Overdue read 5 while filtering to Overdue produced 4 rows — the
+  fifth was displayed under Unassigned. A filter labelled 5 must yield 5. Added
+  `queue_counts`, counted from the de-duplicated queue and **before** the 24-row cap, so
+  every chip equals the rows its filter produces. Verified: 4 + 3 + 2 + 0 = 9 = the queue.
+* Consequently dropped the overdue/unassigned figures from the risk line, which now reports
+  only engineer load. Two different numbers under the same word is worse than one fewer
+  number.
+* **Collapsed selection onto the queue.** The dispatch list was read-only while a separate
+  Action Queue was the actionable one. Queue rows are now buttons that load the schedule
+  into the assign/reschedule panel; `#scheduler-action-queue` and
+  `renderSchedulerActionQueue()` are gone. Added `engineer_ids` to
+  `scheduler_dashboard_shift_row()` so a row can prefill the multi-select — taken from the
+  records that function already resolves, **not** `get_shift_assigned_engineer_ids()`, which
+  would have added a second query per row on top of the existing one.
+* **Fixed a contradiction introduced mid-work.** Availability chip colour came from the new
+  `load_level` while its badge text and the assign dropdown still came from the coordination
+  endpoint's `availability_label` — the browser showed Carlo Diaz as "Available" on a chip
+  and "Watch" in the dropdown. Chips and dropdown now read one decorated list, sorted
+  lightest-loaded first so the engineer most able to take the work is offered first.
+* Deleted the chrome: the static "Scheduler Dashboard Ready" banner and the four link cards
+  to Timeline / Engineers / Clients / Reports, all four already in the sidebar. Kept
+  `'scheduler-final-note'` in `DASHBOARD_SECTION_IDS` with a comment — the markup is gone
+  but accounts that saved a layout while it existed still POST the id back, and the handler
+  rejects unknown ids, so removing it would 400 their next save.
+* **Removed four fetches that rendered nothing.** Schedulers are in `SUPERADMIN_USERNAMES`
+  so they pass `is_admin_authorized()` and took the admin branch, fetching `/get_engineers`,
+  `/get_clients`, `/get_products` and `/get_open_tasks`. But `admin-counters` is gated off
+  for a scheduler account (`dashboard.html:697`) and `open-technical-tasks` is explicitly
+  excluded (`dashboard.html:1044`), so the counter writes no-op'd and `/get_open_tasks` —
+  every open shift company-wide, no date window, no limit, the heaviest query on the page —
+  was downloaded and discarded. A scheduler now makes **2 requests instead of 6**, confirmed
+  in the server log: zero hits on all four.
+* **Retired `/get_scheduler_dashboard_summary`** (123 lines) and its perf-log allowlist
+  entry once its only caller moved. The one thing it uniquely returned,
+  `recent_schedule_changes`, was rendered nowhere. `scheduler_dashboard_shift_row()` is kept
+  — dispatch intelligence uses it. Also removed the now-unused `schedulerStatusBadgeClass()`.
+* **Replaced the hardcoded username list**, the carry-in item from phase 1.
+  `dashboard.html` computed `dashboard_scheduler_account` from an inline `['diary','hanna']`
+  and now uses `nav_is_scheduler`, exposed through the existing `inject_navigation_access()`
+  context processor. **Verified equivalence against the real account rows before switching**
+  rather than assuming, since this flag also drives `dashboard_effective_admin_view` /
+  `_hybrid_view` / `_manager_view`: read-only over all 29 accounts, zero disagreements.
+  Worth recording that the account list contains a **`hannah`** distinct from `hanna` —
+  superadmin, and a scheduler under neither definition. Exactly the near-miss a hand-copied
+  template list invites.
+* Bumped the service worker cache from `v45-digest-audience` to `v46-scheduler-dispatch`;
+  both dashboard assets are `APP_SHELL` entries.
+* Added `tests/test_dashboard_scheduler.py` (17 tests) pinning `MEDICAL_SERVICE_TEST_DB`
+  before importing `app`. Source coverage: the three guarded section ids survive, the
+  retired banner's markup is gone but its id is still accepted, no hardcoded usernames, the
+  queue renderer issues no `fetch(` of its own (the phase-1 rule), the separate action queue
+  is gone, and the summary endpoint is unreferenced. Functional coverage: the endpoint is
+  refused for a non-scheduler, priority rows carry `engineer_ids` and a valid `category`,
+  unassigned rows report no engineer ids, the retired route 404s, and the queue holds one
+  row per schedule — that last one **with a positive control** asserting the shift really is
+  in both underlying buckets, so the de-duplication assertion cannot pass on an empty case.
+* Corrected two of my own test mistakes: the first split matched
+  `loadDashboardLayoutFromAccount` rather than `loadDashboard()`, and my new code comments
+  contained the very literals the tests forbid. Reworded the comments rather than loosening
+  the assertions, and added a positive control proving the admin branch really does fetch
+  what the scheduler branch now skips. Also made the fixture idempotent **per shift** — the
+  test database lives in the temp directory and survives between runs, so a partial seed
+  from a failed run had been silently skipping the rest.
+* Suite green at **269 tests** (was 252). `py_compile` clean, `node --check` clean.
+* Browser-verified on an isolated database, port 5056, explicit `MEDICAL_SERVICE_TEST_DB`,
+  never port 5000. A real quick assign moved Unassigned 3→2 and Overdue 4→5 as the schedule
+  re-categorised, total unchanged — the categorisation is live, not cosmetic. A conflicting
+  reschedule was refused with the existing detailed conflict message. Availability chip
+  click selects that engineer. Console clean, no horizontal overflow at 375 px, every tap
+  target ≥44 px.
+* Contrast measured in **both** themes: light min 4.50, dark min 5.44, all AA. Two genuine
+  dark-mode failures were found and fixed — I had written `var(--app-text-muted)`, **a
+  variable that does not exist**, so the hint and risk-detail text fell back to `#6b7280`
+  and measured 2.93 and 3.36 on the dark card. The real name is `--app-muted`; explicit dark
+  overrides bring them to 5.44 and 6.24. Also changed the queue action from a hardcoded
+  `#0d6efd` to `var(--app-primary)`, matching `.dashboard-today-action`, so it follows the
+  accent theme and inherits the existing dark-mode lightening.
+* Measurement note worth recording so it is not mistaken for a defect later: an early
+  contrast probe reported the queue action at **1.5**. That was my own helper — the browser
+  returned `color(srgb 0.62 0.77 0.99)` in 0–1 units and the helper divided by 255, turning
+  a light blue into near-black. The real value is 7.89. Separately, two rounds of readings
+  were stale because `/static/` is `cacheFirst` and the worker re-registers on every load:
+  unregistering and clearing both caches is required after each asset edit, not once.
+* `scheduler.db` untouched — last written 2026-07-23, and the equivalence check opened it
+  read-only. Verification server stopped; port 5056 confirmed free.
+* Not verified: Edge and Brave, and the offline path against a real service worker
+  registration.
+* Nothing committed or pushed.
+
+---
+
 claude changes - 2026-07-29 (workspace)
 
 ## Moved the working directory to the live repository

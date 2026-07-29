@@ -973,6 +973,24 @@
             "admins"
           ],
           "sort_order": 110
+        },
+        {
+          "item_key": "2026-07-29-scheduler-dispatch-queue",
+          "category": "Scheduling",
+          "description": "The scheduler dashboard is now a single priority queue instead of three overlapping lists. It opens with a dispatch status line, and each count above it — overdue, unassigned, waiting on P.O. or parts, pending TSR — filters the queue when selected. Selecting a row loads it straight into the assign and reschedule panel.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 120
+        },
+        {
+          "item_key": "2026-07-29-scheduler-availability",
+          "category": "Scheduling",
+          "description": "Engineer availability now reflects real workload, including overdue visits and blocked jobs, and selecting an engineer assigns them to the schedule chosen in the queue. The dashboard also loads faster for scheduler accounts, which were downloading the full company task list without displaying it.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 130
         }
       ]
     }

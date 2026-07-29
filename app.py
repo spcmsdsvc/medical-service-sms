@@ -1155,7 +1155,6 @@ PERFORMANCE_LOG_PATHS = {
     '/get_open_tasks',
     '/get_engineer_dashboard_summary',
     '/get_hybrid_dashboard_smart_monitoring',
-    '/get_scheduler_dashboard_summary',
     '/get_scheduler_dispatch_intelligence',
     '/get_scheduler_coordination_tools',
     '/get_manager_dashboard_summary',
@@ -1291,6 +1290,7 @@ def inject_navigation_access():
         'nav_is_approval_center_user': is_approval_center_user(),
         'nav_is_approver_only': is_approver_only_user(),
         'nav_can_access_accounting_center': can_access_accounting_center(),
+        'nav_is_scheduler': is_scheduler_user(),
     }
 
 
@@ -14402,7 +14402,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v45-digest-audience';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v46-scheduler-dispatch';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -17134,6 +17134,9 @@ def appearance_preferences_api():
 # stale or crafted payload cannot persist junk into the account.
 DASHBOARD_SECTION_IDS = {
     'developer-view-switcher',
+    # Retired in the scheduler redesign: the markup is gone, but the id stays accepted.
+    # Accounts that saved a layout while it existed still send it back, and the POST
+    # handler below rejects unknown ids -- dropping it here would 400 their next save.
     'scheduler-final-note',
     'scheduler-core',
     'scheduler-dispatch',
@@ -18936,7 +18939,7 @@ def get_hybrid_dashboard_smart_monitoring():
 
 
 def scheduler_dashboard_shift_row(shift):
-    """Serialize one schedule row for Scheduler Dashboard Phase 1."""
+    """Serialize one schedule row for the scheduler dispatch queue."""
     engineers = get_shift_engineer_records(shift)
     return {
         'id': shift.id,
@@ -18949,132 +18952,14 @@ def scheduler_dashboard_shift_row(shift):
         'task': shift.title or '',
         'status': shift.status or '',
         'engineers': ', '.join([engineer.name for engineer in engineers]) or 'Unassigned',
+        # Ids as well as names: the dispatch queue is the workbench selection surface, so a
+        # row has to prefill the quick-assign multi-select. Taken from the records already
+        # resolved above rather than get_shift_assigned_engineer_ids(), which would add a
+        # second query per row on top of the one get_shift_engineer_records() already costs.
+        'engineer_ids': [engineer.id for engineer in engineers],
         'branches': ', '.join(sorted({engineer.branch or 'Unassigned' for engineer in engineers})) or 'Unassigned',
         'has_tsr': shift_has_tsr_file(shift)
     }
-
-
-@app.route('/get_scheduler_dashboard_summary')
-@login_required
-def get_scheduler_dashboard_summary():
-    """Scheduler Dashboard Phase 1 backend summary.
-
-    This endpoint is intentionally scheduler-focused:
-    - Hanna/Diary get schedule coordination counters and compact queues.
-    - Engineer workflow and hybrid admin-engineer logic stay untouched.
-    - Uses existing Shift/ActivityLog data only; no database schema change.
-    """
-    if not (is_scheduler_user() or developer_dashboard_view_is('scheduler')):
-        return denied('Scheduler dashboard summary is only available to scheduler accounts.')
-
-    ensure_shift_file_original_filename_column()
-
-    today = get_manila_today()
-    tomorrow = today + timedelta(days=1)
-    week_end = today + timedelta(days=7)
-    lookback_start = today - timedelta(days=30)
-    lookahead_end = today + timedelta(days=60)
-    start_dt, end_dt = build_shift_datetime_bounds(lookback_start, lookahead_end)
-
-    invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
-    waiting_statuses = {'Waiting for P.O', 'Waiting for Parts'}
-
-    service_shifts = (
-        Shift.query
-        .options(
-            joinedload(Shift.client),
-            joinedload(Shift.product),
-            selectinload(Shift.files)
-        )
-        .filter(Shift.client_id.isnot(None))
-        .filter(Shift.start_time >= start_dt)
-        .filter(Shift.start_time < end_dt)
-        .order_by(Shift.start_time.asc())
-        .all()
-    )
-
-    open_shifts = [
-        shift for shift in service_shifts
-        if (shift.status or '') not in invalid_dashboard_categories
-    ]
-
-    today_shifts = [
-        shift for shift in service_shifts
-        if shift.start_time and shift.start_time.date() == today
-    ]
-
-    tomorrow_shifts = [
-        shift for shift in service_shifts
-        if shift.start_time and shift.start_time.date() == tomorrow
-    ]
-
-    upcoming_week_shifts = [
-        shift for shift in service_shifts
-        if shift.start_time and today <= shift.start_time.date() <= week_end
-    ]
-
-    overdue_open_shifts = [
-        shift for shift in open_shifts
-        if shift.start_time and shift.start_time.date() < today
-    ]
-
-    waiting_shifts = [
-        shift for shift in open_shifts
-        if (shift.status or '') in waiting_statuses
-    ]
-
-    pending_tsr_shifts = [
-        shift for shift in service_shifts
-        if (shift.status or '') == 'Completed' and not shift_has_tsr_file(shift)
-    ]
-
-    unassigned_shifts = [
-        shift for shift in open_shifts
-        if not get_shift_engineer_records(shift)
-    ]
-
-    recent_schedule_logs = (
-        activity_scope_query(ActivityLog.query)
-        .filter(or_(
-            ActivityLog.action.ilike('%schedule%'),
-            ActivityLog.action.ilike('%calendar%'),
-            ActivityLog.action.ilike('%technical record%'),
-            ActivityLog.action.ilike('%wiped technical%'),
-            ActivityLog.action.ilike('%bulk-purged%')
-        ))
-        .order_by(ActivityLog.timestamp.desc())
-        .limit(8)
-        .all()
-    )
-
-    def limited_rows(rows, limit=8):
-        return [scheduler_dashboard_shift_row(shift) for shift in rows[:limit]]
-
-    return jsonify({
-        'status': 'success',
-        'generated_at': get_manila_time().isoformat(),
-        'scheduler': {
-            'username': getattr(current_user, 'username', ''),
-            'display_role': get_display_role(current_user)
-        },
-        'counts': {
-            'today_schedules': len(today_shifts),
-            'tomorrow_schedules': len(tomorrow_shifts),
-            'upcoming_week': len(upcoming_week_shifts),
-            'open_tasks': len(open_shifts),
-            'overdue_open': len(overdue_open_shifts),
-            'waiting_items': len(waiting_shifts),
-            'pending_tsr': len(pending_tsr_shifts),
-            'unassigned': len(unassigned_shifts)
-        },
-        'today_rows': limited_rows(today_shifts, 10),
-        'tomorrow_rows': limited_rows(tomorrow_shifts, 8),
-        'overdue_rows': limited_rows(sorted(overdue_open_shifts, key=lambda s: s.start_time or datetime.min), 10),
-        'waiting_rows': limited_rows(waiting_shifts, 8),
-        'pending_tsr_rows': limited_rows(pending_tsr_shifts, 8),
-        'unassigned_rows': limited_rows(unassigned_shifts, 8),
-        'recent_schedule_changes': [activity_log_to_dict(log) for log in recent_schedule_logs]
-    })
 
 
 @app.route('/get_scheduler_dispatch_intelligence')
@@ -19199,7 +19084,7 @@ def get_scheduler_dispatch_intelligence():
 
     engineer_workload.sort(key=lambda row: (-row['overdue'], -row['open_tasks'], row['name']))
 
-    def priority_row(shift, reason=''):
+    def priority_row(shift, reason='', category=''):
         row = scheduler_dashboard_shift_row(shift)
         if shift.start_time:
             row['days_from_today'] = (shift.start_time.date() - today).days
@@ -19208,30 +19093,32 @@ def get_scheduler_dispatch_intelligence():
             row['days_from_today'] = 0
             row['age_days'] = 0
         row['priority_reason'] = reason
+        # The queue filters on this rather than parsing priority_reason, which is prose.
+        row['category'] = category
         return row
 
     overdue_rows = [
-        priority_row(shift, f"Overdue by {max((today - shift.start_time.date()).days, 0)} day(s)")
+        priority_row(shift, f"Overdue by {max((today - shift.start_time.date()).days, 0)} day(s)", 'overdue')
         for shift in sorted(overdue_schedules, key=lambda s: s.start_time or datetime.min)[:15]
     ]
 
     upcoming_rows = [
-        priority_row(shift, 'Scheduled within 7 days')
+        priority_row(shift, 'Scheduled within 7 days', 'upcoming')
         for shift in sorted(upcoming_7_days, key=lambda s: s.start_time or datetime.max)[:20]
     ]
 
     unassigned_rows = [
-        priority_row(shift, 'No engineer assigned')
+        priority_row(shift, 'No engineer assigned', 'unassigned')
         for shift in sorted(unassigned_schedules, key=lambda s: s.start_time or datetime.max)[:15]
     ]
 
     waiting_rows = [
-        priority_row(shift, shift.status or 'Waiting item')
+        priority_row(shift, shift.status or 'Waiting item', 'waiting')
         for shift in sorted(waiting_po_parts, key=lambda s: s.start_time or datetime.min)[:15]
     ]
 
     pending_tsr_rows = [
-        priority_row(shift, 'Completed schedule missing TSR')
+        priority_row(shift, 'Completed schedule missing TSR', 'tsr')
         for shift in sorted(pending_tsr_followups, key=lambda s: s.start_time or datetime.min)[:15]
     ]
 
@@ -19252,6 +19139,31 @@ def get_scheduler_dispatch_intelligence():
     else:
         dispatch_risk_level = 'stable'
         dispatch_risk_label = 'Dispatch queue stable'
+
+    # One row per schedule. A shift can legitimately qualify for more than one bucket -- an
+    # overdue visit with nobody assigned is in both lists -- so concatenating the buckets
+    # rendered the same schedule twice in the queue. First match wins and the buckets are
+    # concatenated in priority order, so the reason shown is the most urgent one.
+    # Unassigned leads: it is the only category nobody but the scheduler can clear.
+    priority_queue = []
+    queued_shift_ids = set()
+    for row in (unassigned_rows + overdue_rows + waiting_rows + pending_tsr_rows):
+        if row['id'] in queued_shift_ids:
+            continue
+        queued_shift_ids.add(row['id'])
+        priority_queue.append(row)
+
+    queue_total = len(priority_queue)
+
+    # Counted from the de-duplicated queue, not from the raw buckets, and before the cap
+    # below. These drive the filter buttons, so each one has to equal the number of rows
+    # its filter actually produces -- a schedule that is both overdue and unassigned is
+    # counted once, under the category it is displayed as.
+    queue_counts = {category: 0 for category in ('unassigned', 'overdue', 'waiting', 'tsr')}
+    for row in priority_queue:
+        queue_counts[row['category']] = queue_counts.get(row['category'], 0) + 1
+
+    priority_queue = priority_queue[:24]
 
     return jsonify({
         'status': 'success',
@@ -19278,7 +19190,9 @@ def get_scheduler_dispatch_intelligence():
         'engineer_workload': engineer_workload[:20],
         'pending_tsr_rows': pending_tsr_rows,
         'waiting_rows': waiting_rows,
-        'priority_queue': (overdue_rows[:6] + unassigned_rows[:6] + waiting_rows[:5] + pending_tsr_rows[:5])[:18]
+        'priority_queue': priority_queue,
+        'priority_queue_total': queue_total,
+        'queue_counts': queue_counts
     })
 
 

@@ -66,7 +66,9 @@
     let allOpenTasksRaw = []; 
     let currentSortMode = 'scheduled_latest'; 
     let schedulerCoordinationData = null;
+    let schedulerDispatchData = null;
     let schedulerBranchFilter = 'ALL';
+    let schedulerQueueFilter = 'all';
     let schedulerSelectedShift = null;
 
     /**
@@ -981,63 +983,169 @@
         }
     }
 
-    function schedulerStatusBadgeClass(status) {
-        const value = String(status || '').toLowerCase();
-        if (value.includes('waiting for p.o')) return 'bg-warning text-dark';
-        if (value.includes('waiting for parts')) return 'bg-info text-dark';
-        if (value.includes('completed')) return 'bg-success';
-        if (value.includes('continuation')) return 'bg-dark';
-        return 'bg-primary';
+    /**
+     * The queue rows arrive already ordered and already tagged with a category by
+     * /get_scheduler_dispatch_intelligence, so nothing here re-sorts or re-derives
+     * urgency -- the server is the single source of what is most pressing.
+     */
+    function schedulerQueueAccent(category) {
+        if (category === 'unassigned' || category === 'overdue') return 'is-danger';
+        return 'is-warning';
     }
 
-    function renderSchedulerDispatchRows(data) {
+    function schedulerQueueActionLabel(row) {
+        const assigned = Array.isArray(row.engineer_ids) && row.engineer_ids.length;
+        return assigned ? 'Reschedule' : 'Assign';
+    }
+
+    function getSchedulerQueueRows() {
+        const rows = schedulerDispatchData && Array.isArray(schedulerDispatchData.priority_queue)
+            ? schedulerDispatchData.priority_queue
+            : [];
+
+        return rows.filter(row => {
+            if (schedulerQueueFilter !== 'all' && String(row.category || '') !== schedulerQueueFilter) {
+                return false;
+            }
+            if (schedulerBranchFilter === 'ALL') return true;
+            return String(row.branches || '')
+                .split(',')
+                .map(value => value.trim())
+                .includes(schedulerBranchFilter);
+        });
+    }
+
+    function renderSchedulerQueue() {
         const container = document.getElementById('scheduler-dispatch-list');
         if (!container) return;
 
-        const todayRows = Array.isArray(data.today_rows) ? data.today_rows : [];
-        const unassignedRows = Array.isArray(data.unassigned_rows) ? data.unassigned_rows : [];
-        const waitingRows = Array.isArray(data.waiting_rows) ? data.waiting_rows : [];
-        const pendingTsrRows = Array.isArray(data.pending_tsr_rows) ? data.pending_tsr_rows : [];
+        const rows = getSchedulerQueueRows();
+        const total = Number((schedulerDispatchData || {}).priority_queue_total || 0);
+        const shown = rows.length;
 
-        const rows = [
-            ...unassignedRows.slice(0, 4).map(row => ({...row, schedulerType: 'Unassigned', schedulerClass: 'bg-danger'})),
-            ...todayRows.slice(0, 6).map(row => ({...row, schedulerType: 'Today', schedulerClass: schedulerStatusBadgeClass(row.status)})),
-            ...waitingRows.slice(0, 4).map(row => ({...row, schedulerType: row.status || 'Waiting', schedulerClass: schedulerStatusBadgeClass(row.status)})),
-            ...pendingTsrRows.slice(0, 4).map(row => ({...row, schedulerType: 'Pending TSR', schedulerClass: 'bg-warning text-dark'}))
-        ].slice(0, 14);
+        const caption = document.getElementById('scheduler-queue-caption');
+        if (caption) {
+            if (!shown) {
+                caption.textContent = 'Most urgent first — select a row to assign or reschedule it';
+            } else if (shown < total) {
+                caption.textContent = `Showing ${shown} of ${total} — most urgent first, select a row to work on it`;
+            } else {
+                caption.textContent = `${shown} to work through — most urgent first, select a row`;
+            }
+        }
 
-        if (!rows.length) {
-            renderTeamEmpty('scheduler-dispatch-list', 'No scheduler coordination items right now. Dispatch queue is clear.');
+        if (!shown) {
+            container.innerHTML = `
+                <div class="scheduler-queue-clear">
+                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                    <span>${escapeHtml(schedulerQueueFilter === 'all' && schedulerBranchFilter === 'ALL'
+                        ? 'Nothing needs dispatch attention. The queue is clear.'
+                        : 'Nothing matches this filter. Clear it to see the whole queue.')}</span>
+                </div>`;
             return;
         }
 
-        container.innerHTML = rows.map(row => `
-            <div class="dashboard-team-row scheduler-dispatch-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 'No engineer assigned')}</div>
-                </div>
-                <span class="badge ${row.schedulerClass}">${escapeHtml(row.schedulerType)}</span>
-            </div>
-        `).join('');
+        container.innerHTML = rows.map(row => {
+            const selected = schedulerSelectedShift && Number(schedulerSelectedShift.id) === Number(row.id);
+            const when = [row.date, row.time_start].filter(Boolean).join(' ');
+            return `
+            <button type="button"
+                    class="scheduler-queue-row${selected ? ' is-selected' : ''}"
+                    aria-pressed="${selected ? 'true' : 'false'}"
+                    onclick="selectSchedulerActionShift(${Number(row.id) || 0})">
+                <span class="scheduler-queue-accent ${schedulerQueueAccent(row.category)}" aria-hidden="true"></span>
+                <span class="scheduler-queue-body">
+                    <span class="scheduler-queue-title">${escapeHtml(row.client || 'No client')} — ${escapeHtml(row.task || 'Untitled')}</span>
+                    <span class="scheduler-queue-hint">${escapeHtml(row.priority_reason || '')} • ${escapeHtml(when)} • ${escapeHtml(row.engineers || 'Unassigned')}</span>
+                </span>
+                <span class="scheduler-queue-action">${escapeHtml(schedulerQueueActionLabel(row))} &rarr;</span>
+            </button>`;
+        }).join('');
     }
 
-    async function loadSchedulerDashboardSummary() {
+    function renderSchedulerRisk() {
+        const box = document.getElementById('scheduler-risk');
+        if (!box) return;
+
+        const risk = (schedulerDispatchData || {}).risk || {};
+        const counts = (schedulerDispatchData || {}).counts || {};
+        const level = String(risk.level || 'stable');
+
+        box.className = `scheduler-risk mb-3 is-${level}`;
+        setTextIfPresent('scheduler-risk-label', risk.label || 'Dispatch queue stable');
+
+        // Deliberately does not restate the overdue or unassigned counts: those are the
+        // filter buttons directly below, and the raw bucket totals differ from the queue
+        // counts wherever a schedule qualifies for two categories. Two different numbers
+        // under the same word is worse than one fewer number.
+        const parts = [];
+        if (counts.high_load_engineers) {
+            parts.push(`${counts.high_load_engineers} engineer${counts.high_load_engineers === 1 ? '' : 's'} carrying a heavy load`);
+        }
+        if (counts.watch_load_engineers) parts.push(`${counts.watch_load_engineers} to watch`);
+        setTextIfPresent('scheduler-risk-detail', parts.join(' • '));
+    }
+
+    function renderSchedulerMetrics() {
+        const counts = (schedulerDispatchData || {}).counts || {};
+        // Filter buttons read queue_counts, which is counted from the de-duplicated queue,
+        // so each button's number equals the rows its filter produces. counts.* holds the
+        // raw bucket totals, where a schedule can appear in two buckets at once.
+        const queueCounts = (schedulerDispatchData || {}).queue_counts || {};
+        setTextIfPresent('scheduler-queue-count', (schedulerDispatchData || {}).priority_queue_total || 0);
+        setTextIfPresent('scheduler-overdue-count', queueCounts.overdue || 0);
+        setTextIfPresent('scheduler-unassigned-count', queueCounts.unassigned || 0);
+        setTextIfPresent('scheduler-waiting-count', queueCounts.waiting || 0);
+        setTextIfPresent('scheduler-pending-tsr-count', queueCounts.tsr || 0);
+        setTextIfPresent('scheduler-next7-count', counts.upcoming_7_days || 0);
+
+        document.querySelectorAll('#scheduler-metric-strip [data-scheduler-filter]').forEach(button => {
+            const active = button.getAttribute('data-scheduler-filter') === schedulerQueueFilter;
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            button.classList.toggle('is-active', active);
+        });
+    }
+
+    function setSchedulerQueueFilter(filterName) {
+        schedulerQueueFilter = filterName || 'all';
+        renderSchedulerMetrics();
+        renderSchedulerQueue();
+    }
+
+    async function loadSchedulerDispatchIntelligence() {
         if (!dashboardSchedulerOnly) return;
 
         try {
-            const data = await fetchJsonOrThrow('/get_scheduler_dashboard_summary');
-            const counts = data.counts || data || {};
-            setTextIfPresent('scheduler-today-count', counts.today_schedules || 0);
-            setTextIfPresent('scheduler-unassigned-count', counts.unassigned_schedules || counts.unassigned || 0);
-            setTextIfPresent('scheduler-waiting-count', counts.waiting_items || 0);
-            setTextIfPresent('scheduler-pending-tsr-count', counts.pending_tsr || 0);
-            renderSchedulerDispatchRows(data || {});
+            schedulerDispatchData = await fetchJsonOrThrow('/get_scheduler_dispatch_intelligence') || {};
+            renderSchedulerRisk();
+            renderSchedulerMetrics();
+            renderSchedulerQueue();
+            // load_level comes from the same payload, so the availability chips have to be
+            // re-rendered here or they would disagree with the risk line above them.
+            renderSchedulerAvailabilityStrip();
         } catch (schedulerError) {
-            console.warn('Scheduler dashboard summary could not be loaded:', schedulerError);
-            renderTeamEmpty('scheduler-dispatch-list', 'Scheduler dashboard summary could not be loaded.');
+            console.warn('Scheduler dispatch intelligence could not be loaded:', schedulerError);
+            setTextIfPresent('scheduler-risk-label', 'Dispatch status could not be loaded.');
+            renderTeamEmpty('scheduler-dispatch-list', 'Priority queue could not be loaded.');
         }
+    }
+
+    /**
+     * Workload level for one engineer, taken from the dispatch intelligence payload so the
+     * chip colour and the risk line above it are computed from a single source. Falls back
+     * to the coordination endpoint's own availability value until that payload arrives.
+     */
+    function schedulerEngineerLoadLevel(row) {
+        const workload = schedulerDispatchData && Array.isArray(schedulerDispatchData.engineer_workload)
+            ? schedulerDispatchData.engineer_workload
+            : [];
+        const match = workload.find(entry => Number(entry.engineer_id) === Number(row.engineer_id));
+        if (match && match.load_level) {
+            if (match.load_level === 'high') return 'busy';
+            if (match.load_level === 'watch') return 'watch';
+            return 'available';
+        }
+        return String(row.availability || 'available').toLowerCase();
     }
 
     function schedulerAvailabilityClass(level) {
@@ -1054,20 +1162,36 @@
         return 'bg-success';
     }
 
+    // Label and colour are both derived from the same level, so a chip can never read
+    // "Available" in red.
+    function schedulerAvailabilityLabel(level) {
+        const value = String(level || '').toLowerCase();
+        if (value === 'busy') return 'Heavy load';
+        if (value === 'watch') return 'Watch';
+        return 'Available';
+    }
+
+    /**
+     * Availability rows decorated with the workload level actually displayed, sorted
+     * lightest-loaded first. Both the chips and the assign dropdown read from here, so a
+     * chip and its matching option can never disagree, and the engineer most able to take
+     * the work is offered first.
+     */
     function getSchedulerFilteredAvailability() {
         const rows = schedulerCoordinationData && Array.isArray(schedulerCoordinationData.availability)
             ? schedulerCoordinationData.availability
             : [];
-        if (schedulerBranchFilter === 'ALL') return rows;
-        return rows.filter(row => String(row.branch || 'Unassigned') === schedulerBranchFilter);
-    }
 
-    function getSchedulerFilteredActionRows() {
-        const rows = schedulerCoordinationData && Array.isArray(schedulerCoordinationData.action_rows)
-            ? schedulerCoordinationData.action_rows
-            : [];
-        if (schedulerBranchFilter === 'ALL') return rows;
-        return rows.filter(row => String(row.branches || '').split(',').map(v => v.trim()).includes(schedulerBranchFilter));
+        const scoped = schedulerBranchFilter === 'ALL'
+            ? rows.slice()
+            : rows.filter(row => String(row.branch || 'Unassigned') === schedulerBranchFilter);
+
+        const rank = {available: 0, watch: 1, busy: 2};
+        return scoped
+            .map(row => ({...row, loadLevel: schedulerEngineerLoadLevel(row)}))
+            .sort((a, b) => (rank[a.loadLevel] ?? 9) - (rank[b.loadLevel] ?? 9)
+                || String(a.branch || '').localeCompare(String(b.branch || ''))
+                || String(a.name || '').localeCompare(String(b.name || '')));
     }
 
     function renderSchedulerBranchFilters(data) {
@@ -1077,9 +1201,9 @@
         const branches = Array.isArray(data.branches) ? data.branches : [];
         const branchCounts = data.branch_counts || {};
         const buttons = [
-            `<button type="button" class="btn btn-sm ${schedulerBranchFilter === 'ALL' ? 'btn-success' : 'btn-outline-success'} fw-bold" data-branch="ALL" onclick="setSchedulerBranchFilter('ALL')">All Branches</button>`,
+            `<button type="button" class="btn btn-sm ${schedulerBranchFilter === 'ALL' ? 'btn-success' : 'btn-outline-success'} fw-bold" data-branch="ALL" aria-pressed="${schedulerBranchFilter === 'ALL'}" onclick="setSchedulerBranchFilter('ALL')">All Branches</button>`,
             ...branches.map(branch => `
-                <button type="button" class="btn btn-sm ${schedulerBranchFilter === branch ? 'btn-success' : 'btn-outline-success'} fw-bold" data-branch="${escapeHtml(branch)}" onclick="setSchedulerBranchFilter('${escapeHtml(branch)}')">
+                <button type="button" class="btn btn-sm ${schedulerBranchFilter === branch ? 'btn-success' : 'btn-outline-success'} fw-bold" data-branch="${escapeHtml(branch)}" aria-pressed="${schedulerBranchFilter === branch}" onclick="setSchedulerBranchFilter('${escapeHtml(branch)}')">
                     ${escapeHtml(branch)} <span class="badge bg-light text-dark ms-1">${escapeHtml(branchCounts[branch] || 0)}</span>
                 </button>
             `)
@@ -1100,61 +1224,31 @@
             return;
         }
 
-        container.innerHTML = rows.slice(0, 24).map(row => `
-            <button type="button" class="scheduler-availability-chip ${schedulerAvailabilityClass(row.availability)}" onclick="selectSchedulerEngineerForAssign(${Number(row.engineer_id) || 0})">
+        container.innerHTML = rows.slice(0, 24).map(row => {
+            const level = row.loadLevel;
+            return `
+            <button type="button" class="scheduler-availability-chip ${schedulerAvailabilityClass(level)}" onclick="selectSchedulerEngineerForAssign(${Number(row.engineer_id) || 0})">
                 <span class="scheduler-availability-avatar">${escapeHtml(row.initials || '?')}</span>
                 <span class="scheduler-availability-main">
                     <strong>${escapeHtml(row.name || 'Engineer')}</strong>
                     <small>${escapeHtml(row.branch || 'No branch')} • ${escapeHtml(row.today_tasks || 0)} today • ${escapeHtml(row.next_7_days || 0)} week</small>
                 </span>
-                <span class="badge ${schedulerAvailabilityBadgeClass(row.availability)}">${escapeHtml(row.availability_label || row.availability || 'Available')}</span>
-            </button>
-        `).join('');
-    }
-
-    function schedulerActionBadgeClass(row) {
-        if (!row || !Array.isArray(row.engineer_ids) || !row.engineer_ids.length) return 'bg-danger';
-        return schedulerStatusBadgeClass(row.status);
-    }
-
-    function renderSchedulerActionQueue() {
-        const container = document.getElementById('scheduler-action-queue');
-        if (!container) return;
-
-        const rows = getSchedulerFilteredActionRows();
-        if (!rows.length) {
-            renderTeamEmpty('scheduler-action-queue', 'No schedules need quick action for this branch.');
-            return;
-        }
-
-        container.innerHTML = rows.slice(0, 20).map(row => `
-            <button type="button" class="dashboard-team-row scheduler-action-row ${schedulerSelectedShift && schedulerSelectedShift.id === row.id ? 'scheduler-action-row-active' : ''}" onclick="selectSchedulerActionShift(${Number(row.id) || 0})">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.time_start || '')} - ${escapeHtml(row.time_end || '')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.task || '')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || 'Unassigned')} • ${escapeHtml(row.branches || '')}</div>
-                </div>
-                <span class="badge ${schedulerActionBadgeClass(row)}">${escapeHtml(row.action_hint || row.status || 'Action')}</span>
-            </button>
-        `).join('');
+                <span class="badge ${schedulerAvailabilityBadgeClass(level)}">${escapeHtml(schedulerAvailabilityLabel(level))}</span>
+            </button>`;
+        }).join('');
     }
 
     function renderSchedulerAssignableEngineers() {
         const select = document.getElementById('scheduler-assign-engineers');
         if (!select) return;
 
-        const rows = schedulerCoordinationData && Array.isArray(schedulerCoordinationData.assignable_engineers)
-            ? schedulerCoordinationData.assignable_engineers
-            : [];
-
-        const filteredRows = schedulerBranchFilter === 'ALL'
-            ? rows
-            : rows.filter(row => String(row.branch || 'Unassigned') === schedulerBranchFilter);
+        // Same source as the chips above, so an option can never label an engineer
+        // differently from the chip the scheduler just clicked.
+        const filteredRows = getSchedulerFilteredAvailability();
 
         select.innerHTML = filteredRows.map(row => `
-            <option value="${Number(row.id) || 0}">
-                ${escapeHtml(row.name || 'Engineer')} — ${escapeHtml(row.branch || 'No branch')} — ${escapeHtml(row.availability_label || 'Available')}
+            <option value="${Number(row.engineer_id) || 0}">
+                ${escapeHtml(row.name || 'Engineer')} — ${escapeHtml(row.branch || 'No branch')} — ${escapeHtml(schedulerAvailabilityLabel(row.loadLevel))}
             </option>
         `).join('');
 
@@ -1171,7 +1265,6 @@
         renderSchedulerBranchFilters(schedulerCoordinationData);
         renderSchedulerAvailabilityStrip();
         renderSchedulerAssignableEngineers();
-        renderSchedulerActionQueue();
     }
 
     async function loadSchedulerCoordinationTools() {
@@ -1183,24 +1276,25 @@
         } catch (coordinationError) {
             console.warn('Scheduler coordination tools could not be loaded:', coordinationError);
             renderTeamEmpty('scheduler-availability-strip', 'Scheduler coordination tools could not be loaded.');
-            renderTeamEmpty('scheduler-action-queue', 'Scheduler action queue could not be loaded.');
         }
     }
 
     function setSchedulerBranchFilter(branchName) {
         schedulerBranchFilter = branchName || 'ALL';
         schedulerSelectedShift = null;
+        const hidden = document.getElementById('scheduler-selected-shift-id');
+        if (hidden) hidden.value = '';
         setSchedulerActionStatus('', 'info', true);
         renderSchedulerBranchFilters(schedulerCoordinationData || {});
         renderSchedulerAvailabilityStrip();
         renderSchedulerAssignableEngineers();
-        renderSchedulerActionQueue();
-        setTextIfPresent('scheduler-selected-action-label', 'Select a schedule from the action queue to assign or reschedule.');
+        renderSchedulerQueue();
+        setTextIfPresent('scheduler-selected-action-label', 'Select a schedule from the priority queue to assign or reschedule.');
     }
 
     function findSchedulerActionShift(shiftId) {
-        const rows = schedulerCoordinationData && Array.isArray(schedulerCoordinationData.action_rows)
-            ? schedulerCoordinationData.action_rows
+        const rows = schedulerDispatchData && Array.isArray(schedulerDispatchData.priority_queue)
+            ? schedulerDispatchData.priority_queue
             : [];
         return rows.find(row => Number(row.id) === Number(shiftId)) || null;
     }
@@ -1212,7 +1306,7 @@
         if (hidden) hidden.value = row ? row.id : '';
 
         if (row) {
-            setTextIfPresent('scheduler-selected-action-label', `${row.client || 'No client'} • ${row.date || ''} • ${row.task || ''}`);
+            setTextIfPresent('scheduler-selected-action-label', `${row.client || 'No client'} • ${row.date || ''} • ${row.task || ''} • ${row.priority_reason || ''}`);
             if (row.date) {
                 const dateInput = document.getElementById('scheduler-reschedule-date');
                 if (dateInput) dateInput.value = row.date;
@@ -1228,7 +1322,7 @@
         }
 
         renderSchedulerAssignableEngineers();
-        renderSchedulerActionQueue();
+        renderSchedulerQueue();
         setSchedulerActionStatus('', 'info', true);
     }
 
@@ -1349,8 +1443,10 @@
 
             setSchedulerActionStatus(`<i class="fa-solid fa-circle-check me-1"></i>${escapeHtml(data.message || successMessage)}`, 'success');
             schedulerSelectedShift = null;
+            const hidden = document.getElementById('scheduler-selected-shift-id');
+            if (hidden) hidden.value = '';
             await Promise.all([
-                loadSchedulerDashboardSummary(),
+                loadSchedulerDispatchIntelligence(),
                 loadSchedulerCoordinationTools()
             ]);
         } catch (error) {
@@ -1477,7 +1573,15 @@
         try {
             let tasks = [];
 
-            if (dashboardAdminView) {
+            if (dashboardSchedulerOnly) {
+                // Schedulers pass is_admin_authorized(), so they used to take the admin
+                // branch below and fetch four payloads that render nowhere: admin-counters
+                // and open-technical-tasks are both gated off for a scheduler account, so
+                // the counter writes no-op'd and the company-wide open-task list -- every
+                // open shift, no date window, no limit -- was downloaded and discarded.
+                // The scheduler sections load their own data further down.
+                tasks = [];
+            } else if (dashboardAdminView) {
                 const [engs, clis, prods, adminTasks] = await Promise.all([
                     fetchJsonOrThrow('/get_engineers'),
                     fetchJsonOrThrow('/get_clients'),
@@ -1513,8 +1617,8 @@
             }
 
             if (dashboardSchedulerOnly) {
-                loadSchedulerDashboardSummary();
                 loadSchedulerCoordinationTools();
+                loadSchedulerDispatchIntelligence();
             }
 
             if (dashboardManagerView && !dashboardSchedulerOnly) {
