@@ -1,5 +1,90 @@
 # Project Change Log
 
+claude changes - 2026-07-29 (later)
+
+## What's New email digest — made usable, still switched off
+
+* Established first what actually existed, because the working assumption was that the
+  digest merely needed its flag flipped. It did not. `grep -i digest` across all of
+  `templates/` and `static/` returned **nothing** — the feature was two API endpoints with
+  no UI anywhere in the app. Last session it was exercised through direct API calls, which
+  is why the gap was not obvious.
+* Found the second blocker: **no recipient group fitted.** All ten entries in
+  `EMAIL_RECIPIENT_GROUPS` are workflow handoffs — TSR Client CC, Accounting Handoff,
+  Travel/Cash Advance Accounting, LPR Procurement, Leave Request HR and so on. Announcing
+  a product update would have meant addressing it to one of those lists.
+* Added a `changelog_announcements` group — "What's New Announcements" — to
+  `EMAIL_RECIPIENT_GROUPS` and `EMAIL_RECIPIENT_GROUP_ORDER`. No migration was needed:
+  `EmailRecipientSetting` rows are keyed by string, and Settings renders whatever
+  `get_email_recipient_groups_payload()` returns, so the group appears there for free.
+  Added `CHANGELOG_ANNOUNCEMENT_GROUP_KEY` so the default is named once.
+* **Fixed a defect that corrupted the audit trail.** `send_changelog_digest()` called
+  `add_activity_log_entry("Sent What's New digest…")` unconditionally, before checking the
+  result. A provider rejection still recorded a successful send — worse than recording
+  nothing, because the log looked authoritative. Success and failure are now logged
+  distinctly, after the outcome is known, with the provider message included on failure.
+* **Fixed silently dropped branch targeting.** The preview endpoint accepted and honoured
+  a `branch` parameter; the send called `build_changelog_digest(audience=audience)` with no
+  branch at all. A Cebu-targeted preview would have sent to every branch. Send now
+  validates `branch` against `STOCK_INVENTORY_BRANCHES` exactly as preview does.
+* Added `test_only` mode. It resolves the requesting admin's own address through the
+  existing `get_user_email_for_notification()` and sends only there, so the first real send
+  never requires temporarily editing the recipient group — which would otherwise mean
+  putting a personal address into a shared list and remembering to remove it. It refuses
+  with 400 rather than falling back to the group when no address is on file, and it is
+  behind the same flag: test mode must not be a way around the guard.
+* Extended the preview response with per-group **active recipient counts**, the default
+  group key, and the resolved test address. Counts inform the decision to send; the
+  addresses themselves are deliberately not returned, since Settings is where the list is
+  managed.
+* Built the admin UI: an "Email digest" button on the What's New page opening a modal with
+  audience and branch selectors, a live preview of the real message HTML, the recipient
+  count for the chosen group, and **two separate actions** — "Send test to me" and "Send to
+  group" — the second behind a confirmation naming the group and the recipient count.
+  Markup in `templates/changelog.html`, handlers appended to `static/js/app-changelog.js`,
+  styles in `static/css/app-changelog.css`, following the existing extraction pattern with
+  no Jinja in the static files (verified: zero `{{` or `{%`).
+* The UI mirrors the flag but **is not the guard**. Verified by bypassing the disabled
+  buttons and calling both endpoints directly from the page: each returned **409**.
+* Bumped the service worker cache from `v43-shell-dashboard-changelog` to
+  `v44-changelog-digest`, because `app-changelog.js` and `app-changelog.css` are both
+  `APP_SHELL` entries and field devices would otherwise keep the old copies.
+* Added 14 tests to `tests/test_changelog_workflow.py`, including a
+  `ChangelogDigestEnabledPathTests` class that runs the send path **with the flag on and
+  `send_email_notification` replaced by a capture function**, restoring both in
+  `tearDown`. It proves the group send reaches exactly the active recipients, an empty
+  group is refused before any send, test mode goes only to the requesting admin and never
+  the group, a failed send is logged as `FAILED` while a successful one is logged as sent,
+  and preview never reaches a provider. Previously only the disabled path had coverage,
+  which proved nothing escaped but never proved the feature worked.
+* Corrected my own test mistake: the enabled-path class initially subclassed
+  `ChangelogApiTests`, which re-ran that class's disabled-path assertions with the flag
+  turned on and produced three spurious failures. It is now standalone with its own client
+  helper, and carries a comment saying why it must not inherit.
+* **Proved the new tests catch the real defect** by reverting the activity-log fix and
+  re-running: two tests failed, one source-level and one functional. Restored from an
+  intact copy and confirmed by grep that no probe remained.
+* Verified: `py_compile` clean, suite green at **243 tests** (was 229).
+* Browser-verified on an isolated database, port 5056, explicit `MEDICAL_SERVICE_TEST_DB`.
+  The modal defaulted to the new group showing "2 active recipients", summarised
+  "5 releases, 17 updates", rendered a 4,989-character preview, and kept **both send
+  buttons disabled** behind an explanatory banner. Switching audience to Approvers
+  re-rendered live from 17 to 26 updates. Contrast passes AA in light and dark (banner
+  6.99 / 10.49, summary 15.55 / 12.91), no horizontal overflow, mobile stacks to
+  full-width buttons with the preview scrolling in its own box, console clean.
+* **Zero emails were attempted at any point.** The server log recorded 0 `[EMAIL]` lines
+  and 2 logged refusals. `CHANGELOG_DIGEST_ENABLED` is not present in `.env` and still
+  defaults to false.
+* Noted, not changed: the digest is "the latest 5 releases", not per-recipient unread, so
+  someone who has read everything still receives a full digest. There is no idempotency —
+  pressing send twice sends twice — and no unsubscribe. Making it per-recipient would be a
+  considerably larger change and is deliberately separate work.
+* Note on the resolved test address: the seeded superadmin account resolved to a **real**
+  address (`diary@shimadzu.com.ph`), which is why every check ran against a disposable
+  database rather than `scheduler.db`.
+
+---
+
 claude changes - 2026-07-29
 
 ## Logout now actually ends the session (the HIGH open bug is closed)

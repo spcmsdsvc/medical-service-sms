@@ -18,6 +18,7 @@
             {% if changelog_admin %}
             <button type="button" class="changelog-btn changelog-btn-primary" onclick="openChangelogComposer()"><i class="fa-solid fa-plus"></i>New update</button>
             <button type="button" id="changelog-admin-toggle" class="changelog-btn changelog-btn-warning" onclick="toggleChangelogAdminMode()"><i class="fa-solid fa-pen-to-square"></i>Manage Updates</button>
+            <button type="button" class="changelog-btn" onclick="openChangelogDigest()"><i class="fa-solid fa-envelope"></i>Email digest</button>
             {% endif %}
         </div>
     </header>
@@ -156,6 +157,72 @@
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                 <button type="button" class="btn btn-success fw-bold" onclick="submitChangelogComposer()">
                     <i class="fa-solid fa-paper-plane me-1"></i>Publish
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- EMAIL DIGEST
+     Preview is always safe: it renders the message and reaches no mail provider.
+     Sending is separately gated by CHANGELOG_DIGEST_ENABLED on the server. -->
+<div class="modal fade changelog-edit-modal" id="changelogDigestModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5">Email digest</h2>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="changelog-digest-disabled" class="changelog-digest-banner" hidden>
+                    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    <span>Sending is turned off. You can preview the message, but the send buttons stay disabled
+                          until <code>CHANGELOG_DIGEST_ENABLED</code> is set to true.</span>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-sm-4">
+                        <label class="form-label" for="changelog-digest-audience">Audience</label>
+                        <select class="form-select" id="changelog-digest-audience" onchange="refreshChangelogDigestPreview()">
+                            <option value="everyone">Everyone</option>
+                            <option value="engineers">Engineers</option>
+                            <option value="approvers">Approvers</option>
+                            <option value="admins">Admins</option>
+                        </select>
+                    </div>
+                    <div class="col-sm-4">
+                        <label class="form-label" for="changelog-digest-branch">Branch</label>
+                        <select class="form-select" id="changelog-digest-branch" onchange="refreshChangelogDigestPreview()">
+                            <option value="">All branches</option>
+                            {% for code, label in stock_branches.items() %}
+                            <option value="{{ code }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-sm-4">
+                        <label class="form-label" for="changelog-digest-group">Send to</label>
+                        <select class="form-select" id="changelog-digest-group" onchange="updateChangelogDigestGroupHint()"></select>
+                        <p class="changelog-hint mb-0" id="changelog-digest-group-hint">&nbsp;</p>
+                    </div>
+                </div>
+
+                <div class="changelog-digest-summary" id="changelog-digest-summary" role="status" aria-live="polite">
+                    <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Rendering preview...
+                </div>
+
+                <div class="form-label mt-3">Preview of the message</div>
+                <div class="changelog-digest-preview" id="changelog-digest-preview"></div>
+            </div>
+            <div class="modal-footer changelog-digest-footer">
+                <span class="changelog-hint me-auto" id="changelog-digest-test-target">&nbsp;</span>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-outline-primary fw-bold" id="changelog-digest-test-btn"
+                        onclick="sendChangelogDigest(true)" disabled>
+                    <i class="fa-solid fa-vial me-1"></i>Send test to me
+                </button>
+                <button type="button" class="btn btn-danger fw-bold" id="changelog-digest-send-btn"
+                        onclick="sendChangelogDigest(false)" disabled>
+                    <i class="fa-solid fa-paper-plane me-1"></i>Send to group
                 </button>
             </div>
         </div>

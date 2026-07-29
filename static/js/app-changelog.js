@@ -434,3 +434,153 @@ async function revertChangelogItem(){
         showChangelogStatus('Restored to the manifest version.', 'success');
     }catch(error){ showChangelogStatus(error.message || 'Unable to revert.', 'error'); }
 }
+
+/* ---------------------------------------------------------------------------
+   EMAIL DIGEST
+   Preview reaches no mail provider by design. Sending is gated server-side by
+   CHANGELOG_DIGEST_ENABLED; the buttons here mirror that state but are not the
+   guard - the server refuses with 409 regardless of what this UI allows.
+--------------------------------------------------------------------------- */
+
+let changelogDigestModal = null;
+let changelogDigestState = { sendingEnabled:false, groups:[], testEmail:'', itemCount:0 };
+
+function openChangelogDigest(){
+    const modalEl = document.getElementById('changelogDigestModal');
+    if(!modalEl || typeof bootstrap === 'undefined') return;
+    changelogDigestModal = changelogDigestModal || new bootstrap.Modal(modalEl);
+    changelogDigestModal.show();
+    refreshChangelogDigestPreview();
+}
+
+function selectedChangelogDigestGroup(){
+    const groupSelect = document.getElementById('changelog-digest-group');
+    const key = groupSelect ? groupSelect.value : '';
+    return changelogDigestState.groups.find(group => group.key === key) || null;
+}
+
+function setChangelogDigestButtons(){
+    const testBtn = document.getElementById('changelog-digest-test-btn');
+    const sendBtn = document.getElementById('changelog-digest-send-btn');
+    const selected = selectedChangelogDigestGroup();
+    const hasContent = changelogDigestState.itemCount > 0;
+
+    if(testBtn) testBtn.disabled = !changelogDigestState.sendingEnabled || !hasContent || !changelogDigestState.testEmail;
+    if(sendBtn) sendBtn.disabled = !changelogDigestState.sendingEnabled || !hasContent || !selected || !selected.active_count;
+}
+
+function updateChangelogDigestGroupHint(){
+    const hint = document.getElementById('changelog-digest-group-hint');
+    const selected = selectedChangelogDigestGroup();
+    if(hint){
+        if(!selected) hint.textContent = ' ';
+        else if(!selected.active_count) hint.textContent = 'No active recipients - add them in Settings.';
+        else hint.textContent = selected.active_count + ' active recipient' + (selected.active_count === 1 ? '' : 's') + '.';
+    }
+    setChangelogDigestButtons();
+}
+
+async function refreshChangelogDigestPreview(){
+    const summary = document.getElementById('changelog-digest-summary');
+    const preview = document.getElementById('changelog-digest-preview');
+    const audience = (document.getElementById('changelog-digest-audience') || {}).value || 'everyone';
+    const branch = (document.getElementById('changelog-digest-branch') || {}).value || '';
+
+    if(summary) summary.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin me-2"></i>Rendering preview...';
+    if(preview) preview.innerHTML = '';
+
+    try{
+        const query = 'audience=' + encodeURIComponent(audience) + '&branch=' + encodeURIComponent(branch);
+        const response = await fetch('/api/changelog/admin/digest/preview?' + query, {
+            credentials:'same-origin', headers:{'Accept':'application/json'}
+        });
+        const data = await response.json();
+        if(!response.ok || !data.success) throw new Error(data.error || 'Unable to render the preview.');
+
+        const digest = data.digest || {};
+        changelogDigestState.sendingEnabled = !!data.sending_enabled;
+        changelogDigestState.groups = data.recipient_groups || [];
+        changelogDigestState.testEmail = data.test_email || '';
+        changelogDigestState.itemCount = digest.item_count || 0;
+
+        const banner = document.getElementById('changelog-digest-disabled');
+        if(banner) banner.hidden = changelogDigestState.sendingEnabled;
+
+        const groupSelect = document.getElementById('changelog-digest-group');
+        if(groupSelect && !groupSelect.options.length){
+            changelogDigestState.groups.forEach(function(group){
+                const option = document.createElement('option');
+                option.value = group.key;
+                option.textContent = group.label;
+                groupSelect.appendChild(option);
+            });
+            if(data.default_group) groupSelect.value = data.default_group;
+        }
+
+        const target = document.getElementById('changelog-digest-test-target');
+        if(target){
+            target.textContent = changelogDigestState.testEmail
+                ? 'Test goes only to ' + changelogDigestState.testEmail
+                : 'No email address on file for your account, so a test cannot be sent.';
+        }
+
+        if(summary){
+            summary.textContent = digest.item_count
+                ? digest.release_count + ' release' + (digest.release_count === 1 ? '' : 's') +
+                  ', ' + digest.item_count + ' update' + (digest.item_count === 1 ? '' : 's') +
+                  ' - subject: ' + digest.subject
+                : 'Nothing to send for this audience and branch.';
+        }
+        if(preview) preview.innerHTML = digest.html || '<p class="changelog-hint">Nothing to preview.</p>';
+
+        updateChangelogDigestGroupHint();
+    }catch(error){
+        if(summary) summary.textContent = error.message || 'Unable to render the preview.';
+        changelogDigestState.itemCount = 0;
+        setChangelogDigestButtons();
+    }
+}
+
+async function sendChangelogDigest(testOnly){
+    const audience = (document.getElementById('changelog-digest-audience') || {}).value || 'everyone';
+    const branch = (document.getElementById('changelog-digest-branch') || {}).value || '';
+    const groupSelect = document.getElementById('changelog-digest-group');
+    const groupKey = groupSelect ? groupSelect.value : '';
+    const selected = selectedChangelogDigestGroup();
+
+    if(testOnly){
+        if(!window.confirm('Send a test digest to ' + changelogDigestState.testEmail + ' only?')) return;
+    }else{
+        const count = selected ? selected.active_count : 0;
+        const label = selected ? selected.label : groupKey;
+        if(!window.confirm(
+            'Send this digest to ' + count + ' recipient' + (count === 1 ? '' : 's') + ' in "' + label + '"?\n\n' +
+            'This sends real email and cannot be undone.'
+        )) return;
+    }
+
+    const testBtn = document.getElementById('changelog-digest-test-btn');
+    const sendBtn = document.getElementById('changelog-digest-send-btn');
+    if(testBtn) testBtn.disabled = true;
+    if(sendBtn) sendBtn.disabled = true;
+
+    try{
+        const response = await fetch('/api/changelog/admin/digest/send', {
+            method:'POST', credentials:'same-origin',
+            headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':getCSRFToken()},
+            body: JSON.stringify({ audience:audience, branch:branch, recipient_group:groupKey, test_only:!!testOnly })
+        });
+        const data = await response.json();
+        if(!response.ok || !data.success) throw new Error(data.error || data.message || 'The digest was not sent.');
+        showChangelogStatus(
+            testOnly
+                ? 'Test digest sent to ' + changelogDigestState.testEmail + '.'
+                : 'Digest sent to ' + data.recipients + ' recipient' + (data.recipients === 1 ? '' : 's') + '.',
+            'success'
+        );
+    }catch(error){
+        showChangelogStatus(error.message || 'The digest was not sent.', 'error');
+    }finally{
+        setChangelogDigestButtons();
+    }
+}

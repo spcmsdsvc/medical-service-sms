@@ -391,6 +391,10 @@ EMAIL_RECIPIENT_GROUPS = {
     'leave_request_cc_cebu_davao': {
         'label': 'Leave Request CC - Cebu/Davao',
         'description': 'Additional recipients copied on approved Leave Requests from Cebu or Davao employees.'
+    },
+    'changelog_announcements': {
+        'label': "What's New Announcements",
+        'description': "Recipients of the manually sent What's New update digest. Unlike the other groups this is an announcement list, not a workflow handoff."
     }
 }
 
@@ -404,7 +408,8 @@ EMAIL_RECIPIENT_GROUP_ORDER = [
     'lpr_procurement',
     'leave_request_hr',
     'leave_request_cc',
-    'leave_request_cc_cebu_davao'
+    'leave_request_cc_cebu_davao',
+    'changelog_announcements'
 ]
 
 TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE = 'NCS_TSR{billing_marker}_Shimadzu_{client_name}_{machine_name}_{service_case}_{date_mmddyyyy} - TSR'
@@ -14397,7 +14402,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v43-shell-dashboard-changelog';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v44-changelog-digest';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -15481,6 +15486,9 @@ def revert_changelog_item(item_id):
 # EMAIL_NOTIFICATIONS_ENABLED defaults to true, so it is not a safe guard on its own --
 # a sandbox with a real BREVO_API_KEY would otherwise email actual engineers.
 
+CHANGELOG_ANNOUNCEMENT_GROUP_KEY = 'changelog_announcements'
+
+
 def changelog_digest_sending_enabled():
     return bool(app.config.get('CHANGELOG_DIGEST_ENABLED'))
 
@@ -15550,12 +15558,29 @@ def preview_changelog_digest():
         branch_code = ''
 
     digest = build_changelog_digest(audience=audience, branch_code=branch_code)
+
+    # Recipient counts come from preview so the admin can see who a send would reach
+    # before choosing to send. Addresses themselves are not returned - the count is
+    # what informs the decision, and Settings is where the list is managed.
+    groups = [
+        {
+            'key': group['key'],
+            'label': group['label'],
+            'active_count': len(get_active_email_recipients_by_group(group['key']))
+        }
+        for group in get_email_recipient_groups_payload()
+    ]
+    own_email = normalize_single_email_address(get_user_email_for_notification(current_user))
+
     return jsonify({
         'success': True,
         'audience': audience,
         'branch': branch_code,
         'sending_enabled': changelog_digest_sending_enabled(),
-        'digest': digest
+        'digest': digest,
+        'recipient_groups': groups,
+        'default_group': CHANGELOG_ANNOUNCEMENT_GROUP_KEY,
+        'test_email': own_email
     })
 
 
@@ -15580,21 +15605,60 @@ def send_changelog_digest():
     if audience not in {'everyone', 'engineers', 'approvers', 'admins'}:
         audience = 'everyone'
 
-    group_key = clean_str(payload.get('recipient_group')) or ''
-    recipients = get_active_email_recipients_by_group(group_key) if group_key else []
-    if not recipients:
-        return jsonify({'success': False, 'error': 'No active recipients in that group.'}), 400
+    # Branch was honoured by preview but dropped here, so a branch-targeted preview
+    # would send to everybody. Validated the same way preview validates it.
+    branch_code = (clean_str(payload.get('branch')) or '').strip().upper()
+    if branch_code and branch_code not in STOCK_INVENTORY_BRANCHES:
+        branch_code = ''
 
-    digest = build_changelog_digest(audience=audience)
+    # Test mode sends only to the requesting admin, so the first real send never
+    # needs the recipient group to be edited temporarily.
+    test_mode = bool(payload.get('test_only'))
+    if test_mode:
+        own_email = normalize_single_email_address(get_user_email_for_notification(current_user))
+        if not own_email:
+            return jsonify({
+                'success': False,
+                'error': 'No email address is on file for your account, so a test cannot be sent to you.'
+            }), 400
+        recipients = [own_email]
+        target_label = f'test to {own_email}'
+    else:
+        group_key = clean_str(payload.get('recipient_group')) or ''
+        recipients = get_active_email_recipients_by_group(group_key) if group_key else []
+        if not recipients:
+            return jsonify({'success': False, 'error': 'No active recipients in that group.'}), 400
+        target_label = group_key
+
+    digest = build_changelog_digest(audience=audience, branch_code=branch_code)
     if not digest['release_count']:
         return jsonify({'success': False, 'error': 'There is nothing new to send.'}), 400
 
     sent, message = send_email_notification(
         recipients, digest['subject'], digest['text'], digest['html']
     )
-    add_activity_log_entry(f"Sent What's New digest to {group_key} ({digest['item_count']} updates)")
+
+    # Log what actually happened. This previously recorded a successful send
+    # unconditionally, so a provider rejection still left "Sent" in the audit trail.
+    if sent:
+        add_activity_log_entry(
+            f"Sent What's New digest to {target_label} "
+            f"({digest['item_count']} updates, {len(recipients)} recipient"
+            f"{'' if len(recipients) == 1 else 's'})"
+        )
+    else:
+        add_activity_log_entry(
+            f"What's New digest send FAILED for {target_label} "
+            f"({len(recipients)} recipient{'' if len(recipients) == 1 else 's'}): {message}"
+        )
     db.session.commit()
-    return jsonify({'success': bool(sent), 'message': message, 'recipients': len(recipients)})
+
+    return jsonify({
+        'success': bool(sent),
+        'message': message,
+        'recipients': len(recipients),
+        'test_only': test_mode
+    })
 
 
 @app.route('/activity_page')

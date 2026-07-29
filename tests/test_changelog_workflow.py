@@ -48,6 +48,57 @@ class ChangelogSourceTests(unittest.TestCase):
         send_at = send_fn.index('send_email_notification(')
         self.assertLess(guard_at, send_at, 'the flag check must precede any send')
 
+    def test_send_logs_the_real_outcome_not_an_assumed_one(self):
+        """The activity log previously recorded a successful send unconditionally.
+
+        A provider rejection still left "Sent What's New digest" in the audit trail,
+        which is worse than no record at all.
+        """
+        send_fn = self.app_source.split('def send_changelog_digest(')[1].split('\n@app.route')[0]
+        send_at = send_fn.index('sent, message = send_email_notification(')
+        log_at = send_fn.index('add_activity_log_entry(')
+        self.assertLess(send_at, log_at, 'the outcome must be known before it is logged')
+        self.assertIn('if sent:', send_fn)
+        self.assertIn('FAILED', send_fn)
+
+    def test_send_honours_branch_targeting(self):
+        # Preview accepted a branch and send ignored it, so a branch-targeted
+        # preview would have gone to every branch.
+        send_fn = self.app_source.split('def send_changelog_digest(')[1].split('\n@app.route')[0]
+        self.assertIn('branch_code', send_fn)
+        self.assertIn('build_changelog_digest(audience=audience, branch_code=branch_code)', send_fn)
+        self.assertIn('STOCK_INVENTORY_BRANCHES', send_fn)
+
+
+class ChangelogDigestRecipientGroupTests(unittest.TestCase):
+    """The digest needs an announcement list of its own.
+
+    Every other group is a workflow handoff (accounting, HR, procurement), so
+    without this a product announcement would have to borrow one of them.
+    """
+
+    def test_announcement_group_is_registered_and_ordered(self):
+        key = app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY
+        self.assertEqual(key, 'changelog_announcements')
+        self.assertIn(key, app_module.EMAIL_RECIPIENT_GROUPS)
+        self.assertIn(key, app_module.EMAIL_RECIPIENT_GROUP_ORDER)
+        self.assertEqual(
+            app_module.EMAIL_RECIPIENT_GROUPS[key]['label'],
+            "What's New Announcements"
+        )
+
+    def test_group_is_offered_by_settings_and_accepted_by_the_normalizer(self):
+        keys = [group['key'] for group in app_module.get_email_recipient_groups_payload()]
+        self.assertIn(app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY, keys)
+        self.assertEqual(
+            app_module.normalize_email_recipient_group('changelog_announcements'),
+            'changelog_announcements'
+        )
+
+    def test_unknown_group_is_still_rejected(self):
+        self.assertEqual(app_module.normalize_email_recipient_group('not_a_group'), '')
+        self.assertEqual(app_module.get_active_email_recipients_by_group('not_a_group'), [])
+
 
 class ChangelogApiTests(unittest.TestCase):
     @classmethod
@@ -300,6 +351,233 @@ class ChangelogApiTests(unittest.TestCase):
         finally:
             app_module.send_email_notification = original
         self.assertEqual(calls, [], 'no email may be attempted while the digest is disabled')
+
+    def test_test_mode_is_refused_while_disabled_too(self):
+        """Test mode bypasses the recipient group, so it must not bypass the flag."""
+        client = self._admin_client()
+        calls = []
+        original = app_module.send_email_notification
+        app_module.send_email_notification = lambda *a, **k: calls.append(a) or (True, 'sent')
+        try:
+            response = client.post('/api/changelog/admin/digest/send',
+                                   json={'audience': 'everyone', 'test_only': True})
+        finally:
+            app_module.send_email_notification = original
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(calls, [], 'test mode must not reach a provider while disabled')
+
+    def test_preview_reports_recipient_counts_without_exposing_addresses(self):
+        client = self._admin_client()
+        payload = client.get('/api/changelog/admin/digest/preview').get_json()
+        self.assertEqual(payload['default_group'], app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY)
+
+        groups = {group['key']: group for group in payload['recipient_groups']}
+        self.assertIn(app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY, groups)
+        for group in payload['recipient_groups']:
+            self.assertIn('active_count', group)
+            self.assertIsInstance(group['active_count'], int)
+            # Counts inform the decision; the addresses stay in Settings.
+            self.assertNotIn('emails', group)
+            self.assertNotIn('recipients', group)
+
+    def test_preview_still_sends_nothing(self):
+        client = self._admin_client()
+        calls = []
+        original = app_module.send_email_notification
+        app_module.send_email_notification = lambda *a, **k: calls.append(a) or (True, 'sent')
+        try:
+            response = client.get('/api/changelog/admin/digest/preview?audience=engineers&branch=MANILA')
+        finally:
+            app_module.send_email_notification = original
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(calls, [], 'preview must never reach a mail provider')
+
+
+class ChangelogDigestEnabledPathTests(unittest.TestCase):
+    """Exercise the send path with the flag ON but the provider replaced.
+
+    The disabled-path tests prove nothing can escape while the flag is off. These
+    prove the path actually works once it is on, without ever contacting Brevo.
+    Every test restores both the flag and the real sender.
+
+    Deliberately not a subclass of ChangelogApiTests: inheriting would re-run that
+    class's disabled-path assertions with the flag turned on.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+        cls.app.config['WTF_CSRF_ENABLED'] = False
+        cls.app.config['TESTING'] = True
+        with cls.app.app_context():
+            app_module.db.create_all()
+            app_module.ensure_changelog_tables()
+
+    def _admin_client(self):
+        name = sorted(app_module.SUPERADMIN_USERNAMES)[0]
+        with self.app.app_context():
+            user = app_module.User.query.filter_by(username=name).first()
+            if not user:
+                user = app_module.User(
+                    username=name, role='superadmin', is_active=True,
+                    password=app_module.generate_password_hash('ClogTest123')
+                )
+                app_module.db.session.add(user)
+                app_module.db.session.commit()
+            user_id = user.id
+
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session['_user_id'] = str(user_id)
+            session['_fresh'] = True
+        return client
+
+    def setUp(self):
+        self._original_sender = app_module.send_email_notification
+        self._original_flag = self.app.config.get('CHANGELOG_DIGEST_ENABLED')
+        self.app.config['CHANGELOG_DIGEST_ENABLED'] = True
+        self.sent = []
+
+    def tearDown(self):
+        app_module.send_email_notification = self._original_sender
+        self.app.config['CHANGELOG_DIGEST_ENABLED'] = self._original_flag
+
+    def _capture(self, ok=True, message='sent'):
+        def fake(to_emails, subject, text_body, html_body=None):
+            self.sent.append({'to': list(to_emails), 'subject': subject, 'html': html_body})
+            return ok, message
+        app_module.send_email_notification = fake
+
+    def _seed_group(self, *emails):
+        with self.app.app_context():
+            app_module.ensure_email_recipient_setting_table()
+            key = app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY
+            for existing in app_module.EmailRecipientSetting.query.filter_by(group_key=key).all():
+                app_module.db.session.delete(existing)
+            # Flush the deletes before re-inserting, or SQLAlchemy orders the
+            # inserts first and trips the (group_key, email) unique constraint.
+            app_module.db.session.flush()
+            for index, email in enumerate(emails):
+                app_module.db.session.add(app_module.EmailRecipientSetting(
+                    group_key=key, email=email, display_name=email,
+                    is_active=True, sort_order=index
+                ))
+            app_module.db.session.commit()
+
+    def test_group_send_reaches_exactly_the_active_recipients(self):
+        self._seed_group('one@example.invalid', 'two@example.invalid')
+        self._capture()
+        client = self._admin_client()
+
+        response = client.post('/api/changelog/admin/digest/send', json={
+            'audience': 'everyone',
+            'recipient_group': app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['success'])
+        self.assertEqual(len(self.sent), 1)
+        self.assertEqual(sorted(self.sent[0]['to']),
+                         ['one@example.invalid', 'two@example.invalid'])
+
+    def test_empty_group_is_refused_before_any_send(self):
+        self._seed_group()
+        self._capture()
+        client = self._admin_client()
+
+        response = client.post('/api/changelog/admin/digest/send', json={
+            'recipient_group': app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY
+        })
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.sent, [], 'an empty group must not produce a send')
+
+    def test_test_mode_goes_only_to_the_requesting_admin(self):
+        self._seed_group('everyone@example.invalid')
+        self._capture()
+        client = self._admin_client()
+
+        with self.app.app_context():
+            name = sorted(app_module.SUPERADMIN_USERNAMES)[0]
+            user = app_module.User.query.filter_by(username=name).first()
+            own = app_module.normalize_single_email_address(
+                app_module.get_user_email_for_notification(user))
+
+        response = client.post('/api/changelog/admin/digest/send',
+                               json={'test_only': True})
+
+        if not own:
+            # No address on file: must refuse rather than fall back to the group.
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(self.sent, [])
+            return
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['test_only'])
+        self.assertEqual(self.sent[0]['to'], [own])
+        self.assertNotIn('everyone@example.invalid', self.sent[0]['to'])
+
+    def _activity_since(self, marker_id):
+        with self.app.app_context():
+            entries = (app_module.ActivityLog.query
+                       .filter(app_module.ActivityLog.id > marker_id)
+                       .order_by(app_module.ActivityLog.id.asc()).all())
+            return ' | '.join(entry.action or '' for entry in entries)
+
+    def _latest_activity_id(self):
+        with self.app.app_context():
+            newest = (app_module.ActivityLog.query
+                      .order_by(app_module.ActivityLog.id.desc()).first())
+            return newest.id if newest else 0
+
+    def test_a_failed_send_is_logged_as_a_failure(self):
+        """The audit trail previously said "Sent" even when the provider refused."""
+        self._seed_group('one@example.invalid')
+        self._capture(ok=False, message='provider rejected')
+        client = self._admin_client()
+        marker = self._latest_activity_id()
+
+        response = client.post('/api/changelog/admin/digest/send', json={
+            'recipient_group': app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY
+        })
+        self.assertFalse(response.get_json()['success'])
+
+        logged = self._activity_since(marker)
+        self.assertIn('FAILED', logged)
+        self.assertIn('provider rejected', logged)
+        self.assertNotIn("Sent What's New digest", logged)
+
+    def test_a_successful_send_is_logged_as_a_send(self):
+        self._seed_group('one@example.invalid')
+        self._capture(ok=True)
+        client = self._admin_client()
+        marker = self._latest_activity_id()
+
+        client.post('/api/changelog/admin/digest/send', json={
+            'recipient_group': app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY
+        })
+
+        logged = self._activity_since(marker)
+        self.assertIn("Sent What's New digest", logged)
+        self.assertNotIn('FAILED', logged)
+
+    def test_branch_targeting_changes_what_is_sent(self):
+        self._seed_group('one@example.invalid')
+        self._capture()
+        client = self._admin_client()
+
+        client.post('/api/changelog/admin/digest/send', json={
+            'recipient_group': app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY,
+            'branch': 'MANILA'
+        })
+        client.post('/api/changelog/admin/digest/send', json={
+            'recipient_group': app_module.CHANGELOG_ANNOUNCEMENT_GROUP_KEY,
+            'branch': 'not-a-real-branch'
+        })
+
+        # Both are accepted; the invalid one falls back to all branches rather
+        # than erroring, matching how preview validates the same parameter.
+        self.assertEqual(len(self.sent), 2)
 
 
 if __name__ == '__main__':

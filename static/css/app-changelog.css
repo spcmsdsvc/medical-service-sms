@@ -162,7 +162,74 @@
     color: var(--app-muted, #6b7280);
 }
 
+/* --- EMAIL DIGEST --- */
+
+.changelog-digest-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 14px;
+    padding: 11px 13px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    background: #fff8e6;
+    color: #7a4b06;
+    border: 1px solid #f0cf8a;
+}
+
+.changelog-digest-banner code {
+    background: rgba(0, 0, 0, 0.06);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: inherit;
+}
+
+.changelog-digest-summary {
+    padding: 9px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    background: var(--app-surface-raised, #f1f5f9);
+    color: var(--app-text, #111827);
+    border: 1px solid var(--app-border, #d1d5db);
+    /* Long subjects must not push the modal sideways. */
+    overflow-wrap: anywhere;
+}
+
+/* The preview renders provider-bound HTML, so it is boxed and scrolls on its own
+   rather than being allowed to stretch the dialog. */
+.changelog-digest-preview {
+    max-height: 320px;
+    overflow: auto;
+    padding: 14px;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #111827;
+    border: 1px solid var(--app-border, #d1d5db);
+}
+
+.changelog-digest-footer {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+:root[data-app-theme="dark"] .changelog-digest-banner {
+    background: #3a2f10;
+    color: #fde3a7;
+    border-color: #7a5f1d;
+}
+
+/* The preview deliberately keeps a light surface in dark mode: it is a rendering
+   of the actual email, which recipients will read on a white background. */
+:root[data-app-theme="dark"] .changelog-digest-preview {
+    background: #f8fafc;
+    color: #111827;
+    border-color: #475569;
+}
+
 @media (max-width: 640px) {
     .changelog-filters { flex-direction: column; }
     .changelog-select { width: 100%; }
+    .changelog-digest-footer .btn { width: 100%; }
+    .changelog-digest-preview { max-height: 240px; }
 }

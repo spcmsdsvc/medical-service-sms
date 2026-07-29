@@ -955,6 +955,15 @@
             "admins"
           ],
           "sort_order": 90
+        },
+        {
+          "item_key": "2026-07-29-whats-new-digest",
+          "category": "Administration",
+          "description": "Administrators can now email a What's New digest from the app, with a new What's New Announcements recipient group in Settings, a preview of the exact message before sending, and a send-to-myself test. Sending stays switched off until it is explicitly enabled.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 100
         }
       ]
     }
