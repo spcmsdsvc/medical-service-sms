@@ -443,14 +443,115 @@ async function revertChangelogItem(){
 --------------------------------------------------------------------------- */
 
 let changelogDigestModal = null;
-let changelogDigestState = { sendingEnabled:false, groups:[], testEmail:'', itemCount:0 };
+let changelogDigestState = {
+    sendingEnabled:false, groups:[], testEmail:'', itemCount:0,
+    audienceCount:0, missingEmail:[], selectable:[], selectedIds:null
+};
 
 function openChangelogDigest(){
     const modalEl = document.getElementById('changelogDigestModal');
     if(!modalEl || typeof bootstrap === 'undefined') return;
     changelogDigestModal = changelogDigestModal || new bootstrap.Modal(modalEl);
+    // A fresh selection each time: carrying one over would silently change what a
+    // later send contains.
+    changelogDigestState.selectedIds = null;
     changelogDigestModal.show();
     refreshChangelogDigestPreview();
+}
+
+function changelogDigestMode(){
+    const select = document.getElementById('changelog-digest-mode');
+    return select ? select.value : 'audience';
+}
+
+function updateChangelogDigestMode(){
+    const row = document.getElementById('changelog-digest-group-row');
+    if(row) row.hidden = changelogDigestMode() !== 'group';
+    // Re-render the recipient line too, or it keeps describing the audience while the
+    // send would actually go to a group - misleading exactly where it matters most.
+    renderChangelogDigestRecipients();
+    setChangelogDigestButtons();
+}
+
+function selectedChangelogDigestItemIds(){
+    // null means "not chosen yet", which the server reads as everything this
+    // audience can see. An empty array means the admin deliberately chose nothing.
+    if(changelogDigestState.selectedIds === null) return null;
+    return changelogDigestState.selectedIds.slice();
+}
+
+function renderChangelogDigestPicker(){
+    const host = document.getElementById('changelog-digest-picker');
+    if(!host) return;
+
+    const items = changelogDigestState.selectable || [];
+    if(!items.length){
+        host.innerHTML = '<p class="changelog-hint mb-0">Nothing is available for this audience and branch.</p>';
+        return;
+    }
+
+    const chosen = changelogDigestState.selectedIds;
+    const groups = [];
+    items.forEach(function(item){
+        let group = groups.find(g => g.title === item.release_title && g.date === item.release_date);
+        if(!group){
+            group = { title:item.release_title, date:item.release_date, items:[] };
+            groups.push(group);
+        }
+        group.items.push(item);
+    });
+
+    host.innerHTML = '';
+    groups.forEach(function(group){
+        const wrapper = document.createElement('div');
+        wrapper.className = 'changelog-digest-picker-group';
+
+        const heading = document.createElement('div');
+        heading.className = 'changelog-digest-picker-title';
+        heading.textContent = group.date + ' - ' + group.title;
+        wrapper.appendChild(heading);
+
+        group.items.forEach(function(item){
+            const label = document.createElement('label');
+            label.className = 'changelog-digest-picker-item';
+
+            const box = document.createElement('input');
+            box.type = 'checkbox';
+            box.value = String(item.id);
+            box.checked = chosen === null || chosen.indexOf(item.id) !== -1;
+            box.addEventListener('change', onChangelogDigestItemToggled);
+
+            const text = document.createElement('span');
+            text.textContent = item.category + ': ' + item.description;
+
+            label.appendChild(box);
+            label.appendChild(text);
+            wrapper.appendChild(label);
+        });
+
+        host.appendChild(wrapper);
+    });
+}
+
+function currentChangelogDigestCheckedIds(){
+    const host = document.getElementById('changelog-digest-picker');
+    if(!host) return [];
+    return [...host.querySelectorAll('input[type="checkbox"]')]
+        .filter(box => box.checked)
+        .map(box => parseInt(box.value, 10))
+        .filter(value => !isNaN(value));
+}
+
+function onChangelogDigestItemToggled(){
+    changelogDigestState.selectedIds = currentChangelogDigestCheckedIds();
+    refreshChangelogDigestPreview({ keepSelection:true });
+}
+
+function setAllChangelogDigestItems(checked){
+    changelogDigestState.selectedIds = checked
+        ? (changelogDigestState.selectable || []).map(item => item.id)
+        : [];
+    refreshChangelogDigestPreview({ keepSelection:true });
 }
 
 function selectedChangelogDigestGroup(){
@@ -462,11 +563,48 @@ function selectedChangelogDigestGroup(){
 function setChangelogDigestButtons(){
     const testBtn = document.getElementById('changelog-digest-test-btn');
     const sendBtn = document.getElementById('changelog-digest-send-btn');
-    const selected = selectedChangelogDigestGroup();
     const hasContent = changelogDigestState.itemCount > 0;
+    const enabled = changelogDigestState.sendingEnabled;
 
-    if(testBtn) testBtn.disabled = !changelogDigestState.sendingEnabled || !hasContent || !changelogDigestState.testEmail;
-    if(sendBtn) sendBtn.disabled = !changelogDigestState.sendingEnabled || !hasContent || !selected || !selected.active_count;
+    let hasRecipients;
+    if(changelogDigestMode() === 'group'){
+        const selected = selectedChangelogDigestGroup();
+        hasRecipients = !!(selected && selected.active_count);
+    }else{
+        hasRecipients = changelogDigestState.audienceCount > 0;
+    }
+
+    if(testBtn) testBtn.disabled = !enabled || !hasContent || !changelogDigestState.testEmail;
+    if(sendBtn) sendBtn.disabled = !enabled || !hasContent || !hasRecipients;
+}
+
+function renderChangelogDigestRecipients(){
+    const box = document.getElementById('changelog-digest-recipients');
+    if(!box) return;
+
+    if(changelogDigestMode() === 'group'){
+        box.textContent = 'Sending to the selected recipient group.';
+        box.className = 'changelog-digest-recipients';
+        return;
+    }
+
+    const count = changelogDigestState.audienceCount;
+    const missing = changelogDigestState.missingEmail || [];
+    const audience = (document.getElementById('changelog-digest-audience') || {}).value || 'everyone';
+
+    let text = count
+        ? 'This will email ' + count + ' account' + (count === 1 ? '' : 's') + ' in the ' + audience + ' audience.'
+        : 'No account in the ' + audience + ' audience has an email address on file.';
+    if(missing.length){
+        text += ' ' + missing.length + ' account' + (missing.length === 1 ? '' : 's') +
+                ' skipped for having no email: ' + missing.slice(0, 6).join(', ') +
+                (missing.length > 6 ? ', ...' : '') + '.';
+    }
+
+    box.textContent = text;
+    box.className = 'changelog-digest-recipients' +
+        (count ? '' : ' changelog-digest-recipients-empty') +
+        (missing.length ? ' changelog-digest-recipients-warn' : '');
 }
 
 function updateChangelogDigestGroupHint(){
@@ -480,17 +618,26 @@ function updateChangelogDigestGroupHint(){
     setChangelogDigestButtons();
 }
 
-async function refreshChangelogDigestPreview(){
+async function refreshChangelogDigestPreview(options){
+    const keepSelection = !!(options && options.keepSelection);
     const summary = document.getElementById('changelog-digest-summary');
     const preview = document.getElementById('changelog-digest-preview');
     const audience = (document.getElementById('changelog-digest-audience') || {}).value || 'everyone';
     const branch = (document.getElementById('changelog-digest-branch') || {}).value || '';
 
+    // Changing audience or branch changes what is even available, so a selection made
+    // against the previous list would be meaningless. Start fresh unless a checkbox
+    // was what triggered this.
+    if(!keepSelection) changelogDigestState.selectedIds = null;
+
     if(summary) summary.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin me-2"></i>Rendering preview...';
     if(preview) preview.innerHTML = '';
 
     try{
-        const query = 'audience=' + encodeURIComponent(audience) + '&branch=' + encodeURIComponent(branch);
+        let query = 'audience=' + encodeURIComponent(audience) + '&branch=' + encodeURIComponent(branch);
+        const chosen = selectedChangelogDigestItemIds();
+        if(chosen !== null) query += '&item_ids=' + encodeURIComponent(chosen.join(','));
+
         const response = await fetch('/api/changelog/admin/digest/preview?' + query, {
             credentials:'same-origin', headers:{'Accept':'application/json'}
         });
@@ -502,6 +649,9 @@ async function refreshChangelogDigestPreview(){
         changelogDigestState.groups = data.recipient_groups || [];
         changelogDigestState.testEmail = data.test_email || '';
         changelogDigestState.itemCount = digest.item_count || 0;
+        changelogDigestState.selectable = data.selectable_items || [];
+        changelogDigestState.audienceCount = data.audience_recipient_count || 0;
+        changelogDigestState.missingEmail = data.audience_missing_email || [];
 
         const banner = document.getElementById('changelog-digest-disabled');
         if(banner) banner.hidden = changelogDigestState.sendingEnabled;
@@ -533,6 +683,8 @@ async function refreshChangelogDigestPreview(){
         }
         if(preview) preview.innerHTML = digest.html || '<p class="changelog-hint">Nothing to preview.</p>';
 
+        renderChangelogDigestPicker();
+        renderChangelogDigestRecipients();
         updateChangelogDigestGroupHint();
     }catch(error){
         if(summary) summary.textContent = error.message || 'Unable to render the preview.';
@@ -546,15 +698,28 @@ async function sendChangelogDigest(testOnly){
     const branch = (document.getElementById('changelog-digest-branch') || {}).value || '';
     const groupSelect = document.getElementById('changelog-digest-group');
     const groupKey = groupSelect ? groupSelect.value : '';
-    const selected = selectedChangelogDigestGroup();
+    const mode = changelogDigestMode();
+    const updates = changelogDigestState.itemCount;
+    const plural = n => n === 1 ? '' : 's';
 
     if(testOnly){
-        if(!window.confirm('Send a test digest to ' + changelogDigestState.testEmail + ' only?')) return;
-    }else{
-        const count = selected ? selected.active_count : 0;
-        const label = selected ? selected.label : groupKey;
         if(!window.confirm(
-            'Send this digest to ' + count + ' recipient' + (count === 1 ? '' : 's') + ' in "' + label + '"?\n\n' +
+            'Send a test digest to ' + changelogDigestState.testEmail + ' only?\n\n' +
+            updates + ' update' + plural(updates) + ' included.'
+        )) return;
+    }else{
+        let who;
+        if(mode === 'group'){
+            const selected = selectedChangelogDigestGroup();
+            const count = selected ? selected.active_count : 0;
+            who = count + ' recipient' + plural(count) + ' in "' + (selected ? selected.label : groupKey) + '"';
+        }else{
+            const count = changelogDigestState.audienceCount;
+            who = count + ' account' + plural(count) + ' in the ' + audience + ' audience';
+        }
+        if(!window.confirm(
+            'Send this digest to ' + who + '?\n\n' +
+            updates + ' update' + plural(updates) + ' included.\n\n' +
             'This sends real email and cannot be undone.'
         )) return;
     }
@@ -568,14 +733,22 @@ async function sendChangelogDigest(testOnly){
         const response = await fetch('/api/changelog/admin/digest/send', {
             method:'POST', credentials:'same-origin',
             headers:{'Content-Type':'application/json','Accept':'application/json','X-CSRFToken':getCSRFToken()},
-            body: JSON.stringify({ audience:audience, branch:branch, recipient_group:groupKey, test_only:!!testOnly })
+            body: JSON.stringify({
+                audience: audience,
+                branch: branch,
+                recipient_mode: mode,
+                recipient_group: mode === 'group' ? groupKey : '',
+                item_ids: selectedChangelogDigestItemIds(),
+                test_only: !!testOnly
+            })
         });
         const data = await response.json();
         if(!response.ok || !data.success) throw new Error(data.error || data.message || 'The digest was not sent.');
         showChangelogStatus(
             testOnly
                 ? 'Test digest sent to ' + changelogDigestState.testEmail + '.'
-                : 'Digest sent to ' + data.recipients + ' recipient' + (data.recipients === 1 ? '' : 's') + '.',
+                : 'Digest sent to ' + data.recipients + ' recipient' + plural(data.recipients) +
+                  ' (' + data.item_count + ' update' + plural(data.item_count) + ').',
             'success'
         );
     }catch(error){

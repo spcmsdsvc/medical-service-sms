@@ -66,8 +66,21 @@ class ChangelogSourceTests(unittest.TestCase):
         # preview would have gone to every branch.
         send_fn = self.app_source.split('def send_changelog_digest(')[1].split('\n@app.route')[0]
         self.assertIn('branch_code', send_fn)
-        self.assertIn('build_changelog_digest(audience=audience, branch_code=branch_code)', send_fn)
+        self.assertIn('audience=audience, branch_code=branch_code', send_fn)
         self.assertIn('STOCK_INVENTORY_BRANCHES', send_fn)
+
+    def test_naming_a_group_without_a_mode_still_means_the_group(self):
+        """Audience is the default mode, but it must not widen an explicit group send.
+
+        A caller that passes recipient_group and no recipient_mode meant the group;
+        silently promoting that to the whole audience would turn a short curated list
+        into every matching account.
+        """
+        send_fn = self.app_source.split('def send_changelog_digest(')[1].split('\n@app.route')[0]
+        self.assertIn(
+            "recipient_mode = 'group' if clean_str(payload.get('recipient_group')) else 'audience'",
+            send_fn
+        )
 
 
 class ChangelogDigestRecipientGroupTests(unittest.TestCase):
@@ -560,6 +573,151 @@ class ChangelogDigestEnabledPathTests(unittest.TestCase):
         logged = self._activity_since(marker)
         self.assertIn("Sent What's New digest", logged)
         self.assertNotIn('FAILED', logged)
+
+    # --- audience-driven recipients ---
+
+    def _make_account(self, username, role='engineer', is_active=True, email=None):
+        with self.app.app_context():
+            user = app_module.User.query.filter_by(username=username).first()
+            if not user:
+                user = app_module.User(
+                    username=username, role=role,
+                    password=app_module.generate_password_hash('AudTest123')
+                )
+                app_module.db.session.add(user)
+            user.role = role
+            user.is_active = is_active
+            if email is not None and hasattr(user, 'email'):
+                user.email = email
+            app_module.db.session.commit()
+            return user.id
+
+    def test_audience_resolution_skips_inactive_accounts(self):
+        self._make_account('aud_active_eng', 'engineer', is_active=True)
+        self._make_account('aud_inactive_eng', 'engineer', is_active=False)
+
+        with self.app.app_context():
+            emails, missing = app_module.resolve_changelog_audience_recipients('engineers')
+
+        everyone = set(emails) | set(missing)
+        self.assertIn('aud_active_eng', everyone | {m for m in missing})
+        self.assertNotIn('aud_inactive_eng', missing)
+        self.assertNotIn('aud_inactive_eng@', ' '.join(emails))
+
+    def test_accounts_without_an_email_are_reported_not_dropped(self):
+        """A shrinking send must be visible, not silent."""
+        self._make_account('aud_no_email_user', 'engineer', is_active=True)
+
+        with self.app.app_context():
+            emails, missing = app_module.resolve_changelog_audience_recipients('engineers')
+
+        self.assertIn('aud_no_email_user', missing,
+                      'an account with no resolvable address must be named')
+        for address in emails:
+            self.assertIn('@', address)
+
+    def test_audience_send_reaches_the_resolved_accounts(self):
+        self._make_account('aud_send_eng', 'engineer', is_active=True)
+        self._capture()
+        client = self._admin_client()
+
+        with self.app.app_context():
+            expected, _ = app_module.resolve_changelog_audience_recipients('engineers')
+
+        response = client.post('/api/changelog/admin/digest/send',
+                               json={'audience': 'engineers', 'recipient_mode': 'audience'})
+
+        if not expected:
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(self.sent, [])
+            return
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['recipient_mode'], 'audience')
+        self.assertEqual(sorted(self.sent[0]['to']), sorted(expected))
+
+    def test_audience_with_no_addresses_is_refused_before_any_send(self):
+        self._capture()
+        client = self._admin_client()
+
+        with self.app.app_context():
+            emails, _ = app_module.resolve_changelog_audience_recipients('approvers')
+        if emails:
+            self.skipTest('approvers resolve to real addresses in this fixture')
+
+        response = client.post('/api/changelog/admin/digest/send',
+                               json={'audience': 'approvers', 'recipient_mode': 'audience'})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.sent, [], 'an unresolvable audience must not send')
+
+    # --- per-send update selection ---
+
+    def _item_visible_to(self, audience, audiences_json):
+        """Create a release with one item tagged for the given audiences."""
+        client = self._admin_client()
+        release = client.post('/api/changelog/admin/releases',
+                              json={'title': f'Selection fixture {audiences_json}',
+                                    'summary': 'fixture'}).get_json()['release']
+        item = client.post(f"/api/changelog/admin/releases/{release['id']}/items",
+                           json={'description': f'Fixture item for {audiences_json}',
+                                 'category': 'Fixture',
+                                 'audiences': audiences_json}).get_json()['release']['items'][-1]
+        return release, item
+
+    def test_selection_narrows_the_body(self):
+        release, item = self._item_visible_to('everyone', ['everyone'])
+        client = self._admin_client()
+
+        full = client.get('/api/changelog/admin/digest/preview').get_json()['digest']
+        narrowed = client.get(
+            f"/api/changelog/admin/digest/preview?item_ids={item['id']}"
+        ).get_json()['digest']
+
+        self.assertEqual(narrowed['item_count'], 1)
+        self.assertLess(narrowed['item_count'], full['item_count'])
+        self.assertIn('Fixture item for', narrowed['text'])
+
+    def test_selection_cannot_widen_past_the_audience_filter(self):
+        """The case that would leak an admins-only note to engineers.
+
+        Selection is applied after audience filtering, so passing the id of an item
+        this audience cannot see must not smuggle it into their email.
+        """
+        release, admin_item = self._item_visible_to('admins', ['admins'])
+        client = self._admin_client()
+
+        payload = client.get(
+            f"/api/changelog/admin/digest/preview?audience=engineers&item_ids={admin_item['id']}"
+        ).get_json()
+
+        self.assertEqual(payload['digest']['item_count'], 0,
+                         'an admins-only item must not appear in an engineers digest')
+        offered = [entry['id'] for entry in payload['selectable_items']]
+        self.assertNotIn(admin_item['id'], offered,
+                         'the picker must not even offer it')
+
+    def test_choosing_nothing_sends_nothing(self):
+        """An empty selection must not fall back to sending everything."""
+        self._capture()
+        client = self._admin_client()
+
+        payload = client.get('/api/changelog/admin/digest/preview?item_ids=').get_json()
+        self.assertEqual(payload['digest']['item_count'], 0)
+
+        response = client.post('/api/changelog/admin/digest/send',
+                               json={'audience': 'everyone', 'item_ids': []})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.sent, [], 'an empty selection must not send')
+
+    def test_preview_reports_audience_recipients(self):
+        self._make_account('aud_preview_eng', 'engineer', is_active=True)
+        client = self._admin_client()
+        payload = client.get('/api/changelog/admin/digest/preview?audience=engineers').get_json()
+
+        self.assertIn('audience_recipient_count', payload)
+        self.assertIsInstance(payload['audience_recipient_count'], int)
+        self.assertIn('aud_preview_eng', payload['audience_missing_email'])
+        self.assertIn('selectable_items', payload)
 
     def test_branch_targeting_changes_what_is_sent(self):
         self._seed_group('one@example.invalid')

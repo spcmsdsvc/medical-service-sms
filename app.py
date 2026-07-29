@@ -14402,7 +14402,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v44-changelog-digest';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v45-digest-audience';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -15488,18 +15488,100 @@ def revert_changelog_item(item_id):
 
 CHANGELOG_ANNOUNCEMENT_GROUP_KEY = 'changelog_announcements'
 
+# The audiences a digest can be composed for. Declared once so the resolver and both
+# endpoints validate against the same set instead of three inline copies.
+CHANGELOG_DIGEST_AUDIENCES = {'everyone', 'engineers', 'approvers', 'admins'}
+
 
 def changelog_digest_sending_enabled():
     return bool(app.config.get('CHANGELOG_DIGEST_ENABLED'))
 
 
-def build_changelog_digest(audience='everyone', branch_code='', limit=5):
-    """Render the digest for one audience. Pure formatting: sends nothing."""
+def resolve_changelog_audience_recipients(audience='everyone', branch_code=''):
+    """Resolve an audience to the accounts that belong to it.
+
+    The audience previously only filtered which updates appeared in the body; the
+    recipients came from a hand-maintained group, so picking "Engineers" composed an
+    engineer-flavoured email addressed to nobody. This reuses changelog_user_audiences(),
+    the same logic the What's New page uses to decide what each account sees, so the
+    people who receive a digest are exactly the people it was written for.
+
+    Returns (emails, missing_email_usernames). Accounts with no resolvable address are
+    reported rather than silently dropped, so a shrinking send is visible.
+    """
+    audience = (clean_str(audience) or 'everyone').strip().lower()
+    if audience not in CHANGELOG_DIGEST_AUDIENCES:
+        audience = 'everyone'
+    branch_code = (clean_str(branch_code) or '').strip().upper()
+
+    emails = []
+    missing = []
+
+    for user in User.query.filter_by(is_active=True).order_by(User.username.asc()).all():
+        if audience not in changelog_user_audiences(user):
+            continue
+
+        # An account with no branch receives everything, matching how an item with no
+        # branch list reaches every branch.
+        if branch_code:
+            user_branch = (changelog_user_branch(user) or '').strip().upper()
+            if user_branch and user_branch != branch_code:
+                continue
+
+        address = normalize_single_email_address(get_user_email_for_notification(user))
+        if address:
+            emails.append(address)
+        else:
+            missing.append(getattr(user, 'username', '') or f'user-{getattr(user, "id", "?")}')
+
+    return normalize_email_list(emails), missing
+
+
+def parse_changelog_digest_item_ids(raw):
+    """Parse a selection into a list of ids, or None when nothing was specified.
+
+    None and an empty selection mean different things: None is "no selection given,
+    send everything this audience can see", while an empty list is "nothing chosen",
+    which must produce an empty digest rather than silently sending everything.
+    """
+    if raw is None:
+        return None
+    values = raw.split(',') if isinstance(raw, str) else list(raw)
+    parsed = [clean_int(value) for value in values]
+    return [value for value in parsed if value is not None]
+
+
+def build_changelog_digest_candidates(audience='everyone', branch_code='', limit=5):
+    """Everything one audience is entitled to receive, before any hand-picking.
+
+    Shared by the digest body and the admin picker so the two cannot drift: the picker
+    can only ever offer updates this function already allowed through.
+    """
     audiences = {'everyone'} if audience == 'everyone' else {'everyone', audience}
-    releases = get_visible_changelog_release_dicts(
+    return get_visible_changelog_release_dicts(
         current_user, admin_view=False,
         audiences=audiences, branch_code=branch_code or ''
     )[:max(1, limit)]
+
+
+def build_changelog_digest(audience='everyone', branch_code='', limit=5, item_ids=None):
+    """Render the digest for one audience. Pure formatting: sends nothing.
+
+    `item_ids`, when given, narrows the body to a hand-picked set. It is applied AFTER
+    the audience and branch filtering below, never instead of it, so passing the id of
+    an item the audience cannot see does not smuggle it into their email.
+    """
+    releases = build_changelog_digest_candidates(audience, branch_code, limit)
+
+    if item_ids is not None:
+        wanted = {clean_int(value) for value in item_ids}
+        wanted.discard(None)
+        narrowed = []
+        for release in releases:
+            kept = [item for item in release['items'] if item.get('id') in wanted]
+            if kept:
+                narrowed.append({**release, 'items': kept})
+        releases = narrowed
 
     if not releases:
         return {'subject': '', 'html': '', 'text': '', 'release_count': 0, 'item_count': 0}
@@ -15551,13 +15633,30 @@ def preview_changelog_digest():
     ensure_changelog_tables()
 
     audience = (clean_str(request.args.get('audience')) or 'everyone').strip().lower()
-    if audience not in {'everyone', 'engineers', 'approvers', 'admins'}:
+    if audience not in CHANGELOG_DIGEST_AUDIENCES:
         audience = 'everyone'
     branch_code = (clean_str(request.args.get('branch')) or '').strip().upper()
     if branch_code and branch_code not in STOCK_INVENTORY_BRANCHES:
         branch_code = ''
 
-    digest = build_changelog_digest(audience=audience, branch_code=branch_code)
+    # Everything this audience could receive, before any hand-picked narrowing. The UI
+    # renders its checkboxes from this, so the picker can never offer an update the
+    # audience is not entitled to see.
+    selectable = []
+    for release in build_changelog_digest_candidates(audience, branch_code):
+        for item in release['items']:
+            selectable.append({
+                'id': item['id'],
+                'release_date': release['release_date'],
+                'release_title': release['title'],
+                'category': item['category'],
+                'description': item['description']
+            })
+
+    item_ids = parse_changelog_digest_item_ids(request.args.get('item_ids'))
+    digest = build_changelog_digest(
+        audience=audience, branch_code=branch_code, item_ids=item_ids
+    )
 
     # Recipient counts come from preview so the admin can see who a send would reach
     # before choosing to send. Addresses themselves are not returned - the count is
@@ -15570,6 +15669,9 @@ def preview_changelog_digest():
         }
         for group in get_email_recipient_groups_payload()
     ]
+    audience_emails, audience_missing = resolve_changelog_audience_recipients(
+        audience, branch_code
+    )
     own_email = normalize_single_email_address(get_user_email_for_notification(current_user))
 
     return jsonify({
@@ -15578,6 +15680,10 @@ def preview_changelog_digest():
         'branch': branch_code,
         'sending_enabled': changelog_digest_sending_enabled(),
         'digest': digest,
+        'selectable_items': selectable,
+        'audience_recipient_count': len(audience_emails),
+        # Named, not just counted: "which four" is the first question anyone asks.
+        'audience_missing_email': audience_missing,
         'recipient_groups': groups,
         'default_group': CHANGELOG_ANNOUNCEMENT_GROUP_KEY,
         'test_email': own_email
@@ -15602,7 +15708,7 @@ def send_changelog_digest():
 
     payload = request.get_json(silent=True) or {}
     audience = (clean_str(payload.get('audience')) or 'everyone').strip().lower()
-    if audience not in {'everyone', 'engineers', 'approvers', 'admins'}:
+    if audience not in CHANGELOG_DIGEST_AUDIENCES:
         audience = 'everyone'
 
     # Branch was honoured by preview but dropped here, so a branch-targeted preview
@@ -15611,8 +15717,15 @@ def send_changelog_digest():
     if branch_code and branch_code not in STOCK_INVENTORY_BRANCHES:
         branch_code = ''
 
+    # Audience is the default mode, but a caller that named a group and no mode meant
+    # the group. Defaulting those to the audience would quietly widen the send from a
+    # short curated list to every matching account.
+    recipient_mode = (clean_str(payload.get('recipient_mode')) or '').strip().lower()
+    if recipient_mode not in {'audience', 'group'}:
+        recipient_mode = 'group' if clean_str(payload.get('recipient_group')) else 'audience'
+
     # Test mode sends only to the requesting admin, so the first real send never
-    # needs the recipient group to be edited temporarily.
+    # needs a recipient list to be edited temporarily.
     test_mode = bool(payload.get('test_only'))
     if test_mode:
         own_email = normalize_single_email_address(get_user_email_for_notification(current_user))
@@ -15623,6 +15736,16 @@ def send_changelog_digest():
             }), 400
         recipients = [own_email]
         target_label = f'test to {own_email}'
+    elif recipient_mode == 'audience':
+        recipients, missing = resolve_changelog_audience_recipients(audience, branch_code)
+        if not recipients:
+            return jsonify({
+                'success': False,
+                'error': f'No active accounts in the {audience} audience have an email address on file.'
+            }), 400
+        target_label = f'the {audience} audience'
+        if missing:
+            target_label += f' ({len(missing)} account(s) skipped, no email on file)'
     else:
         group_key = clean_str(payload.get('recipient_group')) or ''
         recipients = get_active_email_recipients_by_group(group_key) if group_key else []
@@ -15630,7 +15753,10 @@ def send_changelog_digest():
             return jsonify({'success': False, 'error': 'No active recipients in that group.'}), 400
         target_label = group_key
 
-    digest = build_changelog_digest(audience=audience, branch_code=branch_code)
+    item_ids = parse_changelog_digest_item_ids(payload.get('item_ids'))
+    digest = build_changelog_digest(
+        audience=audience, branch_code=branch_code, item_ids=item_ids
+    )
     if not digest['release_count']:
         return jsonify({'success': False, 'error': 'There is nothing new to send.'}), 400
 
@@ -15657,7 +15783,9 @@ def send_changelog_digest():
         'success': bool(sent),
         'message': message,
         'recipients': len(recipients),
-        'test_only': test_mode
+        'test_only': test_mode,
+        'recipient_mode': 'test' if test_mode else recipient_mode,
+        'item_count': digest['item_count']
     })
 
 

@@ -1,5 +1,86 @@
 # Project Change Log
 
+claude changes - 2026-07-29 (later still)
+
+## What's New digest — audience-driven recipients and per-send update selection
+
+* Corrected a misconception before writing anything, because it changed the shape of the
+  work: **audience and recipients were unrelated.** `audience` only filtered which updates
+  appeared in the body, via `changelog_visible_items()`; recipients came solely from
+  `get_active_email_recipients_by_group()`. With no group chosen, `recipients` was `[]` and
+  the send returned 400 — so picking "Engineers" composed an engineer-flavoured email
+  addressed to nobody. Verified in the code rather than assumed.
+* Added `resolve_changelog_audience_recipients(audience, branch_code)`. It reuses
+  `changelog_user_audiences()` — the same logic the What's New page already uses to decide
+  what each account sees — so the people who receive a digest are exactly the people it was
+  written for. No new infrastructure and no list to maintain. All four predicates behind it
+  (`is_admin_authorized`, `is_approval_center_user`, `is_approver_only_user`,
+  `has_engineer_profile`) already accepted an explicit user argument.
+* It returns **both the addresses and the usernames that resolved to nothing**, so a
+  shrinking send is visible rather than silent. Verified against a seeded fixture: an
+  inactive engineer was excluded, and two accounts with no address were named.
+* Added `CHANGELOG_DIGEST_AUDIENCES` and replaced two inline copies of the same set, so the
+  resolver and both endpoints validate against one declaration.
+* Added `item_ids` to `build_changelog_digest()` for per-send selection, applied **after**
+  audience and branch filtering, never instead of it. Extracted
+  `build_changelog_digest_candidates()` so the admin picker and the digest body compute
+  their candidates from one function and cannot drift — the picker can only ever offer what
+  the audience is already entitled to.
+* Added `parse_changelog_digest_item_ids()`, which distinguishes `None` ("no selection
+  given — send everything this audience can see") from `[]` ("nothing chosen"). Collapsing
+  those would have made an empty selection silently send the lot.
+* **Guarded the leak case with a test and a positive control.** Passing the id of an
+  admins-only item with `audience='engineers'` yields `item_count=0` and the item is not
+  even offered by the picker; the same item with `audience='admins'` yields `item_count=1`
+  with its text present. Without the positive control the negative assertion could have
+  passed on a broken fixture.
+* **Closed a hazard introduced by the new default.** Audience is now the default mode, but a
+  caller passing `recipient_group` and no `recipient_mode` meant the group — defaulting
+  those to the audience would quietly widen a send from a short curated list to every
+  matching account. Naming a group without a mode still means the group, and the two
+  existing group tests then passed unmodified, which is the compatibility proving itself.
+* Extended the preview response with `selectable_items`, `audience_recipient_count` and
+  `audience_missing_email`. Missing accounts are **named, not just counted** — "which ones"
+  is the first question anyone asks. Addresses are still never returned.
+* Extended the digest modal: a Send-to mode selector (audience or a specific group, with the
+  group row hidden unless needed), a recipient line that turns amber when accounts are being
+  skipped and red when the audience reaches nobody, and an update picker grouped by release
+  with select all / none. The confirmation now states both the recipient count and the
+  number of updates, since both vary per send.
+* Fixed a defect found in the browser, not in review: switching to group mode left the
+  recipient line reading "This will email 8 accounts in the everyone audience" — misleading
+  in exactly the place that guards a send. `updateChangelogDigestMode()` now re-renders it.
+* Note on finding that bug: the first attempt to confirm the fix still showed the old text,
+  because `/static/` is `cacheFirst` in the service worker and the page was serving the
+  previous `app-changelog.js`. Unregistering the worker and clearing both caches was needed.
+  Recorded because a stale asset can easily read as "the fix did not work".
+* Bumped the service worker cache from `v44-changelog-digest` to `v45-digest-audience`.
+* Suite green at **252 tests** (was 243). New coverage: inactive accounts excluded, accounts
+  without email reported not dropped, audience send reaching exactly the resolved addresses,
+  an unresolvable audience refused before any send, selection narrowing the body, selection
+  unable to widen past the audience filter, an empty selection sending nothing, and preview
+  reporting audience recipients.
+* Browser-verified on an isolated database, port 5056, explicit `MEDICAL_SERVICE_TEST_DB`.
+  Audience switching moved the recipient line between 8 / 6 / 6 accounts and the item count
+  between 17 and 19 — engineers correctly see more than "everyone", since their audience set
+  includes it. Unticking one update moved 17 to 16; select-none produced "Nothing to send"
+  and disabled the send. Contrast passes AA in light and dark (recipients 6.99 / 10.49,
+  picker title 4.76 / 8.32, items 16.27 / 8.40), no horizontal overflow, mobile checkboxes
+  44 px tall, picker scrolls in its own box, console clean.
+* **The UI is still not the guard.** All three forced sends — audience, group and test —
+  returned **409** when called directly past the disabled buttons.
+* **Zero emails attempted.** 0 `[EMAIL]` lines in the server log and 3 logged refusals.
+* Standing risk recorded: `CHANGELOG_DIGEST_ENABLED` was set to **true** on Railway before
+  this work. Once deployed, audience mode can reach every matching account, so the recipient
+  count shown before a send is the real safeguard. There is still no idempotency (pressing
+  send twice sends twice) and no unsubscribe.
+* Note for whoever reads a resolved count and finds it larger than expected:
+  `get_user_email_for_notification()` ends in a **hardcoded username-to-email map**
+  (`diary`, `hanna`, `kevin`, `jonamar`, `robert`, `rodito` -> `@shimadzu.com.ph`), so those
+  accounts resolve even with no profile email.
+
+---
+
 claude changes - 2026-07-29 (later)
 
 ## What's New email digest — made usable, still switched off

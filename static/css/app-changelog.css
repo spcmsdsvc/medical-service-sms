@@ -213,6 +213,99 @@
     gap: 8px;
 }
 
+.changelog-digest-recipients {
+    margin-bottom: 14px;
+    padding: 9px 12px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    background: var(--app-surface-raised, #f1f5f9);
+    color: var(--app-text, #111827);
+    border: 1px solid var(--app-border, #d1d5db);
+    overflow-wrap: anywhere;
+}
+
+/* An audience that reaches nobody, or one that silently loses accounts, must look
+   different from a healthy one - the count is the whole safeguard before a send. */
+.changelog-digest-recipients-warn {
+    background: #fff8e6;
+    color: #7a4b06;
+    border-color: #f0cf8a;
+}
+
+.changelog-digest-recipients-empty {
+    background: #fff1f1;
+    color: #9b1c1c;
+    border-color: #f5b7b7;
+}
+
+.changelog-digest-picker-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.changelog-digest-picker-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.changelog-digest-picker {
+    max-height: 220px;
+    overflow: auto;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--app-input, #ffffff);
+    border: 1px solid var(--app-border, #d1d5db);
+}
+
+.changelog-digest-picker-group + .changelog-digest-picker-group {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--app-border, #e5e7eb);
+}
+
+.changelog-digest-picker-title {
+    font-size: 0.72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--app-muted, #6b7280);
+    margin-bottom: 5px;
+}
+
+.changelog-digest-picker-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 0.8rem;
+    color: var(--app-text, #111827);
+    cursor: pointer;
+}
+
+.changelog-digest-picker-item input {
+    /* Comfortably tappable on a phone without resizing every row. */
+    margin-top: 2px;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+}
+
+:root[data-app-theme="dark"] .changelog-digest-recipients-warn {
+    background: #3a2f10;
+    color: #fde3a7;
+    border-color: #7a5f1d;
+}
+
+:root[data-app-theme="dark"] .changelog-digest-recipients-empty {
+    background: #40201f;
+    color: #fecaca;
+    border-color: #8a3b3b;
+}
+
 :root[data-app-theme="dark"] .changelog-digest-banner {
     background: #3a2f10;
     color: #fde3a7;

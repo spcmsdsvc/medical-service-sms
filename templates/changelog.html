@@ -189,6 +189,7 @@
                             <option value="approvers">Approvers</option>
                             <option value="admins">Admins</option>
                         </select>
+                        <p class="changelog-hint mb-0">Sets both who receives it and which updates they see.</p>
                     </div>
                     <div class="col-sm-4">
                         <label class="form-label" for="changelog-digest-branch">Branch</label>
@@ -200,13 +201,34 @@
                         </select>
                     </div>
                     <div class="col-sm-4">
-                        <label class="form-label" for="changelog-digest-group">Send to</label>
+                        <label class="form-label" for="changelog-digest-mode">Send to</label>
+                        <select class="form-select" id="changelog-digest-mode" onchange="updateChangelogDigestMode()">
+                            <option value="audience">Everyone in this audience</option>
+                            <option value="group">A specific recipient group</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3" id="changelog-digest-group-row" hidden>
+                    <div class="col-sm-8">
+                        <label class="form-label" for="changelog-digest-group">Recipient group</label>
                         <select class="form-select" id="changelog-digest-group" onchange="updateChangelogDigestGroupHint()"></select>
                         <p class="changelog-hint mb-0" id="changelog-digest-group-hint">&nbsp;</p>
                     </div>
                 </div>
 
-                <div class="changelog-digest-summary" id="changelog-digest-summary" role="status" aria-live="polite">
+                <div class="changelog-digest-recipients" id="changelog-digest-recipients" role="status" aria-live="polite"></div>
+
+                <div class="changelog-digest-picker-head">
+                    <span class="form-label mb-0">Updates to include</span>
+                    <span class="changelog-digest-picker-actions">
+                        <button type="button" class="changelog-btn" onclick="setAllChangelogDigestItems(true)">Select all</button>
+                        <button type="button" class="changelog-btn" onclick="setAllChangelogDigestItems(false)">Select none</button>
+                    </span>
+                </div>
+                <div class="changelog-digest-picker" id="changelog-digest-picker"></div>
+
+                <div class="changelog-digest-summary mt-3" id="changelog-digest-summary" role="status" aria-live="polite">
                     <i class="fa-solid fa-circle-notch fa-spin me-2"></i>Rendering preview...
                 </div>
 

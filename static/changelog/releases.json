@@ -964,6 +964,15 @@
             "admins"
           ],
           "sort_order": 100
+        },
+        {
+          "item_key": "2026-07-29-digest-audience-recipients",
+          "category": "Administration",
+          "description": "The What's New digest can now be sent to everyone in a chosen audience, with the recipient count shown before sending and any account missing an email address listed by name. Administrators can also tick exactly which updates go into each send.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 110
         }
       ]
     }
