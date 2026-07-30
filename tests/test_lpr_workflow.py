@@ -1,6 +1,10 @@
 import io
+import os
 import pathlib
+import tempfile
 import unittest
+
+from sqlalchemy import create_engine
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -133,6 +137,80 @@ class LPRWorkflowTests(unittest.TestCase):
         self.assertEqual(items[0]['line_total'], 250.0)
         self.assertEqual(app_module.LPR_EDITABLE_STATUSES, {'Draft', 'Rejected', 'Returned'})
         self.assertIn("header.currency_code = 'PHP'", self.app_source)
+
+    def test_standalone_lpr_creation_is_single_flight_and_idempotent(self):
+        self.assertIn('let lprSavePromise = null;', self.template_source)
+        self.assertIn('if(lprSavePromise) return lprSavePromise;', self.template_source)
+        self.assertIn('creation_token:ensureLprCreationToken()', self.template_source)
+        self.assertIn('normalize_lpr_creation_token', self.app_source)
+        self.assertIn('uq_lpr_header_creation_token', self.app_source)
+
+        if app_module is None:
+            self.skipTest(f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+
+        file_handle, database_path = tempfile.mkstemp(suffix='.db')
+        os.close(file_handle)
+        try:
+            with app_module.app.app_context():
+                extension = app_module.app.extensions['sqlalchemy']
+                engines = extension._app_engines[app_module.app]
+                original_engine = engines[None]
+                original_ready = app_module._lpr_tables_ready
+                test_engine = create_engine(f"sqlite:///{database_path.replace(os.sep, '/')}")
+                try:
+                    engines[None] = test_engine
+                    app_module._lpr_tables_ready = False
+                    app_module.db.create_all()
+                    user = app_module.User(
+                        username='lpr-idempotency-user',
+                        password='test-only',
+                        role='engineer'
+                    )
+                    app_module.db.session.add(user)
+                    app_module.db.session.commit()
+
+                    client = app_module.app.test_client()
+                    with client.session_transaction() as session:
+                        session['_user_id'] = str(user.id)
+
+                    payload = {
+                        'creation_token': 'lpr-test-creation-token-20260730',
+                        'request_date': '2026-07-30',
+                        'branch_code': 'BC01',
+                        'class_code': 'CC04',
+                        'dept_code': 'DC03',
+                        'product_code': 'PC23',
+                        'intended_for': 'QA inventory',
+                        'equipment': 'Field service stock',
+                        'items': [{
+                            'description': 'SSD',
+                            'quantity': 1,
+                            'unit_measure': 'pc',
+                            'unit_price': 200
+                        }]
+                    }
+                    first = client.post('/save_lpr', json=payload)
+                    second = client.post('/save_lpr', json=payload)
+                    first_data = first.get_json()
+                    second_data = second.get_json()
+
+                    self.assertEqual(first.status_code, 200)
+                    self.assertEqual(second.status_code, 200)
+                    self.assertFalse(first_data['idempotent_replay'])
+                    self.assertTrue(second_data['idempotent_replay'])
+                    self.assertEqual(first_data['item']['id'], second_data['item']['id'])
+                    self.assertEqual(
+                        app_module.LPRHeader.query.filter_by(user_id=user.id).count(),
+                        1
+                    )
+                finally:
+                    app_module.db.session.remove()
+                    app_module._lpr_tables_ready = original_ready
+                    engines[None] = original_engine
+                    test_engine.dispose()
+        finally:
+            if os.path.exists(database_path):
+                os.unlink(database_path)
 
 
 if __name__ == '__main__':

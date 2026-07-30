@@ -119,7 +119,7 @@
             <div id="lprAttachmentList" class="lpr-attachment-list"><div class="lpr-muted">No supporting attachments.</div></div>
         </div>
 
-        <div class="lpr-form-actions"><button class="lpr-btn lpr-btn-secondary" type="button" onclick="clearLprForm()"><i class="fa-solid fa-eraser"></i> Clear</button><button id="lprSaveBtn" class="lpr-btn lpr-btn-success" type="button" onclick="saveLprDraft()"><i class="fa-solid fa-floppy-disk"></i> Save Draft</button><button class="lpr-btn lpr-btn-secondary" type="button" onclick="previewLpr()"><i class="fa-solid fa-eye"></i> Preview</button><button class="lpr-btn lpr-btn-secondary" type="button" onclick="downloadLpr()"><i class="fa-solid fa-download"></i> Download</button><button id="lprSubmitBtn" class="lpr-btn lpr-btn-warning" type="button" onclick="submitLpr()"><i class="fa-solid fa-paper-plane"></i> Submit</button></div>
+        <div class="lpr-form-actions"><button id="lprClearBtn" class="lpr-btn lpr-btn-secondary" type="button" onclick="clearLprForm()"><i class="fa-solid fa-eraser"></i> Clear</button><button id="lprSaveBtn" class="lpr-btn lpr-btn-success" type="button" onclick="saveLprDraft()"><i class="fa-solid fa-floppy-disk"></i> Save Draft</button><button id="lprPreviewBtn" class="lpr-btn lpr-btn-secondary" type="button" onclick="previewLpr()"><i class="fa-solid fa-eye"></i> Preview</button><button id="lprDownloadBtn" class="lpr-btn lpr-btn-secondary" type="button" onclick="downloadLpr()"><i class="fa-solid fa-download"></i> Download</button><button id="lprSubmitBtn" class="lpr-btn lpr-btn-warning" type="button" onclick="submitLpr()"><i class="fa-solid fa-paper-plane"></i> Submit</button></div>
     </section>
 </div>
 
@@ -130,6 +130,9 @@
     let lprId = null;
     let lprStatus = 'Draft';
     let lprAttachments = [];
+    let lprSavePromise = null;
+    let lprActionBusy = false;
+    let lprCreationToken = '';
     const $ = id => document.getElementById(id);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     const money = value => Number(value || 0).toLocaleString('en-PH', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -141,16 +144,55 @@
     window.addLprItem = () => { const items=rowValues(); items.push({}); renderRows(items); };
     window.removeLprItem = button => { const rows=rowValues(); const index=[...document.querySelectorAll('#lprItemsBody tr')].indexOf(button.closest('tr')); rows.splice(index,1); renderRows(rows); };
     function updateTotals() { let total=0; document.querySelectorAll('#lprItemsBody tr').forEach((row,index)=>{ row.querySelector('.lpr-row-number').textContent=index+1; const line=Number(row.querySelector('[data-field="quantity"]')?.value||0)*Number(row.querySelector('[data-field="unit_price"]')?.value||0); total += Number.isFinite(line)?line:0; const out=row.querySelector('.lpr-line-total'); if(out)out.textContent=`PHP ${money(line)}`; }); if($('lprTotal'))$('lprTotal').textContent=`PHP ${money(total)}`; }
-    function collectPayload() { return {id:lprId, request_date:$('lprDate').value, branch_code:$('lprBranch').value, class_code:$('lprClass').value, dept_code:$('lprDept').value, product_code:$('lprProduct').value, intended_for:$('lprIntendedFor').value, equipment:$('lprEquipment').value, po_no:$('lprPoNo').value, invoice_no:$('lprInvoiceNo').value, received_by:$('lprReceivedBy').value, items:rowValues()}; }
+    function newLprCreationToken() {
+        if (window.crypto?.randomUUID) return `lpr-${window.crypto.randomUUID()}`;
+        const random = Math.random().toString(36).slice(2);
+        return `lpr-${Date.now()}-${random}-${Math.random().toString(36).slice(2)}`;
+    }
+    function ensureLprCreationToken() {
+        if (!lprCreationToken) lprCreationToken = newLprCreationToken();
+        return lprCreationToken;
+    }
+    function collectPayload() { return {id:lprId, creation_token:ensureLprCreationToken(), request_date:$('lprDate').value, branch_code:$('lprBranch').value, class_code:$('lprClass').value, dept_code:$('lprDept').value, product_code:$('lprProduct').value, intended_for:$('lprIntendedFor').value, equipment:$('lprEquipment').value, po_no:$('lprPoNo').value, invoice_no:$('lprInvoiceNo').value, received_by:$('lprReceivedBy').value, items:rowValues()}; }
     async function api(url, options={}) { const response=await fetch(url, {credentials:'same-origin', cache:'no-store', ...options}); const data=await response.json().catch(()=>({})); if(!response.ok || data.success===false) throw new Error(data.error || data.message || 'Request failed.'); return data; }
     function fill(data) { lprId=data.id||data.lpr_id||null; lprStatus=data.status||'Draft'; $('lprNo').value=data.lpr_no||''; $('lprDate').value=data.request_date||''; $('lprCurrency').value='PHP'; $('lprStatus').value=lprStatus; $('lprBranch').value=data.branch_code||''; $('lprClass').value=data.class_code||''; $('lprDept').value=data.dept_code||''; $('lprProduct').value=data.product_code||''; $('lprIntendedFor').value=data.intended_for||''; $('lprEquipment').value=data.equipment||''; $('lprPoNo').value=data.po_no||''; $('lprInvoiceNo').value=data.invoice_no||''; $('lprReceivedBy').value=data.received_by||''; lprAttachments=data.attachments||[]; renderRows(data.items||[]); renderAttachments(); updateGate(); }
-    function updateGate() { const canEdit=editable(); document.querySelectorAll('.lpr-field input:not(#lprNo):not(#lprCurrency):not(#lprStatus), .lpr-field select, #lprItemsBody input').forEach(el=>el.disabled=!canEdit); $('lprAddItemBtn').disabled=!canEdit; $('lprSaveBtn').disabled=!canEdit; $('lprSubmitBtn').disabled=!canEdit || !lprId; $('lprUploadLabel').style.display=canEdit?'inline-flex':'none'; $('lprAttachmentInput').disabled=!canEdit; $('lprDeleteAllBtn').hidden=!canEdit || !lprAttachments.length; const pill=$('lprStatusPill'); if(pill){pill.textContent=lprStatus; pill.className=`lpr-status ${lprStatus.toLowerCase()}`;} }
-    window.saveLprDraft = async () => { try { const payload=collectPayload(); const data=await api('/save_lpr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); fill(data.item); notice('LPR draft saved.','ok'); toast('LPR draft saved.'); await loadLprs(); } catch(err){ notice(err.message,'error'); toast(err.message,'error'); } };
+    function updateGate() { const canEdit=editable(); const controlsEnabled=canEdit && !lprActionBusy; document.querySelectorAll('.lpr-field input:not(#lprNo):not(#lprCurrency):not(#lprStatus), .lpr-field select, #lprItemsBody input').forEach(el=>el.disabled=!controlsEnabled); $('lprAddItemBtn').disabled=!controlsEnabled; $('lprClearBtn').disabled=lprActionBusy; $('lprSaveBtn').disabled=!controlsEnabled; $('lprPreviewBtn').disabled=lprActionBusy; $('lprDownloadBtn').disabled=lprActionBusy; $('lprSubmitBtn').disabled=!controlsEnabled || !lprId; $('lprUploadLabel').style.display=controlsEnabled?'inline-flex':'none'; $('lprAttachmentInput').disabled=!controlsEnabled; $('lprDeleteAllBtn').hidden=!controlsEnabled || !lprAttachments.length; const pill=$('lprStatusPill'); if(pill){pill.textContent=lprStatus; pill.className=`lpr-status ${lprStatus.toLowerCase()}`;} }
+    function setLprActionBusy(busy, message='') {
+        lprActionBusy=!!busy;
+        const form=document.querySelector('.lpr-form');
+        if(form) form.setAttribute('aria-busy', busy ? 'true' : 'false');
+        if(message) notice(message);
+        updateGate();
+    }
+    window.saveLprDraft = async () => {
+        if(lprSavePromise) return lprSavePromise;
+        const payload=collectPayload();
+        lprSavePromise=(async()=>{
+            setLprActionBusy(true,'Saving LPR draft...');
+            try {
+                const data=await api('/save_lpr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+                fill(data.item);
+                const message=data.idempotent_replay?'Existing LPR draft recovered.':'LPR draft saved.';
+                notice(message,'ok');
+                toast(message);
+                await loadLprs();
+                return true;
+            } catch(err) {
+                notice(err.message,'error');
+                toast(err.message,'error');
+                return false;
+            } finally {
+                lprSavePromise=null;
+                setLprActionBusy(false);
+            }
+        })();
+        return lprSavePromise;
+    };
     window.submitLpr = async () => { try { if(!lprId){await saveLprDraft(); if(!lprId)return;} if(!confirm('Submit this LPR for approval?'))return; const data=await api(`/submit_lpr/${lprId}`,{method:'POST'}); fill(data.item); notice(data.message,'ok'); toast(data.message); await loadLprs(); } catch(err){ notice(err.message,'error'); toast(err.message,'error'); } };
     window.previewLpr = async () => { try { if(!lprId){await saveLprDraft(); if(!lprId)return;} $('lprPreviewFrame').src=`/preview_lpr/${lprId}?_=${Date.now()}`; $('lprPreviewModal').classList.add('open'); } catch(err){ notice(err.message,'error'); } };
     window.downloadLpr = async () => { try { if(!lprId){await saveLprDraft(); if(!lprId)return;} window.open(`/download_lpr/${lprId}?_=${Date.now()}`,'_blank','noopener'); } catch(err){ notice(err.message,'error'); } };
     window.closeLprPreview = () => { $('lprPreviewModal').classList.remove('open'); $('lprPreviewFrame').src='about:blank'; };
-    window.clearLprForm = () => { lprId=null; lprStatus='Draft'; fill({request_date:new Date().toISOString().slice(0,10),items:[{}],attachments:[]}); notice('New LPR form ready.'); };
+    window.clearLprForm = () => { if(lprActionBusy)return; lprId=null; lprStatus='Draft'; lprCreationToken=newLprCreationToken(); fill({request_date:new Date().toISOString().slice(0,10),items:[{}],attachments:[]}); notice('New LPR form ready.'); };
     async function loadLprs() { try { const data=await api('/get_lpr_list'); const items=data.items||[]; const counts={Draft:0,Submitted:0,Approved:0,Rejected:0,Ready:0}; items.forEach(item=>{counts[item.status]=(counts[item.status]||0)+1; if(item.procurement_status==='Ready for Purchase')counts.Ready++;}); ['Draft','Submitted','Approved','Rejected'].forEach(key=>{if($(`lprKpi${key}`))$(`lprKpi${key}`).textContent=counts[key]||0;}); if($('lprKpiReady'))$('lprKpiReady').textContent=counts.Ready||0; $('lprList').innerHTML=items.length?items.map(item=>`<div class="lpr-request"><div><div class="lpr-request-title">${esc(item.lpr_no||'LPR')} <span class="lpr-status ${String(item.status||'Draft').toLowerCase()}">${esc(item.procurement_status==='Ready for Purchase'?'Ready for Purchase':item.status||'Draft')}</span></div><div class="lpr-request-meta">${esc(item.request_date||'')} · ${esc(item.intended_for||'No intended recipient')} · PHP ${money(item.total_requested||0)} · ${item.item_count||0} item(s)</div></div><button class="lpr-btn lpr-btn-secondary" type="button" onclick="openLpr(${Number(item.id)})"><i class="fa-solid fa-folder-open"></i> Open</button></div>`).join(''):'<div class="lpr-empty">No LPR records yet. Save a draft to begin.</div>'; } catch(err){ $('lprList').innerHTML=`<div class="lpr-empty">${esc(err.message)}</div>`; } }
     window.openLpr = async id => { try { const data=await api(`/get_lpr/${id}`); fill(data.item); window.scrollTo({top:0,behavior:'smooth'}); } catch(err){ notice(err.message,'error'); } };
     function sizeLabel(bytes) { const n=Number(bytes||0); return n>=1048576?`${(n/1048576).toFixed(2)} MB`:`${Math.max(1,Math.round(n/1024))} KB`; }
@@ -159,7 +201,7 @@
     window.uploadLprAttachments = async files => { if(!files?.length)return; try { if(!lprId){await saveLprDraft(); if(!lprId)return;} const form=new FormData(); [...files].forEach(file=>form.append('attachment_files',file)); const data=await api(`/upload_lpr_attachments/${lprId}`,{method:'POST',body:form}); lprAttachments=data.attachments||[]; renderAttachments(); $('lprAttachmentInput').value=''; toast(data.message); } catch(err){ toast(err.message,'error'); notice(err.message,'error'); $('lprAttachmentInput').value=''; } };
     window.deleteLprAttachment = async id => { if(!confirm('Delete this attachment permanently?'))return; try { const data=await api(`/delete_lpr_attachment/${id}`,{method:'POST'}); lprAttachments=data.attachments||[]; renderAttachments(); toast(data.message); } catch(err){toast(err.message,'error');} };
     window.deleteAllLprAttachments = async () => { if(!lprId||!lprAttachments.length)return; if(!confirm(`Delete all ${lprAttachments.length} supporting attachments permanently?`))return; try { const data=await api(`/delete_all_lpr_attachments/${lprId}`,{method:'POST'}); lprAttachments=[]; renderAttachments(); toast(data.message); } catch(err){toast(err.message,'error');} };
-    async function init() { const query=new URLSearchParams(location.search); const requested=query.get('lpr_id'); if(requested){try{const data=await api(`/get_lpr/${requested}`);fill(data.item);}catch(err){notice(err.message,'error');clearLprForm();}} else { fill({request_date:new Date().toISOString().slice(0,10), items:[{}], attachments:[]}); } await loadLprs(); }
+    async function init() { lprCreationToken=newLprCreationToken(); const query=new URLSearchParams(location.search); const requested=query.get('lpr_id'); if(requested){try{const data=await api(`/get_lpr/${requested}`);fill(data.item);}catch(err){notice(err.message,'error');clearLprForm();}} else { fill({request_date:new Date().toISOString().slice(0,10), items:[{}], attachments:[]}); } await loadLprs(); }
     document.addEventListener('DOMContentLoaded', init);
 })();
 </script>

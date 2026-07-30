@@ -1,5 +1,14 @@
 # Project Change Log
 
+codex changes - 2026-07-30
+- Verified from the unique LPR numbers, identical timestamps, Activity Log wording, standalone `/save_lpr` route, and browser save flow that repeated first-save requests created separate standalone LPR drafts; the affected entries were not reimbursement-generated linked LPRs.
+- Added a stable standalone LPR creation token through an additive nullable `lpr_header.creation_token` column and unique index so browser retries, repeated requests, or lost responses resolve to the original draft instead of consuming another LPR number.
+- Added server-side LPR creation-token validation, ownership checks, idempotent replay responses, flush/commit race-condition recovery after unique-index conflicts, and explicit Activity Log/audit wording when an existing draft is recovered.
+- Added a browser single-flight save promise and busy-state gate across standalone LPR form controls so Save, Preview, Download, Submit, Clear, and attachment autosave cannot launch overlapping first-save requests.
+- Corrected standalone LPR response serialization so an intentionally empty linked-request module is normalized safely instead of calling `.lower()` on a null value.
+- Added focused regression coverage proving two identical standalone creation requests return the same LPR ID and leave only one LPR header, while also pinning the frontend lock and backend unique-token protections.
+- Bumped the service-worker cache to `v50-lpr-idempotency` so the repaired standalone LPR save behavior is delivered immediately after deployment.
+
 claude changes - 2026-07-30 (dashboard phase 4)
 
 ## Hybrid dashboard: one shortcut block, and two unreachable sections retired

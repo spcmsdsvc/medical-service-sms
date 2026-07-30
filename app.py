@@ -80,6 +80,7 @@ from sqlalchemy import (
     or_,
     event,
 )
+from sqlalchemy.exc import IntegrityError
 
 from sqlalchemy.orm import joinedload, selectinload, Session as SqlAlchemySession
 
@@ -14399,7 +14400,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v48-hybrid-focus';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v50-lpr-idempotency';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -48906,6 +48907,7 @@ class LPRHeader(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     lpr_no = db.Column(db.String(80), unique=True, index=True)
+    creation_token = db.Column(db.String(100), unique=True, index=True)
     user_id = db.Column(db.Integer, index=True, nullable=False)
     parent_module = db.Column(db.String(40), index=True)
     cash_advance_id = db.Column(db.Integer, db.ForeignKey('cash_advance_header.id'), index=True)
@@ -48996,6 +48998,15 @@ LPR_ATTACHMENT_MAX_FILES = 10
 _lpr_tables_ready = False
 
 
+def normalize_lpr_creation_token(value):
+    token = clean_str(value)
+    if not token or len(token) < 16 or len(token) > 100:
+        return ''
+    if not re.fullmatch(r'[A-Za-z0-9._:-]+', token):
+        return ''
+    return token
+
+
 def ensure_lpr_tables():
     """Create the additive LPR tables and indexes for local/live startup."""
     global _lpr_tables_ready
@@ -49020,6 +49031,7 @@ def ensure_lpr_tables():
                     for row in connection.exec_driver_sql('PRAGMA table_info(lpr_header)').fetchall()
                 }
                 for column_name, column_sql in (
+                    ('creation_token', 'VARCHAR(100)'),
                     ('parent_module', 'VARCHAR(40)'),
                     ('cash_advance_id', 'INTEGER'),
                     ('travel_request_id', 'INTEGER'),
@@ -49045,6 +49057,7 @@ def ensure_lpr_tables():
                     'CREATE INDEX IF NOT EXISTS idx_lpr_header_cash_advance ON lpr_header (cash_advance_id)',
                     'CREATE INDEX IF NOT EXISTS idx_lpr_header_travel_request ON lpr_header (travel_request_id)',
                     'CREATE INDEX IF NOT EXISTS idx_lpr_header_reimbursement ON lpr_header (reimbursement_id)',
+                    'CREATE UNIQUE INDEX IF NOT EXISTS uq_lpr_header_creation_token ON lpr_header (creation_token) WHERE creation_token IS NOT NULL',
                     'CREATE UNIQUE INDEX IF NOT EXISTS uq_lpr_header_reimbursement ON lpr_header (reimbursement_id) WHERE reimbursement_id IS NOT NULL',
                     'CREATE INDEX IF NOT EXISTS idx_lpr_item_header ON lpr_item (lpr_id)',
                     'CREATE INDEX IF NOT EXISTS idx_lpr_item_reimbursement_source ON lpr_item (reimbursement_source_key)',
@@ -49117,7 +49130,7 @@ def embedded_lpr_disabled_response():
 
 
 def normalize_embedded_lpr_parent_module(value):
-    raw = clean_str(value).lower().replace('-', '_').replace(' ', '_')
+    raw = (clean_str(value) or '').lower().replace('-', '_').replace(' ', '_')
     aliases = {
         'cashadvance': 'cash_advance',
         'travelrequest': 'travel_request',
@@ -50166,21 +50179,84 @@ def save_lpr():
     payload = request.get_json(silent=True) or {}
     if payload.get('parent_module') or payload.get('parent_id') or payload.get('cash_advance_id') or payload.get('travel_request_id') or payload.get('reimbursement_id'):
         return jsonify({'success': False, 'error': 'Use the embedded LPR workflow to attach an LPR to its request.'}), 400
-    header = db.session.get(LPRHeader, clean_int(payload.get('id') or payload.get('lpr_id'))) if clean_int(payload.get('id') or payload.get('lpr_id')) else None
+    requested_id = clean_int(payload.get('id') or payload.get('lpr_id'))
+    supplied_creation_token = clean_str(payload.get('creation_token'))
+    creation_token = normalize_lpr_creation_token(supplied_creation_token)
+    if supplied_creation_token and not creation_token:
+        return jsonify({'success': False, 'error': 'The LPR save token is invalid. Refresh the page and try again.'}), 400
+
+    header = db.session.get(LPRHeader, requested_id) if requested_id else None
+    idempotent_replay = False
     if header:
         if not lpr_can_manage(header) or not lpr_is_editable(header):
             return jsonify({'success': False, 'error': 'This LPR is no longer editable.'}), 409
+        if creation_token and header.creation_token and header.creation_token != creation_token:
+            return jsonify({'success': False, 'error': 'This LPR save token belongs to a different draft.'}), 409
+        if creation_token and not header.creation_token:
+            header.creation_token = creation_token
     else:
-        header = LPRHeader(user_id=current_user.id, request_date=get_manila_today(), status='Draft', currency_code='PHP', created_at=get_manila_time(), updated_at=get_manila_time())
-        db.session.add(header)
-        db.session.flush()
-        lpr_assign_number(header)
+        if creation_token:
+            header = LPRHeader.query.filter_by(creation_token=creation_token).first()
+            if header:
+                if header.user_id != current_user.id or header.parent_module:
+                    return jsonify({'success': False, 'error': 'This LPR save token is already in use.'}), 409
+                if not lpr_is_editable(header):
+                    return jsonify({'success': False, 'error': 'This LPR is no longer editable.'}), 409
+                idempotent_replay = True
+        if not header:
+            creation_token = creation_token or f'lpr-{secrets.token_hex(16)}'
+            header = LPRHeader(
+                user_id=current_user.id,
+                creation_token=creation_token,
+                request_date=get_manila_today(),
+                status='Draft',
+                currency_code='PHP',
+                created_at=get_manila_time(),
+                updated_at=get_manila_time()
+            )
+            db.session.add(header)
+            try:
+                db.session.flush()
+            except IntegrityError:
+                db.session.rollback()
+                duplicate = LPRHeader.query.filter_by(creation_token=creation_token).first()
+                if duplicate and duplicate.user_id == current_user.id and not duplicate.parent_module:
+                    return jsonify({
+                        'success': True,
+                        'message': 'Existing LPR draft recovered.',
+                        'idempotent_replay': True,
+                        'item': lpr_to_dict(duplicate, include_items=True, include_attachments=True)
+                    })
+                return jsonify({
+                    'success': False,
+                    'error': 'Unable to create the LPR because another save completed first. Reload the LPR list and try again.'
+                }), 409
+            lpr_assign_number(header)
     try:
         lpr_apply_payload(header, payload, require_items=True)
-        lpr_add_audit(header, 'draft_saved', 'LPR draft saved.')
-        add_activity_log_entry(f'Saved LPR draft {header.lpr_no or header.id} ({len(header.items or [])} item(s))')
+        audit_action = 'draft_save_replayed' if idempotent_replay else 'draft_saved'
+        audit_remarks = 'Repeated LPR draft creation request resolved to the existing draft.' if idempotent_replay else 'LPR draft saved.'
+        lpr_add_audit(header, audit_action, audit_remarks)
+        activity_prefix = 'Reused existing LPR draft' if idempotent_replay else 'Saved LPR draft'
+        add_activity_log_entry(f'{activity_prefix} {header.lpr_no or header.id} ({len(header.items or [])} item(s))')
         db.session.commit()
-        return jsonify({'success': True, 'message': 'LPR draft saved.', 'item': lpr_to_dict(header, include_items=True, include_attachments=True)})
+        return jsonify({
+            'success': True,
+            'message': 'Existing LPR draft recovered.' if idempotent_replay else 'LPR draft saved.',
+            'idempotent_replay': idempotent_replay,
+            'item': lpr_to_dict(header, include_items=True, include_attachments=True)
+        })
+    except IntegrityError:
+        db.session.rollback()
+        duplicate = LPRHeader.query.filter_by(creation_token=creation_token).first() if creation_token else None
+        if duplicate and duplicate.user_id == current_user.id and not duplicate.parent_module:
+            return jsonify({
+                'success': True,
+                'message': 'Existing LPR draft recovered.',
+                'idempotent_replay': True,
+                'item': lpr_to_dict(duplicate, include_items=True, include_attachments=True)
+            })
+        return jsonify({'success': False, 'error': 'Unable to create the LPR because another save completed first. Reload the LPR list and try again.'}), 409
     except ValueError as exc:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(exc)}), 400
