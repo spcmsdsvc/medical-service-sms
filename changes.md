@@ -151,7 +151,12 @@ claude changes - 2026-07-30 (hybrid ratification)
   already cached v50 would have kept stale dashboard assets. Bumped to **v51** and the
   module's floor pinned to 51 to match. Caught only by re-checking origin before committing,
   which is the argument for that step existing.
-* `scheduler.db` untouched — still last written 2026-07-23. Server stopped, nothing listening
+* `scheduler.db` **not touched by this work**, and never committed. Every check ran against an
+  isolated database with an explicit `MEDICAL_SERVICE_TEST_DB`, and it still read
+  2026-07-23 at the time the verification server ran. It now reads **2026-07-30 11:52**,
+  written from outside this session — the timing lines up with the LPR work in `9a2ad4d`.
+  Recorded precisely because "last written 2026-07-23" was true when first noted and would
+  otherwise read as a claim that the live database is idle. Server stopped, nothing listening
   on 5056, no stray python processes.
 * **Two findings for `pending-work.md`, not changed here** (that file is only edited when the
   owner asks): `/get_recent_activity` (`app.py`) now has **no caller** at all, the same
