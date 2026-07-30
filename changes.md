@@ -1,5 +1,101 @@
 # Project Change Log
 
+claude changes - 2026-07-30 (dashboard phase 4)
+
+## Hybrid dashboard: one shortcut block, and two unreachable sections retired
+
+* **The finding that redirected the phase: the hybrid sections could not render for anyone.**
+  `needs-attention`, `team-intelligence`, `admin-counters` and `recent-activity` are all
+  gated on `dashboard_effective_admin_view and not dashboard_effective_manager_view`. That
+  is unsatisfiable by construction: `is_manager_dashboard_user()` returns true for
+  `is_admin_authorized and not is_scheduler_user`, which is exactly what `admin_view`
+  requires once schedulers are excluded, so every admin account lands in the manager view.
+  Proven from the predicates and corroborated by enumerating every account in the database —
+  **none could reach them.** This predates the phase; `pending-work.md` described phase 4 as
+  "11 tiles across 10 sections", a view that had stopped rendering at some earlier point.
+* What a hybrid account actually gets is the **manager view plus the engineer sections
+  stacked**, which is what the phase 3 entry below already noted from the browser.
+* Confirmed the real hybrid accounts exist: `jonamar`, `robert`, `rodito` and `kevin` all
+  hold engineer profiles, so they are genuinely admin+engineer — they simply receive the
+  manager view rather than a hybrid one.
+* **Fixed the live duplication, which was the reachable part of the phase.** Nine
+  destinations were offered **fifteen times** across three blocks — `quick-admin`
+  (unreachable), `mobile-quick-actions` (mobile-only) and `engineer-workflow` — with
+  **Clients rendered three times** and Timeline, Products, Engineers, Reports and Logs twice
+  each. Someone had already patched the Timeline overlap with a `not
+  dashboard_has_engineer_profile` guard and left Clients alone. Now one responsive grid,
+  each destination once: 8 for an admin, 5 for a pure engineer.
+* **Caught and fixed a regression I introduced.** Folding `engineer-workflow` into
+  `quick-admin` put the merged block behind the unreachable gate, so **every engineer and
+  hybrid lost their shortcuts entirely** — found by reading the rendered page, not by
+  review. Re-gated on who actually had them
+  (`dashboard_has_engineer_profile or dashboard_effective_admin_view`, schedulers excluded
+  because phase 2 dropped their shortcut cards deliberately), then verified a pure engineer
+  gets back exactly the five destinations `engineer-workflow` used to offer.
+* **Fixed a second problem the same check exposed:** the merged block was offering
+  `/analytics_page`, `/engineers_page` and `/activity_page` to pure engineers, which
+  `engineer-workflow` never did and which all redirect a non-admin straight back. Those
+  three are now behind `dashboard_effective_admin_view` — offering a link that bounces the
+  user is the sidebar drift the layout work removed.
+* **Retired `needs-attention` and `team-intelligence`** rather than keeping unreachable
+  markup, per the owner's decision. The manager watchlist already does their job and does
+  render: it consolidates severe overdue, aged TSR, blocked jobs, repeat equipment and
+  at-risk clients into one de-duplicated list with the engineer-workload drill-down beside
+  it. Their section ids stay in `DASHBOARD_SECTION_IDS` so a saved layout naming them still
+  saves.
+* **Relocated the directory totals into the manager block**, the only content in those
+  sections with no manager equivalent. Three large tiles linking to three directories became
+  one line, the same move phase 1 made on the engineer summary, with `count-engineers` /
+  `count-clients` / `count-products` unchanged so the existing loader keeps working. Verified
+  in the browser rendering 7 / 3 / 1 — the first time those numbers have been visible to
+  anyone.
+* Along the way I built and then removed `/get_hybrid_overview`, which merged
+  `/get_hybrid_dashboard_team_summary` and `/get_hybrid_dashboard_smart_monitoring`. Worth
+  recording why the merge was justified even though the result is now deleted: the two
+  scanned the same table with the same query shape but **different limits, 1200 and 1500**,
+  so "Team Open Tasks" and the alert counts printed beside it were computed from
+  different-sized samples and could not be reconciled. They also each rebuilt the same
+  engineer-workload map, and `needs_attention_rows` concatenated stale + TSR-aging + waiting
+  so a schedule open 12 days with status `Waiting for Parts` appeared twice — the **third**
+  instance of that same concatenation bug, after the scheduler queue and the manager
+  watchlist.
+* Net effect in `app.py`: 323 lines of hybrid endpoints removed and not replaced.
+* Recorded in code and left alone rather than widened into this change: `recent-activity`
+  sits behind the same unsatisfiable gate, so it never renders, and the activity-log poll
+  with its **5-second `setInterval`** consequently never runs. Confirmed against a live
+  server, which logged zero requests to it. Harmless as-is, but it is dead weight and
+  belongs in `pending-work.md`.
+* Also still noted, unchanged: `/get_engineer_dashboard_summary` has zero callers.
+* Added `tests/test_dashboard_hybrid.py` (11 tests). The first pins the reachability finding
+  itself — asserting the `is_admin_authorized and not is_scheduler_user` clause is still
+  there — so any future attempt to revive those sections has to confront the predicate
+  first. The rest cover: the retired sections gone but their ids still registered, all three
+  hybrid endpoints 404, each destination once in the grid, **the shortcut gate not
+  inheriting the manager condition** (the regression above, pinned), admin-only
+  destinations gated, directory totals inside the manager block, dead CSS removed with
+  balanced braces, and the layout API still accepting the retired ids.
+* Rewrote two phase-1 tests that asserted the old structure.
+  `test_engineer_shortcuts_are_not_duplicated` split the template on the two class names
+  this phase merged, so it could no longer run; it now states the property directly, scoped
+  to the merged grid, since a whole-file count would be meaningless with every role's markup
+  in one file. `test_other_role_sections_are_untouched_this_phase` became
+  `test_other_role_sections_still_render` — all four phases are done, so it is now the full
+  set rather than a guard against later phases, and it asserts the two retired ids are gone.
+* Suite green at **299 tests** (was 288). `py_compile` clean, `node --check` clean, CSS
+  braces balanced.
+* Browser-verified on an isolated database, port 5056, explicit `MEDICAL_SERVICE_TEST_DB`,
+  never port 5000. Checked both the admin and the pure-engineer path through the developer
+  preview switcher. Contrast: light min **4.76**, dark min **6.24**, all AA — one genuine
+  dark-mode failure found and fixed, the shortcut icon at **3.56** against the dark card
+  because it used `var(--app-primary)` directly; added to the existing `color-mix`
+  lightening block, now 9.05. Two columns at 375 px, no horizontal overflow, no element
+  escaping either section, every card ≥44 px, console clean.
+* Service worker bumped `v47-manager-decisions` → `v48-hybrid-focus`.
+* `scheduler.db` untouched — still last written 2026-07-23. Server stopped, port 5056 free.
+* Not verified: Edge and Brave, and the offline path against a real service worker.
+
+---
+
 claude changes - 2026-07-29 (dashboard phase 3)
 
 ## Manager dashboard rebuilt around decisions and direction

@@ -45,13 +45,27 @@ class DashboardSourceTests(unittest.TestCase):
             self.assertIn(f'id="{count_id}"', self.dashboard)
 
     def test_engineer_shortcuts_are_not_duplicated(self):
-        # Both blocks used to render the same five destinations, toggled by viewport.
-        engineer_block = self.dashboard.split('dashboard-mobile-quick-actions')[1]
-        engineer_block = engineer_block.split('dashboard-engineer-workflow')[0]
-        self.assertNotIn('/offline-tsr', engineer_block)
-        self.assertNotIn('/products_page', engineer_block)
-        self.assertNotIn('display: none', self.css.split('.dashboard-engineer-workflow {')[2]
-                         if self.css.count('.dashboard-engineer-workflow {') > 2 else '')
+        """Rewritten in phase 4, which merged the blocks this used to compare.
+
+        Phase 1 left two shortcut blocks in place -- mobile-quick-actions for the
+        admin/scheduler/manager paths and engineer-workflow for engineers -- and this test
+        asserted the engineer destinations had been removed from the first. Phase 4 merged
+        both into the single responsive quick-admin grid, so there is no longer a pair to
+        compare. The property being protected is unchanged and now stated directly: each
+        destination appears once.
+        """
+        for retired in ('dashboard-mobile-quick-actions', 'dashboard-engineer-workflow'):
+            self.assertNotIn(retired, self.dashboard)
+
+        # Scoped to the merged grid: the template carries every role's markup and only one
+        # role's block renders per request, so a whole-file count would be meaningless.
+        grid = self.dashboard.split('hybrid-shortcut-grid')[1].split('</div>\n        </div>')[0]
+        for destination in ('/timeline', '/clients_page', '/products_page',
+                            '/engineers_page', '/reports_page', '/activity_page',
+                            '/analytics_page', '/offline-tsr'):
+            self.assertEqual(
+                grid.count(f'href="{destination}"'), 1,
+                f'{destination} should be offered exactly once in the shortcut grid')
 
     def test_needs_you_today_is_built_from_loaded_data(self):
         self.assertIn('id="engineer-today-list"', self.dashboard)
@@ -67,11 +81,21 @@ class DashboardSourceTests(unittest.TestCase):
         # The tbody id must not be reused by the wrapper.
         self.assertIn('<tbody id="open-tasks-body">', self.dashboard)
 
-    def test_other_role_sections_are_untouched_this_phase(self):
+    def test_other_role_sections_still_render(self):
+        """Originally a guard so later phases could not edit other roles by accident.
+
+        All four phases are now done, so this is the full set of sections the template
+        still carries. needs-attention and team-intelligence left the list in phase 4:
+        both were gated on `admin_view and not manager_view`, which no account satisfies,
+        so they never rendered and were retired rather than kept as unreachable markup.
+        """
         for section in ('scheduler-core', 'scheduler-dispatch', 'scheduler-coordination',
-                        'manager-executive', 'admin-counters', 'needs-attention',
-                        'team-intelligence', 'quick-admin', 'recent-activity'):
+                        'manager-executive', 'manager-direction', 'manager-watchlist',
+                        'admin-counters', 'quick-admin', 'recent-activity'):
             self.assertIn(f'data-dashboard-section="{section}"', self.dashboard)
+
+        for retired in ('needs-attention', 'team-intelligence'):
+            self.assertNotIn(f'data-dashboard-section="{retired}"', self.dashboard)
 
     def test_layout_preference_column_and_endpoint(self):
         self.assertIn('ui_dashboard_layout_json = db.Column(db.Text, nullable=True)', self.app_source)

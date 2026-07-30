@@ -185,76 +185,6 @@
             </div>`;
     }
 
-    function renderTeamWorkload(rows) {
-        const container = document.getElementById('team-workload-list');
-        if (!container) return;
-
-        if (!rows || !rows.length) {
-            renderTeamEmpty('team-workload-list', 'No active engineer workload found.');
-            return;
-        }
-
-        container.innerHTML = rows.map(row => `
-            <div class="dashboard-team-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.name || 'Unassigned')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.branch || 'No branch')}</div>
-                </div>
-                <div class="dashboard-team-row-badges">
-                    <span class="badge bg-primary">${escapeHtml(row.open_tasks || 0)} open</span>
-                    <span class="badge bg-danger">${escapeHtml(row.overdue || 0)} overdue</span>
-                    ${Number(row.waiting_items || 0) ? `<span class="badge bg-warning text-dark">${escapeHtml(row.waiting_items)} waiting</span>` : ''}
-                </div>
-            </div>
-        `).join('');
-    }
-
-    function renderTeamWatchlist(data) {
-        const container = document.getElementById('team-watchlist');
-        if (!container) return;
-
-        const overdueRows = Array.isArray(data.overdue_rows) ? data.overdue_rows : [];
-        const pendingRows = Array.isArray(data.pending_tsr_rows) ? data.pending_tsr_rows : [];
-        const rows = [
-            ...overdueRows.slice(0, 5).map(row => ({...row, watchType: 'Overdue', watchClass: 'bg-danger'})),
-            ...pendingRows.slice(0, 5).map(row => ({...row, watchType: 'Missing TSR', watchClass: 'bg-warning text-dark'}))
-        ].slice(0, 8);
-
-        if (!rows.length) {
-            renderTeamEmpty('team-watchlist', 'No overdue or missing TSR items.');
-            return;
-        }
-
-        container.innerHTML = rows.map(row => `
-            <div class="dashboard-team-row dashboard-team-watch-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.client || 'No client')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.date || '')} • ${escapeHtml(row.task || '')}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.engineers || '')}</div>
-                </div>
-                <span class="badge ${row.watchClass}">${escapeHtml(row.watchType)}</span>
-            </div>
-        `).join('');
-    }
-
-    async function loadTeamIntelligence() {
-        if (!dashboardAdminView) return;
-
-        try {
-            const data = await fetchJsonOrThrow('/get_hybrid_dashboard_team_summary');
-            setTextIfPresent('team-open-count', data.team_open_tasks || 0);
-            setTextIfPresent('team-overdue-count', data.overdue_tasks || 0);
-            setTextIfPresent('team-pending-tsr-count', data.pending_tsr || 0);
-            setTextIfPresent('team-waiting-count', data.waiting_items || 0);
-            renderTeamWorkload(data.workload_rows || []);
-            renderTeamWatchlist(data || {});
-        } catch (teamError) {
-            console.warn('Team intelligence could not be loaded:', teamError);
-            renderTeamEmpty('team-workload-list', 'Team intelligence could not be loaded.');
-            renderTeamEmpty('team-watchlist', 'Priority watchlist could not be loaded.');
-        }
-    }
-
     function toggleDashboardSection(sectionId, button) {
         const section = document.getElementById(sectionId);
         if (!section) return;
@@ -269,85 +199,6 @@
         }
 
         saveDashboardCollapsedState(sectionId, !isHidden);
-    }
-
-    function smartRiskBadgeClass(level) {
-        if (level === 'critical') return 'badge bg-danger rounded-pill px-3 py-2';
-        if (level === 'warning') return 'badge bg-warning text-dark rounded-pill px-3 py-2';
-        return 'badge bg-success rounded-pill px-3 py-2';
-    }
-
-    function renderSmartAttentionList(data) {
-        const container = document.getElementById('smart-attention-list');
-        if (!container) return;
-
-        const rows = Array.isArray(data.needs_attention_rows) ? data.needs_attention_rows : [];
-        const workloadAlerts = Array.isArray(data.workload_alerts) ? data.workload_alerts : [];
-        const repeatAlerts = Array.isArray(data.repeat_service_alerts) ? data.repeat_service_alerts : [];
-
-        const combined = [
-            ...rows.slice(0, 8).map(row => ({
-                title: row.client || 'No client',
-                subtitle: `${row.date || ''} • ${row.task || ''}`,
-                detail: row.engineers || '',
-                label: row.alert_label || 'Needs attention',
-                badge: row.alert_type === 'tsr_aging' ? 'bg-warning text-dark' : (row.alert_type === 'waiting_item' ? 'bg-dark' : 'bg-danger')
-            })),
-            ...workloadAlerts.slice(0, 3).map(row => ({
-                title: row.name || 'Engineer',
-                subtitle: `${row.open_tasks || 0} open • ${row.overdue || 0} overdue`,
-                detail: row.branch || '',
-                label: row.risk_level === 'high' ? 'High load' : 'Watch load',
-                badge: row.risk_level === 'high' ? 'bg-danger' : 'bg-warning text-dark'
-            })),
-            ...repeatAlerts.slice(0, 3).map(row => ({
-                title: row.client || 'Client',
-                subtitle: `${row.product || 'Product'} ${row.serial ? '(' + row.serial + ')' : ''}`,
-                detail: `${row.service_count || 0} services in recent window`,
-                label: 'Repeat service',
-                badge: 'bg-primary'
-            }))
-        ].slice(0, 12);
-
-        if (!combined.length) {
-            renderTeamEmpty('smart-attention-list', 'No critical items detected right now.');
-            return;
-        }
-
-        container.innerHTML = combined.map(row => `
-            <div class="dashboard-team-row dashboard-attention-row">
-                <div>
-                    <div class="dashboard-team-row-title">${escapeHtml(row.title)}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.subtitle)}</div>
-                    <div class="dashboard-team-row-sub">${escapeHtml(row.detail)}</div>
-                </div>
-                <span class="badge ${row.badge}">${escapeHtml(row.label)}</span>
-            </div>
-        `).join('');
-    }
-
-    async function loadSmartMonitoring() {
-        if (!dashboardAdminView) return;
-
-        try {
-            const data = await fetchJsonOrThrow('/get_hybrid_dashboard_smart_monitoring');
-            const counts = data.counts || {};
-            setTextIfPresent('smart-stale-count', counts.stale_tasks || 0);
-            setTextIfPresent('smart-tsr-aging-count', counts.tsr_aging || 0);
-            setTextIfPresent('smart-workload-count', counts.workload_alerts || 0);
-            setTextIfPresent('smart-repeat-count', counts.repeat_service_alerts || 0);
-
-            const riskBadge = document.getElementById('smart-risk-badge');
-            if (riskBadge) {
-                riskBadge.className = smartRiskBadgeClass(data.risk_level);
-                riskBadge.innerText = data.risk_label || 'Stable';
-            }
-
-            renderSmartAttentionList(data || {});
-        } catch (smartError) {
-            console.warn('Smart monitoring could not be loaded:', smartError);
-            renderTeamEmpty('smart-attention-list', 'Smart monitoring could not be loaded.');
-        }
     }
 
     // --- DASHBOARD PERSONALIZATION: DRAG / REORDER / SAVE ---
@@ -1500,9 +1351,13 @@
                 loadManagerOverview();
             }
 
+            // This condition mirrors the template gate on the recent-activity section, and
+            // that gate cannot be satisfied: is_manager_dashboard_user() is true for any
+            // admin-authorized non-scheduler, so managerView is always set here too. The
+            // branch therefore never runs -- confirmed against a live server, which logged
+            // zero requests to the endpoint below. Left in place with the section it feeds
+            // rather than widened into the hybrid retirement.
             if (dashboardAdminView && !dashboardSchedulerOnly && !dashboardManagerView) {
-                loadSmartMonitoring();
-                loadTeamIntelligence();
                 fetchActivityLog();
                 // Set the auto-refresh interval for Admin Feed (5 seconds)
                 if (!window.__dashboardActivityTimerStarted) {

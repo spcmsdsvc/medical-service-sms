@@ -370,65 +370,8 @@
         background: linear-gradient(135deg, #ffffff, #f8fafc);
     }
 
-    .dashboard-engineer-workflow {
-        display: grid;
-        grid-template-columns: repeat(5, minmax(0, 1fr));
-        gap: 0.85rem;
-    }
-
-    .dashboard-workflow-card {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        min-height: 82px;
-        padding: 1rem;
-        background: #fff;
-        border: 1px solid #e2e8f0;
-        border-radius: 1rem;
-        color: #334155;
-        text-decoration: none;
-        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
-        transition: 0.22s ease;
-    }
-
-    .dashboard-workflow-card:hover {
-        transform: translateY(-3px);
-        color: #0d6efd;
-        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
-    }
-
-    .dashboard-workflow-primary {
-        border-color: rgba(13, 110, 253, 0.35);
-        background: linear-gradient(135deg, #ffffff, #eef5ff);
-    }
-
-    .dashboard-workflow-icon {
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
-        display: grid;
-        place-items: center;
-        background: #e7f1ff;
-        color: #0d6efd;
-        flex: 0 0 auto;
-        font-size: 1rem;
-    }
-
-    .dashboard-workflow-card strong {
-        display: block;
-        color: #0f172a;
-        font-size: 0.9rem;
-        line-height: 1.15;
-    }
-
-    .dashboard-workflow-card span {
-        display: block;
-        color: #64748b;
-        font-size: 0.72rem;
-        font-weight: 700;
-        line-height: 1.2;
-        margin-top: 0.2rem;
-    }
+    /* The hybrid team-panel styles that sat here went with the two unreachable sections.
+       The shortcut grid below is reachable and stays. */
 
     .dashboard-quick-admin {
         background: linear-gradient(135deg, #fffbeb, #ffffff);
@@ -437,107 +380,51 @@
         padding: 1rem;
     }
 
-    .dashboard-admin-action-grid {
+    /* One shortcut grid, responsive, replacing two viewport-toggled copies plus a third
+       collapsed block. Nine destinations were previously offered fifteen times. */
+    .hybrid-shortcut-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 0.85rem;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.7rem;
     }
 
-    .dashboard-admin-action-card {
+    .hybrid-shortcut {
         display: flex;
         flex-direction: column;
-        gap: 0.35rem;
-        min-height: 116px;
-        padding: 1rem;
-        background: #fff;
-        border: 1px solid #e2e8f0;
-        border-radius: 1rem;
-        color: #334155;
+        gap: 0.2rem;
+        min-height: 88px;
+        padding: 0.8rem;
+        border: 1px solid var(--app-border, #e2e8f0);
+        border-radius: 0.9rem;
+        background: var(--app-surface, #ffffff);
         text-decoration: none;
-        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
-        transition: 0.22s ease;
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
     }
 
-    .dashboard-admin-action-card:hover {
-        transform: translateY(-3px);
-        color: #0d6efd;
-        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1);
+    .hybrid-shortcut:hover,
+    .hybrid-shortcut:focus-visible {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.09);
     }
 
-    .dashboard-admin-action-card i {
-        width: 42px;
-        height: 42px;
-        border-radius: 14px;
-        display: grid;
-        place-items: center;
-        background: #fff7ed;
-        color: #f59e0b;
-        font-size: 1rem;
+    .hybrid-shortcut.is-primary { border-color: var(--app-primary, #0d6efd); }
+
+    .hybrid-shortcut i {
+        font-size: 1.05rem;
+        color: var(--app-primary, #0d6efd);
     }
 
-    .dashboard-admin-action-card strong {
-        color: #0f172a;
-        font-size: 0.9rem;
+    .hybrid-shortcut strong {
+        font-size: 0.86rem;
         line-height: 1.15;
+        color: var(--app-text, #0f172a);
     }
 
-    .dashboard-admin-action-card span {
-        color: #64748b;
-        font-size: 0.72rem;
+    .hybrid-shortcut span {
+        font-size: 0.7rem;
         font-weight: 700;
         line-height: 1.25;
-    }
-
-    .dashboard-admin-action-primary {
-        border-color: rgba(245, 158, 11, 0.35);
-        background: linear-gradient(135deg, #ffffff, #fffbeb);
-    }
-
-    .dashboard-team-intelligence {
-        background: linear-gradient(135deg, #f8fafc, #ffffff);
-        border: 1px solid #e2e8f0;
-        border-radius: 1.25rem;
-        padding: 1rem;
-    }
-
-    .dashboard-needs-attention {
-        background: linear-gradient(135deg, #fff7ed, #ffffff);
-        border: 1px solid #fed7aa;
-        border-radius: 1.25rem;
-        padding: 1rem;
-    }
-
-    .dashboard-attention-card {
-        min-height: 128px;
-        border-left: 4px solid rgba(220, 53, 69, 0.35) !important;
-    }
-
-    .dashboard-attention-list {
-        max-height: 360px;
-        overflow-y: auto;
-    }
-
-    .dashboard-attention-row {
-        background: #fff;
-    }
-
-    .dashboard-collapsible-body.d-none {
-        display: none !important;
-    }
-
-    .scheduler-core-dashboard > .d-flex,
-    .scheduler-coordination-panel > .d-flex {
-        align-items: flex-start;
-    }
-
-    .scheduler-dispatch-panel .card-header .btn,
-    .scheduler-core-dashboard .btn,
-    .scheduler-coordination-panel .btn {
-        min-height: 2.25rem;
-    }
-
-    .dashboard-team-card {
-        min-height: 128px;
+        color: var(--app-muted, #6b7280);
     }
 
     .dashboard-team-label {
@@ -959,33 +846,8 @@
     }
 
     /* MOBILE DASHBOARD UPGRADE */
-    .dashboard-mobile-quick-actions,
     .dashboard-mobile-card-list {
         display: none;
-    }
-
-    .dashboard-mobile-action-card {
-        border: 1px solid #e2e8f0;
-        background: #fff;
-        color: #334155;
-        border-radius: 1rem;
-        padding: 0.9rem 0.75rem;
-        text-decoration: none;
-        font-weight: 900;
-        font-size: 0.78rem;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.38rem;
-        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
-    }
-
-    .dashboard-mobile-action-card i { font-size: 1.05rem; }
-
-    .dashboard-mobile-action-primary {
-        background: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
     }
 
     .dashboard-mobile-task-card,
@@ -1084,12 +946,6 @@
         font-weight: 800;
     }
 
-    @media (max-width: 1100px) and (min-width: 769px) {
-        .dashboard-engineer-workflow {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-        }
-    }
-
     @media (max-width: 768px) {
         .container.py-4 { padding: 0.9rem !important; }
 
@@ -1132,40 +988,16 @@
         /* Five equal columns, matching the mobile block this replaced. auto-fit wrapped
            to three rows at 375px, which cost more vertical space than the layout it
            was meant to simplify. */
-        .dashboard-engineer-workflow {
-            grid-template-columns: repeat(5, minmax(0, 1fr));
-            gap: 0.45rem;
+        .hybrid-shortcut-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.6rem;
         }
 
-        .dashboard-engineer-workflow .dashboard-workflow-card {
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            gap: 0.3rem;
-            min-height: 68px;
-            padding: 0.6rem 0.2rem;
+        .hybrid-shortcut {
+            min-height: 82px;
+            padding: 0.7rem;
         }
 
-        .dashboard-engineer-workflow .dashboard-workflow-card span {
-            display: none;
-        }
-
-        .dashboard-engineer-workflow .dashboard-workflow-card strong {
-            font-size: 0.72rem;
-            line-height: 1.15;
-        }
-
-        .dashboard-mobile-quick-actions {
-            display: grid;
-            grid-template-columns: repeat(5, minmax(0, 1fr));
-            gap: 0.45rem;
-        }
-
-        .dashboard-mobile-action-card {
-            padding: 0.75rem 0.35rem;
-            font-size: 0.68rem;
-        }
 
         .dashboard-personalize-toolbar {
             align-items: flex-start;
@@ -1201,8 +1033,6 @@
             top: 0.35rem;
         }
 
-        .dashboard-team-intelligence,
-        .dashboard-needs-attention,
         .dashboard-quick-admin,
         .manager-executive-dashboard,
         .scheduler-core-dashboard,
@@ -1248,15 +1078,6 @@
             justify-self: start;
         }
 
-        .dashboard-admin-action-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.6rem;
-        }
-
-        .dashboard-admin-action-card {
-            min-height: 108px;
-            padding: 0.85rem;
-        }
         .dashboard-team-row {
             align-items: flex-start;
             flex-direction: column;
@@ -1505,14 +1326,16 @@
    for browsers without color-mix; only browsers that support it take the tint. */
 :root[data-app-theme="dark"] .dashboard-metric-link,
 :root[data-app-theme="dark"] .dashboard-today-action,
-:root[data-app-theme="dark"] .scheduler-queue-action {
+:root[data-app-theme="dark"] .scheduler-queue-action,
+:root[data-app-theme="dark"] .hybrid-shortcut i {
     color: #cbd5e1;
 }
 
 @supports (color: color-mix(in srgb, red 50%, white)) {
     :root[data-app-theme="dark"] .dashboard-metric-link,
     :root[data-app-theme="dark"] .dashboard-today-action,
-    :root[data-app-theme="dark"] .scheduler-queue-action {
+    :root[data-app-theme="dark"] .scheduler-queue-action,
+    :root[data-app-theme="dark"] .hybrid-shortcut i {
         color: color-mix(in srgb, var(--app-primary) 40%, #ffffff);
     }
 }
@@ -1529,7 +1352,8 @@
 :root[data-app-theme="dark"] .manager-approvals-total-label,
 :root[data-app-theme="dark"] .manager-approvals-aging,
 :root[data-app-theme="dark"] .manager-approval-age,
-:root[data-app-theme="dark"] .manager-approvals-empty {
+:root[data-app-theme="dark"] .manager-approvals-empty,
+:root[data-app-theme="dark"] .hybrid-shortcut span {
     color: #94a3b8;
 }
 

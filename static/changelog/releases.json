@@ -1018,6 +1018,24 @@
             "admins"
           ],
           "sort_order": 160
+        },
+        {
+          "item_key": "2026-07-29-hybrid-one-shortcut-block",
+          "category": "System",
+          "description": "For accounts that are both an administrator and an engineer, the dashboard's shortcuts are now a single block listing each destination once. Timeline, Clients, Products, Engineers, Reports and Activity Logs were previously repeated across three separate sections, with Clients appearing three times.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 170
+        },
+        {
+          "item_key": "2026-07-29-directory-totals-moved",
+          "category": "Management",
+          "description": "Personnel, medical centre and product totals now appear as a single line on the manager dashboard. They previously sat in a section that no account could actually see.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 180
         }
       ]
     }
