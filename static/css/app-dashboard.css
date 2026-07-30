@@ -270,28 +270,62 @@
     }
 
 
-    .developer-dashboard-switcher {
-        background: linear-gradient(135deg, #fff1f2, #ffffff);
-        border: 1px solid #fecdd3;
-        border-radius: 1rem;
-        padding: 0.95rem 1rem;
-        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
-    }
-
-    .developer-view-buttons {
+    /* Hybrid scope boundary: marks where the team's work ends and the reader's own begins.
+       Only rendered for an admin who also holds an engineer profile -- a pure engineer has
+       nothing above to divide from. */
+    .dashboard-scope-divider {
         display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        justify-content: flex-end;
+        align-items: center;
+        gap: 0.75rem;
+        margin: 1.75rem 0 1rem;
     }
 
-    .developer-view-btn {
+    .dashboard-scope-divider::before,
+    .dashboard-scope-divider::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: #e2e8f0;
+    }
+
+    .dashboard-scope-divider-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        font-size: 0.78rem;
         font-weight: 900;
-        min-height: 2.25rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        /* Measured, not assumed. This label sits on .main-content (rgb(244,247,246)), not on
+           a white card, so it does not inherit the 4.76:1 the on-card metric labels get from
+           the same #64748b -- there it falls to 4.41, under AA. At 12.5px it is not large
+           text, so 4.5 is the bar it has to clear. #5d6b81 measures 5.01:1 on that surface. */
+        color: #5d6b81;
+        white-space: nowrap;
     }
 
-    .developer-view-status {
-        font-weight: 800;
+    /* Subordination, not concealment. The personal sections keep every row and every
+       control; they simply stop competing with the manager block for first read. */
+    .dashboard-scope-personal .card-header h5,
+    .dashboard-scope-personal .dashboard-today-header {
+        font-size: 1rem;
+    }
+
+    /* Shrinking the heading changed which contrast rule applies to it. At the inherited 20px
+       bold it was AA "large text" and Bootstrap's #0d6efd cleared the 3:1 bar easily; at 1rem
+       it is normal text against a 4.5:1 bar and measured exactly 4.50 in light mode and 3.14
+       on the dark card -- one no-margin pass and one genuine failure. Darkened here to
+       5.84:1; the dark side is lightened in the accent block near the end of this file.
+
+       !important is required, not decorative: Bootstrap's .text-primary utility declares its
+       colour !important, so specificity alone loses to it. Verified in the browser -- the
+       first attempt at this rule had no effect for exactly that reason. */
+    .dashboard-scope-personal .card-header h5.text-primary {
+        color: #0b5ed7 !important;
+    }
+
+    .dashboard-scope-personal .dashboard-metric-value {
+        font-size: 1.35rem;
     }
 
 
@@ -1005,18 +1039,12 @@
             padding: 0.85rem;
         }
 
-        .developer-dashboard-switcher {
-            padding: 0.85rem;
+        .dashboard-scope-divider {
+            margin: 1.35rem 0 0.85rem;
         }
 
-        .developer-view-buttons {
-            width: 100%;
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .developer-view-btn {
-            width: 100%;
+        .dashboard-scope-divider-label {
+            font-size: 0.72rem;
         }
 
         .dashboard-personalize-toolbar .d-flex {
@@ -1327,8 +1355,10 @@
 :root[data-app-theme="dark"] .dashboard-metric-link,
 :root[data-app-theme="dark"] .dashboard-today-action,
 :root[data-app-theme="dark"] .scheduler-queue-action,
-:root[data-app-theme="dark"] .hybrid-shortcut i {
-    color: #cbd5e1;
+:root[data-app-theme="dark"] .hybrid-shortcut i,
+/* !important because Bootstrap's .text-primary utility is itself !important. */
+:root[data-app-theme="dark"] .dashboard-scope-personal .card-header h5.text-primary {
+    color: #cbd5e1 !important;
 }
 
 @supports (color: color-mix(in srgb, red 50%, white)) {
@@ -1337,6 +1367,12 @@
     :root[data-app-theme="dark"] .scheduler-queue-action,
     :root[data-app-theme="dark"] .hybrid-shortcut i {
         color: color-mix(in srgb, var(--app-primary) 40%, #ffffff);
+    }
+
+    /* Separated from the group above only because this one needs !important to outrank
+       Bootstrap's .text-primary utility; the others are not Bootstrap-coloured. */
+    :root[data-app-theme="dark"] .dashboard-scope-personal .card-header h5.text-primary {
+        color: color-mix(in srgb, var(--app-primary) 40%, #ffffff) !important;
     }
 }
 

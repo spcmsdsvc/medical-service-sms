@@ -77,37 +77,10 @@
     </section>
 
 
-    {% if dashboard_developer_mode %}
-    <!-- DEVELOPER-ONLY DASHBOARD VIEW SWITCHER -->
-    <div class="developer-dashboard-switcher mb-4 dashboard-sortable-section" data-dashboard-section="developer-view-switcher" data-dashboard-title="Developer View Switcher">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
-            <div>
-                <h6 class="mb-1 fw-bold text-dark">
-                    <i class="fa-solid fa-code-branch me-2 text-danger"></i>
-                    Developer Dashboard Preview
-                </h6>
-                <p class="text-muted small mb-0">
-                    Jonamar-only session preview. This changes your dashboard layout only, not your real account role or permissions.
-                </p>
-            </div>
-            <div class="developer-view-buttons" role="group" aria-label="Developer dashboard view selector">
-                <button type="button" class="btn btn-sm developer-view-btn {% if dashboard_developer_view == 'default' %}btn-danger{% else %}btn-outline-danger{% endif %}" data-dev-view="default" onclick="setDeveloperDashboardView('default')">
-                    <i class="fa-solid fa-layer-group me-1"></i>My Default
-                </button>
-                <button type="button" class="btn btn-sm developer-view-btn {% if dashboard_developer_view == 'engineer' %}btn-primary{% else %}btn-outline-primary{% endif %}" data-dev-view="engineer" onclick="setDeveloperDashboardView('engineer')">
-                    <i class="fa-solid fa-user-gear me-1"></i>Engineer
-                </button>
-                <button type="button" class="btn btn-sm developer-view-btn {% if dashboard_developer_view == 'scheduler' %}btn-success{% else %}btn-outline-success{% endif %}" data-dev-view="scheduler" onclick="setDeveloperDashboardView('scheduler')">
-                    <i class="fa-solid fa-calendar-check me-1"></i>Scheduler
-                </button>
-                <button type="button" class="btn btn-sm developer-view-btn {% if dashboard_developer_view == 'manager' %}btn-dark{% else %}btn-outline-dark{% endif %}" data-dev-view="manager" onclick="setDeveloperDashboardView('manager')">
-                    <i class="fa-solid fa-briefcase me-1"></i>Manager
-                </button>
-            </div>
-        </div>
-        <div id="developer-view-status" class="developer-view-status small mt-2 d-none"></div>
-    </div>
-    {% endif %}
+    {# RETIRED: the developer-only dashboard view switcher, removed by owner decision.
+       Verifying a role's dashboard now means signing in as an account that holds that role,
+       which is stronger evidence than a session flag that only approximated one. Its section
+       id stays registered in DASHBOARD_SECTION_IDS so saved layouts naming it still save. #}
 
     <!-- DASHBOARD PERSONALIZATION CONTROLS -->
     <div class="dashboard-personalize-toolbar mb-4">
@@ -392,7 +365,9 @@
                 <span class="dashboard-metric-divider" aria-hidden="true"></span>
                 <div class="dashboard-metric">
                     <span class="dashboard-metric-value dashboard-metric-warn" id="manager-waiting-count">0</span>
-                    <span class="dashboard-metric-label">Waiting P.O / parts</span>
+                    {# "company-wide" earns its words: an admin with an engineer profile has a
+                       second, personal "waiting" figure further down the same page. #}
+                    <span class="dashboard-metric-label">Waiting P.O / parts{% if dashboard_effective_hybrid_view %}, company-wide{% endif %}</span>
                 </div>
                 <a href="/analytics_page" class="dashboard-metric-link">Open analytics &rarr;</a>
             </div>
@@ -492,13 +467,39 @@
     </div>
     {% endif %}
 
+    {#
+        SCOPE BOUNDARY, hybrid accounts only.
+
+        An admin who also holds an engineer profile gets the manager view above and their own
+        work below. Without a boundary the page reads as two peer dashboards: three visually
+        identical metric strips at three different scopes, and three attention-framed headings
+        competing at the same weight. Two of those strips even carried a "waiting" metric
+        meaning different things -- the company's blocked jobs above, this reader's own
+        assignments below.
+
+        A pure engineer sees no divider because there is nothing above to divide from, and a
+        manager-primary account never reaches here at all.
+    #}
+    {% if dashboard_effective_hybrid_view %}
+    <div class="dashboard-scope-divider" role="presentation">
+        <span class="dashboard-scope-divider-label">
+            <i class="fa-solid fa-user-check" aria-hidden="true"></i>
+            Your own work
+        </span>
+    </div>
+    {% endif %}
+
     <!-- ANALYTICS MATRIX -->
     {% if dashboard_has_engineer_profile %}
     <!-- ENGINEER SUMMARY STRIP
          Replaces four large tiles that all linked to the same destination. The count
          element ids are unchanged so updateEngineerSummaryCards() keeps working; only
-         the presentation changed. -->
-    <div class="dashboard-metric-strip mb-3 dashboard-sortable-section" data-dashboard-section="engineer-summary" data-dashboard-title="Engineer Summary">
+         the presentation changed.
+
+         The labels say "assigned to you" for hybrids because the manager strip above uses
+         the same component with company-wide numbers. A pure engineer has no such ambiguity
+         and keeps the shorter labels. -->
+    <div class="dashboard-metric-strip mb-3 dashboard-sortable-section{% if dashboard_effective_hybrid_view %} dashboard-scope-personal{% endif %}" data-dashboard-section="engineer-summary" data-dashboard-title="Engineer Summary">
         <div class="dashboard-metric">
             <span class="dashboard-metric-value" id="count-my-active">0</span>
             <span class="dashboard-metric-label">active</span>
@@ -516,38 +517,46 @@
         <div class="dashboard-metric-divider" aria-hidden="true"></div>
         <div class="dashboard-metric">
             <span class="dashboard-metric-value dashboard-metric-warn" id="count-my-waiting">0</span>
-            <span class="dashboard-metric-label">waiting</span>
+            <span class="dashboard-metric-label">{% if dashboard_effective_hybrid_view %}waiting, yours{% else %}waiting{% endif %}</span>
         </div>
         <a href="/timeline" class="dashboard-metric-link">Open timeline →</a>
     </div>
 
     <!-- NEEDS YOU TODAY
-         Built entirely from data already loaded for the task tables. No new requests. -->
-    <div class="dashboard-today mb-4 dashboard-sortable-section" data-dashboard-section="engineer-today" data-dashboard-title="Needs You Today">
+         Built entirely from data already loaded for the task tables. No new requests.
+
+         Deliberately not collapsed by default for hybrids. It is real work assigned to a real
+         person, and hiding it to reduce visual noise would trade a cosmetic gain for a missed
+         visit. It is made subordinate instead, not hidden. -->
+    <div class="dashboard-today mb-4 dashboard-sortable-section{% if dashboard_effective_hybrid_view %} dashboard-scope-personal{% endif %}" data-dashboard-section="engineer-today" data-dashboard-title="Needs You Today">
         <div class="dashboard-today-header">
             <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
-            <span>Needs you today</span>
+            <span>{% if dashboard_effective_hybrid_view %}Your own visits today{% else %}Needs you today{% endif %}</span>
         </div>
         <div id="engineer-today-list" class="dashboard-today-list" aria-live="polite"></div>
     </div>
     {% endif %}
 
     {#
-        RETIRED: needs-attention and team-intelligence.
+        RETIRED, and settled: needs-attention and team-intelligence are not coming back.
 
-        Both were gated on `admin_view and not manager_view`, which cannot be satisfied:
-        is_manager_dashboard_user() returns true for any admin-authorized non-scheduler, so
-        every admin account lands in the manager view and these never rendered. Verified
-        against every account in the database -- none could reach them.
+        The hybrid experience is decided: an admin who also holds an engineer profile gets the
+        manager view with their own work stacked beneath it, marked off by the scope divider
+        above. That is intentional, not a side effect.
 
-        The manager watchlist already does this job and is reachable: it consolidates severe
-        overdue, aged TSR, blocked jobs, repeat equipment and at-risk clients into one
-        de-duplicated list, with the engineer-workload drill-down beside it. Their section ids
-        stay registered in DASHBOARD_SECTION_IDS so a saved layout naming them still saves.
+        History, so nobody re-derives it. Both sections were gated on
+        `admin_view and not manager_view`, which cannot be satisfied --
+        is_manager_dashboard_user() is true for any admin-authorized non-scheduler, so every
+        admin lands in the manager view. They never rendered for anyone. But the fix was never
+        the predicate: hybrid_view already existed and was already satisfiable, and the gate
+        simply used the wrong flag. They stay retired because their content is redundant, not
+        because it is unreachable -- the manager watchlist consolidates severe overdue, aged
+        TSR, blocked jobs, repeat equipment and at-risk clients into one de-duplicated list,
+        with the engineer-workload drill-down beside it.
 
-        Still gated the same unsatisfiable way, and left in place rather than widened into
-        this change: the recent-activity section below, together with the activity-log poll
-        and its 5-second interval in app-dashboard.js, which consequently never run.
+        Their section ids stay registered in DASHBOARD_SECTION_IDS so a saved layout naming
+        them still saves. recent-activity, which sat behind the same gate, was retired at the
+        same time as this decision.
     #}
     {#
         One shortcut block. These destinations previously appeared across three sections --
@@ -639,9 +648,12 @@
     <!-- v5.2 ROLE-BASED WIDGET SECTION -->
     {% if dashboard_has_engineer_profile %}
     <!-- ENGINEER-ONLY: MY ACTIVE TASKS -->
-    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-primary dashboard-sortable-section" data-dashboard-section="my-active-tasks" data-dashboard-title="My Active Tasks">
+    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-primary dashboard-sortable-section{% if dashboard_effective_hybrid_view %} dashboard-scope-personal{% endif %}" data-dashboard-section="my-active-tasks" data-dashboard-title="My Active Tasks">
         <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
             <div>
+                {# Stays an h5 so the heading outline is unchanged for screen readers. Visual
+                   subordination under the manager block is done in CSS, from the
+                   dashboard-scope-personal class on the section wrapper. #}
                 <h5 class="mb-0 fw-bold text-primary">
                     <i class="fa-solid fa-user-check me-2"></i>
                     My Active Tasks
@@ -777,49 +789,14 @@
     </div>
     {% endif %}
 
-    {% if dashboard_effective_admin_view and not dashboard_effective_scheduler_only and not dashboard_effective_manager_view %}
-    <!-- ADMIN-ONLY: RECENT SYSTEM ACTIVITY (Auto-refresh enabled) -->
-    <div class="card shadow-sm border-0 bg-white rounded-4 overflow-hidden mb-4 border-start border-4 border-info dashboard-sortable-section" data-dashboard-section="recent-activity" data-dashboard-title="Recent Activity">
-        <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
-            <div>
-                <h5 class="mb-0 fw-bold text-info">
-                    <i class="fa-solid fa-bolt-lightning me-2"></i>
-                    Recent System Activity
-                </h5>
-                <div class="xsmall text-muted mt-1">Showing latest 15 system activities</div>
-            </div>
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-                <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="toggleDashboardSection('activity-feed-body', this)">
-                    <i class="fa-solid fa-chevron-down me-1"></i>Show
-                </button>
-                <a href="/activity_page" class="btn btn-sm btn-outline-info fw-bold">
-                    <i class="fa-solid fa-clock-rotate-left me-1"></i>View All Logs
-                </a>
-                <span class="badge bg-light text-muted border small d-inline-flex align-items-center gap-2">
-                    <span class="live-dot"></span>
-                    Live Feed (5s)
-                </span>
-            </div>
-        </div>
-        <div id="activity-feed-body" class="card-body p-0 dashboard-collapsible-body d-none">
-            <div class="table-responsive" style="max-height: 220px; overflow-y: auto;">
-                <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light text-uppercase small fw-bold text-muted sticky-top">
-                        <tr>
-                            <th class="ps-4">Timestamp</th>
-                            <th>User</th>
-                            <th>Action Performed</th>
-                        </tr>
-                    </thead>
-                    <tbody id="activity-log-body">
-                        <!-- Fetched via fetchActivityLog() -->
-                    </tbody>
-                </table>
-            </div>
-            <div id="activity-mobile-list" class="dashboard-mobile-card-list dashboard-mobile-activity-feed p-3"></div>
-        </div>
-    </div>
-    {% endif %}
+    {# RETIRED: recent-activity, along with its 5-second activity poll.
+
+       It was gated on `admin_view and not manager_view`, the same condition proven
+       unsatisfiable for the two sections retired above, so it never rendered for anyone and
+       the poll behind it never ran -- confirmed against a live server, which logged zero
+       requests to it. Removed as part of ratifying the hybrid view rather than left as dead
+       weight. /activity_page and its own loader are untouched and remain the way to read the
+       activity log. #}
 
 </div>
 
@@ -833,8 +810,6 @@
         schedulerOnly: {{ (dashboard_effective_scheduler_only|default(false))|tojson }},
         hybridView: {{ (dashboard_effective_hybrid_view|default(false))|tojson }},
         managerView: {{ (dashboard_effective_manager_view|default(false))|tojson }},
-        developerMode: {{ (dashboard_developer_mode|default(false))|tojson }},
-        developerView: {{ (dashboard_developer_view|default('default'))|tojson }},
         schedulerAccount: {{ (dashboard_scheduler_account|default(false))|tojson }}
     };
 </script>

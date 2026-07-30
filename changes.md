@@ -9,6 +9,161 @@ codex changes - 2026-07-30
 - Added focused regression coverage proving two identical standalone creation requests return the same LPR ID and leave only one LPR header, while also pinning the frontend lock and backend unique-token protections.
 - Bumped the service-worker cache to `v50-lpr-idempotency` so the repaired standalone LPR save behavior is delivered immediately after deployment.
 
+claude changes - 2026-07-30 (hybrid ratification)
+
+## The hybrid dashboard decision, rodito exempted, developer preview removed
+
+* **Corrected the premise this task was queued under, and it changed the shape of the work.**
+  `pending-work.md` framed phase 4's finding as "the role gating predicate swallows every
+  admin into the manager view, so the predicate is where to start". The predicate was never
+  the blocker. `hybrid_view` — `bool(engineer_profile) and admin_authorized` — already
+  existed, was already satisfiable, and was already passed to the template as
+  `dashboard_effective_hybrid_view` and to JS as `hybridView`, where it was **read into a
+  variable and used for nothing**. The retired sections were gated on
+  `admin_view and not manager_view`, a different and genuinely unsatisfiable condition. So
+  reviving them would have been a one-word gate change, not a predicate rewrite. Recorded
+  because the write-up would otherwise send the next reader at the wrong file.
+* **Decision taken by the owner: manager + engineer stacked is the intended hybrid
+  experience.** `needs-attention` and `team-intelligence` stay retired — not because they are
+  unreachable, but because the manager watchlist already covers their content. The template
+  comment and the `DASHBOARD_SECTION_IDS` comment now state the decision instead of
+  describing an open question.
+* **Established what the four hybrid accounts actually see, since that decided what was
+  worth fixing.** `jonamar`, `robert`, `rodito` and `kevin` are every admin except the two
+  schedulers, and all four hold engineer profiles — so `manager_view` and `hybrid_view`
+  describe the same people, and there is no pure-manager account in the system. Their page
+  was not the "11 tiles across 10 sections" phase 4 went looking for; it was eight coherent
+  sections. The real defect was **scope confusion**: three visually identical
+  `dashboard-metric-strip` instances at three different scopes (company / directory /
+  personal), two of them carrying a `waiting` metric that meant different things, and three
+  attention-framed headings competing at the same weight, with nothing marking where the
+  team's work ended and the reader's own began.
+* Added a **scope divider** gated on `dashboard_effective_hybrid_view` — the flag's first
+  actual job. Labelled the two colliding metrics by scope (`Waiting P.O / parts,
+  company-wide` above, `waiting, yours` below), retitled "Needs you today" to "Your own
+  visits today" for hybrids, and subordinated the personal sections visually. **A pure
+  engineer and rodito see no change at all** — verified in the browser, original labels and
+  original 20px heading intact.
+* **Deliberately did not collapse `engineer-today` by default.** It is real work assigned to
+  a real person; hiding it to reduce visual noise trades a cosmetic gain for a missed visit.
+  Subordinated, not concealed.
+* **Exempted `rodito` as the manager-primary account.** New `MANAGER_PRIMARY_USERNAMES`
+  beside `MANAGER_USERNAMES`, with `is_manager_primary_user()`. His dashboard is now the four
+  manager sections plus shortcuts — verified in the browser as exactly that, with the
+  approvals panel still showing since he is the approval-center manager. Deliberately **not**
+  reused `APPROVAL_CENTER_MANAGER_USERNAME`, which is the same username today: that constant
+  means approval routing, and borrowing it would couple routing to dashboard layout so
+  changing one would silently move the other.
+* **The exemption is presentation only, and that is the property worth guarding.**
+  `get_dashboard_capabilities()` reports `has_engineer_profile: False` for him — the same
+  technique the function's old preview branches used — while `has_engineer_profile()`, which
+  engineer tools and schedule assignment consult, is untouched. There is a test for exactly
+  this, because the failure mode is silent loss of engineer access. Confirmed live: rodito
+  resolves `profile=True` but `sections=False`.
+* **Removed the developer dashboard preview switcher** by owner decision: the route and its
+  perf-log entry, four constants and helpers including `is_developer_user()`, three whole
+  preview branches inside `get_dashboard_capabilities()`, the markup, two config keys, two JS
+  functions, and CSS in two files. `DEVELOPER_SUPERADMIN_USERNAME` stays —
+  `PROTECTED_PASSWORD_USERNAMES`, `get_display_role()` and several test modules use it — and
+  `'developer-view-switcher'` stays in `DASHBOARD_SECTION_IDS` on the `scheduler-final-note`
+  precedent, since saved layouts still POST it back.
+* Two consequences of that removal, both intended and both worth naming: the manager
+  predicate lost its `developer_dashboard_view_is('manager')` clause and
+  `can_view_manager_dashboard()` lost a redundant duplicate of the same clause; and **the
+  scheduler dispatch and coordination endpoints no longer accept a preview flag**, so they
+  are reachable only by `diary` and `hanna`. Verified `diary` still gets a 200 and a real
+  `queue_counts` payload after the change.
+* **Retired `recent-activity`** — the queued item behind the same unsatisfiable gate.
+  **Correcting an assumption I had written into the plan:** I recorded that `activity.html`
+  reused `fetchActivityLog()`, so the loader should stay. It does not — `activity.html` has
+  its own loader against `/get_activity_logs` (plural), while `fetchActivityLog()` targeted
+  `activity-log-body`, an element only the retired section contained, and hit
+  `/get_recent_activity`. The whole chain was therefore dead: `fetchActivityLog`,
+  `renderMobileActivityList`, `getActivityMeta`, `formatActivityText` and
+  `lastActivitySignature`, ~180 lines removed. Confirmed zero requests to
+  `/get_recent_activity` across 186 logged requests.
+* **Re-pinned the reachability test on the decision rather than the predicate.** The old
+  `test_the_hybrid_gate_cannot_be_satisfied` asserted a substring of
+  `is_manager_dashboard_user()` — freezing that function's internals to protect a conclusion
+  about a template — and the preview removal would have broken it regardless. It now asserts
+  the outcome directly: no template gate may combine `admin_view` with `not manager_view`.
+  A companion test asserts `hybrid_view` still gates something, so it cannot quietly become
+  dead weight again.
+* **Proved the new tests are real regression tests.** Disabled the exemption
+  (`engineer_sections = bool(engineer_profile)`) and re-ran: exactly two failures, one at the
+  capability level and one on the rendered page. Restored from an intact copy and confirmed
+  by case-sensitive grep that no probe marker remained.
+* **Two genuine contrast failures found and fixed, both caused by my own change**, and the
+  cause is worth recording: shrinking the personal card heading from the inherited 20px to
+  1rem moved it across the WCAG large-text boundary, so the applicable bar went from 3:1 to
+  4.5:1. Bootstrap's `#0d6efd` then measured exactly **4.50** in light mode (a no-margin
+  pass) and **3.14** on the dark card (a failure). Darkened to `#0b5ed7` for light, and added
+  to the existing `color-mix` lightening block for dark: now **5.84** and **7.99**.
+* **The first attempt at that fix silently did nothing, and the reason generalises:**
+  Bootstrap's `.text-primary` utility declares its colour `!important`, so specificity alone
+  cannot beat it. Verified in the browser rather than assumed — the rule needs `!important`
+  too. Noted in the CSS so the next person does not repeat it.
+* Also corrected a figure I had written into a CSS comment from the wrong measurement: the
+  scope divider label sits on `.main-content` (`rgb(244,247,246)`), not on a white card, so
+  it does not inherit the 4.76:1 the on-card metric labels get from the same `#64748b` —
+  there it measured **4.41**, under AA. `#5d6b81` measures 5.01:1 on that surface.
+* Contrast measured across both themes with a parser handling `rgb()` and `color(srgb …)`,
+  the 0–1 unit confusion that cost a previous session real time: light min **4.50**, dark min
+  **7.69**, all AA. The remaining 4.50 is the pre-existing shortcut icon, not this work.
+* Suite green at **315 tests**, confirmed on the persisted database and again on a fresh one,
+  with `countTestCases()` agreeing at 315. `py_compile` clean, `node --check` clean, braces
+  balanced in both stylesheets. The starting figure was 299; this work added 16, and the
+  remaining difference is commit `9a2ad4d`'s own LPR test, which appeared on disk mid-session
+  — that, not any shared-database effect, is why an intermediate run read 314.
+* **A scare worth recording, because the lesson is about the check and not the code.** Before
+  committing, a script comparing `9a2ad4d`'s additions against the working tree reported **48
+  of 49 app.py lines missing**, i.e. that this session had clobbered a pushed commit. It had
+  not. The script passed `[regex]::Escape()` output to `Select-String -SimpleMatch`, so it
+  searched for literal backslashes that exist in no file — every line containing a regex
+  metacharacter came back a false negative. Re-checked with a plain `String.Contains` over the
+  whole file: **0 of 73 missing**, their `changes.md` entry intact, `templates/lpr.html` and
+  `tests/test_lpr_workflow.py` byte-identical to HEAD, and their 6 LPR tests passing. Escaping
+  and literal-matching are mutually exclusive; a verification script that is wrong in the
+  alarming direction costs as much as one that is wrong in the reassuring direction.
+* **Caught a self-inflicted encoding defect during the final review.** Deleting the dead
+  activity chain with a PowerShell splice used `Set-Content -Encoding utf8`, which on Windows
+  PowerShell 5.1 writes UTF-8 **with BOM** — so `app-dashboard.js` gained a byte-order mark
+  its sibling `app-changelog.js` does not have. `node --check` passed and the browser ran it
+  fine, which is exactly why it would have shipped unnoticed. Rewritten with
+  `UTF8Encoding($false)`; CRLF endings preserved (1669 CRLF, 0 bare LF) and `git diff
+  --numstat` confirms 23/271 on that file, so no whole-file line-ending rewrite. Worth
+  recording as a standing trap: for files other tools read, `Set-Content`/`Out-File` need an
+  explicit no-BOM encoding.
+* Browser-verified on an isolated database, port 5056, explicit `MEDICAL_SERVICE_TEST_DB`,
+  never port 5000 — and **by signing in as four real seeded accounts**, since the preview
+  switcher that used to stand in for this is gone. Hybrid (`robert`): 8 sections, divider
+  present, three personal sections marked, both waiting labels scoped. Manager-primary
+  (`rodito`): 5 sections, no divider, no personal sections. Pure engineer (`fieldeng`): 5
+  sections, unchanged labels, exactly the five engineer-appropriate shortcuts and none of the
+  three admin-only ones. Scheduler (`diary`): 3 dispatch sections, dispatch endpoint 200.
+  Zero 500s across 186 requests, console clean, no horizontal overflow at 375px, divider
+  fits at 318px without wrapping.
+* **Service worker: `v50-lpr-idempotency` → `v51-hybrid-scope`, and the reason matters.** This
+  work first bumped `v48-hybrid-focus` → `v49`, and the v49 caches were observed in the
+  browser. Then commit `9a2ad4d` landed from outside this session and took the worker to
+  **v50**, silently replacing that bump. Because `app-dashboard.js` and `app-dashboard.css`
+  are `APP_SHELL` entries and this work changed both *after* v50, a field device that had
+  already cached v50 would have kept stale dashboard assets. Bumped to **v51** and the
+  module's floor pinned to 51 to match. Caught only by re-checking origin before committing,
+  which is the argument for that step existing.
+* `scheduler.db` untouched — still last written 2026-07-23. Server stopped, nothing listening
+  on 5056, no stray python processes.
+* **Two findings for `pending-work.md`, not changed here** (that file is only edited when the
+  owner asks): `/get_recent_activity` (`app.py`) now has **no caller** at all, the same
+  dead-route shape as the endpoints phase 2 and phase 4 dealt with — retiring a route is a
+  separate decision. And `.dashboard-metric-link` renders **25px tall** at a 375px viewport,
+  below the 44px tap-target minimum, in all three metric strips whether scoped or not — so
+  pre-existing from phase 1/3 and not introduced here, but it is a real mobile defect that
+  earlier tap-target checks missed.
+* Not verified: Edge and Brave, and the offline path against a real service worker.
+
+---
+
 claude changes - 2026-07-30 (dashboard phase 4)
 
 ## Hybrid dashboard: one shortcut block, and two unreachable sections retired

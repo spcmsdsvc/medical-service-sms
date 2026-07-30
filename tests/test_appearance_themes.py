@@ -125,7 +125,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '.cash-signature-box, .travel-signature-box',
             '.travel-status:not(.success):not(.error)',
             '.cash-notification-list, .reim-notification-card',
-            '.developer-dashboard-switcher, .manager-executive-dashboard',
+            '.manager-executive-dashboard',
             '[class*="manager-"][class*="-panel"]',
             '.approval-decision-panel',
             '.product-confirm-box, .client-confirm-box, .engineer-confirm-box',

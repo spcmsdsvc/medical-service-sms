@@ -1170,7 +1170,6 @@ PERFORMANCE_LOG_PATHS = {
     '/get_accounting_liquidations_queue',
     '/scheduler_quick_assign_shift',
     '/scheduler_quick_reschedule_shift',
-    '/set_developer_dashboard_view',
     '/get_recent_activity',
     '/get_activity_logs',
     '/get_activity_filter_options',
@@ -4667,6 +4666,14 @@ def ensure_emergency_superadmin_from_env():
 
 DEVELOPER_SUPERADMIN_USERNAME = 'jonamar'
 MANAGER_USERNAMES = {'rodito', 'robert'}
+# Accounts whose dashboard is the manager dashboard, full stop, even though they also
+# hold an Engineer profile. Every other admin+engineer account gets the manager view
+# with their own work stacked beneath it; these accounts do not.
+#
+# Deliberately NOT reused from APPROVAL_CENTER_MANAGER_USERNAME below, which happens to
+# be the same username today. That constant means approval routing; borrowing it would
+# couple routing to dashboard layout, so changing one would silently move the other.
+MANAGER_PRIMARY_USERNAMES = {'rodito'}
 SCHEDULER_USERNAMES = {'diary', 'hanna'}
 SUPERADMIN_DISPLAY_USERNAMES = {'jonamar', 'robert'}
 SUPERADMIN_USERNAMES = {DEVELOPER_SUPERADMIN_USERNAME} | MANAGER_USERNAMES | SCHEDULER_USERNAMES
@@ -7369,69 +7376,46 @@ def approval_user_to_dict(user):
     }
 
 
-# --- DEVELOPER DASHBOARD VIEW OVERRIDE ---
-# Jonamar-only developer tool for safely previewing different dashboard layouts.
-# This is session-based and does not change the user's real account role.
-DEVELOPER_DASHBOARD_VIEW_SESSION_KEY = 'developer_dashboard_view'
-DEVELOPER_DASHBOARD_VIEW_OPTIONS = {'default', 'engineer', 'scheduler', 'manager'}
-
-
-def is_developer_user(user=None):
-    target = user or current_user
-    return bool(
-        target and
-        getattr(target, 'is_authenticated', False) and
-        _username_of(target) == DEVELOPER_SUPERADMIN_USERNAME
-    )
-
-
-def get_developer_dashboard_view(user=None):
-    """Return Jonamar's current temporary dashboard preview mode.
-
-    Valid values:
-    - default: real hybrid developer dashboard
-    - engineer: engineer-only dashboard preview
-    - scheduler: scheduler-only dashboard preview
-    - manager: manager/admin-only dashboard preview
-    """
-    if not is_developer_user(user):
-        return 'default'
-
-    selected_view = (session.get(DEVELOPER_DASHBOARD_VIEW_SESSION_KEY) or 'default').strip().lower()
-    if selected_view not in DEVELOPER_DASHBOARD_VIEW_OPTIONS:
-        selected_view = 'default'
-    return selected_view
-
-
-def developer_dashboard_view_is(view_name, user=None):
-    return get_developer_dashboard_view(user) == (view_name or '').strip().lower()
-
-
 def is_manager_dashboard_user(user=None):
     """Return True for manager-facing dashboard users.
 
     Manager view is intentionally separated from scheduler-only and engineer-only
-    views. Jonamar can preview it through the developer dashboard switcher.
+    views. Note this admits every admin-authorized non-scheduler, so it is also
+    true for the regional admin and the developer account -- panels that only make
+    sense for a real manager must gate on something narrower, the way the approvals
+    block gates on is_approval_center_user().
     """
     target = user or current_user
     username = _username_of(target)
     return bool(
+        target and
+        getattr(target, 'is_authenticated', False) and
         (
-            target and
-            getattr(target, 'is_authenticated', False) and
-            (
-                username in MANAGER_USERNAMES or
-                (is_admin_authorized(target) and not is_scheduler_user(target))
-            )
-        ) or
-        developer_dashboard_view_is('manager', target)
+            username in MANAGER_USERNAMES or
+            (is_admin_authorized(target) and not is_scheduler_user(target))
+        )
     )
 
 
 def can_view_manager_dashboard(user=None):
     """Manager M1 access gate for executive dashboard summary API."""
+    return bool(is_manager_dashboard_user(user or current_user))
+
+
+def is_manager_primary_user(user=None):
+    """True for accounts whose dashboard is the manager view only.
+
+    This affects dashboard presentation and nothing else. It deliberately does not
+    touch has_engineer_profile() below, so engineer tools, permissions and schedule
+    assignment are unchanged for these accounts -- they simply do not get their own
+    engineer sections stacked under the manager ones.
+    """
     target = user or current_user
-    return bool(is_manager_dashboard_user(target) or developer_dashboard_view_is('manager', target))
+    return bool(
+        target and
+        getattr(target, 'is_authenticated', False) and
+        _username_of(target) in MANAGER_PRIMARY_USERNAMES
+    )
 
 
 def get_display_role(user):
@@ -7541,77 +7525,33 @@ def has_engineer_profile(user=None):
 def get_dashboard_capabilities(user=None):
     """Return capability flags used by dashboard templates and scripts.
 
-    Jonamar can temporarily preview engineer, scheduler, or manager dashboard
-    layouts without changing his real backend role or account permissions.
+    These flags shape dashboard rendering only. They are not an authorization
+    boundary -- every endpoint checks its own permissions.
     """
     target = user or current_user
     engineer_profile = getattr(target, 'engineer_profile', None) if target else None
     admin_authorized = is_admin_authorized(target)
     scheduler_user = is_scheduler_user(target)
-    developer_view = get_developer_dashboard_view(target)
-
-    if developer_view == 'engineer':
-        return {
-            'has_engineer_profile': bool(engineer_profile),
-            'admin_view': False,
-            'scheduler_view': False,
-            'scheduler_only': False,
-            'hybrid_view': False,
-            'manager_view': False,
-            'approver_view': is_configured_approver_user(target),
-            'approver_only': is_approver_only_user(target),
-            'can_approve_requests': is_configured_approver_user(target),
-            'display_role': 'Engineer',
-            'developer_view': developer_view,
-            'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
-        }
-
-    if developer_view == 'scheduler':
-        return {
-            'has_engineer_profile': False,
-            'admin_view': True,
-            'scheduler_view': True,
-            'scheduler_only': True,
-            'hybrid_view': False,
-            'manager_view': False,
-            'approver_view': is_configured_approver_user(target),
-            'approver_only': is_approver_only_user(target),
-            'can_approve_requests': is_configured_approver_user(target),
-            'display_role': 'Scheduler',
-            'developer_view': developer_view,
-            'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
-        }
-
-    if developer_view == 'manager':
-        return {
-            'has_engineer_profile': False,
-            'admin_view': True,
-            'scheduler_view': False,
-            'scheduler_only': False,
-            'hybrid_view': False,
-            'manager_view': True,
-            'approver_view': is_configured_approver_user(target),
-            'approver_only': is_approver_only_user(target),
-            'can_approve_requests': is_configured_approver_user(target),
-            'display_role': 'Manager',
-            'developer_view': developer_view,
-            'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
-        }
-
     scheduler_only = scheduler_user and not bool(engineer_profile)
+
+    # A manager-primary account gets the manager dashboard and nothing stacked under
+    # it, so this reports no engineer profile *for rendering purposes* -- the engineer
+    # sections and their loaders are all gated on this flag. has_engineer_profile()
+    # itself is untouched, so the account keeps its profile everywhere else.
+    manager_primary = is_manager_primary_user(target)
+    engineer_sections = bool(engineer_profile) and not manager_primary
+
     return {
-        'has_engineer_profile': bool(engineer_profile),
+        'has_engineer_profile': engineer_sections,
         'admin_view': admin_authorized,
         'scheduler_view': scheduler_user,
         'scheduler_only': scheduler_only,
-        'hybrid_view': bool(engineer_profile) and admin_authorized,
+        'hybrid_view': engineer_sections and admin_authorized,
         'manager_view': is_manager_dashboard_user(target) and not scheduler_only,
         'approver_view': is_configured_approver_user(target),
         'approver_only': is_approver_only_user(target),
         'can_approve_requests': is_configured_approver_user(target),
         'display_role': get_display_role(target) if target else 'User',
-        'developer_view': developer_view,
-        'developer_view_options': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
     }
 
 
@@ -14400,7 +14340,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v50-lpr-idempotency';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v51-hybrid-scope';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -14673,41 +14613,6 @@ self.addEventListener('message', event => {
 
 # --- PAGE NAVIGATION ROUTES ---
 
-@app.route('/set_developer_dashboard_view', methods=['POST'])
-@login_required
-def set_developer_dashboard_view():
-    """Jonamar-only dashboard preview switcher.
-
-    This only changes the current browser session's dashboard rendering flags.
-    It does not change User.role, permissions, or any database record.
-    """
-    if not is_developer_user():
-        return denied('Only the developer account can change dashboard preview mode.')
-
-    payload = request.get_json(silent=True) or {}
-    requested_view = (
-        clean_str(payload.get('view')) or
-        clean_str(request.form.get('view')) or
-        'default'
-    ).strip().lower()
-
-    if requested_view not in DEVELOPER_DASHBOARD_VIEW_OPTIONS:
-        return jsonify({
-            'status': 'error',
-            'message': 'Invalid dashboard view selected.',
-            'allowed_views': sorted(DEVELOPER_DASHBOARD_VIEW_OPTIONS)
-        }), 400
-
-    session[DEVELOPER_DASHBOARD_VIEW_SESSION_KEY] = requested_view
-    session.modified = True
-
-    return jsonify({
-        'status': 'success',
-        'view': requested_view,
-        'message': f'Dashboard preview switched to {requested_view}.'
-    })
-
-
 @app.route('/')
 @login_required
 def dashboard_page():
@@ -14736,9 +14641,6 @@ def dashboard_page():
         dashboard_approver_only=dashboard_caps.get('approver_only', False),
         dashboard_can_approve_requests=dashboard_caps.get('can_approve_requests', False),
         dashboard_display_role=dashboard_caps['display_role'],
-        dashboard_developer_mode=is_developer_user(),
-        dashboard_developer_view=dashboard_caps.get('developer_view', 'default'),
-        dashboard_developer_view_options=dashboard_caps.get('developer_view_options', [])
     )
 
 
@@ -17131,6 +17033,9 @@ def appearance_preferences_api():
 # Every section id the dashboard can render. Anything outside this set is rejected so a
 # stale or crafted payload cannot persist junk into the account.
 DASHBOARD_SECTION_IDS = {
+    # Retired with the developer dashboard preview switcher. Same reason as
+    # scheduler-final-note below: the markup is gone but the id stays accepted, because the
+    # developer account saved layouts naming it and the POST handler rejects unknown ids.
     'developer-view-switcher',
     # Retired in the scheduler redesign: the markup is gone, but the id stays accepted.
     # Accounts that saved a layout while it existed still send it back, and the POST
@@ -17151,12 +17056,17 @@ DASHBOARD_SECTION_IDS = {
     # `admin_view and not manager_view`, which no account can satisfy, so they never
     # rendered; mobile-quick-actions and engineer-workflow were merged into quick-admin,
     # which now offers each destination once.
+    #
+    # Their content is not coming back: manager + engineer stacked is the ratified hybrid
+    # experience, and the manager watchlist already consolidates what these two showed.
     'needs-attention',
     'team-intelligence',
     'mobile-quick-actions',
     'engineer-workflow',
     'my-active-tasks',
     'open-technical-tasks',
+    # Retired with the hybrid ratification: it sat behind the same unsatisfiable gate, so it
+    # never rendered and its 5-second activity poll never ran.
     'recent-activity',
 }
 
@@ -18665,7 +18575,7 @@ def get_scheduler_dispatch_intelligence():
 
     This reuses existing schedule/TSR tables only. No schema change.
     """
-    if not (is_scheduler_user() or developer_dashboard_view_is('scheduler')):
+    if not is_scheduler_user():
         return denied('Scheduler dispatch intelligence is only available to scheduler accounts.')
 
     ensure_shift_file_original_filename_column()
@@ -18889,8 +18799,8 @@ def get_scheduler_dispatch_intelligence():
 # --- SCHEDULER DASHBOARD PHASE 3: COORDINATION TOOLS ---
 
 def can_use_scheduler_coordination_tools():
-    """Return True for scheduler users and Jonamar's scheduler preview mode."""
-    return bool(is_scheduler_user() or developer_dashboard_view_is('scheduler'))
+    """Return True for scheduler accounts only."""
+    return bool(is_scheduler_user())
 
 
 def scheduler_parse_engineer_id_list(raw_value):

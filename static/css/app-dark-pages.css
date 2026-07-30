@@ -831,9 +831,9 @@
     color: var(--dark-muted) !important;
 }
 
-/* Dashboard role previews and operational panels. */
+/* Dashboard operational panels. */
 :root[data-app-theme="dark"] :is(
-    .developer-dashboard-switcher, .manager-executive-dashboard,
+    .manager-executive-dashboard,
     .scheduler-core-dashboard, .dashboard-engineer-workflow,
     .dashboard-team-intelligence, .dashboard-quick-admin, .dashboard-needs-attention,
     [class*="manager-"][class*="-panel"], [class*="scheduler-"][class*="-panel"],
@@ -853,10 +853,20 @@
     border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] :is(
-    .developer-dashboard-switcher, .manager-executive-dashboard,
+    .manager-executive-dashboard,
     .scheduler-core-dashboard, .dashboard-engineer-workflow
 ) :is(h1, h2, h3, h4, h5, h6, strong, .text-dark) {
     color: var(--dark-text) !important;
+}
+
+/* Hybrid scope divider. The light-mode #64748b label falls to 3.4:1 on the dark surface,
+   so both the rule and the label get explicit dark values. */
+:root[data-app-theme="dark"] .dashboard-scope-divider::before,
+:root[data-app-theme="dark"] .dashboard-scope-divider::after {
+    background: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .dashboard-scope-divider-label {
+    color: var(--dark-muted) !important;
 }
 
 /* Approval workspaces and modal detail panels. */

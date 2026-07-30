@@ -85,17 +85,20 @@ class DashboardSourceTests(unittest.TestCase):
         """Originally a guard so later phases could not edit other roles by accident.
 
         All four phases are now done, so this is the full set of sections the template
-        still carries. needs-attention and team-intelligence left the list in phase 4:
-        both were gated on `admin_view and not manager_view`, which no account satisfies,
-        so they never rendered and were retired rather than kept as unreachable markup.
+        still carries. Three ids have left the list, all for the same reason: they were
+        gated on `admin_view and not manager_view`, which no account satisfies, so they
+        never rendered and were retired rather than kept as unreachable markup.
+        recent-activity went last, when the hybrid view was ratified.
         """
         for section in ('scheduler-core', 'scheduler-dispatch', 'scheduler-coordination',
                         'manager-executive', 'manager-direction', 'manager-watchlist',
-                        'admin-counters', 'quick-admin', 'recent-activity'):
+                        'admin-counters', 'quick-admin'):
             self.assertIn(f'data-dashboard-section="{section}"', self.dashboard)
 
-        for retired in ('needs-attention', 'team-intelligence'):
+        for retired in ('needs-attention', 'team-intelligence', 'recent-activity'):
             self.assertNotIn(f'data-dashboard-section="{retired}"', self.dashboard)
+            # The ids stay registered so a saved layout naming them still saves.
+            self.assertIn(f"'{retired}',", self.app_source)
 
     def test_layout_preference_column_and_endpoint(self):
         self.assertIn('ui_dashboard_layout_json = db.Column(db.Text, nullable=True)', self.app_source)

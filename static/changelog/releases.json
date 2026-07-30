@@ -1038,6 +1038,60 @@
           "sort_order": 180
         }
       ]
+    },
+    {
+      "release_key": "2026-07-30",
+      "release_date": "2026-07-30",
+      "title": "Clearer Dashboards for Managers and Admins",
+      "summary": "The dashboard now separates your team's work from your own, the manager dashboard is no longer mixed with personal assignments for the manager account, and the developer preview switcher was removed.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-07-30-own-work-divider",
+          "category": "Management",
+          "description": "If you hold both admin authority and an engineer profile, your dashboard now marks where your team's overview ends and your own assignments begin, under a Your own work heading. Your personal sections keep everything they showed before.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-07-30-waiting-figures-labelled",
+          "category": "Management",
+          "description": "The two Waiting figures on the same dashboard are now labelled by scope: Waiting P.O / parts, company-wide for the operation, and waiting, yours for your own visits. They previously carried the same word for different numbers.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-30-manager-dashboard-focused",
+          "category": "Management",
+          "description": "The manager account now sees the manager dashboard on its own, without personal engineer sections stacked underneath. Engineer tools, permissions and schedule assignment are unchanged.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-30-recent-activity-retired",
+          "category": "System",
+          "description": "The Recent System Activity panel was removed from the dashboard. It could not be displayed by any account, so its live refresh never ran. The full activity log is unchanged and still available from the Logs page.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-07-30-developer-preview-removed",
+          "category": "System",
+          "description": "The developer dashboard preview switcher was removed. Checking how a role sees the dashboard now means signing in as an account that holds that role.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 50
+        }
+      ]
     }
   ]
 }

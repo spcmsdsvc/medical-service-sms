@@ -31,8 +31,6 @@
     const dashboardSchedulerOnly = __cfg.schedulerOnly === true;
     const dashboardHybridView = __cfg.hybridView === true;
     const dashboardManagerView = __cfg.managerView === true;
-    const dashboardDeveloperMode = __cfg.developerMode === true;
-    const dashboardDeveloperView = __cfg.developerView || 'default';
     const dashboardSchedulerAccount = __cfg.schedulerAccount === true;
 
     // v5.4.5: Real-time Manila Ticker and Date
@@ -76,61 +74,6 @@
      * MASTER DATA LOADER:
      * Dispatches concurrent fetch requests to sync dashboard metrics from server.
      */
-    function setDeveloperViewStatus(message, state = 'info') {
-        const status = document.getElementById('developer-view-status');
-        if (!status) return;
-
-        const classMap = {
-            success: 'text-success',
-            error: 'text-danger',
-            info: 'text-muted'
-        };
-
-        status.className = `developer-view-status small mt-2 ${classMap[state] || classMap.info}`;
-        status.innerHTML = message;
-        status.classList.remove('d-none');
-    }
-
-    async function setDeveloperDashboardView(viewName) {
-        if (!dashboardDeveloperMode) return;
-
-        const allowedViews = ['default', 'engineer', 'scheduler', 'manager'];
-        const requestedView = String(viewName || 'default').toLowerCase();
-
-        if (!allowedViews.includes(requestedView)) {
-            setDeveloperViewStatus('<i class="fa-solid fa-triangle-exclamation me-1"></i>Invalid dashboard view.', 'error');
-            return;
-        }
-
-        const buttons = document.querySelectorAll('.developer-view-btn');
-        buttons.forEach(button => button.disabled = true);
-        setDeveloperViewStatus('<i class="fa-solid fa-circle-notch fa-spin me-1"></i>Switching dashboard preview...', 'info');
-
-        try {
-            const response = await fetch('/set_developer_dashboard_view', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': typeof getCSRFToken === 'function' ? getCSRFToken() : ''
-                },
-                body: JSON.stringify({ view: requestedView })
-            });
-
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok || data.status !== 'success') {
-                throw new Error(data.message || `Dashboard view switch failed (${response.status}).`);
-            }
-
-            setDeveloperViewStatus('<i class="fa-solid fa-circle-check me-1"></i>Dashboard preview updated. Reloading...', 'success');
-            setTimeout(() => location.reload(), 350);
-        } catch (error) {
-            console.warn('Developer dashboard view switch failed:', error);
-            buttons.forEach(button => button.disabled = false);
-            setDeveloperViewStatus(`<i class="fa-solid fa-triangle-exclamation me-1"></i>${escapeHtml(error.message || 'Unable to switch dashboard view.')}`, 'error');
-        }
-    }
-
     function setDashboardLoadState(state, message = '') {
         let alertBox = document.getElementById('dashboard-load-alert');
         const container = document.querySelector('.container.py-4') || document.querySelector('.container-fluid') || document.querySelector('.container');
@@ -535,7 +478,7 @@
             const agingTotal = Number(counts.aging_total || 0);
             const threshold = Number(data.aging_threshold_days || 5);
             if (agingTotal) {
-                aging.textContent = `${agingTotal} waiting more than ${threshold} days — oldest ${counts.oldest_days || 0} days`;
+                aging.textContent = `${agingTotal} waiting more than ${threshold} days â€” oldest ${counts.oldest_days || 0} days`;
                 aging.className = 'manager-approvals-aging is-aging';
             } else if (Number(counts.pending_total || 0)) {
                 aging.textContent = `Nothing older than ${threshold} days`;
@@ -675,7 +618,7 @@
                 <span class="manager-watchlist-accent is-${escapeHtml(row.tone || 'watch')}" aria-hidden="true"></span>
                 <span class="manager-watchlist-body">
                     <span class="manager-watchlist-title">${escapeHtml(row.title || '')}</span>
-                    <span class="manager-watchlist-hint">${escapeHtml(row.subtitle || '')} • ${escapeHtml(row.detail || '')}</span>
+                    <span class="manager-watchlist-hint">${escapeHtml(row.subtitle || '')} â€¢ ${escapeHtml(row.detail || '')}</span>
                 </span>
                 <span class="manager-watchlist-tag">${escapeHtml(managerWatchlistTypeLabel(row.type))}</span>
             </div>
@@ -749,11 +692,11 @@
         const caption = document.getElementById('scheduler-queue-caption');
         if (caption) {
             if (!shown) {
-                caption.textContent = 'Most urgent first — select a row to assign or reschedule it';
+                caption.textContent = 'Most urgent first â€” select a row to assign or reschedule it';
             } else if (shown < total) {
-                caption.textContent = `Showing ${shown} of ${total} — most urgent first, select a row to work on it`;
+                caption.textContent = `Showing ${shown} of ${total} â€” most urgent first, select a row to work on it`;
             } else {
-                caption.textContent = `${shown} to work through — most urgent first, select a row`;
+                caption.textContent = `${shown} to work through â€” most urgent first, select a row`;
             }
         }
 
@@ -778,8 +721,8 @@
                     onclick="selectSchedulerActionShift(${Number(row.id) || 0})">
                 <span class="scheduler-queue-accent ${schedulerQueueAccent(row.category)}" aria-hidden="true"></span>
                 <span class="scheduler-queue-body">
-                    <span class="scheduler-queue-title">${escapeHtml(row.client || 'No client')} — ${escapeHtml(row.task || 'Untitled')}</span>
-                    <span class="scheduler-queue-hint">${escapeHtml(row.priority_reason || '')} • ${escapeHtml(when)} • ${escapeHtml(row.engineers || 'Unassigned')}</span>
+                    <span class="scheduler-queue-title">${escapeHtml(row.client || 'No client')} â€” ${escapeHtml(row.task || 'Untitled')}</span>
+                    <span class="scheduler-queue-hint">${escapeHtml(row.priority_reason || '')} â€¢ ${escapeHtml(when)} â€¢ ${escapeHtml(row.engineers || 'Unassigned')}</span>
                 </span>
                 <span class="scheduler-queue-action">${escapeHtml(schedulerQueueActionLabel(row))} &rarr;</span>
             </button>`;
@@ -806,7 +749,7 @@
             parts.push(`${counts.high_load_engineers} engineer${counts.high_load_engineers === 1 ? '' : 's'} carrying a heavy load`);
         }
         if (counts.watch_load_engineers) parts.push(`${counts.watch_load_engineers} to watch`);
-        setTextIfPresent('scheduler-risk-detail', parts.join(' • '));
+        setTextIfPresent('scheduler-risk-detail', parts.join(' â€¢ '));
     }
 
     function renderSchedulerMetrics() {
@@ -954,7 +897,7 @@
                 <span class="scheduler-availability-avatar">${escapeHtml(row.initials || '?')}</span>
                 <span class="scheduler-availability-main">
                     <strong>${escapeHtml(row.name || 'Engineer')}</strong>
-                    <small>${escapeHtml(row.branch || 'No branch')} • ${escapeHtml(row.today_tasks || 0)} today • ${escapeHtml(row.next_7_days || 0)} week</small>
+                    <small>${escapeHtml(row.branch || 'No branch')} â€¢ ${escapeHtml(row.today_tasks || 0)} today â€¢ ${escapeHtml(row.next_7_days || 0)} week</small>
                 </span>
                 <span class="badge ${schedulerAvailabilityBadgeClass(level)}">${escapeHtml(schedulerAvailabilityLabel(level))}</span>
             </button>`;
@@ -971,7 +914,7 @@
 
         select.innerHTML = filteredRows.map(row => `
             <option value="${Number(row.engineer_id) || 0}">
-                ${escapeHtml(row.name || 'Engineer')} — ${escapeHtml(row.branch || 'No branch')} — ${escapeHtml(schedulerAvailabilityLabel(row.loadLevel))}
+                ${escapeHtml(row.name || 'Engineer')} â€” ${escapeHtml(row.branch || 'No branch')} â€” ${escapeHtml(schedulerAvailabilityLabel(row.loadLevel))}
             </option>
         `).join('');
 
@@ -1029,7 +972,7 @@
         if (hidden) hidden.value = row ? row.id : '';
 
         if (row) {
-            setTextIfPresent('scheduler-selected-action-label', `${row.client || 'No client'} • ${row.date || ''} • ${row.task || ''} • ${row.priority_reason || ''}`);
+            setTextIfPresent('scheduler-selected-action-label', `${row.client || 'No client'} â€¢ ${row.date || ''} â€¢ ${row.task || ''} â€¢ ${row.priority_reason || ''}`);
             if (row.date) {
                 const dateInput = document.getElementById('scheduler-reschedule-date');
                 if (dateInput) dateInput.value = row.date;
@@ -1281,7 +1224,7 @@
             + `<span class="dashboard-today-title">${escapeHtml(row.title)}</span>`
             + `<span class="dashboard-today-hint">${escapeHtml(row.hint)}</span>`
             + '</span>'
-            + `<span class="dashboard-today-action">${escapeHtml(row.action)} →</span>`
+            + `<span class="dashboard-today-action">${escapeHtml(row.action)} â†’</span>`
             + '</a>'
         )).join('');
     }
@@ -1351,22 +1294,16 @@
                 loadManagerOverview();
             }
 
-            // This condition mirrors the template gate on the recent-activity section, and
-            // that gate cannot be satisfied: is_manager_dashboard_user() is true for any
-            // admin-authorized non-scheduler, so managerView is always set here too. The
-            // branch therefore never runs -- confirmed against a live server, which logged
-            // zero requests to the endpoint below. Left in place with the section it feeds
-            // rather than widened into the hybrid retirement.
-            if (dashboardAdminView && !dashboardSchedulerOnly && !dashboardManagerView) {
-                fetchActivityLog();
-                // Set the auto-refresh interval for Admin Feed (5 seconds)
-                if (!window.__dashboardActivityTimerStarted) {
-                    window.__dashboardActivityTimerStarted = true;
-                    setInterval(() => {
-                        if (!document.hidden && !dashboardSchedulerOnly && !dashboardManagerView) fetchActivityLog();
-                    }, 5000);
-                }
-            }
+            // The recent-activity section and its 5-second poll used to be loaded here,
+            // behind `adminView && !managerView` -- a condition no account can satisfy, so it
+            // never ran. Retired with the hybrid ratification, and with them the whole feed
+            // chain in this file: fetchActivityLog, renderMobileActivityList, getActivityMeta
+            // and formatActivityText, all of which only that section reached.
+            //
+            // /activity_page is unaffected: templates/activity.html carries its own loader
+            // against /get_activity_logs and never used any of the above. That does leave
+            // /get_recent_activity without a caller -- noted for pending-work rather than
+            // removed here, since retiring a route is a separate decision.
 
             filterAndRender();
 
@@ -1375,12 +1312,6 @@
             setDashboardLoadState('error', 'Dashboard data could not be loaded. Please check your connection or retry.');
         }
     }
-
-    /**
-     * NEW v5.2: Admin Live Feed Logic.
-     * Fetches the latest system activity.
-     */
-    let lastActivitySignature = "";
 
     function escapeHtml(value) {
         return String(value ?? '')
@@ -1462,185 +1393,6 @@
         }
 
         container.innerHTML = tasks.map(task => buildDashboardTaskMobileCard(task, options)).join('');
-    }
-
-    function renderMobileActivityList(logs, shouldHighlight = false) {
-        const container = document.getElementById('activity-mobile-list');
-        if(!container) return;
-
-        if(!logs || !logs.length){
-            container.innerHTML = `
-                <div class="dashboard-mobile-empty-card">
-                    <i class="fa-solid fa-clock-rotate-left"></i>
-                    <span>No recent activity yet.</span>
-                </div>`;
-            return;
-        }
-
-        container.innerHTML = logs.map((log, index) => {
-            const meta = getActivityMeta(log);
-            const readableAction = formatActivityText(log.display_action || log.action);
-            const highlightClass = shouldHighlight && index === 0 ? 'dashboard-mobile-activity-new' : '';
-
-            return `
-                <div class="dashboard-mobile-activity-card ${highlightClass}">
-                    <div class="dashboard-mobile-activity-top">
-                        <span class="dashboard-mobile-activity-user">${escapeHtml(log.user)}</span>
-                        <span class="activity-type ${meta.badge}">
-                            <i class="fa-solid ${meta.icon} me-1"></i>${meta.label}
-                        </span>
-                    </div>
-                    <div class="dashboard-mobile-activity-action">${escapeHtml(readableAction)}</div>
-                    <div class="dashboard-mobile-activity-time">
-                        <i class="fa-regular fa-clock me-1"></i>${escapeHtml(log.date)} ${escapeHtml(log.time)}
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    function getActivityMeta(logOrAction) {
-        if (logOrAction && typeof logOrAction === 'object' && logOrAction.type) {
-            const typeMeta = {
-                Schedule: { label: 'Schedule', icon: 'fa-calendar-check', badge: 'activity-schedule' },
-                TSR: { label: 'TSR', icon: 'fa-file-signature', badge: 'activity-tsr' },
-                Reimbursement: { label: 'Reimbursement', icon: 'fa-receipt', badge: 'activity-reimbursement' },
-                'Travel Request': { label: 'Travel Request', icon: 'fa-plane-departure', badge: 'activity-travel-request' },
-                'Travel Liquidation': { label: 'Travel Liquidation', icon: 'fa-file-invoice-dollar', badge: 'activity-travel-liquidation' },
-                'Cash Advance': { label: 'Cash Advance', icon: 'fa-money-check-dollar', badge: 'activity-cash-advance' },
-                'Cash Advance Liquidation': { label: 'Cash Advance Liquidation', icon: 'fa-file-circle-check', badge: 'activity-cash-liquidation' },
-                Approval: { label: 'Approval', icon: 'fa-route', badge: 'activity-approval' },
-                Accounting: { label: 'Accounting', icon: 'fa-calculator', badge: 'activity-accounting' },
-                Email: { label: 'Email', icon: 'fa-envelope', badge: 'activity-email' },
-                Client: { label: 'Client', icon: 'fa-hospital', badge: 'activity-client' },
-                Product: { label: 'Product', icon: 'fa-boxes-stacked', badge: 'activity-product' },
-                Personnel: { label: 'Personnel', icon: 'fa-user-gear', badge: 'activity-personnel' },
-                Export: { label: 'Export', icon: 'fa-file-export', badge: 'activity-export' },
-                Security: { label: 'Security', icon: 'fa-shield-halved', badge: 'activity-security' },
-                System: { label: 'System', icon: 'fa-circle-info', badge: 'activity-system' }
-            };
-            if (typeMeta[logOrAction.type]) return typeMeta[logOrAction.type];
-        }
-
-        const actionText = typeof logOrAction === 'object' ? logOrAction.action : logOrAction;
-        const text = String(actionText || '').toLowerCase();
-
-        if (text.includes('password') || text.includes('unauthorized') || text.includes('denied')) {
-            return { label: 'Security', icon: 'fa-shield-halved', badge: 'activity-security' };
-        }
-        if (text.includes('export')) {
-            return { label: 'Export', icon: 'fa-file-export', badge: 'activity-export' };
-        }
-        if (text.includes('client') || text.includes('medical center')) {
-            return { label: 'Client', icon: 'fa-hospital', badge: 'activity-client' };
-        }
-        if (text.includes('product') || text.includes('equipment') || text.includes('inventory')) {
-            return { label: 'Product', icon: 'fa-boxes-stacked', badge: 'activity-product' };
-        }
-        if (text.includes('engineer') || text.includes('technical staff') || text.includes('personnel') || text.includes('profile')) {
-            return { label: 'Personnel', icon: 'fa-user-gear', badge: 'activity-personnel' };
-        }
-        if (text.includes('schedule') || text.includes('calendar') || text.includes('record') || text.includes('bulk-purged')) {
-            return { label: 'Schedule', icon: 'fa-calendar-check', badge: 'activity-schedule' };
-        }
-
-        return { label: 'System', icon: 'fa-circle-info', badge: 'activity-system' };
-    }
-
-    function formatActivityText(actionText) {
-        const raw = String(actionText || '').trim();
-        if (!raw) return 'System activity recorded';
-
-        let text = raw
-            .replace(/^Added calendar schedule:/i, 'Schedule added:')
-            .replace(/^Updated calendar schedule:/i, 'Schedule updated:')
-            .replace(/^Wiped technical record:/i, 'Schedule deleted:')
-            .replace(/^Bulk-purged/i, 'Bulk deleted')
-            .replace(/^Added new client:/i, 'Client added:')
-            .replace(/^Modified details for client:/i, 'Client updated:')
-            .replace(/^Permanently removed Client:/i, 'Client deleted:')
-            .replace(/^Added equipment:/i, 'Product added:')
-            .replace(/^Updated product details:/i, 'Product updated:')
-            .replace(/^Purged product record:/i, 'Product deleted:')
-            .replace(/^Added technical staff:/i, 'Engineer added:')
-            .replace(/^Updated profile for:/i, 'Engineer updated:')
-            .replace(/^Permanently removed personnel:/i, 'Engineer deleted:')
-            .replace(/^Exported Weekly Schedule Snapshot/i, 'Exported weekly schedule')
-            .replace(/^Exported the Client Database/i, 'Exported client database')
-            .replace(/^Exported the Personnel Directory/i, 'Exported personnel directory')
-            .replace(/^Exported the Product Inventory/i, 'Exported product inventory');
-
-        if (text.length > 105) {
-            text = text.slice(0, 102).trim() + '...';
-        }
-
-        return text;
-    }
-
-    async function fetchActivityLog() {
-        const target = document.getElementById('activity-log-body');
-        if(!target) return;
-
-        let logs = [];
-        try {
-            const res = await fetch('/get_recent_activity', { credentials: 'same-origin', cache: 'no-store' });
-            if (!res.ok) throw new Error(`/get_recent_activity returned ${res.status}`);
-            logs = await res.json();
-        } catch (activityError) {
-            console.warn('Recent activity could not be loaded:', activityError);
-            target.innerHTML = `
-                <tr>
-                    <td colspan="3" class="text-center text-muted small py-4">
-                        <i class="fa-solid fa-triangle-exclamation me-1"></i>
-                        Activity feed could not be loaded.
-                    </td>
-                </tr>`;
-            renderMobileActivityList([]);
-            return;
-        }
-
-        if (!logs.length) {
-            target.innerHTML = `
-                <tr>
-                    <td colspan="3" class="text-center text-muted small py-4">
-                        <i class="fa-solid fa-clock-rotate-left me-1"></i>
-                        No recent activity yet.
-                    </td>
-                </tr>`;
-            renderMobileActivityList([]);
-            return;
-        }
-
-        const newSignature = logs.map(l => `${l.date}|${l.time}|${l.user}|${l.action}`).join('||');
-        const shouldHighlight = lastActivitySignature && newSignature !== lastActivitySignature;
-        lastActivitySignature = newSignature;
-
-        renderMobileActivityList(logs, shouldHighlight);
-
-        target.innerHTML = logs.map((l, index) => {
-            const meta = getActivityMeta(l);
-            const readableAction = formatActivityText(l.display_action || l.action);
-            const highlightClass = shouldHighlight && index === 0 ? 'activity-new-row' : '';
-
-            return `
-                <tr class="small activity-row ${highlightClass}">
-                    <td class="ps-4 text-muted font-monospace activity-time">
-                        ${escapeHtml(l.date)}
-                        <span class="fw-bold text-dark">${escapeHtml(l.time)}</span>
-                    </td>
-                    <td>
-                        <div class="d-flex align-items-center gap-2">
-                            <span class="badge bg-light text-dark border">${escapeHtml(l.user)}</span>
-                            <span class="activity-type ${meta.badge}">
-                                <i class="fa-solid ${meta.icon} me-1"></i>${meta.label}
-                            </span>
-                        </div>
-                    </td>
-                    <td class="text-muted activity-action" title="${escapeHtml(l.action)}">
-                        ${escapeHtml(readableAction)}
-                    </td>
-                </tr>`;
-        }).join('');
     }
 
     function parseDashboardDate(value) {
@@ -1758,7 +1510,7 @@
                     let endLabel = rEnd.task_date || startLabel;
                     if (sDate) startLabel = `${sDate.getFullYear()}-${String(sDate.getMonth() + 1).padStart(2, '0')}-${String(sDate.getDate()).padStart(2, '0')}`;
                     if (eDate) endLabel = `${eDate.getFullYear()}-${String(eDate.getMonth() + 1).padStart(2, '0')}-${String(eDate.getDate()).padStart(2, '0')}`;
-                    let rangeLabel = startLabel === endLabel ? startLabel : `${startLabel} → ${endLabel}`;
+                    let rangeLabel = startLabel === endLabel ? startLabel : `${startLabel} â†’ ${endLabel}`;
                     
                     mergedResults.push({
                         ...rStart,
