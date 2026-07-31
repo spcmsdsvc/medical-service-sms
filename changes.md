@@ -2,6 +2,30 @@
 
 claude changes - 2026-07-31
 
+## Pending work: queued the TSR-on-unsynced-schedule question, corrected what is verified
+
+* Recorded **Create TSR on a schedule that has not synced yet** as queued work to be planned,
+  at the owner's request, rather than implementing it off the back of a workflow walkthrough.
+  Both refusal points are cited with line numbers so the next reader does not re-derive them,
+  and the standalone-TSR workaround is written down because it is the answer engineers need
+  today.
+* Framed the decision that should come **before** any code: should the TSR wait for its
+  schedule to sync and then be rewritten to point at the new id, or should it be created
+  standalone and linked afterwards? Those are different features, and the second may carry
+  most of the value for much less risk. Dependent queue items bring ordering questions and an
+  orphan case when the schedule ahead of them parks as a conflict.
+* **Corrected the verified/unverified split, which had drifted in the optimistic direction.**
+  Three items previously listed as unexercised are now genuinely done and are moved into a
+  "verified" list with how they were proved: the form opening offline, queueing through the
+  real UI against a stopped server, and sync landing the schedule with its token.
+* **Added an honest caveat about how the entry-point fix was proved.** `/get_engineers` was
+  seen resolving **200 from the browser HTTP cache** even after the service worker's runtime
+  entry was deleted, so the IndexedDB fallback was demonstrated by forcing the fetch to reject
+  rather than by reproducing a naturally cold device. A phone that has genuinely been closed
+  for a day is still the real test.
+* Refreshed the header facts again: 334 tests, `v56-offline-entry-point`, and the three
+  commits since the last fill.
+
 ## Offline schedule: the Add Schedule form now opens with no signal
 
 * **The owner walked through the intended field workflow before testing it, and it exposed

@@ -7,7 +7,7 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last filled: 2026-07-31 (after offline schedule creation, `709106c`)
+Last filled: 2026-07-31 (after the offline entry-point fix, `bfacf8f`)
 
 **Where the work lives:** this repository, `medical-service-sms-railway`, working directly.
 The sandbox at `Claude-medical-service-sms-railway` still exists, synced to `baefb63`, and
@@ -29,8 +29,10 @@ lands here.
 | `23a58fc` | Approved plans must be recorded in `plans.md` and waited on |
 | `3da143f` | LPR form signatures put back on their own lines |
 | `709106c` | Offline schedule creation for field engineers |
+| `9d4721b` | Recorded the unverified offline attachment path |
+| `bfacf8f` | Add Schedule form opens offline rather than depending on cache luck |
 
-Suite green at **329 tests**. Service worker cache at **`v55-offline-schedule`**.
+Suite green at **334 tests**. Service worker cache at **`v56-offline-entry-point`**.
 
 **A third journal now exists.** `plans.md` holds what was **agreed and is waiting to be
 built**; `changes.md` what **was** done; this file what is **still open**. Approving a plan is
@@ -62,6 +64,45 @@ session recorded.
 ---
 
 ## 2. Queued work
+
+### Create TSR on a schedule that has not synced yet — TO BE PLANNED
+
+**Raised by the project owner on 2026-07-31 while walking through the field workflow. Agreed
+to plan it later rather than bolt it on.** Not a defect — the current behaviour is deliberate
+and fails cleanly — but it leaves the field sequence half-solved.
+
+**The workflow that exposed it.** An engineer with no signal opens the calendar, finds no
+schedule for today, adds one offline, does the work, and then wants to write the TSR on site
+while the details are fresh. He cannot. He must wait for signal, let the schedule sync, and
+only then create the TSR.
+
+**Why it is blocked, in both places** — verified, not assumed:
+
+- The schedule card's Create TSR button is gated on `shift?.id`
+  (`templates/timeline.html:10043`). A queued schedule has no server id, so the button renders
+  **disabled**, labelled "Create TSR unavailable".
+- The shift modal's Create TSR button calls `openOfflineTSRDraftFromShiftModal()`
+  (`templates/timeline.html:18419`), which reads `f-id` first and refuses with "Open an
+  existing saved schedule first before creating a TSR."
+
+Both refuse with a clear message rather than breaking, which is why this is a gap and not a
+bug.
+
+**The working path today, and it is worth telling engineers about:** open **Create TSR** from
+the sidebar and write a **standalone** TSR. That is fully offline already. It simply is not
+linked to the queued schedule, so someone reconciles them afterwards.
+
+**Why this needs planning rather than a quick fix.** A TSR must reference a real shift id, and
+a queued schedule has none until it syncs. Making this work means **dependent queue items**:
+the schedule syncs first, receives its id, and the TSR queued behind it is rewritten to point
+at that id before it is sent. That brings its own questions — ordering, what happens when the
+schedule parks as a conflict and the TSR behind it is orphaned, and whether a standalone TSR
+should be retro-linked instead. `9a2ad4d`'s creation token is the right precedent for the
+identity half, but the dependency half is new.
+
+Worth deciding first, before any code: **should the TSR wait for its schedule, or should it be
+created standalone and linked afterwards?** Those are different features and the second may be
+most of the value for far less risk.
 
 ### `/get_recent_activity` now has zero callers
 
@@ -217,17 +258,33 @@ The TSR queue already stores attachments as blob references and has been through
 use; if this needs rework, copy what `templates/offline_tsr.html` does rather than inventing a
 second approach.
 
-### Offline schedule creation — smaller things not yet exercised
+### Offline schedule creation — what is now verified, and what is still not
 
-- **A schedule queued while genuinely offline**, rather than with the network merely stubbed.
-  The enqueue-on-network-failure path was verified; enqueue-on-`navigator.onLine === false`
-  was not driven end to end through the real form.
+**Verified on 2026-07-31 in `bfacf8f`, by driving the real UI against a genuinely stopped
+server** — not by calling the queue API and not with the network stubbed:
+
+- `/timeline` reloads from the service worker with the server down.
+- **Add Schedule opens**, populated from the device copy of the engineer list.
+- The real form fills and **Save Schedule** queues the schedule, with the banner shown.
+- It survives a reload, and syncs on reconnect, landing in the database with its token.
+- Replaying the same token returns the same shift id rather than creating a duplicate.
+- A genuinely conflicting schedule parks as "needs your attention" instead of double-booking.
+
+Still not exercised:
+
+- **Attachments from a real device camera** — the section above. Unchanged and still the
+  largest gap.
 - **The pre-check against a stale snapshot.** It was verified against a fresh one. The case
   that matters is an engineer offline for a week, where the snapshot is a week old and the
   warning may be wrong in either direction.
 - **Multi-day chains through the device queue.** Replay of a five-day chain is covered by
   `tests/test_offline_schedule.py`, but a multi-day schedule has not been queued and synced
   from the browser.
+- **A cold device with no HTTP cache.** `/get_engineers` was observed resolving **200 from the
+  browser cache** even with the service worker's runtime entry deleted, so the IndexedDB
+  fallback added in `bfacf8f` was proved by forcing the fetch to reject rather than by
+  reproducing a naturally cold device. Worth confirming on a phone that has genuinely been
+  closed for a day.
 
 ---
 
@@ -259,7 +316,7 @@ Same for `.env`, which holds a real Brevo API key.
 
 **Bump the service worker cache** whenever an `APP_SHELL` entry changes, or field devices
 keep the old copies. Tests use `assert_cache_version_at_least`, so a bump never breaks them.
-Currently `v55-offline-schedule`. **Read the live value out of `app.py` immediately before
+Currently `v56-offline-entry-point`. **Read the live value out of `app.py` immediately before
 committing** — `v49` was claimed and then overwritten by a `v50` bump from outside that
 session, and the stale assumption nearly shipped stale dashboard assets to field devices.
 
