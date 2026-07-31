@@ -56,6 +56,46 @@ class OfflineScheduleSourceTests(unittest.TestCase):
         self.assertIn('if first_shift is None and creation_token:', self.app_source)
 
 
+class OfflineScheduleEntryPointTests(unittest.TestCase):
+    """The Add Schedule form must open with no signal, or the queue is unreachable.
+
+    The mobile Add Schedule button calls loadEngineerList() before opening the form, and
+    engineerMaster is an in-memory variable that is empty on every fresh page load. If that
+    loader has no device-side fallback, an engineer who opens the app in the field is told
+    "Unable to open Add Schedule on mobile" and the entire offline queue sits behind a door
+    that will not open.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.timeline = (ROOT / 'templates' / 'timeline.html').read_text(encoding='utf-8')
+        cls.module = (ROOT / 'static' / 'js' / 'app-offline-schedule.js').read_text(encoding='utf-8')
+
+    def test_engineer_list_falls_back_to_the_device_copy(self):
+        loader = self.timeline.split('async function loadEngineerList()')[1].split('\n}')[0]
+        self.assertIn('getCachedList', loader,
+                      'loadEngineerList must fall back to the cached engineer list offline')
+        self.assertIn('catch', loader,
+                      'a bare fetch here blocks the Add Schedule form with no signal')
+
+    def test_engineer_list_is_cached_when_online(self):
+        # A fallback is useless if nothing ever populates it.
+        self.assertIn("cacheReference('engineers'", self.timeline)
+
+    def test_reference_lists_are_cached_under_separate_keys(self):
+        # One combined record would let a page that loads only clients blank the engineers.
+        for key in ("'clients'", "'products'", "'engineers'"):
+            self.assertIn(f'cacheReference({key}', self.timeline)
+
+    def test_an_empty_list_never_overwrites_a_good_cache(self):
+        """A failed fetch returning [] must not wipe the device's only copy."""
+        self.assertIn('if (!Array.isArray(rows) || !rows.length)', self.module)
+
+    def test_the_offline_module_is_an_app_shell_entry(self):
+        app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        self.assertIn("'/static/js/app-offline-schedule.js',", app_source)
+
+
 class OfflineScheduleTokenTests(unittest.TestCase):
     def test_token_rules_match_the_lpr_precedent(self):
         normalize = app_module.normalize_schedule_creation_token

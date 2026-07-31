@@ -7699,8 +7699,31 @@ let engineerMaster = [];
 
 async function loadEngineerList(){
     if(engineerMaster.length && engineerMaster.every(e => Object.prototype.hasOwnProperty.call(e, 'branch'))) return;
-    const res = await fetch('/get_engineers');
-    engineerMaster = await res.json();
+
+    // This is the gate in front of the mobile Add Schedule form. engineerMaster is an
+    // in-memory variable, so it is empty on every fresh page load -- an engineer who opens
+    // the app in the field with no signal used to hit the bare fetch below, get an exception,
+    // and be told "Unable to open Add Schedule on mobile" with no way through. The whole
+    // offline queue sat behind a door that would not open.
+    try{
+        const res = await fetch('/get_engineers');
+        if(!res.ok) throw new Error(`/get_engineers returned ${res.status}`);
+        engineerMaster = await res.json();
+        if(window.offlineSchedule){
+            window.offlineSchedule.cacheReference('engineers', engineerMaster);
+        }
+    }catch(engineerListError){
+        console.warn('[Timeline] Falling back to the cached engineer list', engineerListError);
+        const cached = window.offlineSchedule
+            ? await window.offlineSchedule.getCachedList('engineers')
+            : [];
+        engineerMaster = cached || [];
+        if(!engineerMaster.length){
+            // Genuinely nothing to work with: say so plainly rather than letting the caller
+            // report a generic failure the engineer cannot act on.
+            throw new Error('The engineer list is not saved on this device yet. Open the calendar once with a connection.');
+        }
+    }
 }
 
 document.addEventListener('input', function(e){
@@ -7886,8 +7909,18 @@ function initEngineerSelect(){
 async function loadEngineerOptions(){
     try{
 
-    const res = await fetch('/get_engineers');
-    const data = await res.json();
+    // Falls back to the device copy so the teammate picker is populated offline rather than
+    // silently empty. This one already failed safely, unlike loadEngineerList() above.
+    let data;
+    try{
+        const res = await fetch('/get_engineers');
+        if(!res.ok) throw new Error(`/get_engineers returned ${res.status}`);
+        data = await res.json();
+        if(window.offlineSchedule) window.offlineSchedule.cacheReference('engineers', data);
+    }catch(offlineError){
+        data = window.offlineSchedule ? await window.offlineSchedule.getCachedList('engineers') : [];
+    }
+
     const sel = document.getElementById('f-engineers');
     if(!sel) return;
     sel.innerHTML = "";
@@ -13926,7 +13959,8 @@ async function loadGrid() {
             masterClients = await customerRes.json();
             masterProducts = await assetRes.json();
             if(window.offlineSchedule){
-                window.offlineSchedule.cacheReference(masterClients, masterProducts);
+                window.offlineSchedule.cacheReference('clients', masterClients);
+                window.offlineSchedule.cacheReference('products', masterProducts);
             }
         }catch(masterDataError){
             console.warn('[Timeline] Falling back to the cached client/product lists', masterDataError);

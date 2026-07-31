@@ -93,34 +93,44 @@
        one thing genuinely blocking the full form from working in the field.
        --------------------------------------------------------------------- */
 
-    function cacheReference(clients, products) {
+    function cacheReference(key, rows) {
+        // Each list is cached under its own key so a page that only loads one of them cannot
+        // blank the others. Engineers matter as much as clients and products here: the mobile
+        // Add Schedule button calls loadEngineerList() before opening the form, so without a
+        // cached copy the form cannot open at all with no signal.
         if (!isSupported()) return Promise.resolve(false);
-        var payload = {
-            key: 'master',
-            savedAt: new Date().toISOString(),
-            clients: Array.isArray(clients) ? clients : [],
-            products: Array.isArray(products) ? products : []
-        };
-        if (!payload.clients.length && !payload.products.length) {
+        if (!Array.isArray(rows) || !rows.length) {
             // Never overwrite a good cache with an empty one -- a failed fetch would
             // otherwise wipe the device's only copy.
             return Promise.resolve(false);
         }
         return withStore(STORES.reference, 'readwrite', function (store) {
-            store.put(payload);
+            store.put({ key: key, savedAt: new Date().toISOString(), rows: rows });
         }).then(function () { return true; }).catch(function (err) {
-            console.warn('[OfflineSchedule] Unable to cache reference data', err);
+            console.warn('[OfflineSchedule] Unable to cache ' + key, err);
             return false;
         });
     }
 
-    function getCachedReference() {
-        if (!isSupported()) return Promise.resolve(null);
+    function getCachedList(key) {
+        if (!isSupported()) return Promise.resolve([]);
         return withStore(STORES.reference, 'readonly', function (store) {
-            return requestValue(store.get('master'));
+            return requestValue(store.get(key));
+        }).then(function (row) {
+            return (row && Array.isArray(row.rows)) ? row.rows : [];
         }).catch(function (err) {
-            console.warn('[OfflineSchedule] Unable to read cached reference data', err);
-            return null;
+            console.warn('[OfflineSchedule] Unable to read cached ' + key, err);
+            return [];
+        });
+    }
+
+    function getCachedReference() {
+        return Promise.all([
+            getCachedList('clients'),
+            getCachedList('products'),
+            getCachedList('engineers')
+        ]).then(function (rows) {
+            return { clients: rows[0], products: rows[1], engineers: rows[2] };
         });
     }
 
@@ -509,6 +519,7 @@
     window.offlineSchedule = {
         isSupported: isSupported,
         cacheReference: cacheReference,
+        getCachedList: getCachedList,
         getCachedReference: getCachedReference,
         findCachedConflict: findCachedConflict,
         snapshotAgeLabel: snapshotAgeLabel,

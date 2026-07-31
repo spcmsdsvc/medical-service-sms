@@ -2,6 +2,48 @@
 
 claude changes - 2026-07-31
 
+## Offline schedule: the Add Schedule form now opens with no signal
+
+* **The owner walked through the intended field workflow before testing it, and it exposed
+  that the queue shipped behind a door that could not be relied on to open.** The mobile Add
+  Schedule button calls `loadEngineerList()` before opening the form, and `engineerMaster` is
+  an in-memory variable — empty on every fresh page load. An engineer who closes the app and
+  reopens it in the field hit a bare `fetch('/get_engineers')` with no fallback.
+* **Correcting my own diagnosis, because I stated it too strongly.** I told the owner the
+  fetch *would* reject and the form *would not* open. Tested against a genuinely stopped
+  server, the fetch **resolved 200 from the browser HTTP cache**, so the failure is
+  cache-dependent rather than certain: warm device fine, cold device after eviction not. The
+  fix still matters — it replaces "depends whether the browser still holds it" with a
+  deterministic device copy — but the original claim was overstated.
+* `loadEngineerList()` now caches the engineer list on success and falls back to IndexedDB on
+  failure, throwing a specific message when neither exists rather than letting the caller
+  report a generic "Unable to open Add Schedule" the engineer cannot act on.
+* Reworked the reference cache to store **each list under its own key** rather than one
+  combined record, so a page that loads only clients cannot blank the engineers. The
+  never-overwrite-with-empty guard is kept per list.
+* `loadEngineerOptions()` also gained the fallback, so the teammate picker is populated
+  offline instead of silently empty. It already failed safely, unlike `loadEngineerList()`.
+* **Verified the way it should have been the first time: by driving the real UI, not the queue
+  API.** Server stopped outright rather than stubbed, `/timeline` reloaded from the service
+  worker, Add Schedule tapped, the actual form filled, Save Schedule pressed. It queued, the
+  modal closed, the banner appeared, and after restarting the server it synced and landed in
+  the database as `Emergency client visit (offline)` with its creation token. Proved the
+  fallback carries it by hard-failing `/get_engineers` and watching the form still open with
+  four engineers.
+* Recorded what the owner's step-5 question established, since it is a real limitation rather
+  than a defect: **a TSR cannot be created against a schedule that is still queued.** The card
+  button is gated on `shift?.id` and the modal button checks `f-id`, so both refuse with a
+  clear message. The working field path is a standalone TSR from Create TSR, which is fully
+  offline today; linking a TSR to a not-yet-synced schedule would need dependent queue items
+  and is its own feature.
+* Added five tests to `tests/test_offline_schedule.py` covering the entry point specifically:
+  the loader has a fallback and a catch, something populates that cache, the three lists use
+  separate keys, an empty list never overwrites a good cache, and the module is an `APP_SHELL`
+  entry. Suite green at **334 tests** (was 329).
+* Service worker `v55-offline-schedule` → `v56-offline-entry-point`. No new `releases.json`
+  item: the existing 2026-07-31 entry already tells engineers they can add a schedule with no
+  signal, and this is what makes that true rather than a separate user-facing change.
+
 ## Pending work refreshed after the offline schedule release
 
 * Updated `pending-work.md` at the owner's request. Its header facts had gone stale: it still
