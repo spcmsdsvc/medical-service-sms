@@ -1090,6 +1090,24 @@
             "admins"
           ],
           "sort_order": 50
+        },
+        {
+          "item_key": "2026-07-30-reports-renamed-tsr-files",
+          "category": "Reports",
+          "description": "The Reports page is now called TSR files, in the sidebar, on the page itself, and on the dashboard shortcut. Nothing about the page changed apart from its name.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 60
+        },
+        {
+          "item_key": "2026-07-30-reimbursement-chip-removed",
+          "category": "Reimbursement",
+          "description": "The \"Personal reimbursement only\" tag was removed from the reimbursement page. It repeated what the page already makes clear.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 70
         }
       ]
     }
