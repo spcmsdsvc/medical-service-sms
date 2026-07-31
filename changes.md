@@ -2,6 +2,32 @@
 
 claude changes - 2026-07-31
 
+## Pending work refreshed after the offline schedule release
+
+* Updated `pending-work.md` at the owner's request. Its header facts had gone stale: it still
+  claimed 315 tests and `v51-hybrid-scope`, and its shipped-commit table stopped at `187c2ec`.
+  Now 329 tests, `v55-offline-schedule`, and the seven commits since.
+* Recorded that `plans.md` exists as a third journal, so the next reader finds the
+  agreed / done / open split rather than the old pair.
+* **Added the attachment gap as its own section rather than a table row**, because a one-line
+  entry would understate it. The attachment path in offline schedule creation is implemented
+  and stored but was only ever exercised through the queue's own code with a hand-built
+  `FormData` carrying no files — a photo from a phone camera has never gone through it. The
+  section says what to check on a real device and why it matters: attachments are the heavy
+  part of the queue and the likeliest source of a storage-pressure bug on the exact device
+  this feature exists for, and **a schedule that silently fails to queue because IndexedDB
+  refused a large photo is worse than no offline mode**, because the engineer believes the
+  work is saved.
+* Listed the smaller unexercised paths honestly beside it: queueing while genuinely offline
+  rather than with the network stubbed, the pre-check against a week-old snapshot rather than a
+  fresh one, and a multi-day chain queued and synced from the browser rather than only covered
+  by tests.
+* Moved the four deliberate exclusions from the approved plan into section 5 so they are read
+  as decisions rather than rediscovered as oversights: offline editing and deleting, offline
+  creation for schedulers and admins, the Background Sync API, and renaming
+  `/offline_tsr_sync_ping` now that it serves both queues.
+* Corrected the service-worker note in section 3, which listed observed versions only to `v51`.
+
 ## Offline schedule creation for field engineers
 
 * Implemented the plan recorded in `plans.md`, on the owner's go-ahead. Engineers in remote

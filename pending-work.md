@@ -7,7 +7,7 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last filled: 2026-07-30 (after the hybrid ratification, `187c2ec`)
+Last filled: 2026-07-31 (after offline schedule creation, `709106c`)
 
 **Where the work lives:** this repository, `medical-service-sms-railway`, working directly.
 The sandbox at `Claude-medical-service-sms-railway` still exists, synced to `baefb63`, and
@@ -25,8 +25,16 @@ lands here.
 | `88b88cc` | Dashboard phase 4 — shortcuts consolidated, two unreachable sections retired |
 | `5de1658` | Hybrid ratified, rodito exempted, developer preview removed |
 | `187c2ec` | Journal correction (stale `scheduler.db` claim) |
+| `ac78987` `2bc429c` `10b7f21` `a06e35e` | Reports renamed to TSR files, sidebar flattened |
+| `23a58fc` | Approved plans must be recorded in `plans.md` and waited on |
+| `3da143f` | LPR form signatures put back on their own lines |
+| `709106c` | Offline schedule creation for field engineers |
 
-Suite green at **315 tests**. Service worker cache at **`v51-hybrid-scope`**.
+Suite green at **329 tests**. Service worker cache at **`v55-offline-schedule`**.
+
+**A third journal now exists.** `plans.md` holds what was **agreed and is waiting to be
+built**; `changes.md` what **was** done; this file what is **still open**. Approving a plan is
+not permission to execute it — see `AGENTS.md`, "Approved Plans".
 
 **The dashboard redesign is complete, and the hybrid question that outlived it is now
 decided.** All four phases plus the ratification:
@@ -41,9 +49,9 @@ decided.** All four phases plus the ratification:
 
 **Note for the next reader on service worker versions.** `v49` was skipped in effect: this
 repository is worked in directly and `9a2ad4d` bumped to `v50` from outside the session that
-had claimed `v49`, so `v51` is the first version carrying the current dashboard assets. If two
-streams of work are ever in flight again, read the live value out of `app.py` immediately
-before committing rather than trusting what an earlier note in that session recorded.
+had claimed `v49`. If two streams of work are ever in flight again, read the live value out of
+`app.py` immediately before committing rather than trusting what an earlier note in that
+session recorded.
 
 ---
 
@@ -171,14 +179,55 @@ None of this is known broken — it simply has not been checked.
 | Item | Applies to |
 | --- | --- |
 | **Edge and Brave** | every dashboard phase, login redesign, sidebar, What's New, digest modal |
-| **Offline behaviour against a real service worker registration** | login offline shell, dashboard assets, changelog assets. Real workers *were* registered during phases 2–4 and the ratification (`v46`, `v47`, `v48`, `v49` and `v51` all observed), but the offline path itself has still not been exercised |
+| **Offline behaviour against a real service worker registration** | login offline shell, dashboard assets, changelog assets. Real workers *were* registered through phases 2–4, the ratification and the offline schedule work (`v46` through `v55` observed), but the offline path itself has still not been exercised with the network genuinely down |
 | **Mobile viewport (375px)** | the What's New filter/search row. Every dashboard phase and the ratification were checked at 375px; this row still has not been |
 | **Skip link visual reveal on real keyboard focus** | layout shell |
 | **A real digest email as received** | the HTML was verified in the preview pane, never in an actual inbox. Mail clients strip and rewrite CSS; check before sending to an audience |
+| **Offline schedule attachments from a real device camera** | the least-proven part of `709106c` — see below |
 
 On the skip link: the Browser pane does not composite frames, so CSS transitions never
 advance, and its window is unfocused so `:focus` never matches. Disabling the transition
 proved the element positions correctly, but the actual reveal was never seen.
+
+### Offline schedule attachments — verify on a real device before engineers rely on it
+
+The attachment path in offline schedule creation is **implemented and stored, but was only
+ever exercised through the queue's own code**. Every browser check drove
+`window.offlineSchedule.enqueue()` with a hand-built `FormData` carrying no files. A photo
+taken on a phone has never gone through it.
+
+**Why this one is worth a deliberate pass rather than assuming it works:** attachments are the
+heavy part of the queue and the most likely source of a storage-pressure bug on a field phone,
+which is exactly the device this feature exists for. A schedule that silently fails to queue
+because IndexedDB refused a 12 MB photo is worse than no offline mode, because the engineer
+believes the work is saved.
+
+What to check, on a real phone rather than a desktop browser:
+
+- A photo straight from the camera — several megabytes, not a test fixture — queues, survives
+  a reload, and still syncs.
+- Several photos on one schedule, and several queued schedules each carrying photos.
+- What happens when the device is genuinely low on storage. IndexedDB rejects the write; the
+  engineer must be told the schedule was **not** saved, not left believing it was.
+- The blob survives a browser restart, not only a page reload.
+- After a successful sync the attachments are actually dropped from the device
+  (`discard()` removes them), or the queue becomes a slow storage leak.
+
+The TSR queue already stores attachments as blob references and has been through real field
+use; if this needs rework, copy what `templates/offline_tsr.html` does rather than inventing a
+second approach.
+
+### Offline schedule creation — smaller things not yet exercised
+
+- **A schedule queued while genuinely offline**, rather than with the network merely stubbed.
+  The enqueue-on-network-failure path was verified; enqueue-on-`navigator.onLine === false`
+  was not driven end to end through the real form.
+- **The pre-check against a stale snapshot.** It was verified against a fresh one. The case
+  that matters is an engineer offline for a week, where the snapshot is a week old and the
+  warning may be wrong in either direction.
+- **Multi-day chains through the device queue.** Replay of a five-day chain is covered by
+  `tests/test_offline_schedule.py`, but a multi-day schedule has not been queued and synced
+  from the browser.
 
 ---
 
@@ -210,7 +259,7 @@ Same for `.env`, which holds a real Brevo API key.
 
 **Bump the service worker cache** whenever an `APP_SHELL` entry changes, or field devices
 keep the old copies. Tests use `assert_cache_version_at_least`, so a bump never breaks them.
-Currently `v51-hybrid-scope`. **Read the live value out of `app.py` immediately before
+Currently `v55-offline-schedule`. **Read the live value out of `app.py` immediately before
 committing** — `v49` was claimed and then overwritten by a `v50` bump from outside that
 session, and the stale assumption nearly shipped stale dashboard assets to field devices.
 
@@ -255,6 +304,26 @@ do the same.
 ---
 
 ## 5. Decided against — do not re-raise
+
+**Editing or deleting a schedule offline.** Excluded from `709106c` by decision. Offline
+creation is a new row and needs no reconciliation; an offline *edit* must resolve against a
+row that may have changed on the server in the meantime, which is a materially harder problem.
+Queued rows are refused by `canManageExistingScheduleForRow()` precisely so edit, delete and
+drag cannot act on a schedule that has no server id yet. Revisit only as its own task.
+
+**Offline schedule creation for schedulers and admins.** Excluded by decision. They create
+schedules for many engineers at once, which multiplies the conflict surface, and they are
+typically on a connection. The permission gate is `isEngineer` on the device plus
+`can_create_schedule_for_engineer_ids()` on the server, which is re-checked at sync and is not
+bypassed by the creation token.
+
+**The Background Sync API for the schedule queue.** Excluded by decision; sync is manual and
+on-reconnect, matching the TSR queue. Adding a background sync worker brings its own
+reliability questions and belongs in its own task if it is ever wanted.
+
+**Renaming `/offline_tsr_sync_ping`.** It now serves both the TSR queue and the schedule
+queue, so the name is narrower than the job. Left alone deliberately — renaming a route used
+by field devices to fix a name is not worth the deployment risk.
 
 **Reviving the hybrid dashboard sections.** `needs-attention` and `team-intelligence` were
 retired in phase 4 rather than made reachable. The manager watchlist already consolidates
