@@ -206,7 +206,12 @@
             <div class="sidebar-group-label" aria-hidden="true">Records</div>
             {% endif %}
 
-            {% if is_reports_sidebar_user %}
+            {# A collapsible group only earns its click when it holds more than one
+               destination. Management accounts get Analytics alongside TSR files, so the
+               group stays. Everyone else has TSR files and nothing else, and wrapping one
+               link in a collapsed group named after that same link meant clicking
+               "TSR files" to reveal "TSR files". They get the link directly. #}
+            {% if is_management_user %}
                 <button
                     type="button"
                     class="sidebar-section-toggle {{ 'active' if request.path in reports_paths }}"
@@ -216,15 +221,15 @@
                     aria-controls="reports-insights-sidebar-section"
                 >
                     <i class="fa-solid fa-chart-pie"></i>
-                    <span>{{ 'Reports & Insights' if is_management_user else 'TSR files' }}</span>
+                    <span>Reports &amp; Insights</span>
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
                 </button>
                 <div id="reports-insights-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}">
-                    {% if is_management_user %}
                     {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
-                    {% endif %}
                     {{ nav_link('/reports_page', 'fa-file-lines', 'TSR files') }}
                 </div>
+            {% elif is_reports_sidebar_user %}
+                {{ nav_link('/reports_page', 'fa-file-lines', 'TSR files') }}
             {% endif %}
 
             {% if current_user.is_authenticated and not is_approver_only_user %}
