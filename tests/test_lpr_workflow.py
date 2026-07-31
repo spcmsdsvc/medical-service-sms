@@ -213,5 +213,84 @@ class LPRWorkflowTests(unittest.TestCase):
                 os.unlink(database_path)
 
 
+class LPRSignaturePlacementTests(unittest.TestCase):
+    """The approver signature was stamped a whole row above its own line.
+
+    Hardcoded overlay coordinates put it on top of the Invoice No. label, and the requester
+    signature on top of Equipment. The stamp is now derived from the template's own field
+    rectangles, so these tests assert the geometry rather than the constants.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+
+    def test_signature_placement_is_not_hardcoded_anymore(self):
+        # assertFalse rather than assertNotIn: assertNotIn prints the whole haystack on
+        # failure, which for app.py is tens of thousands of lines of unreadable output.
+        for dead in ('draw_signature(header.requester_signature_snapshot, 145, 49',
+                     'draw_signature(header.approval_signature_snapshot, 397, 63'):
+            self.assertFalse(
+                dead in self.app_source,
+                f'hardcoded signature coordinates are back: {dead!r}. They put the approver '
+                'signature on top of the Invoice No. row.'
+            )
+
+        self.assertIn('def lpr_form_field_rects(', self.app_source)
+        self.assertIn('def lpr_signature_box(', self.app_source)
+
+        # The call site must actually use the computed boxes, not just define the helpers.
+        for call in ('draw_signature(header.requester_signature_snapshot, *requester_box)',
+                     'draw_signature(header.approval_signature_snapshot, *approver_box)'):
+            self.assertTrue(
+                call in self.app_source,
+                f'signature stamping no longer goes through the computed box: {call!r}'
+            )
+
+    @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+    def test_each_signature_sits_inside_its_own_field(self):
+        template = app_module.find_lpr_form_template_path()
+        if not template:
+            self.skipTest('LPR FORM.pdf is not available in this environment')
+
+        rects = app_module.lpr_form_field_rects(PdfReader(template))
+        self.assertIn('Requested by', rects, 'template field rectangles could not be read')
+        self.assertIn('Approved by', rects)
+
+        for field_name in ('Requested by', 'Approved by'):
+            field = rects[field_name]
+            x, y, width, height = app_module.lpr_signature_box(field, None)
+            fx0, fy0, fx1, fy1 = field
+            self.assertGreaterEqual(y + 0.01, fy0, f'{field_name} stamp starts below its row')
+            self.assertLessEqual(y + height, fy1 + 0.01, f'{field_name} stamp rises out of its row')
+            self.assertGreaterEqual(x + 0.01, fx0, f'{field_name} stamp starts left of its line')
+            self.assertLessEqual(x + width, fx1 + 0.01, f'{field_name} stamp runs past its line')
+
+    @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+    def test_approver_signature_clears_the_invoice_row(self):
+        """The reported defect: the approver stamp covered Intended for / PO No / Invoice No."""
+        template = app_module.find_lpr_form_template_path()
+        if not template:
+            self.skipTest('LPR FORM.pdf is not available in this environment')
+
+        rects = app_module.lpr_form_field_rects(PdfReader(template))
+        _, y, _, height = app_module.lpr_signature_box(rects['Approved by'], None)
+        row_above_bottom = rects['Intended for'][1]
+
+        # Positive control: that row really does sit directly above the approver line, so a
+        # stamp of the old height genuinely would have collided with it.
+        self.assertGreater(row_above_bottom, rects['Approved by'][1])
+        self.assertLess(row_above_bottom - rects['Approved by'][1], 20)
+
+        self.assertLessEqual(y + height, row_above_bottom + 0.01,
+                             'approver signature overlaps the Invoice No. row again')
+
+    @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+    def test_signature_box_falls_back_when_the_field_is_missing(self):
+        fallback = (1.0, 2.0, 3.0, 4.0)
+        for bad in (None, (), (1, 2), (0, 0, 5, 1)):
+            self.assertEqual(app_module.lpr_signature_box(bad, fallback), fallback)
+
+
 if __name__ == '__main__':
     unittest.main()

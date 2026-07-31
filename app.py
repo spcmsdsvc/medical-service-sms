@@ -49607,6 +49607,50 @@ def find_lpr_form_template_path():
     return ''
 
 
+def lpr_form_field_rects(reader):
+    """Map AcroForm field name -> (x0, y0, x1, y1) on the template's first page.
+
+    The signature overlay used to be positioned with hardcoded numbers, which put both
+    signatures a whole row above their own lines -- the approver's landed on top of the
+    Invoice No. label. Reading the real rectangles keeps the stamp attached to the field it
+    belongs to, and means a revised template moves the signature with it.
+    """
+    rects = {}
+    try:
+        for annot in reader.pages[0].get('/Annots', []) or []:
+            obj = annot.get_object()
+            name = obj.get('/T')
+            rect = obj.get('/Rect')
+            if not name or not rect or len(rect) != 4:
+                continue
+            rects[str(name)] = tuple(float(value) for value in rect)
+    except Exception as rect_error:
+        print(f'[LPR] Could not read form field rectangles: {rect_error}', flush=True)
+        return {}
+    return rects
+
+
+def lpr_signature_box(field_rect, fallback):
+    """Signature placement inside a signature line, clear of the printed name.
+
+    The form's bottom rows sit only ~13.9pt apart, so a signature taller than the row cannot
+    avoid covering the row above it. The stamp is therefore fitted inside the field's own
+    band and pushed to the right-hand end of the line, where the typed name is not.
+    """
+    if not field_rect or len(field_rect) != 4:
+        return fallback
+
+    x0, y0, x1, y1 = field_rect
+    field_width = max(0.0, x1 - x0)
+    field_height = max(0.0, y1 - y0)
+    if field_width <= 12 or field_height <= 4:
+        return fallback
+
+    width = min(86.0, max(40.0, field_width * 0.5))
+    height = max(8.0, field_height - 1.2)
+    return (x1 - width - 6.0, y0 + 0.6, width, height)
+
+
 def lpr_fill_pdf_bytes(header, approved_by_user=None):
     """Fill the official LPR AcroForm and append continuation pages after row eight."""
     try:
@@ -49664,8 +49708,16 @@ def lpr_fill_pdf_bytes(header, approved_by_user=None):
                     preserveAspectRatio=True, mask='auto'
                 )
 
-            draw_signature(header.requester_signature_snapshot, 145, 49, 100, 18)
-            draw_signature(header.approval_signature_snapshot, 397, 63, 100, 18)
+            # Fallbacks are the measured positions for the current template, used only if the
+            # field rectangles cannot be read.
+            field_rects = lpr_form_field_rects(reader)
+            requester_box = lpr_signature_box(
+                field_rects.get('Requested by'), (189.1, 38.3, 83.8, 12.45))
+            approver_box = lpr_signature_box(
+                field_rects.get('Approved by'), (447.8, 52.2, 86.0, 12.5))
+
+            draw_signature(header.requester_signature_snapshot, *requester_box)
+            draw_signature(header.approval_signature_snapshot, *approver_box)
             canvas_obj.save()
             overlay_reader = PdfReader(io.BytesIO(overlay.getvalue()))
             writer.pages[0].merge_page(overlay_reader.pages[0])

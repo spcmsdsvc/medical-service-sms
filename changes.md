@@ -1,5 +1,126 @@
 # Project Change Log
 
+claude changes - 2026-07-31
+
+## LPR form: the approver signature was stamped a whole row too high
+
+* **Looked at the generated PDF rather than reasoning from the numbers**, which is what found
+  the real extent of it. Rendered the filled form with sample data and a bordered placeholder
+  signature, then rasterised the bottom strip: the approver signature was sitting on top of
+  the **"Invoice No." label and its value**, an entire row above the "Approved by:" line it
+  belongs to.
+* **The requester signature had the identical defect**, landing on "EQUIPMENT VALUE". Only the
+  approver was reported, but the two are the same bug two lines apart and are fixed together.
+* Cause: the overlay stamped at hardcoded coordinates — `(145, 49, 100, 18)` and
+  `(397, 63, 100, 18)` — while the form's bottom three rows sit only **~13.9pt apart**. An
+  18pt-tall stamp cannot fit between rows, so both signatures spilled upward into the row
+  above. Measured from the template's own AcroForm rectangles: `Requested by` occupies
+  y 37.70–51.35, `Approved by` y 51.60–65.30, and `Intended for` / `PO No` / `Invoice No`
+  y 65.50–79.20.
+* **Replaced the magic numbers with geometry read from the template.** Added
+  `lpr_form_field_rects()`, which maps field name to rectangle from the first page, and
+  `lpr_signature_box()`, which fits the stamp inside the field's own band and pushes it to the
+  right-hand end of the line, clear of the typed name. A revised template now moves the
+  signature with it instead of silently misplacing it again.
+* Kept measured fallbacks for the current template in case the rectangles cannot be read, and
+  the whole overlay stays inside the existing try/except so a signature problem can never stop
+  the PDF from generating.
+* Verified through `app.py`'s own functions rather than a reimplementation: both stamps sit
+  inside their own field vertically and horizontally, and the approver stamp clears the
+  Invoice No. row. Re-rendered afterwards and looked at it — "Invoice No. INV-4402" and
+  "EQUIPMENT VALUE" are fully legible, and each signature sits on its own line.
+* Added `LPRSignaturePlacementTests` to `tests/test_lpr_workflow.py` (4 tests): the hardcoded
+  coordinates cannot return, the call site still goes through the computed boxes, each stamp
+  is inside its own field, the approver stamp clears the row above **with a positive control**
+  asserting that row really is directly above it, and the fallback triggers on a missing or
+  malformed rectangle.
+* **Proved the guard test catches the defect** by restoring the old coordinates and re-running:
+  it failed, and was restored from an intact copy with the call site verified afterwards.
+* **Fixed a defect in my own test while doing that.** The first version used `assertNotIn`
+  against `app.py`, so its failure message dumped the entire file — tens of thousands of lines
+  of unreadable output. Rewritten as `assertFalse(... in ...)` with an explicit message naming
+  the regression, and confirmed the failure output is now a single readable line.
+* No service worker bump: nothing in `APP_SHELL` changed, and this is server-side PDF
+  generation. Suite green at **319 tests** (was 315).
+
+## Approved plans now get recorded and wait
+
+* Added `plans.md` at the repository root, a third journal beside the two that already exist:
+  `plans.md` is what was **agreed and is waiting to be built**, `changes.md` is what **was**
+  done, `pending-work.md` is what is **still open**.
+* Added an **Approved Plans** section to `AGENTS.md` stating the rule it exists for:
+  **approval of a plan is not permission to execute it.** On approval the plan is written to
+  `plans.md` in full and work stops until the owner separately says to start.
+* Written to bind explicitly in the case that would otherwise slip: approval arriving through
+  a planning tool or mode, where the tool reports that coding may now begin. That is the
+  tool's default, not the owner's instruction — record the plan and wait.
+* `plans.md` carries a `Status` line per plan (`Approved — awaiting go-ahead` → `In progress`
+  → `Executed` with commit hash, or `Superseded` / `Abandoned` with the reason), newest first,
+  and keeps executed plans rather than deleting them: where a plan and its outcome differed,
+  that record is the useful part.
+* Requires the plan as approved rather than a summary — files, reasoning, deliberate
+  exclusions, verification approach — so it can be executed without the originating
+  conversation.
+
+## Reports renamed to TSR files, and a redundant reimbursement tag removed
+
+* **Recorded late, and that is itself worth noting.** The four commits below shipped earlier
+  today with no `changes.md` entry, which `AGENTS.md` requires in the same task. Caught while
+  adding the plans rule above, not by the discipline that was supposed to catch it.
+* Renamed the Reports page to **TSR files** in every place it is named, so one destination
+  does not carry two names: the sidebar link (`templates/layout.html`), the page header and
+  eyebrow (`templates/reports.html`), and the dashboard shortcut
+  (`templates/dashboard.html`), which still read "Reports" and would otherwise have drifted
+  from the other two. Only labels changed; the page, its route and its behaviour are
+  untouched.
+* Removed the **"Personal reimbursement only"** tag from `templates/reimbursement.html`,
+  together with its container and styles. Nothing populated `#reimSummary` — no JS writes to
+  it — so leaving the div would have meant an empty flex element with a stray 8px top margin,
+  and `.reim-summary` / `.reim-chip` existed solely for the removed markup, including a
+  dark-mode rule in `static/css/app-dark-pages.css`. All three names are now absent from
+  templates, CSS and JS.
+* Renamed the engineer sidebar **group** to "TSR files" as well, then **flattened it**. The
+  rename left a collapsed group called "TSR files" whose single child was also called "TSR
+  files", so reaching the page meant clicking the label to reveal the same label.
+  Non-management accounts now get the link directly at top level, beside Dashboard and Stock
+  Inventory. The group branch is keyed on `is_management_user`, which removed two nested
+  conditions from the markup. Management accounts keep the collapsible "Reports & Insights",
+  because that group genuinely holds two destinations, Analytics and TSR files.
+* **A commit reached `origin/main` with a failing test, and the cause was sequencing.**
+  `ac78987` was pushed while `tests/test_changelog_coverage.py` was red: the date rolled past
+  midnight between writing the manifest entries and making the commit, so items filed under
+  `2026-07-30` did not match a commit dated `2026-07-31`, and that test requires a release
+  dated the commit date. The test *was* run and *did* report the failure — but it had been
+  chained into the same shell command as `git push`, so the push executed before the result
+  could be read. Fixed in `2bc429c` by moving both items into a new `2026-07-31` release with
+  matching `item_key` prefixes. About two minutes of red `main`; nothing functional was wrong.
+  **A verification step has to gate the irreversible step, not merely precede it** — the
+  coverage check has since been run as its own separate step before each push.
+* Service worker bumped three times, once per shipped change to a cached asset:
+  `v51-hybrid-scope` → `v52-tsr-files-label` (`app-dark-pages.css` is an `APP_SHELL` entry)
+  → `v53-tsr-files-group` → `v54-tsr-files-flat` (`layout.html` is embedded in every
+  `APP_SHELL` page, so a cached shell would keep rendering the old sidebar). The v52 bump was
+  the marginal one — its only delta was a deleted rule for markup that no longer exists — but
+  the bump rule is unconditional and a stale asset costs more than a re-download.
+* Changelog: a `2026-07-31` release with two entries, one for the rename and one for the
+  removed tag. The two sidebar commits needed no further entry, since the rename item already
+  says "in the sidebar" and the coverage test requires only that a release exists for the
+  commit date.
+* Browser-verified on an isolated database, port 5056, explicit `MEDICAL_SERVICE_TEST_DB`,
+  never port 5000, signing in as real seeded accounts for both paths. Engineer: the TSR files
+  link renders visible and outside any subnav, and still takes `.active` and
+  `aria-current="page"` on `/reports_page`. Management: "Reports & Insights" with Analytics
+  and TSR files beneath it, the ampersand rendering as `&` rather than a literal entity. The
+  reimbursement tag is gone with the date controls and buttons intact, and no horizontal
+  overflow at 375px.
+* Suite green at **315 tests** throughout. `scheduler.db` never touched by this work and never
+  committed.
+* Shipped as `ac78987`, `2bc429c`, `10b7f21`, `a06e35e`.
+* Noted, not changed: `pending-work.md` cites "AGENTS.md section 3" for the push-by-default
+  posture, but `AGENTS.md` had only one section before today. That cross-reference is stale.
+
+---
+
 codex changes - 2026-07-30
 - Verified from the unique LPR numbers, identical timestamps, Activity Log wording, standalone `/save_lpr` route, and browser save flow that repeated first-save requests created separate standalone LPR drafts; the affected entries were not reimbursement-generated linked LPRs.
 - Added a stable standalone LPR creation token through an additive nullable `lpr_header.creation_token` column and unique index so browser retries, repeated requests, or lost responses resolve to the original draft instead of consuming another LPR number.

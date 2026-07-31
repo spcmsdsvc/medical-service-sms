@@ -1117,6 +1117,15 @@
             "everyone"
           ],
           "sort_order": 20
+        },
+        {
+          "item_key": "2026-07-31-lpr-signature-alignment",
+          "category": "LPR",
+          "description": "Signatures on the generated LPR form now sit on their own lines. The approver signature was printing one row too high, over the Invoice No. field, and the requester signature over Equipment.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 30
         }
       ]
     }
