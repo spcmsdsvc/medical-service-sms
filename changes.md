@@ -2,6 +2,93 @@
 
 claude changes - 2026-07-31
 
+## Offline schedule creation for field engineers
+
+* Implemented the plan recorded in `plans.md`, on the owner's go-ahead. Engineers in remote
+  areas could not add a schedule at all without a connection; the work still happened and the
+  record waited for signal.
+* **Built on what already existed rather than a second offline system.** `/timeline` was
+  already an `APP_SHELL` route with up to 24 cached week/branch snapshots; offline TSR already
+  had the queue, the retriable-versus-fatal split and a health ping; and the LPR work in
+  `9a2ad4d` had already solved duplicate-on-retry with a creation token. The new code is
+  mostly wiring between those three.
+* **Server, `/add_shift`:** added `Shift.creation_token` (nullable, plus a partial unique
+  index `uq_shift_creation_token`) through a new additive `ensure_shift_creation_token_column()`
+  in the startup migration list, `normalize_schedule_creation_token()` mirroring the LPR rules,
+  and replay resolution that returns the existing chain instead of creating a second one.
+* **The token keys the chain, not the row**, and is stored on the first shift only. On every
+  row it would trip the unique index for a multi-day schedule; on none of them a five-day
+  schedule would replay into ten. There is a test for exactly that.
+* **Replay is resolved before the collision check, and the ordering is load-bearing.** A
+  queued schedule that already reached the server occupies its own slots, so checking
+  collisions first would make every retry conflict with the copy it created last time and park
+  a schedule that is in fact already saved. Pinned by a test that asserts the ordering.
+* Wrapped the commit in `IntegrityError` recovery so two retries racing each other return the
+  landed chain rather than a 500 to a device that is only trying to sync.
+* **Did not add the `error_kind` marker the plan called for.** `build_conflict_response()`
+  already returns HTTP **409** with `status: 'conflict'`, and travel conflicts return
+  `status: 'travel_conflict'` with an override key — the device can already tell retry from
+  stop. A second discriminator would have been redundant.
+* **Device:** new `static/js/app-offline-schedule.js` (an `APP_SHELL` entry, or it would be
+  missing from the cache in exactly the situation it exists for) with IndexedDB stores for the
+  queue, attachments and reference data, mirroring `OFFLINE_TSR_DB_STORES`.
+* **Closed the one real blocker to the full form working offline:** `masterClients` and
+  `masterProducts` were fetched fresh on every timeline load and never stored, so the client
+  and product autocompletes came up empty with no signal. They are now cached to IndexedDB on
+  each successful online load and read back when the fetch fails. The cache is never
+  overwritten with an empty list, so a failed fetch cannot wipe the device's only copy.
+* The submit path enqueues when offline **or when the POST throws a network error** — weak
+  signal, not "no signal", is the case that actually bites in the field, which is why the queue
+  cannot be gated on `navigator.onLine` alone. Offline creation is limited to **new** schedules
+  and to engineers, per the plan.
+* Conflicts are pre-checked on the device against the cached snapshot and the engineer is told
+  what it is checking against and how old that copy is, rather than being promised there is no
+  clash. At sync a real conflict **parks** the item with the conflicting schedule attached and
+  is not retried; the engineer edits and resends.
+* **Found and fixed a date bug that would have filed field schedules on the wrong day.**
+  `scheduleDatesBetween()` built a local-midnight `Date` and called `toISOString()`, which
+  converts to UTC — in Manila (UTC+8) that lands on the *previous* day. A schedule added for
+  the 21st queued as the 20th, and the conflict pre-check compared against the wrong date.
+  Now formatted from the local date parts. Caught in the browser, not in review.
+* **Made the grid merge idempotent.** The same data object is re-rendered on filter changes
+  and again when the queue resolves, so appending pending rows without stripping first stacked
+  a duplicate card on every pass.
+* **Engineers render through the role-aware mobile path, not the desktop table.** Merging
+  queued rows only into the desktop renderer would have shown pending cards to everyone except
+  the people who create them. `syncMobileTimelineData()` now merges too. Queued rows are
+  refused by `canManageExistingScheduleForRow()`, so edit, delete and drag cannot act on a
+  schedule that has no server id yet.
+* **A wasted debugging detour worth recording: Jinja caches compiled templates.** For a
+  stretch I was testing template edits against a server that had never reloaded them, and drew
+  two wrong conclusions from it — that the grid merge was broken, and that the date fix had not
+  applied. Both were fine; the server was stale. `pending-work.md` already warns about this and
+  I still lost time to it. **Restart the server after every template edit, not at the end.**
+* Corrected a misleading sync message found in the browser: parking a rejected schedule while
+  reporting "Nothing to sync" is how a lost day in the field goes unnoticed. It now names the
+  parked count.
+* Added `tests/test_offline_schedule.py` (10 tests): replay does not duplicate, **with a
+  positive control proving two untokened posts really do create two chains**; a five-day chain
+  replays to five rows and one `group_id` with exactly one row carrying the token; a conflict
+  returns 409 and creates nothing; an invalid token is refused rather than silently ignored,
+  since dropping it would drop idempotency with it; a token does not bypass
+  `can_create_schedule_for_engineer_ids`; the migration is additive; and the replay-before-
+  collision ordering is pinned. Each test books its own date, because they share a database and
+  would otherwise conflict with each other and report nothing about the code.
+* **Proved the idempotency tests catch the defect** by disabling the replay lookup: three tests
+  failed, including both duplication cases. Restored from an intact copy, verified no residue.
+* Verified end to end in the browser on an isolated database, port 5056, explicit
+  `MEDICAL_SERVICE_TEST_DB`, signed in as a real seeded engineer: reference data and snapshot
+  cached online; a queued schedule survived a reload and rendered in the panel; syncing drained
+  the queue and created the schedule; **replaying the same token twice more returned the same
+  shift id both times**; and a genuinely conflicting schedule parked as "1 queued, 1 needs your
+  attention" with a remove button rather than double-booking.
+* Panel contrast min **5.12** (all AA), no horizontal overflow at 375 px, no tap target under
+  44 px, console clean. Service worker `v54-tsr-files-flat` → `v55-offline-schedule`.
+* Suite green at **329 tests** (was 319). `scheduler.db` untouched by this work.
+* **Not delivered from the plan:** nothing. The attachment path is implemented and stored, but
+  was exercised only through the queue's own code path, not with a real photo from a device
+  camera — see `pending-work.md` for what is still unverified.
+
 ## LPR form: the approver signature was stamped a whole row too high
 
 * **Looked at the generated PDF rather than reasoning from the numbers**, which is what found

@@ -6,6 +6,10 @@
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 {% block content %}
+{# Loaded before the inline timeline script so window.offlineSchedule exists for it. This
+   file is an APP_SHELL entry: without that it would be missing from the cache in exactly
+   the situation it is written for. #}
+<script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=1"></script>
 <!--
     ===========================================================================
     MEDICAL SERVICE MANAGEMENT SYSTEM - TECHNICAL TIMELINE GRID
@@ -67,6 +71,27 @@
             <i class="fa-solid fa-thumbtack"></i>
         </button>
     </div>
+
+    {#
+        OFFLINE SCHEDULE QUEUE
+
+        Schedules added without a connection are held on the device and replayed when signal
+        returns. Hidden entirely until something is actually queued, so it costs nothing on
+        an ordinary online day. Mirrors the offline TSR queue panel.
+    #}
+    <div id="offline-schedule-panel" class="offline-schedule-panel no-print d-none" role="status" aria-live="polite">
+        <div class="offline-schedule-head">
+            <div>
+                <strong><i class="fa-solid fa-cloud-arrow-up me-1"></i>Schedules waiting to sync</strong>
+                <div id="offline-schedule-summary" class="small mt-1"></div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-dark fw-bold" onclick="syncOfflineScheduleQueue()">
+                <i class="fa-solid fa-rotate me-1"></i>Sync Now
+            </button>
+        </div>
+        <div id="offline-schedule-list" class="mt-2"></div>
+    </div>
+    <div id="offline-schedule-notice" class="offline-schedule-notice d-none no-print"></div>
 
     <!--
         TIMELINE NAVIGATION BAR
@@ -7305,6 +7330,89 @@ body.timeline-readonly-approver .header-branding-container h2::after {
     line-height: 1;
 }
 
+/* Offline schedule queue. Only visible when something is actually queued. */
+.offline-schedule-panel {
+    border: 1px solid #fed7aa;
+    border-left: 4px solid #f59e0b;
+    border-radius: 14px;
+    background: #fffbeb;
+    /* #7c4a03 on #fffbeb measures 7.4:1 -- AA at this size and weight. */
+    color: #7c4a03;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+}
+
+.offline-schedule-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.offline-schedule-card {
+    border: 1px solid #e5e7eb;
+    border-left: 4px solid #f59e0b;
+    border-radius: 12px;
+    background: #ffffff;
+    color: #0f172a;
+    padding: 9px 11px;
+    margin-bottom: 8px;
+}
+
+.offline-schedule-card.blocked {
+    border-left-color: #dc3545;
+    background: #fff7f7;
+}
+
+.offline-schedule-card-title { font-weight: 900; }
+
+.offline-schedule-card-meta {
+    font-size: 0.82rem;
+    font-weight: 800;
+    /* #5d6b81 rather than #64748b: this sits on #ffffff and on #fff7f7. */
+    color: #5d6b81;
+}
+
+.offline-schedule-card-error {
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: #b02a37;
+    margin-top: 4px;
+}
+
+.offline-schedule-notice {
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    font-weight: 800;
+    font-size: 0.9rem;
+}
+
+.offline-schedule-notice.queued {
+    background: #ecfdf5;
+    border: 1px solid #bbf7d0;
+    color: #14532d;
+}
+
+.offline-schedule-notice.warn {
+    background: #fffbeb;
+    border: 1px solid #fed7aa;
+    color: #7c4a03;
+}
+
+/* Queued schedules render on the grid so the engineer can see their own work, but must
+   never be mistaken for a saved one. Dashed border plus the amber wash of the queue panel,
+   so the two read as the same state. */
+.schedule-card.pending-sync {
+    border: 2px dashed #f59e0b !important;
+    background: #fffbeb !important;
+    /* #7c4a03 on #fffbeb measures 7.4:1. */
+    color: #7c4a03 !important;
+}
+
+.schedule-card.pending-sync .schedule-card-actions { display: none !important; }
+
 .timeline-dialog-backdrop {
     position: fixed;
     inset: 0;
@@ -12472,6 +12580,10 @@ if (selectedVal === "Leave") {
     }
 
     function syncMobileTimelineData(data){
+        // Engineers -- the only accounts that can queue a schedule offline -- render through
+        // this path, not the desktop table. Merging only into the desktop renderer would have
+        // put pending cards everywhere except in front of the people who created them.
+        mergeQueuedSchedulesIntoGrid(data);
         latestTimelineDataForMobile = data;
         invalidateMobileRenderCache();
         applyPendingMobileFilterAfterLoad();
@@ -12689,6 +12801,238 @@ if (selectedVal === "Leave") {
             console.warn('[PWA] Unable to write offline timeline snapshot map', err);
             return false;
         }
+    }
+
+    /* ---------------------------------------------------------------------
+       Offline schedule queue: the timeline's side of app-offline-schedule.js.
+       --------------------------------------------------------------------- */
+
+    function setOfflineScheduleNotice(message, tone='warn'){
+        const box = document.getElementById('offline-schedule-notice');
+        if(!box) return;
+        if(!message){
+            box.classList.add('d-none');
+            box.textContent = '';
+            return;
+        }
+        box.className = `offline-schedule-notice ${tone}`;
+        box.textContent = message;
+        box.classList.remove('d-none');
+    }
+
+    function scheduleDatesBetween(startISO, endISO){
+        // Deliberately no toISOString() here. `new Date('2026-08-21T00:00:00')` is local
+        // midnight, and toISOString() converts to UTC -- in Manila (UTC+8) that lands on the
+        // previous day, so a schedule added for the 21st would queue as the 20th and the
+        // conflict pre-check would compare against the wrong day. Formatted from the local
+        // date parts instead.
+        const dates = [];
+        if(!startISO || !endISO) return dates;
+        const start = new Date(`${startISO}T00:00:00`);
+        const end = new Date(`${endISO}T00:00:00`);
+        if(isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return dates;
+
+        for(let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)){
+            const month = String(cursor.getMonth() + 1).padStart(2, '0');
+            const day = String(cursor.getDate()).padStart(2, '0');
+            dates.push(`${cursor.getFullYear()}-${month}-${day}`);
+        }
+        return dates;
+    }
+
+    async function queueScheduleOffline(dataSet, engineerIds, startDate, endDate, startTime, endTime){
+        const dates = scheduleDatesBetween(startDate, endDate);
+
+        // Advisory only. The snapshot is as old as the last time this device was online, so
+        // the engineer is told what it is checking against rather than being promised there
+        // is no conflict. The server decides at sync.
+        const clash = window.offlineSchedule.findCachedConflict({
+            engineerIds, dates, startTime, endTime
+        });
+
+        if(clash){
+            const age = window.offlineSchedule.snapshotAgeLabel();
+            const detail = [
+                `${clash.date} ${clash.time}`,
+                clash.task || '',
+                clash.clientName || ''
+            ].filter(Boolean).join(' — ');
+            const confirmed = await timelineConfirmDialog({
+                tone: 'warning',
+                title: 'Possible schedule clash',
+                message: `This looks like it clashes with an existing schedule: ${detail}. ` +
+                    `That is from the copy saved on this device${age ? `, ${age}` : ''}, so it may be out of date. ` +
+                    `Queue it anyway and let the server decide when you are back online?`,
+                confirmText: 'Queue it anyway',
+                cancelText: 'Let me change it'
+            });
+            if(!confirmed) return;
+        }
+
+        const summary = {
+            title: dataSet.get('title') || dataSet.get('task') || 'Schedule',
+            startDate,
+            endDate,
+            startTime,
+            endTime,
+            dayCount: dates.length,
+            engineerIds
+        };
+
+        try{
+            await window.offlineSchedule.enqueue(dataSet, summary);
+            shiftModal.hide();
+            await renderOfflineScheduleQueue();
+            await refreshTimelineGrid();
+            setOfflineScheduleNotice(
+                'Saved on this device. It will be sent automatically when you are back online.',
+                'queued'
+            );
+        }catch(queueError){
+            console.error('[Timeline] Unable to queue the schedule offline', queueError);
+            timelineAlert('This schedule could not be saved on the device. Please write it down and try again with a connection.');
+        }
+    }
+
+    async function renderOfflineScheduleQueue(){
+        const panel = document.getElementById('offline-schedule-panel');
+        const listBox = document.getElementById('offline-schedule-list');
+        const summaryBox = document.getElementById('offline-schedule-summary');
+        if(!panel || !listBox || !window.offlineSchedule?.isSupported()) return;
+
+        const items = await window.offlineSchedule.list();
+
+        // Keep the grid's view of the queue in step with the panel's.
+        queuedScheduleRows = items.map(function(item){
+            return {
+                id: item.id,
+                title: item.summary?.title || 'Queued schedule',
+                startTime: item.summary?.startTime || '',
+                endTime: item.summary?.endTime || '',
+                engineerIds: (item.summary?.engineerIds || []).map(String),
+                dates: scheduleDatesBetween(item.summary?.startDate, item.summary?.endDate),
+                blocked: item.state === 'conflict' || item.state === 'rejected'
+            };
+        });
+
+        // The queue resolves asynchronously, so the grid may already have drawn without it.
+        // Re-merge into the data the mobile path is holding and redraw, which is cheap and
+        // uses no network.
+        if(typeof latestTimelineDataForMobile !== 'undefined' && latestTimelineDataForMobile){
+            mergeQueuedSchedulesIntoGrid(latestTimelineDataForMobile);
+            if(typeof renderMobileEngineerScheduleCards === 'function'){
+                invalidateMobileRenderCache();
+                renderMobileEngineerScheduleCards();
+            }
+        }
+
+        if(!items.length){
+            panel.classList.add('d-none');
+            listBox.innerHTML = '';
+            return;
+        }
+
+        panel.classList.remove('d-none');
+        const needsAttention = items.filter(item => item.state === 'conflict' || item.state === 'rejected').length;
+        if(summaryBox){
+            summaryBox.textContent = needsAttention
+                ? `${items.length} queued, ${needsAttention} need${needsAttention === 1 ? 's' : ''} your attention.`
+                : `${items.length} schedule${items.length === 1 ? '' : 's'} waiting to sync.`;
+        }
+
+        listBox.innerHTML = items.map(item => {
+            const blocked = item.state === 'conflict' || item.state === 'rejected';
+            const range = item.summary?.startDate === item.summary?.endDate
+                ? item.summary?.startDate || ''
+                : `${item.summary?.startDate || ''} to ${item.summary?.endDate || ''}`;
+            const times = [item.summary?.startTime, item.summary?.endTime].filter(Boolean).join(' - ');
+            return `
+                <div class="offline-schedule-card ${blocked ? 'blocked' : ''}">
+                    <div class="offline-schedule-card-title">${escapeTimelineHtml(item.summary?.title || 'Schedule')}</div>
+                    <div class="offline-schedule-card-meta">${escapeTimelineHtml(range)}${times ? ` &middot; ${escapeTimelineHtml(times)}` : ''}</div>
+                    ${blocked ? `<div class="offline-schedule-card-error">${escapeTimelineHtml(item.lastError || 'Needs your attention.')}</div>` : ''}
+                    ${blocked ? `<button type="button" class="btn btn-sm btn-outline-danger fw-bold mt-2" onclick="discardQueuedSchedule('${escapeTimelineHtml(item.id)}')">Remove from queue</button>` : ''}
+                </div>`;
+        }).join('');
+    }
+
+    async function discardQueuedSchedule(id){
+        const confirmed = await timelineConfirmDialog({
+            tone: 'danger',
+            title: 'Remove queued schedule',
+            message: 'This schedule has not reached the server. Removing it here cannot be undone.',
+            confirmText: 'Remove it',
+            cancelText: 'Keep it'
+        });
+        if(!confirmed) return;
+        await window.offlineSchedule.discard(id);
+        await renderOfflineScheduleQueue();
+        await refreshTimelineGrid();
+    }
+
+    async function syncOfflineScheduleQueue(){
+        if(!window.offlineSchedule?.isSupported()) return;
+        setOfflineScheduleNotice('Syncing queued schedules…', 'queued');
+        const result = await window.offlineSchedule.sync({ silent: false });
+        setOfflineScheduleNotice(result.message || '', result.parked ? 'warn' : 'queued');
+        await renderOfflineScheduleQueue();
+        if(result.synced){
+            await refreshTimelineGrid();
+        }
+    }
+
+    // Queued schedules held on this device, shaped like grid rows. Kept in memory and
+    // refreshed by renderOfflineScheduleQueue(), so the synchronous render path can use it.
+    let queuedScheduleRows = [];
+
+    function mergeQueuedSchedulesIntoGrid(data){
+        if(!data || !data.schedule) return;
+
+        // Idempotent by construction. The same data object is re-rendered on filter changes
+        // and when the queue resolves, so appending without stripping first would stack a
+        // duplicate pending card on every pass.
+        Object.keys(data.schedule).forEach(function(engineerKey){
+            const dayMap = data.schedule[engineerKey] || {};
+            Object.keys(dayMap).forEach(function(dayIso){
+                const rows = dayMap[dayIso];
+                if(Array.isArray(rows) && rows.some(function(item){ return item && item.pending_sync; })){
+                    dayMap[dayIso] = rows.filter(function(item){ return !(item && item.pending_sync); });
+                }
+            });
+        });
+
+        if(!queuedScheduleRows.length) return;
+
+        queuedScheduleRows.forEach(function(row){
+            (row.engineerIds || []).forEach(function(engineerId){
+                const key = String(engineerId);
+                if(!data.schedule[key]) return;   // engineer not on this week's grid
+                (row.dates || []).forEach(function(dayIso){
+                    if(!Object.prototype.hasOwnProperty.call(data.schedule[key], dayIso)) return;
+                    data.schedule[key][dayIso] = (data.schedule[key][dayIso] || []).concat([{
+                        id: null,
+                        pending_sync: true,
+                        queue_id: row.id,
+                        task: row.title,
+                        time_start: row.startTime,
+                        time_end: row.endTime,
+                        status: row.blocked ? 'Needs attention' : 'Waiting to sync',
+                        client_id: '',
+                        client_name: '',
+                        engineers: row.engineerIds
+                    }]);
+                });
+            });
+        });
+    }
+
+    function escapeTimelineHtml(value){
+        return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
     }
 
     function saveTimelineOfflineSnapshot(data, cacheKey, options={}){
@@ -13163,6 +13507,11 @@ async function loadGrid() {
          * REQUIREMENT: BRANCH-BASED DIVISION
          * We iterate through each branch (Manila, Cebu, Davao) and render their engineers.
          */
+        // Queued offline schedules are drawn on the grid so an engineer can see their own
+        // work immediately, marked pending and deliberately not editable -- see
+        // canManageExistingScheduleForRow, which refuses them.
+        mergeQueuedSchedulesIntoGrid(data);
+
         const branches = ["Manila", "Cebu", "Davao"];
         const engineersByBranch = data.engineers.reduce(function(map, engineer){
             const branchName = engineer.branch || "Manila";
@@ -13334,7 +13683,7 @@ async function loadGrid() {
                         `;
 
                         cellCards.push(`
-                        <div class="schedule-card ${
+                        <div class="schedule-card ${s.pending_sync ? 'pending-sync' : ''} ${
                             bgHex === 'office-pink' ? 'schedule-office' :
                             isApprovedTravelBlock ? 'schedule-travel-request-block' :
                             bgHex === 'travel-purple' ? 'schedule-travel' :
@@ -13568,9 +13917,28 @@ async function loadGrid() {
      * Initialization: Pre-fetches customer and product data. Calculates naming duplicates.
      */
     async function loadMasterData() {
-        const [customerRes, assetRes] = await Promise.all([fetch('/get_clients'), fetch('/get_products')]);
-        masterClients = await customerRes.json();
-        masterProducts = await assetRes.json();
+        // These lists used to be fetched fresh every load and never stored, so an engineer
+        // with no signal got empty client and product autocompletes -- the one thing that
+        // stopped the full schedule form working in the field. Now the online path tops up
+        // a device copy, and the offline path reads it back.
+        try{
+            const [customerRes, assetRes] = await Promise.all([fetch('/get_clients'), fetch('/get_products')]);
+            masterClients = await customerRes.json();
+            masterProducts = await assetRes.json();
+            if(window.offlineSchedule){
+                window.offlineSchedule.cacheReference(masterClients, masterProducts);
+            }
+        }catch(masterDataError){
+            console.warn('[Timeline] Falling back to the cached client/product lists', masterDataError);
+            const cached = window.offlineSchedule
+                ? await window.offlineSchedule.getCachedReference()
+                : null;
+            masterClients = (cached && cached.clients) || [];
+            masterProducts = (cached && cached.products) || [];
+            if(!masterClients.length && !masterProducts.length){
+                setOfflineScheduleNotice('Client and product lists are not on this device yet. Open the timeline once with a connection.');
+            }
+        }
 
         // Shared Hospital Name detection
         nameCounts = {};
@@ -13715,6 +14083,9 @@ async function loadGrid() {
     }
 
     function canManageExistingScheduleForRow(engineerObj, shiftObj){
+        // A queued offline schedule has no server id yet, so edit, delete and drag would all
+        // act on nothing. It is changed by removing it from the queue and adding it again.
+        if(shiftObj?.pending_sync) return false;
         if(isTimelineReadOnlyApproverMode()) return false;
         if(isSuperAdmin) return true;
         if(isRegionalAdmin) return engineerObj && regionalAllowedBranches.includes(engineerObj.branch);
@@ -15502,7 +15873,29 @@ async function openTSRClientEmailModal(shiftId){
             body: dataSet
         };
 
-        let resObj = await fetch(routeUrl, optionsConfig);
+        // Offline creation is deliberately limited to NEW schedules. Editing offline would
+        // mean resolving against a row that may have changed on the server, which is a
+        // materially harder problem and is excluded from this work on purpose.
+        const canQueueOffline = !activeID && isEngineer && window.offlineSchedule?.isSupported();
+
+        if(canQueueOffline && !navigator.onLine){
+            await queueScheduleOffline(dataSet, selectedEngineersUI, selectedStartDate, selectedEndDate, startTimeValue, endTimeValue);
+            return;
+        }
+
+        let resObj;
+        try{
+            resObj = await fetch(routeUrl, optionsConfig);
+        }catch(networkError){
+            // Weak signal, not "no signal" -- this is the case that actually bites in the
+            // field, and it is why the queue cannot be gated on navigator.onLine alone.
+            if(canQueueOffline){
+                await queueScheduleOffline(dataSet, selectedEngineersUI, selectedStartDate, selectedEndDate, startTimeValue, endTimeValue);
+                return;
+            }
+            throw networkError;
+        }
+
         if (resObj.ok) {
             shiftModal.hide();
             await refreshTimelineGrid();
@@ -18313,6 +18706,15 @@ document.addEventListener('DOMContentLoaded', function(){
     syncPureEngineerMobileMode();
 });
 document.addEventListener('DOMContentLoaded', initTimelineStickyHeaderPolish);
+
+/* Offline schedule queue: show what is waiting as soon as the page opens, and re-render
+   whenever the queue changes underneath us -- including the automatic sync that fires on
+   regaining connectivity. */
+document.addEventListener('DOMContentLoaded', function(){
+    if(!window.offlineSchedule?.isSupported()) return;
+    window.offlineSchedule.onChange(function(){ renderOfflineScheduleQueue(); });
+    renderOfflineScheduleQueue();
+});
 
 
 

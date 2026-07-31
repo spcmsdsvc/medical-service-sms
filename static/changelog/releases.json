@@ -1126,6 +1126,24 @@
             "everyone"
           ],
           "sort_order": 30
+        },
+        {
+          "item_key": "2026-07-31-offline-schedule-creation",
+          "category": "Calendar",
+          "description": "Engineers can now add a schedule with no signal. It is saved on your device, shown on the calendar as waiting to sync, and sent automatically when you are back online. Open the calendar once with a connection first so your client and product lists are stored for offline use.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-07-31-offline-schedule-conflicts",
+          "category": "Calendar",
+          "description": "A schedule added offline is checked against the copy saved on your device and warns you about a likely clash before it is queued. If it still conflicts when it reaches the server, it is held for you to fix rather than double-booking anyone.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 50
         }
       ]
     }

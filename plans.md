@@ -39,9 +39,24 @@ separately says to start. See `AGENTS.md`, "Approved Plans", for the full statem
 
 ## Offline schedule creation for field engineers
 
-**Status:** `Approved — awaiting go-ahead`
+**Status:** `Executed`
 **Approved:** 2026-07-31
-**Not started.** Do not begin this work until the owner says to.
+**Started:** 2026-07-31, on the owner's go-ahead.
+**Finished:** 2026-07-31. See `changes.md` under 2026-07-31 for what was built and what was
+found along the way.
+
+**Where the plan and the outcome differed** — the part worth keeping this record for:
+
+- The plan called for adding an `error_kind` marker to the conflict response. Not done, and
+  deliberately: `build_conflict_response()` already returns HTTP 409 with `status: 'conflict'`,
+  and travel conflicts return `status: 'travel_conflict'` with an override key, so the device
+  could already tell retry from stop. A second discriminator would have been redundant.
+- The plan assumed queued rows only needed merging into the timeline grid. Engineers actually
+  render through the role-aware **mobile** path, so the merge had to be applied there too —
+  otherwise pending cards would have appeared for everyone except the people who create them.
+- Two defects the plan could not have anticipated, both found in the browser: a UTC date shift
+  that filed queued schedules on the previous day, and a non-idempotent grid merge that stacked
+  duplicate pending cards on every re-render.
 
 ### Context
 

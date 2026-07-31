@@ -2433,7 +2433,13 @@ class Shift(db.Model):
     product_id = db.Column(db.String(100), db.ForeignKey('product.serial_number'))
     
     status = db.Column(db.String(50), default='In Progress')
-    
+
+    # Offline schedule creation: the device generates this once per queued schedule and
+    # resends it on every retry, so a replayed sync returns the original chain instead of
+    # creating a second one. Set on the FIRST shift of a multi-day chain only -- the token
+    # identifies the chain, not the row. Null for every schedule created online.
+    creation_token = db.Column(db.String(100), unique=True, index=True)
+
     # Link to the NEW multi-file table
     files = db.relationship(
         'ShiftFile', 
@@ -2516,6 +2522,7 @@ _user_approval_columns_ready = False
 _reimbursement_accounting_columns_ready = False
 _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
+_shift_creation_token_ready = False
 _travel_liquidation_tables_ready = False
 _stock_inventory_tables_ready = False
 
@@ -3674,6 +3681,42 @@ def ensure_shift_travel_block_columns():
 
 
 
+def ensure_shift_creation_token_column():
+    """Safe live SQLite migration for offline schedule idempotency.
+
+    Adds one nullable column plus a partial unique index, mirroring the LPR creation token.
+    The index is partial so the many existing rows with NULL do not collide with each other --
+    SQLite treats NULLs as distinct in a plain unique index, but the partial form states the
+    intent and matches uq_lpr_header_creation_token.
+
+    Nothing is deleted, rewritten or backfilled, so this is safe for the live database.
+    """
+    global _shift_creation_token_ready
+
+    if _shift_creation_token_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            shift_columns = {
+                row[1] for row in connection.exec_driver_sql("PRAGMA table_info(shift)").fetchall()
+            }
+
+            if 'creation_token' not in shift_columns:
+                connection.exec_driver_sql("ALTER TABLE shift ADD COLUMN creation_token VARCHAR(100)")
+                print("[DB MIGRATION] Added shift.creation_token", flush=True)
+
+            connection.exec_driver_sql(
+                'CREATE UNIQUE INDEX IF NOT EXISTS uq_shift_creation_token '
+                'ON shift (creation_token) WHERE creation_token IS NOT NULL'
+            )
+
+        _shift_creation_token_ready = True
+    except Exception as creation_token_error:
+        print(f"[Schedule] Unable to ensure shift.creation_token: {creation_token_error}", flush=True)
+        raise
+
+
 def ensure_travel_liquidation_tables():
     """S13B safe live SQLite migration for Travel Liquidation drafts."""
     global _travel_liquidation_tables_ready
@@ -3798,6 +3841,7 @@ def ensure_live_engineer_signature_schema_before_routes():
     ensure_email_recipient_setting_table()
     ensure_email_template_setting_table()
     ensure_shift_travel_block_columns()
+    ensure_shift_creation_token_column()
     ensure_stock_inventory_tables()
 
     if new_workflows_enabled():
@@ -14340,7 +14384,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v54-tsr-files-flat';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v55-offline-schedule';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -14360,6 +14404,7 @@ const APP_SHELL = [
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
   '/static/js/app-changelog.js',
+  '/static/js/app-offline-schedule.js',
   '/static/vendor/jspdf/jspdf.umd.min.js',
   '/static/fonts/liberation-sans/LiberationSans-Regular.ttf',
   '/static/fonts/liberation-sans/LiberationSans-Bold.ttf',
@@ -39522,6 +39567,54 @@ def send_tsr_client_email(shift_id):
     })
 
 
+def normalize_schedule_creation_token(value):
+    """Validate a device-generated offline schedule token.
+
+    Same rules as normalize_lpr_creation_token: long enough not to collide by accident,
+    short enough for the column, and restricted to characters that cannot smuggle anything
+    into a query or a log line. Returns '' for anything unacceptable.
+    """
+    token = clean_str(value)
+    if not token or len(token) < 16 or len(token) > 100:
+        return ''
+    if not re.fullmatch(r'[A-Za-z0-9._:-]+', token):
+        return ''
+    return token
+
+
+def find_schedule_chain_by_creation_token(creation_token):
+    """Return (first_shift, chain_shifts) for an already-created offline schedule."""
+    if not creation_token:
+        return None, []
+
+    first_shift = Shift.query.filter_by(creation_token=creation_token).first()
+    if not first_shift:
+        return None, []
+
+    if first_shift.group_id:
+        chain = (
+            Shift.query
+            .filter_by(group_id=first_shift.group_id)
+            .order_by(Shift.start_time.asc(), Shift.id.asc())
+            .all()
+        )
+    else:
+        chain = [first_shift]
+
+    return first_shift, chain
+
+
+def build_schedule_replay_response(first_shift, chain):
+    """The success shape /add_shift already returns, plus what the queue needs to settle."""
+    return jsonify({
+        'status': 'success',
+        'idempotent_replay': True,
+        'group_id': first_shift.group_id,
+        'shift_ids': [shift.id for shift in chain],
+        'message': 'This schedule was already saved. The queued copy was not duplicated.'
+    })
+
+
 @app.route('/add_shift', methods=['POST'])
 @login_required
 def add_shift():
@@ -39529,6 +39622,24 @@ def add_shift():
     import uuid
 
     payload = get_shift_payload()
+
+    # Offline replay is resolved before anything else, and that ordering is load-bearing.
+    # A queued schedule that already reached the server occupies its own time slots, so
+    # running the collision check first would make every retry look like a conflict with
+    # itself and park a schedule that is in fact already saved.
+    supplied_creation_token = clean_str(payload.get('creation_token'))
+    creation_token = normalize_schedule_creation_token(supplied_creation_token)
+    if supplied_creation_token and not creation_token:
+        return jsonify({'message': 'The schedule sync token is invalid. Refresh the page and try again.'}), 400
+
+    if creation_token:
+        ensure_shift_creation_token_column()
+        existing_first, existing_chain = find_schedule_chain_by_creation_token(creation_token)
+        if existing_first:
+            # A token must never be a way around the permission check.
+            if not can_create_schedule_for_engineer_ids(get_shift_assigned_engineer_ids(existing_first)):
+                return denied('You are not authorized to view this schedule.')
+            return build_schedule_replay_response(existing_first, existing_chain)
 
     files_ok, files_error = validate_uploaded_report_files()
     if not files_ok:
@@ -39622,6 +39733,11 @@ def add_shift():
         new_shift.travel_request_id = None
         new_shift.travel_block_status = None
 
+        # The token identifies the chain, not the row, so it goes on the first shift only.
+        # Putting it on every row would trip the unique index on a multi-day schedule.
+        if first_shift is None and creation_token:
+            new_shift.creation_token = creation_token
+
         db.session.add(new_shift)
         db.session.flush()
         delete_shift_engineer_links(new_shift.id)
@@ -39657,7 +39773,19 @@ def add_shift():
         log_action += f" | Attached: {len(saved_files)} report file(s)"
 
     db.session.add(ActivityLog(user=current_user.username.capitalize(), action=log_action))
-    db.session.commit()
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Two retries of the same queued schedule raced each other. The unique index did its
+        # job; recover by returning whichever one landed rather than surfacing a 500 to a
+        # device that is simply trying to sync.
+        db.session.rollback()
+        if creation_token:
+            existing_first, existing_chain = find_schedule_chain_by_creation_token(creation_token)
+            if existing_first:
+                return build_schedule_replay_response(existing_first, existing_chain)
+        raise
 
     if first_shift:
         notify_engineers_for_new_schedule_async(
