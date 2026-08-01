@@ -37,6 +37,329 @@ separately says to start. See `AGENTS.md`, "Approved Plans", for the full statem
 
 ---
 
+## Create a TSR against a schedule that has not synced yet
+
+**Status:** `Approved — awaiting go-ahead`
+**Approved:** 2026-07-31
+
+### Context
+
+An engineer with no signal opens the calendar, finds no schedule for today, adds one offline,
+does the work — and then cannot write the TSR while the details are fresh. He must wait for
+signal, let the schedule sync, and only then create the TSR. That leaves the field sequence
+half-solved: `709106c` gave engineers offline schedule creation, but the document the schedule
+exists to produce still requires a connection.
+
+**Correct `pending-work.md:91-93` when this lands.** It records a workaround — "open Create TSR
+from the sidebar and write a standalone TSR, that is fully offline already". That is **wrong**.
+`/offline-tsr` hard-gates every field until a schedule is selected (`updateCreateTSRScheduleGate`,
+`templates/offline_tsr.html:939-958`), and the picker's three sources — the live endpoint, the
+localStorage cache, and `readTimelineSnapshotSchedules` (`:1466`) — none of them ever contain a
+queued offline schedule. There is no way today to write a TSR with no shift, on the device or on
+the server. The gap is bigger than that file claims.
+
+**Intended outcome:** the engineer taps **Create TSR** on a queued schedule card, writes the TSR
+offline, and both queue. When signal returns the schedule syncs first, learns its real shift id,
+and the TSR behind it is rewritten to point at that id before it is sent.
+
+### Decisions taken by the owner
+
+1. **Dependent queue items, not standalone-then-retro-link.** This resolves the open question
+   posed in `pending-work.md` — the TSR waits for its schedule.
+2. **A written TSR must never be lost.** If the parent parks as a conflict and the engineer
+   removes it from the queue, the TSR survives and moves to a "needs a schedule" state where the
+   engineer picks a schedule for it.
+3. **Multi-day chains:** attach to the shift whose date matches the TSR's service date, with the
+   first shift of the chain as the fallback.
+4. **Queued schedules appear in the Create TSR picker**, marked pending, as well as being
+   reachable from the button on the card.
+
+### What already exists, and what genuinely blocks this
+
+Three load-bearing pieces are already built: `/add_shift` resolves a `creation_token` replay
+**before** the collision check (`app.py:39635` before `:39706`, pinned by
+`tests/test_offline_schedule.py:39`); the schedule queue replays strictly serially and
+single-flight (`static/js/app-offline-schedule.js:383-458`); and the TSR queue tolerates per-item
+failure without stopping its loop (`templates/offline_tsr.html:4518-4537`).
+
+Five real blockers, each verified in the source rather than assumed:
+
+- **`/add_shift` returns no ids on a fresh create** — `jsonify({'status': 'success'})`,
+  `app.py:39801`. Ids come back only on the replay path (`build_schedule_replay_response`,
+  `:39607`). And `sendOne` never reads the response body anyway
+  (`app-offline-schedule.js:472-475`).
+- **`app-offline-schedule.js` is not loaded on `/offline-tsr`.** Its only include is
+  `templates/timeline.html:12`, so `window.offlineSchedule` is `undefined` there.
+- **A pending card carries no client or product.** `summary` holds only
+  title/dates/times/engineers (`timeline.html:12905-12913`) and the merged row hardcodes
+  `client_id:''`, `client_name:''` (`:13053`). A TSR written from one would be rejected by
+  `get_online_tsr_missing_core_details` (`app.py:13593`) *after* the engineer wrote the whole
+  thing.
+- **A pre-existing latent bug this feature must fix, not merely avoid.** `collectTSRData`
+  (`offline_tsr.html:2383`) is `schedule_id: selectedSchedule?.id || selectedStandaloneScheduleId
+  || ''` — it falls through to the **composite runtime id**
+  (`"...::2026-08-01::09:00-11:00::0"`). `clean_int` (`app.py:4310`) returns `None` for that, so
+  `/save_offline_tsr_online` 400s (`app.py:13537`) — and 400 is non-retriable
+  (`isRetriableTSRSyncError`, `:684`), so the TSR parks permanently.
+- **Re-pointing a TSR at a different shift 409s forever** unless a fresh `submission_token` is
+  minted — the cross-shift guard at `app.py:13569`, also non-retriable.
+
+### The design in one paragraph
+
+`/add_shift` returns `group_id` / `shift_ids` / `shift_dates` on first success **only when a
+creation token was sent**, so ordinary online saves are untouched. The schedule queue writes a
+durable token → ids mapping into a new IndexedDB store *before* discarding the queue row, so a
+failed mapping write means no discard and the item replays into the same ids. The TSR queue item
+carries a `pending_schedule_token` instead of a `schedule_id`; at sync it awaits the schedule
+queue (single-flight, so awaiting is safe), resolves the token, rewrites the shift reference, and
+only then posts. Unresolved-but-still-queued is retriable; unresolved-and-gone becomes
+"needs a schedule", which the engineer resolves from the existing picker.
+
+### Step 1 — Server: `/add_shift` hands back the ids (`app.py`)
+
+- Generalise `build_schedule_replay_response` (`:39607`) into
+  `build_schedule_ids_response(first_shift, chain, replay)`; keep the old name as a wrapper with
+  `replay=True` so the two existing replay branches (`:39642`, `:39787`) emit byte-identical
+  output. Add `shift_dates` (ISO, parallel to `shift_ids`) to both shapes — additive keys only,
+  so `tests/test_offline_schedule.py:244` keeps passing.
+- In the create loop (`:39714-39748`) collect every `new_shift` into `created_shifts`; only
+  `first_shift` is retained today (`:39744`). `schedule_dates` is already ascending, matching the
+  replay ordering (`Shift.start_time.asc()`, `:39598`).
+- Replace `:39801` with `build_schedule_ids_response(first_shift, created_shifts, replay=False)`
+  **gated on `creation_token` being truthy**. No token → the untouched `{'status': 'success'}`.
+
+Nothing moves above `:39644`, so the replay-before-collision ordering is untouched.
+
+### Step 2 — Schedule module: durable mapping (`static/js/app-offline-schedule.js`)
+
+- `DB_VERSION` `:16` → `2`; add a **new `resolved` store** (keyPath `token`) inside the existing
+  `contains()`-guarded `onupgradeneeded` (`:37-51`). Record:
+  `{token, groupId, shiftIds:[], shiftDates:[], resolvedAt}`. Do **not** reuse the `reference`
+  store — `getCachedList` (`:115`) assumes every record has a `rows` array, and overloading it is
+  a type collision waiting to happen.
+- Export `resolveToken(token)`, `hasQueued(token)` (the queue keyPath *is* the token, `:268`) and
+  `forgetResolved(token)` on `window.offlineSchedule` (`:519-531`).
+- Rewrite the `sendOne` success branch (`:472-475`) as an ordered chain: `response.json()` →
+  `recordResolved(...)` → `discard(item.id)` → `outcome.synced += 1`. A `recordResolved`
+  rejection must skip the discard and fall into the existing catch (`:500`), leaving the item
+  queued — the next pass replays and gets the same ids back. **Increment `synced` last**, or a
+  mapping failure reports "Synced 1 schedule" for an item still sitting in the queue.
+
+### Step 3 — Timeline: give pending cards what a TSR needs (`templates/timeline.html`)
+
+- `queueScheduleOffline` `:12905` — extend `summary` with
+  `clientId/clientName/clientAddress/productId/productName/status`, all already present in the
+  `dataSet` FormData.
+- `renderOfflineScheduleQueue` `:12939` — carry them into `queuedScheduleRows`.
+- `mergeQueuedSchedulesIntoGrid` `:13045` — populate those fields on the pending row and add
+  `creation_token: row.id`. **Keep the strip-then-append idempotence at `:13027-13035` exactly as
+  it is** — stacking duplicate pending cards was a shipped bug once already.
+- `buildMobileScheduleContextKey` `:9947` — add `shift?.queue_id`. The key is currently
+  `[shift?.id || '', day.iso, engineer.id]`, so every pending card on the same day for the same
+  engineer collides and tapping the second opens the first one's actions.
+- `buildPureEngineerMobileWorkflowActions` `:10836` — **this is the primary engineer path and the
+  gate that actually matters**, not the sticky bar. Change `!shift?.id` to
+  `!shift?.id && !shift?.queue_id`, and route pending shifts at `:10846` through a new
+  `redirectToCreateTSRPageFromQueuedSchedule()`.
+- `renderMobileStickyActionBar` `:10076` — same treatment for the `offlineTsrBtn`. Edit, send and
+  duplicate stay disabled; `canManageExistingScheduleForRow` (`:14122`) is unchanged.
+- New `redirectToCreateTSRPageFromQueuedSchedule(...)` beside `:18368`, requiring `queue_id` and
+  passing `pending_schedule_token` with **no** `shift_id`. `buildCreateTSRPageUrlFromContext`
+  (`:18333`) gains a branch emitting `?pending_schedule=<token>`; `storeCreateTSRContextForPage`
+  (`:18349`) stores the whole object and needs no change.
+
+### Step 4 — TSR page: accept a pending token (`templates/offline_tsr.html`)
+
+- **Add the `app-offline-schedule.js` include**, mirroring `timeline.html:12`. It is already an
+  `APP_SHELL` precache entry (`app.py:14407`), and it is a self-contained IIFE whose only side
+  effects are the `online` listener and the `window.offlineSchedule` assignment. Do **not** open
+  `medical_service_offline_schedule_db` by name from this page: an unversioned `open()` on a
+  device where the module never ran creates an empty v1 database with no object stores, and every
+  later `withStore()` call fails with `NotFoundError` permanently.
+- `normalizeStandaloneCreateTSRContext` `:1210` and `getStandaloneCreateTSRHandoffContext` `:1246`
+  — read and preserve `pending_schedule_token` (query param `pending_schedule`), and count it in
+  the "is this context meaningful" test at `:1215`.
+- `findStandaloneScheduleFromCreateTSRContext` `:1281` — when a pending token is present, match
+  **only** on that token. The existing fallback at `:1299` matches on date + client/product, which
+  would silently bind the TSR to a real server schedule for the same client on the same day.
+- `getStandaloneScheduleRealId` `:1206` — numeric-only (`/^\d+$/`), `''` for a pending schedule.
+- `collectTSRData` `:2383` — `schedule_id: getStandaloneScheduleRealId(selectedSchedule)` plus a
+  new `pending_schedule_token`. **This is the latent-bug fix.**
+- New `readPendingScheduleOptions()` beside `readTimelineSnapshotSchedules` (`:1466`), reading
+  `window.offlineSchedule.list()` and emitting one option per date in the chain, labelled
+  "Waiting to sync — ", with `pending_schedule_token` and `_offline_uid`. Merge it in
+  `refreshStandaloneScheduleOptions` (`:1630`) **after** `cacheStandaloneScheduleOptions`
+  (`:1642`, `:1654`) so pending entries never reach localStorage and outlive the queue.
+- `queueStandaloneTSROffline` `:4242` — persist `pending_schedule_token` on the item and inside
+  `payload`; `sanitizeTSRPayloadForTransport` (`:3341`) only strips `attachments`, so it survives.
+
+**Leave `hasStandaloneScheduleSelection` (`:871`), `updateCreateTSRScheduleGate` (`:939`) and
+`requireStandaloneScheduleForTSRAction` (`:954`) alone.** They check the *runtime* picker id,
+which a pending option gets for free — relaxing them would weaken a working guard for nothing.
+
+**Leave `openOfflineTSRDraftFromShiftModal` (`:18419`) alone.** It is the desktop edit-modal path,
+which only ever opens saved shifts.
+
+### Step 5 — TSR sync: resolve before posting (`templates/offline_tsr.html`)
+
+- New `resolveTSRQueueItemSchedule(item)`: a positive integer `schedule_id` → done; a token that
+  resolves → pick the shift by service date (Step 6) and apply (Step 7); a token that does not
+  resolve but `hasQueued(token)` → throw a **retriable** `schedule_pending` error naming the
+  schedule; a token that resolves to nothing and is not queued → `needs_schedule`.
+- `syncOfflineTSRQueue` `:4451` — after the health check (`:4482`) and **above** the loop at
+  `:4518`, if any pending item has an unresolved token,
+  `await window.offlineSchedule.sync({silent:true}).catch(()=>{})`. Once per run, not per item.
+  The catch matters: `sync()` **rejects** on session expiry (`:451-455`), and that must leave the
+  TSR queued-retriable rather than parked.
+- `uploadQueuedOfflineTSR` `:4336` — resolve **before** building `finalizedPayload` at `:4340`,
+  and take `schedule_id` from the resolved integer only. The existing fallback chain at `:4341`
+  (`payload.selectedScheduleId || payload.selectedSchedule?.id`) is precisely what posts a
+  composite string today. Skip resolution when `server_submission_id` is already set (`:4345`).
+- `scheduleOfflineTSRSyncRetry` `:4280` — floor the `schedule_pending` delay at 15s; the 5s first
+  retry would just re-await a schedule queue that is offline for the same reason.
+
+The per-item catch at `:4530` needs no change — a retriable throw lands in
+`markFailedOfflineTSRQueueItem` (`:3602`), keeps `status:'pending'`, and the loop continues.
+
+### Step 6 — Multi-day service-date match
+
+The `resolved` record holds `shiftIds` / `shiftDates` in chain order. Match on
+`payload['tsr-service-date']` (already read at `:4352`), else `selectedSchedule?.date_iso`, else
+`payload.service_date`; find that date in `shiftDates` and take the parallel id. No match →
+`shiftIds[0]`, which is also the token-carrying shift (`app.py:39738`). Record
+`resolved_by: 'service_date' | 'chain_first'` on the item so the panel can say which, and so a
+support question later has an answer.
+
+### Step 7 — One writer for the shift reference, and the "needs a schedule" state
+
+The shift reference lives in **four** places that must agree: `item.schedule_id`,
+`payload.schedule_id`, `payload.selectedScheduleId`, `payload.selectedSchedule.id`. All four are
+written by a single `applyResolvedScheduleToTSRQueueItem(item, {shiftId, scheduleSnapshot})` going
+through `patchOfflineTSRQueueItem` (`:4318`). It also clears the pending token, clears
+`needs_schedule`, restores `retryable`, and — **when the resolved id changes or
+`server_submission_id` is set** — mints a fresh `submission_token` and nulls
+`server_submission_id` / `server_result` / `core_saved_at`. Without that, the cross-shift guard at
+`app.py:13569` 409s every retry forever and the re-point flow bricks itself. No other function may
+write those four fields.
+
+**"Needs a schedule" is detected pull-side**, at TSR sync or panel render, when a token resolves to
+nothing and `hasQueued` is false. Do not try to push a notification from `discardQueuedSchedule`
+(`timeline.html:12992`) — different database, and the TSR page may not even be open. Such an item
+keeps `status:'pending'` (so it is never lost), gains `needs_schedule: true`, and
+`renderOfflineTSRQueuePanel` (`:4041`) shows **Pick a schedule** instead of Retry, reusing the
+existing picker — which, after Step 4, lists re-added pending schedules too.
+`removeOfflineTSRQueueItem` (`:4626`) stays the only deletion path and is already confirm-gated.
+
+### Step 8 — Cache versions
+
+Bump `CACHE_VERSION` in `app.py:14387` (**read the live value immediately before committing** —
+`v49` was claimed and then overwritten by a bump from outside that session), and the `?v=` on both
+module includes. No `APP_SHELL` change; the module is already listed at `:14407`.
+
+### What must not change
+
+- `/add_shift` for ordinary online saves — the new response is gated on `creation_token`, which
+  the online save paths never send. A test asserts the untokened body is exactly
+  `{'status': 'success'}`.
+- Replay-before-collision ordering (`app.py:39635` before `:39706`).
+- `/save_offline_tsr_online`'s validation — the falsy-id 400 (`:13537`), missing-shift 404
+  (`:13541`), `can_work_on_existing_schedule_shift` (`:13544`), cross-shift 409 (`:13569`),
+  `get_online_tsr_missing_core_details` (`:13593`). The client stops sending bad ids; the server
+  keeps refusing them.
+- The three TSR page gates (`:871`, `:939`, `:954`) and `mergeQueuedSchedulesIntoGrid`'s
+  idempotence (`:13027`).
+- `canManageExistingScheduleForRow`'s pending refusal (`:14122`) — queued schedules stay
+  non-editable.
+
+### Verification
+
+**Tests** — new `tests/test_offline_tsr_pending_schedule.py`, house style: `os.environ.setdefault`
+before `import app`, a distinctive title prefix, and a `tearDownClass` deleting the shifts,
+`ShiftEngineer` links, `OnlineTsrSubmission` rows, engineers and users it created — the suite
+shares one database and one Flask app.
+
+Functional, each with a positive control that proves it can fail:
+
+- First success with a token returns `group_id`, `shift_ids`, `shift_dates`; a 5-day range returns
+  the whole chain in ascending date order.
+- Replay returns ids **equal** to the first success — this is what makes the "mapping write
+  failed, let it replay" recovery real rather than theoretical.
+- **Untokened save response is byte-identical to today** — the positive control for all of Step 1.
+- A TSR posted against the middle shift of a 3-day chain lands on that shift; `schedule_id=0`
+  still 400s; a composite runtime id still 400s.
+
+Source assertions: the module is included in `offline_tsr.html` (control: the same assertion
+against another template must fail); `DB_VERSION = 2` and the `resolved` store guard;
+`recordResolved` appears **before** `discard(item.id)` in `sendOne`;
+`resolveTSRQueueItemSchedule` appears before `'/save_offline_tsr_online'` in
+`uploadQueuedOfflineTSR`; `selectedScheduleId` is assigned in exactly one place outside
+`collectTSRData`; pending options are merged after `cacheStandaloneScheduleOptions`;
+`buildMobileScheduleContextKey` includes `queue_id`; cache version bumped via
+`assert_cache_version_at_least`.
+
+**Browser, against a genuinely stopped server** — not DevTools "Offline", which the last round
+showed can still serve from the HTTP cache. Isolated `MEDICAL_SERVICE_TEST_DB`, port 5056, never
+5000, signed in as a real seeded engineer. Unregister the worker and clear **both** caches after
+each asset edit, and restart the server after every template edit — Jinja caches compiled
+templates and that cost real time in `709106c`.
+
+1. Online: load `/timeline`, then `/offline-tsr` once so both shells and the module precache.
+2. **Stop the server** and confirm the port refuses.
+3. Add a 3-day schedule with a client and product; confirm three dashed pending cards land on the
+   right dates **and show the client name** — blank means Step 3 is incomplete.
+4. Tap a pending card: Create TSR enabled in both the workflow row and the sticky bar. Tap a
+   second pending card on the same day and confirm you get *its* actions, not the first card's.
+5. Create TSR → `/offline-tsr` loads from cache, the picker shows "Waiting to sync", fields are
+   enabled, client/product/task/date auto-filled.
+6. Reload `/offline-tsr` with **no query string** — the pending schedule must still be selectable.
+   The sessionStorage context is cleared at `:1343`, so this is what catches a memory-only
+   injection.
+7. Queue the TSR; in IndexedDB confirm `schedule_id` is `''`, `pending_schedule_token` is set, and
+   `payload.selectedScheduleId` is not a composite string.
+8. Sync with the server still stopped: item stays pending, **no** `/save_offline_tsr_online` in
+   the Network tab, message names the schedule it is waiting for.
+9. **Start the server.** In order: `/add_shift` fires, the `resolved` store gains a record with
+   three ids and dates, the schedule queue empties, then `/save_offline_tsr_online` fires **once**
+   with the numeric id of the chain shift matching the TSR's service date.
+10. **Orphan path:** queue a conflicting schedule plus a TSR against it; let it park; remove it.
+    The TSR must still be there in "needs a schedule". Pick a real schedule; confirm all four
+    fields rewrite, a **new** `submission_token` is minted, and it then sends.
+11. **Two-tab race:** `/timeline` and `/offline-tsr` open together, go online, confirm exactly one
+    `/add_shift` per schedule and one `/save_offline_tsr_online` per TSR. Both pages now carry an
+    `online` listener, so this is the only way to prove the single-flight guard holds.
+
+Plus the standing bar: both themes, 375 px with no horizontal overflow, tap targets ≥44 px,
+console clean, `python -m unittest discover -s tests` green from 334, and a `releases.json` entry
+dated the commit date.
+
+### Deliberately excluded
+
+- **The desktop edit-modal path** (`openOfflineTSRDraftFromShiftModal`, `:18419`) — offline
+  creation is a mobile-engineer flow.
+- **Cross-device resolution.** The mapping is device-local by construction. A TSR queued on phone
+  A whose schedule synced from phone B sits in "needs a schedule" until the engineer picks it.
+  Fixing that needs a server-side token lookup endpoint; the re-point flow covers it acceptably
+  without new API surface.
+- **Automatic re-point when a removed parent is re-added.** The re-added schedule gets a new
+  token; asking the engineer to pick it is safer than guessing an identity match on title + date
+  + time.
+- **Offline editing of a queued schedule**, and **TSR revision mode against a pending schedule** —
+  a revision targets an existing server submission, which implies a real shift.
+
+### Risks worth stating
+
+- **This is a larger cut than `709106c`:** four files, a schema version bump on a live device
+  database, and a change to the response shape of `/add_shift`. Steps 1–2 are self-contained and
+  low risk; Step 4 touches the most fragile file in the app.
+- **The natural seam if it should be split is after Step 3** — server ids, durable mapping and
+  enabled pending cards can land and be verified on their own, with the Create TSR button still
+  routing to today's "saved schedules only" behaviour.
+- **The IndexedDB version bump lands on devices that already hold a v1 database.** The existing
+  `contains()` guards make it additive, but it is the first schema change to a store field
+  engineers already rely on.
+
+---
+
 ## Offline schedule creation for field engineers
 
 **Status:** `Executed`
