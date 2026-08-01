@@ -2,6 +2,51 @@
 
 claude changes - 2026-08-01
 
+## Schedule options no longer carry an identity that moves
+
+* Executed plan A from `plans.md` on the owner's go-ahead, against the stated constraint that
+  **the workflow must not be affected once this is live**.
+* `normalizeStandaloneScheduleOptions` stamped each picker option's `_offline_uid` from its
+  **array index**, and that string is what a saved TSR draft stores and later matches on. Any
+  change in list composition renumbered every option after it and detached drafts from their
+  schedules. It reached the field once already; appending the pending merge in `e12a439` only
+  made it rarer.
+* Identity is now derived from the schedule — `shift::<id>::<date>`,
+  `pending::<token>::<date>`, or `snap::<hash>` over the same fields
+  `getStandaloneScheduleGroupKey` already treats as the same schedule.
+  `getStandaloneScheduleRuntimeId` **always computes and never reads a stored `_offline_uid`
+  back**, which is what neutralises the snapshots frozen inside drafts, queue items and the
+  server's `payload_json`.
+* **The dangerous part was never the matching.** `applyScheduleToStandaloneTSR` clears the work
+  fields and wipes the draft id whenever the computed identity differs from the stored one, so
+  swapping the scheme naively would have erased typed TSR content for **every** engineer on
+  their first re-selection. Three things hold it: `isSameScheduleSelection` understands both
+  formats, identity is always recomputed, and an awaiting-re-pick flag stops the re-pick itself
+  counting as a change.
+* The old format stays understood **permanently** — drafts live on devices for months and the
+  server keeps returning old ids through the revision path. A resolved selection is
+  canonicalised in memory so the next save persists the new format; drafts are never rewritten
+  in bulk, because matching is reversible and editing every draft on a device is not.
+* An unmatched draft **keeps everything the engineer typed** and asks them to pick the schedule
+  again, rather than silently falling back to a stored snapshot that may point at a shift which
+  no longer exists.
+* **Verified against drafts written by the old code, captured before any edit** — that state
+  cannot be recreated afterwards. The authentic draft reopened with every field intact, resolved
+  to its schedule and canonicalised itself; re-selecting the same schedule kept the work and the
+  draft id, while a genuinely different schedule still cleared them; the two unresolvable legacy
+  shapes kept their work, prompted, and survived the re-pick; a save then round-tripped and
+  persisted canonical ids throughout. No horizontal overflow at 375 px, chips 44 px, console
+  clean.
+* **A positive control written during the pending-schedule work fired exactly as designed.**
+  `test_the_option_identity_still_depends_on_index` asserted identity *was* index-derived,
+  specifically so that changing it would fail loudly and force the append rule to be revisited
+  rather than silently kept. Replaced by its successor, and the in-code comment justifying the
+  append was corrected: appending is now ordering only, not a correctness guard.
+* One addition the plan did not anticipate: `draftMatchesSelectedStandaloneSchedule` needed the
+  helper too, because it compares persisted values on **both** sides — a pre-change draft would
+  otherwise have been filtered out of the drafts panel and looked lost.
+* Suite green at **397** (was 389). Service worker `v60` → `v61-stable-schedule-identity`.
+
 ## Create a TSR against a schedule that has not synced yet
 
 * Implemented the plan recorded in `plans.md`, on the owner's go-ahead. An engineer with no

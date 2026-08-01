@@ -39,11 +39,29 @@ separately says to start. See `AGENTS.md`, "Approved Plans", for the full statem
 
 ## A — Give schedule options an identity that does not depend on list position
 
-**Status:** `Approved — awaiting go-ahead`
+**Status:** `Executed`
 **Approved:** 2026-08-01
 **Detailed:** 2026-08-01, on the owner's instruction to plan it carefully against the constraint
 that **the workflow must not be affected once this is live**. That pass changed the plan
-materially — see "What the detailed pass changed" below. Still not started.
+materially — see "What the detailed pass changed" below.
+**Finished:** 2026-08-01 in `515698f`. See `changes.md` under 2026-08-01.
+
+**Where the plan and the outcome differed:**
+
+- **Nothing was cut, and one thing was added:** `draftMatchesSelectedStandaloneSchedule` needed
+  the helper too. It compares persisted values on *both* sides, so a pre-change draft would have
+  been filtered out of the drafts panel and looked lost.
+- **A positive control written during the pending-schedule work fired as designed.**
+  `test_the_option_identity_still_depends_on_index` asserted identity *was* index-derived,
+  specifically so that changing it would fail loudly and force the append rule to be revisited
+  rather than silently kept. It was replaced by its successor, and the in-code comment
+  justifying the append was corrected — appending is now ordering only, not a correctness
+  guard.
+- **The upgrade path was verified against drafts written by the old code**, captured before any
+  edit because that state cannot be recreated afterwards. All three legacy shapes were covered,
+  including the two that deliberately do not resolve.
+- **Not covered:** an engineer who picks a schedule while a draft awaits a re-pick and then
+  abandons it without saving. The flag simply resets; nothing is lost.
 **Raised by:** the offline audit, after this exact defect reached the field.
 
 ### Owner's decisions
