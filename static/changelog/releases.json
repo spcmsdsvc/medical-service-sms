@@ -1198,6 +1198,16 @@
             "engineers"
           ],
           "sort_order": 50
+        },
+        {
+          "item_key": "2026-08-01-tsr-number-assignment-fix",
+          "category": "Create TSR",
+          "description": "Fixed \"Unable to assign the next TSR number\", which could block saving a TSR entirely. If it ever appears again it now names the reason instead of stopping with a bare message.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 60
         }
       ]
     }

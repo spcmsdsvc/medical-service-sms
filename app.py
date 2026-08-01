@@ -2575,6 +2575,20 @@ def ensure_online_tsr_submission_table():
                 for row in connection.exec_driver_sql("PRAGMA table_info(online_tsr_submission)").fetchall()
             }
             column_statements = {
+                # tsr_number and its neighbours were missing from this list even though the
+                # model declares them. __table__.create(checkfirst=True) skips a table that
+                # already exists, so on any database created before one of these columns was
+                # added the model and the table disagree and every read raises "no such
+                # column" -- which is how a numbering failure blocks an engineer entirely.
+                # All additive and nullable, and each is guarded by the existing-column check.
+                'tsr_number': "ALTER TABLE online_tsr_submission ADD COLUMN tsr_number VARCHAR(120)",
+                'client_name': "ALTER TABLE online_tsr_submission ADD COLUMN client_name VARCHAR(200)",
+                'product_name': "ALTER TABLE online_tsr_submission ADD COLUMN product_name VARCHAR(200)",
+                'serial_number': "ALTER TABLE online_tsr_submission ADD COLUMN serial_number VARCHAR(120)",
+                'submitted_by_user_id': "ALTER TABLE online_tsr_submission ADD COLUMN submitted_by_user_id INTEGER",
+                'submitted_by_name': "ALTER TABLE online_tsr_submission ADD COLUMN submitted_by_name VARCHAR(120)",
+                'status': "ALTER TABLE online_tsr_submission ADD COLUMN status VARCHAR(40)",
+                'created_at': "ALTER TABLE online_tsr_submission ADD COLUMN created_at DATETIME",
                 'revision_no': "ALTER TABLE online_tsr_submission ADD COLUMN revision_no INTEGER DEFAULT 1 NOT NULL",
                 'parent_submission_id': "ALTER TABLE online_tsr_submission ADD COLUMN parent_submission_id INTEGER",
                 'revision_reason': "ALTER TABLE online_tsr_submission ADD COLUMN revision_reason TEXT",
@@ -2587,8 +2601,18 @@ def ensure_online_tsr_submission_table():
                 if column_name not in existing_columns:
                     connection.exec_driver_sql(statement)
 
+            # Indexes are attempted one at a time and a failure is logged rather than raised.
+            # Columns are correctness and stay fatal, but an index is not worth blocking every
+            # TSR in the field for: the unique index on submission_token only fails when legacy
+            # duplicates already exist, and that needs a person, not an outage.
             for statement in index_statements:
-                connection.exec_driver_sql(statement)
+                try:
+                    connection.exec_driver_sql(statement)
+                except Exception as index_error:
+                    print(
+                        f"[OnlineTSR] Index step skipped ({index_error}): {statement}",
+                        flush=True
+                    )
 
         _online_tsr_submission_table_ready = True
     except Exception as table_error:
@@ -10384,8 +10408,18 @@ def get_next_online_tsr_number():
             'date': sequence_date.isoformat()
         })
     except Exception as exc:
-        print(f"[ONLINE-TSR] Next TSR number failed: {exc}", flush=True)
-        return jsonify({'success': False, 'message': 'Unable to assign the next TSR number.'}), 500
+        # This blocks the engineer completely -- no number, no save -- so it must say why.
+        # The bare message alone sent a field report back with nothing to act on and no way
+        # to tell a missing column from a locked database from an expired session.
+        import traceback
+        print(f"[ONLINE-TSR] Next TSR number failed: {type(exc).__name__}: {exc}", flush=True)
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Unable to assign the next TSR number. ({type(exc).__name__}: {exc})',
+            'error_type': type(exc).__name__,
+            'detail': str(exc)
+        }), 500
 
 
 def attach_online_tsr_pdf_to_shift(shift, pdf_filename):
