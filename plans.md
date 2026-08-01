@@ -39,8 +39,33 @@ separately says to start. See `AGENTS.md`, "Approved Plans", for the full statem
 
 ## Create a TSR against a schedule that has not synced yet
 
-**Status:** `Approved — awaiting go-ahead`
+**Status:** `Executed`
 **Approved:** 2026-07-31
+**Started:** 2026-08-01, on the owner's go-ahead.
+**Finished:** 2026-08-01 in `28ba1b0`. See `changes.md` under 2026-08-01.
+
+**Where the plan and the outcome differed** — the part worth keeping this record for:
+
+- **The plan named `buildPureEngineerMobileWorkflowActions` as "the primary engineer path and
+  the gate that actually matters".** It is not, in this build: no card renders that row at all,
+  real or pending. The live path is the sticky action bar reached through the card's **Details**
+  button. Both gates were opened, so the feature works either way, but the plan's emphasis was
+  wrong and the next reader should not trust it.
+- **Two defects that only the browser found**, neither visible in review — see `changes.md`:
+  `hasQueued` read a missing IndexedDB row as present, and the fresh-submission-token rule
+  missed a send attempt whose response never returned.
+- **The pending token had to be carried explicitly on three payload builders.** The plan
+  treated `queueStandaloneTSROffline` as the only place it needed to be persisted; in fact
+  `prepareTSRForFinalSave` and the offline branch of the final-save preview each rebuild the
+  payload, and the token survived only by riding inside `selectedSchedule`.
+- **Step 11, the two-tab race, was not exercised.**
+- **A pre-existing weak-signal gap was found and deliberately not fixed** — the offline TSR
+  branch is gated on `navigator.onLine === false`, so with a live radio and an unreachable
+  server the TSR number fetch throws and nothing queues. It predates this work and affects
+  every offline TSR, so it is its own task.
+
+Both of those belong in `pending-work.md`, which is only edited when the owner asks. They are
+written up in `changes.md` under 2026-08-01 until then.
 
 ### Context
 

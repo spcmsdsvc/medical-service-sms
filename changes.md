@@ -1,5 +1,72 @@
 # Project Change Log
 
+claude changes - 2026-08-01
+
+## Create a TSR against a schedule that has not synced yet
+
+* Implemented the plan recorded in `plans.md`, on the owner's go-ahead. An engineer with no
+  signal could add a schedule but not the TSR that schedule exists to produce, so the field
+  sequence stopped halfway.
+* **Corrected the record first.** `pending-work.md` claimed the workaround was a standalone TSR
+  from the sidebar, "fully offline already". It is not: `/offline-tsr` disables every field
+  until a schedule is selected, and the picker's three sources never contain a queued schedule.
+  There was no way at all to write a TSR against a queued schedule, on the device or the server.
+* **Server:** `/add_shift` now returns `group_id`, `shift_ids` and `shift_dates` on a **first**
+  success, not only on replay — but **only when a creation token was sent**, so an ordinary
+  online save keeps the exact `{'status': 'success'}` it has always returned. A test asserts
+  that byte-for-byte, because that route is large and much-used.
+* **The mapping is written before the queue row is discarded**, and that ordering is the whole
+  recovery story: a failed write skips the discard, the schedule stays queued, and the replay
+  hands back the same ids rather than leaving a TSR pointing at nothing. The success counter
+  moved to last, so an item still in the queue can never be reported as synced.
+* **Device:** IndexedDB `DB_VERSION` 2 with a new `resolved` store. Deliberately not folded
+  into `reference`, whose records are all `{key, savedAt, rows}` and read back as arrays.
+* The TSR carries its schedule's **creation token** instead of an id, waits for the schedule
+  queue once per sync run (`sync()` is single-flight, so awaiting it is safe), and is rewritten
+  to the real shift before it is sent. Unresolved-but-still-queued is retriable; the item is
+  never posted with a missing id, which the server refuses non-retriably.
+* **Multi-day chains file against the day the work happened**, matched on the TSR's service
+  date with the token-carrying first shift as the fallback, and the outcome recorded on the item
+  as `resolved_by` so a support question later has an answer.
+* **Fixed a latent defect found on the way past.** `collectTSRData` fell through to
+  `selectedStandaloneScheduleId`, the composite runtime picker id
+  (`"12::2026-08-01::09:00-11:00::0"`). `clean_int` rejects it, the resulting 400 is
+  non-retriable, and the TSR parked permanently. `getStandaloneScheduleRealId` is now
+  numeric-only and the single source of that id.
+* **Two bugs the browser caught that review did not**, both in code written this session:
+  - `hasQueued` read a **missing** IndexedDB row as present. `withStore` returns
+    `requestValue`'s box when a key is absent, and the box is truthy. An orphaned TSR would
+    have waited forever for a schedule that was never coming, instead of asking for a new one —
+    defeating the owner's decision that a written TSR is never lost.
+  - Re-pointing minted a fresh submission token only when the shift id **changed**, missing an
+    attempt whose response never came back. That submission can exist server-side under the old
+    token, and the cross-shift guard would then 409 every retry forever.
+* **A plan claim that turned out to be wrong, recorded so the next reader does not inherit it:**
+  `buildPureEngineerMobileWorkflowActions` was described as the primary engineer path. No card
+  renders that row in this build, real or pending. The live path is the sticky action bar behind
+  the card's **Details** button. Both gates were opened, so it works either way.
+* **Verified against a genuinely stopped server**, not DevTools offline, on a 375 px viewport
+  signed in as a seeded engineer: `/timeline` reloaded from the worker, the Add Schedule form
+  opened and both autocompletes filled from the device caches, a 2-day schedule queued carrying
+  its client and product, pending cards rendered on both days with the client name, Create TSR
+  opened `/offline-tsr?pending_schedule=…` from cache with the right schedule selected, and the
+  TSR queued with `schedule_id` empty rather than a composite string. It refused to resolve
+  while the schedule was queued, throwing a retriable error naming the client. On reconnect the
+  posts fired in order — `/add_shift`, `/add_shift`, then `/save_offline_tsr_online` once — and
+  a TSR with a **07-31** service date landed on **shift 5 (07-31)**, not the token-carrying
+  first shift. Removing a schedule left its TSR in "Needs a schedule" with a Pick a schedule
+  button; re-pointing rewrote all four shift-reference fields and minted a new token.
+* No horizontal overflow at 375 px, tap targets 44 px, console clean.
+* Suite green at **361 tests** (was 334), with the ordering, gating and both browser-found bugs
+  each proved to fail when re-injected. Service worker `v56-offline-entry-point` →
+  `v57-offline-tsr-pending-schedule`. `scheduler.db` untouched.
+* **Not delivered from the plan:** the two-tab race check, and a pre-existing weak-signal gap
+  found during verification — the offline TSR branch is gated on `navigator.onLine === false`,
+  so with a live radio and an unreachable server the TSR number fetch throws and nothing queues
+  at all. It predates this work and affects every offline TSR, so it was left alone rather than
+  widened into. **Both are raised with the owner for `pending-work.md`, which is only edited on
+  request**, so they are recorded here in the meantime and are not yet in that file.
+
 claude changes - 2026-07-31
 
 ## Pending work: queued the TSR-on-unsynced-schedule question, corrected what is verified
