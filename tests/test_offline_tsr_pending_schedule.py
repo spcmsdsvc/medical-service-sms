@@ -144,6 +144,33 @@ class PendingScheduleDeviceSourceTests(unittest.TestCase):
         self.assertLess(last_cache_at, pending_at,
                         'pending schedules must be merged after every cache write')
 
+    def test_pending_options_are_appended_not_prepended(self):
+        """A field regression, and the reason this test is worth its weight.
+
+        normalizeStandaloneScheduleOptions stamps each option's _offline_uid from its ARRAY
+        INDEX, and that uid is the identity a saved draft stores and later matches on. Putting
+        pending schedules in front renumbers every real schedule, so a draft saved earlier stops
+        matching its own schedule, falls back to a stale snapshot, and the TSR is posted against
+        a shift that may no longer exist -- which is exactly what an engineer hit.
+        """
+        refresh = self.tsr.split('async function refreshStandaloneScheduleOptions(')[1].split('\nfunction ')[0]
+        self.assertIn('schedules.concat(pendingOptions)', refresh)
+        self.assertNotIn('pendingOptions.concat(schedules)', refresh)
+
+    def test_the_option_identity_still_depends_on_index(self):
+        """Positive control for the test above.
+
+        If _offline_uid ever stops being index-derived, the append rule is no longer load-bearing
+        and this whole guard should be revisited rather than silently kept.
+        """
+        normalize = self.tsr.split('function normalizeStandaloneScheduleOptions(')[1].split('\nfunction ')[0]
+        self.assertIn('getStandaloneScheduleRuntimeId(schedule, index)', normalize)
+
+    def test_a_missing_schedule_sends_the_engineer_back_to_the_picker(self):
+        """A finished TSR must never dead-end because its schedule was deleted."""
+        self.assertIn("error_code === 'schedule_missing'", self.tsr)
+        self.assertIn('openStandaloneSchedulePickerModal()', self.tsr)
+
     def test_repointing_a_tsr_mints_a_fresh_submission_token(self):
         """Otherwise the server's cross-shift guard 409s every retry, forever."""
         apply_fn = self.tsr.split('async function applyResolvedScheduleToTSRQueueItem(')[1].split('\nasync function ')[0]
@@ -367,7 +394,10 @@ class PendingScheduleTSRValidationTests(unittest.TestCase):
     def test_the_missing_schedule_guard_is_still_in_place(self):
         route = self.app_source.split("@app.route('/save_offline_tsr_online'")[1].split('\n@app.route')[0]
         self.assertIn('Please select a schedule before saving online.', route)
-        self.assertIn('Selected schedule was not found.', route)
+        # The wording is allowed to improve; the guard and its machine-readable code are not.
+        # It now names the id and tells the engineer to re-pick, rather than dead-ending.
+        self.assertIn("'error_code': 'schedule_missing'", route)
+        self.assertIn('), 404', route)
         self.assertIn('can_work_on_existing_schedule_shift', route)
 
     def test_the_cross_shift_token_guard_is_still_in_place(self):

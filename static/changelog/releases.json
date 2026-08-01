@@ -1208,6 +1208,16 @@
             "admins"
           ],
           "sort_order": 60
+        },
+        {
+          "item_key": "2026-08-01-tsr-schedule-selection-fix",
+          "category": "Create TSR",
+          "description": "Fixed a saved TSR draft losing track of its schedule, which caused \"Selected schedule was not found\" when saving. If a schedule really has been deleted, the TSR now keeps your work and takes you straight to the schedule picker instead of stopping.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 70
         }
       ]
     }

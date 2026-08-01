@@ -13573,7 +13573,20 @@ def save_offline_tsr_online():
 
     shift = db.session.get(Shift, schedule_id)
     if not shift:
-        return jsonify({'status': 'error', 'message': 'Selected schedule was not found.'}), 404
+        # Name the id and say what to do. The bare sentence left an engineer holding a
+        # finished TSR with no way forward, and no way for anyone to tell whether the
+        # schedule was deleted or the device simply sent the wrong id.
+        print(f"[ONLINE-TSR] Save rejected: shift {schedule_id} not found", flush=True)
+        return jsonify({
+            'status': 'error',
+            'message': (
+                f'Selected schedule (#{schedule_id}) no longer exists. '
+                'Open the schedule picker, choose the correct schedule, and save again. '
+                'Your draft is safe on this device.'
+            ),
+            'error_code': 'schedule_missing',
+            'schedule_id': schedule_id
+        }), 404
 
     if not can_work_on_existing_schedule_shift(shift):
         return denied('You are not allowed to save a TSR for this schedule.')
@@ -14418,7 +14431,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v57-offline-tsr-pending-schedule';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v58-schedule-identity-fix';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

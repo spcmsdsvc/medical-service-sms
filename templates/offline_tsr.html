@@ -1837,7 +1837,12 @@ async function refreshStandaloneScheduleOptions(manual=false){
   // synced or been removed.
   const pendingOptions = await readPendingScheduleOptions();
   if(pendingOptions.length){
-    schedules = pendingOptions.concat(schedules);
+    // Appended, never prepended. normalizeStandaloneScheduleOptions stamps each option's
+    // _offline_uid from its ARRAY INDEX, and that uid is the identity a saved draft stores
+    // and later matches on. Putting anything in front renumbers every real schedule, so a
+    // draft saved earlier stops matching its own schedule and falls back to a stale
+    // snapshot -- which is how a TSR ends up posted against a shift that no longer exists.
+    schedules = schedules.concat(pendingOptions);
     source = source ? `${source} + this device's queue` : "this device's queue";
   }
 
@@ -5407,6 +5412,17 @@ async function finishStandaloneTSRFinalSave(state){
         resetAllInlineTSRKnowledgeSuggestions();
         const queue = readOfflineTSRQueue();
         showTSRStatus(`TSR queued locally for later sync. Pending offline TSRs: ${queue.length}. Page cleared for the next TSR.`, 'warning');
+      }else if(err?.result?.error_code === 'schedule_missing' || err?.httpStatus === 404){
+        // The schedule this draft points at is gone from the server. Keep the work, drop the
+        // dead selection, and put the engineer straight into the picker -- previously this
+        // dead-ended with a finished TSR and no route forward.
+        await saveStandaloneTSRDraftLocally(payload);
+        selectedStandaloneScheduleId = '';
+        selectedStandaloneScheduleSnapshot = null;
+        updateCreateTSRScheduleGate({ showMessage: true });
+        showTSRStatus(`${err?.message || 'That schedule no longer exists.'} Your draft is safe.`, 'danger');
+        await refreshStandaloneScheduleOptions(false);
+        openStandaloneSchedulePickerModal();
       }else{
         await saveStandaloneTSRDraftLocally(payload);
         showTSRStatus(`${err?.message || 'Unable to save TSR online right now.'} Draft was kept locally on this device.`, 'danger');
