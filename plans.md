@@ -248,7 +248,9 @@ Bump the service worker; `/offline-tsr` is precached.
 
 **Status:** `Approved — awaiting go-ahead`
 **Approved:** 2026-08-01
-**Blocked on a decision the owner has not yet made — see below. Do not start without it.**
+**Decision made:** 2026-08-01. The question this plan was blocked on is answered below, and the
+owner improved the answer — the failure is framed as "saved as a draft" rather than "cannot
+save". Ready to build; still not started.
 
 ### Context
 
@@ -261,30 +263,52 @@ made the blob write fail in the first place.
 
 `normalizeOfflineTSRQueue` (`:4109`) does not strip heavy fields, so nothing else prevents it.
 
-### The decision that must come first
+### The decision, now made
 
 Stripping the PDF from the localStorage mirror is the obvious move, and it is wrong on its own:
 **the mirror is the only copy when IndexedDB is unavailable**, which is exactly the case the
-fallback exists to serve. So the real question is:
+fallback exists to serve. The question this plan was blocked on was therefore:
 
-> **Is a TSR queued on a device with no working blob storage worth keeping at all, or should
-> that device refuse to queue and tell the engineer to stay online?**
+> Is a TSR queued on a device with no working blob storage worth keeping at all, or should that
+> device refuse and tell the engineer to stay online?
 
-A queue that silently cannot hold the PDF is worse than one that says so — the engineer believes
-the work is saved. That is the same principle already applied to offline schedule attachments in
-`pending-work.md`.
+**Decision: refuse the send, never the typing — and frame it as a draft, not a failure.** The
+owner's improvement on the original recommendation, and it is the better design: "cannot save"
+is a dead end for someone standing in a hospital corridor, while "it is saved as a draft" is a
+next step. The engineer is not asked to perform the recovery; the draft is saved for them and
+they are told it is done.
 
-**Recommendation: refuse to queue when the blob store is unavailable.** Say so plainly, keep the
-localStorage mirror as metadata only, and drop the duplicate backup key. Storage becomes bounded
-and the failure becomes loud. The cost is a rare "cannot queue here" on a device that today
-would have queued something probably unusable.
+**Sending and drafting are different weights, and that is what makes this safe.** A draft holds
+the typed fields, the signatures and any attachments; the PDF is generated only at final save.
+Confirmed against a real captured draft during the plan A work: it contained the field values
+and signature slots and **no PDF at all**. So refusing the send costs the engineer nothing they
+have typed.
 
-### Scope once decided
+### What the engineer sees
+
+1. The send cannot complete, so the draft is saved automatically first.
+2. Draft saved → *"No connection right now, so this TSR could not be sent. It's saved as a draft
+   on this device — open it from Continue Saved Work and send it when you're back in signal."*
+3. **Draft also failed** → say so plainly and offer the escape hatch (download the PDF now, keep
+   the tab open). This is the only case where work is genuinely at risk, and it is the one place
+   a reassuring message would be a lie. The entire reason for this work is that the app used to
+   imply things were saved when they were not.
+
+Order matters: try the draft, then report what actually happened. Never print the calm message
+without having confirmed the draft write succeeded.
+
+### Scope
 
 - One localStorage key, metadata only: id, status, tokens, client, timestamps, sync state. No
-  `pdf_data_url`, no attachment data URLs.
+  `pdf_data_url`, no attachment data URLs. Drop the duplicate backup key.
 - `prepareOfflineTSRQueueItemBlobs` stops silently keeping the data URL on blob-write failure;
-  it surfaces the failure to the caller.
+  it surfaces the failure to the caller so the message above can be chosen truthfully.
+- **Photos in drafts, added to scope after the owner asked whether drafting still works.** A
+  draft stores `payload.attachments`, and `fileToQueuedAttachment` holds each photo as a base64
+  data URL — so a draft with several site photos is heavy too, and the localStorage draft
+  fallback (`STANDALONE_TSR_KEY`) writes the whole thing. Drafts must keep photos in IndexedDB
+  as blob references, the way queue items already do, or "save it as a draft" fails for exactly
+  the engineers most likely to need it.
 - A storage-pressure warning **before** the queue grows large, using `navigator.storage.estimate()`
   where available, rather than after a write has already failed.
 - Keep the existing "browser storage is full" message as the last resort.
@@ -292,14 +316,17 @@ would have queued something probably unusable.
 ### Deliberately excluded
 
 - Changing the IndexedDB blob layout. It works; this is about the fallback around it.
-- The offline schedule queue's attachments — a separate open item, still unverified on a real
-  device camera.
+- The offline schedule queue's attachments — a separate open item, still unverified against a
+  real device camera.
 
 ### Verification
 
 - A queue item's localStorage form contains no base64 payload, with a positive control asserting
   the IndexedDB record still does.
-- A simulated blob-write failure surfaces rather than silently degrading.
+- A draft carrying photos stores blob references, not data URLs, with the same positive control.
+- A simulated blob-write failure surfaces rather than silently degrading, and the engineer gets
+  the draft message only when the draft actually saved — with a control forcing the draft write
+  to fail and asserting the blunt message appears instead.
 - Real device: fill storage, confirm the engineer is told before the queue is compromised.
 
 ---
