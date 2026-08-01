@@ -621,6 +621,9 @@ const TSR_PRINT_LOGO_DATA_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAB
 let standaloneDocuments = [];
 let standaloneScheduleOptions = [];
 let selectedStandaloneScheduleId = '';
+// Set when a draft was opened whose schedule could not be matched. It survives exactly one
+// call to applyScheduleToStandaloneTSR so the engineer's re-pick does not clear their work.
+let awaitingScheduleRepick = false;
 let selectedStandaloneScheduleSnapshot = null;
 let standaloneScheduleQuickFilter = 'week';
 let signatureData = { serviced: '', acknowledged: '' };
@@ -1206,13 +1209,82 @@ function getScheduleOptionLabel(schedule){
   return schedule.pending_schedule_token ? `Waiting to sync — ${label}` : label;
 }
 
-function getStandaloneScheduleRuntimeId(schedule, index=0){
+function getScheduleOptionDateIso(schedule){
+  return String(schedule?.date_iso || schedule?.date_label || schedule?.start_date || '').slice(0, 10);
+}
+
+function hashScheduleIdentity(schedule){
+  // Same inputs as getStandaloneScheduleGroupKey, which is already this project's notion of
+  // "the same schedule". Deterministic across sessions and devices, which is the whole point.
+  const parts = [
+    schedule?.client_id, schedule?.client_name,
+    schedule?.product_id, schedule?.product_name,
+    getScheduleOptionDateIso(schedule),
+    schedule?.time_start, schedule?.time_end, schedule?.task
+  ].map(value => String(value ?? '').trim().toLowerCase()).join('|');
+
+  let hash = 5381;
+  for(let i = 0; i < parts.length; i++){
+    hash = ((hash * 33) ^ parts.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+function buildStableScheduleOptionUid(schedule){
+  // Derived from the schedule, never from where it sits in an array. The old id ended in the
+  // option's array index, so adding or removing any schedule renumbered every option after it
+  // and detached saved drafts from their own schedule.
   if(!schedule) return '';
-  if(schedule._offline_uid) return String(schedule._offline_uid);
-  const base = schedule.id || schedule.schedule_id || schedule.client_id || schedule.client_name || 'schedule';
-  const date = schedule.date_iso || schedule.date_label || schedule.start_date || '';
-  const time = [schedule.time_start || '', schedule.time_end || ''].join('-');
-  return `${base}::${date}::${time}::${index}`;
+  const date = getScheduleOptionDateIso(schedule);
+
+  const pendingToken = String(schedule.pending_schedule_token || '').trim();
+  if(pendingToken) return `pending::${pendingToken}::${date}`;
+
+  const realId = getStandaloneScheduleRealId(schedule);
+  if(realId) return `shift::${realId}::${date}`;
+
+  return `snap::${hashScheduleIdentity(schedule)}`;
+}
+
+function getStandaloneScheduleRuntimeId(schedule){
+  // Always computed, never read back from a stored _offline_uid. Drafts, queue items and the
+  // server's payload_json all freeze a selectedSchedule snapshot, and trusting the uid frozen
+  // inside one would hand back an identity from before this change.
+  return buildStableScheduleOptionUid(schedule);
+}
+
+function matchesLegacyScheduleUid(storedId, schedule){
+  // Old formats, kept understood permanently: drafts sit on field devices for months and the
+  // server keeps returning old ids through the revision path, so there is no safe removal date.
+  //   normal:  <id|client_id|client_name>::<date>::<start-end>::<index>
+  //   pending: pending::<token>::<date>::<index>
+  if(storedId.indexOf('::') === -1) return false;
+  const segments = storedId.split('::');
+  const scheduleDate = getScheduleOptionDateIso(schedule);
+
+  if(segments[0] === 'pending'){
+    const token = String(schedule?.pending_schedule_token || '').trim();
+    if(!token || token !== String(segments[1] || '').trim()) return false;
+    const legacyDate = String(segments[2] || '').slice(0, 10);
+    return !legacyDate || !scheduleDate || legacyDate === scheduleDate;
+  }
+
+  // Only resolvable when the old base was the real id. An entry whose base fell back to the
+  // client id or name cannot be told apart from another schedule for the same customer, so it
+  // deliberately fails here and the engineer is asked to pick the schedule again.
+  const realId = getStandaloneScheduleRealId(schedule);
+  if(!realId || String(segments[0] || '').trim() !== realId) return false;
+  const legacyDate = String(segments[1] || '').slice(0, 10);
+  return !legacyDate || !scheduleDate || legacyDate === scheduleDate;
+}
+
+function isSameScheduleSelection(storedId, schedule){
+  // The single place a persisted selection is compared with a live schedule.
+  const stored = String(storedId || '').trim();
+  if(!stored || !schedule) return false;
+  if(stored === buildStableScheduleOptionUid(schedule)) return true;
+  if(schedule.id != null && stored === String(schedule.id)) return true;
+  return matchesLegacyScheduleUid(stored, schedule);
 }
 
 function getStandaloneScheduleRealId(schedule){
@@ -1354,7 +1426,7 @@ function ensureStandaloneScheduleOptionFromContext(context){
   const existing = findStandaloneScheduleFromCreateTSRContext(normalized);
   if(existing) return existing;
 
-  const runtimeId = getStandaloneScheduleRuntimeId(normalized, standaloneScheduleOptions.length);
+  const runtimeId = getStandaloneScheduleRuntimeId(normalized);
   const injected = Object.assign({}, normalized, { _offline_uid: runtimeId });
   standaloneScheduleOptions.unshift(injected);
   renderStandaloneScheduleOptions(standaloneScheduleOptions, 'Timeline selected schedule');
@@ -1387,7 +1459,8 @@ function applyCreateTSRHandoffToStandaloneTSR(){
 function normalizeStandaloneScheduleOptions(schedules){
   return (Array.isArray(schedules) ? schedules : []).map((schedule, index) => ({
     ...(schedule || {}),
-    _offline_uid: getStandaloneScheduleRuntimeId(schedule, index)
+    // Kept only so an inspected option still shows its identity; nothing reads it back.
+    _offline_uid: getStandaloneScheduleRuntimeId(schedule)
   }));
 }
 function getStandaloneScheduleGroupKey(schedule){
@@ -1652,8 +1725,12 @@ function renderStandaloneScheduleOptions(schedules, sourceLabel='cached'){
   if(select){
     const currentValue = selectedStandaloneScheduleId || select.value || '';
     select.innerHTML = '<option value="">No schedule selected</option>' + standaloneScheduleOptions.map(schedule => `<option value="${escapeAttr(getStandaloneScheduleRuntimeId(schedule))}">${escapeHTML(getScheduleOptionLabel(schedule))}</option>`).join('');
-    if(currentValue && standaloneScheduleOptions.some(s => String(getStandaloneScheduleRuntimeId(s)) === String(currentValue))){
-      select.value = currentValue;
+    // currentValue may be a selection restored from a draft, so it can be in the old format.
+    const matched = currentValue
+      ? standaloneScheduleOptions.find(s => isSameScheduleSelection(currentValue, s))
+      : null;
+    if(matched){
+      select.value = String(getStandaloneScheduleRuntimeId(matched));
     }
   }
   if(help){
@@ -1689,13 +1766,13 @@ function renderStandaloneScheduleCards(){
   list.innerHTML = groups.map(group => {
     const schedule = group.primary;
     const items = group.items || [];
-    const active = items.some(item => String(getStandaloneScheduleRuntimeId(item)) === String(selectedStandaloneScheduleId));
+    const active = items.some(item => isSameScheduleSelection(selectedStandaloneScheduleId, item));
     const engineers = (schedule.engineer_names || []).join(', ') || schedule.serviced_by || '';
     const dateRange = getStandaloneScheduleGroupDateRange(items);
     const isMultiDay = items.length > 1;
     const dateButtons = isMultiDay ? `<div class="standalone-schedule-date-row">${items.map(item => {
       const uid = getStandaloneScheduleRuntimeId(item);
-      const chipActive = String(uid) === String(selectedStandaloneScheduleId);
+      const chipActive = isSameScheduleSelection(selectedStandaloneScheduleId, item);
       return `<button type="button" class="standalone-schedule-date-chip ${chipActive ? 'active' : ''}" onclick="event.stopPropagation(); selectStandaloneScheduleFromModal('${escapeAttr(uid)}')">${escapeHTML(getStandaloneScheduleDateText(item) || 'Select date')}</button>`;
     }).join('')}</div>` : '';
     const clickTarget = escapeAttr(getStandaloneScheduleRuntimeId(schedule));
@@ -1785,7 +1862,7 @@ async function assignPickedScheduleToQueuedTSR(itemId, schedule){
 }
 
 function selectStandaloneScheduleFromModal(id){
-  const schedule = standaloneScheduleOptions.find(item => String(getStandaloneScheduleRuntimeId(item)) === String(id) || String(item.id) === String(id));
+  const schedule = standaloneScheduleOptions.find(item => isSameScheduleSelection(id, item));
   if(!schedule) return;
 
   if(queuedTSRAwaitingSchedulePick){
@@ -1837,11 +1914,10 @@ async function refreshStandaloneScheduleOptions(manual=false){
   // synced or been removed.
   const pendingOptions = await readPendingScheduleOptions();
   if(pendingOptions.length){
-    // Appended, never prepended. normalizeStandaloneScheduleOptions stamps each option's
-    // _offline_uid from its ARRAY INDEX, and that uid is the identity a saved draft stores
-    // and later matches on. Putting anything in front renumbers every real schedule, so a
-    // draft saved earlier stops matching its own schedule and falls back to a stale
-    // snapshot -- which is how a TSR ends up posted against a shift that no longer exists.
+    // Appended so queued schedules read as an addition to the engineer's real list rather
+    // than displacing it. This used to be load-bearing -- option identity was derived from the
+    // array index, so anything placed in front renumbered every real schedule and detached
+    // saved drafts. Identity is content-derived now, so this is ordering only.
     schedules = schedules.concat(pendingOptions);
     source = source ? `${source} + this device's queue` : "this device's queue";
   }
@@ -1919,10 +1995,21 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
   standaloneTSRAutosavePaused = true;
   try{
     const nextScheduleId = String(getStandaloneScheduleRuntimeId(schedule));
-    if(String(selectedStandaloneScheduleId || '') !== nextScheduleId){
+    // The single most destructive comparison on this page. A plain string test would treat an
+    // old-format selection restored from a draft as a different schedule and wipe everything
+    // the engineer has typed, for every engineer, on their first re-selection after the
+    // identity change. isSameScheduleSelection understands both formats.
+    //
+    // awaitingScheduleRepick covers the other direction: a draft whose schedule could not be
+    // matched at all deliberately clears the selection so the engineer can pick again, and
+    // without this the pick itself -- '' to a real id -- would read as a change and wipe the
+    // work that was just preserved.
+    const isSameSchedule = isSameScheduleSelection(selectedStandaloneScheduleId, schedule);
+    if(!isSameSchedule && !awaitingScheduleRepick){
       clearStandaloneTSRWorkFieldsForScheduleChange();
       standaloneCurrentDraftId = '';
     }
+    awaitingScheduleRepick = false;
     selectedStandaloneScheduleId = nextScheduleId;
     selectedStandaloneScheduleSnapshot = Object.assign({}, schedule);
     setFieldValue('tsr-customer-name', schedule.client_name, overwrite);
@@ -1969,7 +2056,7 @@ function applySelectedStandaloneSchedule(){
   const select = document.getElementById('tsr-schedule-select');
   const id = select?.value || '';
   if(!id){ clearStandaloneScheduleSelection(false); return; }
-  const schedule = standaloneScheduleOptions.find(item => String(getStandaloneScheduleRuntimeId(item)) === String(id) || String(item.id) === String(id));
+  const schedule = standaloneScheduleOptions.find(item => isSameScheduleSelection(id, item));
   applyScheduleToStandaloneTSR(schedule, true);
 }
 function clearStandaloneScheduleSelection(showMessage=true){
@@ -2431,7 +2518,7 @@ async function saveCurrentTSRKnowledge(){
 }
 function getSelectedStandaloneSchedule(){
   if(!selectedStandaloneScheduleId) return null;
-  return standaloneScheduleOptions.find(item => String(getStandaloneScheduleRuntimeId(item)) === String(selectedStandaloneScheduleId) || String(item.id) === String(selectedStandaloneScheduleId)) || selectedStandaloneScheduleSnapshot || null;
+  return standaloneScheduleOptions.find(item => isSameScheduleSelection(selectedStandaloneScheduleId, item)) || selectedStandaloneScheduleSnapshot || null;
 }
 function formatTSRFileSize(bytes){
   const size = Number(bytes || 0);
@@ -2845,6 +2932,9 @@ function draftMatchesSelectedStandaloneSchedule(record, schedule=null){
     payload?.selectedScheduleId
   ].map(value => String(value || '').trim()).filter(Boolean);
   if(draftIds.some(id => id === selectedId || id === String(selectedStandaloneScheduleId || '').trim())) return true;
+  // Both sides here are persisted values, so a draft written before the identity change would
+  // otherwise be filtered out of the panel and look lost.
+  if(selected && draftIds.some(id => isSameScheduleSelection(id, selected))) return true;
 
   const selectedClient = normalizeStandaloneDraftComparable(selected?.client_name);
   const selectedDate = normalizeStandaloneDraftComparable(selected?.date_iso || selected?.date_label);
@@ -2959,8 +3049,29 @@ function applyStandaloneTSRDraftData(data){
   try{
     standaloneCurrentDraftId = String(data._draft_id || data.draft_id || standaloneCurrentDraftId || '').trim();
     document.querySelectorAll('.tsr-field').forEach(el=>{ if(data[el.id]!==undefined) el.value=data[el.id]; });
-    selectedStandaloneScheduleId=data.selectedScheduleId || data.schedule_id || data.selectedSchedule?.id || '';
+    const storedScheduleId = data.selectedScheduleId || data.schedule_id || data.selectedSchedule?.id || '';
     selectedStandaloneScheduleSnapshot=data.selectedSchedule ? Object.assign({}, data.selectedSchedule) : null;
+
+    // Canonicalise the stored selection in place. A draft written before the identity change
+    // holds an old-format id; resolving it here means every later comparison is canonical
+    // against canonical, and the next save quietly persists the new format. Drafts are never
+    // rewritten in bulk -- matching is reversible, editing every draft on a device is not.
+    const matchedOption = storedScheduleId
+      ? standaloneScheduleOptions.find(item => isSameScheduleSelection(storedScheduleId, item))
+      : null;
+
+    if(matchedOption){
+      selectedStandaloneScheduleId = String(getStandaloneScheduleRuntimeId(matchedOption));
+      awaitingScheduleRepick = false;
+    }else if(storedScheduleId && selectedStandaloneScheduleSnapshot){
+      // Nothing in the current list matches. Keep every field the engineer typed, drop the
+      // dead selection, and ask them to pick the schedule again rather than guessing.
+      selectedStandaloneScheduleId = '';
+      awaitingScheduleRepick = true;
+    }else{
+      selectedStandaloneScheduleId = storedScheduleId;
+      awaitingScheduleRepick = false;
+    }
     standaloneDocuments=data.documents||[];
     offlineTSRAttachments=normalizeQueuedAttachments(data.attachments||[]);
     signatureData=data.signatures||{serviced:'',acknowledged:''};
@@ -3048,10 +3159,11 @@ async function loadOnlineTSRRevisionFromUrl(){
 
     const scheduleId = String(submission.shift_id || payload.schedule_id || payload.selectedScheduleId || '');
     if(scheduleId){
+      // payload.selectedScheduleId comes back out of the server's payload_json, so it can be
+      // an old-format id written months ago.
       const schedule = standaloneScheduleOptions.find(item =>
         String(getStandaloneScheduleRealId(item)) === scheduleId ||
-        String(getStandaloneScheduleRuntimeId(item)) === scheduleId ||
-        String(item.id) === scheduleId
+        isSameScheduleSelection(scheduleId, item)
       );
       if(schedule){
         applyScheduleToStandaloneTSR(schedule, false);
@@ -3176,7 +3288,9 @@ async function openStandaloneTSRDraft(id){
     applyStandaloneTSRDraftData(Object.assign({}, record.payload, { _draft_id: record.id }));
     const draftMessage = hasStandaloneScheduleSelection()
       ? 'Loaded saved TSR draft from this device.'
-      : 'Loaded saved TSR draft for visibility. Select a schedule first to continue editing or saving.';
+      : (awaitingScheduleRepick
+        ? 'Loaded saved TSR draft. Everything you typed is still here, but its schedule is no longer in your list — pick the schedule again to continue and save.'
+        : 'Loaded saved TSR draft for visibility. Select a schedule first to continue editing or saving.');
     showTSRStatus(draftMessage, hasStandaloneScheduleSelection() ? 'warning' : 'info');
     renderStandaloneTSRDraftPanel();
   }catch(err){
@@ -6953,8 +7067,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       const select=document.getElementById('tsr-schedule-select');
       if(select) select.value=selectedStandaloneScheduleId;
       const schedule=standaloneScheduleOptions.find(item =>
-        String(getStandaloneScheduleRuntimeId(item)) === String(selectedStandaloneScheduleId) ||
-        String(item.id) === String(selectedStandaloneScheduleId)
+        isSameScheduleSelection(selectedStandaloneScheduleId, item)
       );
       if(schedule) applyScheduleToStandaloneTSR(schedule, false);
     }

@@ -173,6 +173,80 @@ class SilentOfflineSaveTests(unittest.TestCase):
         self.assertIn('isSupported()', describe)
 
 
+class ScheduleOptionIdentityTests(unittest.TestCase):
+    """A picker option's identity must not depend on where it sits in an array.
+
+    `normalizeStandaloneScheduleOptions` used to stamp `_offline_uid` from the array index, and
+    that string is what a saved draft stores and later matches on. Any change in list
+    composition renumbered every option after it and detached drafts from their schedules --
+    which reached the field once already.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tsr = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+
+    def test_identity_is_derived_from_the_schedule(self):
+        builder = self.tsr.split('function buildStableScheduleOptionUid(')[1].split('\nfunction ')[0]
+        for shape in ('`pending::${pendingToken}::${date}`', '`shift::${realId}::${date}`',
+                      '`snap::${hashScheduleIdentity(schedule)}`'):
+            self.assertIn(shape, builder)
+
+    def test_no_call_site_passes_an_array_index(self):
+        """The defect itself. A single surviving index caller reintroduces it."""
+        self.assertNotIn('getStandaloneScheduleRuntimeId(schedule, index)', self.tsr)
+        self.assertNotIn('getStandaloneScheduleRuntimeId(normalized, standaloneScheduleOptions.length)', self.tsr)
+        runtime = self.tsr.split('function getStandaloneScheduleRuntimeId(')[1].split('\nfunction ')[0]
+        self.assertNotIn('index', runtime)
+
+    def test_a_stored_uid_is_never_trusted(self):
+        """Drafts, queue items and the server's payload_json all freeze a selectedSchedule
+        snapshot; reading the uid back out of one would resurrect a pre-change identity."""
+        runtime = self.tsr.split('function getStandaloneScheduleRuntimeId(')[1].split('\nfunction ')[0]
+        self.assertNotIn('schedule._offline_uid', runtime, 'the stored uid must never be read back')
+        self.assertNotIn('return String(schedule._offline_uid)', runtime)
+        self.assertIn('buildStableScheduleOptionUid(schedule)', runtime)
+
+    def test_the_legacy_format_is_still_understood(self):
+        legacy = self.tsr.split('function matchesLegacyScheduleUid(')[1].split('\nfunction ')[0]
+        self.assertIn("segments[0] === 'pending'", legacy)
+        self.assertIn('getStandaloneScheduleRealId(schedule)', legacy)
+        # A legacy id whose date disagrees must not match a different day of the same chain.
+        self.assertIn('legacyDate === scheduleDate', legacy)
+
+    def test_comparisons_against_persisted_values_use_the_helper(self):
+        """Every site where a stored selection meets a freshly computed one."""
+        self.assertIn('function isSameScheduleSelection(', self.tsr)
+        selected = self.tsr.split('function getSelectedStandaloneSchedule(')[1].split('\nfunction ')[0]
+        self.assertIn('isSameScheduleSelection(selectedStandaloneScheduleId, item)', selected)
+        # Positive control: the old exact-string comparison must be gone from that function.
+        self.assertNotIn('String(getStandaloneScheduleRuntimeId(item)) === String(selectedStandaloneScheduleId)', selected)
+
+    def test_in_progress_work_is_not_cleared_for_a_legacy_id(self):
+        """The most destructive line on the page.
+
+        A plain string test would read an old-format selection restored from a draft as a
+        different schedule and wipe everything the engineer had typed, for every engineer, on
+        their first re-selection after the change.
+        """
+        apply_fn = self.tsr.split('function applyScheduleToStandaloneTSR(')[1].split('\nfunction ')[0]
+        self.assertIn('isSameScheduleSelection(selectedStandaloneScheduleId, schedule)', apply_fn)
+        self.assertIn('!isSameSchedule && !awaitingScheduleRepick', apply_fn)
+        # The clear must still happen for a genuinely different schedule.
+        self.assertIn('clearStandaloneTSRWorkFieldsForScheduleChange();', apply_fn)
+
+    def test_an_unmatched_draft_keeps_its_work_and_asks_for_a_schedule(self):
+        apply_draft = self.tsr.split('function applyStandaloneTSRDraftData(')[1].split('\nfunction ')[0]
+        self.assertIn('awaitingScheduleRepick = true', apply_draft)
+        # It clears only the dead selection, never the fields.
+        self.assertNotIn('clearStandaloneTSRWorkFieldsForScheduleChange', apply_draft)
+
+    def test_a_resolved_selection_is_canonicalised_in_place(self):
+        """Self-healing without a bulk rewrite: the next save persists the new format."""
+        apply_draft = self.tsr.split('function applyStandaloneTSRDraftData(')[1].split('\nfunction ')[0]
+        self.assertIn('selectedStandaloneScheduleId = String(getStandaloneScheduleRuntimeId(matchedOption))', apply_draft)
+
+
 class ServiceWorkerCacheVersionTests(unittest.TestCase):
     def test_the_cache_version_moved_for_the_changed_shell(self):
         """/offline-tsr is precached, so devices need the new copy of the page."""

@@ -1210,6 +1210,15 @@
           "sort_order": 60
         },
         {
+          "item_key": "2026-08-01-tsr-draft-keeps-its-schedule",
+          "category": "Create TSR",
+          "description": "Saved TSR drafts now stay attached to their schedule even when your schedule list changes. If a draft's schedule really is gone, everything you typed is kept and you are asked to pick the schedule again rather than the draft failing at save time.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 110
+        },
+        {
           "item_key": "2026-08-01-schedule-save-explains-itself",
           "category": "Calendar",
           "description": "Adding a schedule with no connection now explains itself when it cannot be saved on the device, instead of the Save button appearing to do nothing. Saving without a connection stays limited to new schedules on engineer accounts.",

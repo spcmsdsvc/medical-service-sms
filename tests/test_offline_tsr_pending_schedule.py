@@ -145,26 +145,27 @@ class PendingScheduleDeviceSourceTests(unittest.TestCase):
                         'pending schedules must be merged after every cache write')
 
     def test_pending_options_are_appended_not_prepended(self):
-        """A field regression, and the reason this test is worth its weight.
+        """Kept as the shipped ordering, but no longer the safety mechanism.
 
-        normalizeStandaloneScheduleOptions stamps each option's _offline_uid from its ARRAY
-        INDEX, and that uid is the identity a saved draft stores and later matches on. Putting
-        pending schedules in front renumbers every real schedule, so a draft saved earlier stops
-        matching its own schedule, falls back to a stale snapshot, and the TSR is posted against
-        a shift that may no longer exist -- which is exactly what an engineer hit.
+        This began as the fix for a field regression: option identity was derived from the array
+        index, so putting pending schedules in front renumbered every real schedule and detached
+        saved drafts. Identity is now content-derived, so ordering no longer affects correctness
+        and this assertion only pins where queued schedules appear in the picker. The real guard
+        now lives in tests/test_offline_resilience.py.
         """
         refresh = self.tsr.split('async function refreshStandaloneScheduleOptions(')[1].split('\nfunction ')[0]
         self.assertIn('schedules.concat(pendingOptions)', refresh)
-        self.assertNotIn('pendingOptions.concat(schedules)', refresh)
 
-    def test_the_option_identity_still_depends_on_index(self):
-        """Positive control for the test above.
+    def test_the_option_identity_no_longer_depends_on_index(self):
+        """The successor to a positive control that has now correctly fired.
 
-        If _offline_uid ever stops being index-derived, the append rule is no longer load-bearing
-        and this whole guard should be revisited rather than silently kept.
+        Its predecessor asserted identity WAS index-derived, precisely so that changing it would
+        fail here and force the append rule to be revisited rather than silently kept. That is
+        what happened.
         """
         normalize = self.tsr.split('function normalizeStandaloneScheduleOptions(')[1].split('\nfunction ')[0]
-        self.assertIn('getStandaloneScheduleRuntimeId(schedule, index)', normalize)
+        self.assertNotIn('getStandaloneScheduleRuntimeId(schedule, index)', normalize)
+        self.assertIn('getStandaloneScheduleRuntimeId(schedule)', normalize)
 
     def test_a_missing_schedule_sends_the_engineer_back_to_the_picker(self):
         """A finished TSR must never dead-end because its schedule was deleted."""
