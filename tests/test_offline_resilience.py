@@ -101,6 +101,78 @@ class WeakSignalTSRSaveTests(unittest.TestCase):
         self.assertIn('getStandaloneScheduleRealId(selectedSchedule)', preview)
 
 
+class ShellPrecacheTests(unittest.TestCase):
+    """The app shell is the last-resort offline fallback, so what goes in it matters."""
+
+    @classmethod
+    def setUpClass(cls):
+        source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        cls.precache = source.split('async function precacheShellEntry(cache, url) {')[1].split('\nself.addEventListener')[0]
+        cls.install = source.split("self.addEventListener('install'")[1].split('});')[0]
+
+    def test_a_login_page_is_never_stored_as_a_protected_route(self):
+        """Install was the one write path that did not check this.
+
+        A worker installing while the session is invalid stored the login page under /timeline
+        and /offline-tsr, and offline navigation falls back to the shell.
+        """
+        self.assertIn('isLoginLikeResponse(request, response)', self.precache)
+
+    def test_login_itself_is_still_cached(self):
+        """The signed-out copy of /login is the one login page worth keeping."""
+        self.assertIn("url !== '/login'", self.precache)
+
+    def test_cross_origin_assets_still_use_cache_add(self):
+        """An explicit fetch of a CDN asset is opaque with ok === false, so it would be
+        skipped and bootstrap would stop being available offline."""
+        self.assertIn("if (!url.startsWith('/')) return cache.add(url);", self.precache)
+
+    def test_install_goes_through_the_guarded_helper(self):
+        self.assertIn('precacheShellEntry(cache, url)', self.install)
+        self.assertNotIn('cache.add(url)', self.install)
+
+
+class OfflineQueueUnwrapTests(unittest.TestCase):
+    """A missing IndexedDB record must never read as present."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.module = (ROOT / 'static' / 'js' / 'app-offline-schedule.js').read_text(encoding='utf-8')
+
+    def test_the_result_box_is_unwrapped_by_tag(self):
+        """The old test was `result.value !== undefined`, so a keyed get() that missed handed
+        back the box -- and a box is truthy."""
+        self.assertIn('__isResultBox', self.module)
+        self.assertNotIn('result.value !== undefined ? result.value : result', self.module)
+
+    def test_the_box_is_tagged_where_it_is_created(self):
+        request_value = self.module.split('function requestValue(request) {')[1].split('\n    }')[0]
+        self.assertIn('__isResultBox: true', request_value)
+
+
+class SilentOfflineSaveTests(unittest.TestCase):
+    """A save that cannot happen must say so."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.timeline = (ROOT / 'templates' / 'timeline.html').read_text(encoding='utf-8')
+
+    def test_a_failed_offline_save_is_reported(self):
+        """saveShift() runs from an inline onclick with no catch, so the old rethrow became an
+        unhandled rejection and the button appeared to do nothing at all."""
+        self.assertIn('describeUnavailableOfflineSave', self.timeline)
+        save_shift = self.timeline.split('async function saveShift() {')[1].split('\n    /**')[0]
+        self.assertNotIn('throw networkError;', save_shift)
+
+    def test_each_deliberate_exclusion_is_named(self):
+        """Engineer-only and create-only are decisions from 709106c, not defects. The engineer
+        still has to be told which one they hit."""
+        describe = self.timeline.split('function describeUnavailableOfflineSave(')[1].split('\n    }')[0]
+        self.assertIn('isEditingExisting', describe)
+        self.assertIn('!isEngineer', describe)
+        self.assertIn('isSupported()', describe)
+
+
 class ServiceWorkerCacheVersionTests(unittest.TestCase):
     def test_the_cache_version_moved_for_the_changed_shell(self):
         """/offline-tsr is precached, so devices need the new copy of the page."""

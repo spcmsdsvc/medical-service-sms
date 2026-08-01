@@ -12889,6 +12889,24 @@ if (selectedVal === "Leave") {
         return dates;
     }
 
+    function describeUnavailableOfflineSave(isEditingExisting){
+        // Each branch is a deliberate exclusion from 709106c, not a defect. The engineer just
+        // has to be told which one, and what to do about it.
+        if(isEditingExisting){
+            return 'No connection, so this change was not saved. Editing an existing schedule needs a connection — ' +
+                   'only brand new schedules can be saved on the device and sent later.';
+        }
+        if(!isEngineer){
+            return 'No connection, so this schedule was not saved. Saving without a connection is available on ' +
+                   'engineer accounts only, because schedulers and admins book for several engineers at once.';
+        }
+        if(!window.offlineSchedule?.isSupported()){
+            return 'No connection, so this schedule was not saved. This browser cannot store schedules on the device — ' +
+                   'try the app on the assigned field device.';
+        }
+        return 'No connection, so this schedule was not saved. Reconnect and try again.';
+    }
+
     async function queueScheduleOffline(dataSet, engineerIds, startDate, endDate, startTime, endTime){
         const dates = scheduleDatesBetween(startDate, endDate);
 
@@ -15979,7 +15997,12 @@ async function openTSRClientEmailModal(shiftId){
                 await queueScheduleOffline(dataSet, selectedEngineersUI, selectedStartDate, selectedEndDate, startTimeValue, endTimeValue);
                 return;
             }
-            throw networkError;
+            // saveShift() is called from an inline onclick with no catch, so rethrowing here
+            // became an unhandled rejection: the button did nothing, no message, no closed
+            // modal. Say which of the deliberate limits was hit instead of failing silently.
+            console.warn('[Timeline] Schedule save failed with no offline fallback', networkError);
+            timelineAlert(describeUnavailableOfflineSave(Boolean(activeID)));
+            return;
         }
 
         if (resObj.ok) {

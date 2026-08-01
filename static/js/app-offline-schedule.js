@@ -78,7 +78,11 @@
                     reject(err);
                     return;
                 }
-                transaction.oncomplete = function () { resolve(result && result.value !== undefined ? result.value : result); };
+                // Unwrap by tag, never by whether the value happens to be defined. The old
+                // test handed the box itself back when a keyed get() missed, and a box is
+                // truthy -- so `if (row)` read a missing record as found. That is exactly how
+                // an orphaned TSR ended up waiting for a schedule that was never coming.
+                transaction.oncomplete = function () { resolve(result && result.__isResultBox ? result.value : result); };
                 transaction.onerror = function () { reject(transaction.error); };
                 transaction.onabort = function () { reject(transaction.error); };
             });
@@ -86,7 +90,7 @@
     }
 
     function requestValue(request) {
-        var box = { value: undefined };
+        var box = { __isResultBox: true, value: undefined };
         request.onsuccess = function () { box.value = request.result; };
         return box;
     }

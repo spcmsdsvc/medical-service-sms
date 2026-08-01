@@ -1210,6 +1210,15 @@
           "sort_order": 60
         },
         {
+          "item_key": "2026-08-01-schedule-save-explains-itself",
+          "category": "Calendar",
+          "description": "Adding a schedule with no connection now explains itself when it cannot be saved on the device, instead of the Save button appearing to do nothing. Saving without a connection stays limited to new schedules on engineer accounts.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 100
+        },
+        {
           "item_key": "2026-08-01-tsr-weak-signal-queue",
           "category": "Create TSR",
           "description": "A TSR now queues when your phone shows a connection but the server cannot be reached. Previously only a fully offline phone queued, so saving in a weak signal area failed outright instead of holding the TSR for later.",

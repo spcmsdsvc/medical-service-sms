@@ -14431,7 +14431,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v59-weak-signal-resilience';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v60-shell-and-save-clarity';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -14466,12 +14466,31 @@ const FIELD_SAFE_ROUTES = [
   '/offline'
 ];
 
+async function precacheShellEntry(cache, url) {
+  // Cross-origin CDN assets keep using cache.add: an explicit fetch of those returns an
+  // opaque response with ok === false, which this function would then refuse to store.
+  if (!url.startsWith('/')) return cache.add(url);
+
+  const request = new Request(url, { credentials: 'same-origin' });
+  const response = await fetch(request);
+  if (!response || !response.ok) return;
+
+  // Every other write path checks this; install did not. A worker installing while the
+  // session is invalid -- a first visit, or an expired cookie -- stored the login page under
+  // /timeline and /offline-tsr, and the shell is the last-resort offline fallback. Better to
+  // have no entry at all: the runtime cache is filled by the first successful online load.
+  // /login is the one route whose login page IS the thing worth keeping.
+  if (url !== '/login' && isLoginLikeResponse(request, response)) return;
+
+  await cache.put(request, response.clone());
+}
+
 self.addEventListener('install', event => {
   self.skipWaiting();
 
   event.waitUntil(
     caches.open(APP_SHELL_CACHE).then(cache => {
-      return Promise.allSettled(APP_SHELL.map(url => cache.add(url)));
+      return Promise.allSettled(APP_SHELL.map(url => precacheShellEntry(cache, url)));
     })
   );
 });
