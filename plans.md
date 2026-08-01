@@ -37,6 +37,187 @@ separately says to start. See `AGENTS.md`, "Approved Plans", for the full statem
 
 ---
 
+## A — Give schedule options an identity that does not depend on list position
+
+**Status:** `Approved — awaiting go-ahead`
+**Approved:** 2026-08-01
+**Raised by:** the offline audit, after this exact defect reached the field.
+
+### Context
+
+`normalizeStandaloneScheduleOptions` (`templates/offline_tsr.html:1390`) stamps every picker
+option with `_offline_uid = getStandaloneScheduleRuntimeId(schedule, index)` — **derived from
+the option's position in the array**. That string is the identity a saved TSR draft stores in
+`selectedScheduleId` and later matches on, so anything that changes list composition renumbers
+every option after it and detaches drafts from their schedules.
+
+It has already caused one field incident: the pending-schedule merge prepended queued schedules,
+`4821::2026-07-31::09:00-11:00::0` became `...::2`, and a draft stopped matching its own
+schedule (fixed in `e12a439` by appending). **Appending only made it rarer.** A schedule added
+or removed server-side, a queued schedule syncing away, or a different week loading still
+renumbers everything after the change.
+
+Today the damage is usually absorbed: `getSelectedStandaloneSchedule` (`:2434`) falls back to
+the draft's `selectedSchedule` snapshot, which normally carries the right id. The failure is
+therefore quiet and intermittent, which is precisely why it should not be left.
+
+**Intended outcome:** an option's identity is a function of the schedule, not of where it
+happens to sit in an array, and drafts saved under the old scheme still resolve.
+
+### What the change touches
+
+Identity is **produced** in three places and **consumed** through one function, which is what
+makes this contained:
+
+| Produced | Line |
+| --- | --- |
+| `normalizeStandaloneScheduleOptions` — every option, from the array index | `:1390` |
+| `ensureStandaloneScheduleOptionFromContext` — uses `standaloneScheduleOptions.length` | `:1357` |
+| `readPendingScheduleOptions` — `pending::<token>::<date>::<i>`, already content-derived | `:1528` |
+
+Every consumer goes through `getStandaloneScheduleRuntimeId` (`:1209`), which returns
+`_offline_uid` when present — so fixing the producers fixes all eleven call sites without
+touching them: `:1421`, `:1654`, `:1655`, `:1692`, `:1697`, `:1701`, `:1788`, `:1800`, `:1921`,
+`:1972`, `:2434`, `:2837`, `:3053`, `:6956`.
+
+### The scheme
+
+New `buildStableScheduleOptionUid(schedule)`, used by all three producers:
+
+- **Real server schedule** → `shift::<id>::<date_iso>`. The date is included because a
+  multi-day chain shares one shift id per row in some sources, and a TSR is written for a day.
+- **Queued offline schedule** → `pending::<creation_token>::<date_iso>` — what
+  `readPendingScheduleOptions` already does, minus the trailing index.
+- **Snapshot-sourced entry with no id** → `snap::<hash>` where the hash is a stable digest of
+  `client_id|product_id|date_iso|time_start|time_end|task`, lower-cased and trimmed. Same
+  inputs as the existing `getStandaloneScheduleGroupKey` (`:1393`), so it is already the
+  project's notion of "the same schedule".
+
+**Accepted collision:** two genuinely identical entries — same client, product, date and times —
+collapse to one uid. They are interchangeable for writing a TSR, and today they already collapse
+in `getStandaloneScheduleGroupKey`. Recording it here so it is a decision, not a surprise.
+
+### Migration, and the part that carries the risk
+
+Every draft already on a device holds an old index-shaped uid, `base::date::time::index`. They
+must not detach on the day this ships — a mass detach would be far worse than today's
+occasional one.
+
+Add a legacy read path in `getSelectedStandaloneSchedule` (`:2434`), tried **only after** an
+exact `_offline_uid` match fails and **before** the snapshot fallback:
+
+1. If `selectedStandaloneScheduleId` contains `::`, take the segment before the first `::` —
+   in the old scheme that is `schedule.id` whenever the schedule had one, which is the
+   overwhelming majority.
+2. Match an option whose `getStandaloneScheduleRealId(item)` equals that segment, and whose
+   date matches the old uid's second segment when both are present.
+3. Only then fall through to `selectedStandaloneScheduleSnapshot` as today.
+
+Do **not** rewrite stored drafts. Matching is enough, it is reversible, and a migration that
+edits every draft on the device is a much larger blast radius than the bug being fixed.
+
+### Deliberately excluded
+
+- **Changing what a draft stores.** Only how a stored value is matched.
+- **Touching the offline schedule queue's own identity.** Its key is the creation token and it
+  has never been position-derived.
+- **Deduplicating the picker.** Tempting alongside a content hash, and a separate decision.
+
+### Verification
+
+New tests in `tests/test_offline_resilience.py`, in the house style with positive controls:
+
+- **The identity is stable under reordering** — build an option list, capture the uids, insert
+  an entry at the front, and assert every original uid is unchanged. Positive control: the same
+  assertion against the old index-derived function must fail.
+- **The three producers agree** — a real schedule, a queued one and a snapshot entry each
+  produce the documented shape, and `normalizeStandaloneScheduleOptions` no longer passes an
+  index.
+- **A legacy draft still resolves** — an old `4821::2026-07-31::09:00-11:00::0` value finds the
+  option whose real id is `4821`. Positive control: a legacy value whose id is not in the list
+  must still fall through to the snapshot rather than matching something else.
+- **A legacy value never matches the wrong schedule** — two options sharing a date but not an
+  id; the old-format value must resolve to the one whose id matches, or to nothing.
+- Source assertion: `getStandaloneScheduleRuntimeId` is no longer called with an index argument
+  anywhere.
+
+Browser, against a real seeded engineer: save a draft, force the option list to reorder (queue a
+schedule so a pending entry appears, then let it sync so it disappears), reopen the draft and
+confirm it still selects its own schedule and still saves. Then repeat with a draft written
+**before** the change is deployed — that is the migration path and the only way to prove it.
+
+Bump the service worker; `/offline-tsr` is precached.
+
+### Risks worth stating
+
+- **This changes the identity of every option on every device at once.** The legacy read path is
+  the whole safety net, and it is the part to test hardest.
+- The old scheme's first segment is only the shift id *when the schedule had one*. Entries that
+  fell back to `client_id` or `client_name` produce a legacy value that cannot be resolved by id
+  and will land on the snapshot — the same place they land today.
+
+---
+
+## B — Decide the offline TSR queue's storage strategy
+
+**Status:** `Approved — awaiting go-ahead`
+**Approved:** 2026-08-01
+**Blocked on a decision the owner has not yet made — see below. Do not start without it.**
+
+### Context
+
+`writeOfflineTSRQueueLocalStorageFallback` (`templates/offline_tsr.html:3267`) serialises the
+whole queue and writes it to **two** localStorage keys, and
+`prepareOfflineTSRQueueItemBlobs` (`:3473`) keeps the base64 `pdf_data_url` on the record when
+the IndexedDB blob write fails. So the same multi-megabyte payload is written twice into a
+5–10 MB store — precisely when storage is already under pressure, which is the condition that
+made the blob write fail in the first place.
+
+`normalizeOfflineTSRQueue` (`:4109`) does not strip heavy fields, so nothing else prevents it.
+
+### The decision that must come first
+
+Stripping the PDF from the localStorage mirror is the obvious move, and it is wrong on its own:
+**the mirror is the only copy when IndexedDB is unavailable**, which is exactly the case the
+fallback exists to serve. So the real question is:
+
+> **Is a TSR queued on a device with no working blob storage worth keeping at all, or should
+> that device refuse to queue and tell the engineer to stay online?**
+
+A queue that silently cannot hold the PDF is worse than one that says so — the engineer believes
+the work is saved. That is the same principle already applied to offline schedule attachments in
+`pending-work.md`.
+
+**Recommendation: refuse to queue when the blob store is unavailable.** Say so plainly, keep the
+localStorage mirror as metadata only, and drop the duplicate backup key. Storage becomes bounded
+and the failure becomes loud. The cost is a rare "cannot queue here" on a device that today
+would have queued something probably unusable.
+
+### Scope once decided
+
+- One localStorage key, metadata only: id, status, tokens, client, timestamps, sync state. No
+  `pdf_data_url`, no attachment data URLs.
+- `prepareOfflineTSRQueueItemBlobs` stops silently keeping the data URL on blob-write failure;
+  it surfaces the failure to the caller.
+- A storage-pressure warning **before** the queue grows large, using `navigator.storage.estimate()`
+  where available, rather than after a write has already failed.
+- Keep the existing "browser storage is full" message as the last resort.
+
+### Deliberately excluded
+
+- Changing the IndexedDB blob layout. It works; this is about the fallback around it.
+- The offline schedule queue's attachments — a separate open item, still unverified on a real
+  device camera.
+
+### Verification
+
+- A queue item's localStorage form contains no base64 payload, with a positive control asserting
+  the IndexedDB record still does.
+- A simulated blob-write failure surfaces rather than silently degrading.
+- Real device: fill storage, confirm the engineer is told before the queue is compromised.
+
+---
+
 ## Create a TSR against a schedule that has not synced yet
 
 **Status:** `Executed`
