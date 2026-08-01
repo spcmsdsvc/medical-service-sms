@@ -1210,6 +1210,24 @@
           "sort_order": 60
         },
         {
+          "item_key": "2026-08-01-tsr-weak-signal-queue",
+          "category": "Create TSR",
+          "description": "A TSR now queues when your phone shows a connection but the server cannot be reached. Previously only a fully offline phone queued, so saving in a weak signal area failed outright instead of holding the TSR for later.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 80
+        },
+        {
+          "item_key": "2026-08-01-offline-assets-after-update",
+          "category": "Calendar",
+          "description": "After the app updates, adding a schedule with no signal keeps working. Previously an update followed by losing signal before opening the app once online could quietly disable offline schedule creation.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 90
+        },
+        {
           "item_key": "2026-08-01-tsr-schedule-selection-fix",
           "category": "Create TSR",
           "description": "Fixed a saved TSR draft losing track of its schedule, which caused \"Selected schedule was not found\" when saving. If a schedule really has been deleted, the TSR now keeps your work and takes you straight to the schedule picker instead of stopping.",

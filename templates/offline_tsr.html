@@ -5298,6 +5298,7 @@ async function beginStandaloneTSRFinalPreview(data){
   try{
     let revisionReason = '';
     let payload = null;
+    let queuedForWeakSignal = false;
     const isRevision = Boolean(onlineTSRRevisionContext);
     if(isRevision){
       revisionReason = await offlineTSRPrompt({
@@ -5320,20 +5321,41 @@ async function beginStandaloneTSRFinalPreview(data){
         revision_reason: revisionReason,
         parent_submission_id: onlineTSRRevisionContext.submission_id
       });
-    }else if(navigator.onLine){
-      payload = await prepareTSRForFinalSave(data, { assignNumber:true });
     }else{
-      const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule();
-      payload = Object.assign({}, data || {}, {
-        schedule_id: getStandaloneScheduleRealId(selectedSchedule) || data?.schedule_id || '',
-        pending_schedule_token: selectedSchedule?.pending_schedule_token || data?.pending_schedule_token || '',
-        selectedSchedule: selectedSchedule || data?.selectedSchedule || null,
-        completion_scope: data?.completion_scope || await chooseTSRCompletionScope(selectedSchedule)
-      });
+      // Weak signal is not the same as no signal, and it is the case that actually bites in
+      // the field: navigator.onLine reports a live radio while the server is unreachable.
+      // Assigning the TSR number needs the server, so gating the offline shape on
+      // navigator.onLine alone meant the number fetch threw, the preview never opened, and
+      // the TSR was never queued -- the engineer simply lost the save. The schedule queue
+      // has handled this since 709106c; this is the TSR side catching up.
+      const buildOfflineShapedPayload = async () => {
+        const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule();
+        return Object.assign({}, data || {}, {
+          schedule_id: getStandaloneScheduleRealId(selectedSchedule) || data?.schedule_id || '',
+          pending_schedule_token: selectedSchedule?.pending_schedule_token || data?.pending_schedule_token || '',
+          selectedSchedule: selectedSchedule || data?.selectedSchedule || null,
+          completion_scope: data?.completion_scope || await chooseTSRCompletionScope(selectedSchedule)
+        });
+      };
+
+      if(navigator.onLine){
+        try{
+          payload = await prepareTSRForFinalSave(data, { assignNumber:true });
+        }catch(prepareError){
+          // Only a connection-shaped failure falls back. A refusal the server actually meant
+          // -- a rejected number, a permission error -- must still stop and be shown.
+          if(!isRetriableTSRSyncError(prepareError)) throw prepareError;
+          console.warn('[Offline TSR] Number assignment unreachable, queueing instead', prepareError);
+          queuedForWeakSignal = true;
+          payload = await buildOfflineShapedPayload();
+        }
+      }else{
+        payload = await buildOfflineShapedPayload();
+      }
     }
     payload.submission_token = ensureTSRSubmissionToken(payload.submission_token);
     const pdfPackage = await buildStandaloneTSRPDFBlobForUpload(payload);
-    const offlineNote = !navigator.onLine && !isRevision
+    const offlineNote = (!navigator.onLine || queuedForWeakSignal) && !isRevision
       ? 'Offline mode: this exact PDF will be queued now. The TSR number may be reconfirmed during sync.'
       : '';
     await showFinalTSRPreview(payload, pdfPackage, { isRevision, revisionReason, note: offlineNote });

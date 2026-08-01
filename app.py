@@ -14431,7 +14431,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v58-schedule-identity-fix';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v59-weak-signal-resilience';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -14591,13 +14591,28 @@ async function cacheFirst(request) {
   const cached = await caches.match(request);
   if (cached) return cached;
 
-  const response = await fetch(request);
-  if (response && response.ok) {
-    const cache = await caches.open(APP_SHELL_CACHE);
-    cache.put(request, response.clone());
-  }
+  try {
+    const response = await fetch(request);
+    if (response && response.ok) {
+      const cache = await caches.open(APP_SHELL_CACHE);
+      cache.put(request, response.clone());
+    }
 
-  return response;
+    return response;
+  } catch (err) {
+    // Offline, and this exact URL is not cached. Assets carry a ?v= cache-buster and the
+    // cache key includes the query, so a version bump asks for a URL that has never been
+    // stored -- while the precache holds the identical file under its bare path. Without
+    // this fallback the script simply fails to load, and for app-offline-schedule.js that
+    // silently removes offline schedule creation on exactly the device that needs it.
+    //
+    // Deliberately after the network attempt, never before it: while online the exact
+    // versioned URL must still win, or a bumped asset would keep serving the old copy.
+    const versionAgnostic = await caches.match(request, { ignoreSearch: true });
+    if (versionAgnostic) return versionAgnostic;
+
+    throw err;
+  }
 }
 
 async function staleWhileRevalidate(request) {
