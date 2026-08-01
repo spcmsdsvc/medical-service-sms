@@ -41,7 +41,19 @@ separately says to start. See `AGENTS.md`, "Approved Plans", for the full statem
 
 **Status:** `Approved — awaiting go-ahead`
 **Approved:** 2026-08-01
+**Detailed:** 2026-08-01, on the owner's instruction to plan it carefully against the constraint
+that **the workflow must not be affected once this is live**. That pass changed the plan
+materially — see "What the detailed pass changed" below. Still not started.
 **Raised by:** the offline audit, after this exact defect reached the field.
+
+### Owner's decisions
+
+1. An unmatched draft **keeps the engineer's work** and asks them to re-pick the schedule. It
+   never silently guesses which schedule was meant.
+2. The old identity format stays understood **permanently**. Drafts sit on field devices for
+   months, and the server keeps returning old-format ids through the revision path, so there is
+   no safe date to remove it.
+3. Straight to live, **verified against drafts saved under the old format first**.
 
 ### Context
 
@@ -97,28 +109,71 @@ New `buildStableScheduleOptionUid(schedule)`, used by all three producers:
 collapse to one uid. They are interchangeable for writing a TSR, and today they already collapse
 in `getStandaloneScheduleGroupKey`. Recording it here so it is a decision, not a surprise.
 
-### Migration, and the part that carries the risk
+### What the detailed pass changed
 
-Every draft already on a device holds an old index-shaped uid, `base::date::time::index`. They
-must not detach on the day this ships — a mass detach would be far worse than today's
-occasional one.
+Three findings, and the first one is the whole answer to "will the workflow be affected":
 
-Add a legacy read path in `getSelectedStandaloneSchedule` (`:2434`), tried **only after** an
-exact `_offline_uid` match fails and **before** the snapshot fallback:
+- **The real risk is data loss, not mismatching.** `applyScheduleToStandaloneTSR` (`:1921`)
+  compares the computed uid against the stored one and, when they differ, calls
+  `clearStandaloneTSRWorkFieldsForScheduleChange()` and wipes `standaloneCurrentDraftId`. Swap
+  the identity function naively and that fires for **every** engineer on their first schedule
+  re-selection, erasing typed TSR content. This single line governs the blast radius.
+- **The options localStorage cache does not persist `_offline_uid`.**
+  `cacheStandaloneScheduleOptions` is only ever called with raw server/snapshot arrays, before
+  `normalizeStandaloneScheduleOptions` runs, so uids are recomputed on every page load. But
+  draft, queue and server `payload_json` records **do** freeze a `selectedSchedule` snapshot
+  carrying the old uid, and `getStandaloneScheduleRuntimeId` returns `_offline_uid` first
+  (`:1211`) — so a rehydrated snapshot yields the stale value.
+- **A stale id can never mis-file a TSR.** The server's `clean_int` returns `None` for
+  `12::2026-08-01::09:00-11:00::0`, so the worst case is the 400 that is already handled, never a
+  report saved against the wrong shift. That bounds the whole change.
 
-1. If `selectedStandaloneScheduleId` contains `::`, take the segment before the first `::` —
-   in the old scheme that is `schedule.id` whenever the schedule had one, which is the
-   overwhelming majority.
-2. Match an option whose `getStandaloneScheduleRealId(item)` equals that segment, and whose
-   date matches the old uid's second segment when both are present.
-3. Only then fall through to `selectedStandaloneScheduleSnapshot` as today.
+### Always compute, never trust a stored uid
 
-Do **not** rewrite stored drafts. Matching is enough, it is reversible, and a migration that
-edits every draft on the device is a much larger blast radius than the bug being fixed.
+`getStandaloneScheduleRuntimeId(schedule)` drops both the `_offline_uid` early return and the
+`index` parameter, delegating to `buildStableScheduleOptionUid`. This is what neutralises the
+frozen-snapshot problem: a snapshot rehydrated from a draft now yields the new canonical uid
+because it is computed from the schedule's own fields. `normalizeStandaloneScheduleOptions` and
+`ensureStandaloneScheduleOptionFromContext` (`:1357`, which also uses
+`standaloneScheduleOptions.length` today) stop passing an index.
+
+### One comparison helper, used everywhere stored meets computed
+
+New `isSameScheduleSelection(storedId, schedule)`, true when any of: the canonical uid matches;
+`storedId === String(schedule.id)` (the existing real-id arm at `:2434`); or the **legacy** case —
+`storedId` contains `::` and its first segment equals `getStandaloneScheduleRealId(schedule)`, or
+is `pending` with a matching token, with the old second segment matching the date when present.
+
+Apply it only where the other side can be a *persisted* value: `:1655`, `:1692`, `:1697`, `:1921`,
+`:2434`, `:2837`, `:3053`. The remaining call sites compare freshly rendered values within one
+pass and need no change. `:6956` looks unreachable but was not proven so — route it through the
+helper rather than special-casing it.
+
+### Self-healing, with no bulk rewrite
+
+Whenever a stored selection resolves — draft open, revision load — set
+`selectedStandaloneScheduleId` to the **canonical** uid immediately, so the next save persists the
+new format and devices migrate as they are used. Do **not** rewrite stored drafts in bulk:
+matching is reversible, editing every draft on a device is not.
+
+### Protecting in-progress work — the part that must be right
+
+- `:1922` becomes `if(!isSameScheduleSelection(selectedStandaloneScheduleId, schedule))`, so a
+  legacy id referring to the same schedule no longer reads as a change and nothing is cleared.
+- When a draft's stored selection resolves to **nothing**, clear the selection, leave every field
+  untouched, and ask the engineer to pick the schedule again. `updateCreateTSRScheduleGate`
+  disables the fields but they keep their values.
+- Set a module flag while that draft awaits a re-pick, and have `applyScheduleToStandaloneTSR`
+  skip `clearStandaloneTSRWorkFieldsForScheduleChange()` once for that selection. **Without this
+  the re-pick itself wipes the work just preserved**, because the selection moves from `''` to a
+  real uid and that reads as a schedule change.
 
 ### Deliberately excluded
 
 - **Changing what a draft stores.** Only how a stored value is matched.
+- **Rewriting `resolveStandaloneTSRDraftId`.** `_draft_id` short-circuits on reopen, so existing
+  drafts keep their key; only a pending-schedule draft saved fresh gets the new key shape.
+- **Server changes.** `clean_int` already refuses composites.
 - **Touching the offline schedule queue's own identity.** Its key is the creation token and it
   has never been position-derived.
 - **Deduplicating the picker.** Tempting alongside a content hash, and a separate decision.
@@ -141,10 +196,23 @@ New tests in `tests/test_offline_resilience.py`, in the house style with positiv
 - Source assertion: `getStandaloneScheduleRuntimeId` is no longer called with an index argument
   anywhere.
 
-Browser, against a real seeded engineer: save a draft, force the option list to reorder (queue a
-schedule so a pending entry appears, then let it sync so it disappears), reopen the draft and
-confirm it still selects its own schedule and still saves. Then repeat with a draft written
-**before** the change is deployed — that is the migration path and the only way to prove it.
+- **The work-field guard does not fire for a legacy id of the same schedule** — the regression
+  that would erase typed content, and the single most important assertion in the set.
+
+**Browser, and this is the test that decides whether it ships.** Isolated database, port 5056,
+never 5000, as a real seeded engineer:
+
+1. **On the current code**, save two drafts — one against a normal schedule, one against a queued
+   offline schedule — and confirm the old-format ids are in IndexedDB. This snapshot of "before"
+   is the only way to test the upgrade honestly, and it cannot be recreated afterwards.
+2. Switch to the new code, restart the server (Jinja caches compiled templates), unregister the
+   worker and clear **both** caches.
+3. Reopen each draft: it must select its own schedule, keep every typed field, and save.
+4. Re-pick the schedule on an open draft and confirm the work is **not** cleared.
+5. Force an unmatched draft by editing its stored id to a dead one: work preserved, prompt shown,
+   re-pick, then save — with no field wiped at any point.
+6. Reorder the list for real — queue a schedule so a pending option appears, then sync it so it
+   disappears — and confirm an open draft still matches throughout.
 
 Bump the service worker; `/offline-tsr` is precached.
 
