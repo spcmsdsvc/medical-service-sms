@@ -13,8 +13,17 @@
     'use strict';
 
     var DB_NAME = 'medical_service_offline_schedule_db';
-    var DB_VERSION = 1;
-    var STORES = { queue: 'queue', attachments: 'attachments', reference: 'reference' };
+    var DB_VERSION = 2;
+    var STORES = {
+        queue: 'queue',
+        attachments: 'attachments',
+        reference: 'reference',
+        // Version 2 added `resolved`: what a synced schedule turned into on the server, kept
+        // after the queue row itself is gone so a TSR queued behind it can still find its
+        // shift. It is deliberately not folded into `reference`, whose records are all
+        // {key, savedAt, rows} and read by getCachedList as arrays.
+        resolved: 'resolved'
+    };
 
     var PING_URL = '/offline_tsr_sync_ping';
     var SUBMIT_URL = '/add_shift';
@@ -47,6 +56,9 @@
                 }
                 if (!db.objectStoreNames.contains(STORES.reference)) {
                     db.createObjectStore(STORES.reference, { keyPath: 'key' });
+                }
+                if (!db.objectStoreNames.contains(STORES.resolved)) {
+                    db.createObjectStore(STORES.resolved, { keyPath: 'token' });
                 }
             };
             request.onsuccess = function () { resolve(request.result); };
@@ -338,6 +350,77 @@
         });
     }
 
+    /* ---------------------------------------------------------------------
+       What a queued schedule became on the server.
+
+       The queue row is deleted the moment it syncs, but a TSR queued behind that schedule
+       still needs to know which shift it turned into. That answer is kept here, keyed by the
+       creation token the TSR already holds, and it outlives the queue row on purpose.
+       --------------------------------------------------------------------- */
+
+    function mappingFailure(message) {
+        var error = new Error(message);
+        error.mappingFailure = true;
+        return Promise.reject(error);
+    }
+
+    function recordResolved(token, body) {
+        if (!token) return mappingFailure('A synced schedule must carry its token.');
+        var shiftIds = (body && Array.isArray(body.shift_ids)) ? body.shift_ids : [];
+        if (!shiftIds.length) {
+            // The server owes us ids for anything sent with a token. Failing here rather than
+            // shrugging keeps the queue row alive, and the replay path hands the ids back on
+            // the next pass -- see the success branch of sendOne.
+            return mappingFailure('The server did not say which schedule it created.');
+        }
+        return withStore(STORES.resolved, 'readwrite', function (store) {
+            store.put({
+                token: token,
+                groupId: (body && body.group_id) || null,
+                shiftIds: shiftIds,
+                shiftDates: (body && Array.isArray(body.shift_dates)) ? body.shift_dates : [],
+                resolvedAt: new Date().toISOString()
+            });
+        }).then(function () { return true; }).catch(function (err) {
+            console.warn('[OfflineSchedule] Unable to record the synced schedule', err);
+            return mappingFailure('This device could not store which schedule was created.');
+        });
+    }
+
+    function resolveToken(token) {
+        if (!isSupported() || !token) return Promise.resolve(null);
+        return withStore(STORES.resolved, 'readonly', function (store) {
+            return requestValue(store.get(token));
+        }).then(function (row) {
+            // Same box caveat as hasQueued: a missing key yields a truthy placeholder, so the
+            // shape is what decides, never the row's own truthiness.
+            return (row && Array.isArray(row.shiftIds) && row.shiftIds.length) ? row : null;
+        }).catch(function () { return null; });
+    }
+
+    function hasQueued(token) {
+        // The queue's primary key is the creation token itself, so this is a direct lookup.
+        // It is what tells a waiting TSR apart from an orphaned one: still queued means keep
+        // waiting, gone means the schedule was removed and the TSR needs a new one.
+        if (!isSupported() || !token) return Promise.resolve(false);
+        return withStore(STORES.queue, 'readonly', function (store) {
+            return requestValue(store.get(token));
+        }).then(function (row) {
+            // Test a field, not the row itself. A missing key leaves requestValue's box
+            // undefined, and withStore then hands back the box -- which is truthy. Reading
+            // that as "still queued" would leave an orphaned TSR waiting for a schedule that
+            // is never coming, instead of asking the engineer to pick a new one.
+            return Boolean(row && row.id);
+        }).catch(function () { return false; });
+    }
+
+    function forgetResolved(token) {
+        if (!isSupported() || !token) return Promise.resolve(false);
+        return withStore(STORES.resolved, 'readwrite', function (store) {
+            store.delete(token);
+        }).then(function () { return true; }).catch(function () { return false; });
+    }
+
     function updateItem(id, changes) {
         return withStore(STORES.queue, 'readwrite', function (store) {
             var getRequest = store.get(id);
@@ -470,8 +553,21 @@
                 body: body
             }).then(function (response) {
                 if (response.ok) {
-                    outcome.synced += 1;
-                    return discard(item.id);
+                    // Order matters. The shift ids are written against the token *before* the
+                    // queue row is dropped, so a TSR waiting on this schedule can never find
+                    // the row gone and the answer missing. If the write fails we do not
+                    // discard: the item stays queued, and replaying it returns the same ids
+                    // rather than creating a second schedule.
+                    return response.json().catch(function () { return {}; }).then(function (payload) {
+                        return recordResolved(item.creationToken || item.id, payload);
+                    }).then(function () {
+                        return discard(item.id);
+                    }).then(function () {
+                        // Counted last: an item still sitting in the queue must never be
+                        // reported to the engineer as synced.
+                        outcome.synced += 1;
+                        return true;
+                    });
                 }
 
                 return response.json().catch(function () { return {}; }).then(function (payload) {
@@ -499,6 +595,15 @@
                 });
             }).catch(function (error) {
                 if (/session expired/i.test(error.message || '')) throw error;
+                if (error && error.mappingFailure) {
+                    // The schedule did reach the server; this device just could not write down
+                    // what it became. Say that plainly rather than calling it a lost
+                    // connection. The item stays queued and the next replay is idempotent.
+                    return updateItem(item.id, {
+                        lastError: error.message + ' It will be confirmed on the next sync.',
+                        attempts: (item.attempts || 0) + 1
+                    });
+                }
                 // Network failure: leave it queued exactly as it is.
                 return updateItem(item.id, {
                     lastError: 'Connection failed. This schedule is still queued.',
@@ -526,6 +631,9 @@
         enqueue: enqueue,
         list: list,
         discard: discard,
+        resolveToken: resolveToken,
+        hasQueued: hasQueued,
+        forgetResolved: forgetResolved,
         sync: syncQueue,
         onChange: onChange
     };

@@ -1146,6 +1146,60 @@
           "sort_order": 50
         }
       ]
+    },
+    {
+      "release_key": "2026-08-01",
+      "release_date": "2026-08-01",
+      "title": "Write the TSR Before the Schedule Syncs",
+      "summary": "A schedule added with no signal can now have its TSR written on site straight away, instead of waiting for the schedule to reach the server first.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-01-tsr-on-queued-schedule",
+          "category": "Create TSR",
+          "description": "Create TSR now works on a schedule that is still waiting to sync. Tap Create TSR on the card exactly as you would for a saved schedule, and write the report on site while the details are fresh.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-01-tsr-waits-for-its-schedule",
+          "category": "Create TSR",
+          "description": "A TSR written this way is sent only after its schedule has reached the server and been given its place on the calendar, so the two always end up linked. Until then it shows as waiting for its schedule.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-08-01-tsr-multi-day-service-date",
+          "category": "Create TSR",
+          "description": "On a multi-day schedule the TSR is filed against the day you actually did the work, taken from the service date on the report rather than the first day of the range.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-08-01-tsr-picker-shows-queued",
+          "category": "Create TSR",
+          "description": "Schedules still waiting to sync now appear in the schedule picker on the Create TSR page, marked as waiting to sync, so you can find them from the sidebar as well as from the calendar card.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 40
+        },
+        {
+          "item_key": "2026-08-01-tsr-never-lost",
+          "category": "Create TSR",
+          "description": "If the schedule a TSR was written for is removed from the queue, the TSR is kept rather than deleted with it. It asks you to pick a schedule instead, so work written in the field is never lost.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 50
+        }
+      ]
     }
   ]
 }

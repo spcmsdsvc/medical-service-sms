@@ -1,6 +1,12 @@
 {% extends "layout.html" %}
 
 {% block content %}
+{# The schedule queue module, loaded here as well as on the timeline. A TSR written against a
+   queued schedule has to ask that queue what the schedule turned into, and going through the
+   module's own API is the only safe way to reach its database: opening it by name from this
+   page would create an empty copy with no object stores on any device where the timeline has
+   not run yet, and every later read would fail. #}
+<script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 <div class="offline-tsr-page">
   <div class="offline-tsr-hero no-print">
     <div>
@@ -821,7 +827,10 @@ async function chooseTSRCompletionScope(schedule){
 async function prepareTSRForFinalSave(data, { assignNumber=true, completionScope=null } = {}){
   const selectedSchedule = data?.selectedSchedule || (data?.schedule_id || data?.selectedScheduleId ? null : getSelectedStandaloneSchedule());
   const payload = Object.assign({}, data || {}, {
-    schedule_id: selectedSchedule?.id || data?.schedule_id || '',
+    schedule_id: getStandaloneScheduleRealId(selectedSchedule) || data?.schedule_id || '',
+    // Carried explicitly. It would otherwise survive only inside selectedSchedule, and a
+    // payload that loses the token cannot find its queued schedule again.
+    pending_schedule_token: selectedSchedule?.pending_schedule_token || data?.pending_schedule_token || '',
     selectedSchedule: selectedSchedule || data?.selectedSchedule || null
   });
   payload.submission_token = ensureTSRSubmissionToken(payload.submission_token);
@@ -1191,7 +1200,10 @@ function getScheduleOptionLabel(schedule){
   const product = getScheduleProductLabel(schedule);
   const date = schedule.date_label || schedule.date_iso || '';
   const time = [schedule.time_start, schedule.time_end].filter(Boolean).join('-');
-  return `${date} ${time} — ${client} — ${product}`.trim();
+  const label = `${date} ${time} — ${client} — ${product}`.trim();
+  // Say plainly that this schedule has not reached the server yet, so the engineer knows the
+  // TSR will wait behind it rather than sending straight away.
+  return schedule.pending_schedule_token ? `Waiting to sync — ${label}` : label;
 }
 
 function getStandaloneScheduleRuntimeId(schedule, index=0){
@@ -1204,20 +1216,29 @@ function getStandaloneScheduleRuntimeId(schedule, index=0){
 }
 
 function getStandaloneScheduleRealId(schedule){
-  return String(schedule?.id || schedule?.schedule_id || schedule?.shift_id || '').trim();
+  // Numeric only, and deliberately so. The runtime picker id can be a composite like
+  // "12::2026-08-01::09:00-11:00::0"; letting one of those through here sends it to the server
+  // as schedule_id, where clean_int rejects it with a 400 the sync queue treats as fatal --
+  // the TSR then parks forever. A pending schedule has no real id at all and must return ''.
+  if(schedule?.pending_schedule_token) return '';
+  const raw = String(schedule?.id || schedule?.schedule_id || schedule?.shift_id || '').trim();
+  return /^\d+$/.test(raw) ? raw : '';
 }
 
 function normalizeStandaloneCreateTSRContext(rawContext){
   const ctx = rawContext && typeof rawContext === 'object' ? rawContext : {};
   const shiftId = ctx.shift_id || ctx.schedule_id || ctx.id || '';
   const dateIso = ctx.date || ctx.day_iso || ctx.dayIso || ctx.start_date || ctx.date_iso || '';
+  // A schedule still sitting in the device queue arrives by creation token instead of id.
+  const pendingToken = ctx.pending_schedule_token || ctx.pending_schedule || '';
 
-  if(!shiftId && !ctx.client_name && !ctx.product_name && !ctx.task) return null;
+  if(!shiftId && !pendingToken && !ctx.client_name && !ctx.product_name && !ctx.task) return null;
 
   return {
     id: shiftId,
     schedule_id: shiftId,
     shift_id: shiftId,
+    pending_schedule_token: pendingToken,
     date_iso: String(dateIso || '').slice(0, 10),
     date_label: String(dateIso || '').slice(0, 10),
     start_date: String(ctx.start_date || dateIso || '').slice(0, 10),
@@ -1249,6 +1270,7 @@ function getStandaloneCreateTSRHandoffContext(){
     schedule_id: params.get('schedule_id') || '',
     shift_id: params.get('schedule_id') || '',
     id: params.get('schedule_id') || '',
+    pending_schedule_token: params.get('pending_schedule') || '',
     engineer_id: params.get('engineer_id') || '',
     date: params.get('date') || ''
   });
@@ -1268,6 +1290,7 @@ function getStandaloneCreateTSRHandoffContext(){
       id: urlContext.id || storedContext.id,
       schedule_id: urlContext.schedule_id || storedContext.schedule_id,
       shift_id: urlContext.shift_id || storedContext.shift_id,
+      pending_schedule_token: urlContext.pending_schedule_token || storedContext.pending_schedule_token,
       engineer_id: urlContext.engineer_id || storedContext.engineer_id,
       date_iso: urlContext.date_iso || storedContext.date_iso,
       date_label: urlContext.date_label || storedContext.date_label,
@@ -1283,6 +1306,21 @@ function findStandaloneScheduleFromCreateTSRContext(context){
 
   const targetId = String(context.schedule_id || context.shift_id || context.id || '').trim();
   const targetDate = String(context.date_iso || context.date || context.start_date || '').slice(0, 10);
+  const targetToken = String(context.pending_schedule_token || '').trim();
+
+  if(targetToken){
+    // Match on the token alone and never fall through. The date/client fallback below would
+    // happily bind this TSR to a real server schedule for the same client on the same day,
+    // and the engineer would have no way of knowing it went somewhere else.
+    return standaloneScheduleOptions.find(item => {
+      if(String(item.pending_schedule_token || '') !== targetToken) return false;
+      if(!targetDate) return true;
+      const itemDate = String(item.date_iso || item.start_date || item.date_label || '').slice(0, 10);
+      return itemDate === targetDate;
+    }) || standaloneScheduleOptions.find(item => {
+      return String(item.pending_schedule_token || '') === targetToken;
+    }) || null;
+  }
 
   if(targetId){
     const exact = standaloneScheduleOptions.find(item => {
@@ -1463,6 +1501,74 @@ function enrichCachedStandaloneScheduleCoverage(schedules){
   });
   return schedules;
 }
+async function readPendingScheduleOptions(){
+  // Schedules still sitting in this device's queue. The timeline snapshots only ever contain
+  // schedules the server already knows about, so without this a queued schedule is invisible
+  // here and the engineer who just created it cannot write its TSR.
+  if(!window.offlineSchedule?.isSupported?.()) return [];
+
+  let items = [];
+  try{
+    items = await window.offlineSchedule.list();
+  }catch(err){
+    console.warn('[Offline TSR] Unable to read the schedule queue', err);
+    return [];
+  }
+
+  const options = [];
+  (items || []).forEach(item => {
+    // A schedule the server has already refused is not something to write a TSR against.
+    if(item.state === 'conflict' || item.state === 'rejected') return;
+    const summary = item.summary || {};
+    const dates = standaloneScheduleDatesBetween(summary.startDate, summary.endDate);
+    (dates.length ? dates : [summary.startDate].filter(Boolean)).forEach((dayIso, index) => {
+      options.push({
+        id: '',
+        pending_schedule_token: item.id,
+        _offline_uid: `pending::${item.id}::${dayIso}::${index}`,
+        is_pending_schedule: true,
+        date_iso: dayIso,
+        date_label: dayIso,
+        time_start: summary.startTime || '',
+        time_end: summary.endTime || '',
+        task: summary.title || 'Queued schedule',
+        status: summary.status || 'In Progress',
+        client_name: summary.clientName || '',
+        client_address: summary.clientAddress || '',
+        client_id: summary.clientId || '',
+        product_name: summary.productName || '',
+        product_id: summary.productId || '',
+        engineers: summary.engineerIds || [],
+        engineer_names: [LOGGED_IN_ENGINEER_NAME].filter(Boolean),
+        serviced_by: LOGGED_IN_ENGINEER_NAME || '',
+        serviced_by_initials: LOGGED_IN_ENGINEER_INITIALS || '',
+        group_id: '',
+        parent_shift_id: '',
+        schedule_coverage: []
+      });
+    });
+  });
+  return options;
+}
+
+function standaloneScheduleDatesBetween(startISO, endISO){
+  // Formatted from the local date parts, never toISOString(). In Manila (UTC+8) local
+  // midnight converts to the previous day in UTC, which would file a queued schedule -- and
+  // the TSR written for it -- one day early.
+  const dates = [];
+  if(!startISO || !endISO) return dates;
+  const start = new Date(`${startISO}T00:00:00`);
+  const end = new Date(`${endISO}T00:00:00`);
+  if(isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return dates;
+
+  for(let cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)){
+    const month = String(cursor.getMonth() + 1).padStart(2, '0');
+    const day = String(cursor.getDate()).padStart(2, '0');
+    dates.push(`${cursor.getFullYear()}-${month}-${day}`);
+  }
+  return dates;
+}
+
 function readTimelineSnapshotSchedules(){
   const schedules = [];
   const seen = new Set();
@@ -1617,9 +1723,79 @@ function openStandaloneSchedulePickerModal(){
   modal.show();
   setTimeout(()=>document.getElementById('standalone-schedule-search')?.focus(), 250);
 }
+// Set while the picker is being used to give an orphaned queued TSR a new schedule, rather
+// than to choose a schedule for the form currently on screen. The two look identical to the
+// engineer and must not be confused with each other.
+let queuedTSRAwaitingSchedulePick = '';
+
+async function pickScheduleForQueuedTSR(itemId){
+  queuedTSRAwaitingSchedulePick = String(itemId || '');
+  if(!queuedTSRAwaitingSchedulePick) return;
+  await refreshStandaloneScheduleOptions(false);
+  openStandaloneSchedulePickerModal();
+  showTSRStatus('Pick the schedule this queued TSR belongs to.', 'info');
+}
+
+function closeStandaloneSchedulePickerModal(){
+  const modalEl = document.getElementById('standaloneSchedulePickerModal');
+  const modal = bootstrap.Modal.getInstance(modalEl);
+  if(modal) modal.hide();
+}
+
+async function assignPickedScheduleToQueuedTSR(itemId, schedule){
+  const queue = await loadOfflineTSRQueueStore();
+  const item = queue.find(row => row.id === itemId);
+  if(!item){
+    showTSRStatus('That queued TSR is no longer in the queue.', 'warning');
+    return;
+  }
+
+  const realId = getStandaloneScheduleRealId(schedule);
+  const pendingToken = schedule?.pending_schedule_token || '';
+
+  if(realId){
+    await applyResolvedScheduleToTSRQueueItem(item, {
+      shiftId: realId,
+      scheduleSnapshot: schedule,
+      resolvedBy: 'engineer_picked'
+    });
+    showTSRStatus('Schedule linked. This TSR will send on the next sync.', 'success');
+  }else if(pendingToken){
+    // Re-pointed at another queued schedule: it waits again, behind the new one.
+    await patchOfflineTSRQueueItem(item.id, {
+      schedule_id: '',
+      pending_schedule_token: pendingToken,
+      needs_schedule: false,
+      retryable: true,
+      last_error: '',
+      payload: Object.assign({}, item.payload || {}, {
+        schedule_id: '',
+        pending_schedule_token: pendingToken,
+        selectedSchedule: Object.assign({}, schedule)
+      })
+    });
+    showTSRStatus('Linked to a schedule that is still waiting to sync. The TSR will follow it.', 'info');
+  }else{
+    showTSRStatus('That schedule cannot be linked yet. Pick one with a date and client.', 'warning');
+    return;
+  }
+
+  renderOfflineTSRQueuePanel();
+  syncOfflineTSRQueue({ silent:true });
+}
+
 function selectStandaloneScheduleFromModal(id){
   const schedule = standaloneScheduleOptions.find(item => String(getStandaloneScheduleRuntimeId(item)) === String(id) || String(item.id) === String(id));
   if(!schedule) return;
+
+  if(queuedTSRAwaitingSchedulePick){
+    const targetId = queuedTSRAwaitingSchedulePick;
+    queuedTSRAwaitingSchedulePick = '';
+    closeStandaloneSchedulePickerModal();
+    assignPickedScheduleToQueuedTSR(targetId, schedule);
+    return;
+  }
+
   const select = document.getElementById('tsr-schedule-select');
   if(select) select.value = String(getStandaloneScheduleRuntimeId(schedule));
   applyScheduleToStandaloneTSR(schedule, true);
@@ -1653,6 +1829,16 @@ async function refreshStandaloneScheduleOptions(manual=false){
       source = 'Timeline offline cache';
       cacheStandaloneScheduleOptions(schedules);
     }
+  }
+
+  // Queued schedules are merged in only after every cacheStandaloneScheduleOptions() call
+  // above. They must never reach localStorage: the queue is the single source of truth for
+  // what is still pending, and a cached copy would keep offering a schedule that has since
+  // synced or been removed.
+  const pendingOptions = await readPendingScheduleOptions();
+  if(pendingOptions.length){
+    schedules = pendingOptions.concat(schedules);
+    source = source ? `${source} + this device's queue` : "this device's queue";
   }
 
   renderStandaloneScheduleOptions(schedules, source);
@@ -2380,7 +2566,11 @@ function collectTSRData(){
     attachments:offlineTSRAttachments,
     parts:getParts(),
     selectedScheduleId:selectedStandaloneScheduleId,
-    schedule_id:selectedSchedule?.id || selectedStandaloneScheduleId || '',
+    // Real server ids only. This used to fall through to selectedStandaloneScheduleId, which
+    // is the composite runtime picker id -- the server's clean_int rejects it with a 400 that
+    // the sync queue treats as fatal, so the TSR parked permanently.
+    schedule_id:getStandaloneScheduleRealId(selectedSchedule),
+    pending_schedule_token:selectedSchedule?.pending_schedule_token || '',
     selectedSchedule:selectedSchedule || null,
     schedule_coverage:getTSRScheduleCoverageRows(selectedSchedule),
     original_schedule_time_start:selectedSchedule?.time_start || '',
@@ -4080,11 +4270,13 @@ function renderOfflineTSRQueuePanel(){
     const realAttachments = normalizeQueuedAttachments(item.attachments || []).filter(att => !isQueuedTSRSignatureAttachment(att));
     const attachmentBytes = realAttachments.reduce((total, att) => total + Number(att.size || 0), 0);
     const needsAttention = !!(item.last_error || item.conflict_message);
-    const statusLabel = item.server_submission_id && needsAttention
-      ? 'TSR saved; attachment pending'
-      : needsAttention
-        ? (item.requires_login ? 'Sign in required' : (item.retryable === false ? 'Needs attention' : 'Retry scheduled'))
-        : (offlineTSRSyncRunning ? 'Syncing' : 'Waiting to sync');
+    const statusLabel = item.needs_schedule
+      ? 'Needs a schedule'
+      : item.server_submission_id && needsAttention
+        ? 'TSR saved; attachment pending'
+        : needsAttention
+          ? (item.requires_login ? 'Sign in required' : (item.retryable === false ? 'Needs attention' : 'Retry scheduled'))
+          : (item.pending_schedule_token ? 'Waiting for its schedule' : (offlineTSRSyncRunning ? 'Syncing' : 'Waiting to sync'));
     const phaseLabel = String(item.sync_phase || 'waiting').replaceAll('_', ' ');
     return `
       <div class="offline-tsr-queue-card ${needsAttention ? 'failed' : ''}">
@@ -4102,9 +4294,13 @@ function renderOfflineTSRQueuePanel(){
         ${item.conflict_message ? `<div class="text-warning fw-bold"><i class="fa-solid fa-triangle-exclamation me-1"></i>${escapeHTML(item.conflict_message)}</div>` : ''}
         ${item.conflict_type ? `<div class="text-muted">Conflict type: ${escapeHTML(item.conflict_type)}</div>` : ''}
         <div class="d-flex gap-2 flex-wrap mt-2">
-          <button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="retryOfflineTSRQueueItem('${escapeHTML(item.id)}')">
+          ${item.needs_schedule
+            ? `<button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="pickScheduleForQueuedTSR('${escapeHTML(item.id)}')">
+            <i class="fa-solid fa-calendar-check me-1"></i>Pick a schedule
+          </button>`
+            : `<button type="button" class="btn btn-sm btn-outline-primary fw-bold" onclick="retryOfflineTSRQueueItem('${escapeHTML(item.id)}')">
             <i class="fa-solid fa-rotate-right me-1"></i>Retry
-          </button>
+          </button>`}
           <button type="button" class="btn btn-sm btn-outline-danger fw-bold" onclick="removeOfflineTSRQueueItem('${escapeHTML(item.id)}')">
             <i class="fa-solid fa-trash me-1"></i>Remove
           </button>
@@ -4239,13 +4435,18 @@ async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', 
   const transportPayload = sanitizeTSRPayloadForTransport(payload);
   const submissionToken = ensureTSRSubmissionToken(transportPayload.submission_token || options.submissionToken);
   transportPayload.submission_token = submissionToken;
+  transportPayload.pending_schedule_token = payload?.pending_schedule_token || selectedSchedule?.pending_schedule_token || '';
   let queueItem = {
     id: `offline-tsr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     submission_token: submissionToken,
     status: 'pending',
     reason,
     queued_at: queuedAt,
-    schedule_id: payload?.schedule_id || selectedSchedule?.id || '',
+    // Real ids only; getStandaloneScheduleRealId keeps composite runtime ids out. A schedule
+    // still in the device queue has none, and travels by its creation token instead until
+    // that schedule syncs and hands back a shift.
+    schedule_id: payload?.schedule_id || getStandaloneScheduleRealId(selectedSchedule),
+    pending_schedule_token: payload?.pending_schedule_token || selectedSchedule?.pending_schedule_token || '',
     client_name: payload?.['tsr-customer-name'] || selectedSchedule?.client_name || '',
     product_name: payload?.['tsr-equipment-model'] || selectedSchedule?.product_name || '',
     task: selectedSchedule?.task || payload?.task || '',
@@ -4286,7 +4487,10 @@ function scheduleOfflineTSRSyncRetry(error=null){
   if(!pending.length) return;
   const highestAttempts = Math.max(0, ...pending.map(item => Number(item.sync_attempts || 0)));
   const delayIndex = Math.min(Math.max(highestAttempts - 1, 0), 4);
-  const delay = [5000,15000,30000,60000][delayIndex] || 120000;
+  let delay = [5000,15000,30000,60000][delayIndex] || 120000;
+  // Waiting on a schedule is not a transient blip. A 5-second first retry would just re-await
+  // a schedule queue that is stuck for the same reason this TSR is.
+  if(error?.errorCode === 'schedule_pending') delay = Math.max(delay, 15000);
   offlineTSRSyncRetryTimer = setTimeout(() => {
     offlineTSRSyncRetryTimer = null;
     if(document.visibilityState !== 'hidden') syncOfflineTSRQueue({ silent:true });
@@ -4333,12 +4537,160 @@ async function patchOfflineTSRQueueItem(itemId, update={}){
   return patched;
 }
 
+/* ---------------------------------------------------------------------
+   A TSR written against a schedule that has not synced yet.
+
+   The schedule goes first, gets its real shift id, and the TSR queued behind it is pointed
+   at that id before it is sent. Until then the TSR waits: posting it with no id, or with the
+   composite runtime one, earns a 400 the queue treats as fatal and the TSR parks forever.
+   --------------------------------------------------------------------- */
+
+function isRealScheduleId(value){
+  return /^\d+$/.test(String(value || '').trim());
+}
+
+function pickShiftIdForServiceDate(record, item){
+  const shiftIds = Array.isArray(record?.shiftIds) ? record.shiftIds : [];
+  const shiftDates = Array.isArray(record?.shiftDates) ? record.shiftDates : [];
+  if(!shiftIds.length) return null;
+
+  const payload = item?.payload || {};
+  const serviceDate = String(
+    payload['tsr-service-date'] || payload.selectedSchedule?.date_iso || payload.service_date || ''
+  ).slice(0, 10);
+
+  if(serviceDate){
+    const index = shiftDates.indexOf(serviceDate);
+    if(index > -1 && shiftIds[index]) return { shiftId: shiftIds[index], resolvedBy: 'service_date' };
+  }
+
+  // A multi-day schedule with no date match falls back to the first shift of the chain --
+  // the one carrying the creation token. Recorded, so it is answerable later.
+  return { shiftId: shiftIds[0], resolvedBy: 'chain_first' };
+}
+
+async function applyResolvedScheduleToTSRQueueItem(item, { shiftId, scheduleSnapshot=null, resolvedBy='' }){
+  // The single writer of the shift reference. It lives in four places that must agree, and
+  // scattering those writes is how they drift apart.
+  const resolvedId = String(shiftId);
+  const previousId = String(item?.schedule_id || '');
+  const payload = Object.assign({}, item?.payload || {});
+
+  payload.schedule_id = resolvedId;
+  payload.selectedScheduleId = resolvedId;
+  payload.selectedSchedule = Object.assign({}, payload.selectedSchedule || scheduleSnapshot || {}, {
+    id: resolvedId,
+    pending_schedule_token: '',
+    is_pending_schedule: false
+  });
+  payload.pending_schedule_token = '';
+
+  const update = {
+    schedule_id: resolvedId,
+    pending_schedule_token: '',
+    needs_schedule: false,
+    retryable: true,
+    resolved_by: resolvedBy || item?.resolved_by || '',
+    last_error: '',
+    payload
+  };
+
+  // Pointing at a different shift than a previous attempt used means the old submission token
+  // now belongs to another schedule, and the server answers that with a 409 the queue treats
+  // as fatal -- every retry would fail forever. A new token is what makes re-pointing work.
+  //
+  // "A previous attempt" includes one whose response never came back: the submission can
+  // exist server-side under this token with no server_submission_id recorded here, so any
+  // send attempt at all counts. A first resolution that has never been sent keeps its token,
+  // because that is what makes an ordinary retry idempotent.
+  const hasBeenSent = Boolean(item?.server_submission_id) || Number(item?.sync_attempts || 0) > 0;
+  if((previousId && previousId !== resolvedId) || hasBeenSent){
+    const freshToken = ensureTSRSubmissionToken('');
+    update.submission_token = freshToken;
+    payload.submission_token = freshToken;
+    update.server_submission_id = null;
+    update.server_result = null;
+    update.core_saved_at = '';
+    update.sync_phase = 'waiting';
+    update.uploaded_attachment_tokens = [];
+  }
+
+  return (await patchOfflineTSRQueueItem(item.id, update)) || Object.assign({}, item, update);
+}
+
+async function markTSRQueueItemNeedsSchedule(item){
+  // The schedule this TSR was written for is gone from the queue -- removed after it was
+  // refused, most likely. The TSR is never deleted with it: the engineer wrote it in the
+  // field and picks a new schedule for it instead.
+  return patchOfflineTSRQueueItem(item.id, {
+    status: 'pending',
+    needs_schedule: true,
+    retryable: false,
+    last_error: 'The schedule this TSR was written for is no longer queued. Pick a schedule to send it.'
+  });
+}
+
+async function resolveTSRQueueItemSchedule(item){
+  if(isRealScheduleId(item?.schedule_id)) return String(item.schedule_id).trim();
+
+  const token = String(item?.pending_schedule_token || item?.payload?.pending_schedule_token || '').trim();
+  if(!token){
+    await markTSRQueueItemNeedsSchedule(item);
+    throw makeTSRSyncError('This TSR has no schedule to send against. Pick one from the queue panel.', {
+      phase:'resolving_schedule', errorCode:'needs_schedule', retryable:false
+    });
+  }
+
+  if(!window.offlineSchedule?.isSupported?.()){
+    throw makeTSRSyncError('The queued schedule cannot be read on this device yet.', {
+      phase:'resolving_schedule', errorCode:'schedule_pending', retryable:true
+    });
+  }
+
+  const record = await window.offlineSchedule.resolveToken(token);
+  if(record){
+    const picked = pickShiftIdForServiceDate(record, item);
+    if(picked?.shiftId){
+      await applyResolvedScheduleToTSRQueueItem(item, {
+        shiftId: picked.shiftId,
+        resolvedBy: picked.resolvedBy
+      });
+      return String(picked.shiftId);
+    }
+  }
+
+  if(await window.offlineSchedule.hasQueued(token)){
+    const label = item?.client_name || item?.task || 'this schedule';
+    throw makeTSRSyncError(`Waiting for the queued schedule for ${label} to sync first.`, {
+      phase:'resolving_schedule', errorCode:'schedule_pending', retryable:true
+    });
+  }
+
+  await markTSRQueueItemNeedsSchedule(item);
+  throw makeTSRSyncError('The schedule this TSR was written for is no longer queued. Pick a schedule to send it.', {
+    phase:'resolving_schedule', errorCode:'needs_schedule', retryable:false
+  });
+}
+
 async function uploadQueuedOfflineTSR(item, numberRetryCount=0){
+  // Resolve the shift before anything else is built. A TSR whose schedule is still queued
+  // must not be posted at all -- the server refuses it non-retriably and it would park with
+  // the work already written. Once the core save has a submission id the shift is settled
+  // server-side and there is nothing left to resolve.
+  if(!item?.server_submission_id){
+    const resolvedScheduleId = await resolveTSRQueueItemSchedule(item);
+    item = (await loadOfflineTSRQueueStore()).find(row => row.id === item.id) || item;
+    item.schedule_id = resolvedScheduleId;
+  }
+
   const payload = sanitizeTSRPayloadForTransport(Object.assign({}, item?.payload || {}));
   payload.submission_token = ensureTSRSubmissionToken(item?.submission_token || payload.submission_token || item?.id);
   const isVectorQueue = String(payload._tsr_form_version || '').toLowerCase() === 'vector-pdf-v2';
   const finalizedPayload = Object.assign({}, payload, {
-    schedule_id: payload.schedule_id || item?.schedule_id || payload.selectedScheduleId || payload.selectedSchedule?.id || '',
+    // item.schedule_id only ever holds a real numeric id now. The old fallback chain reached
+    // for selectedScheduleId, which is the composite runtime picker id, and that is exactly
+    // what the server rejected.
+    schedule_id: item?.schedule_id || '',
     completion_scope: payload.completion_scope || item?.completion_scope || 'linked_all',
     _offline_queue_preserve_pdf: true
   });
@@ -4498,6 +4850,19 @@ async function syncOfflineTSRQueue({ silent=false } = {}){
     if(!silent) showTSRStatus(connectionError?.message || 'Unable to reach the server. Sync will retry automatically.', 'warning');
     renderOfflineTSRQueuePanel();
     return;
+  }
+
+  // The one ordering point between the two queues. Each has its own `online` listener and
+  // they would otherwise race, so anything waiting on a schedule gives that queue its turn
+  // first. sync() is single-flight, so this either starts a run or joins the one already
+  // going. A rejection here -- an expired session, most likely -- must leave these TSRs
+  // queued and retriable rather than parking them, hence the swallowed catch.
+  if(pending.some(entry => entry?.pending_schedule_token && !isRealScheduleId(entry?.schedule_id))){
+    try{
+      await window.offlineSchedule?.sync?.({ silent:true });
+    }catch(scheduleSyncError){
+      console.warn('[Offline TSR] The schedule queue did not finish syncing first', scheduleSyncError);
+    }
   }
 
   offlineTSRSyncRunning = true;
@@ -4955,7 +5320,8 @@ async function beginStandaloneTSRFinalPreview(data){
     }else{
       const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule();
       payload = Object.assign({}, data || {}, {
-        schedule_id: selectedSchedule?.id || data?.schedule_id || '',
+        schedule_id: getStandaloneScheduleRealId(selectedSchedule) || data?.schedule_id || '',
+        pending_schedule_token: selectedSchedule?.pending_schedule_token || data?.pending_schedule_token || '',
         selectedSchedule: selectedSchedule || data?.selectedSchedule || null,
         completion_scope: data?.completion_scope || await chooseTSRCompletionScope(selectedSchedule)
       });
@@ -6514,6 +6880,10 @@ function printTSRPreview(){
 
 document.addEventListener('DOMContentLoaded',()=>{
   hideOfflineTSRStorageHealthForNonAdmins();
+  // Dismissing the picker without choosing must not leave the re-point mode armed, or the
+  // next ordinary schedule selection would silently re-point a queued TSR instead.
+  document.getElementById('standaloneSchedulePickerModal')
+    ?.addEventListener('hidden.bs.modal', () => { queuedTSRAwaitingSchedulePick = ''; });
   initializeOfflineTSRDatabaseFoundation()
     .then(() => runOfflineTSRPhase5MigrationLayer())
     .catch(err => console.warn('[Offline TSR Migration] Startup migration check failed', err));

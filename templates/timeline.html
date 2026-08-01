@@ -9,7 +9,7 @@
 {# Loaded before the inline timeline script so window.offlineSchedule exists for it. This
    file is an APP_SHELL entry: without that it would be missing from the cache in exactly
    the situation it is written for. #}
-<script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=1"></script>
+<script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 <!--
     ===========================================================================
     MEDICAL SERVICE MANAGEMENT SYSTEM - TECHNICAL TIMELINE GRID
@@ -9947,6 +9947,10 @@ async function openMobileAddSchedule(){
     function buildMobileScheduleContextKey(shift, day, engineer){
         return [
             shift?.id || '',
+            // A queued schedule has no server id, so without the queue id every pending card
+            // on the same day for the same engineer would share one key and tapping the
+            // second would open the first one's actions.
+            shift?.queue_id || '',
             day?.iso || shift?.start_date || '',
             engineer?.id || ''
         ].map(value => String(value || '').replace(/[^a-zA-Z0-9_-]/g, '_')).join('__');
@@ -10073,9 +10077,17 @@ async function openMobileAddSchedule(){
             : `<button type="button" class="mobile-sticky-btn mobile-sticky-disabled" title="TSR not ready" aria-label="TSR not ready" disabled><i class="fa-solid fa-file-invoice"></i></button>`;
 
         const hasOfflineTSRDraft = shift?.id ? hasOfflineTSRDraftForShift(shift.id) : false;
-        const offlineTsrBtn = shift?.id
-            ? `<button type="button" class="mobile-sticky-btn mobile-sticky-offline-tsr ${hasOfflineTSRDraft ? 'has-draft' : ''}" title="Create TSR" aria-label="Create TSR" onclick="redirectToCreateTSRPageFromSchedule(${editPayload}, ${engineerId}, '${dayIso}')"><i class="fa-solid fa-file-pen"></i></button>`
-            : `<button type="button" class="mobile-sticky-btn mobile-sticky-disabled" title="Create TSR unavailable" aria-label="Create TSR unavailable" disabled><i class="fa-solid fa-file-pen"></i></button>`;
+        let offlineTsrBtn;
+        if(shift?.id){
+            offlineTsrBtn = `<button type="button" class="mobile-sticky-btn mobile-sticky-offline-tsr ${hasOfflineTSRDraft ? 'has-draft' : ''}" title="Create TSR" aria-label="Create TSR" onclick="redirectToCreateTSRPageFromSchedule(${editPayload}, ${engineerId}, '${dayIso}')"><i class="fa-solid fa-file-pen"></i></button>`;
+        }else if(shift?.queue_id){
+            // A queued schedule has no server id yet, but the TSR is exactly what the engineer
+            // is on site to write. It queues behind the schedule and is pointed at the real
+            // shift when that schedule syncs.
+            offlineTsrBtn = `<button type="button" class="mobile-sticky-btn mobile-sticky-offline-tsr" title="Create TSR" aria-label="Create TSR" onclick="redirectToCreateTSRPageFromQueuedSchedule(${editPayload}, ${engineerId}, '${dayIso}')"><i class="fa-solid fa-file-pen"></i></button>`;
+        }else{
+            offlineTsrBtn = `<button type="button" class="mobile-sticky-btn mobile-sticky-disabled" title="Create TSR unavailable" aria-label="Create TSR unavailable" disabled><i class="fa-solid fa-file-pen"></i></button>`;
+        }
 
         const duplicateBtn = canManage
             ? `<button type="button" class="mobile-sticky-btn mobile-sticky-duplicate" title="Duplicate schedule" aria-label="Duplicate schedule" onclick='openMobileDuplicateSchedule(${editPayload}, ${engineerPayload}, ${dayPayload})'><i class="fa-solid fa-copy"></i></button>`
@@ -10833,7 +10845,9 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
     }
 
     function buildPureEngineerMobileWorkflowActions(shift, engineerId, dayIso, canManage, canSendTSR){
-        if(!isPureEngineerMobileMode() || !shift?.id) return '';
+        // A queued schedule has no server id, and this row is the engineer's primary way into
+        // Create TSR -- gating it on the id alone is what kept the offline workflow half-done.
+        if(!isPureEngineerMobileMode() || (!shift?.id && !shift?.queue_id)) return '';
 
         const payload = JSON.stringify(shift || {}).replace(/"/g, '&quot;');
         const resolvedEngineerId = engineerId || loggedInEngineerId || '';
@@ -10843,7 +10857,9 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
             ? `<button type="button" class="mobile-action-btn mobile-action-primary" onclick="openEditModal(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-arrow-up"></i>Upload/Edit</button>`
             : `<button type="button" class="mobile-action-btn mobile-action-muted" disabled><i class="fa-solid fa-lock"></i>View Only</button>`;
 
-        const tsrAction = `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCreateTSRPageFromSchedule(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-pen"></i>Create TSR</button>`;
+        const tsrAction = shift?.id
+            ? `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCreateTSRPageFromSchedule(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-pen"></i>Create TSR</button>`
+            : `<button type="button" class="mobile-action-btn mobile-action-success" onclick="redirectToCreateTSRPageFromQueuedSchedule(${payload}, ${resolvedEngineerId}, '${resolvedDayIso}')"><i class="fa-solid fa-file-pen"></i>Create TSR</button>`;
 
         return `<div class="mobile-workflow-primary-row">${editAction}${tsrAction}</div>`;
     }
@@ -12902,6 +12918,20 @@ if (selectedVal === "Leave") {
             if(!confirmed) return;
         }
 
+        // The client and product travel with the queued schedule, not just their ids. A TSR
+        // written against a pending card needs the customer and the equipment, and the server
+        // rejects a TSR that arrives without them -- which would be discovered only after the
+        // engineer had filled the whole form in. Resolved here, while the master lists are
+        // still in hand, rather than looked up later when the device may be cold.
+        const queuedClientId = dataSet.get('client_id') || '';
+        const queuedProductId = dataSet.get('product_id') || '';
+        const clientRecord = queuedClientId
+            ? masterClients.find(c => String(c.id) === String(queuedClientId))
+            : null;
+        const productRecord = queuedProductId
+            ? masterProducts.find(p => String(p.serial_number) === String(queuedProductId))
+            : null;
+
         const summary = {
             title: dataSet.get('title') || dataSet.get('task') || 'Schedule',
             startDate,
@@ -12909,7 +12939,13 @@ if (selectedVal === "Leave") {
             startTime,
             endTime,
             dayCount: dates.length,
-            engineerIds
+            engineerIds,
+            clientId: queuedClientId,
+            clientName: clientRecord?.name || '',
+            clientAddress: clientRecord?.address || '',
+            productId: queuedProductId,
+            productName: productRecord?.name || productRecord?.product_name || '',
+            status: dataSet.get('status') || 'In Progress'
         };
 
         try{
@@ -12944,7 +12980,13 @@ if (selectedVal === "Leave") {
                 endTime: item.summary?.endTime || '',
                 engineerIds: (item.summary?.engineerIds || []).map(String),
                 dates: scheduleDatesBetween(item.summary?.startDate, item.summary?.endDate),
-                blocked: item.state === 'conflict' || item.state === 'rejected'
+                blocked: item.state === 'conflict' || item.state === 'rejected',
+                clientId: item.summary?.clientId || '',
+                clientName: item.summary?.clientName || '',
+                clientAddress: item.summary?.clientAddress || '',
+                productId: item.summary?.productId || '',
+                productName: item.summary?.productName || '',
+                scheduleStatus: item.summary?.status || 'In Progress'
             };
         });
 
@@ -13046,12 +13088,22 @@ if (selectedVal === "Leave") {
                         id: null,
                         pending_sync: true,
                         queue_id: row.id,
+                        // The creation token is what a TSR queued behind this schedule holds
+                        // on to until the schedule syncs and hands back a real shift id.
+                        creation_token: row.id,
                         task: row.title,
+                        title: row.title,
                         time_start: row.startTime,
                         time_end: row.endTime,
                         status: row.blocked ? 'Needs attention' : 'Waiting to sync',
-                        client_id: '',
-                        client_name: '',
+                        schedule_status: row.scheduleStatus,
+                        client_id: row.clientId,
+                        client_name: row.clientName,
+                        client_address: row.clientAddress,
+                        product_id: row.productId,
+                        product_name: row.productName,
+                        start_date: (row.dates || [])[0] || dayIso,
+                        end_date: (row.dates || [])[(row.dates || []).length - 1] || dayIso,
                         engineers: row.engineerIds
                     }]);
                 });
@@ -18337,7 +18389,12 @@ function buildCreateTSRPageUrlFromContext(context={}){
     const dateIso = context.date || context.day_iso || context.dayIso || context.start_date || '';
     const mode = context.mode || '';
 
+    // A queued schedule has no server id to put in the URL, so it travels by its creation
+    // token instead. The two are mutually exclusive by construction.
+    const pendingToken = context.pending_schedule_token || '';
+
     if(shiftId) params.set('schedule_id', shiftId);
+    else if(pendingToken) params.set('pending_schedule', pendingToken);
     if(engineerId) params.set('engineer_id', engineerId);
     if(dateIso) params.set('date', dateIso);
     if(mode) params.set('mode', mode);
@@ -18382,6 +18439,36 @@ function redirectToCreateTSRPageFromSchedule(shiftPayload, engineerId, dayIso){
         task: shift.task || shift.title || '',
         title: shift.title || shift.task || '',
         status: shift.status || '',
+        start_date: shift.start_date || dayIso || '',
+        end_date: shift.end_date || shift.start_date || dayIso || '',
+        time_start: shift.time_start || '',
+        time_end: shift.time_end || ''
+    });
+}
+
+function redirectToCreateTSRPageFromQueuedSchedule(shiftPayload, engineerId, dayIso){
+    // The offline half of redirectToCreateTSRPageFromSchedule. The schedule is still sitting
+    // in the device queue, so there is no shift id to hand over -- the TSR carries the
+    // schedule's creation token and is pointed at a real shift once that schedule syncs.
+    const shift = normalizeOfflineTSRShiftPayload(shiftPayload || {});
+    const token = shift?.queue_id || shift?.creation_token || '';
+    if(!token){
+        timelineAlert('This schedule is not queued on this device, so a TSR cannot be linked to it yet.');
+        return;
+    }
+
+    redirectToCreateTSRPage({
+        pending_schedule_token: token,
+        engineer_id: engineerId || '',
+        date: dayIso || shift.start_date || '',
+        client_id: shift.client_id || '',
+        product_id: shift.product_id || '',
+        client_name: shift.client_name || '',
+        client_address: shift.client_address || '',
+        product_name: shift.product_name || '',
+        task: shift.task || shift.title || '',
+        title: shift.title || shift.task || '',
+        status: shift.schedule_status || '',
         start_date: shift.start_date || dayIso || '',
         end_date: shift.end_date || shift.start_date || dayIso || '',
         time_start: shift.time_start || '',

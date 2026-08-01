@@ -14384,7 +14384,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v56-offline-entry-point';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v57-offline-tsr-pending-schedule';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -39604,15 +39604,33 @@ def find_schedule_chain_by_creation_token(creation_token):
     return first_shift, chain
 
 
-def build_schedule_replay_response(first_shift, chain):
-    """The success shape /add_shift already returns, plus what the queue needs to settle."""
-    return jsonify({
+def build_schedule_ids_response(first_shift, chain, replay=False):
+    """The success shape /add_shift already returns, plus what the queue needs to settle.
+
+    The device stores these ids against the schedule's creation token, so a TSR queued
+    behind the schedule can be pointed at a real shift before it is sent. `shift_dates`
+    runs parallel to `shift_ids` so a TSR written for day four of a chain files against
+    day four rather than day one.
+    """
+    body = {
         'status': 'success',
-        'idempotent_replay': True,
         'group_id': first_shift.group_id,
         'shift_ids': [shift.id for shift in chain],
-        'message': 'This schedule was already saved. The queued copy was not duplicated.'
-    })
+        'shift_dates': [
+            shift.start_time.date().isoformat() if shift.start_time else ''
+            for shift in chain
+        ]
+    }
+    if replay:
+        body['idempotent_replay'] = True
+        body['message'] = 'This schedule was already saved. The queued copy was not duplicated.'
+    return jsonify(body)
+
+
+def build_schedule_replay_response(first_shift, chain):
+    """A schedule the server already holds, replayed. Kept as its own name because the
+    replay flag is what the device keys on to know it did not create a second chain."""
+    return build_schedule_ids_response(first_shift, chain, replay=True)
 
 
 @app.route('/add_shift', methods=['POST'])
@@ -39711,6 +39729,7 @@ def add_shift():
                     return collision_response
 
     first_shift = None
+    created_shifts = []
     for iter_date in schedule_dates:
         st_obj = datetime.combine(iter_date, datetime.strptime(start_time, '%H:%M').time())
         et_obj = datetime.combine(iter_date, datetime.strptime(end_time, '%H:%M').time())
@@ -39741,6 +39760,9 @@ def add_shift():
         db.session.add(new_shift)
         db.session.flush()
         delete_shift_engineer_links(new_shift.id)
+        # schedule_dates is ascending, so this list is already in the same order the replay
+        # path returns (Shift.start_time.asc()). A retry must not see the chain reshuffled.
+        created_shifts.append(new_shift)
         if first_shift is None:
             first_shift = new_shift
 
@@ -39798,6 +39820,13 @@ def add_shift():
         )
 
     # Keep response simple and immediate; email runs in the background.
+    #
+    # Only a queued schedule gets the ids back. An ordinary online save sends no creation
+    # token and its response stays exactly what it has always been, because a great deal of
+    # existing client code reads this route and none of it asked for a wider payload.
+    if creation_token and first_shift:
+        return build_schedule_ids_response(first_shift, created_shifts, replay=False)
+
     return jsonify({'status': 'success'})
 
 
