@@ -101,6 +101,86 @@ class WeakSignalTSRSaveTests(unittest.TestCase):
         self.assertIn('getStandaloneScheduleRealId(selectedSchedule)', preview)
 
 
+class OfflineTSRStorageStrategyTests(unittest.TestCase):
+    """Large TSR files must live in IndexedDB, not duplicated localStorage JSON."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tsr = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+
+    def test_new_file_selection_does_not_base64_encode_photos(self):
+        file_builder = self.tsr.split('async function fileToQueuedAttachment(')[1].split('\nfunction normalizeQueuedAttachments')[0]
+        self.assertNotIn('blobToBase64Payload', file_builder)
+        self.assertIn('blob: file', file_builder)
+
+    def test_queue_mirror_is_metadata_only_and_backup_is_not_written(self):
+        mirror = self.tsr.split('function writeOfflineTSRQueueLocalStorageFallback(')[1].split('\nasync function loadOfflineTSRQueueStore')[0]
+        self.assertIn('projectOfflineTSRQueueItemForLocalStorage', mirror)
+        self.assertIn('localStorage.setItem(OFFLINE_TSR_QUEUE_KEY', mirror)
+        self.assertIn('localStorage.removeItem(OFFLINE_TSR_QUEUE_BACKUP_KEY)', mirror)
+        self.assertNotIn('localStorage.setItem(OFFLINE_TSR_QUEUE_BACKUP_KEY', mirror)
+        self.assertNotIn('JSON.stringify(normalizedQueue)', mirror)
+
+    def test_queue_blob_failure_surfaces_without_a_base64_fallback(self):
+        prepare = self.tsr.split('async function prepareOfflineTSRQueueItemBlobs(')[1].split('\nasync function resolveQueuedAttachmentDataURL')[0]
+        self.assertIn("storageError.code = 'offline_storage_unavailable'", prepare)
+        self.assertIn('throw storageError;', prepare)
+        self.assertNotIn('Keeping data_url fallback', prepare)
+
+    def test_offline_queue_requires_a_generated_pdf_blob(self):
+        queue = self.tsr.split('async function queueStandaloneTSROffline(')[1].split('\nlet offlineTSRSyncRunning')[0]
+        self.assertIn('if(!pdfPackage?.blob)', queue)
+        self.assertIn("storageError.phase = 'storing_tsr_pdf'", queue)
+
+    def test_durable_queue_failure_restores_previous_in_memory_state(self):
+        persist = self.tsr.split('async function persistOfflineTSRQueueStore(')[1].split('\nasync function refreshOfflineTSRQueueStore')[0]
+        self.assertIn('const previousCache = offlineTSRQueueCache', persist)
+        self.assertIn('offlineTSRQueueCache = previousCache', persist)
+        self.assertIn('if(requireDurable)', persist)
+
+    def test_drafts_convert_attachments_to_blob_references(self):
+        draft = self.tsr.split('async function prepareStandaloneTSRDraftPayload(')[1].split('\nasync function rehydrateStandaloneTSRDraftPayload')[0]
+        self.assertIn("'draft_attachment'", draft)
+        self.assertIn('payload.attachments = preparedAttachments', draft)
+        fallback = self.tsr.split('function saveStandaloneTSRDraftToLocalStorageFallback(')[1].split('\nfunction loadStandaloneTSRDraftFromLocalStorageFallback')[0]
+        self.assertIn('projectOfflineTSRPayloadForLocalStorage', fallback)
+        self.assertNotIn('JSON.stringify(data || {})', fallback)
+
+    def test_final_save_reports_actual_draft_recovery_result(self):
+        self.assertIn('function showTSRFinalSaveRecovery(', self.tsr)
+        self.assertIn("draftResult?.failed || draftResult?.source === 'none'", self.tsr)
+        self.assertIn('Download PDF now', self.tsr)
+        self.assertIn('attachments_not_durable', self.tsr)
+
+    def test_storage_pressure_warning_is_available_before_writes(self):
+        self.assertIn('navigator.storage.estimate()', self.tsr)
+        self.assertIn('warnOfflineTSRStoragePressure', self.tsr)
+        self.assertIn('await warnOfflineTSRStoragePressure();', self.tsr)
+
+    def test_the_background_storage_check_is_throttled(self):
+        """The silent call sits on the draft autosave path, which fires as the engineer types.
+
+        navigator.storage.estimate() on every keystroke-triggered save is a cost nobody asked
+        for; an explicit check must still measure every time.
+        """
+        warn = self.tsr.split('async function warnOfflineTSRStoragePressure(')[1].split('\nasync function ')[0]
+        self.assertIn('OFFLINE_TSR_STORAGE_CHECK_INTERVAL_MS', warn)
+        self.assertIn('if(silent &&', warn)
+        # Positive control: the throttle must not swallow an explicit check.
+        self.assertIn('offlineTSRStorageCheckedAt = checkedAt;', warn)
+
+    def test_the_legacy_backup_is_only_dropped_after_it_has_been_read(self):
+        """The load path reads that backup when the primary is empty -- that read is what
+        migrates it. Removing it before then discards the only copy on a device whose
+        IndexedDB came up empty."""
+        mirror = self.tsr.split('function writeOfflineTSRQueueLocalStorageFallback(')[1].split('\nasync function loadOfflineTSRQueueStore')[0]
+        self.assertIn('if(offlineTSRLegacyQueueRead){', mirror)
+        loader = self.tsr.split('async function loadOfflineTSRQueueStore(')[1].split('\nasync function ')[0]
+        self.assertIn('offlineTSRLegacyQueueRead = true;', loader)
+        # Positive control: the backup must still be read on the way through.
+        self.assertIn('readOfflineTSRQueueFromKey(OFFLINE_TSR_QUEUE_BACKUP_KEY)', loader)
+
+
 class ShellPrecacheTests(unittest.TestCase):
     """The app shell is the last-resort offline fallback, so what goes in it matters."""
 
@@ -251,7 +331,7 @@ class ServiceWorkerCacheVersionTests(unittest.TestCase):
     def test_the_cache_version_moved_for_the_changed_shell(self):
         """/offline-tsr is precached, so devices need the new copy of the page."""
         from tests.sw_cache_version import assert_cache_version_at_least
-        assert_cache_version_at_least(self, 59)
+        assert_cache_version_at_least(self, 62)
 
 
 if __name__ == '__main__':

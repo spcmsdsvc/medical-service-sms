@@ -1,5 +1,50 @@
 # Project Change Log
 
+codex changes - 2026-08-02
+- Executed the approved Plan B offline TSR storage correction locally. Final TSR queue writes now require durable IndexedDB storage for the generated PDF and supporting files; a missing durable PDF or blob reference stops the send path with a clear recovery message instead of silently creating an unrecoverable queue entry.
+- Removed new Base64 duplication from offline TSR attachment handling. Newly selected supporting files and generated PDFs are stored as IndexedDB Blob records and referenced by stable IDs; Base64/data-url values remain accepted only as legacy migration input.
+- Changed the localStorage queue mirror to a metadata-only projection and removed the duplicate full-queue backup write. Legacy queue keys can still be read for migration, but new writes keep only lightweight status, identity, retry, and file metadata.
+- Updated local TSR drafts to persist real supporting files as IndexedDB Blob references, rehydrate them when a draft is reopened, preserve signatures in the TSR payload, and report when a fallback draft could not durably retain attachments.
+- Added truthful final-save recovery behavior. When online save, preview preparation, schedule resolution, or offline queue persistence fails, the page checks the actual draft-save result, distinguishes a saved draft from a failed draft write, and offers an immediate PDF download when the generated PDF is available.
+- Added browser-storage pressure warnings using the Storage Estimate API, including warning and danger thresholds before draft or queue writes, while retaining the existing full-storage warning as the final fallback.
+- Bumped the service-worker cache version to v62-offline-tsr-durable-storage and added the 2026-08-02 What's New release entries for durable offline storage, draft recovery, and browser-storage warnings.
+- Added focused regression assertions for Blob-only new attachments, metadata-only queue mirrors, durable-PDF requirements, durable-write state restoration, draft attachment references, truthful recovery messaging, and storage warnings.
+- Static verification completed locally: venv Scripts python -m unittest discover -s tests -q passed with 405 tests and 1 skipped; focused offline tests passed with 34 tests; app.py compiled; the rendered inline offline_tsr.html JavaScript parsed successfully after template substitution; releases.json parsed; and git diff --check reported no whitespace errors.
+- **Correction to the line above, which originally read "Verification completed".** The plan's browser sequence and its defect-injection step were not run at implementation time, so the work was reported as verified on static checks alone. Both were completed at review, below.
+
+## Plan B review, and the two fixes it produced
+
+* Reviewed the Plan B implementation against the recorded plan before anything was committed.
+  The code passed; the verification did not, and the `changes.md` claim above was corrected to
+  say what had actually been done.
+* **Ran the browser sequence the plan required and the implementation skipped.** With a 600 KB
+  photo on a real page: the attachment stays a `Blob` with no `data_url`; the localStorage
+  draft mirror is **3 KB and contains no base64**, where the old code would have written
+  roughly 800 KB twice; the photo is recovered from IndexedDB at exactly 614,400 bytes; a
+  reopened draft rehydrates it as a usable `Blob`; forcing both stores to fail returns
+  `source: 'none'` so the blunt message fires; forcing only IndexedDB to fail degrades and
+  flags `attachments_not_durable`. Console clean.
+* **Proved the new tests are real guards**, which the implementation had not done. Re-injected
+  the duplicate backup write and the silent base64 fallback; both tests failed. Restored the
+  file and confirmed it was byte-identical by SHA.
+* **Confirmed migration safety**, the thing most likely to have been missed:
+  `resolveQueuedPDFBlob` and `resolveQueuedAttachmentBlob` still fall back to `pdf_data_url`
+  and `data_url`, so a TSR queued on a device *before* this change can still be sent.
+* **Fixed a hot-path cost.** `warnOfflineTSRStoragePressure({silent:true})` ran
+  `navigator.storage.estimate()` on every draft autosave — that is, as the engineer types. The
+  silent check is now throttled to once a minute; an explicit check, such as queueing a TSR,
+  still measures every time.
+* **Fixed a real data-loss risk in the backup cleanup.** The mirror write called
+  `removeItem(OFFLINE_TSR_QUEUE_BACKUP_KEY)` unconditionally, but the load path reads that
+  backup when the primary is empty — and that read is what migrates it. On a device whose
+  IndexedDB came up empty, a write before a load would have discarded the only copy. Removal is
+  now gated on `offlineTSRLegacyQueueRead`, set once the load path has actually read both legacy
+  keys.
+* Added tests for both fixes, each with a positive control: that an explicit storage check is
+  not swallowed by the throttle, and that the legacy backup is still *read* on the way through.
+
+- This implementation remains local and intentionally uncommitted and unpushed pending the owner's separate go signal. scheduler.db, output/, tmp/, and unrelated existing worktree changes were not staged or published.
+
 claude changes - 2026-08-01
 
 ## Schedule options no longer carry an identity that moves
@@ -111,6 +156,20 @@ claude changes - 2026-08-01
   at all. It predates this work and affects every offline TSR, so it was left alone rather than
   widened into. **Both are raised with the owner for `pending-work.md`, which is only edited on
   request**, so they are recorded here in the meantime and are not yet in that file.
+
+## Global Keep Up skill
+
+* Created the global `keep-up` skill at `C:\Users\jonamar\.codex\skills\keep-up` so an explicit
+  `keep up` or `$keep-up` request performs the same deep orientation review used in this task.
+* The skill reads `changes.md`, `plans.md`, and `pending-work.md` completely, reconciles their
+  execution statuses, completed work, open work, verification gaps, risks, and documentation
+  drift, and reports the current repository state without reproducing the journals wholesale.
+* Added strict read-only safeguards: no project edits, journal edits, server starts, migrations,
+  database/artifact access, cache clearing, commits, pushes, or deployments; secrets are not
+  repeated in the resulting summary. Read-only branch/status checks remain allowed.
+* Added the required skill metadata and UI prompt in `agents/openai.yaml`, then ran the skill
+  creator validator successfully. This is a global Codex workflow aid and does not change the
+  application runtime or database.
 
 claude changes - 2026-07-31
 

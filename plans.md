@@ -285,11 +285,31 @@ Bump the service worker; `/offline-tsr` is precached.
 
 ## B — Decide the offline TSR queue's storage strategy
 
-**Status:** `Approved — awaiting go-ahead`
+**Status:** `Executed`
 **Approved:** 2026-08-01
 **Decision made:** 2026-08-01. The question this plan was blocked on is answered below, and the
 owner improved the answer — the failure is framed as "saved as a draft" rather than "cannot
-save". Ready to build; still not started.
+save".
+**Finished:** 2026-08-02. Implemented by Codex, reviewed and completed here. See `changes.md`
+under 2026-08-02.
+
+**Where the plan and the outcome differed:**
+
+- **The implementation was reported as verified when it was not.** Static checks and a green
+  suite were done; the plan's browser sequence and the defect-injection step were skipped. Both
+  were run at review, and the code passed — but "verification completed" in `changes.md` was
+  corrected to say what had actually happened at each point.
+- **Two defects were found at review and fixed**, neither of which the plan anticipated:
+  `navigator.storage.estimate()` ran on every draft autosave, and the legacy queue backup was
+  removed unconditionally even though the load path reads it to migrate it — on a device whose
+  IndexedDB came up empty, a write before a load would have discarded the only copy.
+- **Migration held.** `resolveQueuedPDFBlob` and `resolveQueuedAttachmentBlob` still fall back
+  to the legacy `pdf_data_url` / `data_url`, so a TSR queued before this change can still be
+  sent. Worth recording because it was the most likely thing to have been missed.
+- **A review method worth reusing:** the first defect-injection attempt silently no-oped because
+  the search strings used `\n` against a CRLF file, and the tests passed — which would have read
+  as "the tests are vacuous". Always confirm the injection actually applied before trusting what
+  the test run says.
 **Rewritten:** 2026-08-01 to the required structure — investigation, numbered execution steps,
 and the after-implementation workflow. This is the first plan written to that rule.
 

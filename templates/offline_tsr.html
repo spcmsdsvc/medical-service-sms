@@ -2532,22 +2532,20 @@ function dataURLToFile(dataUrl, filename){
   return new File([blob], filename, { type: blob.type || 'application/octet-stream' });
 }
 
-function blobToBase64Payload(blob){
-  return blobToDataURL(blob);
-}
-
 const TSR_SUPPORTING_ATTACHMENT_MAX_BYTES = 35 * 1024 * 1024;
 const TSR_SUPPORTING_ATTACHMENT_MAX_COUNT = 10;
 
 async function fileToQueuedAttachment(file, fallbackName='attachment'){
   const safeName = String(file?.name || fallbackName || 'attachment').replace(/[^\w.\-() ]+/g, '_').trim() || fallbackName;
-  const dataUrl = await blobToBase64Payload(file);
   return {
     id: `tsr-attachment-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: safeName,
     type: file?.type || 'application/octet-stream',
     size: file?.size || 0,
-    data_url: dataUrl,
+    // Keep the file as a Blob only until the draft/queue IndexedDB write gives it
+    // a durable reference. Never turn field photos into a Base64 JSON payload.
+    blob: file,
+    data_url: '',
     source: 'manual_attachment'
   };
 }
@@ -2562,6 +2560,39 @@ function normalizeQueuedAttachments(attachments){
       source: 'manual_attachment',
       data_url: ''
     }, item));
+}
+
+function getQueuedAttachmentMetadata(attachment){
+  const metadata = Object.assign({}, attachment || {});
+  delete metadata.data_url;
+  delete metadata.blob;
+  delete metadata.file;
+  return metadata;
+}
+
+function projectOfflineTSRPayloadForLocalStorage(payload){
+  const projected = Object.assign({}, payload || {});
+  if(Array.isArray(projected.attachments)){
+    projected.attachments = projected.attachments
+      .filter(item => item && item.name && !isQueuedTSRSignatureAttachment(item))
+      .map(getQueuedAttachmentMetadata);
+  }
+  delete projected.pdf_data_url;
+  delete projected.pdf_blob;
+  return projected;
+}
+
+function projectOfflineTSRQueueItemForLocalStorage(item){
+  const projected = Object.assign({}, item || {});
+  projected.payload = projectOfflineTSRPayloadForLocalStorage(projected.payload || {});
+  if(Array.isArray(projected.attachments)){
+    projected.attachments = projected.attachments
+      .filter(item => item && item.name && !isQueuedTSRSignatureAttachment(item))
+      .map(getQueuedAttachmentMetadata);
+  }
+  delete projected.pdf_data_url;
+  delete projected.pdf_blob;
+  return projected;
 }
 
 function renderTSRAttachments(){
@@ -2627,7 +2658,12 @@ async function handleTSRAttachmentInput(event){
 
   if(event?.target) event.target.value = '';
   renderTSRAttachments();
-  await saveStandaloneTSRDraft(true);
+  const draftResult = await saveStandaloneTSRDraft(true);
+  if(draftResult?.failed || draftResult?.source === 'none'){
+    showTSRStatus('The attachment was selected, but the draft could not be stored on this device. Keep this tab open and try again.', 'danger');
+  }else if(draftResult?.attachments_not_durable){
+    showTSRStatus('Draft text was saved, but supporting attachments need to be selected again because browser file storage is unavailable.', 'warning');
+  }
 }
 
 function removeTSRAttachment(attachmentId){
@@ -2950,21 +2986,77 @@ function formatStandaloneTSRDraftTime(value){
   return date.toLocaleString([], { year:'numeric', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
 
-function buildOfflineTSRDraftRecord(data){
+async function prepareStandaloneTSRDraftPayload(data, draftId){
+  const payload = Object.assign({}, data || {});
+  const signatures = Object.assign({}, payload.signatures || {});
+  const sourceAttachments = normalizeQueuedAttachments(payload.attachments || []);
+  const realAttachments = [];
+
+  for(const attachment of sourceAttachments){
+    if(isQueuedTSRSignatureAttachment(attachment)){
+      const signatureType = String(attachment?.source || attachment?.id || '').toLowerCase().includes('acknowledged')
+        ? 'acknowledged'
+        : 'serviced';
+      if(!signatures[signatureType]){
+        signatures[signatureType] = await resolveQueuedAttachmentDataURL(attachment);
+      }
+      continue;
+    }
+    realAttachments.push(attachment);
+  }
+
+  for(const signatureType of ['serviced','acknowledged']){
+    if(signatures[signatureType]){
+      signatures[signatureType] = await normalizeTSRSignatureDataURL(signatures[signatureType]);
+    }
+  }
+
+  const preparedAttachments = [];
+  for(let index = 0; index < realAttachments.length; index += 1){
+    const prepared = await convertQueuedAttachmentToBlobReference(
+      realAttachments[index],
+      draftId,
+      index,
+      'draft_attachment'
+    );
+    if(prepared) preparedAttachments.push(prepared);
+  }
+
+  payload.signatures = signatures;
+  payload.attachments = preparedAttachments;
+  payload._draft_id = draftId;
+  return payload;
+}
+
+async function rehydrateStandaloneTSRDraftPayload(data){
+  const payload = Object.assign({}, data || {});
+  const attachments = [];
+  for(const attachment of normalizeQueuedAttachments(payload.attachments || [])){
+    if(!attachment.blob && attachment.blob_id){
+      const record = await loadOfflineTSRBlobRecord(attachment.blob_id);
+      if(record?.blob) attachment.blob = record.blob;
+    }
+    attachments.push(attachment);
+  }
+  payload.attachments = attachments;
+  return payload;
+}
+
+async function buildOfflineTSRDraftRecord(data){
   const now = new Date().toISOString();
   const payload = Object.assign({}, data || {});
   const id = resolveStandaloneTSRDraftId(payload);
-  payload._draft_id = id;
+  const durablePayload = await prepareStandaloneTSRDraftPayload(payload, id);
   return {
     id,
-    schedule_id: payload?.schedule_id || payload?.selectedScheduleId || payload?.selectedSchedule?.id || '',
-    selected_schedule_id: payload?.selectedScheduleId || payload?.selectedSchedule?.id || '',
-    title: getStandaloneTSRDraftTitle(payload),
-    subtitle: getStandaloneTSRDraftSubtitle(payload),
-    service_date: payload?.['tsr-service-date'] || payload?.selectedSchedule?.date_iso || '',
-    client_name: payload?.['tsr-customer-name'] || payload?.selectedSchedule?.client_name || '',
-    tsr_number: payload?.['tsr-number'] || '',
-    payload,
+    schedule_id: durablePayload?.schedule_id || durablePayload?.selectedScheduleId || durablePayload?.selectedSchedule?.id || '',
+    selected_schedule_id: durablePayload?.selectedScheduleId || durablePayload?.selectedSchedule?.id || '',
+    title: getStandaloneTSRDraftTitle(durablePayload),
+    subtitle: getStandaloneTSRDraftSubtitle(durablePayload),
+    service_date: durablePayload?.['tsr-service-date'] || durablePayload?.selectedSchedule?.date_iso || '',
+    client_name: durablePayload?.['tsr-customer-name'] || durablePayload?.selectedSchedule?.client_name || '',
+    tsr_number: durablePayload?.['tsr-number'] || '',
+    payload: durablePayload,
     updated_at: now,
     created_at: data?.created_at || data?.savedAt || now,
     source: 'offline_tsr_page',
@@ -2973,7 +3065,7 @@ function buildOfflineTSRDraftRecord(data){
 }
 
 async function saveStandaloneTSRDraftToIndexedDB(data){
-  const record = buildOfflineTSRDraftRecord(data);
+  const record = await buildOfflineTSRDraftRecord(data);
   await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, record);
   standaloneCurrentDraftId = record.id;
   return record;
@@ -2983,7 +3075,7 @@ async function loadStandaloneTSRDraftFromIndexedDB(){
   const record = standaloneCurrentDraftId
     ? await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, standaloneCurrentDraftId)
     : await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, OFFLINE_TSR_ACTIVE_DRAFT_ID);
-  if(record?.payload) return Object.assign({}, record.payload, { _draft_id: record.id });
+  if(record?.payload) return await rehydrateStandaloneTSRDraftPayload(Object.assign({}, record.payload, { _draft_id: record.id }));
   return null;
 }
 
@@ -3003,7 +3095,7 @@ async function loadStandaloneTSRDraftRecordsFromIndexedDB(){
 async function loadStandaloneTSRDraftRecordById(id){
   const record = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.drafts, id);
   if(!record?.payload) return null;
-  const payload = Object.assign({}, record.payload || {}, { _draft_id: record.id });
+  const payload = await rehydrateStandaloneTSRDraftPayload(Object.assign({}, record.payload || {}, { _draft_id: record.id }));
   return Object.assign({}, record, { payload });
 }
 
@@ -3023,9 +3115,11 @@ async function clearStandaloneTSRDraftFromIndexedDB(id=null){
 
 function saveStandaloneTSRDraftToLocalStorageFallback(data){
   try{
-    localStorage.setItem(STANDALONE_TSR_KEY, JSON.stringify(data || {}));
+    localStorage.setItem(STANDALONE_TSR_KEY, JSON.stringify(projectOfflineTSRPayloadForLocalStorage(data || {})));
+    return true;
   }catch(err){
     console.warn('[Offline TSR] Unable to save localStorage draft fallback', err);
+    return false;
   }
 }
 
@@ -3188,17 +3282,36 @@ async function saveStandaloneTSRDraftLocally(data){
   if(!isStandaloneTSRDraftMeaningful(data)){
     return { skipped:true, reason:'empty_tsr_draft' };
   }
+  await warnOfflineTSRStoragePressure({ silent:true });
   try{
     const record = await saveStandaloneTSRDraftToIndexedDB(data);
-    saveStandaloneTSRDraftToLocalStorageFallback(record.payload || data);
-    return record;
+    offlineTSRAttachments = normalizeQueuedAttachments(record.payload?.attachments || offlineTSRAttachments);
+    const mirrorSaved = saveStandaloneTSRDraftToLocalStorageFallback(record.payload || data);
+    return Object.assign({}, record, { localstorage_mirror_saved: mirrorSaved });
   }catch(err){
-    console.warn('[Offline TSR DB] IndexedDB draft save failed. Falling back to localStorage.', err);
+    console.warn('[Offline TSR DB] IndexedDB draft save failed. Falling back to metadata-only localStorage.', err);
     const fallbackId = resolveStandaloneTSRDraftId(data);
     standaloneCurrentDraftId = fallbackId;
     const payload = Object.assign({}, data || {}, { _draft_id:fallbackId });
-    saveStandaloneTSRDraftToLocalStorageFallback(payload);
-    return { id:fallbackId, payload, source:'localstorage', updated_at:new Date().toISOString() };
+    const fallbackSaved = saveStandaloneTSRDraftToLocalStorageFallback(payload);
+    if(!fallbackSaved){
+      return {
+        id:fallbackId,
+        payload,
+        source:'none',
+        failed:true,
+        storage_error:err?.message || 'draft_storage_unavailable',
+        updated_at:new Date().toISOString()
+      };
+    }
+    return {
+      id:fallbackId,
+      payload:projectOfflineTSRPayloadForLocalStorage(payload),
+      source:'localstorage',
+      attachments_not_durable: normalizeQueuedAttachments(payload.attachments || []).length > 0,
+      storage_error:err?.message || 'indexeddb_unavailable',
+      updated_at:new Date().toISOString()
+    };
   }
 }
 
@@ -3320,10 +3433,14 @@ async function deleteStandaloneTSRDraft(id){
 
 /* =========================================================
    PHASE 5 STEP 3 — INDEXEDDB OFFLINE QUEUE STORE
-   Queue now prefers IndexedDB and keeps localStorage as fallback.
+   Queue now uses IndexedDB as its durable source and keeps a metadata-only localStorage mirror.
    ========================================================= */
 let offlineTSRQueueCache = null;
 let offlineTSRQueueLastLoadedAt = null;
+// True once loadOfflineTSRQueueStore has read the legacy localStorage keys and migrated
+// whatever it found. Dropping the old duplicate backup before that could discard the only
+// copy on a device whose IndexedDB was empty.
+let offlineTSRLegacyQueueRead = false;
 
 function buildOfflineTSRQueueRecord(item){
   const normalized = normalizeOfflineTSRQueue([item])[0] || item || {};
@@ -3368,7 +3485,8 @@ async function loadOfflineTSRQueueFromIndexedDB(){
 
 function writeOfflineTSRQueueLocalStorageFallback(queue, warning=''){
   const normalizedQueue = normalizeOfflineTSRQueue(queue);
-  const serializedQueue = JSON.stringify(normalizedQueue);
+  const projectedQueue = normalizedQueue.map(projectOfflineTSRQueueItemForLocalStorage);
+  const serializedQueue = JSON.stringify(projectedQueue);
   const meta = {
     count: normalizedQueue.length,
     last_saved_at: new Date().toISOString(),
@@ -3379,12 +3497,17 @@ function writeOfflineTSRQueueLocalStorageFallback(queue, warning=''){
 
   try{
     localStorage.setItem(OFFLINE_TSR_QUEUE_KEY, serializedQueue);
-    localStorage.setItem(OFFLINE_TSR_QUEUE_BACKUP_KEY, serializedQueue);
+    // IndexedDB is the durable source of truth. Keep one small metadata mirror only; the old
+    // duplicate full-queue backup is dropped after a successful write -- but only once the
+    // load path has actually read it, because that read is what migrates it. Removing it
+    // before then would discard the only copy on a device whose IndexedDB came up empty.
+    if(offlineTSRLegacyQueueRead){
+      localStorage.removeItem(OFFLINE_TSR_QUEUE_BACKUP_KEY);
+    }
     localStorage.setItem(OFFLINE_TSR_QUEUE_META_KEY, JSON.stringify(meta));
   }catch(err){
     console.warn('[Offline TSR] Queue localStorage fallback write failed', err);
     try{
-      localStorage.setItem(OFFLINE_TSR_QUEUE_BACKUP_KEY, serializedQueue);
       localStorage.setItem(OFFLINE_TSR_QUEUE_META_KEY, JSON.stringify(Object.assign(meta, { warning: warning || 'primary_write_failed' })));
     }catch(backupErr){
       console.error('[Offline TSR] Unable to persist offline TSR queue fallback', backupErr);
@@ -3415,6 +3538,10 @@ async function loadOfflineTSRQueueStore(){
     }
   }
 
+  // Both legacy keys have now been read and anything found has been migrated above, so the
+  // duplicate backup is safe to drop on the next write.
+  offlineTSRLegacyQueueRead = true;
+
   const upgradedQueue = [];
   let queueChanged = false;
   for(const item of normalizeOfflineTSRQueue(queue)){
@@ -3436,8 +3563,10 @@ async function loadOfflineTSRQueueStore(){
   return offlineTSRQueueCache;
 }
 
-async function persistOfflineTSRQueueStore(queue){
+async function persistOfflineTSRQueueStore(queue, { requireDurable=false } = {}){
   const normalizedQueue = normalizeOfflineTSRQueue(queue);
+  const previousCache = offlineTSRQueueCache;
+  const previousLoadedAt = offlineTSRQueueLastLoadedAt;
   offlineTSRQueueCache = normalizedQueue;
   offlineTSRQueueLastLoadedAt = new Date().toISOString();
 
@@ -3445,8 +3574,13 @@ async function persistOfflineTSRQueueStore(queue){
     await saveOfflineTSRQueueToIndexedDB(normalizedQueue);
     writeOfflineTSRQueueLocalStorageFallback(normalizedQueue);
   }catch(err){
-    console.warn('[Offline TSR DB] IndexedDB queue write failed. Falling back to localStorage.', err);
+    console.warn('[Offline TSR DB] IndexedDB queue write failed.', err);
     writeOfflineTSRQueueLocalStorageFallback(normalizedQueue, 'indexeddb_write_failed');
+    if(requireDurable){
+      offlineTSRQueueCache = previousCache;
+      offlineTSRQueueLastLoadedAt = previousLoadedAt;
+      throw err;
+    }
   }
 
   renderOfflineTSRQueuePanel();
@@ -3465,7 +3599,7 @@ async function refreshOfflineTSRQueueStore(){
 
 /* =========================================================
    PHASE 5 STEP 4 — INDEXEDDB ATTACHMENT BLOB STORE
-   Queue items now store blob references while local data_url fallback remains.
+   Queue items store blob references; data_url is accepted only as legacy migration input.
    ========================================================= */
 function makeOfflineTSRAttachmentBlobId(ownerId, attachmentId, suffix='file'){
   const safeOwner = String(ownerId || 'draft').replace(/[^\w\-]+/g, '_');
@@ -3524,7 +3658,7 @@ async function deleteOfflineTSRBlobRecordsForQueueItem(item){
   }
 }
 
-async function convertQueuedAttachmentToBlobReference(attachment, ownerId, index=0){
+async function convertQueuedAttachmentToBlobReference(attachment, ownerId, index=0, ownerType='queue_attachment'){
   if(!attachment) return null;
 
   const normalized = normalizeQueuedAttachments([attachment])[0] || attachment;
@@ -3544,7 +3678,7 @@ async function convertQueuedAttachmentToBlobReference(attachment, ownerId, index
     await saveOfflineTSRBlobRecord({
       id: blobId,
       owner_id: ownerId,
-      owner_type: 'queue_attachment',
+      owner_type: ownerType,
       name: filename,
       type: normalized.type || blob.type || 'application/octet-stream',
       size: normalized.size || blob.size || 0,
@@ -3559,14 +3693,18 @@ async function convertQueuedAttachmentToBlobReference(attachment, ownerId, index
       stored_as: 'indexeddb_blob'
     });
   }catch(err){
-    console.warn('[Offline TSR DB] Attachment blob save failed. Keeping data_url fallback.', err);
-    return normalized;
+    const storageError = new Error('Unable to store a supporting attachment in durable browser storage.');
+    storageError.code = 'offline_storage_unavailable';
+    storageError.phase = 'storing_supporting_attachment';
+    storageError.originalError = err;
+    throw storageError;
   }
 }
 
 async function prepareOfflineTSRQueueItemBlobs(queueItem, pdfBlob, attachments){
   const preparedItem = Object.assign({}, queueItem);
   const ownerId = preparedItem.id;
+  preparedItem.pdf_data_url = '';
 
   if(pdfBlob){
     const pdfBlobId = makeOfflineTSRAttachmentBlobId(ownerId, 'pdf', 'tsr-pdf');
@@ -3585,7 +3723,13 @@ async function prepareOfflineTSRQueueItemBlobs(queueItem, pdfBlob, attachments){
       preparedItem.pdf_data_url = '';
       preparedItem.pdf_stored_as = 'indexeddb_blob';
     }catch(err){
-      console.warn('[Offline TSR DB] PDF blob save failed. Keeping data_url fallback.', err);
+      const storageError = new Error('Unable to store the generated TSR PDF in durable browser storage.');
+      storageError.code = 'offline_storage_unavailable';
+      storageError.phase = 'storing_tsr_pdf';
+      storageError.originalError = err;
+      preparedItem.pdf_data_url = '';
+      preparedItem.storage_error = 'pdf_blob_unavailable';
+      throw storageError;
     }
   }
 
@@ -3626,6 +3770,7 @@ async function prepareOfflineTSRQueueItemBlobs(queueItem, pdfBlob, attachments){
 
 async function resolveQueuedAttachmentDataURL(attachment){
   if(attachment?.data_url) return attachment.data_url;
+  if(attachment?.blob instanceof Blob) return blobToDataURL(attachment.blob);
   if(attachment?.blob_id){
     const record = await loadOfflineTSRBlobRecord(attachment.blob_id);
     if(record?.blob) return blobToDataURL(record.blob);
@@ -3650,6 +3795,8 @@ function ensureTSRSubmissionToken(existing=''){
 function sanitizeTSRPayloadForTransport(payload){
   const cleanPayload = Object.assign({}, payload || {});
   delete cleanPayload.attachments;
+  delete cleanPayload.pdf_data_url;
+  delete cleanPayload.pdf_blob;
   cleanPayload.submission_token = ensureTSRSubmissionToken(cleanPayload.submission_token);
   return cleanPayload;
 }
@@ -3693,7 +3840,7 @@ async function resolveQueuedAttachmentBlob(attachment){
 
 /* =========================================================
    PHASE 5 STEP 5 — SAFE LOCALSTORAGE → INDEXEDDB MIGRATION LAYER
-   Non-destructive: localStorage backups are preserved as fallback.
+   Non-destructive: legacy localStorage data is read for migration, while new mirrors stay metadata-only.
    ========================================================= */
 const OFFLINE_TSR_MIGRATION_METADATA_KEY = 'phase5_step5_migration_status';
 
@@ -3986,6 +4133,41 @@ async function getOfflineTSRStorageEstimate(){
     console.warn('[Offline TSR Health] Storage estimate unavailable', err);
     return null;
   }
+}
+
+let offlineTSRStorageWarningShownAt = 0;
+let offlineTSRStorageCheckedAt = 0;
+const OFFLINE_TSR_STORAGE_CHECK_INTERVAL_MS = 60 * 1000;
+
+async function warnOfflineTSRStoragePressure({ silent=false } = {}){
+  // The silent call sits on the draft autosave path, which fires as the engineer types.
+  // navigator.storage.estimate() is not free, so a background check runs at most once a
+  // minute; an explicit check -- queueing a TSR -- always measures.
+  const checkedAt = Date.now();
+  if(silent && checkedAt - offlineTSRStorageCheckedAt < OFFLINE_TSR_STORAGE_CHECK_INTERVAL_MS){
+    return { available:true, skipped:true };
+  }
+  offlineTSRStorageCheckedAt = checkedAt;
+
+  const estimate = await getOfflineTSRStorageEstimate();
+  const usage = Number(estimate?.usage || 0);
+  const quota = Number(estimate?.quota || 0);
+  if(!usage || !quota) return { available:true, usage, quota, ratio:0 };
+
+  const ratio = usage / quota;
+  if(ratio < 0.75) return { available:true, usage, quota, ratio };
+
+  const now = Date.now();
+  const shouldShow = !silent || now - offlineTSRStorageWarningShownAt > 10 * 60 * 1000;
+  if(shouldShow){
+    offlineTSRStorageWarningShownAt = now;
+    const percentage = Math.round(ratio * 100);
+    const message = ratio >= 0.9
+      ? 'Browser storage is almost full (' + percentage + '%). Sync or download pending TSRs before adding more files.'
+      : 'Browser storage is getting full (' + percentage + '%). Sync pending TSRs and remove old drafts before adding more files.';
+    showTSRStatus(message, ratio >= 0.9 ? 'danger' : 'warning', { scroll:false });
+  }
+  return { available:true, usage, quota, ratio, warning:true };
 }
 
 async function collectOfflineTSRStorageHealth(){
@@ -4545,10 +4727,16 @@ async function uploadTSRSupportingAttachments(coreResult, attachments, options={
 }
 
 async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', options={}){
+  await warnOfflineTSRStoragePressure();
+  if(!pdfPackage?.blob){
+    const storageError = new Error('The generated TSR PDF is not available for durable offline storage. Please try Preview or Download again.');
+    storageError.code = 'offline_storage_unavailable';
+    storageError.phase = 'storing_tsr_pdf';
+    throw storageError;
+  }
   const queue = await loadOfflineTSRQueueStore();
   const queuedAt = new Date().toISOString();
   const selectedSchedule = payload?.selectedSchedule || getSelectedStandaloneSchedule() || {};
-  const pdfDataUrl = pdfPackage?.blob ? await blobToDataURL(pdfPackage.blob) : '';
 
   const queuedAttachments = getCurrentTSRQueuedAttachments(payload);
   const transportPayload = sanitizeTSRPayloadForTransport(payload);
@@ -4570,7 +4758,7 @@ async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', 
     product_name: payload?.['tsr-equipment-model'] || selectedSchedule?.product_name || '',
     task: selectedSchedule?.task || payload?.task || '',
     pdf_filename: pdfPackage?.filename || payload?.pdf_filename || payload?.download_filename || 'Online_TSR.pdf',
-    pdf_data_url: pdfDataUrl,
+    pdf_data_url: '',
     attachments: queuedAttachments,
     uploaded_attachment_tokens: options.uploadedAttachmentTokens || [],
     server_submission_id: options.coreResult?.submission_id || null,
@@ -4582,7 +4770,7 @@ async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', 
 
   queueItem = await prepareOfflineTSRQueueItemBlobs(queueItem, pdfPackage?.blob || null, queuedAttachments);
   queue.push(queueItem);
-  await writeOfflineTSRQueueAsync(queue);
+  await persistOfflineTSRQueueStore(queue, { requireDurable:true });
   await saveStandaloneTSRDraftLocally(payload);
   return queueItem;
 }
@@ -5475,12 +5663,57 @@ async function beginStandaloneTSRFinalPreview(data){
     await showFinalTSRPreview(payload, pdfPackage, { isRevision, revisionReason, note: offlineNote });
   }catch(err){
     console.error('[Offline TSR] Final TSR preview failed', err);
-    showTSRStatus(err?.message || 'Unable to prepare final TSR preview. Draft was kept locally on this device.', 'danger');
-    await saveStandaloneTSRDraftLocally(data).catch(draftErr => console.warn('[Offline TSR] Final preview draft preservation failed', draftErr));
+    const draftResult = await saveStandaloneTSRDraftLocally(data).catch(draftErr => ({
+      failed:true,
+      storage_error:draftErr?.message || 'draft_storage_unavailable'
+    }));
+    if(draftResult?.failed || draftResult?.source === 'none'){
+      showTSRFinalSaveRecovery(
+        (err?.message || 'Unable to prepare final TSR preview.') + ' The draft could not be saved on this device. Keep this tab open and download the PDF if it becomes available.',
+        null,
+        'danger'
+      );
+    }else{
+      const attachmentNote = draftResult?.attachments_not_durable
+        ? ' Supporting attachments could not be stored durably and must be selected again before sending.'
+        : '';
+      showTSRFinalSaveRecovery(
+        (err?.message || 'Unable to prepare final TSR preview.') + ' Your TSR draft is saved on this device and can be continued later.' + attachmentNote,
+        null,
+        'warning'
+      );
+    }
   }finally{
     finalTSRPreviewBusy = false;
     setOfflineTSRPDFBusy(false);
   }
+}
+
+function showTSRFinalSaveRecovery(message, pdfPackage=null, variant='danger'){
+  const el = document.getElementById('standalone-tsr-status');
+  if(!el) return;
+  const normalized = ['success','info','warning','danger'].includes(variant) ? variant : 'danger';
+  const icon = normalized === 'danger' ? 'fa-triangle-exclamation' : normalized === 'warning' ? 'fa-circle-exclamation' : 'fa-circle-info';
+  el.className = 'alert alert-' + normalized + ' border-0 shadow-sm no-print';
+  el.innerHTML = '<i class="fa-solid ' + icon + ' me-1"></i>' + escapeHTML(message);
+  if(pdfPackage?.blob){
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-sm btn-outline-danger fw-bold ms-2';
+    button.innerHTML = '<i class="fa-solid fa-file-arrow-down me-1"></i>Download PDF now';
+    button.addEventListener('click', () => {
+      const url = URL.createObjectURL(pdfPackage.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = pdfPackage.filename || 'Online_TSR.pdf';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    });
+    el.appendChild(button);
+  }
+  requestAnimationFrame(() => el.scrollIntoView({ behavior:'smooth', block:'start' }));
 }
 
 async function finishStandaloneTSRFinalSave(state){
@@ -5552,16 +5785,27 @@ async function finishStandaloneTSRFinalSave(state){
         // The schedule this draft points at is gone from the server. Keep the work, drop the
         // dead selection, and put the engineer straight into the picker -- previously this
         // dead-ended with a finished TSR and no route forward.
-        await saveStandaloneTSRDraftLocally(payload);
+        const draftResult = await saveStandaloneTSRDraftLocally(payload);
         selectedStandaloneScheduleId = '';
         selectedStandaloneScheduleSnapshot = null;
         updateCreateTSRScheduleGate({ showMessage: true });
-        showTSRStatus(`${err?.message || 'That schedule no longer exists.'} Your draft is safe.`, 'danger');
+        if(draftResult?.failed || draftResult?.source === 'none'){
+          showTSRFinalSaveRecovery((err?.message || 'That schedule no longer exists.') + ' The draft could not be saved on this device. Keep this tab open and download the PDF now.', pdfPackage, 'danger');
+        }else{
+          showTSRFinalSaveRecovery((err?.message || 'That schedule no longer exists.') + ' Your draft is safe on this device.', pdfPackage, 'warning');
+        }
         await refreshStandaloneScheduleOptions(false);
         openStandaloneSchedulePickerModal();
       }else{
-        await saveStandaloneTSRDraftLocally(payload);
-        showTSRStatus(`${err?.message || 'Unable to save TSR online right now.'} Draft was kept locally on this device.`, 'danger');
+        const draftResult = await saveStandaloneTSRDraftLocally(payload);
+        if(draftResult?.failed || draftResult?.source === 'none'){
+          showTSRFinalSaveRecovery((err?.message || 'Unable to save TSR online right now.') + ' The draft could not be saved on this device. Keep this tab open and download the PDF now.', pdfPackage, 'danger');
+        }else{
+          const attachmentNote = draftResult?.attachments_not_durable
+            ? ' Supporting attachments could not be stored durably and must be selected again before sending.'
+            : '';
+          showTSRFinalSaveRecovery((err?.message || 'Unable to save TSR online right now.') + ' Your TSR draft is saved on this device.' + attachmentNote, pdfPackage, 'warning');
+        }
       }
       renderOfflineTSRQueuePanel();
       await renderStandaloneTSRDraftPanel();
@@ -5597,8 +5841,18 @@ async function confirmStandaloneTSRFinalSave(){
     resetFinalTSRPreviewState();
   }catch(err){
     console.warn('[Offline TSR] Final TSR save failed', err);
-    await saveStandaloneTSRDraftLocally(state.payload || collectTSRData()).catch(draftErr => console.warn('[Offline TSR] Confirm-save draft preservation failed', draftErr));
-    showTSRStatus(err?.message || 'Unable to save TSR. Draft was kept locally on this device.', 'danger');
+    const draftResult = await saveStandaloneTSRDraftLocally(state.payload || collectTSRData()).catch(draftErr => ({
+      failed:true,
+      storage_error:draftErr?.message || 'draft_storage_unavailable'
+    }));
+    if(draftResult?.failed || draftResult?.source === 'none'){
+      showTSRFinalSaveRecovery((err?.message || 'Unable to save TSR.') + ' The draft could not be saved on this device. Keep this tab open and download the PDF now.', state.pdfPackage, 'danger');
+    }else{
+      const attachmentNote = draftResult?.attachments_not_durable
+        ? ' Supporting attachments could not be stored durably and must be selected again before sending.'
+        : '';
+      showTSRFinalSaveRecovery((err?.message || 'Unable to save TSR.') + ' Your TSR draft is saved on this device.' + attachmentNote, state.pdfPackage, 'warning');
+    }
     setFinalTSRPreviewMode(true, { busy:false });
   }finally{
     finalTSRConfirmBusy = false;
@@ -5613,8 +5867,7 @@ async function saveStandaloneTSRDraft(silent=false){
   }
   const data=collectTSRData();
   if(silent){
-    await saveStandaloneTSRDraftLocally(data);
-    return;
+    return await saveStandaloneTSRDraftLocally(data);
   }
   await beginStandaloneTSRFinalPreview(data);
 }

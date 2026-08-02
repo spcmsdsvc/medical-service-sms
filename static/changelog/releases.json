@@ -1256,6 +1256,45 @@
           "sort_order": 70
         }
       ]
+    },
+    {
+      "release_key": "2026-08-02",
+      "release_date": "2026-08-02",
+      "title": "Safer Offline TSR Storage",
+      "summary": "Offline TSR drafts and queued PDFs now use durable browser storage without duplicating large files in localStorage.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-02-offline-tsr-durable-storage",
+          "category": "Create TSR",
+          "description": "Queued TSR PDFs and supporting files are stored as local IndexedDB blobs, while the localStorage mirror keeps only lightweight metadata.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-02-offline-tsr-draft-recovery",
+          "category": "Create TSR",
+          "description": "When a final TSR save cannot complete, the app now reports whether the draft was actually preserved and offers the generated PDF as a download escape hatch when needed.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-08-02-offline-tsr-storage-warning",
+          "category": "Create TSR",
+          "description": "Create TSR warns engineers before browser storage becomes critically full so pending work can be synchronized or downloaded in time.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 30
+        }
+      ]
     }
   ]
 }
