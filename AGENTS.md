@@ -14,6 +14,12 @@
 - Record the plan as approved, not a summary of it: the files to touch, the reasoning behind
   the approach, what is deliberately excluded and why, and how it will be verified. Enough
   that someone without the originating conversation could execute it.
+- **Write it detailed, and write it to be executed.** Prose alone is not enough. Every plan
+  carries numbered execution steps that can be worked through one at a time, each naming the
+  files and functions it touches and what "done" looks like — plus what happens *after* the
+  code is written: self-review, proving the tests fail without the fix, the full suite, browser
+  verification, the service worker bump, `releases.json`, the journals, and the commit
+  checklist. The required structure is in `plans.md` under "How to use this file".
 - Keep the `Status` line current — `Approved — awaiting go-ahead`, `In progress`, `Executed`
   with its commit hash, or `Superseded` / `Abandoned` with the reason.
 - Newest plan at the top, as in `changes.md`. Keep executed plans in the file rather than

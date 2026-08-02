@@ -35,6 +35,45 @@ separately says to start. See `AGENTS.md`, "Approved Plans", for the full statem
 - If the work turns out to need something the plan did not cover, note it under the plan
   rather than quietly widening the scope.
 
+### Required structure
+
+Every plan is written to be **executed by someone who was not in the conversation**. Prose alone
+is not enough: the execution steps must be numbered task bullets that can be worked through and
+ticked off, and the plan must say what happens *after* the code is written, not only during.
+
+| Section | What it must contain |
+| --- | --- |
+| **Status / dates** | The status line, when approved, when detailed, when finished with its commit. |
+| **Context** | The problem, what prompted it, and the intended outcome. Why now. |
+| **Decisions taken** | What the owner settled, so an executor does not reopen it. |
+| **Investigation** | What was verified in the code, with `file:line`. Findings that changed the approach belong here, including anything that turned out **not** to be true. |
+| **Execution steps** | **Numbered tasks, in order**, each naming the files and functions it touches and what "done" looks like. Small enough to finish and check one at a time. |
+| **Deliberately excluded** | What is out of scope and the reason, so it reads as a decision rather than an oversight. |
+| **Verification** | Tests to add, each with the positive control that proves it can fail; the browser sequence; the standing bar (375 px, tap targets, console, suite count). |
+| **After implementation** | The review and release workflow below, made concrete for this plan. |
+| **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
+
+### After implementation — the workflow every plan ends with
+
+State these explicitly in the plan, with anything plan-specific filled in:
+
+1. **Self-review the diff** before anything else — read it as a reviewer would, not as its author.
+2. **Prove the new tests fail without the fix.** Re-inject each defect, watch the test fail,
+   restore from an intact copy, and confirm no residue.
+3. **Full suite green**, quoting the before and after counts.
+4. **Browser verification** of the real user path, against a genuinely stopped server where the
+   change touches offline behaviour.
+5. **Service worker bump** when a precached asset or template changed — read the live value out
+   of `app.py` at commit time, never from a note made earlier in the session.
+6. **`releases.json` entry** dated the commit date for anything user-facing.
+7. **Update the journals**: `changes.md` for what was done, this file for the status and for
+   where the plan and the outcome differed.
+8. **Commit and push** against the standing checklist in `pending-work.md` section 4 — explicit
+   staging, never `git add -A`, `scheduler.db` excluded by name, re-read `origin/main` after
+   finishing rather than only before starting.
+9. **Report honestly**: what was verified, what was not, and anything found along the way that
+   was left alone.
+
 ---
 
 ## A — Give schedule options an identity that does not depend on list position
@@ -251,6 +290,8 @@ Bump the service worker; `/offline-tsr` is precached.
 **Decision made:** 2026-08-01. The question this plan was blocked on is answered below, and the
 owner improved the answer — the failure is framed as "saved as a draft" rather than "cannot
 save". Ready to build; still not started.
+**Rewritten:** 2026-08-01 to the required structure — investigation, numbered execution steps,
+and the after-implementation workflow. This is the first plan written to that rule.
 
 ### Context
 
@@ -297,37 +338,94 @@ have typed.
 Order matters: try the draft, then report what actually happened. Never print the calm message
 without having confirmed the draft write succeeded.
 
-### Scope
+### Investigation — verified in the source
 
-- One localStorage key, metadata only: id, status, tokens, client, timestamps, sync state. No
-  `pdf_data_url`, no attachment data URLs. Drop the duplicate backup key.
-- `prepareOfflineTSRQueueItemBlobs` stops silently keeping the data URL on blob-write failure;
-  it surfaces the failure to the caller so the message above can be chosen truthfully.
-- **Photos in drafts, added to scope after the owner asked whether drafting still works.** A
-  draft stores `payload.attachments`, and `fileToQueuedAttachment` holds each photo as a base64
-  data URL — so a draft with several site photos is heavy too, and the localStorage draft
-  fallback (`STANDALONE_TSR_KEY`) writes the whole thing. Drafts must keep photos in IndexedDB
-  as blob references, the way queue items already do, or "save it as a draft" fails for exactly
-  the engineers most likely to need it.
-- A storage-pressure warning **before** the queue grows large, using `navigator.storage.estimate()`
-  where available, rather than after a write has already failed.
-- Keep the existing "browser storage is full" message as the last resort.
+| Fact | Where |
+| --- | --- |
+| The whole queue is serialised and written to **two** localStorage keys | `writeOfflineTSRQueueLocalStorageFallback`, `offline_tsr.html:3369`; `OFFLINE_TSR_QUEUE_BACKUP_KEY`, `:2698` |
+| The base64 PDF is **kept on the record** when the IndexedDB blob write fails | `prepareOfflineTSRQueueItemBlobs`, `:3567` — the `catch` keeps `pdf_data_url` |
+| Nothing strips heavy fields before the mirror is written | `normalizeOfflineTSRQueue`, `:4223` |
+| A draft stores the **whole payload**, including `attachments` | `buildOfflineTSRDraftRecord`, `:2953` |
+| Each photo is held as a base64 data URL | `fileToQueuedAttachment`, `:2542` |
+| The draft localStorage fallback writes that whole payload | `saveStandaloneTSRDraftToLocalStorageFallback`, `:3024`; `STANDALONE_TSR_KEY`, `:503` |
+| Queue items already have a working blob path to copy | `saveOfflineTSRBlobRecord`, `:3477` |
+| A draft carries **no PDF** — confirmed against a real captured draft during the plan A work | `collectTSRData`; PDF is built only at final save |
+
+### Execution steps
+
+1. **Stop the PDF surviving in the queue record.** In `prepareOfflineTSRQueueItemBlobs`
+   (`:3567`), the blob-write `catch` must clear `pdf_data_url` and mark the item as having no
+   durable PDF, then surface that to the caller instead of degrading quietly.
+   *Done when:* a forced blob-write failure returns a record with no base64 payload and a caller
+   can tell it failed.
+2. **Make the localStorage mirror metadata only.** In `writeOfflineTSRQueueLocalStorageFallback`
+   (`:3369`), serialise a projection — id, status, tokens, client, product, timestamps, sync
+   state, error fields — never `pdf_data_url` or attachment data URLs. Drop the duplicate write
+   to `OFFLINE_TSR_QUEUE_BACKUP_KEY` (`:2698`) and delete any value already stored there.
+   *Done when:* the two localStorage keys hold kilobytes, and IndexedDB still holds the blobs.
+3. **Move draft photos to blob references.** Reuse `saveOfflineTSRBlobRecord` (`:3477`) for
+   `payload.attachments` in `buildOfflineTSRDraftRecord` (`:2953`), mirroring what queue items
+   already do, and rehydrate on draft open. `saveStandaloneTSRDraftToLocalStorageFallback`
+   (`:3024`) writes the projection, never the photos.
+   *Done when:* a draft with three photos is kilobytes in localStorage and the photos still come
+   back when the draft is reopened.
+4. **Draft first, then report — truthfully.** In the final-save failure path in
+   `finishStandaloneTSRFinalSave`, attempt `saveStandaloneTSRDraftLocally` (`:3187`) and branch
+   on the **actual result**: success gives the calm draft message, failure gives the blunt one
+   plus the download-the-PDF escape hatch.
+   *Done when:* forcing the draft write to fail produces the blunt message, not the calm one.
+5. **Warn before the wall, not after it.** Use `navigator.storage.estimate()` where available to
+   warn as the queue grows, keeping the existing "browser storage is full" text as the last
+   resort.
+   *Done when:* a device near its quota is warned while it can still act.
+6. **Cache bump and changelog.** Read `CACHE_VERSION` live out of `app.py` at commit time;
+   `/offline-tsr` is precached. Add a `releases.json` entry dated the commit date.
 
 ### Deliberately excluded
 
 - Changing the IndexedDB blob layout. It works; this is about the fallback around it.
 - The offline schedule queue's attachments — a separate open item, still unverified against a
   real device camera.
+- Any change to what the engineer types or how a TSR is composed. This is storage and messaging.
 
 ### Verification
 
-- A queue item's localStorage form contains no base64 payload, with a positive control asserting
-  the IndexedDB record still does.
-- A draft carrying photos stores blob references, not data URLs, with the same positive control.
-- A simulated blob-write failure surfaces rather than silently degrading, and the engineer gets
-  the draft message only when the draft actually saved — with a control forcing the draft write
-  to fail and asserting the blunt message appears instead.
-- Real device: fill storage, confirm the engineer is told before the queue is compromised.
+Tests in `tests/test_offline_resilience.py`, each with the control that proves it can fail:
+
+- A queue item's localStorage form contains no base64 payload. **Control:** the IndexedDB record
+  still does, so the assertion cannot pass by the data having vanished entirely.
+- A draft carrying photos stores blob references, not data URLs, with the same control.
+- Only one localStorage queue key is written.
+- A simulated blob-write failure surfaces rather than degrading silently.
+- The calm draft message is only reachable after a successful draft write. **Control:** force the
+  draft write to fail and assert the blunt message appears instead — this is the assertion that
+  stops the app implying something was saved when it was not.
+
+Browser, isolated database, port 5056, as a real seeded engineer:
+
+1. Queue a TSR normally and confirm the localStorage keys are small while the PDF is in IndexedDB.
+2. Attach three photos to a draft; confirm the draft reopens with the photos intact.
+3. Force the blob store to fail: confirm the send is refused, the draft is saved, and the calm
+   message names it.
+4. Force the draft write to fail too: confirm the blunt message and the escape hatch.
+5. Standing bar — 375 px with no horizontal overflow, tap targets ≥44 px, console clean.
+
+### After implementation
+
+Follow the workflow in "How to use this file", specifically for this plan:
+
+1. Self-review the diff.
+2. Prove each new test fails without its fix, then restore from an intact copy and confirm no
+   residue.
+3. Full suite green, quoting before and after counts (397 at the time of writing).
+4. Browser sequence above, including both forced-failure cases.
+5. Service worker bump, read live from `app.py` at commit time.
+6. `releases.json` entry dated the commit date.
+7. Update `changes.md`, and this plan's status to `Executed` with its commit hash and any place
+   the plan and the outcome differed.
+8. Commit and push against the `pending-work.md` section 4 checklist — explicit staging,
+   `scheduler.db` excluded by name, re-read `origin/main` after finishing.
+9. Report what was verified, what was not, and anything found and left alone.
 
 ---
 
