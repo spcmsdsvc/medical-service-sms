@@ -142,6 +142,68 @@ State these explicitly in the plan, with anything plan-specific filled in:
 9. **Report honestly**: what was verified, what was not, and anything found along the way that
    was left alone.
 
+## Reimbursement Package Total Consistency Repair
+
+**Status:** `In progress`
+**Approved:** 2026-08-03
+**Detailed:** 2026-08-03, after reviewing the worksheet total, the reimbursement download audit, and the Excel/PCV/RFP generation paths.
+**Finished:** Pending implementation, verification, commit, and push.
+
+### Context
+
+An engineer reported that a reimbursement worksheet showed approximately PHP 55,241.42 while the downloaded Request for Payment form showed a lower amount. The worksheet is calculated from browser inputs, while generated forms currently recalculate independently from persisted expense columns. The fix must make the saved reimbursement header the single source for all generated outputs without changing existing records destructively or breaking range reuse, row deletion, receipts, automatic LPR reconciliation, approval, or accounting handoff.
+
+### Decisions taken
+
+- Use one backend reimbursement total snapshot for the worksheet reload response, status/history summaries, approval serialization, email context, Excel, PCV, RFP, and accounting package generation.
+- Persisted expense columns are authoritative for current rows. A legacy row that has a positive `row_total` but no positive expense-column values is preserved through a controlled fallback into `Others / Misc` for generated outputs.
+- Do not mutate historical rows merely because a mismatch is detected. Return explicit consistency metadata so the UI and logs can identify a mismatch instead of silently presenting different totals.
+- Resolve downloads by the active `reimbursement_id`; retain the existing date-range lookup only as a compatibility fallback for callers that do not provide an ID.
+- Return the server-calculated total after draft save and show it before a package download. Existing locked records, row deletion/restoration, receipts, linked LPRs, and submission cleanup remain unchanged.
+
+### Investigation
+
+- `app.py:19914-19953` defines the reimbursement component fields and currently treats `row_total` as a claimability fallback.
+- `app.py:20125-20153`, `app.py:23222-23223`, and `app.py:23309` serialize totals from `row_total`, while `app.py:21188-21213` builds generated-form categories from component fields.
+- `app.py:20221-20345` writes Excel rows and totals from component fields; `app.py:20471-20500`, `app.py:20676-20702`, and `app.py:21228-21254` feed PCV/RFP totals from the category helper.
+- `app.py:20448-20465` already prefers an exact request `reimbursement_id` and only uses legacy date-range lookup when no ID is supplied.
+- `app.py:23400-23560` saves all current component values and returns the header lifecycle, but does not return the authoritative saved total or a consistency warning.
+- `templates/reimbursement.html:2131-2170` calculates the visible worksheet total from active inputs, and `templates/reimbursement.html:3553-3660` saves an editable draft before downloading the package. The frontend does not currently display the server-calculated total.
+- No destructive live-data or database-file operation is part of this repair. The existing unrelated `scheduler.db`, `output/`, `tmp/`, and handoff artifact worktree changes remain untouched.
+
+### Execution steps
+
+1. Update `app.py` near `REIMBURSEMENT_EXPENSE_FIELDS` with effective row-amount and reimbursement-total snapshot helpers. Done means the helper reports component totals, row-total totals, legacy fallbacks, mismatch rows, category totals, and a serializable warning without mutating rows.
+2. Route `reimbursement_expense_category_totals`, reimbursement email context, manager/history/draft serializers, and `reimbursement_row_to_dict` through the snapshot. Done means every API summary and loaded row uses the same effective saved values.
+3. Route Excel, PCV, and RFP generation through the effective row/category values. Done means all generated forms and the detailed Excel agree for component-backed rows and preserve row-total-only legacy rows under `Others / Misc`.
+4. Extend the draft-save response and frontend `templates/reimbursement.html` state/update functions with the server total summary and mismatch warning. Done means save/download displays the server total and warns when saved data is inconsistent without preventing normal editing or download.
+5. Add focused regression tests for component totals, legacy row-total fallback, mismatch metadata, generated RFP/PCV/Excel consistency, exact-ID package selection, and LPR/zero-row compatibility. Done means the tests fail when the new snapshot path is bypassed and pass after restoration.
+6. Add the user-facing reimbursement consistency item to `static/changelog/releases.json`; no service-worker bump is required unless verification shows this template is in a precached shell asset. Update `changes.md` in the same task.
+7. Self-review the diff before the full suite, run defect-injection checks, compile Python, run focused and isolated full tests, perform a local save/reload/download smoke check, run `git diff --check`, explicitly stage only intended code/journal/manifest/test files, commit, re-read `origin/main`, and push `main`. Never stage `scheduler.db`, `output/`, `outputs/`, or `tmp/`.
+
+### Deliberately excluded
+
+- No database migration, live database replacement, or historical row rewrite.
+- No change to reimbursement date-range reuse or claimed-schedule rules.
+- No change to package receipt handling, linked LPR ownership, approval routing, or submission lifecycle.
+- No change to the official PDF templates, accounting codes, filenames, or the browser worksheet column layout.
+- No service-worker cache bump unless the changed asset is actually precached; the modified reimbursement template is served through the authenticated route rather than the current app shell.
+
+### Verification
+
+- Positive controls: component-backed rows generate the same total in the worksheet response, manager response, Excel, PCV, RFP, email context, and downloaded ZIP.
+- Legacy control: a row with `row_total=500` and all component fields zero generates PHP 500 under `Others / Misc` rather than disappearing.
+- Mismatch control: a row with a nonzero component sum different from `row_total` returns warning metadata and all generated forms use the same component-derived total.
+- Exact-record control: two records with the same date range download the explicitly requested ID, not the newest range match.
+- Defect injection: temporarily bypass the helper in one generated path, observe the focused consistency test fail, restore the intact implementation, and confirm no source residue.
+- Run `python -m py_compile app.py`, focused reimbursement tests, the isolated full suite with its before/after count, JavaScript/template syntax checks, a local browser/API smoke path where available, and `git diff --check`.
+
+### Risks
+
+- Legacy rows with only `row_total` could otherwise disappear from accounting forms; the fallback preserves them without changing the database.
+- Genuine nonzero component/row-total mismatches may represent stale or manually inconsistent data. The repair makes the discrepancy visible and keeps every generated output consistent, but does not guess which historical value should be edited.
+- The package download is a high-blast-radius path, so exact-ID resolution and focused artifact-total tests are required before release.
+
 ---
 
 ## A — Give schedule options an identity that does not depend on list position

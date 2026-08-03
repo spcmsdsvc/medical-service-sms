@@ -1311,6 +1311,16 @@
             "engineers"
           ],
           "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-03-reimbursement-package-total-consistency",
+          "category": "Reimbursement",
+          "description": "Reimbursement downloads now use one saved total across the worksheet, Excel, PCV, Request for Payment form, and accounting package, with clear warnings when legacy data needs review.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 20
         }
       ]
     }

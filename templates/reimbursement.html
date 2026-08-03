@@ -1825,6 +1825,7 @@
     let reimbursementRowChangeBusy = false;
     let currentReimbursementId = null;
     window.currentReimbursementId = null;
+    let currentReimbursementTotalSummary = null;
     let currentReimbursementStatus = 'Draft';
     let currentReimbursementLifecycle = {
         status: 'Draft',
@@ -2380,6 +2381,25 @@ function renderReimbursementRows(rows) {
             window.currentReimbursementId = payloadId;
         }
         return setCurrentReimbursementLifecycle(payload);
+    }
+
+    function applyReimbursementTotalSummary(payload) {
+        if (!payload) return null;
+        const summary = payload.reimbursement_total_summary;
+        if (!summary || typeof summary !== 'object') return null;
+
+        currentReimbursementTotalSummary = summary;
+        const total = Number(summary.grand_total ?? payload.grand_total ?? 0);
+        const grandTotalEl = document.getElementById('reimGrandTotal');
+        if (grandTotalEl && Number.isFinite(total)) {
+            grandTotalEl.textContent = formatMoney(total);
+        }
+        return summary;
+    }
+
+    function reimbursementServerTotalLabel(summary) {
+        const total = Number(summary && summary.grand_total || 0);
+        return `Official saved total: PHP ${formatMoney(Number.isFinite(total) ? total : 0)}`;
     }
 
     function getReimbursementLifecycleCssClass(status) {
@@ -2955,7 +2975,9 @@ function renderReimbursementRows(rows) {
         const el = document.getElementById('reimDraftStatus');
         if (!el) return;
         el.textContent = message || '';
-        el.style.color = tone === 'error' ? '#b91c1c' : (tone === 'ok' ? '#0f5132' : '#64748b');
+        el.style.color = tone === 'error'
+            ? '#b91c1c'
+            : (tone === 'ok' ? '#0f5132' : (tone === 'warn' ? '#b45309' : '#64748b'));
         if (message && (tone === 'error' || tone === 'ok')) {
             reimToast(message, tone);
         }
@@ -3458,6 +3480,7 @@ function showReimbursementDeleteDraftConfirm() {
             reimbursementAdditionalReceipts = [];
             currentReimbursementId = null;
             window.currentReimbursementId = null;
+            currentReimbursementTotalSummary = null;
             setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
             setReimbursementDraftStatus(payload.message || 'Reimbursement draft deleted.', 'ok');
             setReimbursementSubmitNotice('', '');
@@ -3527,6 +3550,7 @@ function showReimbursementDeleteDraftConfirm() {
             reimbursementAdditionalReceipts = [];
             currentReimbursementId = null;
             window.currentReimbursementId = null;
+            currentReimbursementTotalSummary = null;
             setReimbursementDraftStatus('Form cleared.', 'ok');
 
             await loadReimbursementRows();
@@ -3583,10 +3607,16 @@ async function downloadReimbursementExcel() {
             // Future forms/receipts can be added inside the same ZIP package.
             triggerReimbursementDownload(`/download_reimbursement_package?${query}`);
 
+            const totalNote = currentReimbursementTotalSummary
+                ? ` ${reimbursementServerTotalLabel(currentReimbursementTotalSummary)}.`
+                : '';
+            const consistencyNote = currentReimbursementTotalSummary && currentReimbursementTotalSummary.warning
+                ? ` Review: ${currentReimbursementTotalSummary.warning}`
+                : '';
             if (String(currentReimbursementStatus || '').toLowerCase() === 'approved') {
-                setReimbursementDraftStatus('Download started: approved reimbursement package with approval stamp.', 'ok');
+                setReimbursementDraftStatus(`Download started: approved reimbursement package with approval stamp.${totalNote}${consistencyNote}`, consistencyNote ? 'warn' : 'ok');
             } else {
-                setReimbursementDraftStatus('Download started: reimbursement package ZIP.', 'ok');
+                setReimbursementDraftStatus(`Download started: reimbursement package ZIP.${totalNote}${consistencyNote}`, consistencyNote ? 'warn' : 'ok');
             }
         } catch (error) {
             console.error(error);
@@ -3646,12 +3676,16 @@ async function saveReimbursementDraft(silent) {
                 ? payload.excluded_rows
                 : currentReimbursementExcludedRows;
             updateReimbursementLifecycleFromPayload(payload);
+            const totalSummary = applyReimbursementTotalSummary(payload);
             applyReimbursementStatusUi();
             await refreshReimbursementLprPanel();
-            setReimbursementDraftStatus(
+            const warning = String(totalSummary && totalSummary.warning || '').trim();
+            const saveStatus = [
                 `Draft saved (${Number(payload.rows_saved ?? rows.length)} active, ${currentReimbursementExcludedRows.length} removed)`,
-                'ok'
-            );
+                totalSummary ? reimbursementServerTotalLabel(totalSummary) : '',
+                warning ? `Review: ${warning}` : ''
+            ].filter(Boolean).join(' | ');
+            setReimbursementDraftStatus(saveStatus, warning ? 'warn' : 'ok');
             return true;
         } catch (error) {
             console.error(error);
@@ -3964,6 +3998,7 @@ async function saveReimbursementDraft(silent) {
                 return !excludedKeys.has(reimbursementExcludedRowKey(row));
             });
             updateReimbursementLifecycleFromPayload(draft);
+            applyReimbursementTotalSummary(draft);
             renderReimbursementRows(mergedRows);
             await fetchReimbursementReceipts(range.start, range.end);
             await refreshReimbursementLprPanel();
@@ -4067,6 +4102,7 @@ async function saveReimbursementDraft(silent) {
         if (!requestedReimbursementId) {
             currentReimbursementId = null;
             window.currentReimbursementId = null;
+            currentReimbursementTotalSummary = null;
             currentReimbursementExcludedRows = [];
             setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
         }
@@ -4083,6 +4119,7 @@ async function saveReimbursementDraft(silent) {
                 startInput.value = start;
                 endInput.value = end;
                 updateReimbursementLifecycleFromPayload(draft);
+                applyReimbursementTotalSummary(draft);
             }
 
             const openingLockedRecord = !!(
@@ -4141,11 +4178,22 @@ async function saveReimbursementDraft(silent) {
                 currentReimbursementExcludedRows = [];
                 currentReimbursementId = null;
                 window.currentReimbursementId = null;
+                currentReimbursementTotalSummary = null;
                 setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
                 setReimbursementDraftStatus('Fresh reimbursement worksheet ready.', '');
             }
 
             renderReimbursementRows(rows);
+            if (draft.exists) {
+                const loadedTotalSummary = applyReimbursementTotalSummary(draft);
+                const loadedWarning = String(loadedTotalSummary && loadedTotalSummary.warning || '').trim();
+                if (loadedWarning) {
+                    setReimbursementDraftStatus(
+                        `${currentReimbursementStatus} reimbursement loaded. ${reimbursementServerTotalLabel(loadedTotalSummary)}. Review: ${loadedWarning}`,
+                        'warn'
+                    );
+                }
+            }
             try {
                 await fetchReimbursementReceipts(start, end);
             } catch (receiptError) {

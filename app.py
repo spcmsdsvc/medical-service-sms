@@ -6775,7 +6775,7 @@ def reimbursement_email_context(header):
             period = reimbursement_excel_period_label(header.start_date, header.end_date)
         except Exception:
             period = f"{header.start_date} to {header.end_date}"
-    total_amount = round(sum(reimbursement_money_value(row.row_total) for row in (header.rows or [])), 2)
+    total_amount = reimbursement_total_snapshot(header)['grand_total']
     amount_label = f"PHP {total_amount:,.2f}"
     return {
         'request_label': request_label,
@@ -19924,6 +19924,19 @@ REIMBURSEMENT_EXPENSE_FIELDS = (
     'others_misc'
 )
 
+REIMBURSEMENT_EXPENSE_LABELS = {
+    'representation': 'Representation',
+    'car_repair': 'Car Repair',
+    'toll_fee': 'Toll Fee',
+    'gasoline': 'Gasoline',
+    'transpo': 'Transpo',
+    'office_supplies': 'Office/Field Items',
+    'parking': 'Parking',
+    'per_diem': 'Per Diem',
+    'parking_coding': 'Parking Coding',
+    'others_misc': 'Others / Misc',
+}
+
 
 def reimbursement_money_value(value):
     """Normalize reimbursement amount values from the frontend."""
@@ -19938,6 +19951,121 @@ def reimbursement_money_value(value):
         return round(float(cleaned), 2)
     except (TypeError, ValueError):
         return 0.0
+
+
+def reimbursement_row_expense_amounts(row):
+    """Return the persisted component amounts for one reimbursement row."""
+    return {
+        field: reimbursement_money_value(getattr(row, field, 0))
+        for field in REIMBURSEMENT_EXPENSE_FIELDS
+    }
+
+
+def reimbursement_effective_row_amounts(row):
+    """Return the amounts that accounting documents should use for one row.
+
+    Current rows are written from the individual expense columns. Some older
+    rows only retained ``row_total``; preserve those rows by placing their
+    saved total under Others / Misc instead of silently dropping the claim.
+    Non-zero component/row-total mismatches are intentionally not guessed or
+    written back to the database. The snapshot reports them for review while
+    every generated artifact uses the same component-derived value.
+    """
+    component_amounts = reimbursement_row_expense_amounts(row)
+    component_total = round(sum(component_amounts.values()), 2)
+    saved_row_total = reimbursement_money_value(getattr(row, 'row_total', 0))
+
+    if component_total <= 0 and saved_row_total > 0:
+        legacy_amounts = {field: 0.0 for field in REIMBURSEMENT_EXPENSE_FIELDS}
+        legacy_amounts['others_misc'] = saved_row_total
+        return legacy_amounts, saved_row_total, component_total, 'legacy_row_total'
+
+    return component_amounts, component_total, component_total, 'expense_columns'
+
+
+def reimbursement_total_snapshot(header):
+    """Build one consistent, non-mutating total snapshot for a reimbursement.
+
+    This is the shared source for API summaries, Excel, PCV, RFP, email
+    context, and accounting packages. It also exposes old-row fallbacks and
+    data mismatches so they cannot remain invisible to the user.
+    """
+    category_amounts = {field: 0.0 for field in REIMBURSEMENT_EXPENSE_FIELDS}
+    saved_row_total = 0.0
+    raw_component_total = 0.0
+    legacy_row_ids = []
+    mismatch_rows = []
+
+    rows = sorted(
+        list(getattr(header, 'rows', None) or []),
+        key=lambda row: (getattr(row, 'row_date', None) or getattr(header, 'start_date', None), getattr(row, 'id', 0) or 0)
+    )
+    for row in rows:
+        effective_amounts, effective_total, component_total, source = reimbursement_effective_row_amounts(row)
+        saved_total = reimbursement_money_value(getattr(row, 'row_total', 0))
+        saved_row_total += saved_total
+        raw_component_total += component_total
+        for field in REIMBURSEMENT_EXPENSE_FIELDS:
+            category_amounts[field] += reimbursement_money_value(effective_amounts.get(field))
+
+        if source == 'legacy_row_total':
+            legacy_row_ids.append(getattr(row, 'id', None))
+        elif abs(saved_total - component_total) > 0.01 and (saved_total > 0 or component_total > 0):
+            mismatch_rows.append({
+                'row_id': getattr(row, 'id', None),
+                'date': getattr(getattr(row, 'row_date', None), 'isoformat', lambda: '')(),
+                'row_total': round(saved_total, 2),
+                'component_total': round(component_total, 2),
+            })
+
+    category_totals = []
+    for field in REIMBURSEMENT_EXPENSE_FIELDS:
+        amount = round(category_amounts[field], 2)
+        if amount > 0:
+            category_totals.append({
+                'field': field,
+                'label': REIMBURSEMENT_EXPENSE_LABELS.get(field, field.replace('_', ' ').title()),
+                'amount': amount,
+            })
+
+    warning_parts = []
+    if legacy_row_ids:
+        warning_parts.append(
+            f'{len(legacy_row_ids)} legacy row(s) used their saved row total under Others / Misc.'
+        )
+    if mismatch_rows:
+        warning_parts.append(
+            f'{len(mismatch_rows)} row(s) have a saved row total different from their expense columns; '
+            'generated forms use the saved expense columns.'
+        )
+
+    return {
+        'category_totals': category_totals,
+        'grand_total': round(sum(item['amount'] for item in category_totals), 2),
+        'row_total_total': round(saved_row_total, 2),
+        'component_total': round(raw_component_total, 2),
+        'legacy_row_ids': legacy_row_ids,
+        'legacy_fallback_row_count': len(legacy_row_ids),
+        'mismatch_rows': mismatch_rows,
+        'mismatch_row_count': len(mismatch_rows),
+        'consistent': not bool(legacy_row_ids or mismatch_rows),
+        'warning': ' '.join(warning_parts),
+    }
+
+
+def reimbursement_total_summary_for_response(header):
+    """Return the safe serializable total summary used by frontend/API callers."""
+    snapshot = reimbursement_total_snapshot(header)
+    return {
+        'grand_total': snapshot['grand_total'],
+        'row_total_total': snapshot['row_total_total'],
+        'component_total': snapshot['component_total'],
+        'legacy_fallback_row_count': snapshot['legacy_fallback_row_count'],
+        'mismatch_row_count': snapshot['mismatch_row_count'],
+        'consistent': snapshot['consistent'],
+        'warning': snapshot['warning'],
+        'category_totals': snapshot['category_totals'],
+    }
 
 
 def reimbursement_row_has_claim_amount(row):
@@ -20135,6 +20263,7 @@ def reimbursement_header_to_manager_dict(header, include_rows=False):
             for row in sorted(header.rows, key=lambda r: (r.row_date or header.start_date, r.id))
         ]
 
+    total_summary = reimbursement_total_summary_for_response(header)
     payload = {
         'id': header.id,
         'user_id': header.user_id,
@@ -20147,7 +20276,8 @@ def reimbursement_header_to_manager_dict(header, include_rows=False):
         'created_at': header.created_at.isoformat() if header.created_at else None,
         'updated_at': header.updated_at.isoformat() if header.updated_at else None,
         'submitted_at': header.submitted_at.isoformat() if header.submitted_at else None,
-        'grand_total': round(sum(reimbursement_money_value(row.row_total) for row in header.rows), 2),
+        'grand_total': total_summary['grand_total'],
+        'reimbursement_total_summary': total_summary,
         'row_count': len(header.rows or []),
     }
     payload.update(reimbursement_header_approval_meta(header))
@@ -20293,8 +20423,9 @@ def build_reimbursement_excel_workbook(header):
         ws.cell(idx, 1).value = row.row_date if row.row_date else None
         ws.cell(idx, 1).number_format = date_fmt
 
+        effective_amounts, _, _, _ = reimbursement_effective_row_amounts(row)
         for offset, field in enumerate(expense_fields, start=2):
-            amount_value = reimbursement_money_value(getattr(row, field, 0))
+            amount_value = reimbursement_money_value(effective_amounts.get(field))
             ws.cell(idx, offset).value = amount_value if amount_value else None
             ws.cell(idx, offset).number_format = money_fmt
 
@@ -21187,30 +21318,7 @@ def build_reimbursement_pcv_excel_workbook(header):
 
 def reimbursement_expense_category_totals(header):
     """Return reimbursement totals by expense column for summary-based forms."""
-    category_labels = {
-        'representation': 'Representation',
-        'car_repair': 'Car Repair',
-        'toll_fee': 'Toll Fee',
-        'gasoline': 'Gasoline',
-        'transpo': 'Transpo',
-        'office_supplies': 'Office/Field Items',
-        'parking': 'Parking',
-        'per_diem': 'Per Diem',
-        'parking_coding': 'Parking Coding',
-        'others_misc': 'Others / Misc',
-    }
-
-    totals = []
-    rows = sorted(header.rows, key=lambda r: (r.row_date or header.start_date, r.id))
-    for field in REIMBURSEMENT_EXPENSE_FIELDS:
-        amount = round(sum(reimbursement_money_value(getattr(row, field, 0)) for row in rows), 2)
-        if amount > 0:
-            totals.append({
-                'field': field,
-                'label': category_labels.get(field, field.replace('_', ' ').title()),
-                'amount': amount
-            })
-    return totals
+    return reimbursement_total_snapshot(header)['category_totals']
 
 
 def reimbursement_join_summary_labels(labels):
@@ -22021,7 +22129,7 @@ def reimbursement_claimed_schedule_scope_for_user(profile, start_date, end_date,
 
 def reimbursement_row_to_dict(row, receipts_by_shift=None):
     """Serialize a saved reimbursement row for frontend reload."""
-    amounts = {field: reimbursement_money_value(getattr(row, field, 0)) for field in REIMBURSEMENT_EXPENSE_FIELDS}
+    amounts, effective_total, _, _ = reimbursement_effective_row_amounts(row)
     receipts_by_shift = receipts_by_shift or {}
     is_manual = not bool(row.shift_id)
     manual_key = f"manual_{row.id}" if is_manual and row.id else ''
@@ -22044,7 +22152,7 @@ def reimbursement_row_to_dict(row, receipts_by_shift=None):
         'engineers': [row.engineer_name] if row.engineer_name else [],
         'remarks': reimbursement_excel_row_remarks(row),
         'amounts': amounts,
-        'row_total': reimbursement_money_value(row.row_total),
+        'row_total': effective_total,
         'receipts': receipts
     }
 
@@ -23077,12 +23185,13 @@ def build_reimbursement_all_receipts_pdf(header):
             continue
 
         row_date = row.row_date.strftime('%m-%d-%Y') if row.row_date else ''
+        _, effective_row_total, _, _ = reimbursement_effective_row_amounts(row)
         divider_details = [
             ('Date', row_date),
             ('Client / Item', row.client_name or ('Manual Item' if not row.shift_id else '')),
             ('Product / Serial', ' / '.join([part for part in [row.product_name, row.serial_number] if part])),
             ('Task / Purpose', row.task_name or row.remarks or ''),
-            ('Row Total', f"PHP {float(row.row_total or 0):,.2f}"),
+            ('Row Total', f"PHP {effective_row_total:,.2f}"),
         ]
         reimbursement_append_pdf_bytes(
             writer,
@@ -23219,7 +23328,8 @@ def get_reimbursement_draft():
         **reimbursement_header_approval_meta(header),
         'rows': rows,
         'excluded_rows': reimbursement_get_excluded_rows(header),
-        'grand_total': round(sum(reimbursement_money_value(row.row_total) for row in header.rows), 2)
+        'grand_total': reimbursement_total_snapshot(header)['grand_total'],
+        'reimbursement_total_summary': reimbursement_total_summary_for_response(header)
     }
     if receipt_warning:
         payload['receipt_warning'] = receipt_warning
@@ -23306,7 +23416,8 @@ def get_my_reimbursement_statuses():
             'created_at': header.created_at.isoformat() if header.created_at else None,
             'updated_at': header.updated_at.isoformat() if header.updated_at else None,
             'submitted_at': header.submitted_at.isoformat() if header.submitted_at else None,
-            'grand_total': round(sum(reimbursement_money_value(row.row_total) for row in header.rows), 2),
+            'grand_total': reimbursement_total_snapshot(header)['grand_total'],
+            'reimbursement_total_summary': reimbursement_total_summary_for_response(header),
             'row_count': len(header.rows or []),
             **reimbursement_header_approval_meta(header)
         })
@@ -23532,14 +23643,17 @@ def save_reimbursement_draft():
             )
 
         db.session.commit()
+        total_summary = reimbursement_total_summary_for_response(header)
         print(f"[Reimbursement] Draft saved header #{header.id}; status={header.status}; rows={saved_count}", flush=True)
 
         try:
             exclusion_note = f", {len(sanitized_excluded_rows)} removed" if sanitized_excluded_rows else ''
             log_activity(
                 f"Saved reimbursement draft {start_date.isoformat()} to {end_date.isoformat()} "
-                f"({saved_count} rows{exclusion_note})"
+                f"({saved_count} rows{exclusion_note}; total PHP {total_summary['grand_total']:,.2f})"
             )
+            if total_summary.get('warning'):
+                print(f"[Reimbursement] Draft total consistency warning for header #{header.id}: {total_summary['warning']}", flush=True)
         except Exception as log_err:
             print(f"[Reimbursement] Activity log skipped: {log_err}")
 
@@ -23551,6 +23665,8 @@ def save_reimbursement_draft():
             'excluded_rows': sanitized_excluded_rows,
             'excluded_row_count': len(sanitized_excluded_rows),
             'reconciled_lpr_count': reconciled_lpr_count,
+            'grand_total': total_summary['grand_total'],
+            'reimbursement_total_summary': total_summary,
             'message': 'Reimbursement draft saved.',
             **reimbursement_header_approval_meta(header)
         })
@@ -34269,6 +34385,7 @@ def submit_reimbursement():
             print(f"[Reimbursement] Activity log skipped: {log_err}", flush=True)
 
         print(f"[Reimbursement] Submitted header #{header.id}; queue_status=Submitted; rows={row_count}", flush=True)
+        total_summary = reimbursement_total_summary_for_response(header)
         return jsonify({
             'success': True,
             'id': header.id,
@@ -34276,6 +34393,8 @@ def submit_reimbursement():
             'status': 'Submitted',
             'rows_submitted': row_count,
             'excluded_zero_rows': excluded_zero_rows,
+            'grand_total': total_summary['grand_total'],
+            'reimbursement_total_summary': total_summary,
             'submitted_at': header.submitted_at.isoformat() if header.submitted_at else None,
             'manager_queue_status': 'Submitted',
             'message': 'Reimbursement submitted for manager review.',
