@@ -10,7 +10,7 @@ codex changes - 2026-08-03
 - Updated Stock Inventory navigation and UI for read-only engineers: the sidebar link is visible, the branch selector remains superadmin-only, write controls are hidden, barcode lookup opens view-only history, and the new Currently Borrowed Items panel appears before the item and movement views with responsive mobile and dark-mode-compatible styling.
 - Added focused source and regression assertions for engineer access, branch isolation markers, read-only controls, borrowed-item projection, API coverage, and the published release manifest. Updated the What's New manifest for the engineer read-only view and bumped the service-worker cache to `v63-stock-inventory-readonly`.
 - Verification completed locally with `app.py` compilation, 12 focused Stock Inventory tests, inline Stock Inventory JavaScript parsing, `releases.json` parsing, clean isolated full-suite execution of 411 tests, and `git diff --check`.
-- The implementation is now authorized for the requested commit and push. `scheduler.db`, `output/`, and `tmp/` remain excluded and are not modified or staged.
+- The implementation is recorded in commit `6d824a5`; `scheduler.db`, `output/`, and `tmp/` remain excluded and are not modified or staged.
 
 codex changes - 2026-08-02
 - Executed the approved Plan B offline TSR storage correction locally. Final TSR queue writes now require durable IndexedDB storage for the generated PDF and supporting files; a missing durable PDF or blob reference stops the send path with a clear recovery message instead of silently creating an unrecoverable queue entry.

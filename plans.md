@@ -57,10 +57,10 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Engineer Read-Only Stock Inventory Access
 
-**Status:** `Executed — uncommitted`
+**Status:** `Executed — 6d824a5`
 **Approved:** 2026-08-03
 **Detailed:** 2026-08-03, after review of the existing branch-aware Stock Inventory guards, movement ledger, and sidebar rendering.
-**Finished:** 2026-08-03. Implemented and verified locally; no commit or deployment was authorized by this task.
+**Finished:** 2026-08-03. Implemented and verified locally; main implementation committed as `6d824a5`; no Railway deployment was made.
 
 ### Context
 
