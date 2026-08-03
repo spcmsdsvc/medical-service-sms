@@ -144,10 +144,10 @@ State these explicitly in the plan, with anything plan-specific filled in:
 
 ## Reimbursement Package Total Consistency Repair
 
-**Status:** `In progress`
+**Status:** `Executed — aff9001`
 **Approved:** 2026-08-03
 **Detailed:** 2026-08-03, after reviewing the worksheet total, the reimbursement download audit, and the Excel/PCV/RFP generation paths.
-**Finished:** Pending implementation, verification, commit, and push.
+**Finished:** 2026-08-03 in `aff9001`. The verified implementation commit is ready for push; the journal closeout is recorded separately below.
 
 ### Context
 
@@ -197,6 +197,13 @@ An engineer reported that a reimbursement worksheet showed approximately PHP 55,
 - Exact-record control: two records with the same date range download the explicitly requested ID, not the newest range match.
 - Defect injection: temporarily bypass the helper in one generated path, observe the focused consistency test fail, restore the intact implementation, and confirm no source residue.
 - Run `python -m py_compile app.py`, focused reimbursement tests, the isolated full suite with its before/after count, JavaScript/template syntax checks, a local browser/API smoke path where available, and `git diff --check`.
+
+### Outcome
+
+- Implemented the shared non-mutating reimbursement total snapshot and routed worksheet reloads, status/history responses, approval serialization, email context, Excel, PCV, RFP, accounting ZIP output, and receipt-divider row totals through it.
+- Preserved positive legacy `row_total`-only rows under Others / Misc without rewriting historical rows. Nonzero mismatches now remain visible through response metadata, activity output, and the reopened-draft warning while generated documents use the saved component columns consistently.
+- Verified with the focused reimbursement/range/LPR suite (14/14), a fresh isolated full suite (415 passed, 1 existing skip), Python compilation, inline JavaScript parsing, manifest parsing, exact-ID API/package smoke, generated artifact checks, defect injection, and `git diff --check`.
+- No database migration, live database operation, service-worker change, historical rewrite, or artifact cleanup was performed. The implementation commit is `aff9001`.
 
 ### Risks
 
