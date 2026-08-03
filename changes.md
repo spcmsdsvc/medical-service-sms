@@ -1,5 +1,17 @@
 # Project Change Log
 
+codex changes - 2026-08-03
+- Added a separate Stock Inventory read-access capability for ordinary engineer accounts without changing the existing explicit inventory-management privilege. Superadmins and users with `can_manage_stock_inventory` retain their existing operational access; approver-only and unauthorized accounts remain blocked.
+- Restricted read-only engineer access to the branch stored on the linked Engineer profile, mapping Manila/Main to BC01, Cebu to BC02, and Davao to BC03. Missing or unsupported engineer branch values now deny access instead of defaulting to a branch, and non-superadmin branch query parameters cannot override the profile branch.
+- Split Stock Inventory page/API authorization into read and mutation guards. Engineers may read branch-scoped summaries, items, barcode lookups, and movement history, while direct registration, edit, movement, quantity/deactivation, and reversal requests continue to require the existing management permission and return 403 otherwise.
+- Kept superadmin inventory management authoritative even if the stored toggle is stale or unchecked, so protected superadmins do not lose their existing write access while ordinary users remain controlled by the explicit permission flag.
+- Corrected the Stock Inventory page route to pass the optional branch query as `requested_branch`; this preserves valid page access while the helper continues to ignore that value for non-superadmin engineer viewers.
+- Added `GET /api/stock-inventory/borrowed`, which replays the immutable branch movement ledger to show outstanding OUT quantities with the item, barcode, accountable engineer, borrowed timestamp, purpose, and branch. Return and correction movements reduce or restore outstanding quantities without rewriting historical ledger entries.
+- Updated Stock Inventory navigation and UI for read-only engineers: the sidebar link is visible, the branch selector remains superadmin-only, write controls are hidden, barcode lookup opens view-only history, and the new Currently Borrowed Items panel appears before the item and movement views with responsive mobile and dark-mode-compatible styling.
+- Added focused source and regression assertions for engineer access, branch isolation markers, read-only controls, borrowed-item projection, API coverage, and the published release manifest. Updated the What's New manifest for the engineer read-only view and bumped the service-worker cache to `v63-stock-inventory-readonly`.
+- Verification completed locally with `app.py` compilation, 12 focused Stock Inventory tests, inline Stock Inventory JavaScript parsing, `releases.json` parsing, clean isolated full-suite execution of 411 tests, and `git diff --check`.
+- The implementation is now authorized for the requested commit and push. `scheduler.db`, `output/`, and `tmp/` remain excluded and are not modified or staged.
+
 codex changes - 2026-08-02
 - Executed the approved Plan B offline TSR storage correction locally. Final TSR queue writes now require durable IndexedDB storage for the generated PDF and supporting files; a missing durable PDF or blob reference stops the send path with a clear recovery message instead of silently creating an unrecoverable queue entry.
 - Removed new Base64 duplication from offline TSR attachment handling. Newly selected supporting files and generated PDFs are stored as IndexedDB Blob records and referenced by stable IDs; Base64/data-url values remain accepted only as legacy migration input.

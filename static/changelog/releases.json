@@ -1295,6 +1295,24 @@
           "sort_order": 30
         }
       ]
+    },
+    {
+      "release_key": "2026-08-03",
+      "release_date": "2026-08-03",
+      "title": "Branch-Scoped Stock Inventory Viewing",
+      "summary": "Engineers can now view branch stock accountability without changing inventory records.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-03-engineer-stock-inventory-view",
+          "category": "Stock Inventory",
+          "description": "Engineers can view items and movement history for their assigned branch, with current borrowed items shown first so accountability is easy to check.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 10
+        }
+      ]
     }
   ]
 }

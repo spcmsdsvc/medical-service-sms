@@ -1258,6 +1258,7 @@ def inject_feature_flags():
         'embedded_lpr_enabled': embedded_lpr_enabled(),
         'stock_inventory_superadmin': is_superadmin_user(),
         'stock_inventory_access': can_manage_stock_inventory(),
+        'stock_inventory_view': stock_inventory_can_view(),
         'stock_inventory_only_user': is_stock_inventory_only_user(),
     }
 
@@ -4830,8 +4831,23 @@ STOCK_INVENTORY_BRANCHES = {
 
 
 def normalize_stock_inventory_branch(value):
-    branch_code = (clean_str(value) or '').strip().upper()
-    return branch_code if branch_code in STOCK_INVENTORY_BRANCHES else ''
+    raw_value = (clean_str(value) or '').strip().upper()
+    if raw_value in STOCK_INVENTORY_BRANCHES:
+        return raw_value
+    compact = re.sub(r'[^A-Z0-9]+', '', raw_value)
+    aliases = {
+        'MANILA': 'BC01',
+        'MAIN': 'BC01',
+        'MANILAMAIN': 'BC01',
+        'BC01MANILAMAIN': 'BC01',
+        'CEBU': 'BC02',
+        'CEBUBRANCH': 'BC02',
+        'BC02CEBU': 'BC02',
+        'DAVAO': 'BC03',
+        'DAVAOBRANCH': 'BC03',
+        'BC03DAVAO': 'BC03',
+    }
+    return aliases.get(compact, '')
 
 
 def can_manage_stock_inventory(user=None):
@@ -4839,8 +4855,36 @@ def can_manage_stock_inventory(user=None):
     return bool(
         target and getattr(target, 'is_authenticated', False) and
         bool(getattr(target, 'is_active', True)) and
-        bool(getattr(target, 'can_manage_stock_inventory', False))
+        (is_superadmin_user(target) or bool(getattr(target, 'can_manage_stock_inventory', False)))
     )
+
+
+def stock_inventory_can_view(user=None):
+    """Return whether the account may read its branch's stock inventory.
+
+    Explicit inventory-management access remains the source of truth for
+    write-capable users. Ordinary engineer accounts get a separate,
+    branch-scoped read-only path. Approver-only accounts remain restricted to
+    their existing workspace even when a signature profile is linked.
+    """
+    target = user or current_user
+    if not (
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True))
+    ):
+        return False
+    if is_superadmin_user(target) or can_manage_stock_inventory(target):
+        return True
+    return bool(
+        has_engineer_profile(target) and
+        not is_approver_only_user(target)
+    )
+
+
+def stock_inventory_read_only_user(user=None):
+    target = user or current_user
+    return bool(stock_inventory_can_view(target) and not can_manage_stock_inventory(target))
 
 
 def is_stock_inventory_only_user(user=None):
@@ -4856,7 +4900,16 @@ def stock_inventory_branch_for_user(user=None, requested_branch=None):
     target = user or current_user
     if is_superadmin_user(target):
         return normalize_stock_inventory_branch(requested_branch) or 'BC01'
-    return normalize_stock_inventory_branch(getattr(target, 'stock_inventory_branch_code', None))
+    # Engineer viewers are restricted by the Engineer profile.  Do this
+    # before the inventory assignment field so an old/stale manager setting
+    # cannot move a read-only engineer into another branch.
+    if stock_inventory_read_only_user(target):
+        profile = getattr(target, 'engineer_profile', None)
+        return normalize_stock_inventory_branch(getattr(profile, 'branch', None))
+    assigned_branch = normalize_stock_inventory_branch(getattr(target, 'stock_inventory_branch_code', None))
+    if assigned_branch:
+        return assigned_branch
+    return ''
 
 
 def stock_inventory_can_administer(user=None):
@@ -14431,7 +14484,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v62-offline-tsr-durable-storage';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v63-stock-inventory-readonly';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -15962,11 +16015,11 @@ def products_page():
 @app.route('/stock_inventory')
 @login_required
 def stock_inventory_page():
-    """Scanner-ready branch stock ledger for authorized inventory users."""
-    if not can_manage_stock_inventory():
+    """Scanner-ready branch stock ledger for authorized inventory users and engineers."""
+    if not stock_inventory_can_view():
         return Response('Access denied.', status=403, mimetype='text/plain')
     ensure_stock_inventory_tables()
-    branch_code = stock_inventory_branch_for_user(request.args.get('branch'))
+    branch_code = stock_inventory_branch_for_user(requested_branch=request.args.get('branch'))
     if not branch_code:
         return Response('Inventory branch assignment is required.', status=403, mimetype='text/plain')
     return render_template(
@@ -15975,6 +16028,7 @@ def stock_inventory_page():
         stock_branch_code=branch_code,
         stock_branch_name=STOCK_INVENTORY_BRANCHES.get(branch_code, branch_code),
         stock_can_switch_branch=is_superadmin_user(),
+        stock_read_only=stock_inventory_read_only_user(),
         stock_can_administer=stock_inventory_can_administer(),
     )
 
@@ -50826,7 +50880,15 @@ STOCK_INVENTORY_SORT_FIELDS = {
 }
 
 
+def stock_inventory_view_api_guard():
+    if not stock_inventory_can_view():
+        return jsonify({'success': False, 'error': 'Stock Inventory view access is not enabled for this account.'}), 403
+    ensure_stock_inventory_tables()
+    return None
+
+
 def stock_inventory_api_guard():
+    """Guard mutation endpoints while preserving existing manager privileges."""
     if not can_manage_stock_inventory():
         return jsonify({'success': False, 'error': 'Stock Inventory access is not enabled for this account.'}), 403
     ensure_stock_inventory_tables()
@@ -50954,10 +51016,103 @@ def apply_stock_inventory_balance(item_id, direction, quantity):
     return db.session.get(StockInventoryItem, item_id)
 
 
+def stock_inventory_current_borrowings(branch_code, search='', limit=200):
+    """Replay the immutable branch ledger into outstanding borrowings.
+
+    A Return reduces the selected engineer's open loan first and then the
+    oldest open loan for that item when the return was recorded by another
+    engineer. Corrections are already represented as opposite ledger entries,
+    so they naturally undo the original movement without rewriting history.
+    """
+    movements = (
+        StockInventoryMovement.query
+        .join(StockInventoryItem)
+        .options(
+            joinedload(StockInventoryMovement.item),
+            joinedload(StockInventoryMovement.accountable_engineer),
+        )
+        .filter(StockInventoryItem.branch_code == branch_code)
+        .order_by(StockInventoryMovement.created_at.asc(), StockInventoryMovement.id.asc())
+        .all()
+    )
+    open_loans = []
+    for movement in movements:
+        item = movement.item
+        engineer_id = movement.engineer_id
+        if not item or not engineer_id:
+            continue
+        quantity = int(movement.quantity or 0)
+        if quantity <= 0:
+            continue
+        if movement.direction == 'OUT':
+            open_loans.append({
+                'item_id': item.id,
+                'item_name': item.item_name or '',
+                'barcode': stock_inventory_scan_barcode(item),
+                'engineer_id': engineer_id,
+                'engineer_name': movement.engineer_name_snapshot or getattr(movement.accountable_engineer, 'name', '') or '',
+                'quantity': quantity,
+                'borrowed_at': movement.created_at.isoformat() if movement.created_at else None,
+                'borrowed_at_display': movement.created_at.strftime('%b %d, %Y %I:%M %p') if movement.created_at else '',
+                'purpose': movement.purpose or '',
+                'branch_code': branch_code,
+                'branch_name': STOCK_INVENTORY_BRANCHES.get(branch_code, branch_code),
+            })
+            continue
+        if movement.direction != 'IN':
+            continue
+        remaining = quantity
+        candidates = [loan for loan in open_loans if loan['item_id'] == item.id and loan['quantity'] > 0]
+        candidates.sort(key=lambda loan: (loan['engineer_id'] != engineer_id, loan['borrowed_at'] or '', loan['item_id']))
+        for loan in candidates:
+            if remaining <= 0:
+                break
+            applied = min(remaining, loan['quantity'])
+            loan['quantity'] -= applied
+            remaining -= applied
+
+    query = (clean_str(search) or '').strip().lower()
+    rows = [loan for loan in open_loans if loan['quantity'] > 0]
+    if query:
+        rows = [loan for loan in rows if query in ' '.join((
+            loan['item_name'], loan['barcode'], loan['engineer_name'], loan['purpose'],
+            loan['branch_code'], loan['branch_name'],
+        )).lower()]
+    rows.sort(key=lambda loan: (loan['borrowed_at'] or '', loan['item_id']), reverse=True)
+    return rows[:max(1, min(int(limit or 200), 500))]
+
+
+@app.route('/api/stock-inventory/borrowed')
+@login_required
+def get_stock_inventory_borrowed():
+    denied = stock_inventory_view_api_guard()
+    if denied:
+        return denied
+    try:
+        branch_code = stock_inventory_request_branch()
+    except PermissionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 403
+    try:
+        limit = int(request.args.get('limit') or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    rows = stock_inventory_current_borrowings(
+        branch_code,
+        search=request.args.get('q'),
+        limit=limit,
+    )
+    return jsonify({
+        'success': True,
+        'branch_code': branch_code,
+        'branch_name': STOCK_INVENTORY_BRANCHES[branch_code],
+        'borrowed': rows,
+    })
+
+
 @app.route('/api/stock-inventory/summary')
 @login_required
 def get_stock_inventory_summary():
-    denied = stock_inventory_api_guard()
+    denied = stock_inventory_view_api_guard()
     if denied:
         return denied
     now = get_manila_time()
@@ -50993,7 +51148,7 @@ def get_stock_inventory_summary():
 @app.route('/api/stock-inventory/items')
 @login_required
 def get_stock_inventory_items():
-    denied = stock_inventory_api_guard()
+    denied = stock_inventory_view_api_guard()
     if denied:
         return denied
     try:
@@ -51038,7 +51193,7 @@ def get_stock_inventory_items():
 @app.route('/api/stock-inventory/lookup', methods=['POST'])
 @login_required
 def lookup_stock_inventory_barcode():
-    denied = stock_inventory_api_guard()
+    denied = stock_inventory_view_api_guard()
     if denied:
         return denied
     payload = request.get_json(silent=True) or {}
@@ -51187,7 +51342,7 @@ def update_stock_inventory_item(item_id):
 @app.route('/api/stock-inventory/movements')
 @login_required
 def get_stock_inventory_movements():
-    denied = stock_inventory_api_guard()
+    denied = stock_inventory_view_api_guard()
     if denied:
         return denied
     try:

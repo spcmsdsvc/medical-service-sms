@@ -55,6 +55,74 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Engineer Read-Only Stock Inventory Access
+
+**Status:** `Executed — uncommitted`
+**Approved:** 2026-08-03
+**Detailed:** 2026-08-03, after review of the existing branch-aware Stock Inventory guards, movement ledger, and sidebar rendering.
+**Finished:** 2026-08-03. Implemented and verified locally; no commit or deployment was authorized by this task.
+
+### Context
+
+Stock Inventory currently uses `can_manage_stock_inventory()` as the single page and API gate. That correctly protects existing inventory operators, but ordinary engineers cannot inspect stock accountability. The requested outcome is a branch-scoped read-only view for engineers, with current borrowings presented first, while preserving every existing write privilege and keeping `scheduler.db` out of the worktree changes.
+
+### Decisions taken
+
+- Preserve explicit inventory-management permission. An engineer who already has `can_manage_stock_inventory` keeps the existing write behavior; an ordinary engineer without that permission receives read-only access.
+- Resolve ordinary engineer branch access from the linked `Engineer.branch` profile: Manila/Main to BC01, Cebu to BC02, and Davao to BC03. Missing or unsupported branch data denies access rather than defaulting to BC01.
+- Show a first-position Currently Borrowed Items view, followed by the existing item and full movement-history views.
+- Derive outstanding borrowings from OUT, Return IN, and correction ledger movements. Do not add a balance column or change the existing inventory schema.
+
+### Investigation
+
+- `app.py:4837-4860` currently defines `can_manage_stock_inventory`, `stock_inventory_branch_for_user`, and superadmin-only administration.
+- `app.py:15962-15979` gates `/stock_inventory` exclusively on management access and passes branch/admin state to the template.
+- `app.py:50829-51366` uses one API guard for read and mutation endpoints, so the implementation must split read and mutation guards without changing the mutation routes' existing permission semantics.
+- `app.py:1740-1770` stores engineer branch values as human labels such as Manila, Cebu, and Davao.
+- `templates/layout.html:140-142` renders the Stock Inventory sidebar link only when `stock_inventory_access` is true.
+- `templates/stock_inventory.html:115-336` currently renders scanner, item, movement, edit, and reversal controls together and loads movement history through the existing read endpoint.
+
+### Execution steps
+
+1. Update `app.py` access helpers and page context so authorized inventory users retain their current permissions, ordinary engineers gain branch-scoped read access, and missing engineer branches return a clear 403.
+2. Split Stock Inventory read and mutation API authorization. Allow branch-scoped GET/read behavior and barcode lookup for engineers; keep item registration, edits, movements, and reversals blocked for read-only engineers, including direct API calls.
+3. Add the branch-scoped `GET /api/stock-inventory/borrowed` response. Replay the immutable ledger to return outstanding item, quantity, borrower, timestamp, purpose, and branch data, including correction movements without modifying historical records.
+4. Update `templates/layout.html` and `templates/stock_inventory.html` to show the link to engineers, hide write controls for read-only users, keep safe search/history/barcode lookup, and render the borrower panel before the item list.
+5. Add focused source, authorization, branch-isolation, borrower-aggregation, and read-only UI tests in `tests/test_stock_inventory.py` or adjacent focused tests. Verify superadmin and explicit inventory-manager regressions.
+6. Self-review the diff, run defect-injection checks for branch bypass and mutation authorization, run focused tests and the full suite, perform local browser checks for desktop/mobile/dark mode, bump the service-worker cache from the live value in `app.py`, add a dated `releases.json` entry, and update `changes.md`.
+
+### Deliberately excluded
+
+- No inventory schema migration or new persistent fields.
+- No change to existing inventory-user write workflows, superadmin branch switching, quantity adjustments, or reversal rules.
+- No automatic checkout/return pairing UI beyond the read-only outstanding-borrowing calculation.
+- No database schema/data migration or Railway deployment in this task. Commit and push are handled only after the owner's separate go-ahead.
+
+### Verification
+
+- Ordinary engineer can open Stock Inventory and sees only their Engineer-profile branch.
+- Branch query tampering cannot expose another branch.
+- Ordinary engineer receives 403 for registration, item edit, movement creation, and reversal APIs.
+- Explicit inventory managers and superadmins retain their existing capabilities.
+- OUT and Return movements produce correct outstanding borrowing rows; reversals net out without changing history.
+- Borrowed panel displays borrower, item, quantity, time, purpose, and branch first; empty state is clear.
+- Desktop/mobile layout, scrolling, barcode lookup, search, dark mode, Python compilation, JavaScript checks, focused tests, full suite, and `git diff --check` pass.
+
+### Outcome
+
+- Added the separate read guard and profile-branch precedence without altering mutation authorization.
+- Kept superadmin status authoritative for inventory management so an editable user toggle cannot remove a protected superadmin's existing write access.
+- Fixed the page route's branch-helper argument so valid engineer viewers reach the branch-scoped page before API loading begins; query tampering remains ignored for them.
+- Added the borrowed-items ledger projection and first-position responsive panel; existing item and movement history views remain available.
+- Focused Stock Inventory tests passed (12 tests), inline JavaScript parsing passed, and a clean isolated full run passed all 411 tests. A non-isolated run was affected by a reused temporary dashboard fixture database and was not treated as a product regression.
+- Updated the service-worker cache and release manifest. No database schema or data migration was performed; commit and push are now authorized by the owner, while Railway deployment remains separate.
+
+### Risks
+
+- Engineer profiles with missing branch values may lose access by design; the denial message and test coverage make the data issue visible rather than exposing BC01 incorrectly.
+- Return movements recorded for a different engineer may make borrower-level pairing ambiguous; the ledger replay will reduce matching open loans first and preserve all original movement rows.
+- Mutation authorization must remain stricter than read authorization; every mutating endpoint will retain an explicit management guard in addition to the new view guard.
+
 State these explicitly in the plan, with anything plan-specific filled in:
 
 1. **Self-review the diff** before anything else — read it as a reviewer would, not as its author.

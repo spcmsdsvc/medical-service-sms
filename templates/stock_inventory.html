@@ -64,6 +64,20 @@
     .stock-alert.show { display:block; }
     .stock-alert-error { background:#fff5f5; border-color:#ffa8a8; color:#a51124; }
     .stock-alert-success { background:#ebfbee; border-color:#8ce99a; color:#087f5b; }
+    .stock-borrowed-panel { margin-top:14px; background:var(--app-surface); border:1px solid var(--app-border); border-left:5px solid #c92a3b; border-radius:8px; overflow:hidden; }
+    .stock-borrowed-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--app-border); }
+    .stock-borrowed-title { margin:0; font-size:1.05rem; font-weight:900; color:var(--app-text); }
+    .stock-borrowed-subtitle { margin:3px 0 0; color:var(--app-muted); font-size:.88rem; }
+    .stock-borrowed-table-wrap { overflow:auto; overscroll-behavior:contain; }
+    .stock-borrowed-table { width:100%; border-collapse:separate; border-spacing:0; min-width:860px; }
+    .stock-borrowed-table th { background:var(--app-surface-raised); color:var(--app-text); padding:10px 12px; border-bottom:1px solid var(--app-border); text-align:left; font-size:.76rem; text-transform:uppercase; }
+    .stock-borrowed-table td { padding:11px 12px; border-bottom:1px solid var(--app-border); color:var(--app-text); vertical-align:top; }
+    .stock-borrowed-table tr:last-child td { border-bottom:0; }
+    .stock-borrowed-mobile { display:none; padding:10px; }
+    .stock-borrowed-card { padding:13px; margin-bottom:9px; border:1px solid var(--app-border); border-left:4px solid #c92a3b; border-radius:8px; background:var(--app-surface-raised); }
+    .stock-borrowed-card:last-child { margin-bottom:0; }
+    .stock-borrowed-card strong { color:var(--app-text); }
+    .stock-read-only-note { margin:7px 0 0; color:var(--app-muted); font-size:.86rem; }
     .stock-engineer-wrap { position:relative; }
     .stock-engineer-options { position:absolute; z-index:1080; left:0; right:0; top:calc(100% + 4px); max-height:220px; overflow:auto; background:var(--app-surface-raised); border:1px solid var(--app-border); border-radius:6px; box-shadow:var(--app-shadow); }
     .stock-engineer-option { width:100%; border:0; border-bottom:1px solid var(--app-border); padding:9px 11px; background:transparent; color:var(--app-text); text-align:left; }
@@ -82,6 +96,8 @@
         .stock-search { flex:1; min-width:180px; }
         .stock-table-wrap { display:none; }
         .stock-mobile-list { display:block; }
+        .stock-borrowed-table-wrap { display:none; }
+        .stock-borrowed-mobile { display:block; }
     }
     @media (max-width:560px) {
         .stock-header { flex-direction:column; align-items:stretch; }
@@ -115,6 +131,25 @@
 
     <div id="stockPageAlert" class="stock-alert" role="status"></div>
 
+    <section class="stock-borrowed-panel" aria-labelledby="stockBorrowedTitle">
+        <div class="stock-borrowed-header">
+            <div>
+                <h2 id="stockBorrowedTitle" class="stock-borrowed-title"><i class="fa-solid fa-person-circle-check me-1"></i> Currently Borrowed Items</h2>
+                <p class="stock-borrowed-subtitle">See who currently has an item, when it was borrowed, and what it is being used for.</p>
+                {% if stock_read_only %}<p class="stock-read-only-note"><i class="fa-solid fa-eye me-1"></i> View-only access for {{ stock_branch_code }} - {{ stock_branch_name }}.</p>{% endif %}
+            </div>
+            <span id="stockBorrowedCount" class="stock-badge">0 items</span>
+        </div>
+        <div class="stock-borrowed-table-wrap">
+            <table class="stock-borrowed-table">
+                <thead><tr><th>Borrowed By</th><th>Item</th><th>Qty</th><th>Borrowed At</th><th>Purpose</th><th>Branch</th></tr></thead>
+                <tbody id="stockBorrowedBody"></tbody>
+            </table>
+        </div>
+        <div id="stockBorrowedMobile" class="stock-borrowed-mobile"></div>
+        <div id="stockBorrowedEmpty" class="stock-empty" hidden><i class="fa-solid fa-box-open fa-2x mb-2"></i><div>No items are currently marked as borrowed.</div></div>
+    </section>
+
     <section class="stock-scan-band" aria-label="Barcode scanner">
         <div class="stock-scan-field">
             <label class="stock-label" for="stockBarcodeInput"><i class="fa-solid fa-barcode me-1"></i> Scan / Enter Barcode</label>
@@ -122,7 +157,7 @@
             <p class="stock-hint">USB barcode scanners work here like a keyboard. Scan and press Enter.</p>
         </div>
         <button id="stockLookupButton" class="stock-btn stock-btn-primary" type="button" onclick="lookupScannedBarcode()"><i class="fa-solid fa-magnifying-glass"></i> Look Up</button>
-        <button class="stock-btn stock-btn-neutral" type="button" onclick="openRegisterModal('')"><i class="fa-solid fa-plus"></i> Add Item</button>
+        {% if not stock_read_only %}<button class="stock-btn stock-btn-neutral" type="button" onclick="openRegisterModal('')"><i class="fa-solid fa-plus"></i> Add Item</button>{% endif %}
     </section>
 
     <section class="stock-kpis" aria-label="Stock summary">
@@ -238,7 +273,7 @@
 </div>
 
 <script>
-const stockState = { items: [], movements: [], activeTab: 'items', sort: 'name', direction: 'asc', currentItem: null, editItem: null, reverseMovement: null, scanBusy: false, lastScan: '', lastScanAt: 0, branch: {{ stock_branch_code|tojson }}, canAdminister: {{ stock_can_administer|tojson }}, engineers: [] };
+const stockState = { items: [], movements: [], borrowed: [], activeTab: 'items', sort: 'name', direction: 'asc', currentItem: null, editItem: null, reverseMovement: null, scanBusy: false, lastScan: '', lastScanAt: 0, branch: {{ stock_branch_code|tojson }}, readOnly: {{ stock_read_only|tojson }}, canAdminister: {{ stock_can_administer|tojson }}, engineers: [] };
 const stockModals = {};
 
 function stockEscape(value){ const node=document.createElement('div'); node.textContent=String(value ?? ''); return node.innerHTML; }
@@ -262,16 +297,19 @@ function refocusScanner(){ setTimeout(()=>{ const input=document.getElementById(
 function setBusy(button,busy,label){ if(!button)return; if(!button.dataset.original)button.dataset.original=button.innerHTML; button.disabled=busy; button.innerHTML=busy?`<i class="fa-solid fa-spinner fa-spin"></i> ${label}`:button.dataset.original; }
 
 async function loadStockSummary(){ const data=await stockJson(`/api/stock-inventory/summary?${stockBranchParams()}`); const s=data.summary; stockKpiActive.textContent=s.active_items; stockKpiPieces.textContent=s.total_pieces; stockKpiOut.textContent=s.out_of_stock_items; stockKpiToday.textContent=s.movements_today; }
+async function loadStockBorrowed(){ const params=stockBranchParams({limit:'500'}); const data=await stockJson(`/api/stock-inventory/borrowed?${params}`); stockState.borrowed=data.borrowed||[]; renderStockBorrowed(); }
 async function loadStockItems(){
     const params=stockBranchParams({q:stockSearchInput.value.trim(),sort:stockState.sort,direction:stockState.direction,include_inactive:stockIncludeInactive.checked?'1':'0'});
     const data=await stockJson(`/api/stock-inventory/items?${params}`); stockState.items=data.items || []; renderStockItems();
 }
 async function loadStockMovements(itemId=null){ const params=stockBranchParams({limit:'300'}); if(itemId)params.set('item_id',itemId); const data=await stockJson(`/api/stock-inventory/movements?${params}`); stockState.movements=data.movements || []; renderStockMovements(); }
-async function refreshStockInventory(){ try{ await Promise.all([loadStockSummary(),loadStockItems(),loadStockMovements()]); }catch(error){ showStockAlert('stockPageAlert',error.message); } finally{ refocusScanner(); } }
+async function refreshStockInventory(){ try{ await Promise.all([loadStockSummary(),loadStockBorrowed(),loadStockItems(),loadStockMovements()]); }catch(error){ showStockAlert('stockPageAlert',error.message); } finally{ refocusScanner(); } }
 
 function itemActionButtons(item){
     const disabled=item.is_active?'':'disabled';
-    return `<div class="stock-actions"><button class="stock-icon-btn" title="Record IN or OUT" aria-label="Record movement for ${stockEscape(item.item_name)}" ${disabled} onclick="openMovementModal(${item.id})"><i class="fa-solid fa-arrow-right-arrow-left"></i></button><button class="stock-icon-btn" title="Edit item" aria-label="Edit ${stockEscape(item.item_name)}" onclick="openEditModal(${item.id})"><i class="fa-solid fa-pen"></i></button><button class="stock-icon-btn" title="View history" aria-label="View history for ${stockEscape(item.item_name)}" onclick="showItemHistory(${item.id})"><i class="fa-solid fa-clock-rotate-left"></i></button></div>`;
+    const history=`<button class="stock-icon-btn" title="View history" aria-label="View history for ${stockEscape(item.item_name)}" onclick="showItemHistory(${item.id})"><i class="fa-solid fa-clock-rotate-left"></i></button>`;
+    if(stockState.readOnly) return `<div class="stock-actions">${history}</div>`;
+    return `<div class="stock-actions"><button class="stock-icon-btn" title="Record IN or OUT" aria-label="Record movement for ${stockEscape(item.item_name)}" ${disabled} onclick="openMovementModal(${item.id})"><i class="fa-solid fa-arrow-right-arrow-left"></i></button><button class="stock-icon-btn" title="Edit item" aria-label="Edit ${stockEscape(item.item_name)}" onclick="openEditModal(${item.id})"><i class="fa-solid fa-pen"></i></button>${history}</div>`;
 }
 function renderStockItems(){
     const rows=stockState.items.map(item=>`<tr><td class="stock-barcode">${stockEscape(item.barcode)}</td><td><strong>${stockEscape(item.item_name)}</strong></td><td>${stockEscape(item.category || '-')}</td><td>${stockEscape(item.storage_location || '-')}</td><td class="stock-quantity ${item.is_out_of_stock?'stock-low':''}">${item.current_quantity}</td><td><span class="stock-badge">${item.is_active?'Active':'Inactive'}</span></td><td>${itemActionButtons(item)}</td></tr>`).join('');
@@ -279,6 +317,12 @@ function renderStockItems(){
     stockItemsMobile.innerHTML=stockState.items.map(item=>`<article class="stock-mobile-card"><div class="stock-mobile-top"><div><strong>${stockEscape(item.item_name)}</strong><div class="stock-barcode">${stockEscape(item.barcode)}</div></div><div class="stock-quantity ${item.is_out_of_stock?'stock-low':''}">${item.current_quantity}</div></div><div class="stock-mobile-meta">${stockEscape(item.category || 'No category')} &middot; ${stockEscape(item.storage_location || 'No location')}</div><div class="mt-2">${itemActionButtons(item)}</div></article>`).join('');
     stockItemsEmpty.hidden=stockState.items.length>0;
     document.querySelectorAll('[data-sort]').forEach(el=>el.textContent=el.dataset.sort===stockState.sort?(stockState.direction==='asc'?'▲':'▼'):'');
+}
+function renderStockBorrowed(){
+    stockBorrowedCount.textContent=`${stockState.borrowed.length} item${stockState.borrowed.length===1?'':'s'}`;
+    stockBorrowedBody.innerHTML=stockState.borrowed.map(row=>`<tr><td><strong>${stockEscape(row.engineer_name)}</strong></td><td><strong>${stockEscape(row.item_name)}</strong><div class="stock-barcode">${stockEscape(row.barcode)}</div></td><td class="stock-quantity">${row.quantity}</td><td>${stockEscape(row.borrowed_at_display)}</td><td>${stockEscape(row.purpose||'-')}</td><td>${stockEscape(row.branch_code)} - ${stockEscape(row.branch_name)}</td></tr>`).join('');
+    stockBorrowedMobile.innerHTML=stockState.borrowed.map(row=>`<article class="stock-borrowed-card"><div class="stock-mobile-top"><div><strong>${stockEscape(row.item_name)}</strong><div class="stock-barcode">${stockEscape(row.barcode)}</div></div><span class="stock-badge stock-badge-out">OUT ${row.quantity}</span></div><div class="stock-mobile-meta"><strong>Borrowed by:</strong> ${stockEscape(row.engineer_name)}<br><strong>When:</strong> ${stockEscape(row.borrowed_at_display)}<br><strong>Purpose:</strong> ${stockEscape(row.purpose||'-')}<br><strong>Branch:</strong> ${stockEscape(row.branch_code)} - ${stockEscape(row.branch_name)}</div></article>`).join('');
+    stockBorrowedEmpty.hidden=stockState.borrowed.length>0;
 }
 function movementAccountability(m){ const engineer=m.engineer_name?`<strong>${stockEscape(m.engineer_name)}</strong>`:'<span class="text-muted">No engineer assigned</span>'; const context=m.direction==='OUT'&&m.purpose?`<br><span class="text-muted">${stockEscape(m.purpose)}</span>`:(m.source_or_returned_by?`<br><span class="text-muted">${stockEscape(m.source_or_returned_by)}</span>`:''); return engineer+context; }
 function reversalButton(m){ if(m.reversal_of_id)return '<span class="stock-badge">Correction</span>'; if(m.reversed_by_movement_id)return '<span class="stock-badge">Reversed</span>'; if(!m.can_reverse)return ''; return `<button class="stock-icon-btn" title="Reverse transaction" aria-label="Reverse movement ${m.id}" onclick="openReverseModal(${m.id})"><i class="fa-solid fa-rotate-left"></i></button>`; }
@@ -295,7 +339,7 @@ async function lookupScannedBarcode(){
     const input=stockBarcodeInput, barcode=input.value.trim(); if(!barcode){ showStockAlert('stockPageAlert','Scan or enter a barcode first.'); refocusScanner(); return; }
     const now=Date.now(); if(stockState.scanBusy || (stockState.lastScan===barcode && now-stockState.lastScanAt<700))return;
     stockState.scanBusy=true; stockState.lastScan=barcode; stockState.lastScanAt=now; setBusy(stockLookupButton,true,'Looking Up');
-    try{ const data=await stockJson('/api/stock-inventory/lookup',{method:'POST',headers:stockHeaders(),body:JSON.stringify(stockPayload({barcode}))}); input.value=''; if(data.found)openMovementModal(data.item.id,data.item); else openRegisterModal(data.barcode); }
+    try{ const data=await stockJson('/api/stock-inventory/lookup',{method:'POST',headers:stockHeaders(),body:JSON.stringify(stockPayload({barcode}))}); input.value=''; if(data.found){ if(stockState.readOnly){ showItemHistory(data.item.id); showStockAlert('stockPageAlert',`Showing history for ${data.item.item_name}.`,'success'); }else{ openMovementModal(data.item.id,data.item); } } else if(stockState.readOnly){ showStockAlert('stockPageAlert','No item was found for that barcode in your branch.'); refocusScanner(); } else { openRegisterModal(data.barcode); } }
     catch(error){ showStockAlert('stockPageAlert',error.message); refocusScanner(); }
     finally{ stockState.scanBusy=false; setBusy(stockLookupButton,false); }
 }
