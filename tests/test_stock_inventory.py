@@ -1,9 +1,16 @@
 import json
 import pathlib
 import unittest
+from types import SimpleNamespace
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+# tests/__init__.py pins a fresh MEDICAL_SERVICE_TEST_DB for the whole run, so importing the
+# app here cannot touch the real scheduler.db. Branch resolution and the write guard are
+# tested by calling them rather than by matching source text: an authorization rule that is
+# only asserted as a string can be refactored into something that no longer holds.
+import app as app_module  # noqa: E402
 
 
 class StockInventorySourceTests(unittest.TestCase):
@@ -37,7 +44,7 @@ class StockInventorySourceTests(unittest.TestCase):
             "'CEBU': 'BC02'",
             "'DAVAO': 'BC03'",
             'if stock_inventory_read_only_user(target):',
-            "return normalize_stock_inventory_branch(getattr(profile, 'branch', None))",
+            "return stock_inventory_branch_from_engineer_profile(profile)",
             'stock_read_only',
             'readOnly:',
         ):
@@ -128,6 +135,77 @@ class StockInventorySourceTests(unittest.TestCase):
         manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
         release = next(item for item in manifest['releases'] if item['release_key'] == '2026-08-03')
         self.assertTrue(any(item['item_key'] == '2026-08-03-engineer-stock-inventory-view' for item in release['items']))
+
+
+class StockInventoryBranchResolutionTests(unittest.TestCase):
+    """Free-text branch names resolve for engineers, and nowhere else.
+
+    Adding the read-only engineer view meant mapping `Engineer.branch` -- which holds
+    'Manila', 'Cebu', 'Davao' -- onto BC01/BC02/BC03. That tolerance was briefly added to
+    `normalize_stock_inventory_branch`, which also guards the assigned
+    `User.stock_inventory_branch_code`, so a stale or mistyped value there would have become
+    working access to a branch instead of being refused.
+    """
+
+    def test_the_assigned_branch_field_accepts_codes_only(self):
+        for rejected in ('Cebu', 'MANILA', 'davao branch', 'main', 'BC99', '', None):
+            self.assertEqual(
+                app_module.normalize_stock_inventory_branch(rejected), '',
+                f'{rejected!r} must not resolve to a branch on the assigned-code path'
+            )
+
+    def test_the_assigned_branch_field_still_accepts_real_codes(self):
+        """Positive control: the strict path must not reject everything."""
+        for code in ('BC01', 'BC02', 'BC03'):
+            self.assertEqual(app_module.normalize_stock_inventory_branch(code), code)
+            self.assertEqual(app_module.normalize_stock_inventory_branch(code.lower()), code)
+
+    def test_engineer_profile_branches_resolve(self):
+        cases = {'Manila': 'BC01', 'Cebu': 'BC02', 'Davao': 'BC03', 'BC02': 'BC02'}
+        for branch, expected in cases.items():
+            profile = SimpleNamespace(branch=branch)
+            self.assertEqual(app_module.stock_inventory_branch_from_engineer_profile(profile), expected)
+
+    def test_an_unknown_engineer_branch_denies_rather_than_defaulting(self):
+        """Defaulting would put an engineer in someone else's branch."""
+        for branch in ('Baguio', '', None, 'BC99'):
+            self.assertEqual(
+                app_module.stock_inventory_branch_from_engineer_profile(SimpleNamespace(branch=branch)), ''
+            )
+
+    def test_the_two_paths_stay_separate(self):
+        source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        strict = source.split('def normalize_stock_inventory_branch(')[1].split('\ndef ')[0]
+        self.assertNotIn('STOCK_INVENTORY_BRANCH_ALIASES', strict,
+                         'alias tolerance must not leak back into the assigned-code path')
+        resolver = source.split('def stock_inventory_branch_from_engineer_profile(')[1].split('\ndef ')[0]
+        self.assertIn('STOCK_INVENTORY_BRANCH_ALIASES', resolver)
+
+
+class StockInventorySuperadminBypassTests(unittest.TestCase):
+    """The superadmin bypass in can_manage_stock_inventory is deliberate, and bounded.
+
+    `is_superadmin_user` is a hardcoded username allowlist rather than a settable flag, and
+    `stock_inventory_can_administer` already grants those accounts the admin surface, so
+    un-ticking the toggle for a superadmin never withheld anything. Pinned here so it cannot
+    quietly widen to ordinary accounts.
+    """
+
+    def test_the_bypass_is_limited_to_superadmins(self):
+        source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        guard = source.split('def can_manage_stock_inventory(')[1].split('\ndef ')[0]
+        self.assertIn('is_superadmin_user(target)', guard)
+        self.assertIn("getattr(target, 'can_manage_stock_inventory', False)", guard)
+
+    def test_an_ordinary_account_still_needs_the_flag(self):
+        """Positive control: without the flag and without superadmin, write access is refused."""
+        ordinary = SimpleNamespace(
+            is_authenticated=True, is_active=True, role='engineer',
+            username='ordinary_engineer', can_manage_stock_inventory=False,
+        )
+        with app_module.app.test_request_context('/'):
+            self.assertFalse(app_module.can_manage_stock_inventory(ordinary))
+            self.assertFalse(app_module.is_superadmin_user(ordinary))
 
 
 if __name__ == '__main__':

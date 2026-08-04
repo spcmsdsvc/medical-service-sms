@@ -1,5 +1,55 @@
 # Project Change Log
 
+claude changes - 2026-08-04
+
+## Review follow-up: narrowed a widened permission path, and made the suite trustworthy
+
+* Reviewed the two commits the other tool pushed on 2026-08-03 — engineer read-only stock
+  inventory (`6d824a5`) and reimbursement total consistency (`aff9001`). **Both are sound.**
+  Verified the authorization empirically rather than by reading: an engineer account gets 200
+  on every read endpoint, **403 on all four write endpoints**, and a request for `BC01` or
+  `BC03` is always served `BC02`, its own branch. All nine stock-inventory routes are guarded
+  and the read/write split is correct.
+* **Narrowed a permission function that had been widened past its stated scope.**
+  `normalize_stock_inventory_branch` had gained free-text aliases — `MANILA`, `CEBU`, `DAVAO`
+  — but it also guards `User.stock_inventory_branch_code`, the field the Settings form writes
+  and access is decided from. A stale or mistyped value there would have become working access
+  to a branch instead of being refused.
+* The aliases exist for a real reason: `Engineer.branch` holds human labels, and the dev
+  database confirms it — `Manila` (18), `Cebu` (4), `Davao` (5). So the tolerance moved to a
+  separate `stock_inventory_branch_from_engineer_profile`, used only on the read-only engineer
+  path, and `normalize_stock_inventory_branch` went back to accepting branch codes only.
+* **Checked before tightening rather than after:** no account has `stock_inventory_branch_code`
+  set at all — 29 users, every value null — so the strict path provably changes nobody's
+  access.
+* **Kept the superadmin bypass in `can_manage_stock_inventory`, deliberately.**
+  `is_superadmin_user` is a hardcoded username allowlist rather than a settable flag, and
+  `stock_inventory_can_administer` already grants those accounts the admin surface, so
+  un-ticking the toggle for a superadmin never withheld anything. Documented in place and
+  pinned by a test, with a positive control proving an ordinary account without the flag is
+  still refused, so the bypass cannot quietly widen.
+* **Fixed the reason the suite could not be trusted.** `python -m unittest discover -s tests`
+  failed with `test_completed_delta_matches_the_seeded_weeks` `0 != 1` on a developer machine
+  while passing in isolation. The shared test database lived in the temp directory and survived
+  between runs, so a run could fail on data an earlier one left behind. `tests/__init__.py` now
+  pins a fresh database per run before any module imports, so every module's `setdefault`
+  becomes a no-op and each run starts clean; an explicit environment value still wins.
+* That also explains why the other tool's verification kept missing it: pinning a brand-new
+  database by hand — which is what its "fresh isolated full suite" did — sidesteps the default
+  path entirely and reports success.
+* The at-exit cleanup sweeps older run databases as well as its own, because on Windows SQLite
+  may still hold the file at interpreter exit; without the sweep the fix for stale state would
+  have quietly become a litter problem instead.
+* `tests/test_stock_inventory.py` now imports the app and tests branch resolution and the write
+  guard **by calling them**, not by matching source text — an authorization rule asserted only
+  as a string can be refactored into something that no longer holds. Updated one of the other
+  tool's assertions that pinned the exact line this refactor replaced.
+* Both fixes proved to fail when reverted. Suite green at **422** (was 415), and it now passes
+  twice in a row from a dirty machine, which is the actual test of the isolation fix.
+* **Not changed:** the reimbursement mismatch rule, where generated documents use the component
+  columns rather than a disagreeing saved `row_total`. Raised with the owner as a business
+  decision; the owner confirmed it separately.
+
 codex changes - 2026-08-03
 - Repaired reimbursement total consistency across the editable worksheet reload, personal/status APIs, approval serialization, notification email context, Excel workbook, Petty Cash Voucher, Request for Payment form, and downloaded accounting ZIP package. All generated outputs now use one backend reimbursement total snapshot instead of independently summing different persisted values.
 - Made current reimbursement expense columns the authoritative source for component-backed rows, including Representation, Car Repair, Toll Fee, Gasoline, Transpo, Office/Field Items, Parking, Per Diem, Parking Coding, and Others / Misc. This prevents the worksheet's stale `row_total` from making the downloaded RFP/PCV silently disagree with the saved expense breakdown.

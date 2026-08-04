@@ -4830,27 +4830,58 @@ STOCK_INVENTORY_BRANCHES = {
 }
 
 
+STOCK_INVENTORY_BRANCH_ALIASES = {
+    'MANILA': 'BC01',
+    'MAIN': 'BC01',
+    'MANILAMAIN': 'BC01',
+    'BC01MANILAMAIN': 'BC01',
+    'CEBU': 'BC02',
+    'CEBUBRANCH': 'BC02',
+    'BC02CEBU': 'BC02',
+    'DAVAO': 'BC03',
+    'DAVAOBRANCH': 'BC03',
+    'BC03DAVAO': 'BC03',
+}
+
+
 def normalize_stock_inventory_branch(value):
-    raw_value = (clean_str(value) or '').strip().upper()
+    """Strict: only a real branch code counts as a branch code.
+
+    This guards the *assigned* field, `User.stock_inventory_branch_code`, which is written
+    by the Settings form and read to decide which branch an account may see. Accepting free
+    text here would turn a stale or mistyped value into working access to a branch, so an
+    unrecognised value stays empty and the caller denies. Free-text branch names belong to
+    the Engineer profile and are resolved by
+    `stock_inventory_branch_from_engineer_profile` instead.
+    """
+    branch_code = (clean_str(value) or '').strip().upper()
+    return branch_code if branch_code in STOCK_INVENTORY_BRANCHES else ''
+
+
+def stock_inventory_branch_from_engineer_profile(profile):
+    """Resolve an Engineer profile's free-text branch onto a stock branch code.
+
+    `Engineer.branch` holds human labels -- 'Manila', 'Cebu', 'Davao' -- so a read-only
+    engineer viewer has to be mapped onto BC01/BC02/BC03. Deliberately separate from
+    `normalize_stock_inventory_branch` so this tolerance cannot leak into the assigned-code
+    path. An unrecognised branch returns empty and access is denied rather than defaulted.
+    """
+    raw_value = (clean_str(getattr(profile, 'branch', None)) or '').strip().upper()
     if raw_value in STOCK_INVENTORY_BRANCHES:
         return raw_value
     compact = re.sub(r'[^A-Z0-9]+', '', raw_value)
-    aliases = {
-        'MANILA': 'BC01',
-        'MAIN': 'BC01',
-        'MANILAMAIN': 'BC01',
-        'BC01MANILAMAIN': 'BC01',
-        'CEBU': 'BC02',
-        'CEBUBRANCH': 'BC02',
-        'BC02CEBU': 'BC02',
-        'DAVAO': 'BC03',
-        'DAVAOBRANCH': 'BC03',
-        'BC03DAVAO': 'BC03',
-    }
-    return aliases.get(compact, '')
+    return STOCK_INVENTORY_BRANCH_ALIASES.get(compact, '')
 
 
 def can_manage_stock_inventory(user=None):
+    """Write access to stock inventory.
+
+    Superadmins pass regardless of the stored toggle, and that is deliberate rather than a
+    convenience: `is_superadmin_user` is a hardcoded username allowlist, not a settable
+    flag, and `stock_inventory_can_administer` already grants those same accounts the admin
+    surface. Un-ticking the toggle for a superadmin therefore never withheld anything.
+    Pinned by a test so the bypass cannot be widened to ordinary accounts unnoticed.
+    """
     target = user or current_user
     return bool(
         target and getattr(target, 'is_authenticated', False) and
@@ -4905,7 +4936,7 @@ def stock_inventory_branch_for_user(user=None, requested_branch=None):
     # cannot move a read-only engineer into another branch.
     if stock_inventory_read_only_user(target):
         profile = getattr(target, 'engineer_profile', None)
-        return normalize_stock_inventory_branch(getattr(profile, 'branch', None))
+        return stock_inventory_branch_from_engineer_profile(profile)
     assigned_branch = normalize_stock_inventory_branch(getattr(target, 'stock_inventory_branch_code', None))
     if assigned_branch:
         return assigned_branch
