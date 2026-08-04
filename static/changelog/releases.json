@@ -1323,6 +1323,24 @@
           "sort_order": 20
         }
       ]
+    },
+    {
+      "release_key": "2026-08-04",
+      "release_date": "2026-08-04",
+      "title": "Stricter Stock Inventory Branch Assignment",
+      "summary": "Assigning a Stock Inventory branch to an account now requires a real branch code, so a mistyped value cannot quietly grant access to a branch.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-04-stock-inventory-branch-code-strict",
+          "category": "Stock Inventory",
+          "description": "The Stock Inventory branch on an account must now be a real branch code (BC01, BC02 or BC03). Typing a branch name such as \"Cebu\" is no longer accepted there and the account is denied access until a proper code is set. Engineer accounts are unaffected — their branch still comes from their engineer profile.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
     }
   ]
 }

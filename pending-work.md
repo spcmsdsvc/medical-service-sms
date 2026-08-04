@@ -7,7 +7,15 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last filled: 2026-07-31 (after the offline entry-point fix, `bfacf8f`)
+Last filled: 2026-08-04, at the owner's request, after the offline audit, both recorded plans,
+and the review of two commits that came from another tool.
+
+> **Read this first: you are not the only agent in this repository.** Codex works in the same
+> working tree and pushes to the same branch. During the 2026-08-02 session it wrote an entry
+> into `changes.md` while work was in flight here, and on 2026-08-03 it landed four commits
+> directly. Before starting anything: `git fetch origin`, check `git status --short` for
+> changes you did not make, and **stage explicitly** so you never commit someone else's
+> half-finished work. If `changes.md` has an entry you did not write, leave it alone.
 
 **Where the work lives:** this repository, `medical-service-sms-railway`, working directly.
 The sandbox at `Claude-medical-service-sms-railway` still exists, synced to `baefb63`, and
@@ -31,12 +39,30 @@ lands here.
 | `709106c` | Offline schedule creation for field engineers |
 | `9d4721b` | Recorded the unverified offline attachment path |
 | `bfacf8f` | Add Schedule form opens offline rather than depending on cache luck |
+| `28ba1b0` | Create a TSR against a schedule that has not synced yet |
+| `0bb60e3` | Missing column stopped every TSR save — `tsr_number` migration |
+| `e12a439` | Schedule picker stopped renumbering saved TSR drafts |
+| `f268397` | Weak-signal TSR queueing, and assets survive a cache bump |
+| `a01f2b6` | Three contained gaps from the offline audit |
+| `515698f` | Schedule option identity no longer depends on list position |
+| `ca00803` | Plan B — durable offline TSR storage (Codex, reviewed here) |
+| `6d824a5` | Engineer read-only stock inventory (Codex) |
+| `aff9001` | Reimbursement package total consistency (Codex) |
+| `8f72ce2` | Narrowed a widened branch check; fresh test DB per run |
 
-Suite green at **334 tests**. Service worker cache at **`v56-offline-entry-point`**.
+Suite green at **422 tests**. Service worker cache at **`v63-stock-inventory-readonly`** —
+**read the live value out of `app.py` immediately before committing**, never from a note.
 
 **A third journal now exists.** `plans.md` holds what was **agreed and is waiting to be
 built**; `changes.md` what **was** done; this file what is **still open**. Approving a plan is
 not permission to execute it — see `AGENTS.md`, "Approved Plans".
+
+**Plans are now written to be executed, not read.** Since `73f331d` every plan carries numbered
+execution steps naming the files and functions each touches and what "done" looks like, an
+investigation section citing `file:line`, and an "After implementation" section covering the
+review and release workflow. The required structure is in `plans.md` under "How to use this
+file". Plan B is the reference example. Both plans recorded on 2026-08-01 are now `Executed`;
+nothing is currently waiting for a go-ahead.
 
 **The dashboard redesign is complete, and the hybrid question that outlived it is now
 decided.** All four phases plus the ratification:
@@ -59,11 +85,38 @@ session recorded.
 
 ## 1. Open bugs
 
-**None currently open.**
+**None currently open.** Everything found in the 2026-08-01 offline audit has shipped; the
+five items it raised are all closed (`a01f2b6`, `515698f`, `f268397`, `ca00803`).
+
+**Fixed since the last fill, worth knowing because each one blocked real work:**
+
+| What broke | Cause | Fixed in |
+| --- | --- | --- |
+| Every TSR save failed with "Unable to assign the next TSR number" | `ensure_online_tsr_submission_table` never added `tsr_number`, so a live table predating that column raised "no such column" on every read | `0bb60e3` |
+| "Selected schedule was not found" on a saved draft | Picker option identity came from the **array index**, so any list change renumbered every option and detached drafts | `e12a439`, then properly in `515698f` |
+| A TSR could not be saved in weak signal | The offline branch was gated on `navigator.onLine === false`; a live radio with an unreachable server threw at the number fetch and queued nothing | `f268397` |
+| Adding a schedule offline did nothing at all, silently | `saveShift()` runs from an inline `onclick` with no catch, so the rethrown network error became an unhandled rejection | `a01f2b6` |
 
 ---
 
 ## 2. Queued work
+
+### ~~Create TSR on a schedule that has not synced yet~~ — BUILT in `28ba1b0`
+
+**Done.** An engineer taps Create TSR on a queued schedule card, writes the TSR offline, and
+both queue. On reconnect the schedule syncs first, and the TSR behind it is rewritten to the
+real shift id before it is sent. Multi-day chains file against the shift matching the TSR's
+service date. If the parent schedule is removed, the TSR is kept and asks for a new schedule.
+
+**Correcting what the section below claimed, because it sent readers somewhere that did not
+work.** It said the workaround was a standalone TSR from the sidebar, "fully offline already".
+That was never true: `/offline-tsr` disables every field until a schedule is selected
+(`updateCreateTSRScheduleGate`), and the picker's sources never contained a queued schedule.
+There was no way to write a TSR against a queued schedule at all. The original text is kept
+below because the two refusal points it cites are still the right places to look.
+
+<details>
+<summary>Original entry, retained for its references</summary>
 
 ### Create TSR on a schedule that has not synced yet — TO BE PLANNED
 
@@ -103,6 +156,10 @@ identity half, but the dependency half is new.
 Worth deciding first, before any code: **should the TSR wait for its schedule, or should it be
 created standalone and linked afterwards?** Those are different features and the second may be
 most of the value for far less risk.
+
+*(Decided: the TSR waits for its schedule. Built in `28ba1b0`.)*
+
+</details>
 
 ### `/get_recent_activity` now has zero callers
 
@@ -219,6 +276,9 @@ None of this is known broken — it simply has not been checked.
 
 | Item | Applies to |
 | --- | --- |
+| **The two-tab race** | `/timeline` and `/offline-tsr` open together, then reconnect. Both pages carry an `online` listener, so this is the only way to prove the single-flight guard holds and that exactly one `/add_shift` fires per queued schedule |
+| **Engineer read-only stock inventory, in a browser** | `6d824a5` was verified here through the API — reads 200, all four writes 403, branch requests always served the engineer's own branch. The **page and its Currently Borrowed panel** were not opened on a real viewport |
+| **Reimbursement totals against real data** | `aff9001` changes which number appears on the PCV, RFP, Excel and ZIP. Verified against fixtures and a smoke case, not against a real reimbursement with attachments |
 | **Edge and Brave** | every dashboard phase, login redesign, sidebar, What's New, digest modal |
 | **Offline behaviour against a real service worker registration** | login offline shell, dashboard assets, changelog assets. Real workers *were* registered through phases 2–4, the ratification and the offline schedule work (`v46` through `v55` observed), but the offline path itself has still not been exercised with the network genuinely down |
 | **Mobile viewport (375px)** | the What's New filter/search row. Every dashboard phase and the ratification were checked at 375px; this row still has not been |
@@ -341,7 +401,20 @@ regex metacharacter comes back as a false negative. A clobber check written that
 never `preview_start` name-mode, and stop every server afterwards. The Browser pane blocks
 origins it has not registered, so open the app with `preview_start` passing the URL.
 
-Two traps that cost real time this session:
+**Confirm a defect injection actually applied before trusting what the test says.** Proving a
+new test fails without its fix is the standard here, and the check itself can lie: a
+`str.replace` using `\n` search strings against these CRLF files silently does nothing, the
+suite stays green, and it reads as "the tests are vacuous". Print whether the replacement
+changed the text, or compare a hash, before drawing any conclusion.
+
+**An authorization rule asserted as a source string is not tested.** `test_stock_inventory.py`
+pinned the exact line `return normalize_stock_inventory_branch(getattr(profile, 'branch', None))`;
+refactoring that line into a safer helper broke the test while the behaviour improved. Guards
+that decide access should be exercised by **calling** them — build a user, hit the endpoint,
+assert the status code. That is how the read-only engineer work was actually confirmed: reads
+200, all four writes 403, and a request for another branch served the engineer's own.
+
+Two traps that cost real time in the offline schedule work:
 
 - **`/static/` is `cacheFirst` and the service worker re-registers on every page load.**
   Unregister it and clear both caches after *each* asset edit, not once, or you will review
@@ -349,18 +422,39 @@ Two traps that cost real time this session:
 - **Template edits need a server restart.** Jinja caches compiled templates, so a changed
   `{% if %}` gate will keep evaluating the old way until the process is restarted.
 
-**Test isolation caveat:** every test module pins `MEDICAL_SERVICE_TEST_DB` with
-`os.environ.setdefault`, so under `unittest discover` the **first module to import wins and
-all modules share one database and one Flask app**. Two cross-module failures came from this:
+**Test isolation — the database is now fresh per run.** `tests/__init__.py` pins a unique
+`MEDICAL_SERVICE_TEST_DB` before any module imports, so every module's `os.environ.setdefault`
+is a no-op and they all share **one clean database per run**. An explicit environment value
+still wins if you want to inspect one afterwards.
+
+Before that fix the file lived in the temp directory and survived between runs, so state
+accumulated: `python -m unittest discover -s tests` could fail on data an earlier run left
+behind — `test_completed_delta_matches_the_seeded_weeks` with `0 != 1` — while the same module
+passed alone. **Verifying with a hand-pinned brand-new database hides this**, which is exactly
+how it went unnoticed. Run the documented command, on the machine as it is.
+
+Modules still share one database and one Flask app **within** a run, so the old hazards remain:
 seeding an account named `rodito` makes `ensure_default_approval_routes()` write
-`ApprovalRouting` rows whose NOT NULL requester FK then breaks sibling modules, and a
-Completed shift seeded in one module landed inside another module's week-over-week window.
-Both modules now clean up in `tearDownClass`. If a new module seeds users or shifts, it must
-do the same.
+`ApprovalRouting` rows whose NOT NULL requester FK breaks sibling modules, and a Completed
+shift seeded in one module can land inside another's week-over-week window. Keep cleaning up in
+`tearDownClass`; the per-run database only stops a missed cleanup poisoning the *next* run.
 
 ---
 
 ## 5. Decided against — do not re-raise
+
+**Reimbursement rows where the component columns and the saved `row_total` disagree.** Since
+`aff9001` the generated PCV, RFP, Excel and ZIP all use the **component sum**, not the saved
+total, and surface a mismatch warning. Raised with the owner as a business decision rather than
+a technical one — the smoke case differed by ₱18,339 — and **the owner rectified it separately
+and confirmed the rule stands**. Do not "fix" this back to `row_total`.
+
+**The superadmin bypass in `can_manage_stock_inventory`.** It returns true for superadmins
+regardless of the stored toggle. That looks like a hole and is not: `is_superadmin_user` is a
+hardcoded username allowlist rather than a settable flag, and `stock_inventory_can_administer`
+already grants those accounts the admin surface, so un-ticking the toggle never withheld
+anything. Reviewed, documented in place, and pinned by a test whose positive control proves an
+ordinary account without the flag is still refused.
 
 **Editing or deleting a schedule offline.** Excluded from `709106c` by decision. Offline
 creation is a new row and needs no reconciliation; an offline *edit* must resolve against a
