@@ -1357,6 +1357,15 @@
             "admins"
           ],
           "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-05-hr-schedule-export-redaction",
+          "category": "Calendar",
+          "description": "The HR schedule export now hides the same details the HR calendar hides. The downloaded CSV previously included the free-text job title and the equipment name even though the on-screen calendar replaced them, and the export is again limited to admins and dedicated HR accounts rather than any account carrying the HR flag.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
         }
       ]
     }

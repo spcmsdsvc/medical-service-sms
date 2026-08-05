@@ -117,6 +117,17 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
             cls.visible_engineer_id = cls.visible_engineer.id
             cls.client_id = cls.client_record.id
 
+            # The shift carries a real product. Without one, an export that leaks
+            # equipment reads as clean, which is how the CSV redaction gap survived.
+            cls.product_serial = f'HR-SN-{cls.suffix}'
+            cls.product_record = app_module.Product(
+                serial_number=cls.product_serial,
+                name='Confidential Analyzer Model X',
+                client_id=cls.client_record.id,
+            )
+            app_module.db.session.add(cls.product_record)
+            app_module.db.session.commit()
+
             today = app_module.get_manila_today()
             start_dt, end_dt = app_module.build_shift_datetime_bounds(today, today)
             cls.shift = app_module.Shift(
@@ -125,6 +136,7 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
                 end_time=start_dt + timedelta(hours=17),
                 engineer_id=cls.visible_engineer.id,
                 client_id=cls.client_record.id,
+                product_id=cls.product_serial,
                 status='In Progress',
             )
             app_module.db.session.add(cls.shift)
@@ -149,6 +161,9 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
             visible_engineer = app_module.db.session.get(app_module.Engineer, cls.visible_engineer_id)
             if visible_engineer:
                 app_module.db.session.delete(visible_engineer)
+            product = app_module.db.session.get(app_module.Product, cls.product_serial)
+            if product:
+                app_module.db.session.delete(product)
             client = app_module.db.session.get(app_module.Client, cls.client_id)
             if client:
                 app_module.db.session.delete(client)
@@ -187,6 +202,58 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
         export_text = export.get_data(as_text=True)
         self.assertIn('Visible Calendar Engineer', export_text)
         self.assertNotIn('HR Calendar Engineer', export_text)
+
+    def test_hr_csv_export_is_redacted_the_same_way_the_calendar_is(self):
+        """The download must not return what the screen deliberately hides.
+
+        The export built its own cell text and skipped redact_timeline_payload_for_hr
+        entirely, so HR downloaded the real job title and the equipment name while the
+        calendar showed 'Service Schedule'.
+        """
+        client = self._client_for(self.hr_user_id)
+        export = client.get('/export_timeline?offset=0&branch=ALL')
+        self.assertEqual(export.status_code, 200)
+        export_text = export.get_data(as_text=True)
+
+        # Positive control: the row is present and populated, so the assertions below
+        # are testing redaction rather than passing on an empty CSV.
+        self.assertIn('Visible Calendar Engineer', export_text)
+        self.assertIn('HR Viewer Client', export_text)
+        self.assertIn('08:00-17:00', export_text)
+        self.assertIn('Service Schedule', export_text)
+
+        # Second positive control: the underlying row really does carry both secrets,
+        # so their absence above cannot be an artefact of an unpopulated fixture.
+        with self.app.app_context():
+            shift = app_module.db.session.get(app_module.Shift, self.shift_id)
+            self.assertEqual(shift.title, 'Private equipment installation for HR redaction')
+            self.assertEqual(shift.product.name, 'Confidential Analyzer Model X')
+
+        self.assertNotIn('Private equipment installation for HR redaction', export_text)
+        self.assertNotIn('Confidential Analyzer Model X', export_text)
+        self.assertNotIn('Item:', export_text)
+
+    def test_hr_flag_does_not_grant_export_to_an_engineer_account(self):
+        """Ticking HR on an engineer must not hand them an admin-only export.
+
+        /export_timeline gated on is_hr_schedule_viewer(), which is also true for an
+        engineer whose HR box is ticked -- widening a route that had always required
+        is_admin_authorized().
+        """
+        client = self._client_for(self.engineer_user_id)
+        export = client.get('/export_timeline?offset=0&branch=ALL')
+        self.assertEqual(export.status_code, 403)
+        self.assertNotIn(
+            'Private equipment installation for HR redaction',
+            export.get_data(as_text=True),
+        )
+
+        with self.app.app_context():
+            engineer_account = app_module.db.session.get(app_module.User, self.engineer_user_id)
+            # Positive control: this account really does carry the HR flag and really is
+            # not an admin, so the 403 above is the narrowed gate and not a stray fixture.
+            self.assertTrue(app_module.is_hr_schedule_viewer(engineer_account))
+            self.assertFalse(app_module.is_admin_authorized(engineer_account))
 
     def test_hr_timeline_feed_keeps_schedule_context_and_redacts_sensitive_detail(self):
         client = self._client_for(self.hr_user_id)

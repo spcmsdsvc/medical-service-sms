@@ -1,5 +1,50 @@
 # Project Change Log
 
+claude changes - 2026-08-05
+
+## Review of the HR schedule viewer: the export handed back what the calendar hid
+
+* Reviewed the four commits the other tool pushed for the HR schedule viewer (`9b6effd`,
+  `a7560f3`, `2ff9181`, `d6478a1`). **The core is sound**, and it went past the recorded plan in
+  the right places: `restrict_hr_schedule_only_accounts` is a real `before_request` allowlist
+  rather than nav hiding, and `/get_engineers`, `/get_clients`, `/get_products` and
+  `/get_shift_details` are all handled — that was the leak path the plan flagged as likeliest to
+  be missed. The default-deny write surface is intact; none of the new helpers touch
+  `is_admin_authorized`, `is_superadmin_user` or a `role == 'engineer'` branch, so every schedule
+  mutation endpoint still refuses HR by construction.
+* **Fixed a redaction that stopped at the screen.** `d6478a1` opened `/export_timeline` to HR but
+  never applied `redact_timeline_payload_for_hr`, because the CSV builds its own cell text. HR
+  downloaded the free-text job title and the equipment name while the calendar showed
+  "Service Schedule". **Proven by calling both endpoints against the project's own fixture**, not
+  by reading: the title was absent from `/get_timeline_data` and present in the CSV row.
+* The two paths now read one function, `hr_schedule_display_label()`, so the label on screen and
+  the label in the download cannot drift apart again. That was the actual defect — not a missing
+  check, but two places deciding the same thing independently.
+* **Narrowed a gate that had widened past HR.** `/export_timeline` admitted
+  `is_hr_schedule_viewer()`, which is also true for an engineer whose HR box is ticked — handing
+  them a weekly CSV the route had always reserved for `is_admin_authorized()`. It now uses
+  `is_hr_schedule_only_user()`, the same predicate the feed redaction keys off. Confirmed
+  empirically that such an account got 200 with the full title before, and 403 after.
+* **The fixture is why this survived review.** The seeded shift carried no product, so an export
+  that leaks equipment read as clean, and the existing export test asserted only a 200 and that
+  HR personnel were excluded — never that the CSV was redacted. The fixture now carries a real
+  product, and the two new tests each have a positive control: the CSV genuinely contains the
+  engineer, client and time (so redaction is not being confused with an empty file), and the
+  underlying row genuinely holds both secrets (so their absence is not an unpopulated fixture).
+* **Each new test proved to fail without its fix**, injected one defect at a time — the widened
+  gate, the equipment leak, the title leak — with the injection verified by SHA before each run
+  and `app.py` confirmed byte-identical to its backup afterwards. This repo has been burned by
+  replacements that silently matched nothing and left a green suite reading as vacuous.
+* Suite green at **432** (was 430). No service worker bump: nothing in `APP_SHELL` changed, this
+  is server-side CSV generation. `scheduler.db` untouched.
+* **Raised, not changed.** Two items for the owner. Blocked pages return raw JSON rather than a
+  redirect to a real browser, because `request.accept_mimetypes.accept_json` is true for a
+  browser's `*/*;q=0.8` — denial still works, so it is cosmetic, but the existing test asserts a
+  302 and passes only because the test client sends a different `Accept` header. And
+  `HRScheduleViewerSourceTests` pins literal source substrings such as `'timelineReadOnlyHR ||'`,
+  the pattern this repository already ruled against after `test_stock_inventory.py` pinned a line
+  that a safe refactor then broke.
+
 codex changes - 2026-08-05
 
 - Added the restricted **HR Schedule Viewer** workflow. Superadmins can grant the new

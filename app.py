@@ -34732,14 +34732,24 @@ def download_reimbursement_package():
         return jsonify({'success': False, 'error': 'Unable to generate reimbursement package.'}), 500
 
 
+def hr_schedule_display_label(schedule_type=None):
+    """The stand-in label HR sees instead of a free-text job title.
+
+    Shared by the calendar feed and the CSV export on purpose. The export used to
+    build its own cell text and therefore shipped the real title while the screen
+    showed this label, so the two paths now read the same function.
+    """
+    normalized = (clean_str(schedule_type) or 'service').lower()
+    return {
+        'travel': 'Travel Schedule',
+        'leave': 'Leave Schedule',
+    }.get(normalized, 'Service Schedule')
+
+
 def redact_timeline_payload_for_hr(payload):
     """Keep the HR calendar useful without exposing commercial or file details."""
     redacted = dict(payload or {})
-    schedule_type = (clean_str(redacted.get('schedule_type')) or 'service').lower()
-    schedule_label = {
-        'travel': 'Travel Schedule',
-        'leave': 'Leave Schedule',
-    }.get(schedule_type, 'Service Schedule')
+    schedule_label = hr_schedule_display_label(redacted.get('schedule_type'))
     redacted.update({
         'client_address': '',
         'product_name': '',
@@ -36587,7 +36597,11 @@ def export_products():
 @login_required
 def export_timeline():
     """Weekly Grid schedule snapshot CSV dump aligned with multi-engineer assignments."""
-    if not (is_admin_authorized() or is_hr_schedule_viewer()): return denied()
+    # Deliberately is_hr_schedule_only_user() and not is_hr_schedule_viewer(): the broad
+    # predicate is also true for an engineer whose HR box happens to be ticked, and that
+    # would hand them a weekly CSV this route has always reserved for admins.
+    hr_export = is_hr_schedule_only_user()
+    if not (is_admin_authorized() or hr_export): return denied()
     offset = clean_int(request.args.get('offset', 0)) or 0
     branch_filter = clean_str(request.args.get('branch')) or 'ALL'
 
@@ -36633,9 +36647,16 @@ def export_timeline():
                 for s in shifts:
                     time_label = f"{s.start_time.strftime('%H:%M')}-{s.end_time.strftime('%H:%M')}"
                     client_label = s.client.name if s.client else ''
-                    product_label = s.product.name if s.product else ''
+                    # HR keeps the client name and the timing; the free-text title and the
+                    # equipment are the two fields the calendar redacts, so the download
+                    # redacts them too.
+                    product_label = '' if hr_export else (s.product.name if s.product else '')
+                    title_label = (
+                        hr_schedule_display_label(getattr(s, 'schedule_type', None))
+                        if hr_export else s.title
+                    )
                     status_label = s.status or ''
-                    detail_parts = [f"[{time_label}] {s.title}"]
+                    detail_parts = [f"[{time_label}] {title_label}"]
                     if client_label:
                         detail_parts.append(client_label)
                     if product_label:
