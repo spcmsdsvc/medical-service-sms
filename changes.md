@@ -33,6 +33,15 @@ codex changes - 2026-08-05
 - Added a calendar-specific engineer lookup context and regression coverage confirming that
   HR-flagged personnel are absent from calendar rows and pickers while ordinary personnel
   continue to appear. Re-ran the focused HR workflow tests successfully.
+- Restored HR Schedule Viewer access to the weekly schedule print and CSV export workflows.
+  HR remains read-only for schedule data and receives the same filtered roster, so HR-flagged
+  personnel are excluded from exported and printed schedule selections.
+- Added `/export_timeline` to the HR read-only route allowlist and authorized HR Schedule
+  Viewer accounts server-side without widening access for unrelated staff accounts.
+- Updated the Calendar toolbar styling so HR can see the branch filter, Export CSV, and Print
+  Grid controls while approver-only accounts retain their existing hidden admin controls.
+- Extended HR regression tests to verify CSV export succeeds, visible personnel are included,
+  HR-flagged personnel are excluded, and the read-only toolbar selectors remain correct.
 
 claude changes - 2026-08-04
 

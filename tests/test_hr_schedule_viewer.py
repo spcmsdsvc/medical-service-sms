@@ -49,6 +49,8 @@ class HRScheduleViewerSourceTests(unittest.TestCase):
         self.assertIn('timelineReadOnlyHR', self.timeline)
         self.assertIn('HR Schedule View', self.timeline)
         self.assertIn('timelineReadOnlyHR ||', self.timeline)
+        self.assertIn('timeline-export-print-control', self.timeline)
+        self.assertIn('timeline-readonly-approver:not(.timeline-readonly-hr)', self.timeline)
 
     def test_release_and_service_worker_are_bumped(self):
         self.assertIn('2026-08-05-hr-schedule-viewer', self.releases)
@@ -179,6 +181,12 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
         reimbursement = client.get('/reimbursement')
         self.assertEqual(reimbursement.status_code, 302)
         self.assertTrue(reimbursement.headers['Location'].endswith('/'))
+
+        export = client.get('/export_timeline?offset=0&branch=ALL')
+        self.assertEqual(export.status_code, 200)
+        export_text = export.get_data(as_text=True)
+        self.assertIn('Visible Calendar Engineer', export_text)
+        self.assertNotIn('HR Calendar Engineer', export_text)
 
     def test_hr_timeline_feed_keeps_schedule_context_and_redacts_sensitive_detail(self):
         client = self._client_for(self.hr_user_id)

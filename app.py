@@ -36587,7 +36587,7 @@ def export_products():
 @login_required
 def export_timeline():
     """Weekly Grid schedule snapshot CSV dump aligned with multi-engineer assignments."""
-    if not is_admin_authorized(): return denied()
+    if not (is_admin_authorized() or is_hr_schedule_viewer()): return denied()
     offset = clean_int(request.args.get('offset', 0)) or 0
     branch_filter = clean_str(request.args.get('branch')) or 'ALL'
 
@@ -42329,7 +42329,7 @@ def restrict_hr_schedule_only_accounts():
     path = request.path or '/'
     allowed_exact = {
         '/', '/timeline', '/settings', '/change_password', '/logout',
-        '/get_timeline_data', '/get_clients', '/get_products', '/get_engineers',
+        '/get_timeline_data', '/export_timeline', '/get_clients', '/get_products', '/get_engineers',
         '/timeline_session_ping', '/api/preferences/appearance',
         '/manifest.json', '/pwa-icon.svg', '/service-worker.js',
     }

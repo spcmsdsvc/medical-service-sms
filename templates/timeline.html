@@ -7219,21 +7219,26 @@ body.timeline-readonly-hr .timeline-approver-banner-sub {
     color: #065f46;
 }
 
-body.timeline-readonly-approver .timeline-admin-control,
-body.timeline-readonly-approver .timeline-engineer-export-control,
-body.timeline-readonly-approver .timeline-engineer-focus-strip,
-body.timeline-readonly-approver .timeline-engineer-desktop-hero,
-body.timeline-readonly-approver .timeline-hybrid-desktop-hero,
-body.timeline-readonly-approver .timeline-scheduler-desktop-hero,
-body.timeline-readonly-approver #timeline-scheduler-hover-rail,
-body.timeline-readonly-approver #timeline-scheduler-toolbar-handle,
-body.timeline-readonly-approver #mobile-sticky-action-bar,
-body.timeline-readonly-approver .mobile-add-schedule-card,
-body.timeline-readonly-approver .mobile-full-calendar-lite-action-row,
-body.timeline-readonly-approver .mobile-schedule-actions,
-body.timeline-readonly-approver .mobile-quick-status-panel,
-body.timeline-readonly-approver .mobile-workflow-primary-row {
+body.timeline-readonly-approver:not(.timeline-readonly-hr) .timeline-admin-control,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) .timeline-engineer-export-control,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) .timeline-engineer-focus-strip,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) .timeline-engineer-desktop-hero,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) .timeline-hybrid-desktop-hero,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) .timeline-scheduler-desktop-hero,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) #timeline-scheduler-hover-rail,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) #timeline-scheduler-toolbar-handle,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) #mobile-sticky-action-bar,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) .mobile-add-schedule-card,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) .mobile-full-calendar-lite-action-row,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) .mobile-schedule-actions,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) .mobile-quick-status-panel,
+body.timeline-readonly-approver:not(.timeline-readonly-hr) .mobile-workflow-primary-row {
     display: none !important;
+}
+
+/* HR may print/export the read-only schedule; mutation and schedule-card actions remain guarded. */
+body.timeline-readonly-hr .timeline-export-print-control {
+    display: inline-flex !important;
 }
 
 body.timeline-readonly-approver .schedule-card,
