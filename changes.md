@@ -45,6 +45,48 @@ claude changes - 2026-08-05
   the pattern this repository already ruled against after `test_stock_inventory.py` pinned a line
   that a safe refactor then broke.
 
+* Added a shared `resolve_staff_permission_request()` policy resolver in `app.py` and refactored
+  the Settings approval-user update route to use it. Inventory-only now correctly implies the
+  underlying inventory capability, while HR Schedule View, Approver-only, approval capability,
+  and Stock Inventory permissions are rejected when combined incompatibly; existing protected
+  management-account and branch-assignment safeguards remain server-side.
+* Extended `/add_engineer` so the Add Personnel workflow accepts `engineer` (the backward-
+  compatible default), `hr`, or `approver`. Engineer creation keeps the linked `Engineer` row;
+  HR accounts become `role='staff'` with HR Schedule View and no personnel row; Approver accounts
+  become `role='approver'` with approval capability and no personnel row. Temporary credentials,
+  first-login password rotation, username collision handling, and activity logging remain shared.
+* Enforced superadmin-only staff-type and permission assignment. Regional admins can still add a
+  normal engineer, but direct attempts to choose HR/Approver or send any permission field receive
+  HTTP 403 rather than silently losing the requested capability. Permission validation runs before
+  the new user is added or flushed, so invalid requests cannot leave half-created accounts.
+* Updated `templates/engineers.html` Add Personnel UI with a Staff Type selector, superadmin-only
+  approval/HR/inventory controls, conditional branch and Employee ID fields, mutually compatible
+  control states, and clear success messaging that directs non-engineer accounts to Settings.
+  Existing personnel edit/contact behavior remains unchanged, and HR/Approver accounts do not
+  appear in the technical Personnel directory because they have no `Engineer` profile.
+* Added the admin-targeted `2026-08-05-staff-type-personnel-accounts` Whatâ€™s New manifest item in
+  `static/changelog/releases.json`. No schema migration or service-worker bump was introduced;
+  `/engineers_page` and `/settings` are not app-shell assets, and `scheduler.db` was not touched
+  by the implementation.
+* Added `tests/test_staff_creation.py` covering all three account shapes, no-`staff_type`
+  backward compatibility, superadmin-only UI/API controls, regional-admin denials, shared
+  Settings/Add conflict responses, no-half-account behavior, HR restriction, and rendered-page
+  visibility. Focused staff tests passed (7), targeted regression tests passed (38), dashboard
+  regressions passed (77), service-worker checks passed (5), JavaScript extraction passed, and
+  `git diff --check` passed before the full suite.
+* The final repository-wide discovery run passed **439 tests** in 30.547 seconds with no failures.
+  Python compilation, the extracted `engineers.html` JavaScript syntax check, manifest parsing,
+  and the final whitespace review also passed. The test fixture was adjusted to reuse canonical
+  accounts when the suite runs against an already-populated test database, while still cleaning
+  only accounts created by this test module; this avoids duplicate-user setup failures without
+  mutating application data or weakening the account-shape assertions.
+* During implementation, the shared resolver corrected an unreachable pre-existing implication:
+  `stock_inventory_only` now reliably enables the underlying inventory capability before branch
+  validation. HR Schedule View is also rejected when combined with any approval or inventory
+  capability, preventing a restricted HR account from receiving a conflicting operational mode.
+  The existing protected-account and Settings behavior remains covered by the shared call-site
+  tests.
+
 codex changes - 2026-08-05
 
 - Added the restricted **HR Schedule Viewer** workflow. Superadmins can grant the new

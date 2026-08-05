@@ -55,6 +55,227 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Staff type and permission tickboxes on Add Personnel
+
+**Status:** `In progress`
+**Approved:** 2026-08-05
+**Detailed:** 2026-08-05, after reviewing the HR schedule viewer commits and tracing the
+account-creation path against the Settings permission handler.
+
+### Context
+
+Permissions are edited in one place today — the Settings approval-user card: approver-only, HR
+Schedule View, Stock Inventory, branch. But accounts are *created* somewhere else entirely, on
+the Personnel page, with no permissions at all. So adding a person is always two screens and a
+context switch, and the second half is easy to forget.
+
+The owner asked for permission tickboxes on the Add Personnel form. Investigation turned up
+three reasons it cannot be only that.
+
+**It would be a privilege escalation as stated.** `add_engineer` (`app.py:41648`) gates on
+`is_admin_authorized()` — superadmin **or** regional admin. `settings_update_approval_user`
+(`app.py:16373`) gates on `is_superadmin_user()` — superadmin only. Tickboxes on the add form
+would let the regional admin grant permissions the Settings screen refuses them.
+
+**The HR tickbox would be a guaranteed no-op there.** `add_engineer` always creates
+`role='engineer'` **and** an `Engineer` row (`app.py:41664-41682`). `is_hr_schedule_only_user`
+(`app.py:4964`) requires `not has_engineer_profile`. An HR person created through that form gets
+the flag and no restriction, no redaction, no stripped nav. `test_hr_flag_does_not_strip_an_
+engineer_profile_account` pins that as intended behaviour, so the tickbox would silently grant
+nothing.
+
+**And the existing design already contradicts itself here.** `is_hr_schedule_engineer_profile`
+(`app.py:4981`, from `2ff9181`) exists to hide HR staff from the calendar roster, which assumes
+HR people *have* `Engineer` rows. But having one disables the HR restriction entirely. Both
+cannot be right.
+
+The root cause under all three: **Add Personnel only knows how to make engineers, and HR staff
+are not engineers.** Intended outcome — one screen creates the right kind of account with the
+right permissions, and the HR view actually applies to the people it was built for.
+
+### Decisions taken
+
+| Decision | Value |
+| --- | --- |
+| Staff type on the add form | **Engineer / HR / Approver.** HR and Approver get **no `Engineer` row** |
+| Who sees the permission tickboxes | **Superadmin only**, matching Settings. Regional admins keep adding personnel, without them |
+| Editing an existing person | **Not in scope.** Settings stays the place to change permissions after the fact |
+| Where non-engineer staff appear | **The Settings user list only.** Personnel stays the technical roster |
+
+### Investigation
+
+- `add_engineer` (`app.py:41644-41691`) hardcodes `role='engineer'`, derives the username from
+  the first name with a collision fallback (`app.py:41656-41658`), issues a temp password with
+  `must_change_password=True`, and returns both to the caller. All of that is reusable as-is for
+  every staff type; only the role and the `Engineer` row are type-specific.
+- `settings_update_approval_user` (`app.py:16471-16510`) is where every permission rule already
+  lives: `stock_inventory_only` implies `can_manage_stock_inventory` and turning inventory off
+  clears the restricted view (`app.py:16481-16486`); approver-only and inventory are mutually
+  exclusive (`app.py:16488`); HR cannot combine with either restricted mode (`app.py:16490`); a
+  non-superadmin inventory user needs a branch (`app.py:16492`); and `protected_business_roles`
+  (`app.py:16497`) blocks restricted views on managers, schedulers, the developer superadmin and
+  the regional admin. **None of this may be re-implemented on the add path.**
+- `templates/engineers.html` holds the add/edit modal (`#e-emp-id`, `#e-name`, `#e-initials`,
+  `#e-branch`) and the directory table. The directory renders `Engineer` rows only, which is why
+  a non-engineer account created here would not appear in it.
+- `/engineers_page` and `/settings` are **not** `APP_SHELL` entries (`app.py:14592-14614`), and
+  this plan changes no shell asset, so **no service worker bump is required**.
+
+**The failure mode this plan is shaped to avoid** is the one just fixed in `5278df2`: the HR CSV
+export leaked the job title because the export built its own cell text instead of calling the
+redaction helper. Two places deciding the same thing drifted apart. Permissions written from two
+screens is the same shape, with a worse blast radius.
+
+### Execution steps
+
+1. **Extract the permission rules into one resolver.** Add
+   `resolve_staff_permission_request(payload, target_user=None)` beside
+   `settings_update_approval_user`, returning `(values, error_message)`. Move the whole rule set
+   from `app.py:16477-16510` into it unchanged — the implications, the three mutual exclusions,
+   the branch requirement, and the `protected_business_roles` checks. Done: the function is the
+   only place those rules exist.
+
+2. **Refactor `settings_update_approval_user` to call it**, and change nothing else about that
+   route. Done: the existing Settings tests pass untouched, proving the extraction is
+   behaviour-preserving. **Run them before writing step 3** — if the refactor changed behaviour,
+   find out now and not through the new form.
+
+3. **Add `staff_type` to `add_engineer`**, accepting `engineer` (default), `hr`, `approver`, and
+   rejecting anything else. Default must stay `engineer` so existing callers that send no
+   `staff_type` keep working byte-for-byte. Per type:
+   - `engineer` — exactly today's behaviour, `role='engineer'` plus the `Engineer` row.
+   - `hr` — `role='staff'`, `hr_schedule_view=True`, **no `Engineer` row**. (`role='staff'`
+     matches the account shape their own HR fixture uses.)
+   - `approver` — `role='approver'`, `can_approve_requests=True`, **no `Engineer` row**.
+
+   The `Engineer` row creation becomes conditional; username, temp password and
+   `must_change_password` stay shared. Done: three account shapes from one route.
+
+4. **Gate the permission fields on superadmin, and refuse rather than ignore.** Inside
+   `add_engineer`, if the payload carries any permission field or a non-default `staff_type` and
+   `is_superadmin_user()` is false, return 403 with a message naming the reason. **Silently
+   dropping the fields is not acceptable** — a regional admin would believe they had granted
+   access. Done: a regional admin can still add an engineer and is refused anything more.
+
+5. **Route the permission payload through step 1's resolver** on the add path, applying the
+   returned values to the new `User`. On error, return the resolver's message and **create
+   nothing** — no half-made account. Done: an invalid combination fails the same way on both
+   screens, with the same wording.
+
+6. **Update the Add Personnel modal** in `templates/engineers.html`: a staff-type select, and the
+   permission tickboxes rendered only when the viewer is superadmin. The tickboxes shown must
+   follow the selected type — do not offer Stock Inventory branch to an HR account. The edit
+   modal is untouched. Done: a superadmin creates a working HR account in one step; a regional
+   admin sees the form without the permission block.
+
+7. **Say where the person went.** When a non-engineer account is created, the success message
+   must state that the account exists in Settings rather than the Personnel directory, because
+   the row will not appear in the table the admin is looking at. Done: no silent disappearance.
+
+8. **Release plumbing.** Add a `releases.json` entry dated the commit date or
+   `test_changelog_coverage.py` fails. **No service worker bump** — confirmed above that nothing
+   in `APP_SHELL` changes; re-confirm by reading `APP_SHELL` at implementation time rather than
+   trusting this line.
+
+### Deliberately excluded
+
+- **Editing permissions from the Personnel page.** Settings remains the single place to change an
+  existing account. Adding a second writer for the same fields is the drift risk this plan is
+  built to avoid; doing it at creation only means the two paths never compete over one row.
+- **Approval routing detail for the Approver type.** `approval_scope` and `approval_title` stay a
+  Settings concern. The form creates a working approver account; tuning its routing is a separate
+  screen and a separate decision.
+- **A non-technical staff section on the Personnel page.** Decided against — Personnel stays the
+  deployable roster. Revisit only if managing non-engineer staff from Settings proves awkward.
+- **Reworking `is_hr_schedule_engineer_profile`.** With HR accounts no longer carrying `Engineer`
+  rows it becomes legacy-only, covering HR people created before this change. Leave it: it is
+  correct for those accounts and harmless for new ones. Note it in `changes.md` so the next
+  reader knows why it looks redundant.
+- **A general create-user UI in Settings.** Still absent, still provisioned in seed code for
+  anyone who is not staff. Out of scope here.
+- **Employment status and the destructive `delete_engineer` cascade** (`app.py:41645`). Still
+  open, still its own task.
+
+### Verification
+
+- **Test the rules through both call sites, by calling them.** For each invalid combination
+  (approver-only plus inventory, HR plus either restricted mode, inventory without a branch,
+  restricted view on a protected account) assert the **same** rejection from
+  `settings_update_approval_user` and from `add_engineer`. Positive control: the valid version of
+  each combination succeeds on both, so the assertions cannot pass on a route that rejects
+  everything.
+- **Assert the escalation is closed by calling as a regional admin:** `add_engineer` with a
+  permission field returns 403, and the plain engineer add still returns success. Positive
+  control: the identical request as a superadmin succeeds.
+- **Assert an HR account created through the form actually gets the restriction** —
+  `is_hr_schedule_only_user()` true, no `Engineer` row, `/get_timeline_data` redacted,
+  `/export_timeline` redacted. This is the whole point of the staff-type work; without it the
+  tickbox is decoration.
+- Assert `add_engineer` with **no** `staff_type` produces byte-identical behaviour to today —
+  the backward-compatibility guarantee for existing callers.
+- **Prove each new test fails without its fix**, injecting one defect at a time, **verifying the
+  injection actually applied by SHA** before trusting a run and confirming the file is restored
+  byte-identical afterwards. A `\n` search string against these CRLF files silently matches
+  nothing and leaves a green suite reading as vacuous.
+- **Browser**, isolated database, explicit `MEDICAL_SERVICE_TEST_DB`, never port 5000: as
+  superadmin create one account of each type and confirm the engineer appears in the directory
+  while HR and approver do not, and appear in the Settings user list instead; sign in as the new
+  HR account and confirm the stripped calendar. As regional admin confirm the permission block is
+  absent. Standing bar: no horizontal overflow at 375 px, no tap target under 44 px, console
+  clean. Restart the server after every template edit — Jinja caches compiled templates.
+- Full suite via the documented command as **its own step before the commit**, never chained
+  ahead of `git push`.
+
+### After implementation
+
+Review against this plan before committing and correct this record where the outcome differed.
+Then the standing checklist in `pending-work.md` section 4: `git fetch origin`, re-read
+`origin/main` **after** the work, stage file by file, never `git add -A`, keep `scheduler.db` out
+by name, confirm with `git show --name-only`, push `main`. Add the `changes.md` entry in the same
+task. Update `pending-work.md` **only if the owner asks**.
+
+### Risks
+
+**The one that matters: the extraction in step 1 changing a permission rule by accident.** It
+moves live authorization logic that currently protects manager, scheduler, regional-admin and
+superadmin accounts from being handed restricted views. A subtle change there is silent and
+affects existing accounts, not just new ones. The net is step 2 — refactor first, run the
+existing Settings tests before any new behaviour is added, so a difference surfaces while the
+change is still one commit of pure movement.
+
+**Second: a half-created account.** Step 5 must validate before writing anything. `add_engineer`
+flushes the `User` before building the `Engineer` row (`app.py:41670-41671`), so a rejection
+after that point leaves an account with no personnel record and no way to reach it from the
+Personnel page. Validate first, write once.
+
+**Third: `role='staff'` is a new value in a system that branches on `role` in many places.**
+`get_display_role` (`app.py:7573`) will fall through to `'Staff'`, which is fine, but sweep for
+`role ==` comparisons that assume the closed set before relying on it.
+
+### Outcome
+
+Implemented the approved plan in `app.py`, `templates/engineers.html`,
+`static/changelog/releases.json`, `tests/test_staff_creation.py`, `changes.md`, and this plan.
+The Settings permission rules now live in `resolve_staff_permission_request()` and are shared by
+Settings updates and Add Personnel. The add route accepts Engineer, HR, and Approver staff types;
+engineer accounts retain their linked `Engineer` profile, while HR and Approver accounts are
+created without one and are directed to Settings for ongoing permission management. Superadmin
+controls are visible only to superadmins, and regional administrators are explicitly refused
+permission-bearing or non-engineer creation requests instead of having those fields silently
+discarded. Validation runs before account creation, so rejected combinations do not leave partial
+accounts.
+
+The implementation intentionally corrected two policy edge cases rather than copying the old
+resolver literally: inventory-only now implies inventory management as the UI and access model
+require, and HR Schedule View rejects approval capability as well as restricted inventory modes.
+These deviations are documented in `changes.md` and covered by shared call-site tests.
+
+Verification completed: focused staff tests (7), targeted regressions (38), dashboard regressions
+(77), service-worker checks (5), JavaScript extraction, Python compilation, manifest parsing,
+`git diff --check`, and the full repository discovery suite (**439 tests passed**). No schema
+migration or service-worker bump was needed. `scheduler.db`, `output/`, `outputs/`, `tmp/`, and
+the unrelated handoff artifact remain outside the intended change set.
+
 ## HR Schedule Viewer — a read-only "who is deployed" account
 
 **Status:** `Executed — 9b6effd`

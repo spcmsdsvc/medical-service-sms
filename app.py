@@ -16454,6 +16454,77 @@ def settings_approval_routing_data():
     })
 
 
+def resolve_staff_permission_request(payload, target_user=None):
+    """Normalize and validate account permissions shared by Settings and Add Personnel.
+
+    Keep the authorization policy in one place.  The Settings editor updates existing
+    accounts, while Add Personnel uses the same rules before a new account is written.
+    """
+    payload = payload or {}
+    target = target_user if target_user is not None else current_user
+
+    approver_only_requested = bool(payload.get('approver_only'))
+    can_approve_requested = bool(payload.get('can_approve_requests'))
+    hr_schedule_view_requested = bool(payload.get('hr_schedule_view'))
+    stock_inventory_only_requested = bool(payload.get('stock_inventory_only'))
+    stock_inventory_requested = bool(payload.get('can_manage_stock_inventory'))
+    if stock_inventory_only_requested:
+        # Inventory-only is a restricted inventory mode, so it always carries the
+        # underlying inventory capability even when a stale client omitted it.
+        stock_inventory_requested = True
+    elif not stock_inventory_requested:
+        # Turning inventory access off also removes the restricted inventory-only
+        # view. This avoids silently re-enabling access from a stale dependent flag.
+        stock_inventory_only_requested = False
+
+    stock_branch_code = normalize_stock_inventory_branch(payload.get('stock_inventory_branch_code'))
+    if approver_only_requested and stock_inventory_requested:
+        return None, 'Approver-only accounts cannot also manage Stock Inventory.'
+    if hr_schedule_view_requested and (
+        approver_only_requested or
+        can_approve_requested or
+        stock_inventory_requested or
+        stock_inventory_only_requested
+    ):
+        return None, 'HR Schedule View cannot be combined with Approver-only or Stock Inventory-only view.'
+    if stock_inventory_requested and not stock_branch_code and not is_superadmin_user(target):
+        return None, 'Select a branch for this Stock Inventory user.'
+
+    target_username = _username_of(target)
+    protected_business_roles = target_username in (
+        MANAGER_USERNAMES |
+        SCHEDULER_USERNAMES |
+        {DEVELOPER_SUPERADMIN_USERNAME, REGIONAL_ADMIN_USERNAME}
+    )
+    if stock_inventory_only_requested and (is_admin_authorized(target) or protected_business_roles):
+        return None, (
+            'Stock Inventory-only view cannot be applied to protected management, scheduler, '
+            'regional-admin, or superadmin accounts.'
+        )
+    if hr_schedule_view_requested and (is_admin_authorized(target) or protected_business_roles):
+        return None, (
+            'HR Schedule View cannot be applied to protected management, scheduler, '
+            'regional-admin, or superadmin accounts.'
+        )
+    if approver_only_requested and (is_admin_authorized(target) or protected_business_roles):
+        return None, (
+            'Approver-only view cannot be applied to protected management, scheduler, '
+            'or superadmin accounts.'
+        )
+
+    return {
+        'can_approve_requests': can_approve_requested or approver_only_requested,
+        'approval_scope': (clean_str(payload.get('approval_scope')) or '')[:50],
+        'approval_title': (clean_str(payload.get('approval_title')) or '')[:100],
+        'is_active': bool(payload.get('is_active', True)),
+        'can_manage_stock_inventory': stock_inventory_requested,
+        'stock_inventory_only': stock_inventory_only_requested,
+        'stock_inventory_branch_code': stock_branch_code or None,
+        'hr_schedule_view': hr_schedule_view_requested,
+        'approver_only': approver_only_requested,
+    }, None
+
+
 @app.route('/settings/update-approval-user', methods=['POST'])
 @csrf.exempt
 @login_required
@@ -16474,54 +16545,23 @@ def settings_update_approval_user():
     if not target_user:
         return jsonify({'success': False, 'error': 'User not found.'}), 404
 
-    approver_only_requested = bool(payload.get('approver_only'))
-    hr_schedule_view_requested = bool(payload.get('hr_schedule_view'))
-    stock_inventory_only_requested = bool(payload.get('stock_inventory_only'))
-    stock_inventory_requested = bool(payload.get('can_manage_stock_inventory'))
-    if not stock_inventory_requested:
-        # Turning inventory access off also removes the restricted inventory-only
-        # view. This avoids silently re-enabling access from a stale dependent flag.
-        stock_inventory_only_requested = False
-    elif stock_inventory_only_requested:
-        stock_inventory_requested = True
-    stock_branch_code = normalize_stock_inventory_branch(payload.get('stock_inventory_branch_code'))
-    if approver_only_requested and stock_inventory_requested:
-        return jsonify({'success': False, 'error': 'Approver-only accounts cannot also manage Stock Inventory.'}), 400
-    if hr_schedule_view_requested and (approver_only_requested or stock_inventory_only_requested):
-        return jsonify({'success': False, 'error': 'HR Schedule View cannot be combined with Approver-only or Stock Inventory-only view.'}), 400
-    if stock_inventory_requested and not stock_branch_code and not is_superadmin_user(target_user):
-        return jsonify({'success': False, 'error': 'Select a branch for this Stock Inventory user.'}), 400
+    permission_values, permission_error = resolve_staff_permission_request(payload, target_user)
+    if permission_error:
+        return jsonify({'success': False, 'error': permission_error}), 400
 
-    target_username = _username_of(target_user)
+    approver_only_requested = permission_values['approver_only']
     target_raw_role = (getattr(target_user, 'role', '') or '').strip().lower()
-    protected_business_roles = target_username in (MANAGER_USERNAMES | SCHEDULER_USERNAMES | {DEVELOPER_SUPERADMIN_USERNAME, REGIONAL_ADMIN_USERNAME})
-    if stock_inventory_only_requested and (is_admin_authorized(target_user) or protected_business_roles):
-        return jsonify({
-            'success': False,
-            'error': 'Stock Inventory-only view cannot be applied to protected management, scheduler, regional-admin, or superadmin accounts.'
-        }), 400
-    if hr_schedule_view_requested and (is_admin_authorized(target_user) or protected_business_roles):
-        return jsonify({
-            'success': False,
-            'error': 'HR Schedule View cannot be applied to protected management, scheduler, regional-admin, or superadmin accounts.'
-        }), 400
-
-    target_user.can_approve_requests = bool(payload.get('can_approve_requests')) or approver_only_requested
-    target_user.approval_scope = (clean_str(payload.get('approval_scope')) or '')[:50]
-    target_user.approval_title = (clean_str(payload.get('approval_title')) or '')[:100]
-    target_user.is_active = bool(payload.get('is_active', True))
-    target_user.can_manage_stock_inventory = stock_inventory_requested
-    target_user.stock_inventory_only = stock_inventory_only_requested
-    target_user.stock_inventory_branch_code = stock_branch_code or None
+    target_user.can_approve_requests = permission_values['can_approve_requests']
+    target_user.approval_scope = permission_values['approval_scope']
+    target_user.approval_title = permission_values['approval_title']
+    target_user.is_active = permission_values['is_active']
+    target_user.can_manage_stock_inventory = permission_values['can_manage_stock_inventory']
+    target_user.stock_inventory_only = permission_values['stock_inventory_only']
+    target_user.stock_inventory_branch_code = permission_values['stock_inventory_branch_code']
     target_user.stock_inventory_permission_initialized = True
-    target_user.hr_schedule_view = hr_schedule_view_requested
+    target_user.hr_schedule_view = permission_values['hr_schedule_view']
 
     if approver_only_requested:
-        if is_admin_authorized(target_user) or protected_business_roles:
-            return jsonify({
-                'success': False,
-                'error': 'Approver-only view cannot be applied to protected management, scheduler, or superadmin accounts.'
-            }), 400
         target_user.role = 'approver'
     elif target_raw_role == 'approver':
         # Reverting an approver-only account returns it to a regular personnel profile.
@@ -41644,48 +41684,127 @@ def batch_delete_shifts():
 @app.route('/add_engineer', methods=['POST'])
 @login_required
 def add_engineer():
-    """ Register new staff and auto-create User account """
-    if not is_admin_authorized(): return jsonify({'message': 'Denied'}), 403
-    p = request.get_json()
-    emp_id = clean_str(p.get('employee_id'))
-    name_val = clean_str(p['name'])
+    """Register technical staff or a Settings-managed HR/approver account."""
+    if not is_admin_authorized():
+        return jsonify({'message': 'Denied'}), 403
 
-    if Engineer.query.filter_by(employee_id=emp_id).first():
+    p = request.get_json(silent=True) or {}
+    staff_type = (clean_str(p.get('staff_type')) or 'engineer').strip().lower()
+    if staff_type not in {'engineer', 'hr', 'approver'}:
+        return jsonify({'message': 'Invalid staff type. Choose Engineer, HR, or Approver.'}), 400
+
+    permission_fields = {
+        'approver_only',
+        'can_approve_requests',
+        'approval_scope',
+        'approval_title',
+        'hr_schedule_view',
+        'can_manage_stock_inventory',
+        'stock_inventory_only',
+        'stock_inventory_branch_code',
+        'is_active',
+    }
+    if not is_superadmin_user() and (
+        staff_type != 'engineer' or any(field in p for field in permission_fields)
+    ):
+        return denied('Only superadmins can choose staff types or assign account permissions.')
+
+    emp_id = clean_str(p.get('employee_id'))
+    name_val = clean_str(p.get('name'))
+    initials = clean_str(p.get('initials'))
+    if not name_val or not initials or (staff_type == 'engineer' and not emp_id):
+        return jsonify({
+            'message': 'Required fields missing: Employee ID, Name, and Initials are mandatory for engineers.'
+        }), 400
+
+    if staff_type == 'engineer' and Engineer.query.filter_by(employee_id=emp_id).first():
         return jsonify({'message': f'Error: Employee ID {emp_id} is already taken.'}), 400
 
     first_name = name_val.split()[0].lower()
     if User.query.filter_by(username=first_name).first():
         first_name = name_val.replace(" ", "").lower()
 
+    permission_payload = dict(p)
+    if staff_type == 'hr':
+        permission_payload['hr_schedule_view'] = True
+    elif staff_type == 'approver':
+        permission_payload.update({
+            'can_approve_requests': True,
+            'approver_only': True,
+        })
+
+    role_by_staff_type = {
+        'engineer': 'engineer',
+        'hr': 'staff',
+        'approver': 'approver',
+    }
+
     # Generate secure temp password
     temp_password = secrets.token_urlsafe(8)
 
-    # Create linked system account
+    # Validate all permission implications before adding anything to the session. This keeps
+    # a bad permission combination from leaving a half-created account behind.
     new_user = User(
         username=first_name,
         password=generate_password_hash(temp_password),
-        role='engineer',
+        role=role_by_staff_type[staff_type],
         must_change_password=True
     )
+    permission_values, permission_error = resolve_staff_permission_request(permission_payload, new_user)
+    if permission_error:
+        return jsonify({'message': permission_error}), 400
+
+    if staff_type == 'hr' and clean_str(p.get('stock_inventory_branch_code')):
+        return jsonify({'message': 'HR staff accounts do not use an assigned Stock Inventory branch.'}), 400
+    if staff_type == 'approver' and clean_str(p.get('stock_inventory_branch_code')):
+        return jsonify({'message': 'Approver accounts do not use an assigned Stock Inventory branch.'}), 400
+    if staff_type == 'engineer' and (bool(p.get('hr_schedule_view')) or bool(p.get('approver_only'))):
+        return jsonify({
+            'message': 'Use the HR or Approver staff type for restricted account views.'
+        }), 400
+
+    new_user.can_approve_requests = permission_values['can_approve_requests']
+    new_user.approval_scope = permission_values['approval_scope']
+    new_user.approval_title = permission_values['approval_title']
+    new_user.is_active = permission_values['is_active']
+    new_user.can_manage_stock_inventory = permission_values['can_manage_stock_inventory']
+    new_user.stock_inventory_only = permission_values['stock_inventory_only']
+    new_user.stock_inventory_branch_code = permission_values['stock_inventory_branch_code']
+    new_user.stock_inventory_permission_initialized = True
+    new_user.hr_schedule_view = permission_values['hr_schedule_view']
+
     db.session.add(new_user)
     db.session.flush()
 
-    new_eng = Engineer(
-        user_id=new_user.id,
-        employee_id=emp_id,
-        name=name_val,
-        initials=clean_str(p['initials']),
-        phone=clean_str(p.get('phone')),
-        email=clean_str(p.get('email')),
-        branch=clean_str(p.get('branch'))
-    )
-    db.session.add(new_eng)
+    if staff_type == 'engineer':
+        new_eng = Engineer(
+            user_id=new_user.id,
+            employee_id=emp_id,
+            name=name_val,
+            initials=initials,
+            phone=clean_str(p.get('phone')),
+            email=clean_str(p.get('email')),
+            branch=clean_str(p.get('branch'))
+        )
+        db.session.add(new_eng)
 
     db.session.commit()
-    log_activity(f"Added technical staff: {name_val} (ID: {emp_id})")
+
+    if staff_type == 'engineer':
+        message = f'Added engineer account for {name_val}.'
+        log_activity(f"Added technical staff: {name_val} (ID: {emp_id})")
+    else:
+        staff_label = 'HR staff' if staff_type == 'hr' else 'approver'
+        message = (
+            f'Added {staff_label} account for {name_val}. '
+            'This account is available in Settings and is not listed in the Personnel directory.'
+        )
+        log_activity(f"Added {staff_label} account: {name_val}")
 
     return jsonify({
         'status': 'success',
+        'message': message,
+        'staff_type': staff_type,
         'username': first_name,
         'temp_password': temp_password
     })

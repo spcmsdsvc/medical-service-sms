@@ -56,7 +56,7 @@
                 <!-- v5.0 Privilege Guard: Engineers are View-Only -->
                 {% if current_user.role in ['superadmin', 'regional_admin'] %}
                 <button class="btn btn-primary btn-sm ms-2" onclick="openAddModal()">
-                    <i class="fa-solid fa-user-plus me-1"></i>Add Engineer
+                    <i class="fa-solid fa-user-plus me-1"></i>Add Personnel
                 </button>
                 {% endif %}
             </div>
@@ -126,7 +126,57 @@
                 <!-- Hidden DB Primary Key -->
                 <input type="hidden" id="edit-eng-db-id">
                 
-                <div class="mb-3">
+                <div class="mb-3" id="staff-type-wrap">
+                    <label class="small fw-bold text-muted text-uppercase d-block mb-1">Staff Type</label>
+                    <select id="e-staff-type" class="form-select shadow-none" onchange="syncStaffTypePermissionControls()">
+                        <option value="engineer">Engineer</option>
+                        {% if nav_is_superadmin %}
+                        <option value="hr">HR</option>
+                        <option value="approver">Approver</option>
+                        {% endif %}
+                    </select>
+                    <div class="form-text small" id="staff-type-help">Creates a technical personnel record and a linked engineer login.</div>
+                </div>
+
+                {% if nav_is_superadmin %}
+                <div class="border rounded-3 p-3 mb-3" id="new-staff-permissions">
+                    <div class="small fw-bold text-uppercase text-muted mb-2">Account Permissions</div>
+                    <div class="form-check form-switch mb-2" id="staff-can-approve-row">
+                        <input class="form-check-input" type="checkbox" id="e-can-approve">
+                        <label class="form-check-label small fw-bold" for="e-can-approve">Can Approve Requests</label>
+                    </div>
+                    <div class="form-check form-switch mb-2 d-none" id="staff-approver-only-row">
+                        <input class="form-check-input" type="checkbox" id="e-approver-only" disabled>
+                        <label class="form-check-label small fw-bold" for="e-approver-only">Approver-only view</label>
+                    </div>
+                    <div class="form-check form-switch mb-2 d-none" id="staff-hr-row">
+                        <input class="form-check-input" type="checkbox" id="e-hr-schedule-view" disabled>
+                        <label class="form-check-label small fw-bold" for="e-hr-schedule-view">HR Schedule View</label>
+                    </div>
+                    <div id="staff-inventory-row">
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="e-stock-inventory-access" onchange="syncStaffTypePermissionControls()">
+                            <label class="form-check-label small fw-bold" for="e-stock-inventory-access">Can Manage Stock Inventory</label>
+                        </div>
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" id="e-stock-inventory-only" onchange="syncStaffTypePermissionControls()">
+                            <label class="form-check-label small fw-bold" for="e-stock-inventory-only">Stock Inventory-only view</label>
+                        </div>
+                        <div id="staff-inventory-branch-wrap">
+                            <label class="small fw-bold d-block mb-1">Assigned Inventory Branch</label>
+                            <select id="e-stock-inventory-branch" class="form-select form-select-sm shadow-none">
+                                <option value="">Select branch</option>
+                                <option value="BC01">BC01 - Manila/Main</option>
+                                <option value="BC02">BC02 - Cebu</option>
+                                <option value="BC03">BC03 - Davao</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-text small mt-2">These permissions are available only when a superadmin creates the account. Existing accounts remain managed in Settings.</div>
+                </div>
+                {% endif %}
+
+                <div class="mb-3" id="staff-company-branch-wrap">
                     <label class="small fw-bold text-muted text-uppercase d-block mb-1">Company Branch</label>
                     <select id="e-branch" class="form-select shadow-none">
                         <option value="">Select Location...</option>
@@ -137,7 +187,7 @@
                 </div>
 
                 <!-- NEW v5.2.1: Manual Employee ID Input -->
-                <div class="mb-3">
+                <div class="mb-3" id="staff-employee-id-wrap">
                     <label class="small fw-bold text-muted text-uppercase d-block mb-1">Employee ID (Unique)</label>
                     <input type="text" id="e-emp-id" class="form-control shadow-none" placeholder="e.g. MS-2024-001">
                 </div>
@@ -309,7 +359,7 @@
     }
 
     function setEngineerModalContactOnlyMode(contactOnly){
-        ['e-branch', 'e-emp-id', 'e-name', 'e-initials'].forEach(id => {
+        ['e-branch', 'e-emp-id', 'e-name', 'e-initials', 'e-staff-type'].forEach(id => {
             const field = document.getElementById(id);
             if(field) field.disabled = contactOnly;
         });
@@ -323,6 +373,117 @@
                 infoBox.className = 'alert alert-info border-0 small py-2 mb-0';
                 infoBox.innerHTML = '<i class="fa-solid fa-circle-info me-2"></i><strong>Auto-Account:</strong> A secure temporary password will be generated and shown once after account creation.';
             }
+        }
+    }
+
+    function resetNewStaffPermissionControls(){
+        const staffType = document.getElementById('e-staff-type');
+        if(staffType){
+            staffType.value = 'engineer';
+            staffType.dataset.previousType = 'engineer';
+            staffType.disabled = false;
+        }
+
+        ['e-can-approve', 'e-approver-only', 'e-hr-schedule-view', 'e-stock-inventory-access', 'e-stock-inventory-only'].forEach(id => {
+            const checkbox = document.getElementById(id);
+            if(checkbox){
+                checkbox.checked = false;
+                checkbox.disabled = false;
+            }
+        });
+
+        const branch = document.getElementById('e-stock-inventory-branch');
+        if(branch) branch.value = '';
+    }
+
+    function syncStaffTypePermissionControls(){
+        const typeField = document.getElementById('e-staff-type');
+        const permissionPanel = document.getElementById('new-staff-permissions');
+        if(!typeField) return;
+
+        const staffType = typeField.value || 'engineer';
+        const previousType = typeField.dataset.previousType || staffType;
+        const isNew = !document.getElementById('edit-eng-db-id')?.value;
+        const isEngineerType = staffType === 'engineer';
+
+        if(staffType === 'engineer' && previousType !== 'engineer'){
+            const canApprove = document.getElementById('e-can-approve');
+            if(canApprove) canApprove.checked = false;
+        }
+        typeField.dataset.previousType = staffType;
+
+        const toggle = (id, visible) => {
+            const element = document.getElementById(id);
+            if(element) element.classList.toggle('d-none', !visible);
+        };
+        if(permissionPanel) permissionPanel.classList.toggle('d-none', !isSuperAdmin || !isNew);
+
+        const companyBranchWrap = document.getElementById('staff-company-branch-wrap');
+        const employeeIdWrap = document.getElementById('staff-employee-id-wrap');
+        if(companyBranchWrap) companyBranchWrap.classList.toggle('d-none', !isEngineerType);
+        if(employeeIdWrap) employeeIdWrap.classList.toggle('d-none', !isEngineerType);
+        if(!isEngineerType){
+            const companyBranch = document.getElementById('e-branch');
+            const employeeId = document.getElementById('e-emp-id');
+            if(companyBranch) companyBranch.value = '';
+            if(employeeId) employeeId.value = '';
+        }
+
+        const canApprove = document.getElementById('e-can-approve');
+        const approverOnly = document.getElementById('e-approver-only');
+        const hrSchedule = document.getElementById('e-hr-schedule-view');
+        const inventoryAccess = document.getElementById('e-stock-inventory-access');
+        const inventoryOnly = document.getElementById('e-stock-inventory-only');
+        const inventoryBranch = document.getElementById('e-stock-inventory-branch');
+
+        if(staffType === 'hr'){
+            toggle('staff-can-approve-row', false);
+            toggle('staff-approver-only-row', false);
+            toggle('staff-hr-row', true);
+            toggle('staff-inventory-row', false);
+            if(canApprove){ canApprove.checked = false; canApprove.disabled = true; }
+            if(approverOnly){ approverOnly.checked = false; approverOnly.disabled = true; }
+            if(hrSchedule){ hrSchedule.checked = true; hrSchedule.disabled = true; }
+            if(inventoryAccess){ inventoryAccess.checked = false; inventoryAccess.disabled = true; }
+            if(inventoryOnly){ inventoryOnly.checked = false; inventoryOnly.disabled = true; }
+            if(inventoryBranch){ inventoryBranch.value = ''; inventoryBranch.disabled = true; }
+            const help = document.getElementById('staff-type-help');
+            if(help) help.textContent = 'Creates an HR account managed in Settings with the focused HR schedule view.';
+        }else if(staffType === 'approver'){
+            toggle('staff-can-approve-row', true);
+            toggle('staff-approver-only-row', true);
+            toggle('staff-hr-row', false);
+            toggle('staff-inventory-row', false);
+            if(canApprove){ canApprove.checked = true; canApprove.disabled = true; }
+            if(approverOnly){ approverOnly.checked = true; approverOnly.disabled = true; }
+            if(hrSchedule){ hrSchedule.checked = false; hrSchedule.disabled = true; }
+            if(inventoryAccess){ inventoryAccess.checked = false; inventoryAccess.disabled = true; }
+            if(inventoryOnly){ inventoryOnly.checked = false; inventoryOnly.disabled = true; }
+            if(inventoryBranch){ inventoryBranch.value = ''; inventoryBranch.disabled = true; }
+            const help = document.getElementById('staff-type-help');
+            if(help) help.textContent = 'Creates an Approver account managed in Settings and shown in the Approval Center.';
+        }else{
+            toggle('staff-can-approve-row', true);
+            toggle('staff-approver-only-row', false);
+            toggle('staff-hr-row', false);
+            toggle('staff-inventory-row', true);
+            if(canApprove) canApprove.disabled = false;
+            if(approverOnly){ approverOnly.checked = false; approverOnly.disabled = true; }
+            if(hrSchedule){ hrSchedule.checked = false; hrSchedule.disabled = true; }
+            if(inventoryAccess) inventoryAccess.disabled = false;
+            if(inventoryOnly){
+                if(inventoryOnly.checked && inventoryAccess) inventoryAccess.checked = true;
+                inventoryOnly.disabled = false;
+            }
+            if(inventoryBranch){
+                inventoryBranch.disabled = !(inventoryAccess?.checked);
+                if(!inventoryAccess?.checked){
+                    inventoryOnly && (inventoryOnly.checked = false);
+                    inventoryBranch.value = '';
+                }
+            }
+            const help = document.getElementById('staff-type-help');
+            if(help) help.textContent = 'Creates a technical personnel record and a linked engineer login.';
         }
     }
 
@@ -507,8 +668,14 @@
         setEngineerModalContactOnlyMode(false);
         document.getElementById('modal-title').innerText = "Register New Personnel"; 
         document.getElementById('edit-eng-db-id').value = ""; 
-        document.querySelectorAll('#engModal input').forEach(i => i.value = ""); 
+        document.querySelectorAll('#engModal input').forEach(i => {
+            if(i.type === 'checkbox') i.checked = false;
+            else i.value = "";
+        });
         document.getElementById('e-branch').value = "";
+        document.getElementById('staff-type-wrap')?.classList.remove('d-none');
+        resetNewStaffPermissionControls();
+        syncStaffTypePermissionControls();
         engModal.show(); 
     }
 
@@ -522,6 +689,9 @@
 
         const contactOnly = isEngineer && !(isSuperAdmin || isRegionalAdmin);
         setEngineerModalContactOnlyMode(contactOnly);
+
+        document.getElementById('staff-type-wrap')?.classList.add('d-none');
+        document.getElementById('new-staff-permissions')?.classList.add('d-none');
 
         document.getElementById('modal-title').innerText = contactOnly ? "Update My Contact Information" : "Modify Personnel Record"; 
         document.getElementById('edit-eng-db-id').value = dbId; 
@@ -543,6 +713,7 @@
         const dbId = document.getElementById('edit-eng-db-id').value;
         const selectedEngineer = engineersData.find(x => String(x.id) === String(dbId));
         const isSelfContactUpdate = isEngineer && !(isSuperAdmin || isRegionalAdmin) && canEditEngineerContact(selectedEngineer);
+        const staffType = document.getElementById('e-staff-type')?.value || 'engineer';
 
         if(!(isSuperAdmin || isRegionalAdmin) && !isSelfContactUpdate) return;
 
@@ -555,7 +726,20 @@
             branch: document.getElementById('e-branch').value
         };
 
-        if(!isSelfContactUpdate && (!data.employee_id || !data.name || !data.initials)) {
+        if(!dbId){
+            data.staff_type = staffType;
+            if(isSuperAdmin){
+                data.can_approve_requests = Boolean(document.getElementById('e-can-approve')?.checked);
+                data.approver_only = Boolean(document.getElementById('e-approver-only')?.checked);
+                data.hr_schedule_view = Boolean(document.getElementById('e-hr-schedule-view')?.checked);
+                data.can_manage_stock_inventory = Boolean(document.getElementById('e-stock-inventory-access')?.checked);
+                data.stock_inventory_only = Boolean(document.getElementById('e-stock-inventory-only')?.checked);
+                data.stock_inventory_branch_code = document.getElementById('e-stock-inventory-branch')?.value || '';
+            }
+        }
+
+        const employeeIdRequired = Boolean(dbId) || staffType === 'engineer';
+        if(!isSelfContactUpdate && (!data.name || !data.initials || (employeeIdRequired && !data.employee_id))) {
             return engineerAlert("Required fields missing: Employee ID, Name, and Initials are mandatory.");
         }
 
@@ -578,11 +762,18 @@
             loadEngineers(); 
 
             if (respData.temp_password) {
+                const accountNote = document.getElementById('cred-account-note');
+                if(accountNote){
+                    accountNote.textContent = respData.message || 'Account created successfully.';
+                    accountNote.className = 'alert alert-info small mb-3';
+                }
                 document.getElementById('cred-username').value = respData.username;
                 document.getElementById('cred-password').value = respData.temp_password;
                 const credModal = new bootstrap.Modal(document.getElementById('credModal'));
                 credModal.show();
             }
+
+            if(respData.message) engineerToast(respData.message, 'success', 'Account Created');
 
         } else {
             engineerAlert(respData.message || "Database Error: Ensure the Employee ID is unique.");
@@ -1088,6 +1279,7 @@
                 <h5 class="modal-title">Account Created</h5>
             </div>
             <div class="modal-body">
+                <div id="cred-account-note" class="alert alert-info small mb-3"></div>
                 <div class="mb-2">
 <b>Username:</b> <input id="cred-username" class="form-control d-inline w-auto" readonly>
 <button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyText('cred-username')">Copy</button>

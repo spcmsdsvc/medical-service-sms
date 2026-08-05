@@ -1366,6 +1366,15 @@
             "admins"
           ],
           "sort_order": 20
+        },
+        {
+          "item_key": "2026-08-05-staff-type-personnel-accounts",
+          "category": "Personnel",
+          "description": "Superadmins can now create Engineer, HR, or Approver accounts from Add Personnel; restricted permissions are validated at creation and non-engineer accounts are managed from Settings.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 30
         }
       ]
     }
