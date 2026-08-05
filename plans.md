@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Staff type and permission tickboxes on Add Personnel
 
-**Status:** `In progress`
+**Status:** `Executed — 4516c89`
 **Approved:** 2026-08-05
 **Detailed:** 2026-08-05, after reviewing the HR schedule viewer commits and tracing the
 account-creation path against the Settings permission handler.

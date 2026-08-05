@@ -86,6 +86,8 @@ claude changes - 2026-08-05
   capability, preventing a restricted HR account from receiving a conflicting operational mode.
   The existing protected-account and Settings behavior remains covered by the shared call-site
   tests.
+* Implementation committed as `4516c89` with only the verified code, test, manifest, and journal
+  files. The database and pre-existing generated/unrelated artifacts were not staged.
 
 codex changes - 2026-08-05
 
