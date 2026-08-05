@@ -1375,6 +1375,15 @@
             "admins"
           ],
           "sort_order": 30
+        },
+        {
+          "item_key": "2026-08-05-staff-permission-conflict-messages",
+          "category": "Personnel",
+          "description": "A refused permission combination now names the switch that actually conflicts instead of always naming Approver-only and Stock Inventory-only, and Initials are asked for only when creating an engineer, since HR and approver accounts have no personnel record to store them on.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 40
         }
       ]
     }

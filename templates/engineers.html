@@ -198,7 +198,7 @@
                 </div>
 
                 <div class="row">
-                    <div class="col-md-6 mb-3">
+                    <div class="col-md-6 mb-3" id="staff-initials-wrap">
                         <label class="small fw-bold text-muted text-uppercase d-block mb-1">Initials</label>
                         <input type="text" id="e-initials" class="form-control shadow-none" maxlength="5" placeholder="JD">
                     </div>
@@ -420,13 +420,19 @@
 
         const companyBranchWrap = document.getElementById('staff-company-branch-wrap');
         const employeeIdWrap = document.getElementById('staff-employee-id-wrap');
+        const initialsWrap = document.getElementById('staff-initials-wrap');
         if(companyBranchWrap) companyBranchWrap.classList.toggle('d-none', !isEngineerType);
         if(employeeIdWrap) employeeIdWrap.classList.toggle('d-none', !isEngineerType);
+        // Initials live on the Engineer row, so a non-engineer account has nowhere to put
+        // them. Hide the field rather than collect a value the server then discards.
+        if(initialsWrap) initialsWrap.classList.toggle('d-none', !isEngineerType);
         if(!isEngineerType){
             const companyBranch = document.getElementById('e-branch');
             const employeeId = document.getElementById('e-emp-id');
+            const initialsField = document.getElementById('e-initials');
             if(companyBranch) companyBranch.value = '';
             if(employeeId) employeeId.value = '';
+            if(initialsField) initialsField.value = '';
         }
 
         const canApprove = document.getElementById('e-can-approve');
@@ -738,9 +744,14 @@
             }
         }
 
-        const employeeIdRequired = Boolean(dbId) || staffType === 'engineer';
-        if(!isSelfContactUpdate && (!data.name || !data.initials || (employeeIdRequired && !data.employee_id))) {
-            return engineerAlert("Required fields missing: Employee ID, Name, and Initials are mandatory.");
+        const engineerFieldsRequired = Boolean(dbId) || staffType === 'engineer';
+        if(!isSelfContactUpdate){
+            if(!data.name){
+                return engineerAlert("Required field missing: Name is mandatory.");
+            }
+            if(engineerFieldsRequired && (!data.initials || !data.employee_id)){
+                return engineerAlert("Required fields missing: Employee ID, Name, and Initials are mandatory.");
+            }
         }
 
         const url = dbId ? `/update_engineer/${dbId}` : '/add_engineer';

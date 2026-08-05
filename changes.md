@@ -1,5 +1,48 @@
 # Project Change Log
 
+claude changes - 2026-08-05 (Add Personnel review)
+
+## Review of the staff-type work: three permission rules changed inside a refactor
+
+* Reviewed `4516c89` and `90f3b2e` against the recorded plan. **The core is right, and it does
+  the thing the previous design structurally could not.** Verified an HR account created through
+  the new form end to end: `role='staff'`, no `Engineer` row, `is_hr_schedule_only_user` true,
+  `/` redirects to `/timeline`, `/reimbursement` refused. Every plan step landed — the resolver is
+  shared by both routes, the superadmin gate **refuses** rather than silently dropping fields, and
+  validation runs before anything enters the session (proven: a rejected create left the user
+  count unchanged).
+* **Found that the extraction was not the pure movement the plan called for.** Comparing the
+  pre-refactor rule against `resolve_staff_permission_request()` input by input, three cases
+  behave differently. The most significant: ticking **Stock Inventory-only without Can Manage**
+  used to clear both flags and grant nothing, and now grants inventory access plus the restricted
+  view. The direction of that change is *grant more*, on a partial payload.
+* The other two are tightenings — HR can no longer be combined with Can Approve Requests or with
+  Can Manage Stock Inventory, where previously only the "-only" variants clashed.
+* **The owner kept all three**, which is the better policy in each case, so they are now pinned by
+  tests that state the superseded behaviour explicitly. The change stays deliberate instead of
+  being rediscovered later as a mystery.
+* **The lesson is about the check, not the code.** The plan said the existing Settings tests
+  passing would prove the extraction preserved behaviour. They passed, and it had not — they
+  simply never covered these combinations. A regression suite only proves what it exercises, so
+  "the tests still pass" is not evidence of behaviour preservation during a refactor of live
+  authorization rules.
+* **Fixed an error message that had stopped matching its rule.** Ticking HR beside Can Approve
+  Requests returned "HR Schedule View cannot be combined with Approver-only or Stock Inventory-only
+  view" — naming two switches that were both off, leaving no way to work out what to change. The
+  message now names the control that actually conflicts.
+* **Stopped requiring Initials for HR and approver accounts.** `User` has no initials column and
+  the `Engineer` row is only built for engineers, so the value was collected and discarded. The
+  field is now hidden and cleared for non-engineer staff types, and required for engineers as
+  before. A name is still mandatory for every type.
+* Each new test proved to fail without its fix — the flat message, the initials requirement, and
+  the inventory implication injected one at a time, each verified by SHA before the run and
+  `app.py` confirmed byte-identical to its backup afterwards.
+* Suite green at **442** (was 439). No service worker bump: `/engineers_page` is not an
+  `APP_SHELL` entry and `layout.html` is untouched. `scheduler.db` untouched.
+* **Raised, not changed:** an HR person's real name is stored nowhere. There is no `Engineer` row
+  and `User` carries only `username`, so "Maria Santos" becomes `maria` and that is all the
+  Settings list can ever show. Worth deciding before real HR staff are onboarded.
+
 claude changes - 2026-08-05
 
 ## Review of the HR schedule viewer: the export handed back what the calendar hid

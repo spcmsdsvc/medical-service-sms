@@ -282,6 +282,102 @@ class StaffCreationTests(unittest.TestCase):
         self.assertIn('cannot be combined', hr_add_response.get_json()['message'].lower())
 
 
+    # --- Rules that changed when the policy was extracted into the shared resolver ---
+    #
+    # Extracting resolve_staff_permission_request() was meant to be pure movement, but
+    # three inputs came out behaving differently. The new behaviour is the one we want;
+    # these pin it so the change stays deliberate and cannot drift back unnoticed.
+
+    def _resolve(self, **payload):
+        with self.app.app_context():
+            target = app_module.User(
+                username=f'policy_probe_{self.suffix}', role='engineer', is_active=True
+            )
+            return app_module.resolve_staff_permission_request(payload, target)
+
+    def test_inventory_only_now_implies_the_underlying_inventory_capability(self):
+        """Ticking Inventory-only alone used to clear BOTH flags and grant nothing.
+
+        It now grants inventory access as well, because a restricted inventory view that
+        carries no inventory access is not a coherent state. This widens access on a
+        partial payload, so it is pinned rather than left to the reader to notice.
+        """
+        values, error = self._resolve(
+            stock_inventory_only=True, stock_inventory_branch_code='BC01'
+        )
+        self.assertIsNone(error)
+        self.assertTrue(values['stock_inventory_only'])
+        self.assertTrue(values['can_manage_stock_inventory'])
+
+        # Positive control: with neither box ticked nothing is granted, so the assertion
+        # above is reading the implication and not a resolver that always returns True.
+        off_values, off_error = self._resolve()
+        self.assertIsNone(off_error)
+        self.assertFalse(off_values['stock_inventory_only'])
+        self.assertFalse(off_values['can_manage_stock_inventory'])
+
+        # And the branch requirement still applies to the implied capability.
+        _, branch_error = self._resolve(stock_inventory_only=True)
+        self.assertEqual(branch_error, 'Select a branch for this Stock Inventory user.')
+
+    def test_hr_view_conflicts_now_name_the_control_that_actually_clashes(self):
+        """The message named Approver-only and Inventory-only whatever the payload held.
+
+        Ticking HR beside Can Approve Requests therefore reported a conflict with two
+        switches that were both off, leaving no way to work out what to change.
+        """
+        _, approve_error = self._resolve(hr_schedule_view=True, can_approve_requests=True)
+        self.assertIn('Can Approve Requests', approve_error)
+        self.assertNotIn('Approver-only view', approve_error)
+
+        _, manage_error = self._resolve(
+            hr_schedule_view=True, can_manage_stock_inventory=True,
+            stock_inventory_branch_code='BC01',
+        )
+        self.assertIn('Can Manage Stock Inventory', manage_error)
+        self.assertNotIn('Approver-only view', manage_error)
+
+        _, only_error = self._resolve(
+            hr_schedule_view=True, stock_inventory_only=True,
+            stock_inventory_branch_code='BC01',
+        )
+        self.assertIn('Stock Inventory-only view', only_error)
+        # Inventory-only implies Can Manage, but naming both would be noise.
+        self.assertNotIn('Can Manage Stock Inventory', only_error)
+
+        # Positive control: HR on its own is a valid account, so the rejections above are
+        # the conflict rule and not a resolver that refuses HR outright.
+        values, error = self._resolve(hr_schedule_view=True)
+        self.assertIsNone(error)
+        self.assertTrue(values['hr_schedule_view'])
+
+    def test_initials_are_required_for_engineers_only(self):
+        """Initials live on the Engineer row, so a non-engineer account discards them."""
+        client = self._client_for(self.superadmin_id)
+
+        hr_payload = self._payload('Initialless HR Person', 'hr')
+        hr_payload.pop('initials')
+        hr_response = client.post('/add_engineer', json=hr_payload)
+        self.assertEqual(hr_response.status_code, 200)
+        self._remember_created_account(hr_response)
+
+        # Positive control: an engineer without initials is still refused, so the pass
+        # above is the staff-type carve-out and not a dropped validation.
+        engineer_payload = self._payload('Initialless Engineer Person')
+        engineer_payload['initials'] = ''
+        engineer_response = client.post('/add_engineer', json=engineer_payload)
+        self.assertEqual(engineer_response.status_code, 400)
+        self.assertIn('Initials', engineer_response.get_json()['message'])
+
+        # A name is still mandatory for every staff type.
+        nameless = self._payload('Nameless HR Person', 'hr')
+        nameless['name'] = ''
+        nameless.pop('initials')
+        nameless_response = client.post('/add_engineer', json=nameless)
+        self.assertEqual(nameless_response.status_code, 400)
+        self.assertIn('Name', nameless_response.get_json()['message'])
+
+
 class StaffCreationSourceTests(unittest.TestCase):
     def test_template_and_manifest_expose_the_new_staff_flow(self):
         template = (ROOT / 'templates' / 'engineers.html').read_text(encoding='utf-8')

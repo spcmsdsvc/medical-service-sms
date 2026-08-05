@@ -16480,13 +16480,25 @@ def resolve_staff_permission_request(payload, target_user=None):
     stock_branch_code = normalize_stock_inventory_branch(payload.get('stock_inventory_branch_code'))
     if approver_only_requested and stock_inventory_requested:
         return None, 'Approver-only accounts cannot also manage Stock Inventory.'
-    if hr_schedule_view_requested and (
-        approver_only_requested or
-        can_approve_requested or
-        stock_inventory_requested or
-        stock_inventory_only_requested
-    ):
-        return None, 'HR Schedule View cannot be combined with Approver-only or Stock Inventory-only view.'
+    if hr_schedule_view_requested:
+        # Name the switches that actually clash. The message used to say "Approver-only or
+        # Stock Inventory-only view" whatever the payload held, so ticking HR alongside
+        # Can Approve Requests reported a conflict with two controls that were both off,
+        # leaving no way to work out what to change.
+        hr_conflicts = []
+        if approver_only_requested:
+            hr_conflicts.append('Approver-only view')
+        if can_approve_requested:
+            hr_conflicts.append('Can Approve Requests')
+        if stock_inventory_only_requested:
+            hr_conflicts.append('Stock Inventory-only view')
+        elif stock_inventory_requested:
+            hr_conflicts.append('Can Manage Stock Inventory')
+        if hr_conflicts:
+            return None, (
+                'HR Schedule View cannot be combined with ' + ', '.join(hr_conflicts) +
+                '. An HR account is limited to viewing the schedule.'
+            )
     if stock_inventory_requested and not stock_branch_code and not is_superadmin_user(target):
         return None, 'Select a branch for this Stock Inventory user.'
 
@@ -41712,10 +41724,15 @@ def add_engineer():
     emp_id = clean_str(p.get('employee_id'))
     name_val = clean_str(p.get('name'))
     initials = clean_str(p.get('initials'))
-    if not name_val or not initials or (staff_type == 'engineer' and not emp_id):
+    # Initials and Employee ID only exist on the Engineer row, so they are required for
+    # engineers alone. HR and approver accounts have no personnel record to store them on,
+    # and demanding a value the route then discards is just a field that goes nowhere.
+    if staff_type == 'engineer' and (not name_val or not initials or not emp_id):
         return jsonify({
             'message': 'Required fields missing: Employee ID, Name, and Initials are mandatory for engineers.'
         }), 400
+    if not name_val:
+        return jsonify({'message': 'Required field missing: Name is mandatory.'}), 400
 
     if staff_type == 'engineer' and Engineer.query.filter_by(employee_id=emp_id).first():
         return jsonify({'message': f'Error: Employee ID {emp_id} is already taken.'}), 400
