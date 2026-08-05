@@ -7,8 +7,13 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last filled: 2026-08-04, at the owner's request, after the offline audit, both recorded plans,
-and the review of two commits that came from another tool.
+Last filled: 2026-08-05, at the owner's request, recording two items the owner closed — the
+barcode scanner verified clean, and the What's New digest self-test sent and confirmed, which
+leaves only the real audience send. No code shipped with this fill. A stale service worker
+version in section 4 was corrected in the same pass.
+
+Filled before that on 2026-08-04, after the offline audit, both recorded plans, and the review
+of two commits that came from another tool.
 
 > **Read this first: you are not the only agent in this repository.** Codex works in the same
 > working tree and pushes to the same branch. During the 2026-08-02 session it wrote an entry
@@ -201,18 +206,26 @@ list. The same dead-route shape as `/get_scheduler_dispatch_intelligence`, which
 activated, and the two hybrid endpoints phase 4 deleted. Decide whether to wire it up or
 remove it.
 
-### What's New — digest: first real send still not done — DO THIS CAREFULLY
+### What's New — digest: test send done, real audience send still open — DO THIS CAREFULLY
 
 **`CHANGELOG_DIGEST_ENABLED` is `true` on Railway** and the feature has been deployed since
-`0447392`. **No digest has been sent to anyone yet.**
+`0447392`. **The self-test has been sent and passed** — the owner ran **Send test to me** on
+2026-08-05 and confirmed it arrived and read correctly. **No digest has gone to a real
+audience yet.**
 
-Before the first real send, in this order:
+That also closes what section 3 previously listed as unverified: the digest HTML had only ever
+been seen in the preview pane, never in an inbox, and mail clients strip and rewrite CSS. It
+has now been rendered by a real mail client.
+
+The three-step sequence, with step 2 behind us:
 
 1. Open What's New → **Email digest** and read the **resolved recipient count** for each
    audience. That count is the safeguard; nothing else stands between a click and real mail.
-2. **Send test to me** first — it goes only to the requesting admin's own address. Confirm
-   it arrives and reads correctly.
-3. Only then a real audience send, with the count confirmed.
+   **Still to do.**
+2. ~~**Send test to me** first — it goes only to the requesting admin's own address. Confirm
+   it arrives and reads correctly.~~ **Done, 2026-08-05.**
+3. Only then a real audience send, with the count confirmed. **Still to do, and it is the
+   irreversible one.**
 
 Expect the resolved count to be **higher** than "accounts with a profile email":
 `get_user_email_for_notification()` ends in a hardcoded username-to-email map (`diary`,
@@ -238,6 +251,26 @@ hybrid ratification. All are `is_published: true` and every one of the 2026-07-3
 `audiences: ["admins"]`, so a digest sent to engineers will not include them. A digest sent now
 includes everything above.
 
+### ~~Stock inventory barcode scanner~~ — VERIFIED CLEAN, 2026-08-05
+
+**Closed.** Open since the 2026-07-26 handoff: the physical scanner had arrived but had never
+been driven against production behaviour. **The owner verified it on 2026-08-05 and it passed
+clean. No code change was made and none was needed.**
+
+**What the record does and does not contain.** The outcome is the owner's, reported directly.
+The per-item detail the section below asked for — scanner model, the exact scanned string,
+whether it sends Enter/CR, the browser used — **was not captured**. So if the scanner
+misbehaves later there is no recorded baseline to diff against, and the investigation starts
+from the watch-list rather than from known-good values. Worth capturing those the next time
+someone has the hardware in hand.
+
+The original checklist is kept below rather than deleted: it came from the 2026-07-26 handoff,
+it is the fastest route back into this if a regression appears, and none of it is invalidated
+by a passing run.
+
+<details>
+<summary>Original entry, retained as the investigation checklist</summary>
+
 ### Stock inventory barcode scanner — pre-dates this session
 
 From the 2026-07-26 handoff and still open. The physical scanner arrived but has never been
@@ -252,6 +285,8 @@ modals, stripped leading zeroes, one scan producing duplicate events, branch con
 retained, focus not returning to the scan input after a modal closes.
 
 Reproduce with keyboard input locally first.
+
+</details>
 
 ### Spend reporting — deferred by decision in phase 3
 
@@ -283,7 +318,6 @@ None of this is known broken — it simply has not been checked.
 | **Offline behaviour against a real service worker registration** | login offline shell, dashboard assets, changelog assets. Real workers *were* registered through phases 2–4, the ratification and the offline schedule work (`v46` through `v55` observed), but the offline path itself has still not been exercised with the network genuinely down |
 | **Mobile viewport (375px)** | the What's New filter/search row. Every dashboard phase and the ratification were checked at 375px; this row still has not been |
 | **Skip link visual reveal on real keyboard focus** | layout shell |
-| **A real digest email as received** | the HTML was verified in the preview pane, never in an actual inbox. Mail clients strip and rewrite CSS; check before sending to an audience |
 | **Offline schedule attachments from a real device camera** | the least-proven part of `709106c` — see below |
 
 On the skip link: the Browser pane does not composite frames, so CSS transitions never
@@ -376,8 +410,8 @@ Same for `.env`, which holds a real Brevo API key.
 
 **Bump the service worker cache** whenever an `APP_SHELL` entry changes, or field devices
 keep the old copies. Tests use `assert_cache_version_at_least`, so a bump never breaks them.
-Currently `v56-offline-entry-point`. **Read the live value out of `app.py` immediately before
-committing** — `v49` was claimed and then overwritten by a `v50` bump from outside that
+Currently `v63-stock-inventory-readonly`. **Read the live value out of `app.py` immediately
+before committing** — `v49` was claimed and then overwritten by a `v50` bump from outside that
 session, and the stale assumption nearly shipped stale dashboard assets to field devices.
 
 **Multi-line commit messages:** write them to a file and use `git commit -F <file>`. A
