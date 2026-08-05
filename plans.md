@@ -55,6 +55,226 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Grantable admin capabilities in Settings
+
+**Status:** `In progress`
+**Started:** 2026-08-05, after the project owner gave the execution go-ahead.
+**Approved:** 2026-08-05
+**Detailed:** 2026-08-05, after tracing what superadmin actually means in this codebase and the
+full blast radius of the predicate that decides it.
+
+### Context
+
+The request was "add an ability in Settings to change a user's role to superadmin." Investigation
+showed that cannot work as described, and would be actively dangerous if built literally.
+
+**Setting `role = 'superadmin'` does not make a superadmin.** `is_superadmin_user()`
+(`app.py:7691`) requires **both** `role == 'superadmin'` **and** membership in
+`SUPERADMIN_USERNAMES` — a hardcoded set of five (`app.py:4763-4776`). A promoted account still
+fails at roughly 145 gated call sites.
+
+**But it would not do nothing.** Three functions read the role column directly, bypassing the
+predicate: `can_user_access_cash_advance` (`app.py:44428`) grants access to every Cash Advance
+record; `lpr_can_manage` (`app.py:50211`) and `can_user_approve_lpr` (`app.py:50222`) grant LPR
+management and approval — including of the promoted user's own LPRs. Meanwhile `get_display_role`
+(`app.py:7655`) would label them "Superadmin", so the half-state would look like success.
+
+So instead of widening the most powerful predicate in the system, this grants **three specific
+admin capabilities per user**, using the per-user permission-flag pattern the codebase already has
+for stock inventory and HR schedule view. The superadmin allowlist stays code-controlled.
+
+Intended outcome: a superadmin can give a trusted account personnel, reporting or scheduling
+authority from Settings, without handing over password resets, permission granting, system backup
+download, or approval-routing bypass.
+
+### Decisions taken
+
+| Decision | Value |
+| --- | --- |
+| Approach | **Capability toggles only.** No DB-backed superadmin, no change to `is_superadmin_user` |
+| Capabilities | **Personnel management**, **Reports and analytics**, **Schedule management for all engineers** |
+| Settings administration | **Not grantable.** Email templates, recipients and approval routing stay superadmin-only |
+| The three raw-role bypasses | **Fixed in this change** |
+| Who can grant | Superadmin only, inheriting the existing `settings_update_approval_user` gate |
+
+Settings administration was deliberately left out: approval routing is how approvals get wired, so
+granting it is the crown by another name.
+
+**One decision made here for the owner to reverse if they disagree:** personnel management grants
+**add and edit, not delete**. `delete_engineer` (`app.py:41880`) permanently deletes the linked
+`User` account as well as the personnel record. That is a different order of destruction from
+editing a phone number, so it stays superadmin-only. Including it is a one-line change to the guard.
+
+### Investigation
+
+- **The pattern to copy is `hr_schedule_view`**: an additive nullable-safe boolean on `User`, an
+  `ensure_user_hr_schedule_view_column()` migration registered in both `initialize_database()` and
+  the `before_request` hook, a predicate beside the other authorization helpers, and a toggle in the
+  Settings approval-user card. Use **distinct names for column and predicate** — unlike
+  `can_manage_stock_inventory`, where the column and the function share a name and the function
+  reads the column through `getattr`, which is confusing to read.
+- **`resolve_staff_permission_request()`** (`app.py:16470`) is now the single place permission rules
+  live, shared by `settings_update_approval_user` and `add_engineer`. The new flags **must** go
+  through it, or Settings and Add Personnel will drift — exactly what the last two reviews caught
+  elsewhere.
+- **`add_engineer`'s `permission_fields` set** (`app.py:41721`) is what stops a non-superadmin
+  sending permission fields. The three new flags must be added to it, or a regional admin could
+  assign them at creation time.
+- **The four schedule permission functions** — `can_modify_schedule_for_engineer_ids`
+  (`app.py:7841`), `can_create_schedule_for_engineer_ids` (`app.py:7866`),
+  `can_work_on_existing_schedule_shift`, and `can_submit_update_engineer_ids_for_scope` — all branch
+  on `is_superadmin_user()`, then `is_regional_admin_user()`, then `role == 'engineer'`, and
+  **default-return `False`**. They take no user argument; they read `current_user`. Every schedule
+  mutation endpoint depends on that default-deny, so this is the one place the schedule capability
+  may be added.
+- **The audit trail for permission changes is a single free-text line** —
+  `f"Updated approval user settings for {target_user.username}"` (`app.py:16596`). No field, no
+  before, no after. Acceptable for a stock-inventory toggle; not for granting personnel or schedule
+  authority.
+- **`make_user_admin`** (`app.py:41902`) returns "Admin promotion has been disabled." The git
+  history **cannot say why** — `git log -S "make_user_admin"` returns only `b03e281` ("Initial
+  Railway migration setup"), a squashed import, so the rationale predates this repo. Recorded
+  because a future reader will otherwise assume it was never considered.
+
+### Execution steps
+
+1. **Add three columns and one migration.** On `User`, beside the stock-inventory and
+   `hr_schedule_view` flags: `personnel_admin_access`, `reports_admin_access`,
+   `schedule_admin_access`, all `db.Boolean, default=False, nullable=False`. One
+   `ensure_user_admin_capability_columns()` following `ensure_user_hr_schedule_view_column()`
+   verbatim in shape — `_ready` global, `PRAGMA table_info(user)`, `ALTER TABLE ... ADD COLUMN` only
+   when absent, `[DB MIGRATION]` print — registered in `initialize_database()` **and** the
+   `before_request` hook list.
+
+2. **Add three predicates**, beside the other authorization helpers, each shaped
+   `is_admin_authorized(target) or bool(getattr(target, '<column>', False))`:
+   `can_administer_personnel()`, `can_view_admin_reports()`, `can_manage_any_schedule()`. **Purely
+   additive** — superadmins and the regional admin keep everything they have, and no existing
+   account's access changes until someone ticks a box.
+
+3. **Route the flags through the shared resolver.** Add all three to
+   `resolve_staff_permission_request()` (`app.py:16470`) and to `add_engineer`'s `permission_fields`
+   set (`app.py:41721`). **Rule:** none of the three may combine with `approver_only`,
+   `stock_inventory_only` or `hr_schedule_view` — those are restricted-view modes that strip the
+   navigation, and an HR-only account with personnel administration is incoherent. Follow the
+   message style fixed in the last review: name the switch that actually conflicts.
+
+4. **Apply the personnel capability.** Swap `is_admin_authorized()` for `can_administer_personnel()`
+   on `/engineers_page`, `/get_engineers` account metadata, `add_engineer`, `update_engineer` and
+   `export_engineers`. **`delete_engineer` keeps `is_admin_authorized()`.**
+
+   **The critical safety property:** `add_engineer`'s superadmin-only sub-gate on staff types and
+   permission fields (`app.py:41732`) **must stay `is_superadmin_user()`**. If a
+   personnel-management grantee could assign permissions, the capability would become a route to
+   granting itself and everything else.
+
+5. **Apply the reports capability.** Swap in `can_view_admin_reports()` on the admin reporting,
+   analytics and HR-export gates. Read-only surfaces only — nothing that mutates.
+
+6. **Apply the schedule capability in one place.** Add a single
+   `if can_manage_any_schedule(): return True` branch to each of the four schedule permission
+   functions, immediately after the `is_superadmin_user()` branch so a grantee gets all branches
+   rather than the regional admin's Cebu/Davao restriction. **Nowhere else.**
+
+7. **Fix the three raw-role bypasses.** Change `can_user_access_cash_advance` (`app.py:44428`),
+   `lpr_can_manage` (`app.py:50211`) and `can_user_approve_lpr` (`app.py:50222`) from
+   `role in {'superadmin', 'regional_admin'}` to `is_admin_authorized(<that user>)`, so there is one
+   definition of admin. `lpr_can_manage` also has an asymmetry worth removing while there — it uses
+   `is_admin_authorized()` when the target is the current user and the raw role otherwise.
+
+   **Check before tightening, not after.** Count accounts carrying `role == 'superadmin'` outside
+   `SUPERADMIN_USERNAMES`. If none — which the bootstrap code suggests, since only
+   `bootstrap_static_accounts` sets that role and only for the five — the change provably alters
+   nobody's access, and that number belongs in `changes.md`. Same discipline that made the
+   stock-inventory branch narrowing safe.
+
+8. **Make the permission audit line say what changed.** Replace the generic
+   `"Updated approval user settings for X"` (`app.py:16596`) with a line naming each changed field
+   and its old and new value.
+
+9. **Settings UI.** Add the three toggles to the approval-user card in `templates/settings.html`
+   beside the Stock Inventory and HR blocks, and to the payload in `saveApprovalUser`. Superadmin
+   only, inheriting the existing gate on `settings_update_approval_user` (`app.py:16562`) — do not
+   add a second gate. Label them for what they grant, not as "admin".
+
+10. **Release plumbing.** `releases.json` entry dated the commit date or
+    `test_changelog_coverage.py` fails. `templates/settings.html` is **not** an `APP_SHELL` entry
+    and `layout.html` is untouched, so **no service worker bump** — confirm by reading `APP_SHELL`
+    at implementation time rather than trusting this line.
+
+### Deliberately excluded
+
+- **Any change to `is_superadmin_user` or `SUPERADMIN_USERNAMES`.** The allowlist stays
+  code-controlled. This plan grants capabilities, never the crown.
+- **Settings administration as a capability** — email templates, recipients, approval routing.
+  Approval routing decides who approves what; granting it is equivalent to granting everything.
+- **`delete_engineer`.** Stays superadmin-only because it destroys the linked login too.
+- **Password resets, system backup download, approval-routing bypass, stock adjustments and
+  reversals.** All remain `is_superadmin_user()`. These are what make superadmin dangerous and none
+  was asked for.
+- **Re-enabling `make_user_admin`.** Stays disabled. Its rationale is not recoverable from this
+  repo's history, and nothing here needs it.
+
+### Verification
+
+- **Prove each capability by calling endpoints, not by reading predicates.** For each of the three:
+  build a user carrying only that flag and assert the newly-permitted endpoints return 200 while
+  **every** endpoint belonging to the other two capabilities, and every superadmin-only endpoint,
+  returns 403. Positive control: a real superadmin gets 200 on all of them.
+- **The escalation test, which is the one that matters.** A personnel-management grantee calls
+  `add_engineer` with permission fields and with a non-engineer `staff_type`, and **must get 403**.
+  Positive control: the same account succeeds at adding a plain engineer. Without this, the
+  capability can grant itself.
+- **The schedule write surface, by calling all of it.** With only `schedule_admin_access`, hit
+  `/add_shift`, `/update_shift`, `/move_shift`, `/delete_shift`, `/batch_delete_shifts`,
+  `/preview_delete_shifts`, `/delete_shifts_previewed` and both scheduler quick-actions. Assert the
+  first seven now succeed and the scheduler-only quick-actions still refuse — they gate on
+  `is_scheduler_user`, not these four functions. Positive control: an account with no flag is
+  refused on all of them.
+- **Assert the additive property explicitly:** for a superadmin, the regional admin, an ordinary
+  engineer and an approver-only account, every one of the three predicates returns exactly what it
+  returned before the change.
+- **Assert the mutual exclusions** reject and that the message names the switch that actually
+  conflicts.
+- **Assert the audit line names field, old value and new value**, with a positive control that an
+  unchanged field is not listed.
+- **Before tightening step 7**, record the count of `role == 'superadmin'` accounts outside
+  `SUPERADMIN_USERNAMES` and put the number in `changes.md`.
+- **Prove each new test fails without its fix**, injecting one defect at a time, **verifying the
+  injection applied by SHA** before trusting a run and confirming the file is restored
+  byte-identical. A `\n` search string against these CRLF files silently matches nothing.
+- **Browser**, isolated database, explicit `MEDICAL_SERVICE_TEST_DB`, never port 5000: grant each
+  capability to a seeded account, sign in as it, confirm the expected pages appear and the rest of
+  the admin surface does not. Standing bar: no horizontal overflow at 375 px, no tap target under
+  44 px, console clean. Restart the server after every template edit — Jinja caches compiled
+  templates.
+- Full suite via the documented command as **its own step before the commit**, never chained ahead
+  of `git push`.
+
+### After implementation
+
+Review against this plan before committing and correct this record where the outcome differed. Then
+the standing checklist in `pending-work.md` section 4: `git fetch origin`, re-read `origin/main`
+**after** the work, stage file by file, never `git add -A`, keep `scheduler.db` out by name, confirm
+with `git show --name-only`, push `main`. Add the `changes.md` entry in the same task.
+
+### Risks
+
+**The one that matters: a capability that can grant itself.** If step 4 lets a personnel-management
+grantee assign permission fields in `add_engineer`, they can hand themselves every other flag and
+the scoping of this plan evaporates. The net is the explicit escalation test in Verification, which
+fails loudly rather than leaving a hole that only shows up when someone uses it.
+
+**Second: widening the schedule write surface.** Step 6 adds a branch to four functions whose
+default-deny currently protects nine mutation endpoints — the same functions an earlier plan
+deliberately left untouched. Adding it anywhere other than those four, or to some and not others,
+produces an account that can create schedules but not delete them, or the reverse. Hitting every
+endpoint is what catches that.
+
+**Third: silently changing access in step 7.** Tightening the three bypasses is correct, but if any
+account outside the five carries `role == 'superadmin'` it would lose Cash Advance and LPR access
+with no warning. Counting first turns that from a discovery into a decision.
+
 ## Recall: withdrawing a submitted request, with a reason
 
 **Status:** `Executed - 2c20eed`

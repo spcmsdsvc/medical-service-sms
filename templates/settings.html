@@ -1814,6 +1814,9 @@
             const inventoryChecked = user.can_manage_stock_inventory ? 'checked' : '';
             const inventoryOnlyChecked = user.stock_inventory_only ? 'checked' : '';
             const hrScheduleViewChecked = user.hr_schedule_view ? 'checked' : '';
+            const personnelAdminChecked = user.personnel_admin_access ? 'checked' : '';
+            const reportsAdminChecked = user.reports_admin_access ? 'checked' : '';
+            const scheduleAdminChecked = user.schedule_admin_access ? 'checked' : '';
             const inventoryBranch = user.stock_inventory_branch_code || '';
             return `
                 <div class="approval-user-card" data-user-id="${user.id}">
@@ -1877,6 +1880,27 @@
                                     <label class="form-check-label small fw-bold">HR Schedule View</label>
                                 </div>
                                 <div class="form-text small">Read-only calendar access showing client name, assigned engineers, dates, times, and status only.</div>
+                            </div>
+                            <div class="col-lg-4">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input personnel-admin-access-input" type="checkbox" ${personnelAdminChecked} onchange="toggleAdminCapability(this)">
+                                    <label class="form-check-label small fw-bold">Personnel management access</label>
+                                </div>
+                                <div class="form-text small">Add and edit personnel records, plus personnel export. Delete remains superadmin/regional-admin only.</div>
+                            </div>
+                            <div class="col-lg-4">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input reports-admin-access-input" type="checkbox" ${reportsAdminChecked} onchange="toggleAdminCapability(this)">
+                                    <label class="form-check-label small fw-bold">Reports access</label>
+                                </div>
+                                <div class="form-text small">Open Analytics and the full reporting/archive read and export surfaces.</div>
+                            </div>
+                            <div class="col-lg-4">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input schedule-admin-access-input" type="checkbox" ${scheduleAdminChecked} onchange="toggleAdminCapability(this)">
+                                    <label class="form-check-label small fw-bold">Schedule management access</label>
+                                </div>
+                                <div class="form-text small">Create, edit, move, and complete calendar schedules across the schedule surface.</div>
                             </div>
                         </div>
                     </div>
@@ -2033,6 +2057,9 @@
             stock_inventory_only: Boolean(card.querySelector('.stock-inventory-only-input')?.checked),
             stock_inventory_branch_code: card.querySelector('.stock-inventory-branch-input')?.value || '',
             hr_schedule_view: Boolean(card.querySelector('.hr-schedule-view-input')?.checked),
+            personnel_admin_access: Boolean(card.querySelector('.personnel-admin-access-input')?.checked),
+            reports_admin_access: Boolean(card.querySelector('.reports-admin-access-input')?.checked),
+            schedule_admin_access: Boolean(card.querySelector('.schedule-admin-access-input')?.checked),
             approval_title: card.querySelector('.approval-title-input')?.value || '',
             approval_scope: card.querySelector('.approval-scope-input')?.value || '',
             is_active: Boolean(card.querySelector('.approval-active-input')?.checked)
@@ -2427,9 +2454,13 @@
         const canApprove = card.querySelector('.approval-can-approve');
         const inventoryAccess = card.querySelector('.stock-inventory-access-input');
         const inventoryOnly = card.querySelector('.stock-inventory-only-input');
+        const hrScheduleView = card.querySelector('.hr-schedule-view-input');
+        const adminCapabilities = card.querySelectorAll('.personnel-admin-access-input, .reports-admin-access-input, .schedule-admin-access-input');
         if (canApprove) canApprove.checked = true;
         if (inventoryAccess) inventoryAccess.checked = false;
         if (inventoryOnly) inventoryOnly.checked = false;
+        if (hrScheduleView) hrScheduleView.checked = false;
+        adminCapabilities.forEach(control => { control.checked = false; });
     }
 
     function toggleStockInventoryOnlyMode(input) {
@@ -2437,8 +2468,23 @@
         if (!card || !input.checked) return;
         const inventoryAccess = card.querySelector('.stock-inventory-access-input');
         const approverOnly = card.querySelector('.approval-approver-only-input');
+        const hrScheduleView = card.querySelector('.hr-schedule-view-input');
+        const adminCapabilities = card.querySelectorAll('.personnel-admin-access-input, .reports-admin-access-input, .schedule-admin-access-input');
         if (inventoryAccess) inventoryAccess.checked = true;
         if (approverOnly) approverOnly.checked = false;
+        if (hrScheduleView) hrScheduleView.checked = false;
+        adminCapabilities.forEach(control => { control.checked = false; });
+    }
+
+    function toggleAdminCapability(input) {
+        const card = input.closest('.approval-user-card');
+        if (!card || !input.checked) return;
+        const approverOnly = card.querySelector('.approval-approver-only-input');
+        const inventoryOnly = card.querySelector('.stock-inventory-only-input');
+        const hrScheduleView = card.querySelector('.hr-schedule-view-input');
+        if (approverOnly) approverOnly.checked = false;
+        if (inventoryOnly) inventoryOnly.checked = false;
+        if (hrScheduleView) hrScheduleView.checked = false;
     }
 
     function toggleStockInventoryAccess(input) {

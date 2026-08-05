@@ -123,10 +123,11 @@
                looser than the server and showed links that redirected away. #}
             {% set is_management_user = nav_is_admin %}
             {% set is_engineer_only = nav_is_engineer %}
+            {% set is_reports_admin_user = nav_can_view_admin_reports %}
             {% set is_approver_user = nav_is_approval_center_user %}
             {% set is_approver_only_user = nav_is_approver_only %}
             {% set is_accounting_center_user = nav_can_access_accounting_center %}
-            {% set is_reports_sidebar_user = is_management_user or is_engineer_only %}
+            {% set is_reports_sidebar_user = is_reports_admin_user or is_engineer_only %}
             {% set field_ops_paths = ['/travel_request', '/reimbursement', '/cash_advance', '/leave_request'] %}
             {% if lpr_enabled %}{% set field_ops_paths = field_ops_paths + ['/lpr'] %}{% endif %}
             {% set reports_paths = ['/analytics_page', '/reports_page'] %}
@@ -218,7 +219,7 @@
                group stays. Everyone else has TSR files and nothing else, and wrapping one
                link in a collapsed group named after that same link meant clicking
                "TSR files" to reveal "TSR files". They get the link directly. #}
-            {% if is_management_user %}
+            {% if is_reports_admin_user %}
                 <button
                     type="button"
                     class="sidebar-section-toggle {{ 'active' if request.path in reports_paths }}"
@@ -253,7 +254,7 @@
                     <i class="fa-solid fa-chevron-right sidebar-section-arrow"></i>
                 </button>
                 <div id="records-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in records_paths }}">
-                    {% if is_management_user or is_engineer_only %}
+                    {% if nav_can_administer_personnel or is_engineer_only %}
                         {{ nav_link('/engineers_page', 'fa-user-gear', 'Personnel') }}
                     {% endif %}
                     {{ nav_link('/clients_page', 'fa-hospital', 'Medical Centers') }}

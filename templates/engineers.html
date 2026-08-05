@@ -44,7 +44,7 @@
                 Technical Personnel Directory
             </h2>
             <div class="btn-group">
-                {% if current_user.role in ['superadmin', 'regional_admin'] %}
+                {% if nav_can_administer_personnel %}
                 <button class="btn btn-outline-success btn-sm" onclick="window.location.href='/export_engineers'">
                     <i class="fa-solid fa-file-excel me-1"></i>Export
                 </button>
@@ -54,7 +54,7 @@
                 </button>
                 
                 <!-- v5.0 Privilege Guard: Engineers are View-Only -->
-                {% if current_user.role in ['superadmin', 'regional_admin'] %}
+                {% if nav_can_administer_personnel %}
                 <button class="btn btn-primary btn-sm ms-2" onclick="openAddModal()">
                     <i class="fa-solid fa-user-plus me-1"></i>Add Personnel
                 </button>
@@ -337,6 +337,7 @@
     const isSuperAdmin = authRole === "superadmin";
     const isRegionalAdmin = authRole === "regional_admin";
     const isEngineer = authRole === "engineer";
+    const canAdministerPersonnel = {{ 'true' if nav_can_administer_personnel else 'false' }};
     const regionalAllowedBranches = ["Cebu", "Davao"];
     const loggedInEngineerId = "{{ current_user.engineer_profile.id if current_user.engineer_profile else '' }}";
     const loggedInEngineerEmail = "{{ current_user.engineer_profile.email|lower if current_user.engineer_profile and current_user.engineer_profile.email else '' }}";
@@ -347,6 +348,7 @@
     });
 
     function canEditEngineerContact(engineer){
+        if(canAdministerPersonnel) return true;
         if(isSuperAdmin || isRegionalAdmin) return true;
 
         if(isEngineer && engineer){
@@ -503,15 +505,17 @@
     }
 
     function getEngineerActionButtons(e){
-        if (isSuperAdmin || isRegionalAdmin) {
+        if (canAdministerPersonnel) {
+            const deleteMarkup = (isSuperAdmin || isRegionalAdmin) ? `
+                    <button class="engineer-mobile-btn engineer-mobile-delete" onclick="deleteEngineer(${e.id})">
+                        <i class="fa-solid fa-trash"></i>Delete
+                    </button>` : '';
             return `
                 <div class="engineer-mobile-actions">
                     <button class="engineer-mobile-btn engineer-mobile-edit" onclick="openEditModal(${e.id})">
                         <i class="fa-solid fa-pen"></i>Edit
                     </button>
-                    <button class="engineer-mobile-btn engineer-mobile-delete" onclick="deleteEngineer(${e.id})">
-                        <i class="fa-solid fa-trash"></i>Delete
-                    </button>
+                    ${deleteMarkup}
                 </div>`;
         }
 
@@ -618,12 +622,14 @@
             let actions = "";
 
             // Version 5.3 Security Guards
-            if (isSuperAdmin || isRegionalAdmin) {
+            if (canAdministerPersonnel) {
+                const deleteMarkup = (isSuperAdmin || isRegionalAdmin) ? `
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteEngineer(${e.id})"><i class="fa-solid fa-trash"></i></button>` : '';
                 actions = `
                     <td class="text-end no-print">
                         <div class="btn-group">
                             <button class="btn btn-sm btn-outline-warning" onclick="openEditModal(${e.id})"><i class="fa-solid fa-pen"></i></button>
-                            <button class="btn btn-sm btn-outline-danger" onclick="deleteEngineer(${e.id})"><i class="fa-solid fa-trash"></i></button>
+                            ${deleteMarkup}
                         </div>
                     </td>`;
             } else if (canEditEngineerContact(e)) {
@@ -670,7 +676,7 @@
      * MODAL OPS: Reset fields for addition.
      */
     function openAddModal() { 
-        if(!(isSuperAdmin || isRegionalAdmin)) return;
+        if(!canAdministerPersonnel) return;
         setEngineerModalContactOnlyMode(false);
         document.getElementById('modal-title').innerText = "Register New Personnel"; 
         document.getElementById('edit-eng-db-id').value = ""; 
@@ -693,7 +699,7 @@
         const eng = engineersData.find(x => x.id == dbId);
         if(!canEditEngineerContact(eng)) return;
 
-        const contactOnly = isEngineer && !(isSuperAdmin || isRegionalAdmin);
+        const contactOnly = isEngineer && !canAdministerPersonnel;
         setEngineerModalContactOnlyMode(contactOnly);
 
         document.getElementById('staff-type-wrap')?.classList.add('d-none');
@@ -718,10 +724,10 @@
     async function saveEngineer() {
         const dbId = document.getElementById('edit-eng-db-id').value;
         const selectedEngineer = engineersData.find(x => String(x.id) === String(dbId));
-        const isSelfContactUpdate = isEngineer && !(isSuperAdmin || isRegionalAdmin) && canEditEngineerContact(selectedEngineer);
+        const isSelfContactUpdate = isEngineer && !canAdministerPersonnel && canEditEngineerContact(selectedEngineer);
         const staffType = document.getElementById('e-staff-type')?.value || 'engineer';
 
-        if(!(isSuperAdmin || isRegionalAdmin) && !isSelfContactUpdate) return;
+        if(!canAdministerPersonnel && !isSelfContactUpdate) return;
 
         const data = { 
             employee_id: document.getElementById('e-emp-id').value.trim(),

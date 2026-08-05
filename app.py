@@ -1204,6 +1204,7 @@ def should_log_performance_path(path):
 def restore_pwa_session_before_route():
     ensure_user_approval_columns()
     ensure_user_hr_schedule_view_column()
+    ensure_user_admin_capability_columns()
     restore_user_from_pwa_login_cookie()
 
 
@@ -1291,6 +1292,9 @@ def inject_navigation_access():
         'nav_is_approver_only': is_approver_only_user(),
         'nav_can_access_accounting_center': can_access_accounting_center(),
         'nav_is_scheduler': is_scheduler_user(),
+        'nav_can_administer_personnel': can_administer_personnel(),
+        'nav_can_view_admin_reports': can_view_admin_reports(),
+        'nav_can_manage_any_schedule': can_manage_any_schedule(),
     }
 
 
@@ -1498,6 +1502,9 @@ class User(UserMixin, db.Model):
     stock_inventory_branch_code = db.Column(db.String(10), nullable=True)
     stock_inventory_permission_initialized = db.Column(db.Boolean, default=True, nullable=False)
     hr_schedule_view = db.Column(db.Boolean, default=False, nullable=False)
+    personnel_admin_access = db.Column(db.Boolean, default=False, nullable=False)
+    reports_admin_access = db.Column(db.Boolean, default=False, nullable=False)
+    schedule_admin_access = db.Column(db.Boolean, default=False, nullable=False)
 
     # Last successful sign-in. Older accounts stay NULL until their next login.
     last_login_at = db.Column(db.DateTime, nullable=True)
@@ -2524,6 +2531,7 @@ _email_recipient_setting_table_ready = False
 _email_template_setting_table_ready = False
 _user_approval_columns_ready = False
 _hr_schedule_view_column_ready = False
+_user_admin_capability_columns_ready = False
 _reimbursement_accounting_columns_ready = False
 _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
@@ -3282,6 +3290,29 @@ def ensure_user_hr_schedule_view_column():
         print(f"[HR Schedule] User column migration skipped: {hr_schedule_column_error}", flush=True)
 
 
+def ensure_user_admin_capability_columns():
+    """Add grantable admin-surface capability flags without replacing live data."""
+    global _user_admin_capability_columns_ready
+
+    if _user_admin_capability_columns_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            user_columns = {
+                row[1] for row in connection.exec_driver_sql("PRAGMA table_info(user)").fetchall()
+            }
+            for column_name in ('personnel_admin_access', 'reports_admin_access', 'schedule_admin_access'):
+                if column_name not in user_columns:
+                    connection.exec_driver_sql(
+                        f"ALTER TABLE user ADD COLUMN {column_name} BOOLEAN DEFAULT 0 NOT NULL"
+                    )
+                    print(f"[DB MIGRATION] Added user.{column_name}", flush=True)
+        _user_admin_capability_columns_ready = True
+    except Exception as admin_capability_error:
+        print(f"[Admin Capabilities] User column migration skipped: {admin_capability_error}", flush=True)
+
+
 def ensure_reimbursement_accounting_columns():
     """S12A3 safe live SQLite migration for Reimbursement accounting handoff fields."""
     global _reimbursement_accounting_columns_ready
@@ -3886,6 +3917,7 @@ def ensure_live_engineer_signature_schema_before_routes():
     ensure_engineer_signature_column()
     ensure_user_approval_columns()
     ensure_user_hr_schedule_view_column()
+    ensure_user_admin_capability_columns()
     ensure_online_tsr_submission_table()
     ensure_contact_designation_column()
     ensure_system_notification_table()
@@ -7603,6 +7635,9 @@ def approval_user_to_dict(user):
         'stock_inventory_only': is_stock_inventory_only_user(user),
         'stock_inventory_branch_code': normalize_stock_inventory_branch(getattr(user, 'stock_inventory_branch_code', None)),
         'hr_schedule_view': bool(getattr(user, 'hr_schedule_view', False)),
+        'personnel_admin_access': bool(getattr(user, 'personnel_admin_access', False)),
+        'reports_admin_access': bool(getattr(user, 'reports_admin_access', False)),
+        'schedule_admin_access': bool(getattr(user, 'schedule_admin_access', False)),
         'is_active': bool(getattr(user, 'is_active', True)),
         'engineer_id': getattr(profile, 'id', None),
         'employee_id': getattr(profile, 'employee_id', '') if profile else '',
@@ -7721,6 +7756,31 @@ def is_regional_admin_user(user=None):
 def is_admin_authorized(user=None):
     """System-management authorization. The old generic admin role is intentionally not accepted."""
     return is_superadmin_user(user) or is_regional_admin_user(user)
+
+
+def _has_active_account_capability(user, field_name):
+    target = user or current_user
+    return bool(
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True)) and
+        (is_admin_authorized(target) or bool(getattr(target, field_name, False)))
+    )
+
+
+def can_administer_personnel(user=None):
+    """Allow the Personnel directory's admin actions without granting Settings access."""
+    return _has_active_account_capability(user, 'personnel_admin_access')
+
+
+def can_view_admin_reports(user=None):
+    """Allow management reporting surfaces without granting management mutations."""
+    return _has_active_account_capability(user, 'reports_admin_access')
+
+
+def can_manage_any_schedule(user=None):
+    """Allow full calendar schedule operations across the visible schedule surface."""
+    return _has_active_account_capability(user, 'schedule_admin_access')
 
 
 def can_quick_add_timeline_client(user=None):
@@ -7850,6 +7910,9 @@ def can_modify_schedule_for_engineer_ids(engineer_ids):
     if is_superadmin_user():
         return True
 
+    if can_manage_any_schedule():
+        return True
+
     if is_regional_admin_user():
         if not cleaned_ids:
             return False
@@ -7876,6 +7939,9 @@ def can_create_schedule_for_engineer_ids(engineer_ids):
     cleaned_ids = [eid for eid in (engineer_ids or []) if eid]
 
     if is_superadmin_user():
+        return True
+
+    if can_manage_any_schedule():
         return True
 
     if is_regional_admin_user():
@@ -7936,7 +8002,13 @@ def can_work_on_existing_schedule_shift(shift):
     if not shift:
         return False
 
-    if is_superadmin_user() or is_regional_admin_user():
+    if is_superadmin_user():
+        return can_modify_schedule_shift(shift)
+
+    if can_manage_any_schedule():
+        return True
+
+    if is_regional_admin_user():
         return can_modify_schedule_shift(shift)
 
     return is_current_engineer_assigned_to_shift(shift)
@@ -7950,7 +8022,13 @@ def can_submit_update_engineer_ids_for_scope(master_shift, requested_engineer_id
     remove, or reassign other engineers. For custom time override, they can only
     modify their own engineer row.
     """
-    if is_superadmin_user() or is_regional_admin_user():
+    if is_superadmin_user():
+        return can_modify_schedule_for_engineer_ids(requested_engineer_ids)
+
+    if can_manage_any_schedule():
+        return True
+
+    if is_regional_admin_user():
         return can_modify_schedule_for_engineer_ids(requested_engineer_ids)
 
     my_engineer_id = get_current_user_engineer_id()
@@ -15997,7 +16075,7 @@ def activity_page():
 @login_required
 def analytics_page():
     """Analytics dashboard for authorized management users."""
-    if not is_admin_authorized():
+    if not can_view_admin_reports():
         return redirect(url_for('dashboard_page'))
     return render_template('analytics.html')
 
@@ -16006,10 +16084,10 @@ def analytics_page():
 @login_required
 def reports_page():
     """Reports hub. Admins see full intelligence; engineers see TSR archive only."""
-    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+    if not (can_view_admin_reports() or getattr(current_user, 'role', None) == 'engineer'):
         return redirect(url_for('dashboard_page'))
 
-    reports_admin_view = is_admin_authorized()
+    reports_admin_view = can_view_admin_reports()
     return render_template(
         'reports.html',
         # Existing names kept for backward compatibility with older reports.html versions.
@@ -16027,6 +16105,7 @@ def can_access_timeline_page(user=None):
     return bool(
         is_hr_schedule_viewer(target) or
         is_admin_authorized(target) or
+        can_manage_any_schedule(target) or
         has_engineer_profile(target) or
         is_scheduler_user(target) or
         is_manager_dashboard_user(target) or
@@ -16058,7 +16137,8 @@ def timeline_page():
         timeline_approver_view=is_configured_approver_user(),
         timeline_read_only_approver=(is_configured_approver_user() and not is_admin_authorized() and not has_engineer_profile()),
         timeline_read_only_hr=is_hr_schedule_only_user(),
-        timeline_is_named_superadmin=is_superadmin_user()
+        timeline_is_named_superadmin=is_superadmin_user(),
+        timeline_can_manage_schedules=can_manage_any_schedule()
     )
 
 
@@ -16126,7 +16206,7 @@ def approvals_page():
 @login_required
 def engineers_page():
     """ Personnel view - Restricted access handled in HTML templates """
-    if is_approver_only_user():
+    if is_approver_only_user() or not (can_administer_personnel() or has_engineer_profile()):
         return redirect(url_for('dashboard_page'))
     return render_template('engineers.html')
 
@@ -16481,6 +16561,9 @@ def resolve_staff_permission_request(payload, target_user=None):
     hr_schedule_view_requested = bool(payload.get('hr_schedule_view'))
     stock_inventory_only_requested = bool(payload.get('stock_inventory_only'))
     stock_inventory_requested = bool(payload.get('can_manage_stock_inventory'))
+    personnel_admin_requested = bool(payload.get('personnel_admin_access'))
+    reports_admin_requested = bool(payload.get('reports_admin_access'))
+    schedule_admin_requested = bool(payload.get('schedule_admin_access'))
     if stock_inventory_only_requested:
         # Inventory-only is a restricted inventory mode, so it always carries the
         # underlying inventory capability even when a stale client omitted it.
@@ -16491,6 +16574,28 @@ def resolve_staff_permission_request(payload, target_user=None):
         stock_inventory_only_requested = False
 
     stock_branch_code = normalize_stock_inventory_branch(payload.get('stock_inventory_branch_code'))
+    capability_labels = []
+    if personnel_admin_requested:
+        capability_labels.append('Personnel management access')
+    if reports_admin_requested:
+        capability_labels.append('Reports access')
+    if schedule_admin_requested:
+        capability_labels.append('Schedule management access')
+    if capability_labels and approver_only_requested:
+        return None, (
+            ', '.join(capability_labels) +
+            ' cannot be combined with Approver-only view.'
+        )
+    if capability_labels and stock_inventory_only_requested:
+        return None, (
+            ', '.join(capability_labels) +
+            ' cannot be combined with Stock Inventory-only view.'
+        )
+    if capability_labels and hr_schedule_view_requested:
+        return None, (
+            ', '.join(capability_labels) +
+            ' cannot be combined with HR Schedule View.'
+        )
     if approver_only_requested and stock_inventory_requested:
         return None, 'Approver-only accounts cannot also manage Stock Inventory.'
     if hr_schedule_view_requested:
@@ -16546,6 +16651,9 @@ def resolve_staff_permission_request(payload, target_user=None):
         'stock_inventory_only': stock_inventory_only_requested,
         'stock_inventory_branch_code': stock_branch_code or None,
         'hr_schedule_view': hr_schedule_view_requested,
+        'personnel_admin_access': personnel_admin_requested,
+        'reports_admin_access': reports_admin_requested,
+        'schedule_admin_access': schedule_admin_requested,
         'approver_only': approver_only_requested,
     }, None
 
@@ -16574,6 +16682,28 @@ def settings_update_approval_user():
     if permission_error:
         return jsonify({'success': False, 'error': permission_error}), 400
 
+    tracked_permission_fields = (
+        'can_approve_requests',
+        'approver_only',
+        'can_manage_stock_inventory',
+        'stock_inventory_only',
+        'stock_inventory_branch_code',
+        'hr_schedule_view',
+        'personnel_admin_access',
+        'reports_admin_access',
+        'schedule_admin_access',
+    )
+    old_permission_values = {}
+    for field in tracked_permission_fields:
+        if field == 'approver_only':
+            old_permission_values[field] = is_approver_only_user(target_user)
+        elif field == 'stock_inventory_branch_code':
+            old_permission_values[field] = normalize_stock_inventory_branch(
+                getattr(target_user, field, None)
+            )
+        else:
+            old_permission_values[field] = bool(getattr(target_user, field, False))
+
     approver_only_requested = permission_values['approver_only']
     target_raw_role = (getattr(target_user, 'role', '') or '').strip().lower()
     target_user.can_approve_requests = permission_values['can_approve_requests']
@@ -16585,6 +16715,9 @@ def settings_update_approval_user():
     target_user.stock_inventory_branch_code = permission_values['stock_inventory_branch_code']
     target_user.stock_inventory_permission_initialized = True
     target_user.hr_schedule_view = permission_values['hr_schedule_view']
+    target_user.personnel_admin_access = permission_values['personnel_admin_access']
+    target_user.reports_admin_access = permission_values['reports_admin_access']
+    target_user.schedule_admin_access = permission_values['schedule_admin_access']
 
     if approver_only_requested:
         target_user.role = 'approver'
@@ -16593,9 +16726,25 @@ def settings_update_approval_user():
         target_user.role = 'engineer'
 
     db.session.add(target_user)
+    changed_permission_values = []
+    for field in tracked_permission_fields:
+        old_value = old_permission_values[field]
+        new_value = (
+            is_approver_only_user(target_user)
+            if field == 'approver_only' else
+            normalize_stock_inventory_branch(getattr(target_user, field, None))
+            if field == 'stock_inventory_branch_code' else
+            bool(getattr(target_user, field, False))
+        )
+        if old_value != new_value:
+            changed_permission_values.append(f'{field}: {old_value} -> {new_value}')
+
+    audit_action = f"Updated approval user settings for {target_user.username}"
+    if changed_permission_values:
+        audit_action += ' (' + '; '.join(changed_permission_values) + ')'
     db.session.add(ActivityLog(
         user=(getattr(current_user, 'username', '') or 'Superadmin').capitalize(),
-        action=f"Updated approval user settings for {target_user.username}"
+        action=audit_action
     ))
     db.session.commit()
 
@@ -18397,7 +18546,7 @@ def get_engineers():
     """ Personnel Retrieval API providing contact info and account metadata """
     engineers = Engineer.query.order_by(Engineer.name).all()
     results = []
-    include_account_metadata = is_admin_authorized()
+    include_account_metadata = can_administer_personnel()
     hr_view = is_hr_schedule_only_user()
     calendar_view = parse_bool_flag(request.args.get('calendar'), default=False)
 
@@ -35289,7 +35438,7 @@ def analytics_visible_engineer_ids():
         # Kevin/regional_admin may view analytics for all branches, including Manila.
         # Mutation endpoints still restrict write access to Cebu/Davao only.
         pass
-    elif not is_superadmin_user():
+    elif not (is_superadmin_user() or is_regional_admin_user() or can_view_admin_reports()):
         return []
 
     if branch == 'REGIONAL':
@@ -35321,7 +35470,7 @@ def analytics_scope_query(query):
 @login_required
 def get_analytics_summary():
     """Management analytics API: schedules, branch workload, engineer workload, type/status breakdown."""
-    if not is_admin_authorized():
+    if not can_view_admin_reports():
         return denied()
 
     start_date, end_date = analytics_date_bounds()
@@ -35463,7 +35612,7 @@ def user_can_view_shift_tsr_archive(shift, scope=None):
     if not shift:
         return False
 
-    if is_admin_authorized():
+    if can_view_admin_reports():
         return True
 
     if getattr(current_user, 'role', None) == 'engineer':
@@ -35686,7 +35835,7 @@ def tsr_archive_assignment_filter(engineer_ids):
 @login_required
 def get_tsr_archive():
     """All-history TSR file archive with server-side search and pagination."""
-    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+    if not (can_view_admin_reports() or getattr(current_user, 'role', None) == 'engineer'):
         return denied()
 
     search = clean_str(request.args.get('q')) or ''
@@ -35707,7 +35856,7 @@ def get_tsr_archive():
         .filter(Shift.client_id.isnot(None))
     )
 
-    if is_admin_authorized():
+    if can_view_admin_reports():
         query = query.filter(tsr_archive_assignment_filter(analytics_visible_engineer_ids()))
     elif scope == 'my':
         query = query.filter(tsr_archive_assignment_filter([get_current_user_engineer_id()]))
@@ -36309,7 +36458,7 @@ def download_tsr_archive_file(file_id):
 @login_required
 def get_reports_summary():
     """Reports dashboard API: TSR intelligence, product intelligence, and email report visibility."""
-    if not is_admin_authorized():
+    if not can_view_admin_reports():
         return denied()
 
     start_date, end_date = analytics_date_bounds()
@@ -36486,7 +36635,7 @@ def get_reports_summary():
 @login_required
 def export_reports_summary():
     """CSV export for Reports page TSR/product/email intelligence."""
-    if not is_admin_authorized():
+    if not can_view_admin_reports():
         return denied()
 
     start_date, end_date = analytics_date_bounds()
@@ -36539,7 +36688,7 @@ def export_reports_summary():
 @login_required
 def export_analytics_summary():
     """CSV export for selected analytics range and branch."""
-    if not is_admin_authorized():
+    if not can_view_admin_reports():
         return denied()
 
     start_date, end_date = analytics_date_bounds()
@@ -36623,7 +36772,7 @@ def export_clients():
 @login_required
 def export_engineers():
     """ Technical personnel list CSV dump """
-    if not is_admin_authorized(): return denied()
+    if not can_administer_personnel(): return denied()
     engineers = Engineer.query.order_by(Engineer.name).all()
     output = io.StringIO(); writer = csv.writer(output)
     writer.writerow(['Emp ID', 'Engineer Name', 'Shorthand Initials', 'Branch', 'Phone', 'Email'])
@@ -36666,7 +36815,7 @@ def export_timeline():
     # predicate is also true for an engineer whose HR box happens to be ticked, and that
     # would hand them a weekly CSV this route has always reserved for admins.
     hr_export = is_hr_schedule_only_user()
-    if not (is_admin_authorized() or hr_export): return denied()
+    if not (can_view_admin_reports() or hr_export): return denied()
     offset = clean_int(request.args.get('offset', 0)) or 0
     branch_filter = clean_str(request.args.get('branch')) or 'ALL'
 
@@ -41710,7 +41859,7 @@ def batch_delete_shifts():
 @login_required
 def add_engineer():
     """Register technical staff or a Settings-managed HR/approver account."""
-    if not is_admin_authorized():
+    if not can_administer_personnel():
         return jsonify({'message': 'Denied'}), 403
 
     p = request.get_json(silent=True) or {}
@@ -41727,6 +41876,9 @@ def add_engineer():
         'can_manage_stock_inventory',
         'stock_inventory_only',
         'stock_inventory_branch_code',
+        'personnel_admin_access',
+        'reports_admin_access',
+        'schedule_admin_access',
         'is_active',
     }
     if not is_superadmin_user() and (
@@ -41802,6 +41954,9 @@ def add_engineer():
     new_user.stock_inventory_branch_code = permission_values['stock_inventory_branch_code']
     new_user.stock_inventory_permission_initialized = True
     new_user.hr_schedule_view = permission_values['hr_schedule_view']
+    new_user.personnel_admin_access = permission_values['personnel_admin_access']
+    new_user.reports_admin_access = permission_values['reports_admin_access']
+    new_user.schedule_admin_access = permission_values['schedule_admin_access']
 
     db.session.add(new_user)
     db.session.flush()
@@ -41853,7 +42008,7 @@ def update_engineer(id):
     if not eng:
         return jsonify({'message': 'Missing'}), 404
 
-    if getattr(current_user, 'role', None) == 'engineer' and not is_admin_authorized():
+    if getattr(current_user, 'role', None) == 'engineer' and not can_administer_personnel():
         my_profile = getattr(current_user, 'engineer_profile', None)
         if not my_profile or my_profile.id != eng.id:
             return denied('Engineers can edit only their own contact information.')
@@ -41865,7 +42020,7 @@ def update_engineer(id):
         log_activity(f"Updated own contact info: {eng.name}")
         return jsonify({'status': 'success', 'self_contact_update': True})
 
-    if not is_admin_authorized():
+    if not can_administer_personnel():
         return jsonify({'message': 'Denied'}), 403
 
     new_eid = clean_str(p.get('employee_id'))
@@ -42676,6 +42831,7 @@ def initialize_database():
         # hierarchy/account migration loads an existing user record.
         ensure_user_approval_columns()
         ensure_user_hr_schedule_view_column()
+        ensure_user_admin_capability_columns()
         ensure_engineer_signature_column()
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()
@@ -44429,7 +44585,7 @@ def can_user_access_cash_advance(header, user_obj=None):
     user_obj = user_obj or current_user
     if not header or not user_obj or not getattr(user_obj, 'is_authenticated', False):
         return False
-    if getattr(user_obj, 'role', '') in ['superadmin', 'regional_admin']:
+    if is_admin_authorized(user_obj):
         return True
     return int(getattr(header, 'user_id', 0) or 0) == int(getattr(user_obj, 'id', 0) or 0)
 
@@ -50214,15 +50370,13 @@ def lpr_can_manage(header, user_obj=None):
         return False
     if clean_int(getattr(header, 'user_id', None)) == clean_int(getattr(target, 'id', None)):
         return True
-    if target == current_user:
-        return bool(is_admin_authorized())
-    return getattr(target, 'role', '') in {'superadmin', 'regional_admin'}
+    return bool(is_admin_authorized(target))
 
 
 def can_user_approve_lpr(user_obj, header):
     if not header or not user_obj or not getattr(user_obj, 'is_authenticated', False):
         return False
-    if getattr(user_obj, 'role', '') in {'superadmin', 'regional_admin'}:
+    if is_admin_authorized(user_obj):
         return True
     return can_user_approve_for_requester(user_obj, header.user_id, 'lpr')
 

@@ -8406,6 +8406,8 @@ async function fetchTimelineDataWithOfflineTimeout(url){
         "{{ 'true' if timeline_read_only_hr else 'false' }}" === "true";
     const isNamedSuperAdmin =
         "{{ 'true' if timeline_is_named_superadmin else 'false' }}" === "true";
+    const canManageAnySchedule =
+        "{{ 'true' if timeline_can_manage_schedules else 'false' }}" === "true";
     const isSuperAdmin = authRole === "superadmin";
     const isRegionalAdmin = authRole === "regional_admin";
     const isEngineer = authRole === "engineer";
@@ -14228,6 +14230,7 @@ async function loadGrid() {
     function canManageScheduleForEngineer(engineerObj){
         if(isTimelineReadOnlyApproverMode()) return false;
         if(isSuperAdmin) return true;
+        if(canManageAnySchedule) return true;
         if(isRegionalAdmin) return engineerObj && regionalAllowedBranches.includes(engineerObj.branch);
         if(isEngineer) return isLoggedInEngineer(engineerObj);
         return false;
@@ -14236,6 +14239,7 @@ async function loadGrid() {
     function canManageScheduleForBranch(branchName){
         if(isTimelineReadOnlyApproverMode()) return false;
         if(isSuperAdmin) return true;
+        if(canManageAnySchedule) return true;
         if(isRegionalAdmin) return regionalAllowedBranches.includes(branchName);
         return false;
     }
@@ -14243,6 +14247,7 @@ async function loadGrid() {
     function canStartScheduleFromEngineerCell(engineerObj){
         if(isTimelineReadOnlyApproverMode()) return false;
         if(isSuperAdmin) return true;
+        if(canManageAnySchedule) return true;
         if(isRegionalAdmin) return engineerObj && regionalAllowedBranches.includes(engineerObj.branch);
 
         // Engineers can only start a new schedule from their own row.
@@ -14258,6 +14263,7 @@ async function loadGrid() {
         if(shiftObj?.pending_sync) return false;
         if(isTimelineReadOnlyApproverMode()) return false;
         if(isSuperAdmin) return true;
+        if(canManageAnySchedule) return true;
         if(isRegionalAdmin) return engineerObj && regionalAllowedBranches.includes(engineerObj.branch);
 
         if(isEngineer){

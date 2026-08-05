@@ -1411,6 +1411,15 @@
             "everyone"
           ],
           "sort_order": 70
+        },
+        {
+          "item_key": "2026-08-05-grantable-admin-capabilities",
+          "category": "Settings",
+          "description": "Superadmins can now grant focused Personnel management, Reports, or Schedule management access from Settings without granting full system-management authority. Each capability remains separate from restricted Approver-only, HR Schedule, and Stock Inventory-only views.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 80
         }
       ]
     }
