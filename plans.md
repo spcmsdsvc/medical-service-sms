@@ -57,7 +57,8 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Open an attached TSR from the schedule card
 
-**Status:** `Approved — awaiting go-ahead`
+**Status:** `In progress`
+**Started:** 2026-08-05, after the project owner gave the execution go-ahead.
 **Approved:** 2026-08-05
 **Detailed:** 2026-08-05, after tracing the timeline payload's file data, the card and popover
 renderers, and the TSR preview/download authorization.

@@ -14694,7 +14694,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v67-admin-capabilities';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v68-schedule-tsr-attachments';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -35008,6 +35008,20 @@ def redact_timeline_payload_for_hr(payload):
     return redacted
 
 
+def timeline_file_detail_payload(file_record):
+    """Serialize one schedule file with an explicit recognized-TSR identity flag."""
+    is_tsr = shift_file_is_recognized_tsr(file_record)
+    return {
+        'id': file_record.id,
+        'filename': get_shift_file_display_name(file_record) or file_record.filename,
+        'disk_filename': file_record.filename,
+        'display_name': get_shift_file_display_name(file_record),
+        'is_tsr': is_tsr,
+        'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if is_tsr else '',
+        'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else ''
+    }
+
+
 @app.route('/get_timeline_data')
 @login_required
 def get_timeline_data():
@@ -35176,14 +35190,7 @@ def get_timeline_data():
                 # When timeline_lite=true, skip heavy per-file metadata so the grid can load faster.
                 'files': [] if timeline_lite else [get_shift_file_display_name(file_record) or file_record.filename for file_record in shift.files],
                 'file_details': [] if timeline_lite else [
-                    {
-                        'id': file_record.id,
-                        'filename': get_shift_file_display_name(file_record) or file_record.filename,
-                        'disk_filename': file_record.filename,
-                        'display_name': get_shift_file_display_name(file_record),
-                        'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if shift_file_is_recognized_tsr(file_record) else '',
-                        'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else ''
-                    }
+                    timeline_file_detail_payload(file_record)
                     for file_record in shift.files
                 ],
                 'engineers': assigned_engineer_ids,
@@ -35328,14 +35335,7 @@ def get_shift_details(shift_id):
             'status': shift.status,
             'files': [get_shift_file_display_name(file_record) or file_record.filename for file_record in shift.files],
             'file_details': [
-                {
-                    'id': file_record.id,
-                    'filename': get_shift_file_display_name(file_record) or file_record.filename,
-                    'disk_filename': file_record.filename,
-                    'display_name': get_shift_file_display_name(file_record),
-                    'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if shift_file_is_recognized_tsr(file_record) else '',
-                    'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else ''
-                }
+                timeline_file_detail_payload(file_record)
                 for file_record in shift.files
             ],
             'manual_upload_count': get_linked_schedule_manual_upload_count(shift),

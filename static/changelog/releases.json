@@ -1429,6 +1429,15 @@
             "admins"
           ],
           "sort_order": 90
+        },
+        {
+          "item_key": "2026-08-05-schedule-card-tsr-preview-links",
+          "category": "Calendar",
+          "description": "Schedule details now show recognized TSR documents with direct in-app preview links. Mobile View Files stays inside the existing detail sheet, while unsupported or legacy attachments are identified without dead links.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 100
         }
       ]
     }

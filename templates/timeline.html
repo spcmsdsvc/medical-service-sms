@@ -2487,6 +2487,129 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     margin: 0.18rem 0;
 }
 
+.timeline-tsr-attachments {
+    border-top: 1px solid #e2e8f0;
+    padding: 0.72rem 0.9rem 0.82rem;
+    background: #f8fafc;
+}
+
+.timeline-tsr-attachments-title {
+    display: flex;
+    align-items: center;
+    gap: 0.38rem;
+    color: #334155;
+    font-size: 0.72rem;
+    font-weight: 950;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.timeline-tsr-attachments-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.35rem;
+    min-height: 1.35rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: #dbeafe;
+    color: #1d4ed8;
+    font-size: 0.64rem;
+}
+
+.timeline-tsr-attachments-list {
+    display: grid;
+    gap: 0.32rem;
+    margin-top: 0.48rem;
+}
+
+.timeline-tsr-attachment-link,
+.timeline-tsr-attachment-unavailable {
+    display: flex;
+    align-items: center;
+    gap: 0.42rem;
+    min-height: 2.2rem;
+    padding: 0.34rem 0.45rem;
+    border: 1px solid #dbeafe;
+    border-radius: 0.45rem;
+    color: #1d4ed8;
+    font-size: 0.7rem;
+    font-weight: 850;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    text-decoration: none;
+}
+
+.timeline-tsr-attachment-link {
+    background: #ffffff;
+}
+
+.timeline-tsr-attachment-link:hover,
+.timeline-tsr-attachment-link:focus-visible {
+    border-color: #93c5fd;
+    background: #eff6ff;
+    color: #1e40af;
+}
+
+.timeline-tsr-attachment-link span,
+.timeline-tsr-attachment-unavailable span {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.timeline-tsr-attachment-unavailable {
+    border-color: #e2e8f0;
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+.timeline-tsr-attachments-empty,
+.timeline-tsr-attachments-note {
+    margin-top: 0.45rem;
+    color: #64748b;
+    font-size: 0.68rem;
+    font-weight: 750;
+    line-height: 1.3;
+}
+
+:root[data-app-theme="dark"] .timeline-tsr-attachments {
+    border-color: rgba(148, 163, 184, 0.26);
+    background: #172235;
+}
+
+:root[data-app-theme="dark"] .timeline-tsr-attachments-title {
+    color: #e2e8f0;
+}
+
+:root[data-app-theme="dark"] .timeline-tsr-attachments-count {
+    background: rgba(96, 165, 250, 0.2);
+    color: #bfdbfe;
+}
+
+:root[data-app-theme="dark"] .timeline-tsr-attachment-link {
+    border-color: rgba(96, 165, 250, 0.42);
+    background: #1e293b;
+    color: #bfdbfe;
+}
+
+:root[data-app-theme="dark"] .timeline-tsr-attachment-link:hover,
+:root[data-app-theme="dark"] .timeline-tsr-attachment-link:focus-visible {
+    border-color: #60a5fa;
+    background: #243756;
+    color: #dbeafe;
+}
+
+:root[data-app-theme="dark"] .timeline-tsr-attachment-unavailable {
+    border-color: rgba(148, 163, 184, 0.28);
+    background: #202c3d;
+    color: #cbd5e1;
+}
+
+:root[data-app-theme="dark"] .timeline-tsr-attachments-empty,
+:root[data-app-theme="dark"] .timeline-tsr-attachments-note {
+    color: #a8b7ca;
+}
+
 .mobile-linked-badge {
     margin: 0.25rem 0 0;
     font-size: 0.62rem;
@@ -9586,15 +9709,7 @@ function shouldUseEngineerMobileView(){
         const context = getMobileFullCalendarLiteActionContext(shiftId, dayIso, engineerId);
         if(!context) return;
 
-        closeMobileFullCalendarLiteDetails();
-        await openEditModal(context.shift, context.engineerId, context.dayIso);
-
-        setTimeout(() => {
-            const list = document.getElementById('existing-files-list');
-            const fileSection = document.getElementById('file-container');
-            if(list) list.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            else if(fileSection) fileSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 450);
+        openMobileFullCalendarLiteDetails(context.shift.id, context.dayIso, context.engineerId);
     }
 
     function findMobileFullCalendarLiteShift(shiftId, dayIso, engineerId){
@@ -9682,6 +9797,7 @@ function shouldUseEngineerMobileView(){
                     ${addressLabel ? buildMobileFullCalendarLiteDetailRow('Address', addressLabel) : ''}
                     ${buildMobileFullCalendarLiteDetailRow('Attachments', files.length ? `${files.length} file(s)` : 'None')}
                 </div>
+                ${buildTimelineTSRAttachmentsHtml(shift, { mobile: true })}
                 <div class="mobile-full-calendar-lite-quick-actions">
                     ${isTravelBlock ? `
                         <button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-close" onclick="closeMobileFullCalendarLiteDetails()">
@@ -11812,6 +11928,7 @@ function collectMobileEngineerSchedules(){
                 ${linked ? scheduleSummaryRow('Dates', linkedDates) : ''}
                 ${linked ? scheduleSummaryRow('Team', linkedEngineers) : ''}
             </div>
+            ${buildTimelineTSRAttachmentsHtml(shift)}
         `;
     }
 
@@ -14652,6 +14769,7 @@ if(shift.engineers){
                 filename: file.filename || file.name || file.disk_filename || '',
                 disk_filename: file.disk_filename || file.stored_filename || '',
                 display_name: file.display_name || file.original_filename || cleanStoredFilenameForDisplay(file.filename || file.name || file.disk_filename || ''),
+                is_tsr: Boolean(file.is_tsr),
                 preview_url: file.preview_url || (file.id ? `/preview_tsr_archive_file/${file.id}` : ''),
                 download_url: file.download_url || (file.id ? `/download_tsr_archive_file/${file.id}` : '')
             })).filter(file => file.filename || file.id);
@@ -14662,9 +14780,53 @@ if(shift.engineers){
             filename,
             disk_filename: filename,
             display_name: cleanStoredFilenameForDisplay(filename),
+            is_tsr: false,
             preview_url: '',
             download_url: ''
         })).filter(file => file.filename);
+    }
+
+    function buildTimelineTSRAttachmentsHtml(shift, options = {}){
+        const files = getShiftFileDetails(shift);
+        if(!files.length) return '';
+
+        const recognizedFiles = files.filter(file => file.is_tsr);
+        const otherFileCount = Math.max(0, files.length - recognizedFiles.length);
+        const heading = options.mobile ? 'TSR Files' : 'TSR Attachments';
+        const rows = recognizedFiles.map(file => {
+            const displayName = file.display_name || cleanStoredFilenameForDisplay(file.filename) || 'TSR document';
+            const previewUrl = getTimelineFilePreviewUrl(file);
+            const imageIcon = /\.(png|jpe?g)$/i.test(displayName) ? 'fa-file-image' : 'fa-file-pdf';
+            if(!previewUrl){
+                return `
+                    <div class="timeline-tsr-attachment-unavailable" title="Preview is unavailable for this legacy file">
+                        <i class="fa-solid ${imageIcon}" aria-hidden="true"></i>
+                        <span>${escapeHtml(displayName)}</span>
+                    </div>
+                `;
+            }
+            return `
+                <a class="timeline-tsr-attachment-link" href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener" aria-label="Preview ${escapeHtml(displayName)}">
+                    <i class="fa-solid ${imageIcon}" aria-hidden="true"></i>
+                    <span>${escapeHtml(displayName)}</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                </a>
+            `;
+        }).join('');
+
+        return `
+            <section class="timeline-tsr-attachments" aria-label="${escapeHtml(heading)}">
+                <div class="timeline-tsr-attachments-title">
+                    <i class="fa-solid fa-file-circle-check" aria-hidden="true"></i>
+                    <span>${escapeHtml(heading)}</span>
+                    <span class="timeline-tsr-attachments-count">${recognizedFiles.length}</span>
+                </div>
+                <div class="timeline-tsr-attachments-list">
+                    ${rows || '<div class="timeline-tsr-attachments-empty">No recognized TSR documents are available for preview.</div>'}
+                </div>
+                ${otherFileCount ? `<div class="timeline-tsr-attachments-note">${otherFileCount} other attachment(s) are available from the schedule form.</div>` : ''}
+            </section>
+        `;
     }
 
     function getTimelineFilePreviewUrl(fileInfo){

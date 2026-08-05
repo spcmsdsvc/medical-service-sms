@@ -1,5 +1,14 @@
 # Project Change Log
 
+codex changes - 2026-08-05
+- Updated `get_timeline_data` and `get_shift_details` so every non-HR schedule file detail explicitly reports whether it is a recognized TSR, using the existing generated-submission identity check plus legacy filename recognition.
+- Added a shared recognized-TSR attachment list to the desktop schedule details popover and the mobile calendar detail sheet. Recognized TSR files open through the existing authenticated preview route; legacy entries without a preview URL render as plain text, and other schedule attachments are counted without being presented as TSR links.
+- Changed the mobile `View Files` action to remain inside the existing detail sheet instead of opening the Edit Schedule modal or using delayed scrolling, preserving the native mobile action flow and reducing modal/scroll conflicts.
+- Consolidated timeline file serialization through `timeline_file_detail_payload()` so TSR recognition is evaluated once per file while `/get_timeline_data` and `/get_shift_details` keep the same metadata contract.
+- Added readable light/dark attachment-list styling, added the calendar What’s New entry `2026-08-05-schedule-card-tsr-preview-links`, and bumped the service-worker cache to `v68-schedule-tsr-attachments`.
+- Added focused source and API regression coverage for generated-vs-supporting file identity, protected preview URL presence, legacy fallback behavior, HR redaction compatibility, mobile action routing, release metadata, and the service-worker version.
+- Verification passed with the project venv: focused tests 7/7, full suite 466 tests with 1 expected skip, Python compilation, five inline timeline JavaScript blocks parsed by Node, `releases.json` parsing, isolated local service-worker smoke check on port 5055, and `git diff --check`.
+
 claude changes - 2026-08-05 (recall and admin capability review)
 
 ## The capability check swallowed the regional admin's branch limit
