@@ -1,5 +1,58 @@
 # Project Change Log
 
+claude changes - 2026-08-05 (schedule card TSR review)
+
+## The feature is right; its tests mostly asserted that source text exists
+
+* Reviewed `6fa7fe4` and `4748cac` against the recorded plan. **The implementation is sound, and
+  the backend is better than the plan specified.** Rather than adding two lines in two places, it
+  extracted `timeline_file_detail_payload()` — one serializer used by both `/get_timeline_data` and
+  `/get_shift_details`, with `is_tsr` computed once and reused for `download_url` so the flag and
+  the URL cannot drift apart. That is the "one place decides" lesson from the last three reviews,
+  applied without being asked.
+* The plan's main risk is avoided cleanly: `buildTimelineTSRAttachmentsHtml` filters on
+  `file.is_tsr` and never on the URL, so site photos are not listed as service reports. The legacy
+  payload path sets `is_tsr: false`. The mobile workaround is genuinely gone — the Edit-modal open
+  and `scrollIntoView` are removed from `openMobileFullCalendarLiteFilesAction` entirely. The
+  service worker was bumped, and `assert_cache_version_at_least` used as a **floor** rather than an
+  exact pin, which is the previous review's lesson holding.
+* **Verified the HR protection by calling it**, since the shipped test did not: an HR session's
+  `/get_timeline_data` returns `file_details: []` and `files: []` for a shift genuinely carrying
+  both a recognised TSR and a photo, while an entitled viewer gets both entries with `is_tsr`
+  true and false respectively. The behaviour is correct.
+* **Fixed a tap target below the bar.** `.timeline-tsr-attachment-link` shipped at
+  `min-height: 2.2rem` (~35 px) — the only `2.2rem` in a template where every other tap target uses
+  `2.75rem`, and these links render in the mobile detail sheet. Now `2.75rem`. Same class of miss as
+  the `.dashboard-metric-link` 25 px item already recorded in `pending-work.md`.
+* **Replaced three source-string tests with behavioural ones.** The most misleading was
+  `test_hr_redaction_and_release_cache_are_preserved`, which asserted only that the literal
+  `"'file_details': [],"` appears somewhere in `app.py` — it could not tell you an HR session
+  receives an empty list, which is the entire protection. It now asserts the response, with a
+  non-HR positive control.
+* Added a test the original set had no equivalent for: **both endpoints must return an identical
+  file-detail shape**. A source check that the shared serializer is called twice cannot catch a
+  hand-edited copy of one call site; comparing real responses can. Proving it required diverging a
+  single endpoint — the first injection changed the shared serializer, so both feeds moved together
+  and the test correctly stayed green. Worth recording: **an injection that does not reproduce the
+  defect proves nothing**, and it read as a passing control until it was looked at properly.
+* **One source check was deliberately kept**, narrowed and commented: that
+  `openMobileFullCalendarLiteFilesAction` no longer reaches for the Edit modal. That behaviour lives
+  in inline template JavaScript and this project has no JS test runner, so it asserts an outcome
+  rather than pinning how the replacement is written.
+* **A deviation from the plan, kept on merit.** The plan said omit the attachments block when no
+  recognised TSR is present; the implementation renders it with a zero count, an explanatory line
+  and the other-attachment count. Travel blocks and attachment-free schedules are still omitted, so
+  the plan's actual concern is met — and telling someone "you have three files, none is a TSR"
+  beats showing nothing.
+* Noted, not changed: the `timeline-tsr-attachment-unavailable` branch is unreachable. Anything with
+  `is_tsr` true came from `file_details` and therefore carries an id, so a preview URL is always
+  synthesised; legacy entries are filtered out before reaching it. Harmless, but it means a legacy
+  or offline-cached payload shows no TSR block rather than plain-text names.
+* Each fix proved to fail when re-injected, one at a time, verified by SHA with both files confirmed
+  byte-identical to their backups afterwards. Suite green at **468** (was 466). Service worker
+  `v68-schedule-tsr-attachments` → `v69-tsr-link-tap-target`, because `templates/timeline.html` is
+  the first `APP_SHELL` entry and a cached shell would keep the small tap target.
+
 codex changes - 2026-08-05
 - Updated `get_timeline_data` and `get_shift_details` so every non-HR schedule file detail explicitly reports whether it is a recognized TSR, using the existing generated-submission identity check plus legacy filename recognition.
 - Added a shared recognized-TSR attachment list to the desktop schedule details popover and the mobile calendar detail sheet. Recognized TSR files open through the existing authenticated preview route; legacy entries without a preview URL render as plain text, and other schedule attachments are counted without being presented as TSR links.

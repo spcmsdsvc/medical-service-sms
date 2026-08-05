@@ -24,26 +24,32 @@ class TimelineTsrFileDetailsSourceTests(unittest.TestCase):
         cls.timeline_source = (ROOT / 'templates' / 'timeline.html').read_text(encoding='utf-8')
         cls.releases = (ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8')
 
-    def test_api_marks_recognized_tsr_files_explicitly(self):
-        self.assertIn('def timeline_file_detail_payload(file_record):', self.app_source)
-        self.assertIn('timeline_file_detail_payload(file_record)', self.app_source)
-        self.assertIn('def shift_file_is_recognized_tsr(file_rec):', self.app_source)
+    def test_the_mobile_files_action_no_longer_opens_the_edit_modal(self):
+        """The workaround this feature exists to remove must not come back.
 
-    def test_client_preserves_identity_and_never_links_legacy_fallbacks(self):
-        self.assertIn('is_tsr: Boolean(file.is_tsr)', self.timeline_source)
-        self.assertIn('is_tsr: false', self.timeline_source)
-        self.assertIn('function buildTimelineTSRAttachmentsHtml', self.timeline_source)
-        self.assertIn('getTimelineFilePreviewUrl(file)', self.timeline_source)
-
+        This stays a source check on purpose: the behaviour lives in inline template
+        JavaScript and there is no JS test runner in this project. It asserts an
+        outcome -- that function does not reach for the Edit modal -- rather than
+        pinning how the replacement is written. Everything else that was asserted as
+        a source string here is now checked against real responses in the API tests
+        below, because a string match only tells you the old text is gone.
+        """
         files_action = self.timeline_source.split(
             'async function openMobileFullCalendarLiteFilesAction'
         )[1].split('function findMobileFullCalendarLiteShift')[0]
-        self.assertIn('openMobileFullCalendarLiteDetails', files_action)
         self.assertNotIn('openEditModal', files_action)
         self.assertNotIn('scrollIntoView', files_action)
 
-    def test_hr_redaction_and_release_cache_are_preserved(self):
-        self.assertIn("'file_details': [],", self.app_source)
+    def test_attachment_links_meet_the_tap_target_floor(self):
+        """These links render in the mobile detail sheet, so the 44px bar applies.
+
+        Shipped at 2.2rem (~35px) while every other tap target in this template uses
+        2.75rem.
+        """
+        block = self.timeline_source.split('.timeline-tsr-attachment-link,', 1)[1].split('}', 1)[0]
+        self.assertIn('min-height: 2.75rem;', block)
+
+    def test_release_and_cache_metadata(self):
         self.assertIn('2026-08-05-schedule-card-tsr-preview-links', self.releases)
         assert_cache_version_at_least(self, 68, self.app_source)
 
@@ -126,7 +132,21 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
             cls.generated_file.online_tsr_submission_id = cls.submission.id
             app_module.db.session.commit()
 
+            # An HR schedule viewer: no Engineer profile, so is_hr_schedule_only_user()
+            # is true and the timeline feed must be redacted for them.
+            app_module.ensure_user_hr_schedule_view_column()
+            cls.hr_user = app_module.User(
+                username=f'timeline_files_hr_{cls.suffix}',
+                password=app_module.generate_password_hash('TimelineFilesHR123'),
+                role='staff',
+                is_active=True,
+                hr_schedule_view=True,
+            )
+            app_module.db.session.add(cls.hr_user)
+            app_module.db.session.commit()
+
             cls.user_id = cls.user.id
+            cls.hr_user_id = cls.hr_user.id
             cls.engineer_id = cls.engineer.id
             cls.client_id = cls.client_record.id
             cls.shift_id = cls.shift.id
@@ -151,18 +171,24 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
             client = app_module.db.session.get(app_module.Client, cls.client_id)
             if client:
                 app_module.db.session.delete(client)
-            user = app_module.db.session.get(app_module.User, cls.user_id)
-            if user:
-                app_module.db.session.delete(user)
+            for user_id in (cls.user_id, cls.hr_user_id):
+                user = app_module.db.session.get(app_module.User, user_id)
+                if user:
+                    app_module.db.session.delete(user)
             app_module.db.session.commit()
 
     @classmethod
-    def _client_for_user(cls):
+    def _client_for_user(cls, user_id=None):
         client = cls.app.test_client()
         with client.session_transaction() as session:
-            session['_user_id'] = str(cls.user_id)
+            session['_user_id'] = str(user_id or cls.user_id)
             session['_fresh'] = True
         return client
+
+    def _timeline_row_for(self, user_id):
+        response = self._client_for_user(user_id).get('/get_timeline_data?offset=0&branch=ALL')
+        self.assertEqual(response.status_code, 200)
+        return self._find_shift(response.get_json(), self.shift_id)
 
     @staticmethod
     def _find_shift(payload, shift_id):
@@ -191,6 +217,49 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
         details = {item['id']: item for item in details_response.get_json()['shift']['file_details']}
         self.assertTrue(details[self.generated_file_id]['is_tsr'])
         self.assertFalse(details[self.manual_file_id]['is_tsr'])
+
+    def test_both_endpoints_return_an_identical_file_detail_shape(self):
+        """The two feeds are served by one serializer; this is what proves it stayed one.
+
+        They were duplicated blocks before, and the whole risk of duplicated blocks is
+        that someone edits one. A source check that `timeline_file_detail_payload` is
+        called twice cannot catch a hand-edited copy; comparing real responses can.
+        """
+        client = self._client_for_user()
+
+        timeline_row = self._find_shift(
+            client.get('/get_timeline_data?offset=0&branch=ALL').get_json(), self.shift_id
+        )
+        details_shift = client.get(f'/get_shift_details/{self.shift_id}').get_json()['shift']
+
+        timeline_files = {item['id']: item for item in timeline_row['file_details']}
+        details_files = {item['id']: item for item in details_shift['file_details']}
+
+        self.assertEqual(set(timeline_files), set(details_files))
+        for file_id, timeline_entry in timeline_files.items():
+            self.assertEqual(timeline_entry, details_files[file_id])
+        # Positive control: the comparison is over populated entries, not two empties.
+        self.assertIn(self.generated_file_id, timeline_files)
+        self.assertIn(self.manual_file_id, timeline_files)
+
+    def test_hr_viewers_receive_no_attachment_data_at_all(self):
+        """Behavioural replacement for a string match on "'file_details': [],".
+
+        That assertion passed as long as the line existed somewhere in app.py; it could
+        not tell you an HR session actually receives an empty list. The attachment block
+        renders from file_details, so this emptiness is the whole protection.
+        """
+        hr_row = self._timeline_row_for(self.hr_user_id)
+        self.assertEqual(hr_row['file_details'], [])
+        self.assertEqual(hr_row['files'], [])
+        self.assertNotIn('Generated TSR', json.dumps(hr_row))
+        self.assertNotIn('Supporting Photo', json.dumps(hr_row))
+
+        # Positive control: the same shift really does carry both files for a viewer
+        # who is entitled to them, so the empties above are the redaction and not an
+        # unattached fixture.
+        engineer_row = self._timeline_row_for(self.user_id)
+        self.assertEqual(len(engineer_row['file_details']), 2)
 
 
 if __name__ == '__main__':

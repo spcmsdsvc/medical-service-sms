@@ -2528,7 +2528,9 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     display: flex;
     align-items: center;
     gap: 0.42rem;
-    min-height: 2.2rem;
+    /* 2.75rem is the tap-target size every other control in this template uses.
+       These links render in the mobile detail sheet too, so the 44px bar applies. */
+    min-height: 2.75rem;
     padding: 0.34rem 0.45rem;
     border: 1px solid #dbeafe;
     border-radius: 0.45rem;
