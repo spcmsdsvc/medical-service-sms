@@ -57,9 +57,10 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Open an attached TSR from the schedule card
 
-**Status:** `In progress`
+**Status:** `Executed — 6fa7fe4`
 **Started:** 2026-08-05, after the project owner gave the execution go-ahead.
 **Approved:** 2026-08-05
+**Executed:** 2026-08-05 in commit `6fa7fe4`; documentation status recorded in the follow-up commit.
 **Detailed:** 2026-08-05, after tracing the timeline payload's file data, the card and popover
 renderers, and the TSR preview/download authorization.
 

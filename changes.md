@@ -8,6 +8,7 @@ codex changes - 2026-08-05
 - Added readable light/dark attachment-list styling, added the calendar What’s New entry `2026-08-05-schedule-card-tsr-preview-links`, and bumped the service-worker cache to `v68-schedule-tsr-attachments`.
 - Added focused source and API regression coverage for generated-vs-supporting file identity, protected preview URL presence, legacy fallback behavior, HR redaction compatibility, mobile action routing, release metadata, and the service-worker version.
 - Verification passed with the project venv: focused tests 7/7, full suite 466 tests with 1 expected skip, Python compilation, five inline timeline JavaScript blocks parsed by Node, `releases.json` parsing, isolated local service-worker smoke check on port 5055, and `git diff --check`.
+- Recorded the approved schedule-card TSR preview plan as executed after the implementation commit `6fa7fe4`; no database or generated artifact was included in the release.
 
 claude changes - 2026-08-05 (recall and admin capability review)
 
