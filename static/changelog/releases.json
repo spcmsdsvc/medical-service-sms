@@ -1341,6 +1341,24 @@
           "sort_order": 10
         }
       ]
+    },
+    {
+      "release_key": "2026-08-05",
+      "release_date": "2026-08-05",
+      "title": "HR Schedule Viewer",
+      "summary": "HR can now review deployment schedules in a focused, read-only calendar.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-05-hr-schedule-viewer",
+          "category": "Calendar",
+          "description": "Superadmins can grant a focused HR Schedule View that shows client names, assigned engineers, dates, times, and status while keeping schedule changes, commercial details, contact information, and TSR files unavailable.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
     }
   ]
 }

@@ -55,6 +55,234 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## HR Schedule Viewer — a read-only "who is deployed" account
+
+**Status:** `In progress`
+**Approved:** 2026-08-05
+**Detailed:** 2026-08-05, after mapping the schedule write surface, the timeline data feed, the
+existing read-only-approver mode, and the `stock_inventory_only` restricted-account pattern.
+
+### Context
+
+Management wants HR to see the system. On investigation the ask is narrower than it sounded:
+**HR needs to see who is deployed and when.** Nothing else.
+
+HR already interacts with this system — as an email address. Approving a leave request fires
+`send_hr_email_background` to the `leave_request_hr` recipient group (`leave_feature.py:595`),
+and the row stores `hr_email_status`. HR works out of an inbox today. This gives them a
+read-only window instead.
+
+Two owner decisions shrank the work substantially: **departments are not needed** (they would
+have been entirely net-new — no model, column, enum or dropdown exists anywhere in the
+codebase), and the **personnel page revision is dropped** as unnecessary for this goal.
+
+Intended outcome: an HR account logs in, sees a calendar and nothing else, can read who is
+assigned where and when, and cannot change anything or see client commercial detail.
+
+### Decisions taken
+
+| Decision | Value |
+| --- | --- |
+| What HR sees per schedule | Engineer, date, time, status, **and client name** — nothing further |
+| Nav shape | Schedule only, stripped nav, mirroring `stock_inventory_only` |
+| How access is granted | Per-user boolean toggle in Settings, superadmin-controlled |
+| Departments | **Not needed at all.** Dropped |
+| Personnel model/page revision | Dropped — not required for HR access |
+
+Rejected on the way: a hardcoded username allowlist (matches how manager/scheduler/superadmin
+work today, but means a code change and deploy whenever HR staffing changes) and a single shared
+HR login (no accountability — the activity log could not say which HR person did what).
+
+### Investigation
+
+**The write surface is already closed, and this is the most important finding.** Every schedule
+mutation endpoint gates on `can_create_schedule_for_engineer_ids` (`app.py:7784`),
+`can_modify_schedule_for_engineer_ids` (`app.py:7759`), `can_work_on_existing_schedule_shift`
+(`app.py:7848`) or `can_submit_update_engineer_ids_for_scope` (`app.py:7863`). All four branch
+**only** on `is_superadmin_user`, `is_regional_admin_user` or `role == 'engineer'`, and
+**default-return `False`**. A new role never folded into those three is refused by `/add_shift`,
+`/update_shift`, `/move_shift`, `/delete_shift`, `/batch_delete_shifts`,
+`/preview_delete_shifts`, `/delete_shifts_previewed` and both scheduler quick-actions **without
+one line of new guard code**. This plan's job is to not break that, not to build it.
+
+**A read-only timeline mode already exists.** `timeline_read_only_approver` (`app.py:15955`)
+feeds `isTimelineReadOnlyApproverMode()` (`templates/timeline.html:8375`), which roughly fifteen
+mutation paths short-circuit on. Generalising that one function covers all of them at once.
+
+**The exposure is in the data feed, not the UI.** `/timeline` (`app.py:15938`) and
+`/get_timeline_data` (`app.py:34609`) carry **no guard beyond `@login_required`**, and the
+per-shift payload (`app.py:34755-34816`) includes `client_address`, `product_name`, `files`,
+`file_details` with live `download_url` links to TSR archive files, and travel
+purpose/destination/remarks. That payload — not the buttons — is what has to be filtered.
+
+**A second leak path the payload does not show.** The mobile card reads client contact via
+`getMobileClientContact` (`templates/timeline.html:10953`), sourced from the page's client master
+fetch rather than the timeline payload. Redacting `/get_timeline_data` alone does **not** close
+it.
+
+**`timeline_lite`** (`app.py:34768`) already conditionally empties `files` and `file_details` in
+this exact dict — the redaction precedent to follow rather than invent.
+
+**The restricted-account shape to copy:** `User.stock_inventory_only` →
+`is_stock_inventory_only_user()` (`app.py:4921`) → `inject_feature_flags()` (`app.py:1253`) →
+the negative nav gate at `templates/layout.html:144` → plus a route-level redirect in
+`dashboard_page()` (`app.py:14826`). All four parts are needed; the template gate alone is not a
+boundary.
+
+**What turned out not to be true.** The request arrived as "revise personnel, add departments".
+Neither is required. There is no department/division/team/org-unit concept anywhere — the only
+`dept_code` in the codebase is an unrelated accounting classification on payment forms, and
+`Engineer.branch` is a location, not a department. Separately, `Engineer` carries only 9 columns
+with no employment status, and `delete_engineer` (`app.py:41543`) permanently deletes the linked
+`User` account — a real gap, but not this task's.
+
+### Execution steps
+
+1. **Add the column and its migration.** `User.hr_schedule_view = db.Column(db.Boolean,
+   default=False, nullable=False)` beside the stock-inventory flags (`app.py:1494-1497`). Write
+   `ensure_user_hr_schedule_view_column()` following `ensure_shift_creation_token_column()`
+   (`app.py:3709`) verbatim in shape: module-level `_ready` global, `PRAGMA table_info(user)`,
+   `ALTER TABLE ... ADD COLUMN` only when absent, `[DB MIGRATION]` print. Register it in
+   `initialize_database()` (`app.py:42304`) **and** in the `before_request` hook list
+   (`app.py:3860`). Done: a live DB without the column gains it on next request.
+
+2. **Add the two permission helpers**, in the authorization block beside the stock-inventory
+   ones (~`app.py:4876-4947`):
+   - `is_hr_schedule_viewer(user=None)` — authenticated, active, `hr_schedule_view` true.
+   - `is_hr_schedule_only_user(user=None)` — the above **and not** `is_superadmin_user`, **and
+     not** `is_admin_authorized`, **and not** `has_engineer_profile`. Mirrors
+     `is_stock_inventory_only_user()` (`app.py:4921`).
+
+   **Do not touch `is_admin_authorized`, `is_superadmin_user`, `is_scheduler_user`, or any
+   `role == 'engineer'` branch.** That untouched default-deny is the entire write protection.
+   Done: an HR account returns `False` from all four schedule-modify helpers.
+
+3. **Surface the toggle in Settings.** Add a checkbox to the approval-user-card beside the Stock
+   Inventory block (`templates/settings.html:1848-1874`), add the field to the payload in
+   `saveApprovalUser` (`templates/settings.html:2020-2030`), and write it in
+   `settings_update_approval_user` (`app.py:16364-16439`) next to the
+   `can_manage_stock_inventory` write at `app.py:16412`. That handler is already
+   `is_superadmin_user`-gated at `app.py:16373` — inherit it, do not add a second gate.
+   **Reuse the existing protected-account rule** at `app.py:16401-16406`: managers, schedulers,
+   the developer superadmin and the regional admin must not be assignable an HR-only view.
+   Done: a superadmin can tick the box and the flag persists.
+
+4. **Redact the feed.** In `/get_timeline_data` (`app.py:34609`) resolve
+   `hr_view = is_hr_schedule_viewer()` **once before the shift loop**, then apply a
+   `redact_timeline_payload_for_hr(payload)` helper after the dict is built (`app.py:34816`),
+   following how `timeline_lite` already branches.
+
+   **Keep:** `id`, `client_name`, `time_start`, `time_end`, `status`, `engineers`,
+   `day_owner_engineer_*`, `start_date`, `end_date`, `group_id`, `schedule_type`,
+   `is_travel_block` — the last two because the grid cannot render without them.
+
+   **Blank:** `client_address`, `product_name`, `client_id`, `product_id`, `files`,
+   `file_details`, `travel_request_no`, `travel_destination`, `travel_purpose`,
+   `travel_remarks`, `travel_schedule_suggestions`, `can_open_travel_request`.
+
+   **One judgment call to confirm at review:** `task` is `shift.title`, a free-text job
+   description that may carry commercial detail. "Client name, nothing else" was explicit, so
+   redact it to a generic label derived from `schedule_type` and raise it with the owner rather
+   than deciding silently. Done: an HR session's feed contains no address, contact, product or
+   download URL.
+
+5. **Close the second leak path.** Audit every other endpoint `templates/timeline.html` calls on
+   load — the client and product masters and `/get_engineers` — and confirm none returns client
+   contact fields to an HR account. Either omit those fields server-side for HR or stop the
+   mobile card calling `getMobileClientContact` (`templates/timeline.html:10953`) in HR mode.
+   Done: a network trace of an HR session contains no client phone, email or contact name.
+
+6. **Generalise the read-only UI mode.** Compute `timeline_read_only_hr` in `timeline_page()`
+   beside `timeline_read_only_approver` (`app.py:15955`), thread it into the template next to
+   `timelineReadOnlyApprover` (`templates/timeline.html:8364`), and **OR it into
+   `isTimelineReadOnlyApproverMode()`** (`templates/timeline.html:8375`) rather than editing its
+   ~15 call sites. Rename to `isTimelineReadOnlyMode()` and keep the old name as a one-line
+   alias so no call site is missed. Done: every add/edit/drag/delete affordance is inert for HR,
+   with the existing view-only toast.
+
+7. **Guard the two routes.** `/timeline` and `/get_timeline_data` currently admit any
+   authenticated user. Add an explicit allow-check so HR is admitted deliberately rather than by
+   the absence of a check. Done: the guard names HR as permitted instead of relying on the hole
+   that already lets approver-only accounts in.
+
+8. **Strip the nav.** Add `hr_schedule_only_user` to `inject_feature_flags()`
+   (`app.py:1253-1263`), extend the negative gate at `templates/layout.html:144` so an HR-only
+   account keeps only the calendar link, and route `dashboard_page()` (`app.py:14826`) for HR the
+   way it already special-cases stock-inventory-only accounts. Done: HR's sidebar is the calendar
+   and a password link.
+
+9. **Release plumbing.** Bump `CACHE_VERSION` — **read the live value out of `app.py:14518`
+   immediately before committing**; `layout.html` is embedded in every `APP_SHELL` page, so a
+   stale shell would keep rendering the old sidebar. Add a `releases.json` entry dated the commit
+   date, `audiences: ["admins"]`, or `test_changelog_coverage.py` fails the commit.
+
+### Deliberately excluded
+
+- **Departments, and any `Engineer` schema change.** Settled by the owner as not needed. Adding
+  an org-unit concept is net-new schema for no requirement this task carries.
+- **The personnel page revision.** Dropped by the owner as unnecessary here.
+- **Leave, reimbursements, personnel directory and TSR files for HR.** HR asked for schedules.
+  Each of the others is its own authorization surface and its own decision.
+- **A create-user UI.** None exists — accounts are provisioned in seed code (`app.py:4683`,
+  `4722`, `41472`). The HR account will need creating the same way. Worth raising as its own
+  task; not built here.
+- **Fixing `/timeline`'s pre-existing openness for approver-only accounts.** Step 7 adds a
+  deliberate guard for this path; auditing every other ungated route is separate work.
+- **Employment status on `Engineer`, and the destructive `delete_engineer` cascade.** Real gaps
+  found during investigation, deliberately not widened into. Their own task.
+
+### Verification
+
+- **Prove the write surface by calling it, not by reading it.** The standing rule after
+  `test_stock_inventory.py` pinned a source line that a safe refactor then broke. Build an HR
+  user, hit `/add_shift`, `/update_shift`, `/move_shift`, `/delete_shift`,
+  `/batch_delete_shifts`, `/preview_delete_shifts`, `/delete_shifts_previewed` and both scheduler
+  quick-actions, and **assert 403 on every one**. Positive control: the same requests from a
+  seeded engineer/admin succeed, so the assertions cannot pass on a broken fixture.
+- **Assert the redaction on the response body**, not the helper: an HR session's
+  `/get_timeline_data` JSON contains no `client_address`, `product_name`, `download_url` or
+  travel purpose, **and still contains `client_name` and the engineer assignment**. Positive
+  control: the same request as an admin does contain them.
+- Assert `is_hr_schedule_only_user()` is false for a superadmin, an admin and an engineer, so the
+  flag can never strip an existing account's nav.
+- **Prove each new test fails without its fix**, and **confirm the injection actually applied**
+  (print whether the replacement changed the text, or compare a hash) before trusting a green
+  run. A `\n` search string against these CRLF files silently does nothing and reads as "the
+  tests are vacuous".
+- **Browser**, on an isolated database with an explicit `MEDICAL_SERVICE_TEST_DB`, never port
+  5000, signed in as a real seeded HR account: sidebar shows the calendar only; the grid renders
+  with engineer, date, time, status and client name; no add/edit/drag/delete affordance responds;
+  a network trace shows no client contact detail or TSR download URL anywhere. Standing bar: no
+  horizontal overflow at 375 px, no tap target under 44 px, console clean.
+- Full suite via the documented command, expecting the current 422 plus the new tests, run as
+  **its own step before the commit** — `ac78987` reached `origin/main` red because a check was
+  chained ahead of `git push`.
+- Restart the server after every template edit (Jinja caches compiled templates) and unregister
+  the service worker plus clear both caches after **each** asset edit, not once.
+
+### After implementation
+
+Review against this plan before committing; correct this record where the outcome differed. Then
+the standing commit checklist in `pending-work.md` section 4: `git fetch origin`, re-read
+`origin/main` **after** the work, stage file by file, never `git add -A`, keep `scheduler.db` out
+by name, confirm with `git show --name-only`, push `main`. Add the `changes.md` entry in the same
+task. Record anything left unverified in `pending-work.md` **only if the owner asks**.
+
+### Risks
+
+**The one that matters: silently widening write access.** If step 2's helpers are ever folded
+into `is_admin_authorized` or an engineer branch for convenience, every schedule endpoint opens
+to HR at once and nothing visibly breaks. Blast radius is the whole scheduler. The net is the 403
+suite above, which fails loudly the moment it happens.
+
+**Second: partial redaction reading as complete.** Step 4 filters the feed, but step 5's client
+master is a separate path. Closing one and assuming both would leave contact data visible on
+mobile cards specifically — the layout HR is least likely to be checked on. The network trace,
+not the payload assertion, is what proves it.
+
+Low risk elsewhere: the column is additive and nullable-safe, the flag defaults false, and no
+existing account's behaviour changes until someone ticks the box.
+
 ## Engineer Read-Only Stock Inventory Access
 
 **Status:** `Executed — 6d824a5`

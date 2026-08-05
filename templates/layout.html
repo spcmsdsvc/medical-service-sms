@@ -58,7 +58,7 @@
             <button type="button" class="appearance-header-button" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
                 <i class="appearance-header-icon fa-solid fa-moon" aria-hidden="true"></i>
             </button>
-            {% if not stock_inventory_only_user %}<a href="/whats_new"
+            {% if not stock_inventory_only_user and not hr_schedule_only_user %}<a href="/whats_new"
                class="changelog-header-button {{ 'active' if request.path == '/whats_new' }}"
                aria-label="What's New"
                title="What's New">
@@ -83,7 +83,7 @@
                 <button type="button" class="appearance-header-button" onclick="window.appAppearance && window.appAppearance.toggleQuick()" aria-label="Switch appearance" title="Switch appearance">
                     <i class="appearance-header-icon fa-solid fa-moon" aria-hidden="true"></i>
                 </button>
-                {% if not stock_inventory_only_user %}<a href="/whats_new"
+                {% if not stock_inventory_only_user and not hr_schedule_only_user %}<a href="/whats_new"
                    class="changelog-header-button {{ 'active' if request.path == '/whats_new' }}"
                    aria-label="What's New"
                    title="What's New">
@@ -135,13 +135,20 @@
 
             <div class="sidebar-group-label" aria-hidden="true">Main</div>
 
-            {{ nav_link('/', 'fa-chart-line', 'Dashboard') }}
-
-            {% if stock_inventory_view %}
-                {{ nav_link('/stock_inventory', 'fa-barcode', 'Stock Inventory') }}
+            {% if not hr_schedule_only_user %}
+                {{ nav_link('/', 'fa-chart-line', 'Dashboard') }}
             {% endif %}
 
-            {% if not stock_inventory_only_user %}
+            {% if stock_inventory_view %}
+                {% if not hr_schedule_only_user %}
+                    {{ nav_link('/stock_inventory', 'fa-barcode', 'Stock Inventory') }}
+                {% endif %}
+            {% endif %}
+
+            {% if hr_schedule_only_user %}
+                {{ nav_link('/timeline', 'fa-calendar-days', 'Calendar') }}
+                {{ nav_link('/settings', 'fa-key', 'Password Settings') }}
+            {% elif not stock_inventory_only_user %}
 
             {% if not is_approver_only_user %}
                 <div class="sidebar-calendar-row {{ 'active' if request.path in ['/timeline', '/offline-tsr'] }}">
@@ -289,6 +296,7 @@
                     {%- if nav_is_superadmin -%}Superadmin
                     {%- elif nav_is_admin -%}Regional Admin
                     {%- elif nav_is_approver_only -%}Approver
+                    {%- elif hr_schedule_only_user -%}HR Schedule Viewer
                     {%- elif stock_inventory_only_user -%}Inventory
                     {%- elif nav_is_engineer -%}Engineer
                     {%- else -%}Staff{%- endif -%}

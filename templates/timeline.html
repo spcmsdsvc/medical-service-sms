@@ -314,9 +314,15 @@
             <i class="fa-solid fa-eye"></i>
         </div>
         <div>
-            <div class="timeline-approver-banner-title">Approver Calendar View</div>
+            <div class="timeline-approver-banner-title">
+                {% if timeline_read_only_hr %}HR Schedule View{% else %}Approver Calendar View{% endif %}
+            </div>
             <div class="timeline-approver-banner-sub">
-                You can review schedules for approval context. Adding, editing, deleting, and drag/drop changes are disabled for approver-only access.
+                {% if timeline_read_only_hr %}
+                    You can review assigned client schedules, dates, times, and status. Schedule changes and detailed client records are unavailable.
+                {% else %}
+                    You can review schedules for approval context. Adding, editing, deleting, and drag/drop changes are disabled for approver-only access.
+                {% endif %}
             </div>
         </div>
     </div>
@@ -7193,6 +7199,26 @@ body.timeline-readonly-approver .timeline-approver-banner {
     display: flex;
 }
 
+body.timeline-readonly-hr .timeline-approver-banner {
+    display: flex;
+    border-color: #a7f3d0;
+    background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%);
+    color: #065f46;
+}
+
+body.timeline-readonly-hr .timeline-approver-banner-icon {
+    background: #d1fae5;
+    color: #047857;
+}
+
+body.timeline-readonly-hr .timeline-approver-banner-title {
+    color: #064e3b;
+}
+
+body.timeline-readonly-hr .timeline-approver-banner-sub {
+    color: #065f46;
+}
+
 body.timeline-readonly-approver .timeline-admin-control,
 body.timeline-readonly-approver .timeline-engineer-export-control,
 body.timeline-readonly-approver .timeline-engineer-focus-strip,
@@ -7235,7 +7261,8 @@ body.timeline-readonly-approver .header-branding-container h2::after {
 }
 
 @media (max-width: 768px) {
-    body.timeline-approver-view .timeline-approver-banner {
+    body.timeline-approver-view .timeline-approver-banner,
+    body.timeline-readonly-hr .timeline-approver-banner {
         display: flex;
         margin-bottom: 0.65rem;
         padding: 0.72rem 0.8rem;
@@ -8363,6 +8390,8 @@ async function fetchTimelineDataWithOfflineTimeout(url){
         "{{ 'true' if timeline_approver_view else 'false' }}" === "true";
     const timelineReadOnlyApprover =
         "{{ 'true' if timeline_read_only_approver else 'false' }}" === "true";
+    const timelineReadOnlyHR =
+        "{{ 'true' if timeline_read_only_hr else 'false' }}" === "true";
     const isSuperAdmin = authRole === "superadmin";
     const isRegionalAdmin = authRole === "regional_admin";
     const isEngineer = authRole === "engineer";
@@ -8372,17 +8401,29 @@ async function fetchTimelineDataWithOfflineTimeout(url){
         return Boolean(timelineApproverView);
     }
 
+    function isTimelineReadOnlyMode(){
+        return Boolean(timelineReadOnlyApprover || timelineReadOnlyHR);
+    }
+
+    // Backward-compatible alias for existing action guards in this large page.
     function isTimelineReadOnlyApproverMode(){
-        return Boolean(timelineReadOnlyApprover);
+        return isTimelineReadOnlyMode();
+    }
+
+    function showTimelineReadOnlyNotice(){
+        timelineAlert(timelineReadOnlyHR
+            ? "This calendar is view-only for HR schedule access. Schedule changes are disabled."
+            : "This calendar is view-only for approver access. Schedule changes are disabled.");
     }
 
     function showTimelineReadOnlyApproverNotice(){
-        timelineAlert("This calendar is view-only for approver access. Schedule changes are disabled.");
+        showTimelineReadOnlyNotice();
     }
 
     try {
         document.body.classList.toggle('timeline-approver-view', isTimelineApproverView());
-        document.body.classList.toggle('timeline-readonly-approver', isTimelineReadOnlyApproverMode());
+        document.body.classList.toggle('timeline-readonly-approver', isTimelineReadOnlyMode());
+        document.body.classList.toggle('timeline-readonly-hr', Boolean(timelineReadOnlyHR));
     } catch(err) {}
 
     // Detection of user's home branch to set auto-filter
@@ -8936,6 +8977,7 @@ function isTimelineMobileDevice(){
 function isAdminOrSchedulerMobileTimeline(){
     const role = getTimelineCurrentUserRole();
     return isTimelineMobileDevice() && (
+        timelineReadOnlyHR ||
         role === 'admin' ||
         role === 'superadmin' ||
         isTimelineSchedulerAccount() ||
@@ -8959,7 +9001,9 @@ function syncMobileRoleBadges(){
     const badgeText = document.getElementById('mobile-role-badge-text');
     if(!badge || !badgeText) return;
 
-    if(isMobileAdmin){
+    if(timelineReadOnlyHR){
+        badgeText.innerText = 'HR Schedule View';
+    }else if(isMobileAdmin){
         badgeText.innerText = isHybridEngineerAdminMobileMode()
             ? 'Hybrid Engineer/Admin Mobile Timeline'
             : (role === 'regional_admin' ? 'Regional Admin Mobile Timeline' : 'Admin Mobile Timeline');
@@ -9003,7 +9047,13 @@ function shouldUseEngineerMobileView(){
         const noticeBody = document.querySelector('.mobile-engineer-notice .small');
         const addHelp = document.querySelector('.mobile-add-schedule-help');
 
-        if(useAdminSchedulerMobile){
+        if(timelineReadOnlyHR){
+            if(eyebrow) eyebrow.innerText = 'HR Schedule View';
+            if(title) title.innerText = 'Team Service Schedule';
+            if(noticeTitle) noticeTitle.innerText = 'Read-only schedule access';
+            if(noticeBody) noticeBody.innerText = 'Assigned client schedules are shown below with dates, times, engineers, and status.';
+            if(addHelp) addHelp.innerText = 'Schedule changes and detailed client records are not available in this view.';
+        }else if(useAdminSchedulerMobile){
             if(isHybridEngineerAdminMobileMode()){
                 if(eyebrow) eyebrow.innerText = 'Hybrid Mobile View';
                 if(title) title.innerText = 'My Work + Team Schedule';
@@ -10741,6 +10791,7 @@ async function openMobileAddSchedule(){
     }
 
     function getMobileClientAddress(shift){
+        if(timelineReadOnlyHR) return '';
         if(!shift?.client_id) return '';
         const match = (masterClients || []).find(c => String(c.id) === String(shift.client_id));
         return match?.address || '';
@@ -10754,6 +10805,7 @@ async function openMobileAddSchedule(){
 
 
     function getMobileClientContact(shift){
+        if(timelineReadOnlyHR) return null;
         if(!shift?.client_id) return null;
         const match = (masterClients || []).find(c => String(c.id) === String(shift.client_id));
         if(!match) return null;

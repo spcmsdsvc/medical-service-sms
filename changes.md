@@ -1,5 +1,32 @@
 # Project Change Log
 
+codex changes - 2026-08-05
+
+- Added the restricted **HR Schedule Viewer** workflow. Superadmins can grant the new
+  account-level HR Schedule View permission from Settings; the permission is additive,
+  defaults off for existing users, and is incompatible with approver-only and
+  stock-inventory-only modes.
+- Added the additive `User.hr_schedule_view` database column and startup migration guard.
+  Existing users and the live SQLite database remain intact; `scheduler.db` is not part of
+  the deployment files.
+- Added server-side HR-only route protection. HR schedule viewers are limited to Calendar,
+  password settings, logout, the required session/PWA endpoints, and read-only schedule
+  data; direct access to operational pages and mutation APIs is denied.
+- Added a dedicated HR navigation and dashboard experience with Calendar and Password
+  Settings only. HR users do not receive Dashboard, What’s New, Stock Inventory, Field
+  Operations, My Requests, Reports, Records, or Admin navigation links.
+- Added HR-safe timeline responses that retain only schedule identity, client name, assigned
+  engineer names/IDs, date, time, status, and schedule type. Client address, equipment,
+  product identifiers, files, travel details, contact data, and action URLs are withheld;
+  task text is reduced to a generic schedule label.
+- Updated timeline read-only behavior for HR on desktop and mobile, including the HR banner,
+  mobile role labels, safe client/product/engineer lookups, and disabled schedule actions.
+- Added the `2026-08-05` HR Schedule Viewer What’s New release entry and bumped the PWA
+  service-worker cache version to deliver the new navigation and access behavior.
+- Added focused HR authorization, redaction, route, template, navigation, mobile, release,
+  and cache regression tests. Verified `app.py` compilation, `git diff --check`, and the full
+  suite: 429 tests passed with one existing expected skip.
+
 claude changes - 2026-08-04
 
 ## Review follow-up: narrowed a widened permission path, and made the suite trustworthy

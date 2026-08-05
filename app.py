@@ -1203,6 +1203,7 @@ def should_log_performance_path(path):
 @app.before_request
 def restore_pwa_session_before_route():
     ensure_user_approval_columns()
+    ensure_user_hr_schedule_view_column()
     restore_user_from_pwa_login_cookie()
 
 
@@ -1260,6 +1261,7 @@ def inject_feature_flags():
         'stock_inventory_access': can_manage_stock_inventory(),
         'stock_inventory_view': stock_inventory_can_view(),
         'stock_inventory_only_user': is_stock_inventory_only_user(),
+        'hr_schedule_only_user': is_hr_schedule_only_user(),
     }
 
 
@@ -1495,6 +1497,7 @@ class User(UserMixin, db.Model):
     stock_inventory_only = db.Column(db.Boolean, default=False, nullable=False)
     stock_inventory_branch_code = db.Column(db.String(10), nullable=True)
     stock_inventory_permission_initialized = db.Column(db.Boolean, default=True, nullable=False)
+    hr_schedule_view = db.Column(db.Boolean, default=False, nullable=False)
 
     # Last successful sign-in. Older accounts stay NULL until their next login.
     last_login_at = db.Column(db.DateTime, nullable=True)
@@ -2520,6 +2523,7 @@ _changelog_manifest_synced = False
 _email_recipient_setting_table_ready = False
 _email_template_setting_table_ready = False
 _user_approval_columns_ready = False
+_hr_schedule_view_column_ready = False
 _reimbursement_accounting_columns_ready = False
 _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
@@ -3256,6 +3260,28 @@ def ensure_user_approval_columns():
         print(f"[ApprovalRouting] User column migration skipped: {user_approval_error}", flush=True)
 
 
+def ensure_user_hr_schedule_view_column():
+    """Add the HR schedule-view flag without replacing the live SQLite database."""
+    global _hr_schedule_view_column_ready
+
+    if _hr_schedule_view_column_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            user_columns = {
+                row[1] for row in connection.exec_driver_sql("PRAGMA table_info(user)").fetchall()
+            }
+            if 'hr_schedule_view' not in user_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE user ADD COLUMN hr_schedule_view BOOLEAN DEFAULT 0 NOT NULL"
+                )
+                print("[DB MIGRATION] Added user.hr_schedule_view", flush=True)
+        _hr_schedule_view_column_ready = True
+    except Exception as hr_schedule_column_error:
+        print(f"[HR Schedule] User column migration skipped: {hr_schedule_column_error}", flush=True)
+
+
 def ensure_reimbursement_accounting_columns():
     """S12A3 safe live SQLite migration for Reimbursement accounting handoff fields."""
     global _reimbursement_accounting_columns_ready
@@ -3859,6 +3885,7 @@ def ensure_live_engineer_signature_schema_before_routes():
 
     ensure_engineer_signature_column()
     ensure_user_approval_columns()
+    ensure_user_hr_schedule_view_column()
     ensure_online_tsr_submission_table()
     ensure_contact_designation_column()
     ensure_system_notification_table()
@@ -4924,6 +4951,30 @@ def is_stock_inventory_only_user(user=None):
         can_manage_stock_inventory(target) and
         bool(getattr(target, 'stock_inventory_only', False)) and
         not is_superadmin_user(target)
+    )
+
+
+def is_hr_schedule_viewer(user=None):
+    """Return whether an active account has been granted the HR schedule view flag."""
+    target = user or current_user
+    return bool(
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True)) and
+        bool(getattr(target, 'hr_schedule_view', False))
+    )
+
+
+def is_hr_schedule_only_user(user=None):
+    """Return whether the HR flag should restrict this account to the calendar."""
+    target = user or current_user
+    return bool(
+        is_hr_schedule_viewer(target) and
+        not is_superadmin_user(target) and
+        not is_admin_authorized(target) and
+        not has_engineer_profile(target) and
+        not is_approver_only_user(target) and
+        not is_stock_inventory_only_user(target)
     )
 
 
@@ -7521,6 +7572,7 @@ def approval_user_to_dict(user):
         'can_manage_stock_inventory': can_manage_stock_inventory(user),
         'stock_inventory_only': is_stock_inventory_only_user(user),
         'stock_inventory_branch_code': normalize_stock_inventory_branch(getattr(user, 'stock_inventory_branch_code', None)),
+        'hr_schedule_view': bool(getattr(user, 'hr_schedule_view', False)),
         'is_active': bool(getattr(user, 'is_active', True)),
         'engineer_id': getattr(profile, 'id', None),
         'employee_id': getattr(profile, 'employee_id', '') if profile else '',
@@ -14515,7 +14567,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v63-stock-inventory-readonly';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v64-hr-schedule-viewer';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -14827,6 +14879,9 @@ self.addEventListener('message', event => {
 @login_required
 def dashboard_page():
     """Overhauled Overview Hub with capability-based hybrid dashboard flags."""
+    if is_hr_schedule_only_user():
+        return redirect(url_for('timeline_page'))
+
     if is_stock_inventory_only_user():
         branch_code = stock_inventory_branch_for_user()
         return render_template(
@@ -15935,10 +15990,29 @@ def reports_page():
     )
 
 
+def can_access_timeline_page(user=None):
+    """Keep Timeline access explicit while preserving existing schedule viewers."""
+    target = user or current_user
+    role = (getattr(target, 'role', '') or '').strip().lower()
+    return bool(
+        is_hr_schedule_viewer(target) or
+        is_admin_authorized(target) or
+        has_engineer_profile(target) or
+        is_scheduler_user(target) or
+        is_manager_dashboard_user(target) or
+        is_configured_approver_user(target) or
+        is_legacy_reimbursement_approval_user(target) or
+        role in {'admin', 'manager'}
+    )
+
+
 @app.route('/timeline')
 @login_required
 def timeline_page():
     """ Main technical scheduling matrix interface """
+    if not can_access_timeline_page():
+        return redirect(url_for('dashboard_page'))
+
     engineer_id = None
     engineer_employee_id = ''
 
@@ -15952,7 +16026,8 @@ def timeline_page():
         logged_in_engineer_id=engineer_id,
         logged_in_engineer_employee_id=engineer_employee_id,
         timeline_approver_view=is_configured_approver_user(),
-        timeline_read_only_approver=(is_configured_approver_user() and not is_admin_authorized() and not has_engineer_profile())
+        timeline_read_only_approver=(is_configured_approver_user() and not is_admin_authorized() and not has_engineer_profile()),
+        timeline_read_only_hr=is_hr_schedule_only_user()
     )
 
 
@@ -16382,6 +16457,7 @@ def settings_update_approval_user():
         return jsonify({'success': False, 'error': 'User not found.'}), 404
 
     approver_only_requested = bool(payload.get('approver_only'))
+    hr_schedule_view_requested = bool(payload.get('hr_schedule_view'))
     stock_inventory_only_requested = bool(payload.get('stock_inventory_only'))
     stock_inventory_requested = bool(payload.get('can_manage_stock_inventory'))
     if not stock_inventory_requested:
@@ -16393,6 +16469,8 @@ def settings_update_approval_user():
     stock_branch_code = normalize_stock_inventory_branch(payload.get('stock_inventory_branch_code'))
     if approver_only_requested and stock_inventory_requested:
         return jsonify({'success': False, 'error': 'Approver-only accounts cannot also manage Stock Inventory.'}), 400
+    if hr_schedule_view_requested and (approver_only_requested or stock_inventory_only_requested):
+        return jsonify({'success': False, 'error': 'HR Schedule View cannot be combined with Approver-only or Stock Inventory-only view.'}), 400
     if stock_inventory_requested and not stock_branch_code and not is_superadmin_user(target_user):
         return jsonify({'success': False, 'error': 'Select a branch for this Stock Inventory user.'}), 400
 
@@ -16404,6 +16482,11 @@ def settings_update_approval_user():
             'success': False,
             'error': 'Stock Inventory-only view cannot be applied to protected management, scheduler, regional-admin, or superadmin accounts.'
         }), 400
+    if hr_schedule_view_requested and (is_admin_authorized(target_user) or protected_business_roles):
+        return jsonify({
+            'success': False,
+            'error': 'HR Schedule View cannot be applied to protected management, scheduler, regional-admin, or superadmin accounts.'
+        }), 400
 
     target_user.can_approve_requests = bool(payload.get('can_approve_requests')) or approver_only_requested
     target_user.approval_scope = (clean_str(payload.get('approval_scope')) or '')[:50]
@@ -16413,6 +16496,7 @@ def settings_update_approval_user():
     target_user.stock_inventory_only = stock_inventory_only_requested
     target_user.stock_inventory_branch_code = stock_branch_code or None
     target_user.stock_inventory_permission_initialized = True
+    target_user.hr_schedule_view = hr_schedule_view_requested
 
     if approver_only_requested:
         if is_admin_authorized(target_user) or protected_business_roles:
@@ -18231,19 +18315,28 @@ def get_engineers():
     engineers = Engineer.query.order_by(Engineer.name).all()
     results = []
     include_account_metadata = is_admin_authorized()
+    hr_view = is_hr_schedule_only_user()
 
     for e in engineers:
-        row = {
-            'id': e.id,
-            'employee_id': e.employee_id,
-            'name': e.name,
-            'initials': e.initials,
-            'phone': e.phone or "",
-            'email': e.email or "",
-            'branch': e.branch or "",
-        }
+        if hr_view:
+            row = {
+                'id': e.id,
+                'name': e.name,
+                'initials': e.initials,
+                'branch': e.branch or "",
+            }
+        else:
+            row = {
+                'id': e.id,
+                'employee_id': e.employee_id,
+                'name': e.name,
+                'initials': e.initials,
+                'phone': e.phone or "",
+                'email': e.email or "",
+                'branch': e.branch or "",
+            }
 
-        if include_account_metadata:
+        if include_account_metadata and not hr_view:
             # Cross-reference engineer ID with user database (Hard Link v5.4)
             account = db.session.get(User, e.user_id) if e.user_id else None
             if not account:
@@ -18274,6 +18367,12 @@ def get_engineers():
 @login_required
 def get_clients():
     ensure_contact_designation_column()
+
+    if is_hr_schedule_only_user():
+        return jsonify([
+            {'id': client.id, 'name': client.name or ''}
+            for client in Client.query.order_by(Client.name).all()
+        ])
 
     try:
         repair_recent_online_tsr_contacts_for_medical_centers()
@@ -18492,6 +18591,8 @@ def quick_add_timeline_client():
 def get_products():
     """ Inventory Retrieval API featuring machine ownership mapping """
     ensure_product_contract_column()
+    if is_hr_schedule_only_user():
+        return jsonify([])
     products = Product.query.all()
     results = []
 
@@ -34606,9 +34707,41 @@ def download_reimbursement_package():
         return jsonify({'success': False, 'error': 'Unable to generate reimbursement package.'}), 500
 
 
+def redact_timeline_payload_for_hr(payload):
+    """Keep the HR calendar useful without exposing commercial or file details."""
+    redacted = dict(payload or {})
+    schedule_type = (clean_str(redacted.get('schedule_type')) or 'service').lower()
+    schedule_label = {
+        'travel': 'Travel Schedule',
+        'leave': 'Leave Schedule',
+    }.get(schedule_type, 'Service Schedule')
+    redacted.update({
+        'client_address': '',
+        'product_name': '',
+        'task': schedule_label,
+        'client_id': None,
+        'product_id': None,
+        'files': [],
+        'file_details': [],
+        'travel_request_no': '',
+        'travel_destination': '',
+        'travel_purpose': '',
+        'travel_status': '',
+        'travel_remarks': '',
+        'travel_schedule_suggestions': [],
+        'travel_schedule_suggestion_count': 0,
+        'travel_schedule_single_suggestion': None,
+        'can_open_travel_request': False,
+    })
+    return redacted
+
+
 @app.route('/get_timeline_data')
 @login_required
 def get_timeline_data():
+    if not can_access_timeline_page():
+        return denied('You are not authorized to view the calendar.')
+
     ensure_shift_file_original_filename_column()
 
     """
@@ -34623,6 +34756,7 @@ def get_timeline_data():
     offset = clean_int(request.args.get('offset', 0)) or 0
     branch_filter = clean_str(request.args.get('branch')) or 'ALL'
     timeline_lite = parse_bool_flag(request.args.get('lite'), default=False)
+    hr_view = is_hr_schedule_only_user()
 
     # Regional admin view policy:
     # - may view ALL branches and Manila schedules
@@ -34815,6 +34949,9 @@ def get_timeline_data():
                 )
             }
 
+            if hr_view:
+                payload = redact_timeline_payload_for_hr(payload)
+
             day_key = shift.start_time.date().isoformat()
             for engineer_id in visible_assigned_ids:
                 if day_key in schedule_mapping.get(engineer_id, {}):
@@ -34856,6 +34993,9 @@ def get_shift_details(shift_id):
     - Existing default timeline behavior remains unchanged until frontend is patched.
     """
     ensure_shift_file_original_filename_column()
+
+    if is_hr_schedule_only_user():
+        return denied('Detailed schedule data is not available for HR schedule viewing.')
 
     shift = (
         Shift.query
@@ -42150,6 +42290,27 @@ def restrict_stock_inventory_only_accounts():
 
 
 @app.before_request
+def restrict_hr_schedule_only_accounts():
+    """Keep HR schedule viewers inside the calendar and password workspace."""
+    if not current_user.is_authenticated or not is_hr_schedule_only_user():
+        return
+
+    path = request.path or '/'
+    allowed_exact = {
+        '/', '/timeline', '/settings', '/change_password', '/logout',
+        '/get_timeline_data', '/get_clients', '/get_products', '/get_engineers',
+        '/timeline_session_ping', '/api/preferences/appearance',
+        '/manifest.json', '/pwa-icon.svg', '/service-worker.js',
+    }
+    if path in allowed_exact or path.startswith('/static/'):
+        return
+
+    if request.accept_mimetypes.accept_json or path.startswith('/api/'):
+        return jsonify({'success': False, 'error': 'This account is limited to schedule viewing and password settings.'}), 403
+    return redirect(url_for('dashboard_page'))
+
+
+@app.before_request
 def enforce_password_change():
     if current_user.is_authenticated and getattr(current_user, "must_change_password", False):
         if request.endpoint not in ['force_change_password_api','logout','static']:
@@ -42313,6 +42474,7 @@ def initialize_database():
         # User model queries during startup require additive columns before any
         # hierarchy/account migration loads an existing user record.
         ensure_user_approval_columns()
+        ensure_user_hr_schedule_view_column()
         ensure_engineer_signature_column()
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()
