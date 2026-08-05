@@ -719,12 +719,18 @@ def register_leave_feature(ctx):
             query = query.filter(LeaveRequest.status == 'Submitted')
         elif status_filter == 'paid':
             query = query.filter(LeaveRequest.status == 'Approved')
+        elif status_filter == 'superseded':
+            query = query.filter(LeaveRequest.status == 'Superseded')
         rows = query.order_by(LeaveRequest.updated_at.desc(), LeaveRequest.id.desc()).limit(300).all()
         all_rows = LeaveRequest.query.filter_by(user_id=current_user.id).all()
+        # Superseded gets its own count rather than folding into 'paid'. It is a closed
+        # record, but it was never approved, and counting it as approved leave would
+        # misreport how much leave the employee actually took.
         summary = {
             'pending': sum(row.status in {'Draft', 'Form to Follow', 'Provisional', 'Rejected'} for row in all_rows),
             'processing': sum(row.status == 'Submitted' for row in all_rows),
             'paid': sum(row.status == 'Approved' for row in all_rows),
+            'superseded': sum(row.status == 'Superseded' for row in all_rows),
         }
         return jsonify({
             'success': True,
@@ -855,10 +861,15 @@ def register_leave_feature(ctx):
                 user=current_user.username,
                 action=f'Provisional Leave Recorded: {header.request_no} for {engineer.name}',
             ))
+            # Deliberately not called "Form to Follow": that is the emergency Sick Leave
+            # flow, it sets emergency_form_to_follow, and it rejects differently. A
+            # provisional is a separate status precisely so the two stay distinguishable,
+            # so the wording has to stay distinct too.
             create_system_notification(
                 target_user.id,
-                'Leave Form to Follow',
-                f'{header.request_no} was recorded on the Calendar for {engineer.name}. Complete and submit the signed form.',
+                'Provisional Leave Recorded',
+                f'{header.request_no} ({header.leave_type}) was recorded on the Calendar for '
+                f'{engineer.name}. Complete and submit the signed form.',
                 module='leave_request',
                 record_id=header.id,
                 target_url=f'/leave_request?open={header.id}',
@@ -871,7 +882,7 @@ def register_leave_feature(ctx):
 
         return jsonify({
             'success': True,
-            'message': 'Leave was recorded on the Calendar as Form to Follow.',
+            'message': 'Provisional leave was recorded on the Calendar. The employee still needs to complete and submit the signed form.',
             'leave_request': to_dict(header),
         }), 201
 
@@ -1005,25 +1016,34 @@ def register_leave_feature(ctx):
             if not provisional or provisional.status != 'Provisional':
                 continue
             provisional_type = provisional.leave_type
+            type_changed = provisional_type != header.leave_type
+            # Name both leave types whenever they differ. Whoever plotted the provisional
+            # guessed the type from a verbal request; "your record was replaced" does not
+            # tell them the leave is now a different kind, which is the only reason this
+            # case is treated differently from a matching one.
+            supersede_note = (
+                f'Superseded by approved Leave Request {header.request_no} (#{header.id}).'
+                if not type_changed else
+                f'Superseded by approved Leave Request {header.request_no} (#{header.id}). '
+                f'Leave type changed from {provisional_type} to {header.leave_type}.'
+            )
             provisional.status = 'Superseded'
             provisional.updated_at = now
             provisional.approval_action = 'Superseded'
-            provisional.approval_remarks = f'Superseded by approved Leave Request {header.request_no} (#{header.id}).'
+            provisional.approval_remarks = supersede_note
             update_calendar(provisional, 'Superseded', expected_dates=set())
-            audit(
-                provisional,
-                'superseded',
-                f'Superseded by approved Leave Request {header.request_no} (#{header.id}).',
-            )
+            audit(provisional, 'superseded', supersede_note)
             db.session.add(ActivityLog(
                 user=current_user.username,
                 action=f'Provisional Leave Superseded: {provisional.request_no} by {header.request_no}',
             ))
-            if provisional_type != header.leave_type and provisional.provisional_created_by_id:
+            if type_changed and provisional.provisional_created_by_id:
                 create_system_notification(
                     provisional.provisional_created_by_id,
                     'Provisional Leave Replaced',
-                    f'{provisional.request_no} was replaced by approved Leave Request {header.request_no} for the same dates.',
+                    f'{provisional.request_no} ({provisional_type}) was replaced by approved '
+                    f'Leave Request {header.request_no} ({header.leave_type}) for '
+                    f'{header.start_date.isoformat()} to {header.end_date.isoformat()}.',
                     module='leave_request',
                     record_id=header.id,
                     target_url=f'/leave_request?open={header.id}',

@@ -1,5 +1,52 @@
 # Project Change Log
 
+claude changes - 2026-08-05 (provisional leave review)
+
+## Review of the provisional leave workflow: the mismatch notice said nothing useful
+
+* Reviewed `5c976bb` and `35673e1` against the recorded plan. **The hard part is right.** The
+  supersede ordering — the plan's top risk, because getting it wrong double-books an engineer on
+  leave — clears the provisional's calendar rows *before* `update_calendar(header, 'Approved')`
+  writes the new ones. Verified: after a supersede the provisional holds **zero** Shift rows and
+  the approved request holds exactly the weekdays in its range. One set of blocks, never two.
+* It also avoided the notification trap the plan called out: the supersede goes through
+  `update_calendar(provisional, 'Superseded', expected_dates=set())` rather than
+  `delete_shift_rows_with_cleanup`, so no "Schedule Deleted" email fires at an engineer whose leave
+  was merely reorganised. `update_calendar` gained a clean `expected_dates` parameter for it.
+* The other two recorded risks are covered: the endpoint refuses an engineer with no linked user
+  account, so no unsignable phantom can be created; and `Provisional` was added to
+  `EDITABLE_STATUSES` and both queue filters, so the employee can complete the record.
+* **Fixed the half-delivered step: the mismatch messaging named neither leave type.** The audit
+  read "Superseded by approved Leave Request LR-… (#4)." and the notice to the plotter read
+  "… was replaced by approved Leave Request … for the same dates." `provisional_type` was captured
+  into a variable used **only** for the `!=` comparison and never reached any message — so a
+  superadmin who plotted Vacation Leave was told their record was replaced but not that the leave
+  is now Sick Leave, which is the only reason the mismatch branch exists. Both messages now name
+  the type on each side, and the notice carries the dates.
+* **Added the positive control the plan asked for and the shipped test omitted.** The existing test
+  asserted the notification exists on a mismatch but never that it is absent on a match, so a
+  change firing it unconditionally would have passed. Proved the gap was real by injecting exactly
+  that regression: the new control fails with `1 != 0`.
+* **Renamed the user-facing "Form to Follow" wording on provisional records.** The response message,
+  the notification title and the changelog entry all called it Form to Follow, while the status was
+  correctly `Provisional`. Those are different things — Form to Follow means emergency Sick Leave
+  with a signed form coming, sets `emergency_form_to_follow`, and rejects differently — and a
+  separate status is worthless if the words put them back together.
+* **Gave `Superseded` its own count.** It was in no queue bucket, so the summary totals silently
+  excluded it. Deliberately **not** folded into `paid`: that bucket means approved leave, and
+  counting a superseded placeholder as approved would misreport how much leave the employee
+  actually took.
+* Each fix proved to fail when its defect was re-injected, one at a time, verified by SHA before
+  each run with `leave_feature.py` confirmed byte-identical to its backup afterwards.
+* Suite green at **448** (was 445). No service worker bump: this is server-side and no `APP_SHELL`
+  entry changed — `templates/timeline.html` was already bumped to `v65-provisional-leave` by the
+  implementation commit. `scheduler.db` untouched.
+* **A correction to my own first reading, recorded because the method matters.** An early probe
+  appeared to show the mismatch notification firing on a matching leave type. It was not: the
+  notice counted was "Leave Request Awaiting Approval" going to the approver on submit. Isolating
+  by title gave 0 on a match and 1 on a mismatch. A count that lumps unrelated rows together is
+  evidence of nothing.
+
 claude changes - 2026-08-05 (Add Personnel review)
 
 ## Review of the staff-type work: three permission rules changed inside a refactor

@@ -1388,11 +1388,20 @@
         {
           "item_key": "2026-08-05-provisional-leave-calendar",
           "category": "Leave Request",
-          "description": "Named superadmins can now record a future or current Leave Request as Form to Follow from the Calendar while the employee completes the signed form; approval replaces the provisional block without creating duplicate leave entries.",
+          "description": "Named superadmins can now record provisional leave from the Calendar while the employee completes the signed form; approval replaces the provisional block without creating duplicate leave entries. This is separate from the emergency Sick Leave Form to Follow flow.",
           "audiences": [
             "admins"
           ],
           "sort_order": 50
+        },
+        {
+          "item_key": "2026-08-05-provisional-leave-supersede-detail",
+          "category": "Leave Request",
+          "description": "When an approved Leave Request replaces a provisional one of a different type, the audit trail and the notice sent to whoever plotted it now name both leave types, so a Vacation Leave placeholder replaced by approved Sick Leave says so. Superseded requests are also counted separately from approved leave rather than going uncounted.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 60
         }
       ]
     }

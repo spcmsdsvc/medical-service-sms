@@ -241,6 +241,130 @@ class ProvisionalLeaveWorkflowTests(unittest.TestCase):
             self.assertTrue(any('approved Leave Request' in (row.remarks or '') for row in audits))
             self.assertTrue(any(item.title == 'Provisional Leave Replaced' for item in notifications))
 
+    def _supersede_run(self, offset, provisional_type, formal_type):
+        """Plot a provisional, file a separate formal request over it, approve it."""
+        start, end = self._range(offset)
+        super_client = self._client_as(self.superuser_id)
+        provisional = super_client.post(
+            '/api/leave-requests/provisional',
+            json=self._provisional_payload(start, end, leave_type=provisional_type),
+        )
+        self.assertEqual(provisional.status_code, 201, provisional.get_data(as_text=True))
+        provisional_id = provisional.get_json()['leave_request']['id']
+        self.created_leave_ids.append(provisional_id)
+
+        target_client = self._client_as(self.target_user_id)
+        draft = target_client.post('/api/leave-requests/save', json={
+            'leave_type': formal_type,
+            'start_date': start,
+            'end_date': end,
+            'duration_type': 'full_day',
+            'half_day_period': None,
+            'reason': 'Filed separately from the provisional plot.',
+        })
+        self.assertEqual(draft.status_code, 200, draft.get_data(as_text=True))
+        formal_id = draft.get_json()['leave_request']['id']
+        self.created_leave_ids.append(formal_id)
+        submitted = target_client.post(f'/api/leave-requests/{formal_id}/submit')
+        self.assertEqual(submitted.status_code, 200, submitted.get_data(as_text=True))
+        approved = super_client.post(
+            f'/api/leave-requests/{formal_id}/approve', json={'remarks': 'Approved.'}
+        )
+        self.assertEqual(approved.status_code, 200, approved.get_data(as_text=True))
+        return provisional_id, formal_id, self._weekday_count(start, end)
+
+    @staticmethod
+    def _weekday_count(start_iso, end_iso):
+        """_range() only spans five weekdays when it happens to start on a Monday, so the
+        expected block count has to be computed rather than hardcoded."""
+        start = date.fromisoformat(start_iso)
+        end = date.fromisoformat(end_iso)
+        days, cursor = 0, start
+        while cursor <= end:
+            if cursor.weekday() < 5:
+                days += 1
+            cursor += timedelta(days=1)
+        return days
+
+    @staticmethod
+    def _replaced_notice_count():
+        return app_module.SystemNotification.query.filter_by(
+            title='Provisional Leave Replaced'
+        ).count()
+
+    def test_a_mismatched_supersede_names_both_leave_types(self):
+        """Telling the plotter "replaced" without saying it became a different leave type
+        withholds the one fact that makes the mismatch branch worth having."""
+        provisional_id, _formal_id, _days = self._supersede_run(40, 'Vacation Leave', 'Sick Leave')
+
+        with self.app.app_context():
+            provisional = app_module.db.session.get(app_module.LeaveRequest, provisional_id)
+            audits = app_module.LeaveRequestAudit.query.filter_by(
+                leave_request_id=provisional_id, action='superseded'
+            ).all()
+            self.assertTrue(audits, 'no supersede audit was written')
+            audit_text = ' '.join(row.remarks or '' for row in audits)
+            self.assertIn('Vacation Leave', audit_text)
+            self.assertIn('Sick Leave', audit_text)
+            self.assertIn('Vacation Leave', provisional.approval_remarks or '')
+            self.assertIn('Sick Leave', provisional.approval_remarks or '')
+
+            notice = app_module.SystemNotification.query.filter_by(
+                user_id=self.superuser_id, title='Provisional Leave Replaced'
+            ).order_by(app_module.SystemNotification.id.desc()).first()
+            self.assertIsNotNone(notice, 'the plotter was never notified')
+            self.assertIn('Vacation Leave', notice.message or '')
+            self.assertIn('Sick Leave', notice.message or '')
+
+    def test_b_matching_supersede_is_quiet_and_still_replaces(self):
+        """Positive control for the test above.
+
+        Without this, the mismatch assertion would still pass if the notification fired
+        unconditionally, and the branch would be untested.
+        """
+        before = None
+        with self.app.app_context():
+            before = self._replaced_notice_count()
+
+        provisional_id, formal_id, weekday_count = self._supersede_run(60, 'Sick Leave', 'Sick Leave')
+
+        with self.app.app_context():
+            self.assertEqual(
+                self._replaced_notice_count(), before,
+                'a matching leave type must not raise the mismatch notification'
+            )
+            provisional = app_module.db.session.get(app_module.LeaveRequest, provisional_id)
+            # The supersede itself must still happen, so the assertion above is reading
+            # the mismatch branch rather than a run where nothing was superseded at all.
+            self.assertEqual(provisional.status, 'Superseded')
+            self.assertEqual(
+                app_module.Shift.query.filter_by(leave_request_id=provisional_id).all(), []
+            )
+            self.assertEqual(
+                len(app_module.Shift.query.filter_by(leave_request_id=formal_id).all()),
+                weekday_count
+            )
+
+    def test_superseded_requests_are_counted_in_the_queue_summary(self):
+        provisional_id, _formal_id, _days = self._supersede_run(80, 'Vacation Leave', 'Sick Leave')
+
+        response = self._client_as(self.target_user_id).get(
+            '/get_accounting_leave_request_queue?status=superseded'
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertIn('superseded', body['summary'])
+        self.assertGreaterEqual(body['summary']['superseded'], 1)
+        self.assertIn(provisional_id, [item['id'] for item in body['items']])
+
+        # Positive control: the superseded record is not also counted as approved leave,
+        # which is what folding it into the existing 'paid' bucket would have done.
+        with self.app.app_context():
+            approved_total = app_module.LeaveRequest.query.filter_by(
+                user_id=self.target_user_id, status='Approved'
+            ).count()
+        self.assertEqual(body['summary']['paid'], approved_total)
+
     def app_module_header(self, leave_id):
         return app_module.db.session.get(app_module.LeaveRequest, leave_id)
 
