@@ -33,6 +33,7 @@ class HRScheduleViewerSourceTests(unittest.TestCase):
             'def ensure_user_hr_schedule_view_column():',
             'def is_hr_schedule_viewer(user=None):',
             'def is_hr_schedule_only_user(user=None):',
+            'def is_hr_schedule_engineer_profile(engineer=None):',
             'def redact_timeline_payload_for_hr(payload):',
             "@app.route('/get_timeline_data')",
             'restrict_hr_schedule_only_accounts',
@@ -93,6 +94,14 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
                 phone='09170000000',
                 email='hr-engineer@example.test',
             )
+            cls.visible_engineer = app_module.Engineer(
+                employee_id=f'CAL-E-{cls.suffix}',
+                name='Visible Calendar Engineer',
+                initials='VCE',
+                branch='Cebu',
+                phone='09171111111',
+                email='visible-engineer@example.test',
+            )
             cls.client_record = app_module.Client(
                 name='HR Viewer Client',
                 address='Commercial address must not be exposed',
@@ -100,9 +109,10 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
                 contact_number_1='09179999999',
                 email_address_1='private@example.test',
             )
-            app_module.db.session.add_all([cls.engineer, cls.client_record])
+            app_module.db.session.add_all([cls.engineer, cls.visible_engineer, cls.client_record])
             app_module.db.session.commit()
             cls.engineer_id = cls.engineer.id
+            cls.visible_engineer_id = cls.visible_engineer.id
             cls.client_id = cls.client_record.id
 
             today = app_module.get_manila_today()
@@ -111,7 +121,7 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
                 title='Private equipment installation for HR redaction',
                 start_time=start_dt + timedelta(hours=8),
                 end_time=start_dt + timedelta(hours=17),
-                engineer_id=cls.engineer.id,
+                engineer_id=cls.visible_engineer.id,
                 client_id=cls.client_record.id,
                 status='In Progress',
             )
@@ -120,7 +130,7 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
             cls.shift_id = cls.shift.id
             app_module.db.session.add(app_module.ShiftEngineer(
                 shift_id=cls.shift.id,
-                engineer_id=cls.engineer.id,
+                engineer_id=cls.visible_engineer.id,
             ))
             app_module.db.session.commit()
 
@@ -134,6 +144,9 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
             engineer = app_module.db.session.get(app_module.Engineer, cls.engineer_id)
             if engineer:
                 app_module.db.session.delete(engineer)
+            visible_engineer = app_module.db.session.get(app_module.Engineer, cls.visible_engineer_id)
+            if visible_engineer:
+                app_module.db.session.delete(visible_engineer)
             client = app_module.db.session.get(app_module.Client, cls.client_id)
             if client:
                 app_module.db.session.delete(client)
@@ -185,7 +198,7 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
         self.assertIsNone(row['client_id'])
         self.assertIsNone(row['product_id'])
         self.assertEqual(row['task'], 'Service Schedule')
-        self.assertEqual(row['engineers'], [self.engineer_id])
+        self.assertEqual(row['engineers'], [self.visible_engineer_id])
         self.assertEqual(row['status'], 'In Progress')
         self.assertEqual(row['file_details'], [])
         self.assertNotIn('download_url', row)
@@ -203,8 +216,25 @@ class HRScheduleViewerWorkflowTests(unittest.TestCase):
 
         engineers = client.get('/get_engineers')
         self.assertEqual(engineers.status_code, 200)
-        engineer_row = next(item for item in engineers.get_json() if item['id'] == self.engineer_id)
+        engineer_row = next(item for item in engineers.get_json() if item['id'] == self.visible_engineer_id)
         self.assertEqual(set(engineer_row), {'id', 'name', 'initials', 'branch'})
+
+    def test_hr_flagged_personnel_is_hidden_from_calendar(self):
+        client = self._client_for(self.hr_user_id)
+
+        timeline = client.get('/get_timeline_data?offset=0&branch=ALL').get_json()
+        timeline_rows = [
+            row
+            for day_map in timeline['schedule'].values()
+            for day_rows in day_map.values()
+            for row in day_rows
+        ]
+        self.assertNotIn(str(self.engineer_id), timeline['schedule'])
+        self.assertNotIn(self.engineer_id, [engineer_id for row in timeline_rows for engineer_id in row.get('engineers', [])])
+
+        calendar_engineers = client.get('/get_engineers?calendar=1').get_json()
+        self.assertNotIn(self.engineer_id, [row['id'] for row in calendar_engineers])
+        self.assertIn(self.visible_engineer_id, [row['id'] for row in calendar_engineers])
 
     def test_hr_write_endpoints_are_denied_even_with_direct_requests(self):
         client = self._client_for(self.hr_user_id)

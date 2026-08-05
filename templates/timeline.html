@@ -7733,7 +7733,7 @@ async function loadEngineerList(){
     // and be told "Unable to open Add Schedule on mobile" with no way through. The whole
     // offline queue sat behind a door that would not open.
     try{
-        const res = await fetch('/get_engineers');
+        const res = await fetch('/get_engineers?calendar=1');
         if(!res.ok) throw new Error(`/get_engineers returned ${res.status}`);
         engineerMaster = await res.json();
         if(window.offlineSchedule){
@@ -7940,7 +7940,7 @@ async function loadEngineerOptions(){
     // silently empty. This one already failed safely, unlike loadEngineerList() above.
     let data;
     try{
-        const res = await fetch('/get_engineers');
+        const res = await fetch('/get_engineers?calendar=1');
         if(!res.ok) throw new Error(`/get_engineers returned ${res.status}`);
         data = await res.json();
         if(window.offlineSchedule) window.offlineSchedule.cacheReference('engineers', data);
@@ -17189,7 +17189,7 @@ function buildEngineerList(){
     const selectedBranch = document.getElementById('print-branch-filter')?.value || 'ALL';
     const engineerOwnPrint = document.getElementById('printModal')?.getAttribute('data-engineer-own-print') === '1';
 
-    fetch('/get_engineers').then(r=>r.json()).then(data=>{
+    fetch('/get_engineers?calendar=1').then(r=>r.json()).then(data=>{
         container.innerHTML = "";
 
         if(engineerOwnPrint){

@@ -26,6 +26,13 @@ codex changes - 2026-08-05
 - Added focused HR authorization, redaction, route, template, navigation, mobile, release,
   and cache regression tests. Verified `app.py` compilation, `git diff --check`, and the full
   suite: 429 tests passed with one existing expected skip.
+- Excluded Engineer/Personnel profiles linked to HR Schedule Viewer accounts from the
+  Calendar roster, weekly timeline feed, Calendar engineer picker, print engineer picker,
+  and timeline CSV export. The Personnel directory remains available through its normal
+  non-calendar endpoint.
+- Added a calendar-specific engineer lookup context and regression coverage confirming that
+  HR-flagged personnel are absent from calendar rows and pickers while ordinary personnel
+  continue to appear. Re-ran the focused HR workflow tests successfully.
 
 claude changes - 2026-08-04
 

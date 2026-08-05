@@ -4978,6 +4978,24 @@ def is_hr_schedule_only_user(user=None):
     )
 
 
+def is_hr_schedule_engineer_profile(engineer=None):
+    """Return True when an Engineer profile belongs to an HR Schedule Viewer account.
+
+    HR Schedule View is an account permission, but the linked personnel row must also be
+    excluded from calendar rows and calendar engineer pickers.  This keeps HR personnel
+    out of the operational roster without removing them from the Personnel directory.
+    """
+    if not engineer:
+        return False
+
+    linked_user = getattr(engineer, 'user_account', None)
+    if not linked_user:
+        linked_user_id = clean_int(getattr(engineer, 'user_id', None))
+        linked_user = db.session.get(User, linked_user_id) if linked_user_id else None
+
+    return bool(linked_user and is_hr_schedule_viewer(linked_user))
+
+
 def stock_inventory_branch_for_user(user=None, requested_branch=None):
     target = user or current_user
     if is_superadmin_user(target):
@@ -18316,6 +18334,13 @@ def get_engineers():
     results = []
     include_account_metadata = is_admin_authorized()
     hr_view = is_hr_schedule_only_user()
+    calendar_view = parse_bool_flag(request.args.get('calendar'), default=False)
+
+    if hr_view or calendar_view:
+        engineers = [
+            engineer for engineer in engineers
+            if not is_hr_schedule_engineer_profile(engineer)
+        ]
 
     for e in engineers:
         if hr_view:
@@ -34782,7 +34807,10 @@ def get_timeline_data():
     engineers = [
         engineer
         for engineer in engineer_query.all()
-        if not is_approver_only_engineer_profile(engineer)
+        if (
+            not is_approver_only_engineer_profile(engineer) and
+            not is_hr_schedule_engineer_profile(engineer)
+        )
     ]
     visible_engineer_ids = {engineer.id for engineer in engineers}
 
@@ -36580,7 +36608,10 @@ def export_timeline():
     personnel = [
         engineer
         for engineer in personnel_query.all()
-        if not is_approver_only_engineer_profile(engineer)
+        if (
+            not is_approver_only_engineer_profile(engineer) and
+            not is_hr_schedule_engineer_profile(engineer)
+        )
     ]
 
     for eng in personnel:
