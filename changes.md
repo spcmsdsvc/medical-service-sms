@@ -1,5 +1,65 @@
 # Project Change Log
 
+claude changes - 2026-08-05 (recall and admin capability review)
+
+## The capability check swallowed the regional admin's branch limit
+
+* Reviewed the request recall work (`2c20eed`, `6b8021f`) and the grantable admin capabilities
+  (`2ce472b`, `fb3f37f`) against their recorded plans.
+* **Request recall is clean — no findings.** Every guard verified by calling it: recalling a Draft
+  returns 409, an empty reason 400, a non-requester 403, an excluded module 404. The race guard is
+  stronger than the plan asked for: a conditional `UPDATE ... WHERE lower(trim(status))='submitted'`
+  that checks the affected row count, so an approve/recall race cannot interleave. The destructive
+  case holds — recalling a provisional-backed leave returned it to `Provisional` with all five
+  calendar blocks intact, the audit written `Submitted -> Provisional` with the reason in remarks,
+  and the requester signature cleared.
+* **The escalation risk the capabilities plan was built around is properly closed.** A
+  personnel-management grantee is refused on all four paths — sending a permission field, sending
+  the new capability flag itself, choosing a non-engineer staff type, and the Settings permission
+  endpoint — while a plain engineer add still succeeds. `delete_engineer` stayed admin-only.
+* **Fixed a privilege escalation that reached `main`.** `can_manage_any_schedule()` is
+  `is_admin_authorized(target) or flag`, and `is_admin_authorized` includes the regional admin. It
+  was placed **ahead of** the regional-admin branch in all four schedule permission helpers, so it
+  returned True first and the `REGIONAL_ADMIN_BRANCHES` check never ran. `kevin` could create and
+  modify schedules for **Manila** engineers, which `can_modify_schedule_for_engineer_ids` documents
+  as forbidden — and it fired with `schedule_admin_access` **False**, so it was a regression, not a
+  granted capability.
+* The four helpers now use a new `has_schedule_admin_capability()` — the granted flag alone, with
+  the admin roles deliberately not folded in — so the regional admin falls through to their own
+  branch check. `can_manage_any_schedule()` is kept for navigation, where "may this account manage
+  schedules at all" is the right question. **The rule generalises: a broad admin predicate placed
+  ahead of a narrower role branch deletes the narrower rule.**
+* The same flag is passed to the timeline template, and the client runs the same
+  superadmin → capability → regional-admin ladder, so it was switched to the flag-only predicate
+  too. Otherwise the regional admin would have been offered Manila buttons the server then refused.
+* **Bumped the service worker, and corrected the claim that no bump was needed.** `2ce472b`'s
+  journal entry said the cache was "intentionally not bumped because this change does not alter an
+  APP_SHELL asset". It changed `templates/timeline.html` — `/timeline` is the **first** `APP_SHELL`
+  entry — and `templates/layout.html`, which is embedded in every app-shell page. A cached device
+  would have kept a timeline with no `canManageAnySchedule` constant, so a grantee would have had
+  server permission and no buttons. `v66-request-recall` → `v67-admin-capabilities`.
+* **Replaced a source-string test with a behavioural one.** The file asserted
+  `assertNotIn("role in {'superadmin', 'regional_admin'}", function_body)` — the pattern this
+  repository already ruled against twice. A pinned string cannot tell you the rule holds, only that
+  the old text is gone. It now builds an account whose role column says `superadmin` but whose
+  username is outside `SUPERADMIN_USERNAMES` and asserts the Cash Advance and LPR helpers refuse it,
+  with a genuine allowlisted superadmin as the positive control.
+* **Why the suite did not catch the escalation:** nothing exercised the regional admin. The plan's
+  verification asked for exactly that — "for a superadmin, the regional admin, an ordinary engineer
+  and an approver-only account, every one of the three predicates returns exactly what it returned
+  before the change" — and it was the one step not done. 459 tests passed over a live regression.
+  The fixture now carries the regional admin plus a Manila and a Cebu engineer.
+* **A test that punished the rule it sat next to.** `tests/test_request_recall.py` pinned the exact
+  string `'v66-request-recall'`, so bumping the service worker — a required routine step, and the
+  fix above — failed the suite. It is the only module of fifteen that does this; the other fourteen
+  use `assert_cache_version_at_least`, a floor that expects later bumps. Switched to the helper.
+  Worth recording because the failure mode is backwards: a green suite meant nobody had bumped.
+* Both fixes proved to fail when re-injected, one at a time, verified by SHA with `app.py` confirmed
+  byte-identical to its backup afterwards. Suite green at **462** (was 459).
+* **Not changed, raised instead:** Codex executed the admin-capabilities plan while `plans.md`
+  recorded it as `Approved — awaiting go-ahead`. The work itself is sound apart from the escalation
+  above, so nothing was reverted, but the plans-file status was not the signal it is meant to be.
+
 claude changes - 2026-08-05 (provisional leave review)
 
 ### Request recall: requester withdrawal before approval
@@ -19,7 +79,7 @@ claude changes - 2026-08-05 (provisional leave review)
 * Personnel capability now permits the Personnel page, add/edit actions, account metadata, and export while keeping permanent personnel deletion superadmin/regional-admin-only. Reports capability opens Analytics, full Reports/TSR archive read surfaces, reporting APIs/exports, and the reporting timeline export without granting Personnel or schedule mutation access. Schedule capability is applied at the four shared schedule permission helpers so calendar create/edit/move/delete/complete behavior is consistent across branches.
 * Replaced three raw `role in {'superadmin', 'regional_admin'}` checks in Cash Advance access and LPR management/approval with `is_admin_authorized(...)`, preventing a role-column-only escalation from bypassing the allowlist. Permission audit entries now include each changed field and its old/new value, while unchanged fields remain absent.
 * Added `tests/test_admin_capabilities.py` with isolated endpoint-level access checks, superadmin preservation, mutual-exclusion validation, audit assertions, and the personnel capability escalation test proving permission fields and non-engineer staff types remain superadmin-only. Python compilation, focused capability/staff/HR/sidebar tests, `git diff --check`, and the isolated full suite passed (`459` tests, `1` existing skip).
-* Added the dated `2026-08-05-grantable-admin-capabilities` What's New item. The service-worker cache was intentionally not bumped because this change does not alter an APP_SHELL asset or offline behavior. `scheduler.db`, generated output, temporary files, and the handoff artifact remain excluded from staging and deployment.
+* Added the dated `2026-08-05-grantable-admin-capabilities` What's New item. ~~The service-worker cache was intentionally not bumped because this change does not alter an APP_SHELL asset or offline behavior.~~ **Corrected at review: that claim was wrong.** `2ce472b` changed `templates/timeline.html`, and `/timeline` is the first `APP_SHELL` entry, plus `templates/layout.html`, which is embedded in every app-shell page. The bump was made during the review below. `scheduler.db`, generated output, temporary files, and the handoff artifact remain excluded from staging and deployment.
 * Implementation committed as `2ce472b` after the final isolated verification pass: `459` tests passed with `1` existing skip, Python compilation passed, the local startup smoke returned HTTP 200 on port 5055, and only intended code, test, journal, and release-manifest files were staged.
 
 ## Review of the provisional leave workflow: the mismatch notice said nothing useful

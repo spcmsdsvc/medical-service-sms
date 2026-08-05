@@ -7783,6 +7783,25 @@ def can_manage_any_schedule(user=None):
     return _has_active_account_capability(user, 'schedule_admin_access')
 
 
+def has_schedule_admin_capability(user=None):
+    """The granted flag alone, with the admin roles deliberately NOT folded in.
+
+    can_manage_any_schedule() answers "may this account manage schedules at all", which
+    is the right question for navigation. Inside the four schedule permission helpers it
+    is the wrong one: the regional admin reaches those helpers through a *narrower*
+    branch that restricts them to REGIONAL_ADMIN_BRANCHES, and a broad admin check placed
+    ahead of that branch returns True first -- silently deleting the "never Manila" rule.
+    Use this predicate wherever a narrower role branch follows.
+    """
+    target = user or current_user
+    return bool(
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True)) and
+        bool(getattr(target, 'schedule_admin_access', False))
+    )
+
+
 def can_quick_add_timeline_client(user=None):
     """Allow Timeline quick client creation for scheduling/management roles only.
 
@@ -7910,7 +7929,7 @@ def can_modify_schedule_for_engineer_ids(engineer_ids):
     if is_superadmin_user():
         return True
 
-    if can_manage_any_schedule():
+    if has_schedule_admin_capability():
         return True
 
     if is_regional_admin_user():
@@ -7941,7 +7960,7 @@ def can_create_schedule_for_engineer_ids(engineer_ids):
     if is_superadmin_user():
         return True
 
-    if can_manage_any_schedule():
+    if has_schedule_admin_capability():
         return True
 
     if is_regional_admin_user():
@@ -8005,7 +8024,7 @@ def can_work_on_existing_schedule_shift(shift):
     if is_superadmin_user():
         return can_modify_schedule_shift(shift)
 
-    if can_manage_any_schedule():
+    if has_schedule_admin_capability():
         return True
 
     if is_regional_admin_user():
@@ -8025,7 +8044,7 @@ def can_submit_update_engineer_ids_for_scope(master_shift, requested_engineer_id
     if is_superadmin_user():
         return can_modify_schedule_for_engineer_ids(requested_engineer_ids)
 
-    if can_manage_any_schedule():
+    if has_schedule_admin_capability():
         return True
 
     if is_regional_admin_user():
@@ -14675,7 +14694,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v66-request-recall';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v67-admin-capabilities';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -16138,7 +16157,11 @@ def timeline_page():
         timeline_read_only_approver=(is_configured_approver_user() and not is_admin_authorized() and not has_engineer_profile()),
         timeline_read_only_hr=is_hr_schedule_only_user(),
         timeline_is_named_superadmin=is_superadmin_user(),
-        timeline_can_manage_schedules=can_manage_any_schedule()
+        # Flag-only, matching the server helpers. The client runs the same
+        # superadmin -> capability -> regional-admin ladder, so passing the broad
+        # predicate here would offer the regional admin buttons for Manila that the
+        # server then refuses.
+        timeline_can_manage_schedules=has_schedule_admin_capability()
     )
 
 

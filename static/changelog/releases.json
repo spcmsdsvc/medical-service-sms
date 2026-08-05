@@ -1420,6 +1420,15 @@
             "admins"
           ],
           "sort_order": 80
+        },
+        {
+          "item_key": "2026-08-05-regional-admin-branch-scope-restored",
+          "category": "Calendar",
+          "description": "The regional administrator's calendar scope is limited to Cebu and Davao again. While the new Schedule management capability was being added, the check that grants it was placed ahead of the regional administrator's branch rule and briefly allowed Manila schedules as well. Named superadmins and accounts granted the capability are unaffected.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 90
         }
       ]
     }

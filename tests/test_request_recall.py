@@ -15,6 +15,7 @@ _TEST_DB_PATH = pathlib.Path(tempfile.gettempdir()) / f'medical_service_request_
 os.environ.setdefault('MEDICAL_SERVICE_TEST_DB', str(_TEST_DB_PATH))
 
 import app as app_module  # noqa: E402
+from tests.sw_cache_version import assert_cache_version_at_least  # noqa: E402
 
 
 class RequestRecallSourceTests(unittest.TestCase):
@@ -39,7 +40,11 @@ class RequestRecallSourceTests(unittest.TestCase):
         for marker in ('openRequestRecall', 'submitRequestRecall', 'A reason is required'):
             self.assertIn(marker, self.partial)
         self.assertIn('2026-08-05-request-recall', self.releases)
-        self.assertIn('v66-request-recall', self.app_source)
+        # A floor, not an exact match. Pinning 'v66-request-recall' made every later
+        # service-worker bump fail this test -- and bumping is a required routine step,
+        # so the test actively discouraged the rule it sits next to. Fourteen other test
+        # modules already use this helper.
+        assert_cache_version_at_least(self, 66, self.app_source)
 
 
 class RequestRecallWorkflowTests(unittest.TestCase):

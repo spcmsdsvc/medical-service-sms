@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import tempfile
+import types
 import unittest
 import uuid
 
@@ -49,16 +50,7 @@ class AdminCapabilitySourceTests(unittest.TestCase):
             self.assertIn(marker, self.source + self.settings)
 
     def test_scope_guards_and_escalation_boundaries_are_source_visible(self):
-        self.assertIn('if not can_administer_personnel()', self.source)
-        self.assertIn('if not can_view_admin_reports()', self.source)
-        self.assertIn('can_manage_any_schedule(target)', self.source)
         self.assertIn('Only superadmins can choose staff types or assign account permissions.', self.source)
-        self.assertIn("if not is_admin_authorized(): return jsonify({'message': 'Denied'}), 403", self.source)
-
-        for function_name in ('can_user_access_cash_advance', 'lpr_can_manage', 'can_user_approve_lpr'):
-            function_body = self.source.split(f'def {function_name}(', 1)[1].split('\ndef ', 1)[0]
-            self.assertIn('is_admin_authorized', function_body)
-            self.assertNotIn("role in {'superadmin', 'regional_admin'}", function_body)
 
     def test_release_manifest_has_the_capability_update(self):
         release = next(item for item in self.releases['releases'] if item['release_key'] == '2026-08-05')
@@ -112,6 +104,62 @@ class AdminCapabilityWorkflowTests(unittest.TestCase):
             cls.schedule_user = add_user('cap_schedule', schedule_admin_access=True)
             cls.plain_user = add_user('cap_plain')
             cls.approver_user = add_user('cap_approver', role='approver', can_approve_requests=True)
+
+            # role='superadmin' on a username outside SUPERADMIN_USERNAMES. The three
+            # Cash Advance / LPR helpers used to trust the role column alone, so this
+            # account is what proves they no longer do.
+            cls.role_only_user = add_user('cap_roleonly', role='superadmin')
+
+            # The regional admin is restricted to REGIONAL_ADMIN_BRANCHES, never Manila.
+            # No fixture covered them, which is how a broad capability check placed ahead
+            # of their branch silently removed that restriction.
+            cls.regional_admin = app_module.User.query.filter_by(username='kevin').first()
+            if not cls.regional_admin:
+                cls.regional_admin = app_module.User(
+                    username='kevin',
+                    password=app_module.generate_password_hash('test-password'),
+                    role='regional_admin',
+                    is_active=True,
+                )
+                app_module.db.session.add(cls.regional_admin)
+                app_module.db.session.flush()
+                cls.owned_user_ids.append(cls.regional_admin.id)
+            app_module.db.session.commit()
+
+            cls.owned_regional_profile = False
+            regional_profile = app_module.Engineer.query.filter_by(
+                user_id=cls.regional_admin.id
+            ).first()
+            if not regional_profile:
+                regional_profile = app_module.Engineer(
+                    user_id=cls.regional_admin.id,
+                    employee_id=app_module.REGIONAL_ADMIN_EMPLOYEE_ID,
+                    name='Kevin Regional Admin',
+                    initials='KRA',
+                    branch='Cebu',
+                )
+                app_module.db.session.add(regional_profile)
+                app_module.db.session.flush()
+                cls.created_engineer_ids.append(regional_profile.id)
+                cls.owned_regional_profile = True
+
+            manila_engineer = app_module.Engineer(
+                employee_id=f'CAP-MNL-{cls.suffix}',
+                name=f'Capability Manila {cls.suffix}',
+                initials='CMN', branch='Manila',
+            )
+            cebu_engineer = app_module.Engineer(
+                employee_id=f'CAP-CEB-{cls.suffix}',
+                name=f'Capability Cebu {cls.suffix}',
+                initials='CCB', branch='Cebu',
+            )
+            app_module.db.session.add_all([manila_engineer, cebu_engineer])
+            app_module.db.session.flush()
+            cls.created_engineer_ids.extend([manila_engineer.id, cebu_engineer.id])
+            cls.manila_engineer_id = manila_engineer.id
+            cls.cebu_engineer_id = cebu_engineer.id
+            cls.regional_admin_id = cls.regional_admin.id
+            cls.role_only_user_id = cls.role_only_user.id
             app_module.db.session.commit()
 
             cls.superadmin_id = cls.superadmin.id
@@ -142,6 +190,77 @@ class AdminCapabilityWorkflowTests(unittest.TestCase):
             session['_user_id'] = str(user_id)
             session['_fresh'] = True
         return client
+
+    def _as_user(self, user_id, fn):
+        """Run fn() with a real logged-in current_user, inside a request context."""
+        from flask_login import login_user
+        with self.app.test_request_context():
+            user = app_module.db.session.get(app_module.User, user_id)
+            login_user(user)
+            return fn(user)
+
+    def test_regional_admin_still_cannot_touch_manila_schedules(self):
+        """The capability check must not swallow the regional admin's branch limit.
+
+        can_manage_any_schedule() folds in is_admin_authorized(), which is true for the
+        regional admin. Placed ahead of their narrower branch it returned True first and
+        deleted the "Cebu and Davao only, never Manila" rule -- with no flag enabled.
+        """
+        manila, cebu = self.manila_engineer_id, self.cebu_engineer_id
+
+        def check(user):
+            self.assertFalse(bool(getattr(user, 'schedule_admin_access', False)))
+            # Positive control: their own branches still work, so a False below is the
+            # branch restriction rather than the regional admin being locked out entirely.
+            self.assertTrue(app_module.can_modify_schedule_for_engineer_ids([cebu]))
+            self.assertTrue(app_module.can_create_schedule_for_engineer_ids([cebu]))
+            self.assertFalse(app_module.can_modify_schedule_for_engineer_ids([manila]))
+            self.assertFalse(app_module.can_create_schedule_for_engineer_ids([manila]))
+            self.assertFalse(app_module.can_modify_schedule_for_engineer_ids([cebu, manila]))
+
+        self._as_user(self.regional_admin_id, check)
+
+    def test_schedule_capability_grants_every_branch(self):
+        """Positive control for the test above: the granted flag does cross branches."""
+        manila, cebu = self.manila_engineer_id, self.cebu_engineer_id
+
+        def check(_user):
+            self.assertTrue(app_module.can_modify_schedule_for_engineer_ids([manila]))
+            self.assertTrue(app_module.can_create_schedule_for_engineer_ids([manila]))
+            self.assertTrue(app_module.can_modify_schedule_for_engineer_ids([cebu, manila]))
+
+        self._as_user(self.schedule_user_id, check)
+
+        def refused(_user):
+            self.assertFalse(app_module.can_modify_schedule_for_engineer_ids([manila]))
+            self.assertFalse(app_module.can_create_schedule_for_engineer_ids([manila]))
+
+        self._as_user(self.plain_user_id, refused)
+
+    def test_role_column_alone_does_not_grant_cash_advance_or_lpr_admin(self):
+        """Behavioural replacement for the source-string assertion this file used to make.
+
+        A pinned source string cannot tell you whether the rule holds; it only tells you
+        the old text is gone. This exercises the predicates with a real account whose role
+        column says superadmin but whose username is outside SUPERADMIN_USERNAMES.
+        """
+        with self.app.app_context():
+            role_only = app_module.db.session.get(app_module.User, self.role_only_user_id)
+            superadmin = app_module.db.session.get(app_module.User, self.superadmin_id)
+
+            self.assertEqual(role_only.role, 'superadmin')
+            self.assertNotIn(role_only.username, app_module.SUPERADMIN_USERNAMES)
+            self.assertFalse(app_module.is_admin_authorized(role_only))
+
+            stub = types.SimpleNamespace(user_id=self.superadmin_id, id=1)
+            self.assertFalse(app_module.can_user_access_cash_advance(stub, role_only))
+            self.assertFalse(app_module.can_user_approve_lpr(role_only, stub))
+            self.assertFalse(app_module.lpr_can_manage(stub, role_only))
+
+            # Positive control: a genuine allowlisted superadmin is still granted, so the
+            # refusals above are the username gate and not a predicate that denies all.
+            self.assertTrue(app_module.can_user_access_cash_advance(stub, superadmin))
+            self.assertTrue(app_module.can_user_approve_lpr(superadmin, stub))
 
     def test_each_capability_opens_only_its_intended_surface(self):
         with self.app.app_context():
