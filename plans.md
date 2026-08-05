@@ -55,6 +55,174 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Open an attached TSR from the schedule card
+
+**Status:** `Approved — awaiting go-ahead`
+**Approved:** 2026-08-05
+**Detailed:** 2026-08-05, after tracing the timeline payload's file data, the card and popover
+renderers, and the TSR preview/download authorization.
+
+### Context
+
+To read a TSR attached to a schedule, a user opens the Edit modal and scrolls to Attachments. That
+is a heavy, mutating surface for a read-only glance, and on mobile the "View Files" button literally
+performs that workaround for you — `openMobileFullCalendarLiteFilesAction`
+(`templates/timeline.html:9585`) opens the Edit modal and scrolls to `#existing-files-list` on a
+450 ms timer.
+
+**Almost everything needed is already in place.** `/get_timeline_data` already ships `file_details[]`
+per shift with `download_url` populated for recognised TSRs (`app.py:35164`), and
+`shouldUseTimelineLitePayload()` is hardcoded to `false` with a comment recording that it was
+deliberately turned off *so cards receive `file_details`* (`templates/timeline.html:7982`). The
+client already normalises those entries and synthesises preview URLs in `getShiftFileDetails()`
+(`templates/timeline.html:14648`) and `getTimelineFilePreviewUrl()` (`templates/timeline.html:14670`).
+
+The Details popover already exists, already opens from every card, and already renders an
+`N File(s)` badge (`templates/timeline.html:11786`) — it just never makes the files reachable. This
+turns that badge into a real list.
+
+Intended outcome: click Details on any card carrying a TSR, see the TSR listed, click it, read it in
+the in-app viewer. No Edit modal, no scrolling.
+
+### Decisions taken
+
+| Decision | Value |
+| --- | --- |
+| Placement | **The existing Details popover.** No new card button, no new component |
+| Opening a TSR | **In-app preview** (`preview_tsr_archive_file`), not a forced download |
+| Which cards | **Any card with a recognised TSR**, not only Completed ones |
+| `scope=all` on the link | **Left as-is.** Engineers may already reference any TSR through the archive page |
+
+### Investigation
+
+- **The recognition signal is a blank string, and that matters.** The server sets `download_url`
+  **only** when `shift_file_is_recognized_tsr(file_record)` is true; every other attachment gets
+  `''`. But the client's `getShiftFileDetails()` then *synthesises* a URL from the file id
+  (`templates/timeline.html:14656`), overwriting exactly the blank that carried the meaning.
+  Filtering on that field client-side would list every photo as a TSR.
+- `shift_file_is_recognized_tsr()` (`app.py:11702`) is not a filename check alone: it matches the
+  system-generated PDF by identity via `online_tsr_submission_id`, and otherwise falls back to
+  `'TSR'` appearing in the display or disk filename.
+- **The Edit modal's link pattern is the one to copy** — an `<a target="_blank" rel="noopener">`
+  built from `getTimelineFilePreviewUrl(fileInfo)`, with a document/image icon chosen by extension
+  (`templates/timeline.html:14520-14545`).
+- **`getShiftFileDetails()` has a legacy fallback** for shifts whose payload carries only a `files`
+  array of names (`templates/timeline.html:14660`). Those entries have **no id and no preview URL**,
+  so anything rendering links must degrade to plain text rather than emit a dead `href`.
+- **HR accounts are already safe**: `redact_timeline_payload_for_hr` blanks `file_details` to `[]`,
+  so an HR viewer's popover has no attachments to list. No new gate needed — but the block must
+  render from `file_details` and nothing else, or that protection is bypassed.
+- The popover is shared with **travel blocks**, which have no attachments. The new block must be
+  absent rather than empty for them.
+- `preview_tsr_archive_file` and `download_tsr_archive_file` share one guard,
+  `user_can_view_shift_tsr_archive` (`app.py:35628`) — so switching the card link from download to
+  preview moves no authorization.
+- **Noted, not fixed:** `hasScheduleTSRAttachment()` (`templates/timeline.html:14681`) returns true
+  for *any* attachment, so the existing "Edit TSR" button already appears for shifts holding only a
+  photo. Pre-existing looseness, out of scope, but it is why this plan does not reuse that predicate.
+
+### Execution steps
+
+1. **Make TSR recognition explicit in the payload.** Add
+   `'is_tsr': shift_file_is_recognized_tsr(file_record)` to the `file_details` entries in
+   `/get_timeline_data` (`app.py:35164`) **and** `/get_shift_details` (`app.py:35330`), whose blocks
+   are identical in shape and must stay that way. Two lines. It replaces inferring recognition from
+   whether a URL string happens to be empty — the kind of implicit coupling that has broken twice in
+   recent reviews.
+
+2. **Pass the flag through the client normaliser.** In `getShiftFileDetails()`
+   (`templates/timeline.html:14648`) carry `is_tsr` onto each normalised entry, defaulting to
+   `false` on the legacy `files` fallback path. **Leave the synthesised `download_url`/`preview_url`
+   behaviour alone** — the Edit modal depends on it; just stop treating it as evidence of anything.
+
+3. **Render the attachments block in the popover.** Extend
+   `buildTimelineScheduleHoverSummaryHtml()` (`templates/timeline.html:11764`) with a section after
+   the summary body listing entries where `is_tsr` is true, each an
+   `<a href="${getTimelineFilePreviewUrl(file)}" target="_blank" rel="noopener">` with the display
+   name, matching the Edit modal's markup. Keep the existing `N File(s)` badge — it counts all
+   attachments and stays truthful.
+   - An entry with **no preview URL** (legacy fallback) renders as plain text, never a dead link.
+   - **Omit the whole block** when there are no recognised TSRs, so travel blocks and
+     attachment-free schedules are unchanged.
+   - When non-TSR attachments also exist, add one muted line naming the count, so a card holding
+     three photos and one TSR does not look like it lost something.
+
+4. **Retarget the mobile "View Files" button.** `openMobileFullCalendarLiteFilesAction`
+   (`templates/timeline.html:9585`) currently opens the Edit modal and scrolls. Render the same list
+   from step 3 inside the sheet body it already owns (`#mobile-full-calendar-lite-detail-body`).
+
+5. **Release plumbing.** `releases.json` entry dated the commit date or
+   `test_changelog_coverage.py` fails. **Service worker bump required** — `/timeline` is the first
+   `APP_SHELL` entry (`app.py:14683`), so a cached shell would keep a popover with no attachment
+   block. Currently `v67-admin-capabilities`; **read the live value out of `app.py` immediately
+   before committing** rather than trusting this line.
+
+### Deliberately excluded
+
+- **A new card button or a new popover component.** The Details popover already opens from every
+  card and already counts the files; a sixth icon on a card action row that is tight at 375 px buys
+  nothing.
+- **Changing `scope=all`.** Decided: engineers may already reference any TSR through the archive
+  page, and this surfaces an existing path rather than widening one.
+- **Tightening `hasScheduleTSRAttachment()`** so "Edit TSR" stops appearing for non-TSR attachments.
+  Real, pre-existing, and its own change — fixing it here would alter an existing button's
+  visibility under cover of a read-only feature.
+- **Making the mobile expanded-details "Files" row clickable** (`templates/timeline.html:10989`).
+  The popover is the agreed surface.
+- **Any change to the Edit modal's Attachments section.** It keeps upload and delete; this feature
+  only removes the need to go there to *read*.
+
+### Verification
+
+- **Assert the payload flag by calling the endpoint**: a shift with a recognised TSR returns a
+  `file_details` entry with `is_tsr` true and a non-empty `download_url`. **Positive control:** a
+  shift whose only attachment is a non-TSR file returns `is_tsr` false — the assertion that proves
+  recognition is real and not inferred, and the whole reason step 1 exists.
+- **Assert HR still sees nothing**: an HR-only session's `/get_timeline_data` returns
+  `file_details: []`. Positive control: an admin session on the same shift does get the entries.
+- **Assert the preview link resolves**: fetch the `preview_tsr_archive_file` URL as an authorised
+  viewer and get 200; as an account the guard refuses, get 403 — confirming no authorization moved.
+- **Assert the legacy fallback degrades**: a payload carrying only a `files` name array produces
+  entries with `is_tsr` false and no preview URL, and renders no anchor.
+- **Prove each new test fails without its fix**, injecting one defect at a time — most importantly
+  removing `is_tsr` and falling back to the URL-emptiness inference, which must make the non-TSR
+  control fail. **Verify each injection applied by SHA** before trusting a run, and confirm files
+  are restored byte-identical.
+- **Browser**, isolated database, explicit `MEDICAL_SERVICE_TEST_DB`, never port 5000: open Details
+  on a schedule with a TSR and confirm the link opens the in-app viewer in a new tab; open Details
+  on a travel block and on an attachment-free schedule and confirm no empty block appears; check a
+  schedule holding both a TSR and photos shows one link plus the other-attachments count. Standing
+  bar: no horizontal overflow at 375 px, no tap target under 44 px, console clean. **Restart the
+  server after every template edit** — Jinja caches compiled templates — and unregister the service
+  worker and clear both caches after each asset edit, not once.
+- Full suite via the documented command as **its own step before the commit**, never chained ahead
+  of `git push`.
+
+### After implementation
+
+Review against this plan before committing and correct this record where the outcome differed. Then
+the standing checklist in `pending-work.md` section 4: `git fetch origin`, re-read `origin/main`
+**after** the work, stage file by file, never `git add -A`, keep `scheduler.db` out by name, confirm
+with `git show --name-only`, push `main`. Add the `changes.md` entry in the same task.
+
+### Risks
+
+**The one that matters: listing non-TSR attachments as TSRs.** The recognition signal is an empty
+string that the client already overwrites, so the obvious implementation — filter on `download_url`
+— silently lists every photo as a TSR. Step 1 replaces the inference with a flag, and the non-TSR
+positive control is what proves it.
+
+**Second: a dead link from the legacy payload shape.** `getShiftFileDetails()` still supports shifts
+carrying only a `files` name array, with no id and no preview URL. Rendering those as anchors would
+404 on click, on exactly the older records most likely to be looked up.
+
+**Third: quietly undoing the HR redaction.** The block must read from `file_details` and nothing
+else. Sourcing filenames from `shift.files`, or refetching per shift, would hand an HR viewer the
+attachment names the redaction removes.
+
+Low risk otherwise: two lines of additive payload, one new block in a function that already renders
+conditional sections, and no change to any authorization path.
+
 ## Grantable admin capabilities in Settings
 
 **Status:** `Executed — 2ce472b`
