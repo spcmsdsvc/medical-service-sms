@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## HR Schedule Viewer — a read-only "who is deployed" account
 
-**Status:** `In progress`
+**Status:** `Executed — 9b6effd`
 **Approved:** 2026-08-05
 **Detailed:** 2026-08-05, after mapping the schedule write surface, the timeline data feed, the
 existing read-only-approver mode, and the `stock_inventory_only` restricted-account pattern.
