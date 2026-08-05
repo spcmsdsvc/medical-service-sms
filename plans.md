@@ -57,11 +57,12 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Grantable admin capabilities in Settings
 
-**Status:** `In progress`
+**Status:** `Executed — 2ce472b`
 **Started:** 2026-08-05, after the project owner gave the execution go-ahead.
 **Approved:** 2026-08-05
 **Detailed:** 2026-08-05, after tracing what superadmin actually means in this codebase and the
 full blast radius of the predicate that decides it.
+**Finished:** 2026-08-05, implementation committed as `2ce472b` after focused and isolated full-suite verification.
 
 ### Context
 

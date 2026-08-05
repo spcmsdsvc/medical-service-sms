@@ -20,6 +20,7 @@ claude changes - 2026-08-05 (provisional leave review)
 * Replaced three raw `role in {'superadmin', 'regional_admin'}` checks in Cash Advance access and LPR management/approval with `is_admin_authorized(...)`, preventing a role-column-only escalation from bypassing the allowlist. Permission audit entries now include each changed field and its old/new value, while unchanged fields remain absent.
 * Added `tests/test_admin_capabilities.py` with isolated endpoint-level access checks, superadmin preservation, mutual-exclusion validation, audit assertions, and the personnel capability escalation test proving permission fields and non-engineer staff types remain superadmin-only. Python compilation, focused capability/staff/HR/sidebar tests, `git diff --check`, and the isolated full suite passed (`459` tests, `1` existing skip).
 * Added the dated `2026-08-05-grantable-admin-capabilities` What's New item. The service-worker cache was intentionally not bumped because this change does not alter an APP_SHELL asset or offline behavior. `scheduler.db`, generated output, temporary files, and the handoff artifact remain excluded from staging and deployment.
+* Implementation committed as `2ce472b` after the final isolated verification pass: `459` tests passed with `1` existing skip, Python compilation passed, the local startup smoke returned HTTP 200 on port 5055, and only intended code, test, journal, and release-manifest files were staged.
 
 ## Review of the provisional leave workflow: the mismatch notice said nothing useful
 
