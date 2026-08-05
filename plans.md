@@ -57,10 +57,11 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Recall: withdrawing a submitted request, with a reason
 
-**Status:** `In progress`
+**Status:** `Executed - 2c20eed`
 **Approved:** 2026-08-05
 **Detailed:** 2026-08-05, after inventorying every submit-then-approve module, the shared approval
 audit and notification infrastructure, and the requester-facing UI in each module.
+**Finished:** 2026-08-05, implementation and verification completed in commit `2c20eed`.
 
 ### Context
 
