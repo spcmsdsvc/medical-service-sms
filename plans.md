@@ -55,6 +55,225 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Recall: withdrawing a submitted request, with a reason
+
+**Status:** `In progress`
+**Approved:** 2026-08-05
+**Detailed:** 2026-08-05, after inventorying every submit-then-approve module, the shared approval
+audit and notification infrastructure, and the requester-facing UI in each module.
+
+### Context
+
+Once a request is submitted there is no way to pull it back. The requester notices a wrong amount,
+a wrong date, a missing receipt — and their only options are to ask an approver to reject it, or to
+let it be approved wrongly and fix it afterwards. Neither leaves an honest record of what happened
+or who decided it.
+
+Recall lets the requester withdraw their own submitted-but-unapproved request, state a reason, and
+get the record back in an editable state to correct and resubmit. The reason is mandatory and lands
+in the audit trail.
+
+**The audit half is nearly free.** `record_universal_approval_audit(module, record_id, action, ...)`
+(`app.py:5228`) stores `action` as a plain `String(80)` with no enum, and already carries
+`status_from`, `status_to`, `remarks` and `metadata_json`. A `'recalled'` action with the reason in
+`remarks` needs **no schema change**, and `get_universal_approval_audit_entries()` already reads it
+back generically for any module.
+
+**Approval is single-step, first-actor-wins.** There is no per-approver state anywhere — no partial
+approvals to unwind. Recall only ever undoes one flat `Submitted` status.
+
+### Decisions taken
+
+| Decision | Value |
+| --- | --- |
+| State after recall | **Editable and resubmittable** — the same record, corrected and sent again |
+| Who can recall | **The requester only** — the owner of the record |
+| Modules in scope | **Five:** Leave Request, Reimbursement, Travel Request, Cash Advance, LPR |
+| Travel Liquidation and Cash Advance Liquidation | **Excluded for now** — accounting-gated, and they mirror status onto a parent record |
+| Requester signature on recall | **Cleared.** Resubmitting requires re-signing |
+| Reason | **Mandatory.** No reason, no recall |
+
+Clearing the signature is the point worth defending: a signature attests to the content *as
+submitted*. If the record is recalled and edited, carrying the old signature forward would attach an
+attestation to content the signer never saw.
+
+### Investigation
+
+- **`reject_*` is the template to copy.** `reject_reimbursement` (`app.py:34298-34350`) is the
+  cleanest instance: require remarks (400 if absent), 404 if missing, 403 if not yours, **409 if
+  `status != 'Submitted'`**, then mutate, clear the signature snapshot,
+  `record_universal_approval_audit(...)`, `resolve_pending_approval_notifications(module, id,
+  event='submitted')`, notify, commit. Recall is the same shape with a different actor guard and a
+  different destination status.
+- **That 409 is the concurrency guard and must be kept.** It is what stops a recall landing on a
+  request an approver approved a moment earlier.
+- **`resolve_pending_approval_notifications`** (`app.py:5327`) already exists to clear stale
+  "awaiting approval" notices and is used by every approve/reject handler. Recall must call it, or
+  approvers keep a notification for a request that is no longer pending.
+- **Requester signature fields are named identically across all five modules** —
+  `requester_signature_snapshot`, `requester_signature_layout`, `requester_signed_at` (confirmed on
+  `CashAdvanceHeader` `app.py:42730` and `LPRHeader` `app.py:49632`). One helper mirroring
+  `clear_approval_signature_snapshot` (`app.py:5169`) covers them all.
+- **`reimbursement_lock_claim_schedules`** (`app.py:22265`) is a transaction-scoped row lock, **not**
+  a persistent flag — nothing to unlock on recall. Checked because it looked like state that would
+  leak.
+- **There is no module→model registry.** `can_view_universal_approval_audit` (`app.py:7298`)
+  resolves records with a hardcoded if/elif chain per module. Five copies of recall logic is
+  precisely the shape that drifted apart twice in recent reviews, so this plan introduces the
+  registry rather than extending the chain.
+- `APPROVAL_REQUEST_SCOPES` (`app.py:4786`) is the canonical module-string set already shared by
+  routing, audit and notifications. The registry keys off the same strings.
+- Editable-status constants per module: `EDITABLE_STATUSES` (`leave_feature.py:25`),
+  `REIMBURSEMENT_EDITABLE_STATUSES` (`app.py:20334`), `TRAVEL_REQUEST_EDITABLE_STATUSES`
+  (`app.py:25004`), `LPR_EDITABLE_STATUSES` (`app.py:49699`), and an inline list for Cash Advance
+  (`app.py:44786`). The recall destination must land inside these, or the requester cannot edit what
+  they just pulled back.
+- **Seven modules have a submit→approve workflow**, not six: LPR has its own `submit_lpr`
+  (`app.py:51027`), `approve_lpr` (`app.py:51103`) and `reject_lpr` (`app.py:51134`). Online TSR
+  submission and the RFP/PCV documents are **not** approval workflows — TSR is an intake/versioning
+  record with no approve route, and RFP/PCV are PDFs generated from an already-approved parent.
+
+### Execution steps
+
+1. **Build the recall registry.** One module-level table keyed by the existing scope strings, each
+   entry naming the model, the owner field, the destination-status resolver, and an optional
+   post-recall hook. Five entries: `leave_request`, `reimbursement`, `travel_request`,
+   `cash_advance`, `lpr`. **Default deny** — a scope absent from the registry is not recallable, so
+   adding a module is a deliberate act.
+
+2. **Add `clear_requester_signature_snapshot(target_obj)`** beside
+   `clear_approval_signature_snapshot` (`app.py:5169`), clearing `requester_signature_snapshot`,
+   `requester_signature_layout` and `requester_signed_at` where present. Same defensive shape — skip
+   fields the model does not have.
+
+3. **Add one endpoint: `POST /api/requests/<module>/<int:record_id>/recall`.** Not five routes. Body
+   `{reason}`. In order: resolve the registry entry (404 if unknown module), load the record (404),
+   confirm `current_user.id` matches the owner field (**403**), require a non-empty reason (**400**),
+   and require `status == 'Submitted'` (**409**, message naming the current status). Then: set the
+   destination status, clear `submitted_at`, clear the requester signature via step 2, clear any
+   approval/rejection fields, and reset `accounting_status` where the model has one.
+
+4. **Write the audit and clear the stale notices.** `record_universal_approval_audit(module,
+   record_id, 'recalled', actor_user=current_user, status_from='Submitted', status_to=<destination>,
+   remarks=<reason>, metadata={...})`, then `resolve_pending_approval_notifications(module,
+   record_id, event='submitted')`, then a `SystemNotification` to each assigned approver from
+   `get_assigned_approvers_for_requester(header.user_id, module)` telling them it was withdrawn —
+   they may have been about to act on it. Plus an `ActivityLog` row.
+
+5. **Leave Request needs its own destination status, and getting this wrong destroys data.** A leave
+   that reached `Submitted` from `Provisional` (a superadmin's plot) or `Form to Follow` (emergency
+   Sick Leave) carries **calendar `Shift` rows**. Recalling it flatly to `Draft` would delete a
+   superadmin's provisional block. The resolver returns `Provisional` when `provisional_created_at`
+   is set, `Form to Follow` when `emergency_form_to_follow` is set, and `Draft` otherwise — all three
+   are in `EDITABLE_STATUSES` — and the hook calls `update_calendar` with the matching state so the
+   blocks follow.
+
+6. **Per-module notes for the registry entries.**
+   - **Travel Request** — participants can *submit* (`can_current_user_submit_travel_request`,
+     `app.py:26084`), but per the decision only `user_id` may recall. State that in the entry so it
+     reads as a decision, not an oversight.
+   - **Cash Advance** — `user_id` is a plain `db.Integer`, **not a declared ForeignKey**
+     (`app.py:42723`). The owner comparison still works; note it so nobody assumes a relationship
+     exists. It also keeps its own `CashAdvanceAudit` alongside the universal trail — write both,
+     matching what submit does.
+   - **Reimbursement** — reset `accounting_status` as well as `status`.
+   - **LPR** — destination `Draft`, inside `LPR_EDITABLE_STATUSES`.
+
+7. **UI: one shared partial, not five copies.** The confirm-dialog and required-remarks pattern
+   exists only in `templates/approvals.html` (`approvalConfirmDialog` ~2425-2484; the remarks
+   textarea and its required check ~2124 and ~5802) and is approver-side. Extract a small
+   recall-modal partial — confirm text plus a required reason textarea — and include it in the five
+   requester templates (`leave_request.html`, `reimbursement.html`, `travel_request.html`,
+   `cash_advance.html`, `lpr.html`). Add the Recall button to each module's own row renderer, shown
+   only when the row is the user's own and its status is `Submitted`.
+
+8. **Status display.** Each template maps status to a CSS class in its own helper (`statusClass` in
+   `leave_request.html`, `getReimbursementStatusPillClass` in `reimbursement.html`, and so on).
+   Recall lands records back in existing statuses — `Draft`, `Provisional`, `Form to Follow` — so
+   **no new badge is needed**. Confirm that per template rather than assuming; a status with no class
+   renders unstyled.
+
+9. **Release plumbing.** `releases.json` entry dated the commit date or
+   `test_changelog_coverage.py` fails. **Service worker bump required** — the five requester
+   templates are reached through the app shell; currently `v65-provisional-leave`, but **read the
+   live value out of `app.py:14588` immediately before committing** rather than trusting this line.
+
+### Deliberately excluded
+
+- **Travel Liquidation and Cash Advance Liquidation.** Excluded by decision. They sit behind an
+  accounting-center gate and mirror their status onto a parent record on submit (`TravelRequest` →
+  `'Liquidation Submitted'`, `CashAdvanceHeader` → same), so recalling one must also revert the
+  parent or the parent reads "Liquidation Submitted" forever with nothing pending. That coupling
+  deserves its own task.
+- **Recall by anyone but the requester.** No superadmin override and no approver-side recall.
+  Approvers already have Reject, which takes remarks and does the same job from their side.
+- **Recalling an approved request.** Approval fires calendar blocks, HR emails and accounting
+  handoffs. Un-approving is a different feature with a much larger blast radius.
+- **Unsending notification emails.** Submit fires async emails to approvers and they cannot be
+  recalled. The audit entry records that a recall happened after the fact; the notification to
+  approvers in step 4 is the mitigation.
+- **A cross-module "my requests" view.** Each module keeps its own page.
+
+### Verification
+
+- **Test the guards by calling them, on every module in the registry.** For each of the five: recall
+  as the owner on a `Submitted` record succeeds; recall as a **different user** returns 403; recall
+  with an empty reason returns 400; recall of a `Draft` and of an `Approved` record returns 409.
+  Positive control: the same request with a reason, as the owner, on a Submitted record, succeeds —
+  so the refusals are the guards and not a route that rejects everything.
+- **Assert the record is genuinely editable afterwards** — the destination status is inside that
+  module's editable-status constant, and a resubmit of the recalled record succeeds. A recall that
+  strands a record in a state nobody can edit is worse than no recall.
+- **Assert the reason reaches the audit trail**: a `'recalled'` entry for that module and record id
+  with `status_from='Submitted'`, the destination in `status_to`, and the reason in `remarks`.
+  Positive control: the reason string is one the fixture chose, so the assertion cannot pass on a
+  pre-existing row.
+- **Assert the requester signature is cleared** and that resubmitting requires signing again.
+- **Assert the approvers' pending notifications are gone** after a recall, and that a withdrawal
+  notice reached each assigned approver.
+- **The leave-calendar case, which is the one that can destroy data**: recall a leave that reached
+  Submitted from `Provisional` and assert it returns to `Provisional` **with its calendar blocks
+  still present**. Positive control: an ordinary leave with no provisional history returns to `Draft`
+  with no blocks, so the first assertion is reading the resolver and not a hook that always keeps
+  blocks.
+- **Prove each new test fails without its fix**, injecting one defect at a time, **verifying the
+  injection applied by SHA** before trusting a run and confirming the file is restored
+  byte-identical. A `\n` search string against these CRLF files silently matches nothing.
+- **Browser**, isolated database, explicit `MEDICAL_SERVICE_TEST_DB`, never port 5000: submit and
+  recall one request in each of the five modules as a real seeded requester; confirm the Recall
+  button is absent on Draft and Approved rows and absent on another user's rows. Standing bar: no
+  horizontal overflow at 375 px, no tap target under 44 px, console clean. **Restart the server after
+  every template edit** — Jinja caches compiled templates — and unregister the service worker and
+  clear both caches after each asset edit, not once.
+- Full suite via the documented command as **its own step before the commit**, never chained ahead of
+  `git push`.
+
+### After implementation
+
+Review against this plan before committing and correct this record where the outcome differed. Then
+the standing checklist in `pending-work.md` section 4: `git fetch origin`, re-read `origin/main`
+**after** the work, stage file by file, never `git add -A`, keep `scheduler.db` out by name, confirm
+with `git show --name-only`, push `main`. Add the `changes.md` entry in the same task.
+
+### Risks
+
+**The one that matters: recalling a request an approver is acting on.** Approve and recall both read
+then write `status`. Without the `status == 'Submitted'` check inside the same transaction as the
+write, a recall can land on a just-approved request and quietly un-approve it — after the approval
+emails and calendar blocks have already fired. The net is step 3's 409, the same guard
+`reject_reimbursement` already relies on, plus the explicit test that recalling an `Approved` record
+is refused.
+
+**Second: destroying a superadmin's provisional leave plot.** Step 5 exists for this. A flat `Draft`
+destination would delete calendar blocks somebody else created, and the deletion would look like
+correct behaviour. The positive control in Verification is what separates "blocks kept because the
+resolver worked" from "blocks kept because the hook never runs".
+
+**Third: five modules, one behaviour.** The registry is the mitigation. If recall logic gets copied
+per module instead, the five copies will diverge — exactly what happened to the HR export redaction
+and to the permission resolver in the last two reviews. Any per-module difference belongs in a
+registry entry, not in a branch inside the endpoint.
+
 ## Provisional leave: superadmins plotting leave ahead of approval
 
 **Status:** `Executed — 5c976bb`

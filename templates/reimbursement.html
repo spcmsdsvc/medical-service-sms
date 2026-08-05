@@ -4280,6 +4280,7 @@ async function saveReimbursementDraft(silent) {
                     </div>
                     <div class="reim-status-window-actions">
                         <button type="button" class="reim-btn reim-btn-secondary" onclick="openReimbursementStatusRecord(${reimbursementId}, '${reimEscape(start)}', '${reimEscape(end)}')">Open Record</button>
+                        ${String(status || '').toLowerCase() === 'submitted' ? `<button type="button" class="reim-btn reim-btn-danger" onclick="openRequestRecall('reimbursement', ${reimbursementId}, 'Reimbursement')"><i class="fa-solid fa-rotate-left"></i> Withdraw</button>` : ''}
                     </div>
                 </div>
             `;
@@ -4910,4 +4911,5 @@ async function dismissReimbursementNotification(event, notificationId) {
     }
 </script>
 {% if embedded_lpr_enabled %}{% set embedded_lpr_parent_module = 'reimbursement' %}{% include '_embedded_lpr_modal.html' %}{% endif %}
+{% include '_request_recall_modal.html' %}
 {% endblock %}

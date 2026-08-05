@@ -203,6 +203,29 @@
     window.deleteAllLprAttachments = async () => { if(!lprId||!lprAttachments.length)return; if(!confirm(`Delete all ${lprAttachments.length} supporting attachments permanently?`))return; try { const data=await api(`/delete_all_lpr_attachments/${lprId}`,{method:'POST'}); lprAttachments=[]; renderAttachments(); toast(data.message); } catch(err){toast(err.message,'error');} };
     async function init() { lprCreationToken=newLprCreationToken(); const query=new URLSearchParams(location.search); const requested=query.get('lpr_id'); if(requested){try{const data=await api(`/get_lpr/${requested}`);fill(data.item);}catch(err){notice(err.message,'error');clearLprForm();}} else { fill({request_date:new Date().toISOString().slice(0,10), items:[{}], attachments:[]}); } await loadLprs(); }
     document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', () => {
+        const list = $('lprList');
+        if (!list || !window.MutationObserver) return;
+        const addRecallButtons = () => {
+            list.querySelectorAll('.lpr-request').forEach(card => {
+                const status = card.querySelector('.lpr-status')?.textContent?.trim().toLowerCase();
+                const open = card.querySelector('button[onclick^="openLpr("]');
+                if (status !== 'submitted' || !open || card.querySelector('[data-request-recall]')) return;
+                const match = String(open.getAttribute('onclick') || '').match(/openLpr\((\d+)\)/);
+                if (!match) return;
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'lpr-btn lpr-btn-danger';
+                button.dataset.requestRecall = 'true';
+                button.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Withdraw';
+                button.addEventListener('click', () => window.openRequestRecall('lpr', Number(match[1]), 'LPR'));
+                open.parentElement.appendChild(button);
+            });
+        };
+        new MutationObserver(addRecallButtons).observe(list, { childList: true, subtree: true });
+        addRecallButtons();
+    });
 })();
 </script>
+{% include '_request_recall_modal.html' %}
 {% endblock %}

@@ -1402,6 +1402,15 @@
             "admins"
           ],
           "sort_order": 60
+        },
+        {
+          "item_key": "2026-08-05-request-recall",
+          "category": "Requests",
+          "description": "Requesters can now withdraw their own Submitted Leave Requests, Reimbursements, Travel Requests, Cash Advances, and LPRs with a required reason before approval. The request returns to an editable state, pending approval notices are cleared, and the recall is recorded in the audit trail.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 70
         }
       ]
     }

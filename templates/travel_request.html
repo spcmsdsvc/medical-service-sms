@@ -3677,6 +3677,7 @@ async function loadMyTravelRequests(){
                     </div>
                     <div class="travel-history-actions">
                         <button type="button" class="travel-btn travel-btn-secondary" onclick="loadTravelRequestDetail(${id})">Open</button>
+                        ${String(item.status || '').toLowerCase() === 'submitted' ? `<button type="button" class="travel-btn travel-btn-danger" onclick="openRequestRecall('travel_request', ${id}, 'Travel Request')"><i class="fa-solid fa-rotate-left"></i> Withdraw</button>` : ''}
                         ${timelineBtn}
                         ${restoreBtn}
                     </div>
@@ -3808,4 +3809,5 @@ document.addEventListener('DOMContentLoaded', async function(){
 });
 </script>
 {% if embedded_lpr_enabled %}{% set embedded_lpr_parent_module = 'travel_request' %}{% include '_embedded_lpr_modal.html' %}{% endif %}
+{% include '_request_recall_modal.html' %}
 {% endblock %}

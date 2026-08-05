@@ -2,6 +2,15 @@
 
 claude changes - 2026-08-05 (provisional leave review)
 
+### Request recall: requester withdrawal before approval
+
+* Added a shared, default-deny recall registry and authenticated `POST /api/requests/<module>/<id>/recall` endpoint for Leave Requests, Reimbursements, Travel Requests, Cash Advances, and LPRs. The endpoint requires the logged-in requester to own the record, requires a non-empty reason, and uses a conditional Submitted-state update so an approver/recall race returns a safe conflict instead of overwriting a newer status.
+* Recall returns each supported request to its existing editable workflow state, clears submitted/approval/rejection/accounting/procurement/HR handoff state where present, clears requester and approver signature snapshots, and preserves the entered request data for correction and resubmission. Travel Liquidation and Cash Advance Liquidation remain deliberately excluded because their status is coupled to parent accounting workflows.
+* Leave recall preserves Provisional and Form to Follow calendar blocks through the existing leave calendar updater; ordinary submitted leave returns to Draft and removes request-generated leave blocks. Leave, Cash Advance, LPR, universal approval, Activity Log, approver notification, and stale pending-approval notification records are updated in the same transaction.
+* Added the shared requester-facing recall modal partial and wired it into `leave_request.html`, `reimbursement.html`, `travel_request.html`, `cash_advance.html`, and `lpr.html`. Recall controls appear only for the requester's own Submitted history rows, include required-reason validation, remain scrollable and usable on mobile/dark mode, and reload the module after success. LPR history receives the control through its existing client-side list renderer.
+* Added `tests/test_request_recall.py` covering all five module guards, ownership, reason validation, destination statuses, lifecycle clearing, audit records, provisional leave preservation, source exclusion, and release metadata. Focused tests and Python compilation pass using the project virtual environment; the isolated full suite passed 453 tests.
+* Bumped the service-worker cache to `v66-request-recall` and added the 2026-08-05 What's New release item. No schema migration or database replacement was added; the pre-existing `scheduler.db`, `output/`, `tmp/`, and handoff artifact remain untracked/unrelated and are excluded from release staging.
+
 ## Review of the provisional leave workflow: the mismatch notice said nothing useful
 
 * Reviewed `5c976bb` and `35673e1` against the recorded plan. **The hard part is right.** The

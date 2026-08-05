@@ -1,0 +1,181 @@
+<style>
+    .request-recall-modal {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 2050;
+        padding: 1rem;
+        align-items: center;
+        justify-content: center;
+        background: rgba(4, 12, 24, .72);
+        overflow: auto;
+    }
+    .request-recall-modal.is-open { display: flex; }
+    .request-recall-card {
+        width: min(100%, 560px);
+        max-height: min(92vh, 720px);
+        overflow: auto;
+        border: 1px solid var(--app-border, #cbd5e1);
+        border-radius: 12px;
+        background: var(--app-surface-raised, #fff);
+        color: var(--app-text, #122033);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, .32);
+    }
+    .request-recall-head,
+    .request-recall-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .75rem;
+        padding: 1rem 1.15rem;
+        border-bottom: 1px solid var(--app-border, #cbd5e1);
+    }
+    .request-recall-head h2 { margin: 0; font-size: 1.15rem; }
+    .request-recall-close {
+        width: 42px;
+        height: 42px;
+        border: 1px solid var(--app-border, #cbd5e1);
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        font-size: 1.35rem;
+        cursor: pointer;
+    }
+    .request-recall-body { padding: 1.15rem; }
+    .request-recall-body p { margin: 0 0 1rem; color: var(--app-text-muted, #52657d); }
+    .request-recall-body label { display: block; margin-bottom: .4rem; font-weight: 700; }
+    .request-recall-body textarea {
+        width: 100%;
+        min-height: 120px;
+        resize: vertical;
+        border: 1px solid var(--app-border, #cbd5e1);
+        border-radius: 8px;
+        background: var(--app-input-bg, #fff);
+        color: var(--app-text, #122033);
+        padding: .75rem;
+    }
+    .request-recall-body textarea:focus {
+        outline: 2px solid var(--app-focus, #2563eb);
+        outline-offset: 1px;
+    }
+    .request-recall-error {
+        display: none;
+        margin-top: .75rem;
+        color: var(--app-danger-text, #b42318);
+        font-weight: 700;
+    }
+    .request-recall-error.is-visible { display: block; }
+    .request-recall-foot { justify-content: flex-end; border-top: 1px solid var(--app-border, #cbd5e1); border-bottom: 0; }
+    .request-recall-btn {
+        min-height: 42px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        padding: .6rem .9rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .request-recall-btn.secondary { background: var(--app-button-muted, #e2e8f0); color: var(--app-text, #122033); }
+    .request-recall-btn.danger { background: var(--app-danger, #c62828); color: #fff; }
+    .request-recall-btn:disabled { opacity: .6; cursor: wait; }
+    @media (max-width: 480px) {
+        .request-recall-modal { padding: .5rem; align-items: flex-end; }
+        .request-recall-card { max-height: 94vh; border-radius: 12px 12px 0 0; }
+        .request-recall-foot { flex-wrap: wrap; }
+        .request-recall-foot .request-recall-btn { flex: 1 1 45%; }
+    }
+</style>
+
+<div id="requestRecallModal" class="request-recall-modal" role="dialog" aria-modal="true" aria-labelledby="requestRecallTitle" aria-hidden="true">
+    <div class="request-recall-card" role="document">
+        <div class="request-recall-head">
+            <h2 id="requestRecallTitle">Withdraw Request</h2>
+            <button type="button" class="request-recall-close" onclick="closeRequestRecall()" aria-label="Close withdraw dialog">&times;</button>
+        </div>
+        <div class="request-recall-body">
+            <p id="requestRecallDescription">Withdraw this submitted request before an approver acts on it. The request will return to an editable state.</p>
+            <label for="requestRecallReason">Reason <span aria-hidden="true">*</span></label>
+            <textarea id="requestRecallReason" maxlength="1000" placeholder="Explain what needs to be corrected." required></textarea>
+            <div id="requestRecallError" class="request-recall-error" role="alert"></div>
+        </div>
+        <div class="request-recall-foot">
+            <button type="button" class="request-recall-btn secondary" onclick="closeRequestRecall()">Cancel</button>
+            <button type="button" id="requestRecallSubmit" class="request-recall-btn danger" onclick="submitRequestRecall()">Withdraw Request</button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    let activeRecall = null;
+    const modal = () => document.getElementById('requestRecallModal');
+    const reason = () => document.getElementById('requestRecallReason');
+    const errorBox = () => document.getElementById('requestRecallError');
+    const submitButton = () => document.getElementById('requestRecallSubmit');
+
+    function setRecallError(message) {
+        const box = errorBox();
+        if (!box) return;
+        box.textContent = message || '';
+        box.classList.toggle('is-visible', Boolean(message));
+    }
+
+    window.openRequestRecall = function (module, recordId, label) {
+        activeRecall = { module: String(module || ''), recordId: Number(recordId || 0), label: String(label || 'Request') };
+        const dialog = modal();
+        if (!dialog || !activeRecall.recordId) return;
+        document.getElementById('requestRecallTitle').textContent = `Withdraw ${activeRecall.label}`;
+        document.getElementById('requestRecallDescription').textContent = `Withdraw this submitted ${activeRecall.label.toLowerCase()} before an approver acts on it. It will return to an editable state and require resubmission.`;
+        reason().value = '';
+        setRecallError('');
+        dialog.classList.add('is-open');
+        dialog.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('request-recall-open');
+        window.setTimeout(() => reason().focus(), 0);
+    };
+
+    window.closeRequestRecall = function () {
+        const dialog = modal();
+        if (!dialog) return;
+        dialog.classList.remove('is-open');
+        dialog.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('request-recall-open');
+        activeRecall = null;
+        setRecallError('');
+    };
+
+    window.submitRequestRecall = async function () {
+        if (!activeRecall) return;
+        const text = String(reason().value || '').trim();
+        if (!text) {
+            setRecallError('A reason is required before withdrawing this request.');
+            reason().focus();
+            return;
+        }
+        const button = submitButton();
+        button.disabled = true;
+        button.textContent = 'Withdrawing...';
+        setRecallError('');
+        try {
+            const response = await fetch(`/api/requests/${encodeURIComponent(activeRecall.module)}/${encodeURIComponent(activeRecall.recordId)}/recall`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify({ reason: text })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.success === false) throw new Error(payload.error || 'Unable to withdraw this request.');
+            window.closeRequestRecall();
+            window.location.reload();
+        } catch (err) {
+            setRecallError(err.message || 'Unable to withdraw this request.');
+            button.disabled = false;
+            button.textContent = 'Withdraw Request';
+        }
+    };
+
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape' && activeRecall) window.closeRequestRecall();
+    });
+}());
+</script>

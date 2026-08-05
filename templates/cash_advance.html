@@ -1019,6 +1019,7 @@
                     </div>
                     <div class="cash-actions">
                         <button type="button" class="cash-btn cash-btn-secondary" onclick="openCashAdvance(${Number(item.id) || 0})">Open</button>
+                        ${statusKey.includes('submitted') ? `<button type="button" class="cash-btn cash-btn-danger" onclick="openRequestRecall('cash_advance', ${Number(item.id) || 0}, 'Cash Advance')"><i class="fa-solid fa-rotate-left"></i> Withdraw</button>` : ''}
                     </div>
                 </div>
             `;
@@ -1247,4 +1248,5 @@
     });
 </script>
 {% if embedded_lpr_enabled %}{% set embedded_lpr_parent_module = 'cash_advance' %}{% include '_embedded_lpr_modal.html' %}{% endif %}
+{% include '_request_recall_modal.html' %}
 {% endblock %}

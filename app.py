@@ -5186,6 +5186,18 @@ def clear_approval_signature_snapshot(target_obj):
             setattr(target_obj, field_name, value)
 
 
+def clear_requester_signature_snapshot(target_obj):
+    """Clear a requester's saved signature snapshot before resubmission."""
+    cleared_fields = {
+        'requester_signature_snapshot': None,
+        'requester_signature_layout': None,
+        'requester_signed_at': None,
+    }
+    for field_name, value in cleared_fields.items():
+        if hasattr(target_obj, field_name):
+            setattr(target_obj, field_name, value)
+
+
 
 def universal_approval_actor_name(user=None):
     """Return a readable actor name for universal approval audit entries."""
@@ -14585,7 +14597,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v65-provisional-leave';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v66-request-recall';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -52033,6 +52045,232 @@ def reverse_stock_inventory_movement(movement_id):
 
 from leave_feature import register_leave_feature
 register_leave_feature(globals())
+
+
+RECALL_REQUEST_REGISTRY = {
+    'leave_request': {
+        'model': LeaveRequest,
+        'label': 'Leave Request',
+        'owner_field': 'user_id',
+        'destination': lambda record: (
+            'Provisional' if getattr(record, 'provisional_created_at', None)
+            else ('Form to Follow' if bool(getattr(record, 'emergency_form_to_follow', False)) else 'Draft')
+        ),
+    },
+    'reimbursement': {
+        'model': ReimbursementHeader,
+        'label': 'Reimbursement',
+        'owner_field': 'user_id',
+        'destination': lambda record: 'Draft',
+    },
+    'travel_request': {
+        'model': TravelRequest,
+        'label': 'Travel Request',
+        'owner_field': 'user_id',
+        'destination': lambda record: 'Draft',
+    },
+    'cash_advance': {
+        'model': CashAdvanceHeader,
+        'label': 'Cash Advance',
+        'owner_field': 'user_id',
+        'destination': lambda record: 'Draft',
+    },
+    'lpr': {
+        'model': LPRHeader,
+        'label': 'LPR',
+        'owner_field': 'user_id',
+        'destination': lambda record: 'Draft',
+    },
+}
+
+
+def recall_request_display_label(module, record, entry):
+    identifier = (
+        getattr(record, 'request_no', None) or
+        getattr(record, 'cash_advance_no', None) or
+        getattr(record, 'lpr_no', None) or
+        f'#{getattr(record, "id", "")}'
+    )
+    return f'{entry["label"]} {identifier}'
+
+
+def recall_request_owner_name(record):
+    requester = db.session.get(User, clean_int(getattr(record, 'user_id', None)))
+    if not requester:
+        return 'Requester'
+    return (
+        approval_user_display_name(requester)
+        or clean_str(getattr(requester, 'username', None))
+        or 'Requester'
+    )
+
+
+def recall_request_notification_target(module, record_id):
+    return f'/approvals?module={module}&id={clean_int(record_id)}'
+
+
+def clear_recalled_request_lifecycle_fields(record):
+    """Reset approval-side state while preserving the request's entered data."""
+    fields = {
+        'submitted_at': None,
+        'approved_at': None,
+        'approved_by_id': None,
+        'rejected_at': None,
+        'rejected_by_id': None,
+        'approval_remarks': None,
+        'accounting_status': None,
+        'sent_to_accounting_at': None,
+        'accounting_remarks': None,
+        'accounting_approved_at': None,
+        'accounting_rejected_at': None,
+        'approval_action': None,
+        'approved_amount': 0,
+        'procurement_status': None,
+        'sent_to_procurement_at': None,
+        'procurement_remarks': None,
+        'hr_email_status': None,
+        'hr_email_remarks': None,
+        'hr_email_sent_at': None,
+    }
+    for field_name, value in fields.items():
+        if hasattr(record, field_name):
+            setattr(record, field_name, value)
+    clear_requester_signature_snapshot(record)
+    clear_approval_signature_snapshot(record)
+    if hasattr(record, 'updated_at'):
+        record.updated_at = get_manila_time()
+
+
+def restore_leave_calendar_after_recall(header, destination):
+    """Preserve provisional leave blocks, while ordinary leave returns to Draft."""
+    if destination in {'Provisional', 'Form to Follow'}:
+        update_leave_request_calendar(header, destination)
+        return
+
+    for shift in Shift.query.filter_by(leave_request_id=header.id).all():
+        ShiftEngineer.query.filter_by(shift_id=shift.id).delete(synchronize_session=False)
+        db.session.delete(shift)
+
+
+@app.route('/api/requests/<module>/<int:record_id>/recall', methods=['POST'])
+@csrf.exempt
+@login_required
+def recall_submitted_request(module, record_id):
+    """Allow the requester to withdraw their own Submitted request once."""
+    module = (clean_str(module) or '').lower()
+    entry = RECALL_REQUEST_REGISTRY.get(module)
+    if not entry:
+        return jsonify({'success': False, 'error': 'This request type cannot be withdrawn.'}), 404
+
+    model = entry['model']
+    owner_field = entry['owner_field']
+    record = db.session.get(model, clean_int(record_id))
+    if not record:
+        return jsonify({'success': False, 'error': f'{entry["label"]} not found.'}), 404
+    if clean_int(getattr(record, owner_field, None)) != clean_int(current_user.id):
+        return jsonify({'success': False, 'error': 'Only the requester can withdraw this request.'}), 403
+
+    payload = request.get_json(silent=True) or {}
+    reason = (clean_str(payload.get('reason')) or '').strip()
+    if not reason:
+        return jsonify({'success': False, 'error': 'A reason is required to withdraw this request.'}), 400
+
+    current_status = clean_str(getattr(record, 'status', None)) or 'Draft'
+    if current_status.strip().lower() != 'submitted':
+        return jsonify({
+            'success': False,
+            'error': f'Only Submitted requests can be withdrawn. This request is currently {current_status}.',
+            'status': current_status,
+        }), 409
+
+    destination = entry['destination'](record)
+    try:
+        # The conditional update is the approval/recall race guard. It obtains
+        # the write lock before any lifecycle fields or audit rows are changed.
+        owner_column = getattr(model, owner_field)
+        changed = (
+            model.query
+            .filter(model.id == clean_int(record_id))
+            .filter(owner_column == clean_int(current_user.id))
+            .filter(func.lower(func.trim(model.status)) == 'submitted')
+            .update({'status': destination}, synchronize_session=False)
+        )
+        if changed != 1:
+            db.session.rollback()
+            fresh = db.session.get(model, clean_int(record_id))
+            fresh_status = clean_str(getattr(fresh, 'status', None)) if fresh else current_status
+            return jsonify({
+                'success': False,
+                'error': f'Only Submitted requests can be withdrawn. This request is currently {fresh_status or current_status}.',
+                'status': fresh_status or current_status,
+            }), 409
+
+        record.status = destination
+        clear_recalled_request_lifecycle_fields(record)
+
+        if module == 'leave_request':
+            restore_leave_calendar_after_recall(record, destination)
+            db.session.add(LeaveRequestAudit(
+                leave_request_id=record.id,
+                action='recalled',
+                actor_user_id=current_user.id,
+                remarks=reason,
+                created_at=get_manila_time(),
+            ))
+        elif module == 'cash_advance':
+            cash_advance_add_audit(record, 'recalled', reason)
+        elif module == 'lpr':
+            lpr_add_audit(record, 'recalled', reason)
+
+        display_label = recall_request_display_label(module, record, entry)
+        record_universal_approval_audit(
+            module,
+            record.id,
+            'recalled',
+            actor_user=current_user,
+            status_from='Submitted',
+            status_to=destination,
+            remarks=reason,
+            metadata={
+                'record_id': record.id,
+                'requester_user_id': current_user.id,
+                'reason': reason,
+                'destination_status': destination,
+            },
+        )
+        resolve_pending_approval_notifications(module, record.id, event='submitted')
+
+        approvers = get_assigned_approvers_for_requester(current_user.id, module)
+        requester_name = recall_request_owner_name(record)
+        create_system_notifications_for_users(
+            approvers,
+            title=f'{entry["label"]} Withdrawn',
+            message=f'{requester_name} withdrew {display_label} before approval. Reason: {reason}',
+            module=module,
+            record_id=record.id,
+            target_url=recall_request_notification_target(module, record.id),
+            metadata={
+                'event': 'recalled',
+                'record_id': record.id,
+                'requester_user_id': current_user.id,
+                'reason': reason,
+                'destination_status': destination,
+            },
+        )
+        add_activity_log_entry(f'Recalled {display_label}: {reason}')
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'module': module,
+            'record_id': record.id,
+            'status': destination,
+            'previous_status': 'Submitted',
+            'message': f'{display_label} was withdrawn and returned to {destination}.',
+        })
+    except Exception as exc:
+        db.session.rollback()
+        print(f'[Recall] Failed: module={module} record_id={record_id} error={exc}', flush=True)
+        return jsonify({'success': False, 'error': 'Unable to withdraw this request. Please try again.'}), 500
 
 
 def initialize_wsgi_workflow_schemas():
