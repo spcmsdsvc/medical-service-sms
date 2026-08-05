@@ -779,6 +779,13 @@
                         <option value="Maternity Leave">Maternity Leave</option>
                         <option value="Leave Without Pay">Leave Without Pay</option>
                     </select>
+                    {% if timeline_is_named_superadmin %}
+                    <div class="mt-2">
+                        <label for="f-leave-verbal-approval-notes" class="small fw-bold text-muted text-uppercase mb-1 d-block">Verbal / Chat Approval Notes (Optional)</label>
+                        <textarea id="f-leave-verbal-approval-notes" class="form-control shadow-none" rows="2" placeholder="Optional reference for the verbal or chat approval"></textarea>
+                        <div class="xsmall text-muted mt-1">For a new current or future Leave schedule, this records Form to Follow and waits for the employee’s signed request.</div>
+                    </div>
+                    {% endif %}
                     {% if current_user.engineer_profile %}<button type="button" class="btn btn-warning fw-bold w-100 mt-2" onclick="openLeaveFormToFollowFromCalendar()">
                         <i class="fa-solid fa-triangle-exclamation me-1"></i>Record Sick Leave - Form to Follow
                     </button>
@@ -8397,6 +8404,8 @@ async function fetchTimelineDataWithOfflineTimeout(url){
         "{{ 'true' if timeline_read_only_approver else 'false' }}" === "true";
     const timelineReadOnlyHR =
         "{{ 'true' if timeline_read_only_hr else 'false' }}" === "true";
+    const isNamedSuperAdmin =
+        "{{ 'true' if timeline_is_named_superadmin else 'false' }}" === "true";
     const isSuperAdmin = authRole === "superadmin";
     const isRegionalAdmin = authRole === "regional_admin";
     const isEngineer = authRole === "engineer";
@@ -12527,7 +12536,7 @@ function collectMobileEngineerSchedules(){
         const startDate = document.getElementById('f-start-date')?.value || '';
         const editingExistingLeave = Boolean(document.getElementById('f-id')?.value) && category?.value === 'Leave';
         const historicalDate = Boolean(startDate && startDate < timelineTodayISO());
-        const allowLegacyLeave = editingExistingLeave || historicalDate;
+        const allowLegacyLeave = editingExistingLeave || historicalDate || isNamedSuperAdmin;
         if(!category || !leaveOption) return allowLegacyLeave;
 
         leaveOption.hidden = !allowLegacyLeave;
@@ -14306,6 +14315,8 @@ async function loadGrid() {
 
         document.getElementById('f-id').value = "";
         document.getElementById('f-eng-id').value = engId;
+        const provisionalLeaveNotes = document.getElementById('f-leave-verbal-approval-notes');
+        if(provisionalLeaveNotes) provisionalLeaveNotes.value = '';
         resetEngineerPicker();
         resetSiteVisitFlags();
         resetEditScopeControls();
@@ -14320,6 +14331,7 @@ async function loadGrid() {
         }
 
         document.getElementById('f-category').value = "Work";
+        document.getElementById('f-leave-type').value = "Sick Leave";
         document.getElementById('f-start-date').value = date;
         document.getElementById('f-end-date').value = date;
         document.getElementById('f-original-start-date').value = '';
@@ -15921,6 +15933,50 @@ async function openTSRClientEmailModal(shiftId){
 
         if (isEngineer && !currentEngineerIsIncludedInSelection()) {
             timelineAlert(activeID ? "Engineers can update team schedules only if they are assigned to the schedule." : "Engineers can create team schedules only if they include themselves.");
+            return;
+        }
+
+        // Current/future Leave entries must be Leave Requests, not ordinary Shift rows.
+        // Named superadmins may record a provisional block for one employee while the
+        // employee completes the signed form. Keep this branch separate from /add_shift
+        // so the existing leave restriction remains effective for every other caller.
+        if (!activeID && categoryVal === "Leave" && isNamedSuperAdmin) {
+            if (selectedEngineersUI.length !== 1) {
+                timelineAlert("Select exactly one employee for provisional Leave.");
+                return;
+            }
+
+            const provisionalPayload = {
+                engineer_id: Number(selectedEngineersUI[0]),
+                leave_type: document.getElementById('f-leave-type').value,
+                start_date: document.getElementById('f-start-date').value,
+                end_date: document.getElementById('f-end-date').value,
+                duration_type: 'full_day',
+                half_day_period: null,
+                verbal_approval_notes: document.getElementById('f-leave-verbal-approval-notes')?.value || ''
+            };
+
+            try {
+                const provisionalResponse = await fetch('/api/leave-requests/provisional', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCSRFToken()
+                    },
+                    body: JSON.stringify(provisionalPayload)
+                });
+                const provisionalResult = await provisionalResponse.json().catch(() => ({}));
+                if(!provisionalResponse.ok || provisionalResult.success === false){
+                    handleScheduleError(provisionalResult, 'Unable to record provisional Leave.');
+                    return;
+                }
+                shiftModal.hide();
+                await refreshTimelineGrid();
+                timelineAlert(provisionalResult.message || 'Leave was recorded as Form to Follow.', 'success');
+            }catch(error){
+                console.warn('[Timeline] Provisional Leave save failed', error);
+                timelineAlert('Unable to record provisional Leave. Please check the connection and try again.');
+            }
             return;
         }
 

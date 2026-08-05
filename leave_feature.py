@@ -22,7 +22,7 @@ from sqlalchemy import inspect, text, or_
 LEAVE_TYPES = ('Vacation Leave', 'Sick Leave', 'Maternity Leave', 'Leave Without Pay')
 LEAVE_DURATION_TYPES = {'full_day', 'half_day'}
 LEAVE_HALF_DAY_PERIODS = {'AM', 'PM'}
-EDITABLE_STATUSES = {'Draft', 'Form to Follow', 'Rejected'}
+EDITABLE_STATUSES = {'Draft', 'Form to Follow', 'Provisional', 'Rejected'}
 ACTIVE_CONFLICT_STATUSES = {'Submitted', 'Approved'}
 MAX_ATTACHMENTS = 10
 
@@ -63,6 +63,7 @@ def register_leave_feature(ctx):
     get_email_template_value = ctx['get_email_template_value']
     render_email_template = ctx['render_email_template']
     send_email_with_attachments = ctx['send_email_with_attachments']
+    is_superadmin_user = ctx['is_superadmin_user']
     STORAGE_PREFIX_LEAVE_REQUESTS = ctx['STORAGE_PREFIX_LEAVE_REQUESTS']
     basedir = ctx['basedir']
 
@@ -356,13 +357,25 @@ def register_leave_feature(ctx):
     def conflicts(engineer_id, start_date, end_date, exclude_leave_id=None, duration_type='full_day', half_day_period=None):
         dates = weekdays(start_date, end_date)
         if not dates:
-            return {'blocking_schedules': [], 'overlapping_leave_requests': []}
+            return {
+                'blocking_schedules': [],
+                'overlapping_leave_requests': [],
+                'supersedable_provisionals': [],
+            }
         request_start_time, request_end_time = leave_time_range(duration_type, half_day_period)
         shift_ids = assigned_shift_ids(engineer_id)
+        provisional_headers = {
+            row.id: row for row in LeaveRequest.query.filter_by(
+                engineer_id=engineer_id, status='Provisional'
+            ).all()
+        }
         schedules = []
         if shift_ids:
             for shift in Shift.query.filter(Shift.id.in_(shift_ids)).filter(Shift.start_time >= datetime.combine(dates[0], datetime.min.time())).filter(Shift.start_time < datetime.combine(dates[-1] + timedelta(days=1), datetime.min.time())).all():
-                if exclude_leave_id and clean_int(getattr(shift, 'leave_request_id', None)) == exclude_leave_id:
+                leave_request_id = clean_int(getattr(shift, 'leave_request_id', None))
+                if exclude_leave_id and leave_request_id == exclude_leave_id:
+                    continue
+                if leave_request_id and leave_request_id in provisional_headers:
                     continue
                 if shift.start_time.date() not in dates:
                     continue
@@ -376,11 +389,29 @@ def register_leave_feature(ctx):
                     'title': shift.title,
                     'time': f"{shift.start_time.strftime('%I:%M %p')} - {shift.end_time.strftime('%I:%M %p')}",
                 })
+        supersedable_provisionals = []
+        requested_dates = set(dates)
+        for row in provisional_headers.values():
+            if exclude_leave_id and row.id == exclude_leave_id:
+                continue
+            shared_dates = requested_dates.intersection(weekdays(row.start_date, row.end_date))
+            if not shared_dates:
+                continue
+            row_duration, row_period = header_duration(row)
+            row_start_time, row_end_time = leave_time_range(row_duration, row_period)
+            if request_start_time < row_end_time and request_end_time > row_start_time:
+                supersedable_provisionals.append({
+                    'id': row.id,
+                    'request_no': row.request_no,
+                    'date_range': f'{row.start_date.isoformat()} to {row.end_date.isoformat()}',
+                    'status': row.status,
+                    'leave_type': row.leave_type,
+                    'duration_label': duration_label(row),
+                })
         query = LeaveRequest.query.filter_by(engineer_id=engineer_id).filter(LeaveRequest.status.in_(ACTIVE_CONFLICT_STATUSES)).filter(LeaveRequest.start_date <= end_date).filter(LeaveRequest.end_date >= start_date)
         if exclude_leave_id:
             query = query.filter(LeaveRequest.id != exclude_leave_id)
         overlaps = []
-        requested_dates = set(dates)
         for row in query.all():
             shared_dates = requested_dates.intersection(weekdays(row.start_date, row.end_date))
             if not shared_dates:
@@ -395,13 +426,20 @@ def register_leave_feature(ctx):
                     'status': row.status,
                     'duration_label': duration_label(row),
                 })
-        return {'blocking_schedules': schedules, 'overlapping_leave_requests': overlaps}
+        return {
+            'blocking_schedules': schedules,
+            'overlapping_leave_requests': overlaps,
+            'supersedable_provisionals': supersedable_provisionals,
+        }
 
-    def update_calendar(header, state):
+    def update_calendar(header, state, expected_dates=None):
         """Create or update the request-owned weekday blocks without duplicates."""
         group_id = header.calendar_group_id or f'leave-request-{header.id}'
         header.calendar_group_id = group_id
-        expected_dates = set(weekdays(header.start_date, header.end_date))
+        if expected_dates is None:
+            expected_dates = set(weekdays(header.start_date, header.end_date))
+        else:
+            expected_dates = set(expected_dates)
         existing = {row.start_time.date(): row for row in Shift.query.filter_by(leave_request_id=header.id).all()}
         status_map = {
             'Form to Follow': 'Form to Follow',
@@ -676,7 +714,7 @@ def register_leave_feature(ctx):
         status_filter = (clean_str(request.args.get('status')) or 'all').lower()
         query = LeaveRequest.query.filter_by(user_id=current_user.id)
         if status_filter == 'pending':
-            query = query.filter(LeaveRequest.status.in_(['Draft', 'Form to Follow', 'Rejected']))
+            query = query.filter(LeaveRequest.status.in_(['Draft', 'Form to Follow', 'Provisional', 'Rejected']))
         elif status_filter == 'processing':
             query = query.filter(LeaveRequest.status == 'Submitted')
         elif status_filter == 'paid':
@@ -684,7 +722,7 @@ def register_leave_feature(ctx):
         rows = query.order_by(LeaveRequest.updated_at.desc(), LeaveRequest.id.desc()).limit(300).all()
         all_rows = LeaveRequest.query.filter_by(user_id=current_user.id).all()
         summary = {
-            'pending': sum(row.status in {'Draft', 'Form to Follow', 'Rejected'} for row in all_rows),
+            'pending': sum(row.status in {'Draft', 'Form to Follow', 'Provisional', 'Rejected'} for row in all_rows),
             'processing': sum(row.status == 'Submitted' for row in all_rows),
             'paid': sum(row.status == 'Approved' for row in all_rows),
         }
@@ -747,6 +785,95 @@ def register_leave_feature(ctx):
             db.session.rollback()
             print(f'[LeaveRequest] Save failed: {exc}', flush=True)
             return jsonify({'success': False, 'error': 'Unable to save Leave Request.'}), 500
+
+    @app.route('/api/leave-requests/provisional', methods=['POST'])
+    @login_required
+    def create_provisional_leave_request():
+        """Plot a superadmin-created leave block while the signed form is pending."""
+        if not is_superadmin_user():
+            return jsonify({'success': False, 'error': 'Only named superadmins can record provisional leave.'}), 403
+
+        payload = request.get_json(silent=True) or {}
+        engineer_id = clean_int(payload.get('engineer_id'))
+        engineer = db.session.get(Engineer, engineer_id) if engineer_id else None
+        target_user = db.session.get(User, engineer.user_id) if engineer and engineer.user_id else None
+        if not engineer or not target_user:
+            return jsonify({'success': False, 'error': 'Select an engineer with a linked user account.'}), 400
+
+        leave_type = clean_str(payload.get('leave_type')) or ''
+        if leave_type not in LEAVE_TYPES:
+            return jsonify({'success': False, 'error': 'Select a valid leave type.'}), 400
+
+        start_date = parse_date(payload.get('start_date'))
+        end_date = parse_date(payload.get('end_date'))
+        try:
+            duration, period = normalized_duration(
+                payload.get('duration_type'), payload.get('half_day_period')
+            )
+        except ValueError as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 400
+        if not start_date or not end_date or end_date < start_date:
+            return jsonify({'success': False, 'error': 'Select a valid leave date range.'}), 400
+        leave_days = weekdays(start_date, end_date)
+        if not leave_days:
+            return jsonify({'success': False, 'error': 'The selected range contains no weekdays.'}), 400
+        if duration == 'half_day' and (start_date != end_date or len(leave_days) != 1):
+            return jsonify({'success': False, 'error': 'Half-day leave must use the same weekday for From and To.'}), 400
+
+        result = conflicts(engineer.id, start_date, end_date, None, duration, period)
+        if result['blocking_schedules'] or result['overlapping_leave_requests'] or result['supersedable_provisionals']:
+            return jsonify({
+                'success': False,
+                'error': 'The selected dates conflict with an existing schedule or Leave Request.',
+                **result,
+            }), 409
+
+        today = get_manila_today()
+        header = LeaveRequest(
+            request_no=request_number(today),
+            user_id=target_user.id,
+            engineer_id=engineer.id,
+            application_date=today,
+            leave_type=leave_type,
+            start_date=start_date,
+            end_date=end_date,
+            weekday_count=len(leave_days),
+            duration_type=duration,
+            half_day_period=period,
+            status='Provisional',
+            requester_name_snapshot=engineer.name,
+            provisional_created_by_id=current_user.id,
+            provisional_created_at=get_manila_time(),
+            verbal_approval_notes=clean_str(payload.get('verbal_approval_notes')) or '',
+        )
+        db.session.add(header)
+        try:
+            db.session.flush()
+            update_calendar(header, 'Pending Approval')
+            audit(header, 'provisional_created', header.verbal_approval_notes)
+            db.session.add(ActivityLog(
+                user=current_user.username,
+                action=f'Provisional Leave Recorded: {header.request_no} for {engineer.name}',
+            ))
+            create_system_notification(
+                target_user.id,
+                'Leave Form to Follow',
+                f'{header.request_no} was recorded on the Calendar for {engineer.name}. Complete and submit the signed form.',
+                module='leave_request',
+                record_id=header.id,
+                target_url=f'/leave_request?open={header.id}',
+            )
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            print(f'[LeaveRequest] Provisional creation failed: {exc}', flush=True)
+            return jsonify({'success': False, 'error': 'Unable to record provisional leave.'}), 500
+
+        return jsonify({
+            'success': True,
+            'message': 'Leave was recorded on the Calendar as Form to Follow.',
+            'leave_request': to_dict(header),
+        }), 201
 
     @app.route('/api/leave-requests/check-conflicts', methods=['POST'])
     @login_required
@@ -823,7 +950,7 @@ def register_leave_feature(ctx):
         header.rejected_at = None
         header.rejected_by_id = None
         header.approval_remarks = None
-        if header.emergency_form_to_follow:
+        if header.emergency_form_to_follow or header.provisional_created_at:
             update_calendar(header, 'Pending Approval')
         audit(header, 'submitted')
         record_universal_approval_audit('leave_request', header.id, 'submitted', actor_user=current_user, status_from=previous, status_to='Submitted', remarks='Leave Request submitted for approval.', metadata={'request_no': header.request_no})
@@ -871,6 +998,37 @@ def register_leave_feature(ctx):
         header.approval_signature_snapshot = signature
         header.approval_signature_layout = 'signature_over_printed_name'
         header.approval_signed_at = now
+        # A provisional calendar block is superseded by the formal request. Clear it
+        # before writing the approved blocks so the engineer never sees duplicates.
+        for provisional_info in result.get('supersedable_provisionals', []):
+            provisional = db.session.get(LeaveRequest, provisional_info.get('id'))
+            if not provisional or provisional.status != 'Provisional':
+                continue
+            provisional_type = provisional.leave_type
+            provisional.status = 'Superseded'
+            provisional.updated_at = now
+            provisional.approval_action = 'Superseded'
+            provisional.approval_remarks = f'Superseded by approved Leave Request {header.request_no} (#{header.id}).'
+            update_calendar(provisional, 'Superseded', expected_dates=set())
+            audit(
+                provisional,
+                'superseded',
+                f'Superseded by approved Leave Request {header.request_no} (#{header.id}).',
+            )
+            db.session.add(ActivityLog(
+                user=current_user.username,
+                action=f'Provisional Leave Superseded: {provisional.request_no} by {header.request_no}',
+            ))
+            if provisional_type != header.leave_type and provisional.provisional_created_by_id:
+                create_system_notification(
+                    provisional.provisional_created_by_id,
+                    'Provisional Leave Replaced',
+                    f'{provisional.request_no} was replaced by approved Leave Request {header.request_no} for the same dates.',
+                    module='leave_request',
+                    record_id=header.id,
+                    target_url=f'/leave_request?open={header.id}',
+                )
+
         update_calendar(header, 'Approved')
         audit(header, 'approved', header.approval_remarks)
         record_universal_approval_audit('leave_request', header.id, 'approved', actor_user=current_user, status_from='Submitted', status_to='Approved', remarks=header.approval_remarks, metadata={'request_no': header.request_no})
@@ -894,7 +1052,7 @@ def register_leave_feature(ctx):
         header.rejected_at = get_manila_time()
         header.rejected_by_id = current_user.id
         header.approval_remarks = remarks
-        if header.emergency_form_to_follow:
+        if header.emergency_form_to_follow or header.provisional_created_at:
             update_calendar(header, 'Unapproved / Rejected')
         audit(header, 'rejected', remarks)
         record_universal_approval_audit('leave_request', header.id, 'rejected', actor_user=current_user, status_from='Submitted', status_to='Rejected', remarks=remarks, metadata={'request_no': header.request_no})

@@ -1384,6 +1384,15 @@
             "admins"
           ],
           "sort_order": 40
+        },
+        {
+          "item_key": "2026-08-05-provisional-leave-calendar",
+          "category": "Leave Request",
+          "description": "Named superadmins can now record a future or current Leave Request as Form to Follow from the Calendar while the employee completes the signed form; approval replaces the provisional block without creating duplicate leave entries.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 50
         }
       ]
     }

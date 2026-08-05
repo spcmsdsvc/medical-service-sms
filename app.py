@@ -14585,7 +14585,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v64-hr-schedule-viewer';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v65-provisional-leave';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -16045,7 +16045,8 @@ def timeline_page():
         logged_in_engineer_employee_id=engineer_employee_id,
         timeline_approver_view=is_configured_approver_user(),
         timeline_read_only_approver=(is_configured_approver_user() and not is_admin_authorized() and not has_engineer_profile()),
-        timeline_read_only_hr=is_hr_schedule_only_user()
+        timeline_read_only_hr=is_hr_schedule_only_user(),
+        timeline_is_named_superadmin=is_superadmin_user()
     )
 
 

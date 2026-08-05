@@ -55,6 +55,227 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Provisional leave: superadmins plotting leave ahead of approval
+
+**Status:** `In progress`
+**Started:** 2026-08-05, after the project owner gave the execution go-ahead.
+**Approved:** 2026-08-05
+**Detailed:** 2026-08-05, after tracing the leave approval path, the calendar writer, the
+2026-07-21 commit that closed manual leave plotting, and the existing Form-to-Follow mechanism.
+
+### Context
+
+A superadmin plotting August needs to block out a week of leave an engineer has already asked for
+verbally, while the signed form is still working through approval. Today they cannot: commit
+`44cb579` (2026-07-21, "Route current leave entries through leave requests") added a hard 400 in
+`/add_shift` for any leave-titled schedule dated today or later, **with no superadmin carve-out**,
+and hid the Leave option in the Add Schedule modal for non-past dates.
+
+Three corrections to the premise, established in code:
+
+- **The scenario fails at step 2, not step 4.** The superadmin cannot plot the leave at all.
+- **It would also fail at step 3.** `submit_leave_request` blocks on any overlapping calendar
+  commitment (`leave_feature.py:810-812`), so the engineer could not submit while a manual block
+  sat on those dates. Approval blocks the same way (`leave_feature.py:858-861`).
+- **"Manual leave" was never a real type.** `schedule_type='leave'` has never existed. The old
+  mechanism set the Shift *title* to a `LEAVE_CATEGORIES` string and created an ordinary
+  `schedule_type='service'` row, recognised by string matching. "Same leave type?" would have meant
+  comparing free text against `header.leave_type` — and the lists differ: `LEAVE_CATEGORIES`
+  (`app.py:1419`) carries Emergency and Paternity Leave, `LEAVE_TYPES` (`leave_feature.py:22`)
+  does not.
+
+Intended outcome: the superadmin plots leave from the calendar as before, but what it creates is a
+**real provisional leave request** the engineer then completes and signs — so in the normal case
+there is one record from start to finish and nothing to reconcile.
+
+### Decisions taken
+
+| Decision | Value |
+| --- | --- |
+| Entry point | The Add Schedule modal's **Leave** category, as before |
+| What it creates | A **provisional `LeaveRequest`** for the engineer, not a bare titled `Shift` |
+| Who can do it | **Superadmins only** — `is_superadmin_user()`, not `is_admin_authorized()` |
+| Engineer's path | Opens **that same record**, adds reason and signature, submits |
+| Approved leave vs a provisional on the same dates | **Approved always wins and is always placed** |
+| Different leave type | **Still replaced**, flagged loudly — both types named in the audit, plotter notified |
+| Both on the same dates | **Never.** Double-booking on leave is what the conflict detector exists to prevent |
+
+The reasoning on mismatch: a signed, audited, approved document beats a manually typed placeholder.
+A type mismatch is not a conflict to resolve on the calendar — it is a signal the plotter guessed
+wrong. Blocking approval would leave the engineer's approved leave unrecorded, which is today's
+behaviour and the thing being fixed.
+
+The owner initially chose "revive the old calendar Leave option" alongside "the engineer completes
+the existing record". Those are incompatible — the old option produces a bare titled `Shift` with
+no record to complete — and the conflict was resolved in favour of keeping the familiar **entry
+point** while creating a real leave request behind it.
+
+### Investigation
+
+- **The provisional mechanism already exists**, restricted to Sick Leave and to the requester:
+  `mark_leave_form_to_follow` (`leave_feature.py:773-794`) sets `provisional_created_by_id` /
+  `provisional_created_at` and calls `update_calendar(header, 'Form to Follow')`. The columns this
+  plan needs are already on the model (`leave_feature.py:85-87`).
+- `update_calendar()` (`leave_feature.py:400-446`) is the calendar writer: one `Shift` per
+  **weekday** (weekends excluded by `weekdays()`), `schedule_type='leave_request'`,
+  `leave_request_id` set, `group_id = leave-request-{id}`, times from `leave_time_range()` — full
+  day 08:00–17:00, half AM 08:00–12:00, half PM 13:00–17:00. It already reconciles
+  update-or-delete-obsolete against its **own** rows. Extend it, do not replace it.
+- **Leave-owned rows are protected from calendar mutation** — `update_shift` (`app.py:40382`) and
+  `delete_shift` (`app.py:41610`) return 409, and `delete_shift_rows_with_cleanup` silently skips
+  them (`app.py:41342`). Creating the provisional as a real leave row inherits that protection for
+  free; a bare titled Shift would not.
+- **Notification asymmetry, and how this plan avoids it.** Deleting through
+  `delete_shift_rows_with_cleanup` fires a "Schedule Deleted" email per row, while leave approval
+  fires no creation email at all — so a delete-then-create reconciliation would email the engineer
+  a deletion with nothing to balance it. `update_calendar()` deletes rows directly and sends
+  nothing, so **superseding through `update_calendar` avoids the problem entirely.** Do not route
+  this through `delete_shift_rows_with_cleanup`.
+- `submit_leave_request` requires `header.user_id == current_user.id` (`leave_feature.py:805`) and
+  `editable(header)` (`leave_feature.py:800`, `EDITABLE_STATUSES` at `leave_feature.py:25`). So the
+  provisional must be owned by the **engineer's** user account with the superadmin recorded only in
+  `provisional_created_by_id`, and its status must be editable.
+- `conflicts()` (`leave_feature.py:356-398`) takes `exclude_leave_id`, so a request is never
+  blocked by its own calendar rows. That is what makes the single-record flow work without touching
+  the conflict logic.
+- `save_leave_request` refuses to create for another engineer (`leave_feature.py:719-721`) — the
+  provisional needs its own route rather than a carve-out there.
+
+### Execution steps
+
+1. **Add a `Provisional` status.** Add it to `EDITABLE_STATUSES` (`leave_feature.py:25`) so the
+   engineer can complete and submit it, and to the pending buckets at `leave_feature.py:679` and
+   `687`. **Do not reuse `'Form to Follow'`** — that means "emergency Sick Leave, signed form
+   coming" and sets `emergency_form_to_follow`, which changes reject behaviour
+   (`leave_feature.py:897`). Conflating them would make rejection behave differently for reasons
+   nobody could trace. Done: a Provisional request is editable and appears in the engineer's
+   pending list.
+
+2. **Add `POST /api/leave-requests/provisional`** in `leave_feature.py`, guarded by
+   `is_superadmin_user()`. Takes engineer_id, leave_type, start/end date, duration/half-day period,
+   and optional `verbal_approval_notes`. Creates a `LeaveRequest` with `user_id` = **the engineer's
+   linked User**, `engineer_id` = their profile, `status='Provisional'`,
+   `provisional_created_by_id = current_user.id`, `provisional_created_at = now`, and a
+   `request_no` from `request_number()`. **Refuse if the engineer has no linked user account** —
+   otherwise nobody can ever sign it. Then `update_calendar(header, 'Pending Approval')`, which
+   already maps to that Shift status (`leave_feature.py:407-410`) so no calendar-side change is
+   needed. Audit, notify the engineer, `ActivityLog`. Done: a superadmin creates a typed, protected
+   leave block plus a record the engineer can sign.
+
+3. **Keep `/add_shift`'s leave block exactly as it is.** The modal routes Leave to the new endpoint
+   instead. That block correctly prevents untyped title-matched leave rows and should not be
+   reopened — reviving it is what would bring back free-text type matching. Done:
+   `block_new_calendar_leave_for_current_or_future` is untouched and still returns 400 for
+   everyone.
+
+4. **Re-enable the modal's Leave option for superadmins.** In `updateLegacyLeaveOptionForDate()`
+   (`templates/timeline.html:12524-12540`) add a superadmin branch to `allowLegacyLeave`. When
+   Leave is selected and the user is superadmin, the save path posts to the new endpoint rather
+   than `/add_shift`, and the form requires **exactly one** engineer — a leave request belongs to
+   one person, and the modal otherwise allows several. Done: a superadmin picks Leave for a future
+   date and it saves; everyone else sees the option hidden as now.
+
+5. **Let a provisional be superseded rather than block.** In `conflicts()`
+   (`leave_feature.py:356`) classify an overlapping `Provisional` request for the same engineer
+   into a new `supersedable_provisionals` bucket instead of `overlapping_leave_requests`, and leave
+   its `Shift` rows out of `blocking_schedules`. Submit and approve keep blocking on everything
+   else. Done: an engineer who files their own request can still submit and be approved over their
+   own provisional.
+
+6. **Supersede on approval.** In `approve_leave_request` (`leave_feature.py:849-881`), after the
+   header is marked Approved and **before** `update_calendar(header, 'Approved')`, resolve any
+   supersedable provisional: set its status to `'Superseded'`, record the approved request's id on
+   it, and clear its calendar rows via `update_calendar` on that header with an empty expected
+   range — **not** `delete_shift_rows_with_cleanup`, per the notification finding. Ordering is
+   load-bearing: clear the provisional's rows first, or the approved request's rows collide with
+   them on the same dates. Done: the approved leave lands and the provisional's blocks are gone.
+
+7. **Flag a type mismatch loudly.** When the superseded provisional's `leave_type` differs from the
+   approved request's, write an audit entry naming **both** types, and `create_system_notification`
+   to `provisional_created_by_id` saying which dates changed and from what to what. A matching type
+   gets a quieter audit line and no notification. Never block either way.
+
+8. **Release plumbing.** `releases.json` entry dated the commit date or
+   `test_changelog_coverage.py` fails. `templates/timeline.html` **is** an `APP_SHELL` route
+   (`app.py:14593`), so this **does** need a service worker bump — currently
+   `v64-hr-schedule-viewer`; **read the live value out of `app.py` immediately before committing**
+   rather than trusting this line.
+
+### Deliberately excluded
+
+- **Reviving the untyped title-matched leave row.** The entry point is restored; the mechanism
+  behind it is not. Free-text titles as a type system is what made "is it the same leave type?"
+  unanswerable in the first place.
+- **Schedulers and regional admins plotting leave.** Superadmins only, per the decision. Widening
+  it later is a one-line predicate change.
+- **Cancelling or un-approving an approved leave.** No such route exists today
+  (`reject_leave_request` only accepts `Submitted`), and adding one is its own task with its own
+  calendar and HR-email consequences.
+- **Reconciling the two leave-type lists.** `LEAVE_CATEGORIES` (`app.py:1419`) and `LEAVE_TYPES`
+  (`leave_feature.py:22`) disagree, and `classify_schedule_type` still buckets by title string
+  (`app.py:35211`). Real inconsistency, pre-existing, and off this path once the provisional
+  carries a proper `leave_type`.
+- **Leave balance accounting.** Nothing tracks entitlement or deducts days, so a type change has no
+  balance to correct.
+
+### Verification
+
+- **Drive the owner's scenario end to end, by calling it**: superadmin plots a one-week VL
+  provisional; assert the calendar carries five weekday blocks with `schedule_type='leave_request'`
+  and `leave_request_id` set, and **not** a `service` row. The engineer opens the same record, adds
+  a reason and signature, and **submits successfully** — the assertion that proves the
+  single-record flow, since submit blocks on conflicts today and must not block on its own rows.
+  Approve and assert the blocks survive with status Approved.
+- **The mismatch path**: superadmin plots VL, engineer files a *separate* SL request, approve it.
+  Assert the SL blocks are placed, the VL provisional is `Superseded` with **zero** remaining Shift
+  rows, and **exactly one** set of blocks exists for those dates — the no-double-booking assertion.
+  Assert the audit names both leave types and a notification reached `provisional_created_by_id`.
+  Positive control: the same flow with matching types supersedes too but sends **no** mismatch
+  notification, so that assertion is reading the mismatch branch rather than firing unconditionally.
+- **Assert no "Schedule Deleted" email fires** during supersede — the specific asymmetry
+  `delete_shift_rows_with_cleanup` would have introduced.
+- **Assert a non-superadmin is refused** the provisional endpoint (403) and still sees the Leave
+  option hidden. Positive control: the superadmin succeeds on the identical request.
+- Assert `/add_shift` still returns 400 for a leave-titled future schedule for everyone, proving
+  step 3 left that path closed.
+- **Prove each new test fails without its fix**, injecting one defect at a time, **verifying the
+  injection applied by SHA** before trusting a run and confirming the file is restored
+  byte-identical. A `\n` search string against these CRLF files silently matches nothing.
+- **Browser**, isolated database, explicit `MEDICAL_SERVICE_TEST_DB`, never port 5000: plot leave
+  from the real modal as a seeded superadmin, sign in as the engineer and complete it, approve as
+  the approver. Confirm the leave block cannot be dragged, edited or deleted from the calendar (409,
+  inherited from leave-row protection). Standing bar: no horizontal overflow at 375 px, no tap
+  target under 44 px, console clean. **Restart the server after every template edit** — Jinja caches
+  compiled templates — and unregister the service worker and clear both caches after each asset
+  edit, not once.
+- Full suite via the documented command as **its own step before the commit**, never chained ahead
+  of `git push`.
+
+### After implementation
+
+Review against this plan before committing and correct this record where the outcome differed. Then
+the standing checklist in `pending-work.md` section 4: `git fetch origin`, re-read `origin/main`
+**after** the work, stage file by file, never `git add -A`, keep `scheduler.db` out by name, confirm
+with `git show --name-only`, push `main`. Add the `changes.md` entry in the same task.
+
+### Risks
+
+**The one that matters: two sets of leave blocks on the same dates.** If step 6's ordering is wrong
+— the approved request's rows written before the provisional's are cleared — the engineer is
+double-booked on leave, which is exactly the outcome every decision here was made to prevent. The
+net is the "exactly one set of blocks" assertion, which fails loudly rather than leaving a
+plausible-looking calendar.
+
+**Second: a provisional nobody can sign.** If the target engineer has no linked `User`, the record
+is created, blocks the calendar, and can never be submitted or approved — a permanent phantom. Step
+2 refuses up front for that reason.
+
+**Third: `Provisional` is a new status in a module that branches on status in several places.**
+`EDITABLE_STATUSES`, `ACTIVE_CONFLICT_STATUSES`, the queue buckets and the UI status rendering all
+enumerate statuses. Sweep for `status ==` and `status.in_` in `leave_feature.py` before relying on
+it; a status that is editable but missing from `ACTIVE_CONFLICT_STATUSES` would stop blocking
+double-booking elsewhere.
+
 ## Staff type and permission tickboxes on Add Personnel
 
 **Status:** `Executed — 4516c89`

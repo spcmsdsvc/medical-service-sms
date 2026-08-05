@@ -43,6 +43,38 @@ claude changes - 2026-08-05 (Add Personnel review)
   and `User` carries only `username`, so "Maria Santos" becomes `maria` and that is all the
   Settings list can ever show. Worth deciding before real HR staff are onboarded.
 
+## Provisional Leave From Calendar
+
+* Added the named-superadmin Calendar path for recording a future or current Leave schedule as a
+  real provisional `LeaveRequest`, rather than creating an untyped ordinary `Shift`. The modal
+  now exposes optional verbal/chat approval notes, requires exactly one assigned engineer for
+  this path, and keeps the existing Leave entry hidden for non-superadmin users and protected
+  future-date `/add_shift` behavior unchanged.
+* Added `POST /api/leave-requests/provisional` in `leave_feature.py`. It validates the selected
+  engineer's linked user account, leave type, weekday range, and half-day values; records the
+  plotter, timestamp, and notes; writes protected weekday calendar blocks with
+  `schedule_type='leave_request'`; audits the action; and notifies the employee to complete the
+  signed request. The route is explicitly limited to named superadmins and rejects direct access
+  by other roles.
+* Added the `Provisional` lifecycle to editable and pending Leave Request buckets. Provisional
+  blocks remain editable by the employee through the existing Leave Request record, can be signed
+  and submitted without conflicting with their own protected rows, and transition to Pending
+  Approval, Approved, or Unapproved / Rejected without creating duplicate calendar entries.
+* Updated Leave conflict evaluation to separate overlapping provisional requests from genuine
+  blocking schedules and active Leave Requests. A separate formal request can replace a matching
+  provisional block; approval clears the provisional rows directly through `update_calendar()` so
+  no misleading Schedule Deleted email is emitted, then writes exactly one approved set of rows.
+  Type mismatches are retained in audit history and notify the original plotter.
+* Added `tests/test_provisional_leave.py` covering same-record provisional-to-approved flow,
+  separate-request superseding and mismatch notification, and the non-superadmin 403 guard.
+  Targeted Leave, timeline, theme, dashboard, offline, changelog, and service-worker suites passed;
+  the complete repository suite passed with **445 tests**. `git diff --check` passed.
+* Bumped the app-shell service worker to
+  `medical-service-pwa-offline-navigation-v65-provisional-leave` and added the corresponding
+  admin-targeted What’s New release item in `static/changelog/releases.json`. No database schema
+  replacement was performed, and `scheduler.db`, generated output, and temporary files remain
+  excluded from the implementation release.
+
 claude changes - 2026-08-05
 
 ## Review of the HR schedule viewer: the export handed back what the calendar hid
