@@ -57,11 +57,13 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Provisional leave: superadmins plotting leave ahead of approval
 
-**Status:** `In progress`
+**Status:** `Executed — 5c976bb`
 **Started:** 2026-08-05, after the project owner gave the execution go-ahead.
 **Approved:** 2026-08-05
 **Detailed:** 2026-08-05, after tracing the leave approval path, the calendar writer, the
 2026-07-21 commit that closed manual leave plotting, and the existing Form-to-Follow mechanism.
+**Finished:** 2026-08-05, implementation committed as `5c976bb`; full verification passed and the
+ release is ready to push without database or generated-artifact changes.
 
 ### Context
 

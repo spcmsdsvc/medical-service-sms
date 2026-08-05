@@ -74,6 +74,9 @@ claude changes - 2026-08-05 (Add Personnel review)
   admin-targeted What’s New release item in `static/changelog/releases.json`. No database schema
   replacement was performed, and `scheduler.db`, generated output, and temporary files remain
   excluded from the implementation release.
+* Implementation commit: `5c976bb` (`Add provisional leave calendar workflow`). The plan record in
+  `plans.md` is now marked executed with that commit hash; the follow-up journal commit contains
+  documentation only.
 
 claude changes - 2026-08-05
 
