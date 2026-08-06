@@ -7,13 +7,15 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last filled: 2026-08-05, at the owner's request, recording two items the owner closed — the
-barcode scanner verified clean, and the What's New digest self-test sent and confirmed, which
-leaves only the real audience send. No code shipped with this fill. A stale service worker
-version in section 4 was corrected in the same pass.
+Last filled: 2026-08-05 (end of session), at the owner's request, after **six features shipped
+and were reviewed in one day**: HR schedule viewer, staff types on Add Personnel, provisional
+leave, request recall, grantable admin capabilities, and TSR previews on schedule cards. Every
+one was built by Codex from a plan recorded here and reviewed afterwards in this repository. The
+review found two privilege escalations and one silent-no-op; all are fixed and pushed.
 
-Filled before that on 2026-08-04, after the offline audit, both recorded plans, and the review
-of two commits that came from another tool.
+Filled earlier the same day recording the barcode scanner verified clean and the What's New
+digest self-test sent, and on 2026-08-04 after the offline audit and the review of two commits
+from another tool.
 
 > **Read this first: you are not the only agent in this repository.** Codex works in the same
 > working tree and pushes to the same branch. During the 2026-08-02 session it wrote an entry
@@ -54,9 +56,33 @@ lands here.
 | `6d824a5` | Engineer read-only stock inventory (Codex) |
 | `aff9001` | Reimbursement package total consistency (Codex) |
 | `8f72ce2` | Narrowed a widened branch check; fresh test DB per run |
+| `db285d5` | Barcode scanner closed, digest item narrowed |
 
-Suite green at **422 tests**. Service worker cache at **`v63-stock-inventory-readonly`** —
+**The 2026-08-05 run, newest last.** Codex built each feature; the `claude` commits are the
+reviews that followed.
+
+| Commit | What |
+| --- | --- |
+| `9b6effd` `a7560f3` `2ff9181` `d6478a1` | HR read-only schedule viewer (Codex) |
+| `5278df2` | **Review fix** — the HR CSV export leaked what the calendar redacted |
+| `4516c89` `90f3b2e` | Staff types and permission tickboxes on Add Personnel (Codex) |
+| `79d2847` | **Review fix** — pinned three permission rules changed inside a refactor |
+| `5c976bb` `35673e1` | Provisional leave plotted from the calendar (Codex) |
+| `b5dd637` | **Review fix** — the supersede notice named neither leave type |
+| `2c20eed` `6b8021f` | Request recall with a mandatory reason (Codex) |
+| `2ce472b` `fb3f37f` | Grantable admin capabilities in Settings (Codex) |
+| `54c4aaa` | **Review fix** — regional admin could schedule Manila; worker bumped |
+| `5462c38` | Recorded the schedule-card TSR plan |
+| `6fa7fe4` `4748cac` | TSR previews from the schedule details popover (Codex) |
+| `9b33c02` | **Review fix** — three tests asserted source text, not behaviour |
+
+Suite green at **468 tests**. Service worker cache at **`v69-tsr-link-tap-target`** —
 **read the live value out of `app.py` immediately before committing**, never from a note.
+
+**Every review found something, and two were live privilege escalations.** That is the single
+most useful fact for the next reader: the implementations were competent, the suites were green,
+and the defects were still there. Both escalations passed hundreds of tests because **nothing
+exercised the affected account**. See section 6.
 
 **A third journal now exists.** `plans.md` holds what was **agreed and is waiting to be
 built**; `changes.md` what **was** done; this file what is **still open**. Approving a plan is
@@ -66,8 +92,16 @@ not permission to execute it — see `AGENTS.md`, "Approved Plans".
 execution steps naming the files and functions each touches and what "done" looks like, an
 investigation section citing `file:line`, and an "After implementation" section covering the
 review and release workflow. The required structure is in `plans.md` under "How to use this
-file". Plan B is the reference example. Both plans recorded on 2026-08-01 are now `Executed`;
-nothing is currently waiting for a go-ahead.
+file". Plan B is the reference example. **Every plan in `plans.md` now reads `Executed`;
+nothing is waiting for a go-ahead.**
+
+**But the "wait for a go-ahead" rule did not hold in practice on 2026-08-05, and the next reader
+should know that before trusting a `Status` line.** Two plans were executed while still recorded
+as `Approved — awaiting go-ahead` — grantable admin capabilities most clearly, which was written
+here with an explicit "nothing built" note and was implemented anyway. Nothing was reverted,
+because the work was sound apart from the escalation the review caught. The rule is still the
+right one; it simply is not currently a reliable signal, so **read `git log` rather than a status
+line to learn what has actually shipped.**
 
 **The dashboard redesign is complete, and the hybrid question that outlived it is now
 decided.** All four phases plus the ratification:
@@ -91,9 +125,20 @@ session recorded.
 ## 1. Open bugs
 
 **None currently open.** Everything found in the 2026-08-01 offline audit has shipped; the
-five items it raised are all closed (`a01f2b6`, `515698f`, `f268397`, `ca00803`).
+five items it raised are all closed (`a01f2b6`, `515698f`, `f268397`, `ca00803`). The four
+defects found in the 2026-08-05 reviews are all fixed and pushed.
 
-**Fixed since the last fill, worth knowing because each one blocked real work:**
+**Fixed on 2026-08-05, and worth reading even though they are closed — each was live on
+`origin/main` with a green suite:**
+
+| What was wrong | Why the suite missed it | Fixed in |
+| --- | --- | --- |
+| **The regional admin could schedule Manila engineers**, which the code documents as forbidden. Fired with no toggle enabled — a pure regression | `can_manage_any_schedule()` is `is_admin_authorized or flag`, and `is_admin_authorized` **includes** the regional admin. Placed ahead of their narrower branch, it returned True first and the Cebu/Davao check never ran. **No test exercised the regional admin at all** | `54c4aaa` |
+| **The HR CSV export returned what the calendar redacted** — job title and equipment, for a role built to see neither | `/export_timeline` builds its own cell text and never called the redaction helper. The test asserted a 200 and that HR personnel were excluded, never that the file was redacted. The fixture also had no product, so an equipment leak read as clean | `5278df2` |
+| Ticking **HR Schedule View beside Can Approve Requests** was refused with a message naming two switches that were both off | The message was written before the rule was widened, and no test asserted its content | `79d2847` |
+| The **provisional-leave supersede notice named neither leave type** — a superadmin who plotted Vacation Leave was told their record was replaced, not that it became Sick Leave | The type was captured into a variable used only for the `!=` comparison and never reached a message. The test asserted the notification existed, never what it said | `b5dd637` |
+
+**Fixed before that, each of which blocked real work:**
 
 | What broke | Cause | Fixed in |
 | --- | --- | --- |
@@ -319,6 +364,31 @@ None of this is known broken — it simply has not been checked.
 | **Mobile viewport (375px)** | the What's New filter/search row. Every dashboard phase and the ratification were checked at 375px; this row still has not been |
 | **Skip link visual reveal on real keyboard focus** | layout shell |
 | **Offline schedule attachments from a real device camera** | the least-proven part of `709106c` — see below |
+| **Everything shipped on 2026-08-05, in a browser** | **All six features.** See the note directly below — this is the largest unverified block in the file |
+
+### The 2026-08-05 features were proven by calling, not by using
+
+Every review that day verified behaviour **through the endpoints** — building a user, hitting the
+route, asserting the status code and the response body. That is the right way to prove
+authorization, and it is how both privilege escalations were found. It proves nothing about
+whether the screens work.
+
+Codex reports local browser and smoke checks in its `changes.md` entries; those were not
+independently repeated here. So for each of the six, the server behaviour is well proven and the
+interface is not:
+
+| Feature | Proven by calling | Not seen on a real viewport |
+| --- | --- | --- |
+| HR schedule viewer | Redacted feed and export, all writes refused, stripped nav computed | The HR account's actual calendar, sidebar, and that no control is reachable |
+| Staff types on Add Personnel | All four escalation paths refused, three account shapes created | The modal's staff-type switching, which fields hide, the success message |
+| Provisional leave | Blocks created, superseded with zero duplicates, audit text | Plotting from the real Add Schedule modal; the engineer completing the record |
+| Request recall | Every guard, the race guard, provisional blocks preserved | The recall modal in all five requester templates, and its required-reason field |
+| Admin capabilities | Per-capability endpoint access, escalation refused, branch limit restored | The three Settings toggles, and what a grantee's sidebar actually shows |
+| Schedule-card TSR previews | `is_tsr` on both endpoints, HR redaction, identical shapes | **The whole point of the feature** — opening Details and clicking through to a TSR |
+
+The last row matters most: it is a pure interface feature, so calling the endpoint confirms the
+data and says nothing about whether a user can reach it. Worth one deliberate browser pass across
+all six before the next feature lands on top, at 375 px as well as desktop.
 
 On the skip link: the Browser pane does not composite frames, so CSS transitions never
 advance, and its window is unfocused so `:focus` never matches. Disabling the transition
@@ -408,11 +478,21 @@ Standing checklist for any commit here:
 *untracked* files, so **gitignore does not protect it**. Exclude it by name at every step.
 Same for `.env`, which holds a real Brevo API key.
 
-**Bump the service worker cache** whenever an `APP_SHELL` entry changes, or field devices
-keep the old copies. Tests use `assert_cache_version_at_least`, so a bump never breaks them.
-Currently `v63-stock-inventory-readonly`. **Read the live value out of `app.py` immediately
-before committing** — `v49` was claimed and then overwritten by a `v50` bump from outside that
-session, and the stale assumption nearly shipped stale dashboard assets to field devices.
+**Bump the service worker cache** whenever an `APP_SHELL` entry changes, or field devices keep
+the old copies. Tests use `assert_cache_version_at_least`, a **floor**, so a bump never breaks
+them — do not pin an exact version in a test, which makes the required bump fail the suite.
+
+**No current version is written here on purpose.** This line has gone stale twice and been
+corrected twice, inside the very paragraph telling you not to trust notes. **Read the live value
+out of `app.py` immediately before committing.** `v49` was claimed and then overwritten by a
+`v50` bump from outside that session, and the stale assumption nearly shipped old dashboard
+assets to field devices.
+
+**What counts as an `APP_SHELL` change is wider than it looks.** `/timeline` is the first entry,
+so any edit to `templates/timeline.html` qualifies — including CSS. `templates/layout.html` is
+embedded in every shell page, so it qualifies too. One 2026-08-05 commit shipped a whole
+capability without a bump, its journal asserting no `APP_SHELL` asset had changed; a cached
+device would have had the permission and none of the buttons.
 
 **Multi-line commit messages:** write them to a file and use `git commit -F <file>`. A
 PowerShell here-string breaks on double quotes inside the message and silently reinterprets
@@ -574,7 +654,58 @@ routine.
 
 ---
 
-## 6. Pattern worth knowing before the next feature
+## 6. Patterns worth knowing before the next feature
+
+### The four lessons from 2026-08-05, in order of how much time they will save you
+
+**1. A broad admin predicate placed ahead of a narrower role branch deletes the narrower rule.**
+This is the shape of the worst defect found all day. `can_manage_any_schedule()` was written as
+`is_admin_authorized(target) or flag` so that existing admins would keep their access — sensible
+in isolation. Dropped into the four schedule helpers *above* the regional-admin branch, it
+returned True first and silently removed the "Cebu and Davao only, never Manila" rule. The fix
+was a second predicate, `has_schedule_admin_capability()`, carrying the flag **alone**. Before
+adding any capability check to a function that already branches on roles, ask what comes *after*
+it and whether that branch narrows anything.
+
+**2. "The tests still pass" is not evidence during a refactor of live authorization rules.**
+Extracting `resolve_staff_permission_request()` was specified as pure movement and changed three
+rules; the existing Settings tests passed because none of them covered those inputs. Both
+escalations survived hundreds of green tests for the same reason: **nothing exercised the
+affected account.** When you move authorization logic, list the accounts the rules distinguish
+between and assert each one before and after — the regional admin, an approver-only account, a
+plain engineer. A suite only proves what it exercises.
+
+**3. An assertion on source text is not a test, and this repo has now produced five.**
+`test_stock_inventory` pinned a line that a safe refactor broke; `test_admin_capabilities`
+asserted a raw-role string was absent; `test_request_recall` pinned the exact cache version so
+that bumping the worker — a **required** step — failed the suite; `test_timeline_tsr_file_details`
+claimed to test HR redaction by checking that `'file_details': [],` appears somewhere in
+`app.py`. Each was replaced with a behavioural assertion plus a positive control. The rule:
+**build the account, call the route, assert the response.** The narrow exception is inline
+template JavaScript, where there is no JS runner — there, assert an *outcome* (that a function no
+longer calls `openEditModal`) rather than pinning how the replacement is written, and say so in a
+comment.
+
+**4. An injection that does not reproduce the defect proves nothing — and it looks like success.**
+Proving the endpoint-shape test required diverging one endpoint. The first attempt edited the
+*shared* serializer, so both feeds changed together, stayed identical, and the test correctly
+passed. It read exactly like a healthy control. This is the same family as the CRLF trap in
+section 4: **verification steps can fail in the reassuring direction.** After every injection,
+confirm it applied (SHA the file) *and* that the test failed **for the reason you expected** —
+read the assertion message, not just the exit code.
+
+### Two smaller ones from the same day
+
+**Redaction that stops at one exit.** The HR calendar hid job titles and equipment; the CSV export
+of the same data did not, because it built its own cell text. If you redact something, find every
+path that serialises it — screen, export, email, PDF — and make them read one function.
+
+**Bump the worker when a template changes, even if it feels like CSS.** `templates/timeline.html`
+is `APP_SHELL` entry #1 and `layout.html` is embedded in every shell page, so a cached device
+keeps the old markup. One commit shipped a whole capability with no bump and a journal entry
+asserting no `APP_SHELL` asset had changed. A one-line CSS fix in `timeline.html` needs a bump too.
+
+### The de-duplication pattern
 
 The same defect appeared **three times independently** across the dashboard endpoints:
 buckets of rows concatenated without de-duplication, so an item qualifying for two buckets
