@@ -57,16 +57,15 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## P.O. Details page, with a grantable access toggle
 
-**Status:** `Executed — pending implementation commit hash`
+**Status:** `Executed — b01c78c`
 **Started:** 2026-08-06, after the project owner explicitly said to execute the plan.
 **Approved:** 2026-08-06
 **Detailed:** 2026-08-06, after tracing the Clients page end to end, the grantable-capability
 pattern from the 2026-08-05 admin-capabilities work, and how the Analytics page is built.
 
 **Finished:** 2026-08-06, after implementation, focused tests, the full test suite, and a
-throwaway-database browser verification. The implementation commit hash will be recorded here
-immediately after the first commit; the follow-up journal commit will contain only that status
-update and completion documentation.
+throwaway-database browser verification. Implementation commit: `b01c78c`. The follow-up journal
+commit contains this final status update and completion documentation.
 
 ### Execution outcome
 
@@ -77,8 +76,9 @@ Client delete-orphan cascade, responsive filtering/sorting/modal UI, release met
 service-worker cache bump. The implementation intentionally excludes amounts, CSV import/export,
 Shift/TSR/Product linkage, and analytics, as decided above. Verification passed with 13 focused
 P.O. tests, 472 full-suite tests plus one expected skip, Python/JavaScript checks, and a local
-browser pass on a throwaway database. `scheduler.db`, `output/`, `tmp/`, and the handoff note are
-not part of the implementation or release.
+browser pass on a throwaway database. Implementation commit `b01c78c` contains the approved code
+and tests. `scheduler.db`, `output/`, `tmp/`, and the handoff note are not part of the implementation
+or release.
 
 Execution is now authorized. The implementation must preserve the two owner-emphasized
 safeguards below, and must not stage or modify the tracked local database.

@@ -40,6 +40,8 @@ claude changes - 2026-08-06
 * The release manifest and service-worker cache version were updated for the P.O. Details page and
   Settings access toggle. `scheduler.db`, the handoff note, `output/`, and `tmp/` remain outside
   the staged change set and are not eligible for commit or push.
+* The verified implementation was committed as `b01c78c`; the follow-up journal commit records the
+  final plan status without adding database or generated artifacts.
 
 ## Browser pass over the six 2026-08-05 features (read-only; no project files changed)
 
