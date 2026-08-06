@@ -12,8 +12,9 @@ done and a seventh feature shipped and was reviewed**. Three things changed the 
 
 1. **All six 2026-08-05 features were driven through a browser.** That was the largest unverified
    block in this file and it is now closed — see section 3. Five passed. The pass found **two new
-   bugs**, both in section 1. **1a (the export cache leak) was fixed the same day**; **1b (every
-   provisional-leave failure reason discarded before the user sees it) is still open.**
+   bugs**, both in section 1 — the export cache leak and every provisional-leave failure reason
+   being discarded before the user sees it. **Both were fixed the same day**, in `v71` and `v72`.
+   **Section 1 is empty again.**
 2. **P.O. Details shipped** (`b01c78c`, `3dd83b1`, Codex) and was reviewed here (`5b40dde`). The
    implementation was sound; the review found the Settings switch reporting an effective
    permission rather than the stored grant, and that the journal claimed test coverage that did
@@ -98,9 +99,10 @@ reviews that followed.
 | `b01c78c` `3dd83b1` | P.O. Details register and its grantable access toggle (Codex) |
 | `5b40dde` | **Review fix** — the P.O. Settings switch reported the effective permission, not the stored grant; six missing tests added |
 | `ad463c8` | The same write-back fixed in the two stock inventory switches, at the owner's request |
-| `v71` bump | Authenticated exports made network-only, closing open bug 1a — the runtime-cache leak |
+| `v71` bump | Authenticated exports made network-only, closing bug 1a — the runtime-cache leak |
+| `v72` bump | Provisional-leave refusals now show the server's reason, closing bug 1b |
 
-Suite green at **485 tests**. Service worker cache at **`v71-export-network-only`** —
+Suite green at **488 tests**. Service worker cache at **`v72-schedule-error-text`** —
 **read the live value out of `app.py` immediately before committing**, never from a note.
 
 **Every review found something, and two were live privilege escalations.** That is the single
@@ -148,9 +150,10 @@ session recorded.
 
 ## 1. Open bugs
 
-**One open.** Both were found by the 2026-08-06 browser pass; **1a was fixed later the same day**
-at the owner's request and is kept below with its reproduction, because the mechanism is worth
-knowing before touching the service worker again. **1b is still open and unfixed.**
+**None open.** Both bugs found by the 2026-08-06 browser pass were fixed the same day, at the
+owner's request — 1a in `v71`, 1b in `v72`. Both entries are kept below with their reproductions,
+because each is a clean worked example of a defect class this project keeps meeting: a cache key
+that is wrong rather than stale, and two modules that disagree about a payload key.
 
 ### ~~1a. The service worker runtime cache serves one account's export to another~~ — FIXED, `v71`
 
@@ -218,6 +221,27 @@ This is the item that **re-opens a section 5 decision** — see the correction t
 should be cleared on logout in general — authenticated HTML still persists there after sign-out,
 and the reasoning that made that acceptable predates the HR role. Read the correction in section 5.
 
+### ~~1b. Every provisional-leave failure reason is discarded before the user sees it~~ — FIXED, `v72`
+
+**Fixed the same day, on the client.** Both sides were audited first: the three schedule endpoints
+feeding `handleScheduleError()` — `/add_shift`, `/update_shift`, `/move_shift` — use `message`
+exclusively, while `leave_feature.py` uses `error` throughout. The helper is the **adapter between
+two modules with different conventions**, so it is where they get reconciled; changing the endpoint
+would have made one leave route inconsistent with the rest of its own module. `scheduleErrorText()`
+now reads `message` first, then `error`, so nothing that already worked changes.
+
+Verified on screen, all three paths: a Sunday now says "The selected range contains no weekdays.";
+plotting over an existing provisional says "The selected dates conflict with an existing schedule
+or Leave Request."; and a free weekday still saves with its success toast — the control proving the
+success path was not disturbed.
+
+**Left as a possible improvement:** routing the 409 to `showConflictWarning()` would name the
+conflicting request rather than describing it, but that function expects a schedule-collision
+shape. Not bundled into a bug fix.
+
+<details>
+<summary>Original entry, retained for the mechanism</summary>
+
 ### 1b. Every provisional-leave failure reason is discarded before the user sees it
 
 `handleScheduleError` reads `errorPayload?.message`, but **every** failure return from
@@ -240,6 +264,8 @@ before changing the helper rather than the endpoint.
 the formal Leave Request**, not on plotting a second provisional, so the 409 is correct behaviour.
 The `b5dd637` message naming both leave types lives on that approval path and was **not**
 re-verified in a browser — it is server-side text the earlier review proved by calling.
+
+</details>
 
 **Everything else is closed.** The 2026-08-01 offline audit's five items all shipped
 (`a01f2b6`, `515698f`, `f268397`, `ca00803`), and the four defects from the 2026-08-05 reviews

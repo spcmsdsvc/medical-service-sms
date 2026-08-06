@@ -1474,6 +1474,15 @@
             "admins"
           ],
           "sort_order": 30
+        },
+        {
+          "item_key": "2026-08-06-provisional-leave-refusal-reasons",
+          "category": "Calendar",
+          "description": "When provisional Leave cannot be recorded, the Calendar now shows the actual reason instead of a generic message. Weekend-only ranges, invalid dates, and clashes with an existing schedule or Leave Request each say what to change.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 40
         }
       ]
     }

@@ -368,6 +368,78 @@ class ProvisionalLeaveWorkflowTests(unittest.TestCase):
     def app_module_header(self, leave_id):
         return app_module.db.session.get(app_module.LeaveRequest, leave_id)
 
+    def test_every_rejection_carries_a_specific_reason_under_error(self):
+        """The server contract half of the fix.
+
+        Plotting provisional leave on a weekend answered "Unable to record provisional
+        Leave." on screen while the server had said "The selected range contains no
+        weekdays." Each rejection below is a distinct, actionable reason, and every one of
+        them is set under `error` -- the key the client did not read.
+        """
+        client = self._client_as(self.superuser_id)
+        cases = [
+            ({'start_date': '2099-08-08', 'end_date': '2099-08-09'}, 'weekday'),
+            ({'start_date': 'not-a-date', 'end_date': 'not-a-date'}, 'date'),
+            ({'leave_type': 'Nap Leave'}, 'leave type'),
+            ({'engineer_id': 99999999}, 'engineer'),
+        ]
+        start, end = self._range(400)
+        for override, expected_fragment in cases:
+            payload = self._provisional_payload(start, end)
+            payload.update(override)
+            response = client.post('/api/leave-requests/provisional', json=payload)
+            self.assertEqual(response.status_code, 400, f'{override} was accepted')
+            body = response.get_json()
+            self.assertTrue(body.get('error'), f'{override} gave no reason at all')
+            self.assertIn(expected_fragment.lower(), body['error'].lower())
+            # Positive control on the premise: the reason really is NOT under `message`,
+            # which is why reading only that key discarded it.
+            self.assertIsNone(body.get('message'))
+
+    def test_the_client_reads_the_key_the_server_actually_sets(self):
+        """The cross-file half. This is the bug: two files, two conventions.
+
+        Asserted against source because this project has no JavaScript runner for the
+        inline timeline script. It checks an outcome -- that the extraction helper reads
+        both keys, and that handleScheduleError() goes through it rather than reaching for
+        `.message` directly -- rather than pinning how the helper is written.
+        """
+        timeline = (pathlib.Path(__file__).resolve().parents[1] / 'templates' / 'timeline.html').read_text(encoding='utf-8')
+
+        helper = timeline.split('function scheduleErrorText(errorPayload){')[1].split('}')[0]
+        self.assertIn('errorPayload?.message', helper)
+        self.assertIn('errorPayload?.error', helper)
+        self.assertLess(
+            helper.find('errorPayload?.message'), helper.find('errorPayload?.error'),
+            'message must be read first so nothing that works today changes',
+        )
+
+        handler = timeline.split('function handleScheduleError(errorPayload, fallbackMessage){')[1].split('\n    }')[0]
+        self.assertIn('scheduleErrorText(errorPayload)', handler)
+        self.assertNotIn('errorPayload?.message', handler,
+                         'the handler must go through the helper, not read one key directly')
+
+    def test_the_conflict_reason_is_also_recoverable(self):
+        """The 409 is the most informative rejection and was lost the same way.
+
+        It names the conflicting request. It carries neither `status: 'conflict'` nor
+        `conflict`, so handleScheduleError()'s conflict branch does not fire either and it
+        falls through to the text path -- which is why the text path had to be the fix.
+        """
+        client = self._client_as(self.superuser_id)
+        start, end = self._range(500)
+        first = client.post('/api/leave-requests/provisional', json=self._provisional_payload(start, end))
+        self.assertEqual(first.status_code, 201)
+        self.created_leave_ids.append(first.get_json()['leave_request']['id'])
+
+        clash = client.post('/api/leave-requests/provisional', json=self._provisional_payload(start, end))
+        self.assertEqual(clash.status_code, 409)
+        body = clash.get_json()
+        self.assertTrue(body.get('error'))
+        self.assertIsNone(body.get('status'))
+        self.assertIsNone(body.get('conflict'))
+        self.assertTrue(body.get('supersedable_provisionals'))
+
 
 if __name__ == '__main__':
     unittest.main()

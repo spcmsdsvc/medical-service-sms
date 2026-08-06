@@ -14734,9 +14734,21 @@ if(shift.engineers){
         return !!(errorPayload && errorPayload.status === 'travel_conflict' && errorPayload.allow_override);
     }
 
+    // The schedule endpoints (/add_shift, /update_shift, /move_shift) report failures under
+    // `message`. The leave module reports them under `error` -- leave_feature.py uses that key
+    // exclusively. handleScheduleError() was written for the first group and later reused for
+    // /api/leave-requests/provisional, so every reason that endpoint gives was read from a key it
+    // never sets and silently replaced by the generic fallback: plotting leave on a weekend
+    // answered "Unable to record provisional Leave." instead of "The selected range contains no
+    // weekdays." Seven distinct reasons were lost this way, including the 409 that names the
+    // conflicting request. Read both keys, `message` first so nothing that works today changes.
+    function scheduleErrorText(errorPayload){
+        return errorPayload?.message || errorPayload?.error || '';
+    }
+
     function handleScheduleError(errorPayload, fallbackMessage){
         if(isTravelConflictPayload(errorPayload)){
-            timelineAlert(errorPayload?.message || 'Approved travel conflict detected. Please confirm to continue.', 'warning');
+            timelineAlert(scheduleErrorText(errorPayload) || 'Approved travel conflict detected. Please confirm to continue.', 'warning');
             return;
         }
 
@@ -14745,7 +14757,7 @@ if(shift.engineers){
             return;
         }
 
-        timelineAlert(errorPayload?.message || fallbackMessage || "Unable to complete schedule action.");
+        timelineAlert(scheduleErrorText(errorPayload) || fallbackMessage || "Unable to complete schedule action.");
     }
 
 

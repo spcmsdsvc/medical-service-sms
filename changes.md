@@ -2,6 +2,45 @@
 
 claude changes - 2026-08-06
 
+## Provisional leave now tells you why it was refused
+
+* Fixed open bug 1b. `handleScheduleError()` read failure text from `message`; the leave module
+  sets it under `error` and never `message`, so every reason `/api/leave-requests/provisional`
+  gave was read from a key it does not set and silently replaced by the generic fallback.
+  Plotting leave on a weekend answered "Unable to record provisional Leave." while the server had
+  said "The selected range contains no weekdays."
+* **Fixed on the client, after auditing both sides.** The three schedule endpoints feeding this
+  helper — `/add_shift`, `/update_shift`, `/move_shift` — use `message` exclusively (18, 6 and 11
+  occurrences, zero `error`), while `leave_feature.py` uses `error` throughout. The helper is the
+  adapter between two modules with different conventions, so it is the right place to reconcile
+  them; changing the endpoint would have made one leave route inconsistent with the rest of its
+  own module. Extracted `scheduleErrorText()` reading `message` **first**, so nothing that works
+  today changes, then `error`.
+* **Verified on screen, all three paths.** Plotting Sick Leave on a Sunday now shows
+  "The selected range contains no weekdays."; plotting over an existing provisional block shows
+  "The selected dates conflict with an existing schedule or Leave Request."; and a free weekday
+  still saves with its success toast — the positive control proving the success path was not
+  disturbed.
+* **The 409 had to be fixed through the text path, not the conflict branch.** It carries neither
+  `status: 'conflict'` nor `conflict` — only `supersedable_provisionals` — so
+  `handleScheduleError()`'s conflict branch never fired for it. Routing it to
+  `showConflictWarning()` would show the conflicting request by name and is the richer fix, but
+  that function expects a schedule-collision shape; left as a possible improvement rather than
+  bundled in.
+* Added three tests: every rejection carries a specific reason under `error` **and not** under
+  `message` (the control that pins the premise), the client reads the key the server actually sets
+  with `message` first, and the 409 lacks the conflict markers. The client-side one is a source
+  assertion because there is no JavaScript runner for the inline timeline script; it asserts an
+  outcome — that the handler goes through the helper rather than reaching for one key — not pinned
+  text.
+* All three injections reproduced their defect, including one that moved the reason to `message`
+  on the **server** to prove the premise is not assumed. Verified by SHA with both files
+  byte-identical afterwards. Suite green at **488** (was 485). Both inline timeline script blocks
+  parse under `node --check`.
+* **Bumped the worker to `v72-schedule-error-text`.** `templates/timeline.html` is `APP_SHELL`
+  entry #1, so a cached device would keep the old handler and none of this would reach a field
+  phone. Two commits have shipped without this bump before.
+
 ## Authenticated exports are network-only, closing the runtime-cache leak
 
 * Fixed the export cache leak recorded as open bug 1a. `/export_` requests are now handled by a
