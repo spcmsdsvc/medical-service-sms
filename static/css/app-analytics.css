@@ -178,7 +178,10 @@
     margin-bottom: var(--analytics-gap);
 }
 
-.analytics-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.analytics-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+}
 .analytics-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 .analytics-panel {

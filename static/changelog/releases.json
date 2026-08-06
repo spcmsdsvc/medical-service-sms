@@ -1510,6 +1510,15 @@
             "admins"
           ],
           "sort_order": 70
+        },
+        {
+          "item_key": "2026-08-06-analytics-panel-sizing",
+          "category": "Analytics",
+          "description": "Analytics panels now keep their own content height, so a short status summary no longer appears as a large empty block beside a longer workload table.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 80
         }
       ]
     }

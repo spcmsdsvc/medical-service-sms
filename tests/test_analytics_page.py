@@ -209,6 +209,7 @@ class AnalyticsPageTests(unittest.TestCase):
         self.assertNotIn('innerHTML', self.js)
         self.assertIn('@media print', self.css)
         self.assertIn('var(--app-', self.css)
+        self.assertRegex(self.css, r'\.analytics-grid-2\s*\{[^}]*align-items:\s*start')
         self.assertNotIn('analytics-', (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8'))
         assert_cache_version_at_least(self, 73, self.source)
         self.assertIn("'/static/css/app-analytics.css',", self.source)

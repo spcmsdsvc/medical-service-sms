@@ -51,6 +51,20 @@ codex changes - 2026-08-06
   `scheduler.db` and local `output/`, `outputs/`, and `tmp/` paths remain explicitly excluded from
   staging and pushing.
 
+## Analytics status panel now fits its content
+
+* Fixed the large empty area below `Open client work by status` in `static/css/app-analytics.css`.
+  The panel contained valid data such as `In Progress: 41`, but the two-column CSS Grid stretched
+  the shorter status panel to the height of the neighboring Engineer Workload panel.
+* Added `align-items: start` to `.analytics-grid-2` so each Analytics panel keeps its natural
+  content height while preserving the existing two-column desktop layout and one-column mobile
+  layout.
+* Bumped the Analytics asset query versions in `templates/analytics.html` and the service-worker
+  cache to `v75-analytics-panel-height` so deployed browsers receive the correction instead of
+  retaining the cached v74 layout.
+* Added a regression assertion in `tests/test_analytics_page.py` for the grid alignment rule and
+  added the user-facing correction to the August 6 What's New release manifest.
+
 ## Provisional leave now tells you why it was refused
 
 * Fixed open bug 1b. `handleScheduleError()` read failure text from `message`; the leave module
