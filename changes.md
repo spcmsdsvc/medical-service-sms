@@ -6,7 +6,7 @@ codex changes - 2026-08-06
 
 * Added "Analytics upgrade: give the page a job, and report purchase orders" to the top of
   `plans.md` before the owner gave the separate execution go-ahead; the implementation is now
-  complete and the plan will be marked with its commit hash after release.
+  complete in commit `45da21c`, and the plan is marked `Executed — 45da21c`.
 * The plan covers P.O. reporting on Analytics plus a full upgrade of the page: extracting the inline
   CSS and JS to static files, moving every colour to the `--app-*` tokens so the four accent themes
   and dark mode work, replacing the hand-rolled flexbox charts with themed accessible SVG, adding

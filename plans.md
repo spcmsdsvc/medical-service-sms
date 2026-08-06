@@ -57,11 +57,14 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Analytics upgrade: give the page a job, and report purchase orders
 
-**Status:** `In progress`
+**Status:** `Executed — 45da21c`
 **Started:** 2026-08-06, after the project owner explicitly said to execute the plan.
 **Approved:** 2026-08-06
 **Detailed:** 2026-08-06, after mapping the current Analytics page end to end, the design language
 the four dashboard phases established, and what data exists that is not yet surfaced.
+**Finished:** 2026-08-06, in commit `45da21c`, after focused tests, the neighboring regression set,
+the full 497-test suite (1 intentional skip), syntax/JSON/diff checks, and local desktop/mobile
+light/dark browser verification.
 
 Execution is authorized. The implementation must preserve the reports-only boundary for personnel
 analytics and must not stage or modify the tracked local database.
