@@ -2,6 +2,26 @@
 
 claude changes - 2026-08-06
 
+## Recorded the approved Analytics upgrade plan
+
+* Added "Analytics upgrade: give the page a job, and report purchase orders" to the top of
+  `plans.md` with status `Approved — awaiting go-ahead`. **No implementation work has started.**
+* The plan covers P.O. reporting on Analytics plus a full upgrade of the page: extracting the inline
+  CSS and JS to static files, moving every colour to the `--app-*` tokens so the four accent themes
+  and dark mode work, replacing the hand-rolled flexbox charts with themed accessible SVG, adding
+  period-over-period trend on flow metrics only, and fixing the accessibility, XSS, error-handling
+  and print defects.
+* Three investigation findings changed the design and are recorded with the plan: `analytics-*`
+  class names do **not** inherit dark mode (the `app-dark-pages.css` wildcards cover only `manager-`,
+  `scheduler-` and `dashboard-`, so the fix is removing those `!important` rules rather than
+  extending them); widening `/get_analytics_summary` to the P.O. capability would hand a P.O.-only
+  manager engineer names, branches and workload, so the panel gets a separate `/get_po_analytics`
+  instead; and the sidebar gate wraps Analytics and TSR files together, so it needs a third branch
+  rather than a widened condition.
+* Sequenced as eight commits with real stopping points — the CSS and JS extractions are
+  behaviour-neutral and individually reversible, the backend correctness work is invisible to users,
+  and only commit 7 grants any new access.
+
 ## Provisional leave now tells you why it was refused
 
 * Fixed open bug 1b. `handleScheduleError()` read failure text from `message`; the leave module

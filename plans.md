@@ -55,6 +55,200 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Analytics upgrade: give the page a job, and report purchase orders
+
+**Status:** `Approved — awaiting go-ahead`
+**Approved:** 2026-08-06
+**Detailed:** 2026-08-06, after mapping the current Analytics page end to end, the design language
+the four dashboard phases established, and what data exists that is not yet surfaced.
+
+**Nothing has been built. Do not start.** Plan-mode reported this approved and said coding could
+begin; per `AGENTS.md` "Approved Plans" that is the tool's default, not the owner's instruction.
+
+### Context
+
+The owner asked for P.O. reporting on Analytics, and for the whole page to be upgraded:
+*"P.O analytics. but let us also upgrade the whole analytics page. improve the design, propose an
+upgrade for the page."*
+
+Analytics is the last major page that predates the dashboard redesign, and it shows. ~250 lines of
+inline `<style>` with **zero design tokens**, so the four accent themes have no effect on it. Its
+charts are white slabs in dark mode. No `<h1>`, no aria anywhere, unlabelled filter controls. Two
+renderers interpolate **user-editable branch names unescaped** while their siblings on the same page
+escape correctly. A failed refresh leaves every stale number on screen looking authoritative.
+
+More fundamentally the page has no job of its own. Its headline tiles — Today, This Week, This
+Month — **ignore the date filter directly above them.** They answer *what is happening now*, which
+is the dashboard's question, already answered better there.
+
+Phase 3 recorded that the manager view *"compensated for having no trend by showing more numbers"*.
+**Trend is the gap Analytics can own.** Intended outcome: a page that answers *how is service
+activity changing over this period, and where is it concentrated* — themed, accessible, printable,
+with purchase-order reporting alongside.
+
+### Decisions taken
+
+| Decision | Value |
+| --- | --- |
+| Charts | **Hand-rolled inline SVG** driven by `--app-*` tokens. No library: this is an offline-first PWA, and canvas would not inherit the theme, would be invisible to screen readers, and would print as a bitmap |
+| Scope | **Refresh + give the page a job** — fix every defect, real stylesheet with tokens, re-focus on period-over-period trend |
+| Trend discipline | **Flow metrics only.** Stock metrics carry no arrow |
+| P.O. panel access | `can_view_admin_reports()` **or** `can_manage_purchase_orders()` |
+| P.O. + branch filter | **Show it, labelled company-wide.** Never infer a branch |
+| Money | **None.** `PurchaseOrder` has no amount by prior decision |
+
+### Shape of the work
+
+Eight commits with real stopping points. **1–2** move CSS and JS to static files byte-identically
+(no visual change, individually reversible). **3–4** fix backend correctness and speed with the
+numbers unchanged. **5–7** are the actual upgrade and must land together or the payload and template
+disagree. **8** is the worker bump and changelog. Stopping after 4 leaves the page faster and its
+queries correct with nothing half-built. **The one change granting new access is in commit 7.**
+
+### Investigation
+
+Verified by reading. Two findings changed the design.
+
+1. **`analytics-*` class names do NOT inherit dark mode.** `app-dark-pages.css` wildcards only
+   `[class*="manager-"]`, `[class*="scheduler-"]`, `[class*="dashboard-"]`. `analytics-` appears
+   there as three hand-written literal lists (`:447`, `:758`, `:773`), and
+   `grep -rln "analytics-" templates/ static/js/` returns `templates/analytics.html` **only**. So the
+   fix is the opposite of adding a wildcard — those `!important` rules are what break token theming.
+   Build on tokens and remove the `analytics-*` selectors. **Each of those three rules also lists
+   unrelated selectors** (`.accounting-card`, `.activity-mobile-empty`, `.reports-empty`, …) — remove
+   only the `analytics-*` names, never the whole rule.
+2. **Widening `/get_analytics_summary` would leak personnel data.** The owner's decision applies to
+   the *panel*. That endpoint returns engineer names, branches and per-engineer workload, which a
+   P.O.-only manager must not receive. **Split**: new `/get_po_analytics` under the wider predicate;
+   `/get_analytics_summary` keeps `can_view_admin_reports()`.
+3. **The sidebar gate is coarser than it looks.** `templates/layout.html:223` wraps Analytics *and*
+   TSR files in one `{% if is_reports_admin_user %}`. A P.O.-only user needs Analytics **without**
+   TSR files, so this needs a third branch, not a widened condition.
+
+Confirmed at source: `/analytics_page` `app.py:16228` passes no Jinja context; template 756 lines
+(markup 1-177, `<style>` 179-506, `<script>` 508-754) with **no `page_head` block**;
+`analytics_scope_query()` `app.py:35616` joins `ShiftEngineer` so a shift with N engineers returns N
+rows, hence the de-dup at `35661` copy-pasted at `36641`/`36816`/`36867`; `count_between()` `35643`
+runs three extra full queries for tiles that ignore the filter; `engineers` keyed by `eng.name`
+(`35700`) so same-named engineers merge, capped at 15 with no total returned; `statuses` returned
+with no consumer and contradicting `open_statuses`; `analytics_visible_engineer_ids()` `35595`
+**shared with `/get_tsr_archive`** (`36024`); the load-bearing regional-admin-may-view-Manila comment
+at `35602`; no eager loading so `get_shift_engineer_records()` is N+1; XSS at
+`analytics.html:571,574,596,597` with `escapeHtml` sitting at `606`; `res.json()` before `res.ok` at
+`711`; unconditional mobile re-render at `665`; dead `lastAnalyticsData` / `parseLocalDate` /
+`renderMobileAnalyticsSummary` / `.analytics-page` / `.analytics-panel`; no `@media print`;
+`.dashboard-metric-link` 25px; cache version `v72-schedule-error-text` at `14811`; **no analytics
+test file exists**.
+
+### The page's job, and the resulting layout
+
+**"How is service activity changing over this period, and where is it concentrated?"**
+
+Header + filter `<form>` → scope line (`role="status"`) and error region (`role="alert"`) →
+**Trend** (new, leads) → branches → categories → open client work by status (**stock, no arrow**) →
+engineer workload ("Top 15 of N") → **purchase orders, company-wide** (new).
+
+Retired: the Today/Week/Month tiles (they ignore the filter above them, at the cost of three extra
+queries); the three insight cards (each restates row 1 of the chart beneath it); the
+`mini-chart` + `analytics-bars` pairs (same object rendered twice, one truncated to 6 and one
+complete, so they disagree about how many categories exist); the `statuses` key; the
+`.analytics-hero` gradient (hardcoded, immune to all four accents, prints as a colour slab).
+
+### Execution steps
+
+1. **Extract the CSS**, byte-identically, to `static/css/app-analytics.css` + a `page_head` block.
+   Behaviour-neutral, own commit. *Done when* the extracted body diffs empty against the removed
+   block and the page is pixel-identical at 1280/375 × light/dark.
+2. **Extract the JS** to `static/js/app-analytics.js`. No Jinja in the block, so no config shim yet.
+3. **Count each shift once** — rewrite `analytics_scope_query()` to a membership subquery instead of
+   the join (set-equivalent, since every caller already de-duplicates); add
+   `analytics_scoped_shifts()` and route all four call sites through it. **Preserve** the existing
+   behaviour that a shift with only `Shift.engineer_id` is invisible to analytics — "fixing" it
+   would silently move every historical number; note it in `pending-work.md` instead. **Do not touch
+   `analytics_visible_engineer_ids()`.**
+4. **Load engineers in two queries**, not per shift — `analytics_engineer_map()` keeping the
+   `Shift.engineer_id` fallback that feeds `branches['Unassigned']`; add `joinedload` for client and
+   product. Do not modify `get_shift_engineer_records()`; it has many callers.
+5. **Trend and the flow/stock split** — `analytics_previous_bounds()`; previous window counted with
+   **aggregates only** so it is not a fifth scan; bucket server-side and **in Python** (not
+   `func.strftime`, SQLite-only, nor `date_trunc`, Postgres-only). **Enforce the discipline in the
+   payload shape:** only metrics carrying `previous` may render an arrow. `completed` gets none — it
+   is `status=='Completed'` read today against a past window, so an arrow would encode recency bias.
+6. **Themed SVG charts** — two components built with `createElementNS` + `textContent`, never string
+   interpolation, which makes the XSS class structurally unreachable rather than escaped by
+   discipline. `role="img"` + `<title>`/`<desc>` plus a visually-hidden table carrying every row.
+   Draw 1 user unit = 1 CSS px (a fixed viewBox at `width:100%` scales `<text>` to ~6px at 375px).
+   Print hides the SVG and reveals the table. **No pie or donut.**
+7. **The P.O. panel** — `/analytics_page` gate widened, `can_view_schedule_analytics` passed so a
+   P.O.-only user gets no schedule panels; new `/get_po_analytics` calling
+   `ensure_purchase_order_schema()` first; third sidebar branch. Counts only, `PO_TYPE_LABELS` as the
+   single source for labels. **Scope note rendered always**, not only when filtered.
+8. **Every remaining defect** — stale-data-after-failure, double render, dead code, `<h1>` and
+   heading order, `<label for>` and a real `<form>`, `scope="col"` and `<caption>`, status/alert
+   split, `prefers-reduced-motion`, tokens throughout, one radius/spacing/shadow scale, `@media
+   print`, and the `.dashboard-metric-link` 44px fix closing that `pending-work.md` item.
+
+Reuse rather than reinvent: load **both** `app-dashboard.css` and `app-analytics.css`, and use
+`.dashboard-metric-strip` and friends, the risk-verdict pill (`app-dashboard.css:127-154`) and
+`.dashboard-collapsible-toggle`.
+
+### Deliberately excluded
+
+Any money figure, spend column or billing proxy (spend reporting is deferred; the deleted Billing
+Visibility panel string-matched TSR *filenames*). Inferring a P.O. branch from client schedules —
+same failure mode. A charting library. Pie/donut charts. New panels from other modules (TSR
+turnaround has **no reliable timestamp**, and offline-queued TSRs would read as multi-day). Changing
+`analytics_visible_engineer_ids()`. Adding `analytics-` to the dark-page wildcards.
+
+### Verification
+
+New `tests/test_analytics_page.py` and `tests/test_analytics_purchase_orders.py` — behavioural, in
+the style of `tests/test_purchase_orders.py`, since **this page has no tests today**. Each with the
+positive control that proves it can fail: de-duplication (one shift/three assignees → 1 and 3);
+branch filter; regional-admin-may-view-Manila; `/get_tsr_archive` scope unchanged after step 3; date
+bounds and previous-window length; caps with uncapped totals; `previous` present on flow and
+**absent** on `stock.completed`; `statuses` gone; the export; the **access matrix** including
+**P.O.-only denied from `/get_analytics_summary`**; P.O. aggregation; cache floor 73.
+
+Injection proof: set an `Engineer.branch` and `Client.name` to
+`"><img src=x onerror=alert(1)>` and confirm literal text in the SVG label, per-row `<title>`, hidden
+table, engineer table, mobile card and print view. Separately prove each new test fails without its
+fix using the byte-level harness — a `\n` replace against these CRLF files silently no-ops and the
+suite stays green, which reads exactly like the tests being vacuous.
+
+Browser: {1280×800, 375×812} × {light, dark} × {classic, shimadzu-red} — accent-following fills, no
+white slab in dark, full keyboard pass, `aria-live` announcement, network killed mid-request with
+**every number reset to an em dash**, ≥44px controls, no horizontal scroll, exactly one of
+table/cards. Then print preview in both themes.
+
+### After implementation
+
+Self-review the diff; `releases.json` items dated the commit date; **bump the service worker reading
+the live value out of `app.py` immediately before committing** (and the `?v=` on both new assets);
+`changes.md`; this plan to `Executed` with its hash; `pending-work.md` only if asked; commit per the
+standing checklist, staging file by file and never `scheduler.db`.
+
+### Risks
+
+| Risk | Blast radius | Mitigation |
+| --- | --- | --- |
+| **Widening `/analytics_page` and the sidebar** — the only change granting anything new | A P.O.-only account reaching schedule analytics or the TSR archive | The endpoint split, the third sidebar branch, and the access-matrix test asserting `/get_analytics_summary` is **denied** |
+| `analytics_scope_query` rewrite touches four endpoints including `/get_reports_summary` | Every historical analytics and reports number | Set-equivalence rests on every caller already de-duplicating — re-confirm all four, and pin `/get_tsr_archive` |
+| Removing `analytics-*` from `app-dark-pages.css` | Those rules list unrelated selectors | Remove only the `analytics-*` names; re-grep at implementation time |
+| Two windows means two scans | A year-long range scans a year twice | Previous window is count-only; consider refusing ranges > 400 days |
+| `ResizeObserver` re-render loop | Page hangs | Integer-width guard + 100ms debounce; never set the container's own width |
+| `func.strftime` / `date_trunc` | Works on SQLite, breaks on Postgres | Bucket in Python. Easy to miss in review |
+| Forgotten worker bump or `?v=` | Returning users get the old page against the new API | The floor assertion |
+| Retiring the today/week/month tiles | Someone may read them daily | They contradict the filter above them. Call it out in the changelog |
+
+### Critical files
+
+`app.py` (analytics module ~`35518`, `/analytics_page` `16228`, new `/get_po_analytics`, worker
+`14811`); `templates/analytics.html`; `static/css/app-analytics.css` (**new**);
+`static/js/app-analytics.js` (**new**); `static/css/app-dark-pages.css`;
+`static/css/app-dashboard.css`; `templates/layout.html`; `tests/test_analytics_page.py` and
+`tests/test_analytics_purchase_orders.py` (**new**); `static/changelog/releases.json`.
+
 ## P.O. Details page, with a grantable access toggle
 
 **Status:** `Executed — b01c78c`
