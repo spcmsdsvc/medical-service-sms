@@ -139,12 +139,28 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
         self.assertEqual(reports.get('/analytics_page').status_code, 200)
         self.assertEqual(reports.get('/get_analytics_summary').status_code, 200)
 
-    def test_po_source_contract_is_separate_from_schedule_analytics(self):
-        source = (Path(self.app.root_path) / 'app.py').read_text(encoding='utf-8')
-        self.assertIn("@app.route('/get_po_analytics')", source)
-        endpoint = source.split("@app.route('/get_po_analytics')", 1)[1].split("@app.route", 1)[0]
-        self.assertIn('can_view_admin_reports() or can_manage_purchase_orders()', endpoint)
-        self.assertIn('ensure_purchase_order_schema()', endpoint)
+    def test_po_endpoint_serves_both_capabilities_and_nobody_else(self):
+        """Called, not read as source.
+
+        This replaced assertIn on the literal gate expression. A pinned rule string cannot
+        tell you the rule holds; building each account and calling the route can.
+        """
+        for user_id, label in (
+            (self.po_user_id, 'P.O. capability'),
+            (self.reports_user_id, 'reports capability'),
+        ):
+            client = self._client_for(user_id)
+            response = client.get('/get_po_analytics')
+            self.assertEqual(response.status_code, 200, f'{label} was refused')
+            self.assertEqual(response.get_json()['scope_label'], 'Company-wide')
+
+        # Negative, and the reason the two capabilities are kept separate at all.
+        self.assertEqual(
+            self._client_for(self.plain_user_id).get('/get_po_analytics').status_code, 403
+        )
+        self.assertEqual(
+            self._client_for(self.po_user_id).get('/get_analytics_summary').status_code, 403
+        )
 
 
 if __name__ == '__main__':

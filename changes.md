@@ -1,5 +1,66 @@
 # Project Change Log
 
+claude changes - 2026-08-06 (analytics review)
+
+## A comparison that could not mean what it showed
+
+* Reviewed `45da21c`, `a762b05` and `d562654` against the recorded plan. **The implementation is
+  strong.** Every top risk in the plan's risk table is closed, and each was checked by calling
+  rather than reading: `/get_analytics_summary` stayed on `can_view_admin_reports()` and a P.O.-only
+  account gets **403** from it; the sidebar's third branch gives that account Analytics **without**
+  TSR files; the scope query became a correlated `EXISTS` with no fan-out; there is no
+  `func.strftime` or `date_trunc`; `analytics-*` is fully gone from `app-dark-pages.css`; and the
+  `.dashboard-metric-link` 44px fix landed, closing that `pending-work.md` item.
+* **XSS is structurally closed, not escaped by discipline.** A single `svgElement()` helper using
+  `setAttribute` and `textContent`, with no `innerHTML` carrying data anywhere in the new script.
+  Verified by setting an `Engineer.branch` to `"><img src=x onerror=alert(1)><script>alert(2)</script>`:
+  it renders as literal text in the chart, the table and the mobile cards, with no console errors.
+* **Accent theming works, which was the whole argument for hand-rolled SVG.** Bar fills move
+  `#0d6efd` → `#c8102e` → `#198754` across classic, Shimadzu red and clinical green, and hold in dark
+  mode. Panels and chart frames sit on tokens — no white slab anywhere.
+* **Fixed: the P.O. panel was hidden from reports admins.** `analytics_page` set
+  `can_view_po_analytics` from `can_manage_purchase_orders()` alone, while `/get_po_analytics` uses
+  either capability. A reports-admin grantee therefore got **200 with real data** from the endpoint
+  and **no panel** on the page — half the feature request missing for the page's primary audience.
+  Superadmins pass either way, which is why it survived; the shipped test checked that account's
+  *schedule* surface but never the P.O. panel.
+* **Fixed: `active` carried a period arrow although it is exactly `total − completed`.** The page
+  correctly withheld the arrow from `completed` and said why — then gave one to its complement,
+  captioned "Not completed". Proven arithmetically (`active 2 + completed 2 = total 4`, and
+  `previous_active = previous_total − previous_completed`): if recent work has had less time to
+  finish, `completed` is biased low and `active` is biased high **by the same amount**. `active`,
+  `open_client_work` and `completed` now sit in a `stock` block with a `basis` string and no
+  `previous` key at all — **a value that must not be shown is no longer computed**. Only
+  `flow.total` carries a comparison, and the renderer draws an arrow strictly from the payload shape.
+* **Retired the duplicated chart-and-bars pairs**, which the plan had listed as retired but which
+  shipped intact — branch and service-mix data were each rendered twice, stacked and both visible.
+  The second list existed to carry the change figure, so that was folded into the chart as a compact
+  `+2` / `−1` column with the long form in the row's `<title>`. One representation each now.
+  `renderBars` is kept: it is the P.O. panel's only renderer, not dead code.
+* **Replaced two source-string authorization tests with behavioural ones.** One asserted the literal
+  `"if not can_view_admin_reports():"` appears in `app.py`; the other pinned the P.O. gate
+  expression. `pending-work.md` section 6 records that this repository has already had to undo five
+  of these. They now revoke a capability and assert the route's response, with the granted case as
+  the control.
+* Dropped dead payload: `previous_open_statuses` and the duplicated top-level `completed`/`active`
+  were returned and never read. `engineer_total` **was** returned and never read, so the workload
+  caption now states the real figure — "Showing all 3 scoped engineers" — instead of a static
+  sentence about the total. Error text no longer shows the raw `Failed to fetch`.
+* All four fixes proved to fail when re-injected, one at a time, verified by SHA with `app.py`
+  byte-identical afterwards. **Two injections initially aborted rather than passing** — the
+  multi-line needles used `\n` against a CRLF file, the exact trap section 4 of `pending-work.md`
+  records; the harness's match-count check caught it instead of reporting a false green. Suite green
+  at **498** (was 497). `node --check` passes on the new script.
+* Service worker `v75-analytics-panel-height` → `v76-analytics-flow-stock`, with both asset query
+  strings bumped to match.
+* **Raised, not fixed:** the chart frames scroll horizontally at 375 px (`min-width: 560px` on the
+  SVG inside a 320 px frame). It is contained — `overflow-x: auto`, no page overflow — but the plan
+  specified 1:1 pixel sizing from `clientWidth` precisely to avoid this, and the shipped approach is
+  the `viewBox` scaling the plan rejected. Fixing it means rewriting both chart renderers, so it is
+  a separate decision rather than review cleanup. Also noted: this landed as three commits rather
+  than the planned eight, so the CSS/JS extraction can no longer be **proved** behaviour-neutral by
+  diffing the moved block.
+
 codex changes - 2026-08-06
 
 ## Analytics upgrade: implementation completed

@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block page_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=74">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-analytics.css') }}?v=75">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-analytics.css') }}?v=76">
 {% endblock %}
 
 {% block content %}
@@ -65,9 +65,13 @@
 
         <section class="analytics-metric-grid mb-3" aria-label="Service activity metrics">
             <article class="analytics-metric"><div class="analytics-metric-label">Total schedules</div><strong id="schedule-total" class="analytics-metric-value" data-schedule-value>—</strong><div id="schedule-total-delta" class="analytics-delta"></div><div class="analytics-metric-note">Selected period</div></article>
-            <article class="analytics-metric"><div class="analytics-metric-label">Active schedules</div><strong id="schedule-active" class="analytics-metric-value" data-schedule-value>—</strong><div id="schedule-active-delta" class="analytics-delta"></div><div class="analytics-metric-note">Not completed</div></article>
-            <article class="analytics-metric"><div class="analytics-metric-label">Open client work</div><strong id="schedule-open" class="analytics-metric-value" data-schedule-value>—</strong><div id="schedule-open-delta" class="analytics-delta"></div><div class="analytics-metric-note">Client schedules needing follow-up</div></article>
-            <article class="analytics-metric"><div class="analytics-metric-label">Completed</div><strong id="schedule-completed" class="analytics-metric-value" data-schedule-value>—</strong><div class="analytics-metric-note">No recency arrow; status stock</div></article>
+            {# Active, open and completed are one measurement seen three ways: active is
+               exactly total minus completed. None of the three can carry a period arrow,
+               because recent work has had less time to finish, so they have no delta node
+               at all rather than an empty one. #}
+            <article class="analytics-metric"><div class="analytics-metric-label">Active schedules</div><strong id="schedule-active" class="analytics-metric-value" data-schedule-value>—</strong><div class="analytics-metric-note">Not completed; status as of today</div></article>
+            <article class="analytics-metric"><div class="analytics-metric-label">Open client work</div><strong id="schedule-open" class="analytics-metric-value" data-schedule-value>—</strong><div class="analytics-metric-note">Client work needing follow-up; status as of today</div></article>
+            <article class="analytics-metric"><div class="analytics-metric-label">Completed</div><strong id="schedule-completed" class="analytics-metric-value" data-schedule-value>—</strong><div class="analytics-metric-note">Status as of today</div></article>
         </section>
 
         <section class="analytics-panel mb-3" aria-labelledby="trend-heading">
@@ -78,13 +82,13 @@
         </section>
 
         <div class="analytics-grid-2">
-            <section class="analytics-panel" aria-labelledby="branch-heading"><div class="analytics-panel-header"><div><h3 id="branch-heading">Branch concentration</h3><p>Assignment counts by branch.</p></div></div><div id="branch-chart" class="analytics-chart-frame"></div><div id="branch-bars" class="analytics-bars mt-3"></div><table id="branch-table" class="analytics-chart-table"><caption>Branch concentration data</caption><thead><tr><th>Branch</th><th>Selected period</th><th>Previous period</th></tr></thead><tbody id="branch-table-body"></tbody></table></section>
-            <section class="analytics-panel" aria-labelledby="category-heading"><div class="analytics-panel-header"><div><h3 id="category-heading">Service mix</h3><p>Schedule categories in the selected period.</p></div></div><div id="category-chart" class="analytics-chart-frame"></div><div id="category-bars" class="analytics-bars mt-3"></div><table id="category-table" class="analytics-chart-table"><caption>Service mix data</caption><thead><tr><th>Category</th><th>Selected period</th><th>Previous period</th></tr></thead><tbody id="category-table-body"></tbody></table></section>
+            <section class="analytics-panel" aria-labelledby="branch-heading"><div class="analytics-panel-header"><div><h3 id="branch-heading">Branch concentration</h3><p>Assignment counts by branch.</p></div></div><div id="branch-chart" class="analytics-chart-frame"></div><table id="branch-table" class="analytics-chart-table"><caption>Branch concentration data</caption><thead><tr><th>Branch</th><th>Selected period</th><th>Previous period</th></tr></thead><tbody id="branch-table-body"></tbody></table></section>
+            <section class="analytics-panel" aria-labelledby="category-heading"><div class="analytics-panel-header"><div><h3 id="category-heading">Service mix</h3><p>Schedule categories in the selected period.</p></div></div><div id="category-chart" class="analytics-chart-frame"></div><table id="category-table" class="analytics-chart-table"><caption>Service mix data</caption><thead><tr><th>Category</th><th>Selected period</th><th>Previous period</th></tr></thead><tbody id="category-table-body"></tbody></table></section>
         </div>
 
         <div class="analytics-grid-2">
             <section class="analytics-panel" aria-labelledby="status-heading"><div class="analytics-panel-header"><div><h3 id="status-heading">Open client work by status</h3><p>Stock view; no misleading period-over-period arrow.</p></div></div><div id="status-list" class="analytics-status-list"></div></section>
-            <section class="analytics-panel" aria-labelledby="workload-heading"><div class="analytics-panel-header"><div><h3 id="workload-heading">Engineer workload</h3><p>Top 15 of the total scoped engineer count.</p></div></div><div class="analytics-table-wrap"><table class="table analytics-table"><caption class="visually-hidden">Engineer workload</caption><thead><tr><th scope="col">Engineer</th><th scope="col">Branch</th><th scope="col">Total</th><th scope="col">Active</th><th scope="col">Completed</th></tr></thead><tbody id="engineer-table-body"></tbody></table></div><div id="engineer-mobile-list" class="analytics-workload-mobile"></div></section>
+            <section class="analytics-panel" aria-labelledby="workload-heading"><div class="analytics-panel-header"><div><h3 id="workload-heading">Engineer workload</h3><p id="workload-caption">Loading engineer workload…</p></div></div><div class="analytics-table-wrap"><table class="table analytics-table"><caption class="visually-hidden">Engineer workload</caption><thead><tr><th scope="col">Engineer</th><th scope="col">Branch</th><th scope="col">Total</th><th scope="col">Active</th><th scope="col">Completed</th></tr></thead><tbody id="engineer-table-body"></tbody></table></div><div id="engineer-mobile-list" class="analytics-workload-mobile"></div></section>
         </div>
     </main>
     {% endif %}
@@ -110,5 +114,5 @@ window.ANALYTICS_CAPABILITIES = {
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='js/app-analytics.js') }}?v=75"></script>
+<script src="{{ url_for('static', filename='js/app-analytics.js') }}?v=76"></script>
 {% endblock %}

@@ -250,6 +250,14 @@
 .analytics-chart-frame svg .chart-grid { stroke: var(--app-border); stroke-width: 1; }
 .analytics-chart-frame svg .chart-current { fill: var(--app-primary); }
 .analytics-chart-frame svg .chart-previous { fill: var(--analytics-chart-previous); }
+/* The change column, folded into the chart so each dataset has one representation
+   rather than a chart shadowed by a second visible bar list. Matches the metric-card
+   convention above: rising volume is not automatically good, so up is red and down is
+   green, and the direction is also carried by the +/- sign rather than colour alone. */
+.analytics-chart-frame svg .chart-delta { font-size: 11px; font-weight: 700; }
+.analytics-chart-frame svg .chart-delta.is-up { fill: #dc3545; }
+.analytics-chart-frame svg .chart-delta.is-down { fill: #198754; }
+.analytics-chart-frame svg .chart-delta.is-flat { fill: var(--app-muted); }
 
 .analytics-legend {
     display: flex;

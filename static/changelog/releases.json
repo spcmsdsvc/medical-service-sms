@@ -1519,6 +1519,24 @@
             "admins"
           ],
           "sort_order": 80
+        },
+        {
+          "item_key": "2026-08-06-analytics-po-panel-for-reports-admins",
+          "category": "Analytics",
+          "description": "Purchase order reporting now appears on Analytics for anyone who can read reports, not only for accounts granted P.O. records access.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 90
+        },
+        {
+          "item_key": "2026-08-06-analytics-comparison-honesty",
+          "category": "Analytics",
+          "description": "Only the schedule total is compared with the previous period. Active, open and completed counts now state that they are a status as of today, because recent work has had less time to finish and a comparison there would read as a change in performance when it is not. Branch and service-mix changes now sit in the chart itself instead of a second list below it.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 100
         }
       ]
     }

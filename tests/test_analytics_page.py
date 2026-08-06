@@ -224,8 +224,29 @@ class AnalyticsPageTests(unittest.TestCase):
         self.assertEqual(payload['range_total'], 2)
         self.assertEqual(payload['assignment_total'], 4)
         self.assertEqual(payload['flow']['total']['previous'], 1)
-        self.assertNotIn('previous', payload['flow']['completed'])
         self.assertNotIn('statuses', payload)
+
+        # Flow carries a comparison; stock never does. `active` is exactly
+        # `total - completed`, so an arrow on it is an arrow on -completed: recent work has
+        # had less time to finish. `completed` was already excluded for that reason and its
+        # complement has to be excluded on the same grounds.
+        self.assertIn('previous', payload['flow']['total'])
+        for stock_key in ('active', 'open_client_work', 'completed'):
+            self.assertNotIn(
+                'previous', payload['stock'][stock_key],
+                f'{stock_key} is stock and must not carry a period comparison',
+            )
+            self.assertIn('basis', payload['stock'][stock_key])
+        self.assertNotIn('active', payload['flow'])
+
+        # The arithmetic the exclusion rests on, asserted so it cannot drift.
+        self.assertEqual(
+            payload['stock']['active']['value'] + payload['stock']['completed']['value'],
+            payload['flow']['total']['value'],
+        )
+
+        # Returned and consumed only. previous_open_statuses was shipped and never read.
+        self.assertNotIn('previous_open_statuses', payload)
         self.assertEqual(payload['trend']['current'][0]['count'], 2)
         self.assertEqual(payload['trend']['previous'][0]['count'], 1)
         self.assertEqual(len(payload['trend']['current']), len(payload['trend']['previous']))
@@ -265,9 +286,46 @@ class AnalyticsPageTests(unittest.TestCase):
         self.assertEqual(archive.status_code, 200)
         self.assertEqual(archive.get_json()['scope'], 'my')
 
-    def test_source_keeps_schedule_analytics_reports_only(self):
-        self.assertIn("if not can_view_admin_reports():", self.source)
-        self.assertIn("@app.route('/get_po_analytics')", self.source)
+    def test_schedule_analytics_stays_reports_only(self):
+        """Called, not read as source.
+
+        This replaced an assertIn on the literal "if not can_view_admin_reports():". A
+        pinned rule string cannot tell you the rule holds, only that the text is present --
+        the practice this repository has already had to undo five times.
+        """
+        reports = self._client_for(self.reports_user_id)
+        self.assertEqual(reports.get('/get_analytics_summary').status_code, 200)
+
+        with self.app.app_context():
+            target = app_module.db.session.get(app_module.User, self.reports_user_id)
+            target.reports_admin_access = False
+            app_module.db.session.commit()
+        try:
+            stripped = self._client_for(self.reports_user_id)
+            self.assertEqual(stripped.get('/get_analytics_summary').status_code, 403)
+        finally:
+            with self.app.app_context():
+                target = app_module.db.session.get(app_module.User, self.reports_user_id)
+                target.reports_admin_access = True
+                app_module.db.session.commit()
+
+    def test_reports_admin_sees_the_purchase_order_panel(self):
+        """The panel gate must match /get_po_analytics, which uses either capability.
+
+        Reading it from the P.O. capability alone hid the panel from reports admins while
+        the endpoint still served them 200. Superadmins pass either way, so only a granted
+        account shows the gap.
+        """
+        client = self._client_for(self.reports_user_id)
+        page = client.get('/analytics_page')
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn('Purchase order reporting', html)
+        self.assertEqual(client.get('/get_po_analytics').status_code, 200)
+
+        # Positive control: the same page still gates the schedule panels separately, so
+        # this is not passing because every panel renders for everyone.
+        self.assertIn('Service activity', html)
 
 
 if __name__ == '__main__':

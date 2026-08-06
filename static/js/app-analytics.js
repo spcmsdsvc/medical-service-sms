@@ -24,7 +24,7 @@
 
     function resetScheduleDisplay() {
         document.querySelectorAll('[data-schedule-value]').forEach((node) => { node.textContent = '—'; });
-        ['trend-chart', 'branch-chart', 'category-chart', 'branch-bars', 'category-bars', 'status-list', 'engineer-table-body', 'engineer-mobile-list'].forEach((id) => clearNode(byId(id)));
+        ['trend-chart', 'branch-chart', 'category-chart', 'status-list', 'engineer-table-body', 'engineer-mobile-list'].forEach((id) => clearNode(byId(id)));
         ['trend-table-body', 'branch-table-body', 'category-table-body'].forEach((id) => clearNode(byId(id)));
         setText('schedule-scope-line', 'Schedule analytics is unavailable for this refresh.');
     }
@@ -46,6 +46,17 @@
         return delta > 0
             ? { text: `Up ${delta} vs previous period`, cls: 'is-up', icon: 'fa-arrow-up' }
             : { text: `Down ${Math.abs(delta)} vs previous period`, cls: 'is-down', icon: 'fa-arrow-down' };
+    }
+
+    // The chart's change column has room for a few characters, not a sentence. The long
+    // form still reaches assistive tech and hover through the row's <title>.
+    function compactDelta(current, previous) {
+        if (previous == null) return null;
+        const delta = Number(current || 0) - Number(previous || 0);
+        if (!delta) return { text: '0', long: 'No change from previous period', cls: 'is-flat' };
+        return delta > 0
+            ? { text: `+${delta}`, long: `Up ${delta} vs previous period`, cls: 'is-up' }
+            : { text: `−${Math.abs(delta)}`, long: `Down ${Math.abs(delta)} vs previous period`, cls: 'is-down' };
     }
 
     function renderMetric(id, metric, allowPrevious) {
@@ -138,12 +149,35 @@
         const max = Math.max(1, ...safeRows.map((row) => Number(row.count) || 0));
         safeRows.forEach((row, index) => {
             const y = 18 + index * 15;
-            const width = Math.max(2, ((Number(row.count) || 0) / max) * 430);
-            svg.append(
+            // The bar track ends at 520 so the count and the change both have their own
+            // column. This chart used to be shadowed by a second, visible bar list that
+            // existed only to carry the change figure; folding it in here leaves one
+            // representation of each dataset instead of two stacked copies.
+            const width = Math.max(2, ((Number(row.count) || 0) / max) * 342);
+            const rowNode = svgElement('g', { class: 'analytics-chart-row' });
+            rowNode.append(
                 svgElement('text', { x: 4, y: y + 9, class: 'chart-muted' }, row.label),
                 svgElement('rect', { x: 178, y, width, height: 10, rx: 3, class: 'chart-current' }),
-                svgElement('text', { x: 620, y: y + 9, 'text-anchor': 'end' }, row.count)
+                svgElement('text', { x: 556, y: y + 9, 'text-anchor': 'end' }, row.count)
             );
+            const delta = row.previous == null ? null : compactDelta(row.count, row.previous);
+            if (delta) {
+                rowNode.append(svgElement(
+                    'text',
+                    { x: 636, y: y + 9, 'text-anchor': 'end', class: `chart-delta ${delta.cls}` },
+                    delta.text
+                ));
+            }
+            // Per-row tooltip, and the accessible long form of the compact delta above.
+            // textContent, never an attribute built from data.
+            rowNode.append(svgElement(
+                'title',
+                {},
+                delta
+                    ? `${row.label}: ${row.count} (${delta.long})`
+                    : `${row.label}: ${row.count}`
+            ));
+            svg.append(rowNode);
         });
     }
 
@@ -230,9 +264,19 @@
         return 'Light';
     }
 
-    function renderWorkload(engineers) {
+    function renderWorkload(engineers, total) {
         const body = byId('engineer-table-body');
         const mobile = byId('engineer-mobile-list');
+        // "A filter labelled 5 must yield 5": say how many of how many, from the uncapped
+        // total the endpoint computes before its slice, rather than a vague sentence.
+        const caption = byId('workload-caption');
+        if (caption) {
+            const shown = Array.isArray(engineers) ? engineers.length : 0;
+            const scoped = total == null ? shown : total;
+            caption.textContent = scoped > shown
+                ? `Showing the ${shown} busiest of ${scoped} scoped engineers.`
+                : `Showing all ${scoped} scoped engineer${scoped === 1 ? '' : 's'}.`;
+        }
         clearNode(body);
         clearNode(mobile);
         if (!engineers || !engineers.length) {
@@ -266,18 +310,20 @@
 
     function updateSchedule(data) {
         state.schedule = data;
+        // Arrows come from the payload shape: flow metrics carry `previous`, stock metrics
+        // carry `basis` and never a comparison. See the note on the endpoint for why
+        // `active` cannot have one -- it is exactly `total - completed`.
         const flow = data.flow || {};
+        const stock = data.stock || {};
         renderMetric('schedule-total', flow.total, true);
-        renderMetric('schedule-active', flow.active, true);
-        renderMetric('schedule-open', flow.open_client_work, true);
-        renderMetric('schedule-completed', flow.completed, false);
+        renderMetric('schedule-active', stock.active, false);
+        renderMetric('schedule-open', stock.open_client_work, false);
+        renderMetric('schedule-completed', stock.completed, false);
         renderTrend(data.trend);
         renderHorizontalChart('branch-chart', 'branch-table', data.branches, 'Branch concentration', 'Scoped schedule assignments by engineer branch.');
         renderHorizontalChart('category-chart', 'category-table', data.categories, 'Service mix', 'Schedule categories in the selected period.');
-        renderBars('branch-bars', data.branches);
-        renderBars('category-bars', data.categories);
         renderStatusList(data.open_statuses);
-        renderWorkload(data.engineers);
+        renderWorkload(data.engineers, data.engineer_total);
         const line = byId('schedule-scope-line');
         if (line) line.textContent = `Schedule range: ${data.range.start_date} to ${data.range.end_date} · ${data.branch_label || 'All Branches'} · ${data.range_total} schedules · ${data.assignment_total} assignments · Previous period: ${data.previous_range.start_date} to ${data.previous_range.end_date}`;
     }
@@ -316,6 +362,16 @@
         if (config.schedule) window.location.href = `/export_analytics_summary?${queryString()}`;
     };
 
+    function describeFailure(failure) {
+        const label = failure.type === 'purchaseOrders' ? 'Purchase order reporting' : 'Schedule analytics';
+        const raw = (failure.error && failure.error.message) || '';
+        // A TypeError from fetch means the request never reached the server.
+        if (!raw || /failed to fetch|networkerror|load failed/i.test(raw)) {
+            return `${label} could not be loaded. Check your connection and try again.`;
+        }
+        return `${label}: ${raw}`;
+    }
+
     async function fetchJson(url) {
         const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
         const data = await response.json().catch(() => ({}));
@@ -335,7 +391,10 @@
             const results = await Promise.all(tasks);
             const failures = results.filter((result) => result && result.error);
             failures.forEach((failure) => failure.type === 'schedule' ? resetScheduleDisplay() : resetPoDisplay());
-            if (failures.length) setError(failures.map((failure) => failure.error.message).join(' '));
+            // failure.error.message is a JS internal ("Failed to fetch") for a dropped
+            // connection, which tells a manager nothing. Surface the server's own message
+            // when there is one, and a plain sentence when the request never arrived.
+            if (failures.length) setError(failures.map(describeFailure).join(' '));
             const stamp = byId('analytics-last-loaded');
             if (stamp && !failures.length) stamp.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
         } finally {

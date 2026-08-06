@@ -14809,7 +14809,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v75-analytics-panel-height';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v76-analytics-flow-stock';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -16237,7 +16237,11 @@ def analytics_page():
     return render_template(
         'analytics.html',
         can_view_schedule_analytics=can_view_admin_reports(),
-        can_view_po_analytics=can_manage_purchase_orders(),
+        # Either flag, matching /get_po_analytics. Setting this from the P.O. capability
+        # alone hid the panel from reports admins -- the page's primary audience -- while
+        # the endpoint still served them. Superadmins pass either way, so the gap only
+        # showed for a granted account.
+        can_view_po_analytics=can_view_admin_reports() or can_manage_purchase_orders(),
     )
 
 
@@ -35845,19 +35849,13 @@ def get_analytics_summary():
         )
         previous_category_counts[previous_category] = previous_category_counts.get(previous_category, 0) + 1
 
-    previous_open_statuses = {}
-    for row in previous_rows:
-        previous_status = row[1] or 'In Progress'
-        if previous_status != 'Completed' and row[2]:
-            previous_open_statuses[previous_status] = previous_open_statuses.get(previous_status, 0) + 1
-
+    # Only the window count is comparable. `active` is exactly `total - completed`, so a
+    # period arrow on it is an arrow on -completed: recent work has had less time to finish,
+    # which makes the current window look worse for a reason that is not performance. The
+    # same argument excluded `completed`, and it excludes its complement. `open_client_work`
+    # is a subset of active and inherits the bias. Previous-period counts for those are
+    # therefore not computed at all -- a value that must not be shown should not exist.
     previous_total = len(previous_rows)
-    previous_completed = sum(1 for row in previous_rows if (row[1] or 'In Progress') == 'Completed')
-    previous_active = previous_total - previous_completed
-    previous_open_client_work = sum(
-        1 for row in previous_rows
-        if row[2] and (row[1] or 'In Progress') != 'Completed'
-    )
     current_branch_counts = branches
     previous_branch_counts = analytics_branch_counts(previous_start, previous_end)
     current_trend = analytics_trend_rows(
@@ -35880,14 +35878,17 @@ def get_analytics_summary():
         'branch': analytics_requested_branch(),
         'branch_label': analytics_branch_label(analytics_requested_branch()),
         'range_total': len(shifts),
-        'completed': completed,
-        'active': active,
         'assignment_total': total_assignment_count,
+        # Only metrics carrying `previous` may render an arrow. The split is enforced by the
+        # payload shape rather than by a comment in the renderer, so a metric cannot acquire
+        # a misleading comparison by being moved between blocks.
         'flow': {
             'total': {'value': len(shifts), 'previous': previous_total},
-            'active': {'value': active, 'previous': previous_active},
-            'open_client_work': {'value': open_client_work, 'previous': previous_open_client_work},
-            'completed': {'value': completed},
+        },
+        'stock': {
+            'active': {'value': active, 'basis': 'status as of today'},
+            'open_client_work': {'value': open_client_work, 'basis': 'status as of today'},
+            'completed': {'value': completed, 'basis': 'status as of today'},
         },
         'trend': {
             'current': current_trend,
@@ -35903,7 +35904,6 @@ def get_analytics_summary():
             {'label': label, 'count': count}
             for label, count in sorted(open_statuses.items(), key=lambda item: (-item[1], item[0]))
         ],
-        'previous_open_statuses': previous_open_statuses,
     })
 
 
