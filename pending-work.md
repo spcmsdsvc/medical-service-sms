@@ -7,21 +7,32 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last filled: 2026-08-06, at the owner's request, after **the 2026-08-05 browser pass was finally
-done and a seventh feature shipped and was reviewed**. Three things changed the picture:
+Last filled: 2026-08-06 (end of session), at the owner's request, after **the Analytics upgrade
+shipped and was reviewed** — the largest single piece of work this repository has taken.
 
-1. **All six 2026-08-05 features were driven through a browser.** That was the largest unverified
-   block in this file and it is now closed — see section 3. Five passed. The pass found **two new
-   bugs**, both in section 1 — the export cache leak and every provisional-leave failure reason
-   being discarded before the user sees it. **Both were fixed the same day**, in `v71` and `v72`.
-   **Section 1 is empty again.**
-2. **P.O. Details shipped** (`b01c78c`, `3dd83b1`, Codex) and was reviewed here (`5b40dde`). The
-   implementation was sound; the review found the Settings switch reporting an effective
-   permission rather than the stored grant, and that the journal claimed test coverage that did
-   not exist.
-3. **The same write-back was fixed in the stock inventory switches** (`ad463c8`) at the owner's
-   request, which **partly overturns an entry in section 5** — read that section's correction
-   before trusting it.
+**Start here if you are picking this up cold.** The state is good: **no open bugs**, suite green at
+**498**, service worker at **`v76-analytics-flow-stock`**, nothing uncommitted but the four known
+artifacts. One deliberate deferral is in section 2 and one design decision is waiting in section 5.
+
+**What happened today, in order:**
+
+1. **The 2026-08-05 browser pass was finally done** — all six features driven through a browser.
+   That was the largest unverified block in this file and it is closed (section 3). Five passed.
+   It found two bugs: the export cache leak and every provisional-leave failure reason being
+   discarded. **Both fixed the same day**, `v71` and `v72`.
+2. **P.O. Details shipped** (`b01c78c`, `3dd83b1`, Codex), reviewed here (`5b40dde`). Sound, but the
+   Settings switch reported an effective permission rather than the stored grant, and the journal
+   claimed test coverage that did not exist.
+3. **The same write-back was fixed in the stock inventory switches** (`ad463c8`), which **partly
+   overturns an entry in section 5** — read that correction before trusting it.
+4. **The Analytics upgrade shipped** (`45da21c`, `a762b05`, `d562654`, Codex) and was reviewed here
+   (`34f60b9`). Strong work — XSS structurally closed, accent theming live, the access split
+   correct. The review fixed a P.O. panel invisible to reports admins and a trend arrow on a metric
+   that cannot carry one. **One new item is open in section 3.**
+
+**The single most useful thing to know before touching Analytics again:** `active` is *exactly*
+`total − completed`. It is the same measurement negated, so anything true of one is true of the
+other with the sign flipped. That is why neither carries a period comparison. See section 6.
 
 Filled previously on 2026-08-05 (end of session) after **six features shipped and were reviewed in
 one day**: HR schedule viewer, staff types on Add Personnel, provisional leave, request recall,
@@ -99,10 +110,13 @@ reviews that followed.
 | `b01c78c` `3dd83b1` | P.O. Details register and its grantable access toggle (Codex) |
 | `5b40dde` | **Review fix** — the P.O. Settings switch reported the effective permission, not the stored grant; six missing tests added |
 | `ad463c8` | The same write-back fixed in the two stock inventory switches, at the owner's request |
-| `v71` bump | Authenticated exports made network-only, closing bug 1a — the runtime-cache leak |
-| `v72` bump | Provisional-leave refusals now show the server's reason, closing bug 1b |
+| `e8ede40` (`v71`) | Authenticated exports made network-only, closing bug 1a — the runtime-cache leak |
+| `98bd7b4` (`v72`) | Provisional-leave refusals now show the server's reason, closing bug 1b |
+| `f59703c` | Recorded the approved Analytics upgrade plan |
+| `45da21c` `a762b05` `d562654` (`v73`-`v75`) | Analytics upgrade: trends, themed SVG charts, P.O. reporting (Codex) |
+| `34f60b9` (`v76`) | **Review fix** — P.O. panel invisible to reports admins; a trend arrow on a metric that cannot carry one |
 
-Suite green at **488 tests**. Service worker cache at **`v72-schedule-error-text`** —
+Suite green at **498 tests**. Service worker cache at **`v76-analytics-flow-stock`** —
 **read the live value out of `app.py` immediately before committing**, never from a note.
 
 **Every review found something, and two were live privilege escalations.** That is the single
@@ -294,33 +308,27 @@ are all fixed and pushed.
 
 ## 2. Queued work
 
-### P.O. reporting on the Analytics page — AGREED, NOT PLANNED
+### ~~P.O. reporting on the Analytics page~~ — BUILT in `45da21c`, reviewed in `34f60b9`
 
-The owner asked for this in the same breath as the P.O. Details page: *"then we will update
-analytics page afterwards to show the reports regarding the P.O page."* The register shipped
-(`b01c78c`); this half has **no plan yet** and should get one before any code.
+**Done, and the whole Analytics page was upgraded with it** at the owner's request:
+*"P.O analytics. but let us also upgrade the whole analytics page."* The plan is in `plans.md`.
 
-**Decide this first, because it is a real choice and not an implementation detail:**
-`/analytics_page` gates on `can_view_admin_reports()` — a **different** flag from
-`po_admin_access`. So either the P.O. cards show to reports-admins, or to
-`can_view_admin_reports() or can_manage_purchase_orders()`, or a separate endpoint sits under the
-P.O. flag. Nobody has chosen.
+The open question this entry flagged — *who sees P.O. reporting, given `/analytics_page` gates on a
+different flag from `po_admin_access`* — **was decided and is worth not relitigating**: the panel
+shows to `can_view_admin_reports() or can_manage_purchase_orders()`, but through a **separate
+`/get_po_analytics` endpoint**. `/get_analytics_summary` stayed on `can_view_admin_reports()` alone,
+because it returns engineer names, branches and per-engineer workload that a P.O.-only manager must
+not receive. The sidebar needed a **third branch**, not a widened one, because its existing
+condition wrapped Analytics and TSR files together.
 
-Settled already, and worth not relitigating: the P.O. record carries **no monetary amount** by
-owner decision, deliberately keeping this clear of the spend-reporting work deferred below. So the
-reports are **counts** — total in range, Contract vs Single Visit, top clients, P.O.s per month.
+Also resolved from the notes that used to live here: the unescaped-label problem is gone, and not by
+escaping. The charts are now inline SVG built with `createElementNS` + `textContent` via one
+`svgElement()` helper, so injection is structurally unreachable rather than escaped by discipline.
+There is still **no charting library**, and adding one was declined — it would not inherit the theme
+tokens, would be invisible to screen readers, and would print as a bitmap.
 
-Two things about the existing page that shape the endpoint:
-
-- **There is no charting library in this repo.** `renderMiniChart()` and `renderBars()` in
-  `templates/analytics.html` are hand-rolled flexbox bars that take a flat `{label: count}`
-  object, so an endpoint emitting that shape needs no new charting code at all.
-- **Both helpers interpolate labels unescaped**, into `title="${label}"` and the bar label. P.O.
-  labels are client names, which are user-entered. Fix the two helpers to escape — that also
-  benefits the existing branch and engineer charts — rather than escaping at each call site.
-
-Reuse `analytics_date_bounds()` unchanged for the range. The `purchase_order` indexes added in
-`b01c78c` (`(client_id, po_date)`, `(po_number)`, `(po_date)`) already serve the grouping.
+`analytics_date_bounds()` is reused unchanged, and the `purchase_order` indexes from `b01c78c` serve
+the grouping as expected.
 
 ### ~~Create TSR on a schedule that has not synced yet~~ — BUILT in `28ba1b0`
 
@@ -523,7 +531,29 @@ resurrect it as a money proxy.
 
 ## 3. Not yet verified
 
-None of this is known broken — it simply has not been checked.
+None of this is known broken — it simply has not been checked. **One item here is a known
+deviation rather than an unknown, and it is listed first.**
+
+### Analytics charts scroll horizontally at 375 px — known, contained, not fixed
+
+`static/css/app-analytics.css` sets `min-width: 560px` on the chart SVG inside a frame that is
+~320 px wide on a phone. The frame carries `overflow-x: auto`, so it is **contained** — the page
+itself does not overflow and nothing is clipped — but the bars scroll sideways with **no affordance**
+(no fade, no styled scrollbar), which is the same complaint the old `.mini-chart` earned before the
+rewrite.
+
+**This is a deviation from the approved plan, which is why it is recorded rather than shrugged at.**
+The plan specified drawing 1 user unit = 1 CSS px from `container.clientWidth`, precisely so the
+charts would never scroll; what shipped is `viewBox` + `preserveAspectRatio` scaling, which the plan
+had explicitly rejected because it shrinks `<text>` to ~6 px at 375 px. The `min-width` is what stops
+the text shrinking, at the cost of the scroll.
+
+Fixing it properly means rewriting both chart renderers in `static/js/app-analytics.js`
+(`renderHorizontalChart` and `renderTrend`) to measure and redraw at 1:1, plus a debounced
+`ResizeObserver` — guard on integer width change and never let the chart set its own container's
+width, or it re-renders itself in a loop. That is its own task, not review cleanup.
+
+### The rest
 
 | Item | Applies to |
 | --- | --- |
@@ -537,6 +567,9 @@ None of this is known broken — it simply has not been checked.
 | **Offline schedule attachments from a real device camera** | the least-proven part of `709106c` — see below |
 | **The provisional-leave supersede notice, in a browser** | `b5dd637` names both leave types on the **approval** path, which the 2026-08-06 pass did not reach — see section 1b |
 | **P.O. Details on Edge, Brave, and in dark mode** | verified in one browser, light theme only |
+| **The Analytics print view** | `app-analytics.css` has a real `@media print` block that hides each SVG and reveals its `.analytics-chart-table` as a bordered table. That is a genuinely better print than the page used to produce — and **it has never been print-previewed.** Cheap to check, and the only representation of the charts on paper |
+| **Analytics on Edge and Brave** | the SVG charts, the accent-following fills and the print block were checked in one browser only |
+| **Analytics keyboard pass** | the filter is a real `<form>` with `Apply` as `type="submit"`, headings run `h1`→`h2`→`h3`, and the scope/error regions are `role="status"` / `role="alert"`. Structure was verified; a full tab-through with visible focus was not |
 
 ### ~~The 2026-08-05 features were proven by calling, not by using~~ — DONE, 2026-08-06
 
@@ -863,6 +896,45 @@ routine.
 ---
 
 ## 6. Patterns worth knowing before the next feature
+
+### From the Analytics review, and the first one generalises well beyond it
+
+**1. A metric's complement inherits its bias, sign flipped.** The Analytics page correctly withheld
+a period-over-period arrow from **Completed** — recent work has had less time to finish, so a
+comparison would read as a change in performance when it is not — and printed *"No recency arrow;
+status stock"* to say so. Then it put an arrow on **Active**, captioned "Not completed". But
+`active` is *exactly* `total − completed`: `active 2 + completed 2 = total 4`, and
+`previous_active = previous_total − previous_completed`. If `completed` is biased low, `active` is
+biased high **by the same amount**. Half a rule applied is a rule that looks principled and is not.
+Before exempting a metric from a comparison, write down what it is arithmetically and check whether
+anything else on the page is that same quantity rearranged.
+
+The enforcement is worth copying: `active`, `open_client_work` and `completed` now sit in a `stock`
+block whose members carry a `basis` string and **no `previous` key computed at all**, and the
+renderer draws an arrow **iff** `previous` is present. A value that must not be shown should not
+exist. Compare that with a comment saying "do not show this" — comments do not survive a refactor.
+
+**2. A panel's gate must be the same expression as its endpoint's gate.** `/get_po_analytics` was
+opened to `can_view_admin_reports() or can_manage_purchase_orders()`; the template flag was set from
+`can_manage_purchase_orders()` alone. A reports-admin therefore got **200 with real data** from the
+endpoint and **no panel** on the page. Superadmins pass either way, so it looked fine to whoever
+tested it, and the shipped test checked that account's *schedule* surface but never the P.O. panel.
+**When two places must agree about who sees something, assert them together against the granted
+account** — this is the fourth time an admin-passes/grantee-fails gap has reached `main`.
+
+**3. Structural beats escaped.** The XSS fix here is not `escapeHtml()` at every call site — it is
+one `svgElement()` helper using `createElementNS` + `setAttribute` + `textContent`, so there is no
+string-interpolation path to forget. Verified by setting an `Engineer.branch` to
+`"><img src=x onerror=alert(1)><script>alert(2)</script>` and finding literal text in the chart, the
+table, the mobile cards and the tooltip. If you extend those charts, keep the rule: **never
+`innerHTML` with data**, and the class of bug stays unreachable rather than merely handled.
+
+**4. The CRLF trap is real, and the guard against it is a match count.** Two defect injections during
+this review **aborted instead of passing** because their multi-line needles used `\n` against these
+CRLF files. Section 4 has warned about this for weeks; it still caught a careful attempt. The reason
+it surfaced as an abort rather than a false green is that the harness asserts the needle occurs
+**exactly once** before writing, and re-checks the SHA changed. Keep both checks in any injection
+script — without them a silently-matched-nothing injection reads exactly like a healthy control.
 
 ### The three from 2026-08-06
 
