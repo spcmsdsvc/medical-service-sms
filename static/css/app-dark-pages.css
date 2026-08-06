@@ -444,7 +444,7 @@
 :root[data-app-theme="dark"] :is(
     .reim-filter-card, .reim-table-card, .travel-card, .cash-card,
     .approval-module-card, .approval-card, .reports-hero, .report-stat-card,
-    .analytics-card, .analytics-panel, .accounting-card
+    .accounting-card
 ) {
     background: var(--dark-panel) !important;
     color: var(--dark-text) !important;
@@ -755,7 +755,7 @@
     .cash-notification-list, .reim-notification-card, .reim-notification-list,
     .reim-status-window-card, .approval-notification-card,
     .reim-empty, .approval-empty, .approval-empty-state,
-    .analytics-mobile-empty, .activity-mobile-empty, .reports-empty,
+    .activity-mobile-empty, .reports-empty,
     .product-mobile-empty, .client-mobile-empty, .engineer-mobile-empty,
     .dashboard-empty-state, .dashboard-team-empty, .dashboard-mobile-empty-card,
     .mobile-empty-state
@@ -770,7 +770,6 @@
     .cash-card,
     .travel-card, .travel-visit-card, .travel-equipment-box,
     .reim-filter-card, .reim-table-card, .reim-dialog,
-    .analytics-filter-card, .analytics-range-label, .analytics-mobile-engineer-card,
     .reports-mobile-card, .archive-file-entry,
     .product-mobile-card, .client-mobile-card, .client-mobile-view-contact,
     .engineer-mobile-card,

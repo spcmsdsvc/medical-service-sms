@@ -1217,6 +1217,10 @@
 }
 
 .dashboard-metric-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0.35rem 0.5rem;
     margin-left: auto;
     font-size: 0.76rem;
     font-weight: 700;

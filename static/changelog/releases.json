@@ -1483,6 +1483,33 @@
             "admins"
           ],
           "sort_order": 40
+        },
+        {
+          "item_key": "2026-08-06-analytics-service-activity",
+          "category": "Analytics",
+          "description": "Analytics now leads with period-over-period service trends, branch concentration, service mix, open client work, and engineer workload instead of disconnected Today, Week, and Month tiles.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 50
+        },
+        {
+          "item_key": "2026-08-06-analytics-purchase-orders",
+          "category": "Purchase Orders",
+          "description": "Authorized reports and P.O. users can now see company-wide purchase-order counts by type, client, and month without exposing monetary values or personnel analytics to P.O.-only accounts.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 60
+        },
+        {
+          "item_key": "2026-08-06-analytics-accessibility",
+          "category": "Analytics",
+          "description": "Analytics charts now follow the active theme, provide screen-reader data tables, clear failed-refresh values, support print output, and remain usable on mobile.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 70
         }
       ]
     }

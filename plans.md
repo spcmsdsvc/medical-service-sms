@@ -57,13 +57,14 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Analytics upgrade: give the page a job, and report purchase orders
 
-**Status:** `Approved — awaiting go-ahead`
+**Status:** `In progress`
+**Started:** 2026-08-06, after the project owner explicitly said to execute the plan.
 **Approved:** 2026-08-06
 **Detailed:** 2026-08-06, after mapping the current Analytics page end to end, the design language
 the four dashboard phases established, and what data exists that is not yet surfaced.
 
-**Nothing has been built. Do not start.** Plan-mode reported this approved and said coding could
-begin; per `AGENTS.md` "Approved Plans" that is the tool's default, not the owner's instruction.
+Execution is authorized. The implementation must preserve the reports-only boundary for personnel
+analytics and must not stage or modify the tracked local database.
 
 ### Context
 

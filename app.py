@@ -116,6 +116,7 @@ import time
 import traceback
 import hashlib
 import mimetypes
+import types
 from email.message import EmailMessage
 from email.utils import formataddr
 
@@ -14808,7 +14809,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v72-schedule-error-text';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v74-analytics-mobile-layout';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -14824,9 +14825,11 @@ const APP_SHELL = [
   '/static/css/app-auth.css',
   '/static/css/app-shell.css',
   '/static/css/app-dashboard.css',
+  '/static/css/app-analytics.css',
   '/static/css/app-changelog.css',
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
+  '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/js/app-offline-schedule.js',
   '/static/vendor/jspdf/jspdf.umd.min.js',
@@ -16228,10 +16231,14 @@ def activity_page():
 @app.route('/analytics_page')
 @login_required
 def analytics_page():
-    """Analytics dashboard for authorized management users."""
-    if not can_view_admin_reports():
+    """Analytics dashboard for schedule-report and purchase-order readers."""
+    if not (can_view_admin_reports() or can_manage_purchase_orders()):
         return redirect(url_for('dashboard_page'))
-    return render_template('analytics.html')
+    return render_template(
+        'analytics.html',
+        can_view_schedule_analytics=can_view_admin_reports(),
+        can_view_po_analytics=can_manage_purchase_orders(),
+    )
 
 
 @app.route('/reports_page')
@@ -35592,6 +35599,14 @@ def analytics_branch_label(branch):
     return f'{branch} Branch'
 
 
+def analytics_previous_bounds(start_date, end_date):
+    """Return the immediately preceding period with the same number of days."""
+    period_days = max((end_date - start_date).days + 1, 1)
+    previous_end = start_date - timedelta(days=1)
+    previous_start = previous_end - timedelta(days=period_days - 1)
+    return previous_start, previous_end
+
+
 def analytics_visible_engineer_ids():
     """Restrict analytics scope by role and optional branch filter."""
     branch = analytics_requested_branch()
@@ -35614,7 +35629,7 @@ def analytics_visible_engineer_ids():
 
 
 def analytics_scope_query(query):
-    """Apply role scope to analytics queries."""
+    """Apply role scope without multiplying a shift for each assignment."""
     visible_ids = analytics_visible_engineer_ids()
 
     if visible_ids is None:
@@ -35623,55 +35638,164 @@ def analytics_scope_query(query):
     if not visible_ids:
         return query.filter(False)
 
-    return (
-        query
-        .join(ShiftEngineer, Shift.id == ShiftEngineer.shift_id)
-        .filter(ShiftEngineer.engineer_id.in_(visible_ids))
+    membership = db.session.query(ShiftEngineer.id).filter(
+        ShiftEngineer.shift_id == Shift.id,
+        ShiftEngineer.engineer_id.in_(visible_ids),
+    ).correlate(Shift).exists()
+    return query.filter(membership)
+
+
+def analytics_scoped_shifts(start_date=None, end_date=None, eager=True):
+    """Build one de-duplicated schedule query for the Analytics/Reports surfaces."""
+    query = Shift.query
+    if eager:
+        query = query.options(
+            joinedload(Shift.client),
+            joinedload(Shift.product),
+        )
+    if start_date:
+        query = query.filter(func.date(Shift.start_time) >= start_date)
+    if end_date:
+        query = query.filter(func.date(Shift.start_time) <= end_date)
+    return analytics_scope_query(query)
+
+
+def analytics_engineer_map(shifts):
+    """Load assigned engineers in two queries, preserving the legacy primary fallback."""
+    shift_ids = {shift.id for shift in shifts if getattr(shift, 'id', None)}
+    if not shift_ids:
+        return {}
+
+    visible_ids = set(analytics_visible_engineer_ids())
+
+    linked_rows = db.session.query(ShiftEngineer.shift_id, Engineer).join(
+        Engineer, Engineer.id == ShiftEngineer.engineer_id
+    ).filter(
+        ShiftEngineer.shift_id.in_(shift_ids),
+        ShiftEngineer.engineer_id.in_(visible_ids),
+    ).all()
+
+    engineer_map = {}
+    seen_by_shift = {}
+    for shift_id, engineer in linked_rows:
+        seen = seen_by_shift.setdefault(shift_id, set())
+        if engineer.id in seen:
+            continue
+        seen.add(engineer.id)
+        engineer_map.setdefault(shift_id, []).append(engineer)
+
+    primary_ids = {
+        shift.engineer_id for shift in shifts
+        if shift.id not in engineer_map
+        and getattr(shift, 'engineer_id', None) in visible_ids
+    }
+    primary_by_id = {}
+    if primary_ids:
+        primary_by_id = {
+            engineer.id: engineer
+            for engineer in Engineer.query.filter(Engineer.id.in_(primary_ids)).all()
+        }
+
+    for shift in shifts:
+        if shift.id not in engineer_map and shift.engineer_id in primary_by_id:
+            engineer_map[shift.id] = [primary_by_id[shift.engineer_id]]
+        else:
+            engineer_map.setdefault(shift.id, [])
+
+    return engineer_map
+
+
+def analytics_count_rows(start_date, end_date):
+    """Fetch only the fields needed for a previous-period aggregate/trend."""
+    return analytics_scoped_shifts(start_date, end_date, eager=False).with_entities(
+        Shift.start_time,
+        Shift.status,
+        Shift.client_id,
+        Shift.title,
+    ).all()
+
+
+def analytics_branch_counts(start_date, end_date):
+    """Count distinct scoped shifts by assigned engineer branch."""
+    visible_ids = analytics_visible_engineer_ids()
+    if not visible_ids:
+        return {}
+
+    query = analytics_scoped_shifts(start_date, end_date, eager=False).join(
+        ShiftEngineer, Shift.id == ShiftEngineer.shift_id
+    ).join(Engineer, Engineer.id == ShiftEngineer.engineer_id).filter(
+        ShiftEngineer.engineer_id.in_(visible_ids)
     )
+    return {
+        (branch or 'Unassigned'): count
+        for branch, count in query.with_entities(
+            Engineer.branch,
+            func.count(func.distinct(Shift.id)),
+        ).group_by(Engineer.branch).all()
+    }
+
+
+def analytics_ranked_counts(current, previous=None):
+    """Serialize comparable count maps without exposing user-controlled HTML."""
+    previous = previous or {}
+    labels = set(current) | set(previous)
+    return [
+        {
+            'label': label,
+            'count': int(current.get(label, 0)),
+            'previous': int(previous.get(label, 0)),
+        }
+        for label in sorted(labels, key=lambda value: (-current.get(value, 0), str(value)))
+    ]
+
+
+def analytics_trend_rows(rows, start_date=None, end_date=None):
+    counts = {}
+    for row in rows:
+        start_time = row[0]
+        if not start_time:
+            continue
+        service_date = start_time.date() if hasattr(start_time, 'date') else start_time
+        counts[service_date.isoformat()] = counts.get(service_date.isoformat(), 0) + 1
+
+    if start_date and end_date:
+        service_dates = []
+        current_date = start_date
+        while current_date <= end_date:
+            service_dates.append(current_date)
+            current_date += timedelta(days=1)
+    else:
+        service_dates = [date.fromisoformat(value) for value in sorted(counts)]
+
+    return [
+        {'date': service_date, 'count': counts.get(service_date, 0)}
+        for service_date in [service_date.isoformat() for service_date in service_dates]
+    ]
 
 
 @app.route('/get_analytics_summary')
 @login_required
 def get_analytics_summary():
-    """Management analytics API: schedules, branch workload, engineer workload, type/status breakdown."""
+    """Reports-admin schedule analytics with period comparisons."""
     if not can_view_admin_reports():
         return denied()
 
     start_date, end_date = analytics_date_bounds()
-    today = get_manila_time().date()
+    previous_start, previous_end = analytics_previous_bounds(start_date, end_date)
+    shifts = analytics_scoped_shifts(start_date, end_date).order_by(Shift.start_time.asc()).all()
+    previous_rows = analytics_count_rows(previous_start, previous_end)
+    engineer_map = analytics_engineer_map(shifts)
 
-    def count_between(start_d, end_d):
-        q = Shift.query.filter(
-            func.date(Shift.start_time) >= start_d,
-            func.date(Shift.start_time) <= end_d
-        )
-        q = analytics_scope_query(q)
-        return len({shift.id for shift in q.all()})
-
-    week_start = today - timedelta(days=today.weekday())
-    week_end = week_start + timedelta(days=6)
-    month_start = today.replace(day=1)
-
-    range_query = Shift.query.filter(
-        func.date(Shift.start_time) >= start_date,
-        func.date(Shift.start_time) <= end_date
+    completed = sum(1 for shift in shifts if (shift.status or 'In Progress') == 'Completed')
+    active = len(shifts) - completed
+    open_client_work = sum(
+        1 for shift in shifts
+        if shift.client_id and (shift.status or 'In Progress') != 'Completed'
     )
-    range_query = analytics_scope_query(range_query)
-    raw_shifts = range_query.order_by(Shift.start_time.asc()).all()
-    shifts = list({shift.id: shift for shift in raw_shifts}.values())
-
-    completed = 0
-    active = 0
     branches = {}
     engineers = {}
     categories = {}
-    statuses = {}
-    open_statuses = {
-        'In Progress': 0,
-        'For Continuation': 0,
-        'Waiting for P.O': 0,
-        'Waiting for Parts': 0
-    }
+    open_statuses = {}
 
     total_assignment_count = 0
 
@@ -35680,17 +35804,10 @@ def get_analytics_summary():
         categories[schedule_type] = categories.get(schedule_type, 0) + 1
 
         status = shift.status or 'In Progress'
-        statuses[status] = statuses.get(status, 0) + 1
+        if status != 'Completed' and shift.client_id:
+            open_statuses[status] = open_statuses.get(status, 0) + 1
 
-        if status == 'Completed':
-            completed += 1
-        else:
-            active += 1
-
-        if status in open_statuses and shift.client_id:
-            open_statuses[status] += 1
-
-        assigned_engineers = get_shift_engineer_records(shift)
+        assigned_engineers = engineer_map.get(shift.id) or []
         if not assigned_engineers:
             branches['Unassigned'] = branches.get('Unassigned', 0) + 1
             continue
@@ -35701,8 +35818,8 @@ def get_analytics_summary():
             branch = eng.branch or 'Unassigned'
             branches[branch] = branches.get(branch, 0) + 1
 
-            if eng.name not in engineers:
-                engineers[eng.name] = {
+            if eng.id not in engineers:
+                engineers[eng.id] = {
                     'name': eng.name,
                     'branch': branch,
                     'count': 0,
@@ -35710,16 +35827,45 @@ def get_analytics_summary():
                     'active': 0
                 }
 
-            engineers[eng.name]['count'] += 1
+            engineers[eng.id]['count'] += 1
             if status == 'Completed':
-                engineers[eng.name]['completed'] += 1
+                engineers[eng.id]['completed'] += 1
             else:
-                engineers[eng.name]['active'] += 1
+                engineers[eng.id]['active'] += 1
 
     busiest_engineers = sorted(
         engineers.values(),
         key=lambda x: (-x['count'], x['name'])
-    )[:15]
+    )
+
+    previous_category_counts = {}
+    for row in previous_rows:
+        previous_category = classify_schedule_type(
+            types.SimpleNamespace(title=row[3] or '', client_id=row[2])
+        )
+        previous_category_counts[previous_category] = previous_category_counts.get(previous_category, 0) + 1
+
+    previous_open_statuses = {}
+    for row in previous_rows:
+        previous_status = row[1] or 'In Progress'
+        if previous_status != 'Completed' and row[2]:
+            previous_open_statuses[previous_status] = previous_open_statuses.get(previous_status, 0) + 1
+
+    previous_total = len(previous_rows)
+    previous_completed = sum(1 for row in previous_rows if (row[1] or 'In Progress') == 'Completed')
+    previous_active = previous_total - previous_completed
+    previous_open_client_work = sum(
+        1 for row in previous_rows
+        if row[2] and (row[1] or 'In Progress') != 'Completed'
+    )
+    current_branch_counts = branches
+    previous_branch_counts = analytics_branch_counts(previous_start, previous_end)
+    current_trend = analytics_trend_rows(
+        [(shift.start_time,) for shift in shifts],
+        start_date,
+        end_date,
+    )
+    previous_trend = analytics_trend_rows(previous_rows, previous_start, previous_end)
 
     return jsonify({
         'status': 'success',
@@ -35727,20 +35873,86 @@ def get_analytics_summary():
             'start_date': start_date.isoformat(),
             'end_date': end_date.isoformat()
         },
+        'previous_range': {
+            'start_date': previous_start.isoformat(),
+            'end_date': previous_end.isoformat()
+        },
         'branch': analytics_requested_branch(),
         'branch_label': analytics_branch_label(analytics_requested_branch()),
-        'today': count_between(today, today),
-        'week': count_between(week_start, week_end),
-        'month': count_between(month_start, today),
         'range_total': len(shifts),
         'completed': completed,
         'active': active,
         'assignment_total': total_assignment_count,
-        'branches': dict(sorted(branches.items())),
+        'flow': {
+            'total': {'value': len(shifts), 'previous': previous_total},
+            'active': {'value': active, 'previous': previous_active},
+            'open_client_work': {'value': open_client_work, 'previous': previous_open_client_work},
+            'completed': {'value': completed},
+        },
+        'trend': {
+            'current': current_trend,
+            'previous': previous_trend,
+            'current_total': len(shifts),
+            'previous_total': previous_total,
+        },
+        'branches': analytics_ranked_counts(current_branch_counts, previous_branch_counts),
         'engineers': busiest_engineers,
-        'categories': dict(sorted(categories.items())),
-        'statuses': dict(sorted(statuses.items())),
-        'open_statuses': open_statuses
+        'engineer_total': len(engineers),
+        'categories': analytics_ranked_counts(categories, previous_category_counts),
+        'open_statuses': [
+            {'label': label, 'count': count}
+            for label, count in sorted(open_statuses.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        'previous_open_statuses': previous_open_statuses,
+    })
+
+
+@app.route('/get_po_analytics')
+@login_required
+def get_po_analytics():
+    """Company-wide purchase-order counts for reports and P.O.-only users."""
+    if not (can_view_admin_reports() or can_manage_purchase_orders()):
+        return denied()
+
+    ensure_purchase_order_schema()
+    start_date, end_date = analytics_date_bounds()
+    orders = PurchaseOrder.query.options(joinedload(PurchaseOrder.client)).filter(
+        PurchaseOrder.po_date >= start_date,
+        PurchaseOrder.po_date <= end_date,
+    ).order_by(PurchaseOrder.po_date.desc(), PurchaseOrder.id.desc()).all()
+
+    by_type = {}
+    by_client = {}
+    by_month = {}
+    for order in orders:
+        po_type = normalize_purchase_order_type(order.po_type) or PO_TYPE_SINGLE_VISIT
+        type_label = PO_TYPE_LABELS.get(po_type, PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT])
+        by_type[type_label] = by_type.get(type_label, 0) + 1
+        client_label = order.client.name if order.client else 'Unassigned client'
+        by_client[client_label] = by_client.get(client_label, 0) + 1
+        month_label = order.po_date.strftime('%Y-%m') if order.po_date else 'Unknown'
+        by_month[month_label] = by_month.get(month_label, 0) + 1
+
+    return jsonify({
+        'status': 'success',
+        'range': {
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+        },
+        'scope_label': 'Company-wide',
+        'total': len(orders),
+        'by_type': [
+            {'label': label, 'count': count}
+            for label, count in sorted(by_type.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        'by_client': [
+            {'label': label, 'count': count}
+            for label, count in sorted(by_client.items(), key=lambda item: (-item[1], item[0]))[:10]
+        ],
+        'by_month': [
+            {'label': label, 'count': count}
+            for label, count in sorted(by_month.items())
+        ],
     })
 
 
@@ -36628,17 +36840,9 @@ def get_reports_summary():
     start_date, end_date = analytics_date_bounds()
     today = get_manila_time().date()
 
-    range_query = Shift.query.options(
-        joinedload(Shift.client),
-        joinedload(Shift.product),
+    shifts = analytics_scoped_shifts(start_date, end_date).options(
         selectinload(Shift.files)
-    ).filter(
-        func.date(Shift.start_time) >= start_date,
-        func.date(Shift.start_time) <= end_date
-    )
-    range_query = analytics_scope_query(range_query)
-    raw_shifts = range_query.order_by(Shift.start_time.desc()).all()
-    shifts = list({shift.id: shift for shift in raw_shifts}.values())
+    ).order_by(Shift.start_time.desc()).all()
 
     service_shifts = [shift for shift in shifts if shift.client_id]
     completed_service_shifts = [shift for shift in service_shifts if (shift.status or '') == 'Completed']
@@ -36804,16 +37008,9 @@ def export_reports_summary():
 
     start_date, end_date = analytics_date_bounds()
 
-    range_query = Shift.query.options(
-        joinedload(Shift.client),
-        joinedload(Shift.product),
+    shifts = analytics_scoped_shifts(start_date, end_date).options(
         selectinload(Shift.files)
-    ).filter(
-        func.date(Shift.start_time) >= start_date,
-        func.date(Shift.start_time) <= end_date
-    )
-    range_query = analytics_scope_query(range_query)
-    shifts = list({shift.id: shift for shift in range_query.order_by(Shift.start_time.asc()).all()}.values())
+    ).order_by(Shift.start_time.asc()).all()
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -36858,13 +37055,7 @@ def export_analytics_summary():
     start_date, end_date = analytics_date_bounds()
     branch = analytics_requested_branch()
 
-    range_query = Shift.query.filter(
-        func.date(Shift.start_time) >= start_date,
-        func.date(Shift.start_time) <= end_date
-    )
-    range_query = analytics_scope_query(range_query)
-    raw_shifts = range_query.order_by(Shift.start_time.asc()).all()
-    shifts = list({shift.id: shift for shift in raw_shifts}.values())
+    shifts = analytics_scoped_shifts(start_date, end_date).order_by(Shift.start_time.asc()).all()
 
     output = io.StringIO()
     writer = csv.writer(output)

@@ -237,6 +237,8 @@
                     {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
                     {{ nav_link('/reports_page', 'fa-file-lines', 'TSR files') }}
                 </div>
+            {% elif can_manage_purchase_orders %}
+                {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
             {% elif is_reports_sidebar_user %}
                 {{ nav_link('/reports_page', 'fa-file-lines', 'TSR files') }}
             {% endif %}
