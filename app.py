@@ -7732,7 +7732,13 @@ def approval_user_to_dict(user):
         'personnel_admin_access': bool(getattr(user, 'personnel_admin_access', False)),
         'reports_admin_access': bool(getattr(user, 'reports_admin_access', False)),
         'schedule_admin_access': bool(getattr(user, 'schedule_admin_access', False)),
-        'po_admin_access': can_manage_purchase_orders(user),
+        # The STORED grant, not can_manage_purchase_orders(), which folds in
+        # is_admin_authorized(). This dict drives the Settings switches, and
+        # saveApprovalUser() posts the rendered state straight back -- so reporting the
+        # effective permission made the switch render checked for every superadmin and
+        # the regional admin, and saving any unrelated change on their card then wrote
+        # po_admin_access=True plus an audit line for a grant nobody performed.
+        'po_admin_access': bool(getattr(user, 'po_admin_access', False)),
         'is_active': bool(getattr(user, 'is_active', True)),
         'engineer_id': getattr(profile, 'id', None),
         'employee_id': getattr(profile, 'employee_id', '') if profile else '',

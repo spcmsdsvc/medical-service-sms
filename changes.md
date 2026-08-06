@@ -2,6 +2,62 @@
 
 claude changes - 2026-08-06
 
+## P.O. Details review: the Settings switch reported the wrong thing
+
+* Reviewed `b01c78c` and `3dd83b1` against the recorded plan. **The implementation is sound.**
+  Every structural risk the plan called out is closed: `po_admin_access` is in `add_engineer`'s
+  `permission_fields` allowlist, the `Client` backref carries `cascade='all, delete-orphan'`, the
+  service worker was bumped to `v70-po-details`, **both** `settings.html` mutual-exclusion lists
+  were updated, and the resolver return dict is complete. The register also improves on the plan
+  with an `IntegrityError` fallback, a shared `page_scripts` layout block so page JavaScript runs
+  after Bootstrap, and a native-modal fallback for a blocked CDN.
+* **Verified the interface in a browser**, which no test covers: the page loads with one
+  page-specific XHR and no 404s, console clean, add works, the duplicate dialog fires and matches
+  case-insensitively, Save Anyway stores the second record with the typed casing, and at 375 px the
+  card list replaces the table with 44 px actions and no horizontal overflow. Authorization holds on
+  every endpoint — page redirects, list 403, and add/update/delete all 403 once a CSRF token is
+  supplied. (A first probe without the token returned 400 from CSRF before the guard ran; the guard
+  was re-tested properly rather than recorded from the misleading result.)
+* **Fixed: `approval_user_to_dict()` reported the effective permission, not the stored grant.**
+  `'po_admin_access': can_manage_purchase_orders(user)` folds in `is_admin_authorized()`, unlike the
+  three sibling capability flags beside it, which report `bool(getattr(user, ...))`. That dict drives
+  the Settings switches and `saveApprovalUser()` posts the rendered state straight back, so for every
+  superadmin and the regional admin the switch rendered **checked** with nothing granted; saving any
+  unrelated change on their card then wrote `po_admin_access=True` and an audit line
+  `po_admin_access: False -> True` for a grant nobody performed. Reproduced end to end before fixing.
+  Not a privilege escalation — those accounts already reach the register through
+  `is_admin_authorized()` — but a false entry in the one log that records who was given what.
+* **`can_manage_stock_inventory` behaves identically and was deliberately left alone.** It was
+  probed and shows the same round-trip write-back, so the P.O. field was following an existing
+  precedent rather than inventing a fault. That precedent is already reviewed and documented in
+  `pending-work.md` section 5; changing it is a separate decision, not review cleanup.
+* **Corrected the record on test coverage.** The entry below states "13 tests passed ... including
+  capability guards, ... type/date validation, missing-record handling". `tests/test_purchase_orders.py`
+  contained **4** tests, and there was no `po_type` validation test, no `po_date` validation test and
+  no 404 test — the enumeration describes the plan's test table rather than what was written. The
+  behaviours themselves were correct when called by hand; they were simply unprotected, and the
+  journal told the next reader not to look.
+* **Added six behavioural tests**, each with a positive control: the serializer reports the stored
+  grant while `can_manage_purchase_orders()` still returns True for an admin; a superadmin's card
+  round-trips without persisting the flag; add/update/delete are refused with 403 without the
+  capability and succeed with it; `po_type` rejects five non-values and accepts both real ones;
+  `po_date` rejects five malformed dates and accepts ISO; and update/delete of a deleted id return
+  404 with the successful first delete as the control. Suite green at **478** (was 472).
+* Each of the six was proved to fail when its defect was re-injected, one at a time, using a
+  byte-level harness so CRLF endings could not make a replacement silently no-op — every injection
+  was confirmed to have changed the file by SHA, confirmed to fail **for the expected test**, and
+  `app.py` confirmed byte-identical to its original afterwards.
+* Noted, not changed: `validate_purchase_order_payload()` falls back to the existing record for
+  `po_number`, `po_date` and `po_type` but not `client_id`, so a partial `PUT` omitting the client is
+  refused with "Select a medical center." The page's edit form always sends it, so nothing is broken
+  today; it is an inconsistency in a shared helper.
+* No service worker bump and no new release item: this change touches `app.py` and `tests/` only, no
+  `APP_SHELL` asset, and the 2026-08-06 release already covers the P.O. feature for users.
+* **Attribution note for the next reader:** the entry below was written by Codex under this file's
+  `claude changes - 2026-08-06` heading, and `b01c78c` also swept up uncommitted `plans.md` and
+  `changes.md` edits that were in the working tree from this session. Two agents share this tree —
+  stage explicitly.
+
 ## P.O. Details execution started
 
 * Began the approved P.O. Details implementation after explicit owner authorization. The

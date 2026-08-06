@@ -240,6 +240,176 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             True,
         )
 
+    def test_settings_reports_the_stored_grant_not_the_effective_permission(self):
+        """The Settings payload must carry the stored flag, not the effective permission.
+
+        approval_user_to_dict() drives the Settings switches, and saveApprovalUser()
+        posts the rendered state straight back. Reporting can_manage_purchase_orders()
+        -- which folds in is_admin_authorized() -- made the switch render checked for
+        every superadmin and the regional admin, so saving any unrelated change on their
+        card wrote po_admin_access=True and an audit line for a grant nobody performed.
+        The regional admin reaches the same is_admin_authorized() branch.
+        """
+        with self.app.app_context():
+            superadmin = app_module.db.session.get(app_module.User, self.superadmin_id)
+            self.assertFalse(
+                superadmin.po_admin_access,
+                'fixture precondition: the superadmin holds no explicit grant',
+            )
+            # Effective access is unchanged -- admins still reach the register.
+            self.assertTrue(app_module.can_manage_purchase_orders(superadmin))
+            # ...but the Settings switch must show the stored grant, which is False.
+            self.assertFalse(
+                app_module.approval_user_to_dict(superadmin)['po_admin_access']
+            )
+
+            # Positive control: a real grantee still reports True, so the assertion
+            # above cannot pass by the serializer simply always returning False.
+            granted = app_module.db.session.get(app_module.User, self.po_user_id)
+            self.assertTrue(granted.po_admin_access)
+            self.assertTrue(
+                app_module.approval_user_to_dict(granted)['po_admin_access']
+            )
+
+    def test_saving_an_unrelated_permission_does_not_grant_po_access(self):
+        """A superadmin's card round-trips without silently persisting the flag."""
+        superadmin = self._client_for(self.superadmin_id)
+        rendered = superadmin.get('/settings/approval-routing-data')
+        self.assertEqual(rendered.status_code, 200)
+        row = next(
+            user for user in rendered.get_json()['users']
+            if user['id'] == self.superadmin_id
+        )
+        self.assertFalse(row['po_admin_access'], 'the switch must render unchecked')
+
+        # Post back exactly what the UI rendered, as saveApprovalUser() does.
+        saved = superadmin.post('/settings/update-approval-user', json={
+            'user_id': self.superadmin_id,
+            'is_active': True,
+            'po_admin_access': row['po_admin_access'],
+        })
+        self.assertEqual(saved.status_code, 200)
+        with self.app.app_context():
+            self.assertFalse(
+                app_module.db.session.get(app_module.User, self.superadmin_id).po_admin_access
+            )
+
+    def test_writes_are_refused_without_the_capability(self):
+        owner = self._client_for(self.po_user_id)
+        seeded = owner.post('/add_purchase_order', json={
+            'client_id': self.client_two_id,
+            'po_date': '2026-08-06',
+            'po_number': f'GUARD-{self.suffix}',
+            'po_type': 'contract',
+        })
+        self.assertEqual(seeded.status_code, 201)
+        record_id = seeded.get_json()['purchase_order']['id']
+
+        intruder = self._client_for(self.plain_user_id)
+        self.assertEqual(intruder.post('/add_purchase_order', json={
+            'client_id': self.client_two_id,
+            'po_date': '2026-08-06',
+            'po_number': f'INTRUDER-{self.suffix}',
+            'po_type': 'contract',
+        }).status_code, 403)
+        self.assertEqual(intruder.put(f'/update_purchase_order/{record_id}', json={
+            'client_id': self.client_two_id,
+            'po_date': '2026-08-06',
+            'po_number': f'INTRUDER-EDIT-{self.suffix}',
+            'po_type': 'contract',
+        }).status_code, 403)
+        self.assertEqual(
+            intruder.delete(f'/delete_purchase_order/{record_id}').status_code, 403
+        )
+
+        with self.app.app_context():
+            survivor = app_module.db.session.get(app_module.PurchaseOrder, record_id)
+            self.assertIsNotNone(survivor, 'the refused delete must not have landed')
+            self.assertEqual(survivor.po_number, f'GUARD-{self.suffix}')
+
+        # Positive control: the same three calls succeed for the capability holder.
+        self.assertEqual(owner.put(f'/update_purchase_order/{record_id}', json={
+            'client_id': self.client_two_id,
+            'po_date': '2026-08-06',
+            'po_number': f'GUARD-EDITED-{self.suffix}',
+            'po_type': 'single_visit',
+        }).status_code, 200)
+        self.assertEqual(
+            owner.delete(f'/delete_purchase_order/{record_id}').status_code, 200
+        )
+
+    def test_po_type_must_be_contract_or_single_visit(self):
+        client = self._client_for(self.po_user_id)
+
+        def add(po_type, number):
+            return client.post('/add_purchase_order', json={
+                'client_id': self.client_two_id,
+                'po_date': '2026-08-06',
+                'po_number': number,
+                'po_type': po_type,
+            })
+
+        for rejected in ('maybe', '', 'Contracts', 'true', '1'):
+            response = add(rejected, f'TYPE-BAD-{self.suffix}')
+            self.assertEqual(response.status_code, 400, f'accepted po_type={rejected!r}')
+            self.assertIn('Contract', response.get_json()['error'])
+
+        # Positive control: both real values are accepted and stored as text.
+        for accepted, label in (('contract', 'Contract'), ('single_visit', 'Single Visit')):
+            response = add(accepted, f'TYPE-OK-{accepted}-{self.suffix}')
+            self.assertEqual(response.status_code, 201)
+            body = response.get_json()['purchase_order']
+            self.assertEqual(body['po_type'], accepted)
+            self.assertEqual(body['po_type_label'], label)
+
+    def test_po_date_must_be_an_iso_date(self):
+        client = self._client_for(self.po_user_id)
+
+        def add(po_date, number):
+            return client.post('/add_purchase_order', json={
+                'client_id': self.client_two_id,
+                'po_date': po_date,
+                'po_number': number,
+                'po_type': 'contract',
+            })
+
+        for rejected in ('08/06/2026', '2026-13-45', '', 'yesterday', '2026/08/06'):
+            response = add(rejected, f'DATE-BAD-{self.suffix}')
+            self.assertEqual(response.status_code, 400, f'accepted po_date={rejected!r}')
+            self.assertIn('date', response.get_json()['error'].lower())
+
+        # Positive control.
+        response = add('2026-08-06', f'DATE-OK-{self.suffix}')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()['purchase_order']['po_date'], '2026-08-06')
+
+    def test_missing_records_report_404_rather_than_a_silent_success(self):
+        """delete_client() reports success for an id that never existed; this must not."""
+        client = self._client_for(self.po_user_id)
+        created = client.post('/add_purchase_order', json={
+            'client_id': self.client_two_id,
+            'po_date': '2026-08-06',
+            'po_number': f'GONE-{self.suffix}',
+            'po_type': 'single_visit',
+        })
+        self.assertEqual(created.status_code, 201)
+        record_id = created.get_json()['purchase_order']['id']
+
+        # Positive control: the first delete really does succeed.
+        self.assertEqual(
+            client.delete(f'/delete_purchase_order/{record_id}').status_code, 200
+        )
+
+        self.assertEqual(
+            client.delete(f'/delete_purchase_order/{record_id}').status_code, 404
+        )
+        self.assertEqual(client.put(f'/update_purchase_order/{record_id}', json={
+            'client_id': self.client_two_id,
+            'po_date': '2026-08-06',
+            'po_number': f'GONE-EDIT-{self.suffix}',
+            'po_type': 'contract',
+        }).status_code, 404)
+
 
 if __name__ == '__main__':
     unittest.main()
