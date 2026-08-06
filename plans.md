@@ -55,6 +55,329 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## P.O. Details page, with a grantable access toggle
+
+**Status:** `Executed — pending implementation commit hash`
+**Started:** 2026-08-06, after the project owner explicitly said to execute the plan.
+**Approved:** 2026-08-06
+**Detailed:** 2026-08-06, after tracing the Clients page end to end, the grantable-capability
+pattern from the 2026-08-05 admin-capabilities work, and how the Analytics page is built.
+
+**Finished:** 2026-08-06, after implementation, focused tests, the full test suite, and a
+throwaway-database browser verification. The implementation commit hash will be recorded here
+immediately after the first commit; the follow-up journal commit will contain only that status
+update and completion documentation.
+
+### Execution outcome
+
+Implemented the standalone P.O. Details register and its grantable access capability. The code
+adds the additive `PurchaseOrder` table/schema helper, `po_admin_access` user capability and
+Settings toggle, guarded page/API access, CSRF-protected CRUD with soft duplicate confirmation,
+Client delete-orphan cascade, responsive filtering/sorting/modal UI, release metadata, and the
+service-worker cache bump. The implementation intentionally excludes amounts, CSV import/export,
+Shift/TSR/Product linkage, and analytics, as decided above. Verification passed with 13 focused
+P.O. tests, 472 full-suite tests plus one expected skip, Python/JavaScript checks, and a local
+browser pass on a throwaway database. `scheduler.db`, `output/`, `tmp/`, and the handoff note are
+not part of the implementation or release.
+
+Execution is now authorized. The implementation must preserve the two owner-emphasized
+safeguards below, and must not stage or modify the tracked local database.
+
+### Context
+
+There is nowhere in the system to record a client's purchase orders. The owner wants a register
+listing, per record: the **medical center**, the **P.O. date**, the **P.O. number**, and whether the
+order is a **contract** or a **single visit**. It should look and behave like the existing Medical
+Centers page, and which accounts can reach it should be switchable per-user in Settings rather than
+hardcoded to a role. Analytics gains P.O. reporting afterwards, as a separate phase.
+
+Intended outcome: a superadmin grants "P.O. records access" to an account; that account gets a
+**P.O. Details** entry in the Records sidebar group and can add, edit and delete P.O. records.
+
+### Decisions taken
+
+| Decision | Value |
+| --- | --- |
+| Monetary amount | **None.** Counts only. Deliberately keeps this clear of the spend-reporting work deferred in `pending-work.md` section 2 |
+| Access model | **One capability, view + manage**, mirroring `personnel_admin_access`. Superadmin and regional admin hold it implicitly |
+| Contract vs single visit | **Text column** `po_type` with values `'contract'` / `'single_visit'`, shown as a two-option selector — not a boolean checkbox |
+| Linkage | **Standalone.** FK to `Client` only. No FK to Shift, TSR or Product |
+| Duplicate P.O. numbers | **Soft 409 + `force` re-post**, not a DB unique constraint |
+
+### Investigation
+
+Verified by reading, not assumed:
+
+- **The capability pattern is a well-worn groove.** Columns at `app.py:1505-1507`;
+  `ensure_user_admin_capability_columns()` at `app.py:3293-3313` **loops a tuple**, so a new flag
+  needs no new function; `_has_active_account_capability()` at `app.py:7761-7768`;
+  `approval_user_to_dict()` at `app.py:7622-7645`; `resolve_staff_permission_request()` at
+  `app.py:16573-16681` (return dict confirmed at `:16668-16681`); save route at `app.py:16684-16778`.
+- **`add_engineer`'s `permission_fields` set at `app.py:41893-41906` is the security-critical line.**
+  The escalation check at `:41907-41910` only fires when a *listed* field appears in the payload. A
+  new flag omitted there lets a personnel-admin mint accounts carrying it — the same shape as the
+  escalation fixed in `54c4aaa`.
+- **`can_manage_purchase_orders()` does not need a flag-alone variant.**
+  `has_schedule_admin_capability()` (`app.py:7786-7802`) exists only because the schedule helpers hit
+  a *narrower* branch afterwards (regional admin restricted to `REGIONAL_ADMIN_BRANCHES`), and a
+  broad predicate ahead of it deleted that rule. The P.O. surface has no branch, ownership or
+  record-level narrowing after the check, so there is nothing for the broad form to swallow. If a
+  scoped P.O. rule is ever added, the flag-alone variant must be added at the same time.
+- **`db.create_all()` runs on every non-static request** —
+  `ensure_runtime_sqlite_migrations_before_request()` at `app.py:42625-42637`. A brand-new *table*
+  therefore appears by itself. The migration helper is still needed for indexes and for any column
+  added later.
+- **`Client.products` / `Client.shifts` (`app.py:1817-1819`) declare no cascade.** A P.O. backref
+  without `cascade='all, delete-orphan'` would make SQLAlchemy NULL a `nullable=False` FK and break
+  the existing `/delete_client`. `Engineer.shifts` (`app.py:1780-1786`) is the house pattern to copy.
+- **`nav_can_manage_any_schedule` is injected at `app.py:1297` but referenced nowhere in
+  `layout.html`.** Do not repeat that — wire the new key into the sidebar and grep to confirm.
+- **Restricted-account gates already deny by default.** `restrict_stock_inventory_only_accounts()`
+  (`app.py:42651`) and `restrict_hr_schedule_only_accounts()` (`app.py:42672`) are allowlists, so
+  `/po_details` is blocked for both with no edit. Do not add it to either allowlist.
+- Records subnav confirmed at `templates/layout.html:256-262`, `records_paths` at `:134`.
+- **Three things in the Clients code are bugs, not patterns:** `clients.html:788` fetches
+  `/get_clients_summary`, **a route that does not exist**, 404ing on every load and silently
+  swallowed; `renderTable()` (`:1036`) does `innerHTML +=` inside a loop; and `delete_client()`
+  (`app.py:37278-37287`) returns success for an id that never existed.
+- `tests/test_admin_capabilities.py` contains a source-string class (`:35-52`) whose own docstring at
+  `:241-246` argues against the practice. Add behavioural coverage; do not extend that class.
+
+### Owner-emphasized safeguards
+
+These two details are implementation-critical and must be treated as one review checkpoint:
+
+- **Permission escalation guard:** `add_engineer`'s `permission_fields` set at
+  `app.py:41893-41906` controls whether the escalation check runs. The new `po_admin_access`
+  field must be added to that set and assigned to the new account in the same edit. If it is
+  omitted from the set, a personnel administrator can submit the field without the escalation
+  guard and mint an account with P.O. access. Add a behavioural test proving a personnel-admin
+  receives `403` while a superadmin can grant it, and verify the failing injection before restoring
+  the intact file.
+- **Client deletion cascade:** `Client.products` and `Client.shifts` currently declare no cascade.
+  The new `PurchaseOrder` relationship must use
+  `cascade='all, delete-orphan'` so deleting a Client does not make SQLAlchemy NULL a non-nullable
+  foreign key or break the existing `/delete_client` workflow. Add a regression test that deletes a
+  Client with a P.O. and confirms the deletion succeeds while another Client's P.O. remains. This
+  is a compatibility requirement, not optional cleanup.
+
+### Execution steps
+
+**1. Model and schema — `app.py`**
+
+1.1 After `class Client` ends (`app.py:1821`, before `class Contact`), add `PO_TYPE_CONTRACT`,
+`PO_TYPE_SINGLE_VISIT`, and `PO_TYPE_LABELS` — one source of truth for display strings so the page,
+the API and the later report cannot drift.
+
+1.2 Add `class PurchaseOrder(db.Model)`, `__tablename__ = 'purchase_order'`: `id`; `client_id`
+FK→`client.id`, `nullable=False`, `index=True`; `po_number` `String(60)`, `nullable=False`,
+`index=True`; `po_date` `Date`, `nullable=False`, `index=True`; `po_type` `String(20)`,
+`nullable=False`, default single-visit; nullable `created_at` / `created_by` / `updated_at`.
+Relationship to `Client` with
+`backref=db.backref('purchase_orders', lazy=True, cascade='all, delete-orphan')`. This cascade is
+required because the existing `Client.products` and `Client.shifts` relationships declare no
+cascade; without it, `/delete_client` can fail when SQLAlchemy tries to NULL a non-nullable P.O.
+foreign key.
+*Done when:* `PurchaseOrder.__table__.columns.keys()` contains no `amount`, `shift_id`, `tsr_id`
+or `product_id`.
+
+1.3 Add `ensure_purchase_order_schema()` beside `ensure_user_admin_capability_columns()`
+(`app.py:3293`), with a module-global `_purchase_order_schema_ready` guard next to `app.py:2534`. It
+calls `PurchaseOrder.__table__.create(bind=db.engine, checkfirst=True)`, then an additive
+`PRAGMA table_info(purchase_order)` loop for the three nullable columns, then three
+`CREATE INDEX IF NOT EXISTS` statements — `(client_id, po_date)`, `(po_number)`, `(po_date)` — the
+live-safe idiom already used by `ensure_schedule_delete_indexes()` (`app.py:38133-38154`).
+**Swallow and log** on failure, matching `app.py:3312`, so a P.O. migration problem cannot take down
+login.
+
+1.4 Call it from `initialize_database()` (after `app.py:42862`), from
+`ensure_runtime_sqlite_migrations_before_request()` (after `app.py:42643`), and at the top of each
+P.O. endpoint (as `get_clients()` opens with `ensure_contact_designation_column()`, `app.py:18631`).
+**Not** from `restore_pwa_session_before_route()` — that runs on every request including `/static`.
+
+**2. The `po_admin_access` capability**
+
+| # | File / location | Edit |
+| --- | --- | --- |
+| 2.1 | `app.py:1508` | `po_admin_access = db.Column(db.Boolean, default=False, nullable=False)` |
+| 2.2 | `app.py:3305` | Append `'po_admin_access'` to the existing tuple — no new function |
+| 2.3 | after `app.py:7787` | `can_manage_purchase_orders()` via `_has_active_account_capability`, with a docstring recording **why** no flag-alone variant is needed |
+| 2.4 | `app.py:7640` | `'po_admin_access': bool(getattr(user, 'po_admin_access', False)),` |
+| 2.5 | `app.py:16589`, `:16606`, `:16679` | Read the flag; append `'P.O. records access'` to `capability_labels`; return it in the dict |
+| 2.6 | `app.py:16717`, `:16743` | Add to `tracked_permission_fields`; assign to the target user |
+| 2.7 | `app.py:41904`, `:41982` | **Add to `permission_fields` and assign on the new user in the same edit.** This is the privilege-escalation guard; omitting the list entry lets a personnel-admin mint P.O.-enabled accounts. |
+| 2.8 | `templates/settings.html` | Checked var after `:1819`; a `col-lg-4` switch after `:1890` with class `po-admin-access-input` and `onchange="toggleAdminCapability(this)"`; payload key after `:2062`; **and `.po-admin-access-input` added to BOTH exclusion lists at `:2458` and `:2472`** |
+| 2.9 | `app.py:1297` | `'nav_can_manage_purchase_orders': can_manage_purchase_orders(),` |
+| 2.10 | `templates/layout.html:134`, `:261` | Add `'/po_details'` to `records_paths`; add the gated `nav_link('/po_details', 'fa-file-invoice', 'P.O. Details')` after the Inventory link |
+
+2.5 needs no new conflict rule: the rejections at `:16607-16619` join `capability_labels`, which is
+built only from flags actually requested — so ticking P.O. + Approver-only yields "P.O. records
+access cannot be combined with Approver-only view", naming exactly what the user turned on, which is
+what the comment at `app.py:16620-16628` demands.
+
+*Done when:* the switch appears in Settings, ticking it clears Approver-only / Stock Inventory-only /
+HR Schedule View and vice versa, and `grep -c nav_can_manage_purchase_orders templates/layout.html`
+returns 1.
+
+**3. Page route and CRUD — `app.py`, after `delete_client()` (`app.py:37287`)**
+
+3.1 Helpers: `normalize_po_type()` (canonical value or `None`), `normalize_po_number()`,
+`find_duplicate_purchase_order(client_id, po_number, exclude_id=None)` (case-insensitive, scoped to
+**same client**), `purchase_order_to_dict()` (includes `po_type_label`).
+
+3.2 `GET /po_details` → `po_details_page()`, guarded `if not can_manage_purchase_orders(): redirect`.
+Deliberately **not** the `clients_page()` shape (`app.py:16237-16243`), whose docstring delegates
+access to templates — every endpoint below also carries its own check.
+
+3.3 `GET /get_purchase_orders` — guard `denied()` (`app.py:7907`). Returns `purchase_orders`, the
+`clients` list and `po_types` in **one** payload, so the page issues exactly one XHR.
+
+3.4 `POST /add_purchase_order`, `PUT /update_purchase_order/<id>`,
+`DELETE /delete_purchase_order/<id>` — each guarded by `can_manage_purchase_orders()`. Validate the
+client exists, number non-empty and ≤60 chars, `parse_date` (`app.py:4415`) accepts the date,
+`po_type` recognised; each failure a distinct 400 message. Update and delete return **404 for a
+missing id** — the deliberate correction to `delete_client()`. All three call `log_activity()`. No
+`@csrf.exempt`; the front end sends `X-CSRFToken` via `getCSRFToken()` (`templates/layout.html:368-370`).
+
+*Duplicate handling — soft 409 + `force`, not a unique index.* SQLite cannot add a constraint to an
+existing table, and `CREATE UNIQUE INDEX` *fails outright* if live data already holds a duplicate,
+leaving the migration to crash or silently no-op forever. Duplicates are also legitimately real (a
+revised P.O. keeps its number; two hospitals can issue the same one). `/add_client` already returns
+`{'status':'conflict'}, 409` and honours `force` (`app.py:37177-37181`), and `clientConfirmDialog()`
+exists for it. A unique index can be added later once data is known clean; the reverse is not true.
+
+**4. `templates/po_details.html` (new)**
+
+Modelled on `clients.html`: inline `<script>`/`<style>`, no separate asset file, no `<form>`, inline
+`onclick`, custom toast/confirm instead of native `alert`/`confirm`. Namespace everything `po`/`po-`.
+
+- Filters: client text, number text, type select, and a `po_date` from/to range.
+- Sortable headers (`client`, `po_date`, `po_number`, `po_type`) with the localStorage preference
+  pattern from `clients.html:257-260`.
+- Empty `<tbody id="po-table-body">` plus a parallel `#po-mobile-list`, swapped by CSS at the
+  **768px** breakpoint exactly as `clients.html:1720-1726`.
+- One `#poModal` for add and edit, mode set by a hidden `#po-id`.
+- **po_type control:** real radios with visually-hidden inputs and styled labels — keyboard and
+  screen-reader behaviour comes free, and add-mode preselects nothing rather than letting a checkbox
+  impose a silent default.
+- Gate Add/Edit/Delete on `nav_can_manage_purchase_orders`, **not** on `current_user.role` —
+  `clients.html:27` uses the role literal, which `tests/test_layout_sidebar.py:44` bans in
+  `layout.html` for the reason given at `app.py:1271-1282`.
+- Do not copy the phantom `/get_clients_summary` fetch or `innerHTML +=` in a loop (build with
+  `.map().join('')` and assign once). Escape every interpolated value, `client_name` included.
+
+### Deliberately excluded
+
+| Excluded | Why |
+| --- | --- |
+| Any amount / value column | Owner decision. Would pull in the spend-reporting decision deferred in `pending-work.md` section 2 |
+| FK to Shift / TSR / Product | Owner decision — standalone first version. Linking to shifts also raises the multi-engineer join de-duplication hazard |
+| CSV import/export | Not requested. `/import_clients` and `/export_clients` exist as precedent if wanted later |
+| A DB unique constraint on `po_number` | One-way door on SQLite; see 3.4 |
+| Adding `/po_details` to `APP_SHELL` | Not a field-safe offline route; precaching an authorized page invites the cached-login-page failure `precacheShellEntry` (`app.py:14733-14750`) guards against |
+| The analytics phase | Separate phase — outlined below, to be planned properly before it is built |
+
+### Verification
+
+New `tests/test_purchase_orders.py`, behavioural only, in the fixture style of
+`tests/test_admin_capabilities.py:64-185`. Every test names the positive control that proves it can
+fail:
+
+| Test | Positive control |
+| --- | --- |
+| P.O. surface open only to the capability — grantee 200, personnel/reports/schedule/plain 302 on page and 403 on API | grantee + superadmin 200 in the same test |
+| Writes refused without the capability (403 on add/update/delete) | the same three calls as grantee succeed |
+| Superadmin and regional admin hold it implicitly with the flag `False` | plain user `False` in the same block |
+| Duplicate number → 409, then 200 with `force` | a different number, and the same number under a *different* client, both 200 first try |
+| `po_type` validated and stored as text (`'maybe'` → 400) | both valid values 200, read back with the right label |
+| `po_date` must be real ISO (`'08/06/2026'` → 400) | `'2026-08-06'` → 200 |
+| Deleting a missing P.O. → 404 | the first delete returns 200 — the test that would have caught `delete_client`'s bug |
+| Deleting a client removes its P.O.s, no IntegrityError | a second client's P.O.s survive |
+| Only superadmin can grant the flag (personnel-admin → 403 on `/add_engineer`) | superadmin → 200 and the flag is set |
+| Conflict message names the switch actually turned on | the same payload without `approver_only` → 200 |
+| Grant audited as `po_admin_access: False -> True`; unchanged save not re-logged | the first grant is logged |
+| `assert_cache_version_at_least(self, 70)` — a **floor**, never a pinned version | — |
+| `releases.json` carries the P.O. item keys | — |
+
+**Extend** `tests/test_admin_capabilities.py::test_each_capability_opens_only_its_intended_surface`
+(`:265-305`) with `/po_details` → 302 for the other three capabilities and the plain user. Do **not**
+extend `AdminCapabilitySourceTests`.
+
+**Prove each test fails without its fix**, one at a time — invert the endpoint guard, the `force`
+check, `normalize_po_type`, the 404, the cascade, and the `permission_fields` entry. Confirm the
+injection applied (hash the file) *and* that the failure message is the expected one; per
+`pending-work.md` section 6, an injection that does not reproduce the defect reads exactly like
+success.
+
+**Full suite:** `python -m unittest discover -s tests` from the repo root, on the machine as it is.
+Record the count (currently 468). Plus `python -m compileall app.py` and `node --check` on the new
+template's inline script if practical.
+
+**Browser, desktop 1280 then 375px** — explicit `MEDICAL_SERVICE_TEST_DB`, never port 5000,
+`preview_start` with a URL, stop the server afterwards:
+
+1. Grant P.O. access in Settings; confirm the exclusion switches clear in both directions.
+2. Try P.O. + Approver-only; the error names "P.O. records access".
+3. As the grantee: sidebar shows P.O. Details; page loads with **exactly one XHR** and a clean console.
+4. Add, duplicate-then-confirm, edit to the other type, sort all four columns, reload (sort
+   persists), filter by each control, delete. Check `/activity_page` for the add/edit/delete entries.
+5. As a reports-admin: no link, `/po_details` redirects.
+6. At 375px: card list replaces the table, no horizontal overflow, every control ≥44px, the segmented
+   type control comfortably tappable, modal fits without zoom.
+7. Both light and dark themes (`static/css/app-dark-pages.css` exists for page-level overrides).
+
+### After implementation
+
+1. Self-review the diff before anything else.
+2. `static/changelog/releases.json` — two items dated the **commit date**: the P.O. Details page and
+   the Settings access toggle, `audiences: ["admins"]`. Without this
+   `tests/test_changelog_coverage.py` fails the commit.
+3. **Bump the service worker** — read the live value out of `app.py` immediately before committing,
+   never from this note. Required because `templates/layout.html` is edited and it is embedded in
+   every app-shell page. Two commits have already shipped without this bump.
+4. `changes.md` — new dated section at the top per `AGENTS.md` "Mandatory Change Log".
+5. `plans.md` — this plan's status to `Executed` with the commit hash.
+6. `pending-work.md` — only if the owner asks; add the analytics phase as an open item.
+7. Commit per the standing checklist: `git fetch origin`, re-check `origin/main` **after** finishing,
+   stage **file by file** (never `git add -A`; `scheduler.db` is tracked and gitignore does not
+   protect it), `git diff --cached --check`, confirm with `git show --name-only`, then push.
+
+### Later: the analytics phase (outline only, to be planned separately)
+
+- **Decide access first:** `/analytics_page` gates on `can_view_admin_reports()`, a *different* flag.
+  Choose whether P.O. cards show to reports-admins, to
+  `can_view_admin_reports() or can_manage_purchase_orders()`, or via a separate endpoint under the
+  P.O. flag.
+- Counts only: total in range, Contract vs Single Visit split, top clients by count, P.O.s per month.
+- Reuse `analytics_date_bounds()` (`app.py:35379-35393`) unchanged; the step-1.3 indexes already
+  serve the grouping.
+- **There is no charting library.** `renderMiniChart()` (`templates/analytics.html:563-582`) and
+  `renderBars()` (`:584-604`) are hand-rolled flexbox bars taking a flat `{label: count}` object, so
+  the endpoint must emit that shape.
+- **Both helpers interpolate labels unescaped.** Client names are user-entered — fix the helpers to
+  escape (which also benefits the existing branch and engineer charts) rather than escaping at each
+  call site.
+
+### Risks
+
+| Risk | Blast radius | Mitigation |
+| --- | --- | --- |
+| `po_admin_access` omitted from `permission_fields` (`app.py:41893-41906`) | **Privilege escalation** — a personnel-admin mints accounts with P.O. access. Same shape as `54c4aaa` | Step 2.7 lands the list entry and the assignment as one edit; dedicated test |
+| Missing cascade on the `Client` backref | `/delete_client` starts raising IntegrityError — breaks an existing working page | `cascade='all, delete-orphan'` in 1.2 + a test that calls the real route |
+| Forgotten service worker bump | Every device keeps a stale `layout.html` with no P.O. link, indefinitely | After-implementation step 3 + the floor assertion |
+| Only one of the two `settings.html` exclusion lists edited | UI offers a combination the resolver then rejects with a 400 — the confusion documented at `app.py:16620-16628` | Browser steps 1-2 check both directions |
+| Resolver return-dict key omitted | `KeyError` → 500 saving **any** user's permissions, not just P.O. ones | Tests exercise the save path end to end |
+| `layout.html` / `settings.html` edits | Reach every page and the whole permissions UI; a Jinja typo is a site-wide 500 | Small additive edits; `test_layout_sidebar.py` + `test_admin_capabilities.py` + a manual pass |
+| Soft duplicate rule | Genuine duplicates enterable after a confirm | Accepted and justified; the unique-index door stays open, the reverse does not |
+| Codex works the same tree | Merge conflict / clobber | Keep edits contiguous, land promptly, re-read `origin/main` at commit time |
+| **Otherwise contained** | No existing route, model or template changes behaviour. Everything is additive except two nav/settings templates and three shared permission functions, each gaining one line | — |
+
+### Critical files
+
+`app.py`; `templates/po_details.html` (**new**); `templates/settings.html`;
+`templates/layout.html`; `tests/test_purchase_orders.py` (**new**); `static/changelog/releases.json`.
+Reference while implementing: `templates/clients.html`, `tests/test_admin_capabilities.py`.
+
 ## Open an attached TSR from the schedule card
 
 **Status:** `Executed — 6fa7fe4`

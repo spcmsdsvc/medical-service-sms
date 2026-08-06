@@ -1,5 +1,105 @@
 # Project Change Log
 
+claude changes - 2026-08-06
+
+## P.O. Details execution started
+
+* Began the approved P.O. Details implementation after explicit owner authorization. The
+  execution checkpoint preserves the `add_engineer` permission allowlist/escalation guard and
+  the Client `PurchaseOrder` delete-orphan cascade as required compatibility and security
+  safeguards. No database replacement, staging, commit, or deployment has occurred.
+* Added the additive `PurchaseOrder` model/schema helper, `po_admin_access` capability field and
+  migration, shared capability resolver/serializer, Settings toggle, guarded CRUD APIs, and the
+  initial responsive `P.O. Details` register with soft duplicate confirmation. The implementation
+  deliberately records no monetary amount and does not alter existing Products, Clients, or
+  schedule data.
+* Added the shared layout `page_scripts` block and moved the P.O. Details page script into it so
+  the page JavaScript is emitted after Bootstrap and the common layout scripts. Added a native
+  modal fallback for the P.O. form when Bootstrap JavaScript is unavailable, preventing a blocked
+  CDN/offline session from stopping record loading or making Add/Edit unusable.
+* Completed the P.O. register filters for separate Medical Center and P.O. Number searches, type
+  selection, and inclusive P.O. date ranges, with one-click clearing and responsive layout. Sort
+  indicators use readable ascending, descending, and neutral glyphs directly so browser encoding
+  cannot make the controls appear corrupted.
+* Removed CSRF exemptions from the P.O. add, update, and delete endpoints so mutation requests
+  require the same authenticated CSRF token already sent by the page, while read access remains
+  separately guarded by the P.O. capability.
+* Added a namespaced, themed confirmation dialog for duplicate-number override and P.O. deletion,
+  including keyboard Escape handling and an explicit destructive action state; browser-native
+  confirmation prompts are no longer required for the new register.
+* Verified the focused P.O. workflow tests: 13 tests passed, including capability guards, the
+  add-engineer privilege-escalation allowlist, CSRF-protected CRUD, soft duplicate confirmation,
+  type/date validation, missing-record handling, and Client delete-orphan behavior.
+* Verified the full Python suite with `python -m unittest discover -s tests`: 472 tests passed and
+  1 expected test was skipped. Python compilation, the new inline JavaScript parse check, release
+  manifest parsing, and `git diff --check` also passed.
+* Rechecked the final page locally on a throwaway database at port 5078: the P.O. page loaded with
+  its filters and existing fixture row, the native-confirm branch was absent, the custom
+  duplicate/delete dialog remained present, and the Add P.O. modal opened through the fallback
+  path. No live database or production data was used.
+* The release manifest and service-worker cache version were updated for the P.O. Details page and
+  Settings access toggle. `scheduler.db`, the handoff note, `output/`, and `tmp/` remain outside
+  the staged change set and are not eligible for commit or push.
+
+## Browser pass over the six 2026-08-05 features (read-only; no project files changed)
+
+* Drove all six features through a browser against a throwaway fixture database on port 5077,
+  desktop and 375 px. Screenshots were unavailable because the Browser pane does not composite
+  frames, so verification used the accessibility tree, real click handlers and measured geometry
+  (`getBoundingClientRect` / `getComputedStyle`).
+* **Schedule-card TSR previews, HR schedule viewer, staff types, admin capabilities and request
+  recall all pass.** Notable confirmations on screen rather than by calling: the Details popover
+  lists only the recognised TSR and counts other attachments separately; the attachment link renders
+  at `min-height: 44px`; the mobile View Files action opens no modal and stays in the detail sheet;
+  the `79d2847` refusal message names "Can Approve Requests", the switch actually ticked; and as the
+  regional admin with the branch filter on Manila every row is View-only with zero Add/Edit/Delete,
+  with a superadmin positive control showing those controls on the same rows.
+* **Found: the service worker runtime cache serves one account's `/export_timeline` to another.**
+  Fetched as superadmin, logged out, logged in as an HR account, fetched again and received the
+  **unredacted** CSV containing job titles and equipment — the two fields the HR role exists to hide
+  and the exact leak `5278df2` fixed server-side. Confirmed held in the `…-v69-…-runtime` cache;
+  `/export_timeline` matches no network-first prefix so a non-navigation GET falls through to
+  `staleWhileRevalidate`, and logout does not clear the cache. The real Export button navigates and
+  is therefore network-first, so online it always returns a redacted file; the user-reachable form is
+  a shared device with the HR user offline. Relevant to the "clearing the runtime cache on logout"
+  decision in `pending-work.md` section 5, which was taken about cached HTML and predates the HR role.
+* **Found: every provisional-leave failure reason is discarded before it reaches the user.**
+  `handleScheduleError` reads `errorPayload.message` but every failure return from
+  `/api/leave-requests/provisional` sets `error`, and the payload carries neither `status: 'conflict'`
+  nor `conflict`, so it falls to the generic fallback. Plotting leave on a Sunday returns "The
+  selected range contains no weekdays." and the screen shows only "Unable to record provisional
+  Leave." Seven actionable reasons are lost, including the 409 that names the conflicting request.
+* Correction recorded because it nearly became a false finding: the supersede flow is **not** broken.
+  Supersede fires on approval of the formal Leave Request, not on plotting a second provisional, so
+  the 409 is correct behaviour. The `b5dd637` message naming both leave types lives on that approval
+  path and was not re-verified in a browser.
+* No project files were modified by the pass; the repository was left with only its four known-dirty
+  artifacts and no divergence from `origin/main`.
+
+## Recorded the approved P.O. Details plan
+
+* Added the "P.O. Details page, with a grantable access toggle" plan to the top of `plans.md` with
+  status `Approved — awaiting go-ahead`. Covers a new `PurchaseOrder` model and additive schema
+  migration, a `po_admin_access` grantable capability wired end to end (column, migration tuple,
+  predicate, serializer, resolver, save route, `add_engineer` escalation list, Settings switch, nav
+  context key, sidebar link), the page route and four CRUD endpoints, a new `templates/po_details.html`
+  modelled on the Clients page, and the behavioural test set. **No implementation work has started.**
+
+## P.O. plan safeguards emphasized
+
+* Amended `plans.md` to make the two owner-highlighted compatibility/security safeguards explicit
+  in the execution section, not only in the risk table.
+* The `po_admin_access` field must be added to `add_engineer`'s `permission_fields` set and
+  assigned to the new account in the same edit. A dedicated behavioural test must prove that a
+  personnel administrator cannot mint P.O.-enabled accounts while a superadmin can grant the
+  capability.
+* The `PurchaseOrder` Client backref must use `cascade='all, delete-orphan'`. A regression test
+  must delete a Client with a P.O. and confirm `/delete_client` succeeds while another Client's
+  P.O. remains, protecting the existing client deletion workflow from a non-nullable foreign-key
+  failure.
+* This was a journal-only amendment. No application code, database, generated artifact, commit,
+  push, or deployment was performed.
+
 claude changes - 2026-08-05 (schedule card TSR review)
 
 ## The feature is right; its tests mostly asserted that source text exists

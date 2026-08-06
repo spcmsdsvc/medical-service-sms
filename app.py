@@ -86,6 +86,7 @@ from sqlalchemy.orm import joinedload, selectinload, Session as SqlAlchemySessio
 
 from datetime import (
     datetime, 
+    date,
     timedelta,
     timezone
 )
@@ -1295,6 +1296,7 @@ def inject_navigation_access():
         'nav_can_administer_personnel': can_administer_personnel(),
         'nav_can_view_admin_reports': can_view_admin_reports(),
         'nav_can_manage_any_schedule': can_manage_any_schedule(),
+        'nav_can_manage_purchase_orders': can_manage_purchase_orders(),
     }
 
 
@@ -1505,6 +1507,7 @@ class User(UserMixin, db.Model):
     personnel_admin_access = db.Column(db.Boolean, default=False, nullable=False)
     reports_admin_access = db.Column(db.Boolean, default=False, nullable=False)
     schedule_admin_access = db.Column(db.Boolean, default=False, nullable=False)
+    po_admin_access = db.Column(db.Boolean, default=False, nullable=False)
 
     # Last successful sign-in. Older accounts stay NULL until their next login.
     last_login_at = db.Column(db.DateTime, nullable=True)
@@ -1819,6 +1822,43 @@ class Client(db.Model):
     
     shifts = db.relationship('Shift', backref='client', lazy=True)
 
+
+
+PO_TYPE_CONTRACT = 'contract'
+PO_TYPE_SINGLE_VISIT = 'single_visit'
+PO_TYPE_LABELS = {
+    PO_TYPE_CONTRACT: 'Contract',
+    PO_TYPE_SINGLE_VISIT: 'Single Visit',
+}
+
+
+class PurchaseOrder(db.Model):
+    """Standalone client purchase-order register.
+
+    Purchase orders intentionally record identity and classification only. Financial
+    amounts remain out of this page until a separate reporting decision is made.
+    """
+    __tablename__ = 'purchase_order'
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False, index=True)
+    po_number = db.Column(db.String(60), nullable=False, index=True)
+    po_date = db.Column(db.Date, nullable=False, index=True)
+    po_type = db.Column(db.String(20), nullable=False, default=PO_TYPE_SINGLE_VISIT)
+    created_at = db.Column(db.DateTime, nullable=True, default=get_manila_time)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    updated_at = db.Column(db.DateTime, nullable=True, default=get_manila_time, onupdate=get_manila_time)
+
+    client = db.relationship(
+        'Client',
+        backref=db.backref(
+            'purchase_orders',
+            lazy=True,
+            cascade='all, delete-orphan',
+        ),
+        foreign_keys=[client_id],
+    )
+    created_by_user = db.relationship('User', foreign_keys=[created_by])
 
 
 class Contact(db.Model):
@@ -2532,6 +2572,7 @@ _email_template_setting_table_ready = False
 _user_approval_columns_ready = False
 _hr_schedule_view_column_ready = False
 _user_admin_capability_columns_ready = False
+_purchase_order_schema_ready = False
 _reimbursement_accounting_columns_ready = False
 _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
@@ -3302,7 +3343,12 @@ def ensure_user_admin_capability_columns():
             user_columns = {
                 row[1] for row in connection.exec_driver_sql("PRAGMA table_info(user)").fetchall()
             }
-            for column_name in ('personnel_admin_access', 'reports_admin_access', 'schedule_admin_access'):
+            for column_name in (
+                'personnel_admin_access',
+                'reports_admin_access',
+                'schedule_admin_access',
+                'po_admin_access',
+            ):
                 if column_name not in user_columns:
                     connection.exec_driver_sql(
                         f"ALTER TABLE user ADD COLUMN {column_name} BOOLEAN DEFAULT 0 NOT NULL"
@@ -3311,6 +3357,54 @@ def ensure_user_admin_capability_columns():
         _user_admin_capability_columns_ready = True
     except Exception as admin_capability_error:
         print(f"[Admin Capabilities] User column migration skipped: {admin_capability_error}", flush=True)
+
+
+def ensure_purchase_order_schema():
+    """Create and index the P.O. register without replacing live data."""
+    global _purchase_order_schema_ready
+
+    if _purchase_order_schema_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            PurchaseOrder.__table__.create(bind=connection, checkfirst=True)
+            columns = {
+                row[1]
+                for row in connection.exec_driver_sql(
+                    "PRAGMA table_info(purchase_order)"
+                ).fetchall()
+            }
+            additive_columns = {
+                'created_at': 'DATETIME',
+                'created_by': 'INTEGER',
+                'updated_at': 'DATETIME',
+            }
+            for column_name, column_type in additive_columns.items():
+                if column_name not in columns:
+                    connection.exec_driver_sql(
+                        f"ALTER TABLE purchase_order ADD COLUMN {column_name} {column_type}"
+                    )
+                    print(f"[DB MIGRATION] Added purchase_order.{column_name}", flush=True)
+
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_purchase_order_client_date "
+                "ON purchase_order (client_id, po_date)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_purchase_order_number "
+                "ON purchase_order (po_number)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_purchase_order_date "
+                "ON purchase_order (po_date)"
+            )
+        _purchase_order_schema_ready = True
+    except Exception as purchase_order_schema_error:
+        print(
+            f"[Purchase Orders] Unable to ensure purchase_order table: {purchase_order_schema_error}",
+            flush=True,
+        )
 
 
 def ensure_reimbursement_accounting_columns():
@@ -7638,6 +7732,7 @@ def approval_user_to_dict(user):
         'personnel_admin_access': bool(getattr(user, 'personnel_admin_access', False)),
         'reports_admin_access': bool(getattr(user, 'reports_admin_access', False)),
         'schedule_admin_access': bool(getattr(user, 'schedule_admin_access', False)),
+        'po_admin_access': can_manage_purchase_orders(user),
         'is_active': bool(getattr(user, 'is_active', True)),
         'engineer_id': getattr(profile, 'id', None),
         'employee_id': getattr(profile, 'employee_id', '') if profile else '',
@@ -7781,6 +7876,11 @@ def can_view_admin_reports(user=None):
 def can_manage_any_schedule(user=None):
     """Allow full calendar schedule operations across the visible schedule surface."""
     return _has_active_account_capability(user, 'schedule_admin_access')
+
+
+def can_manage_purchase_orders(user=None):
+    """Allow the standalone client P.O. register and its management APIs."""
+    return _has_active_account_capability(user, 'po_admin_access')
 
 
 def has_schedule_admin_capability(user=None):
@@ -14694,7 +14794,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v69-tsr-link-tap-target';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v70-po-details';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -16587,6 +16687,7 @@ def resolve_staff_permission_request(payload, target_user=None):
     personnel_admin_requested = bool(payload.get('personnel_admin_access'))
     reports_admin_requested = bool(payload.get('reports_admin_access'))
     schedule_admin_requested = bool(payload.get('schedule_admin_access'))
+    po_admin_requested = bool(payload.get('po_admin_access'))
     if stock_inventory_only_requested:
         # Inventory-only is a restricted inventory mode, so it always carries the
         # underlying inventory capability even when a stale client omitted it.
@@ -16604,6 +16705,8 @@ def resolve_staff_permission_request(payload, target_user=None):
         capability_labels.append('Reports access')
     if schedule_admin_requested:
         capability_labels.append('Schedule management access')
+    if po_admin_requested:
+        capability_labels.append('P.O. records access')
     if capability_labels and approver_only_requested:
         return None, (
             ', '.join(capability_labels) +
@@ -16677,6 +16780,7 @@ def resolve_staff_permission_request(payload, target_user=None):
         'personnel_admin_access': personnel_admin_requested,
         'reports_admin_access': reports_admin_requested,
         'schedule_admin_access': schedule_admin_requested,
+        'po_admin_access': po_admin_requested,
         'approver_only': approver_only_requested,
     }, None
 
@@ -16715,6 +16819,7 @@ def settings_update_approval_user():
         'personnel_admin_access',
         'reports_admin_access',
         'schedule_admin_access',
+        'po_admin_access',
     )
     old_permission_values = {}
     for field in tracked_permission_fields:
@@ -16741,6 +16846,7 @@ def settings_update_approval_user():
     target_user.personnel_admin_access = permission_values['personnel_admin_access']
     target_user.reports_admin_access = permission_values['reports_admin_access']
     target_user.schedule_admin_access = permission_values['schedule_admin_access']
+    target_user.po_admin_access = permission_values['po_admin_access']
 
     if approver_only_requested:
         target_user.role = 'approver'
@@ -37288,6 +37394,191 @@ def delete_client(id):
     return jsonify({'status': 'success'})
 
 
+def normalize_purchase_order_number(value):
+    """Normalize a P.O. number for display and duplicate comparison."""
+    return re.sub(r'\s+', ' ', clean_str(value) or '').strip()[:60]
+
+
+def normalize_purchase_order_type(value):
+    normalized = (clean_str(value) or '').strip().lower()
+    return normalized if normalized in PO_TYPE_LABELS else None
+
+
+def purchase_order_to_dict(purchase_order):
+    po_type = normalize_purchase_order_type(purchase_order.po_type) or PO_TYPE_SINGLE_VISIT
+    return {
+        'id': purchase_order.id,
+        'client_id': purchase_order.client_id,
+        'client_name': purchase_order.client.name if purchase_order.client else '',
+        'client_address': purchase_order.client.address if purchase_order.client else '',
+        'po_number': purchase_order.po_number or '',
+        'po_date': purchase_order.po_date.isoformat() if purchase_order.po_date else '',
+        'po_type': po_type,
+        'po_type_label': PO_TYPE_LABELS.get(po_type, PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT]),
+        'created_at': purchase_order.created_at.isoformat() if purchase_order.created_at else None,
+        'updated_at': purchase_order.updated_at.isoformat() if purchase_order.updated_at else None,
+    }
+
+
+def find_purchase_order_duplicate(client_id, po_number, exclude_id=None):
+    normalized_number = normalize_purchase_order_number(po_number).casefold()
+    if not normalized_number:
+        return None
+    query = PurchaseOrder.query.filter_by(client_id=client_id)
+    if exclude_id:
+        query = query.filter(PurchaseOrder.id != exclude_id)
+    for purchase_order in query.order_by(PurchaseOrder.id.asc()).all():
+        if normalize_purchase_order_number(purchase_order.po_number).casefold() == normalized_number:
+            return purchase_order
+    return None
+
+
+def validate_purchase_order_payload(payload, existing=None):
+    payload = payload or {}
+    client_id = clean_int(payload.get('client_id'))
+    po_number = normalize_purchase_order_number(
+        payload.get('po_number') if 'po_number' in payload else getattr(existing, 'po_number', None)
+    )
+    raw_date = payload.get('po_date') if 'po_date' in payload else getattr(existing, 'po_date', None)
+    po_date = raw_date if isinstance(raw_date, date) else parse_date(raw_date)
+    po_type = normalize_purchase_order_type(
+        payload.get('po_type') if 'po_type' in payload else getattr(existing, 'po_type', None)
+    )
+    if not client_id:
+        return None, 'Select a medical center.'
+    if not po_number:
+        return None, 'Enter a P.O. number.'
+    if not po_date:
+        return None, 'Select a P.O. date.'
+    if not po_type:
+        return None, 'Select Contract or Single Visit.'
+    client = db.session.get(Client, client_id)
+    if not client:
+        return None, 'Medical center not found.'
+    return {
+        'client_id': client_id,
+        'po_number': po_number,
+        'po_date': po_date,
+        'po_type': po_type,
+    }, None
+
+
+@app.route('/po_details')
+@login_required
+def po_details_page():
+    if not can_manage_purchase_orders():
+        return redirect(url_for('dashboard_page'))
+    ensure_purchase_order_schema()
+    return render_template('po_details.html')
+
+
+@app.route('/get_purchase_orders')
+@login_required
+def get_purchase_orders():
+    if not can_manage_purchase_orders():
+        return denied('You do not have access to P.O. Details.')
+    ensure_purchase_order_schema()
+    purchase_orders = PurchaseOrder.query.options(joinedload(PurchaseOrder.client)).order_by(
+        PurchaseOrder.po_date.desc(), PurchaseOrder.id.desc()
+    ).all()
+    clients = Client.query.order_by(func.lower(Client.name).asc(), Client.id.asc()).all()
+    return jsonify({
+        'success': True,
+        'purchase_orders': [purchase_order_to_dict(item) for item in purchase_orders],
+        'clients': [{'id': client.id, 'name': client.name or '', 'address': client.address or ''} for client in clients],
+        'po_types': [
+            {'value': PO_TYPE_CONTRACT, 'label': PO_TYPE_LABELS[PO_TYPE_CONTRACT]},
+            {'value': PO_TYPE_SINGLE_VISIT, 'label': PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT]},
+        ],
+    })
+
+
+@app.route('/add_purchase_order', methods=['POST'])
+@login_required
+def add_purchase_order():
+    if not can_manage_purchase_orders():
+        return denied('You do not have access to P.O. Details.')
+    ensure_purchase_order_schema()
+    payload = request.get_json(silent=True) or {}
+    values, validation_error = validate_purchase_order_payload(payload)
+    if validation_error:
+        return jsonify({'success': False, 'error': validation_error}), 400
+
+    duplicate = find_purchase_order_duplicate(values['client_id'], values['po_number'])
+    if duplicate and not bool(payload.get('force')):
+        return jsonify({
+            'success': False,
+            'error': 'A P.O. with this number is already recorded for this medical center.',
+            'duplicate': purchase_order_to_dict(duplicate),
+        }), 409
+
+    purchase_order = PurchaseOrder(**values, created_by=current_user.id)
+    db.session.add(purchase_order)
+    add_activity_log_entry(
+        f"Added P.O. {values['po_number']} for client #{values['client_id']} ({values['po_type']})"
+    )
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'The P.O. could not be saved. Please try again.'}), 409
+    return jsonify({'success': True, 'purchase_order': purchase_order_to_dict(purchase_order)}), 201
+
+
+@app.route('/update_purchase_order/<int:id>', methods=['PUT', 'POST'])
+@login_required
+def update_purchase_order(id):
+    if not can_manage_purchase_orders():
+        return denied('You do not have access to P.O. Details.')
+    ensure_purchase_order_schema()
+    purchase_order = db.session.get(PurchaseOrder, id)
+    if not purchase_order:
+        return jsonify({'success': False, 'error': 'P.O. record not found.'}), 404
+    payload = request.get_json(silent=True) or {}
+    values, validation_error = validate_purchase_order_payload(payload, existing=purchase_order)
+    if validation_error:
+        return jsonify({'success': False, 'error': validation_error}), 400
+
+    duplicate = find_purchase_order_duplicate(
+        values['client_id'], values['po_number'], exclude_id=purchase_order.id
+    )
+    if duplicate and not bool(payload.get('force')):
+        return jsonify({
+            'success': False,
+            'error': 'A P.O. with this number is already recorded for this medical center.',
+            'duplicate': purchase_order_to_dict(duplicate),
+        }), 409
+
+    old_summary = f"{purchase_order.po_number} for client #{purchase_order.client_id}"
+    for field, value in values.items():
+        setattr(purchase_order, field, value)
+    add_activity_log_entry(
+        f"Updated P.O. {old_summary} to {values['po_number']} for client #{values['client_id']}"
+    )
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'The P.O. could not be updated. Please try again.'}), 409
+    return jsonify({'success': True, 'purchase_order': purchase_order_to_dict(purchase_order)})
+
+
+@app.route('/delete_purchase_order/<int:id>', methods=['DELETE', 'POST'])
+@login_required
+def delete_purchase_order(id):
+    if not can_manage_purchase_orders():
+        return denied('You do not have access to P.O. Details.')
+    ensure_purchase_order_schema()
+    purchase_order = db.session.get(PurchaseOrder, id)
+    if not purchase_order:
+        return jsonify({'success': False, 'error': 'P.O. record not found.'}), 404
+    summary = f"{purchase_order.po_number} for {purchase_order.client.name if purchase_order.client else 'client'}"
+    db.session.delete(purchase_order)
+    add_activity_log_entry(f"Deleted P.O. {summary}")
+    db.session.commit()
+    return jsonify({'success': True, 'deleted_id': id})
+
+
 # --- SCHEDULE MANAGEMENT CORE ACTIONS ---
 
 
@@ -41902,6 +42193,7 @@ def add_engineer():
         'personnel_admin_access',
         'reports_admin_access',
         'schedule_admin_access',
+        'po_admin_access',
         'is_active',
     }
     if not is_superadmin_user() and (
@@ -41980,6 +42272,7 @@ def add_engineer():
     new_user.personnel_admin_access = permission_values['personnel_admin_access']
     new_user.reports_admin_access = permission_values['reports_admin_access']
     new_user.schedule_admin_access = permission_values['schedule_admin_access']
+    new_user.po_admin_access = permission_values['po_admin_access']
 
     db.session.add(new_user)
     db.session.flush()
@@ -42635,6 +42928,8 @@ def ensure_runtime_sqlite_migrations_before_request():
 
     # Safe on existing SQLite databases; creates tables only when missing.
     db.create_all()
+    ensure_user_admin_capability_columns()
+    ensure_purchase_order_schema()
 
     # Fresh Railway volume emergency login bootstrap.
     ensure_emergency_superadmin_from_env()
@@ -42855,6 +43150,7 @@ def initialize_database():
         ensure_user_approval_columns()
         ensure_user_hr_schedule_view_column()
         ensure_user_admin_capability_columns()
+        ensure_purchase_order_schema()
         ensure_engineer_signature_column()
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()

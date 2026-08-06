@@ -127,11 +127,12 @@
             {% set is_approver_user = nav_is_approval_center_user %}
             {% set is_approver_only_user = nav_is_approver_only %}
             {% set is_accounting_center_user = nav_can_access_accounting_center %}
+            {% set can_manage_purchase_orders = nav_can_manage_purchase_orders %}
             {% set is_reports_sidebar_user = is_reports_admin_user or is_engineer_only %}
             {% set field_ops_paths = ['/travel_request', '/reimbursement', '/cash_advance', '/leave_request'] %}
             {% if lpr_enabled %}{% set field_ops_paths = field_ops_paths + ['/lpr'] %}{% endif %}
             {% set reports_paths = ['/analytics_page', '/reports_page'] %}
-            {% set records_paths = ['/engineers_page', '/clients_page', '/products_page'] %}
+            {% set records_paths = ['/engineers_page', '/clients_page', '/products_page', '/po_details'] %}
             {% set admin_paths = ['/activity_page', '/settings', '/stock_inventory'] %}
 
             <div class="sidebar-group-label" aria-hidden="true">Main</div>
@@ -259,6 +260,9 @@
                     {% endif %}
                     {{ nav_link('/clients_page', 'fa-hospital', 'Medical Centers') }}
                     {{ nav_link('/products_page', 'fa-boxes-stacked', 'Inventory') }}
+                    {% if can_manage_purchase_orders %}
+                        {{ nav_link('/po_details', 'fa-file-invoice', 'P.O. Details') }}
+                    {% endif %}
                 </div>
             {% endif %}
 
@@ -611,5 +615,7 @@
 </script>
 
 <script src="{{ url_for('static', filename='js/app-appearance.js') }}?v=16"></script>
+
+{% block page_scripts %}{% endblock %}
 </body>
 </html>

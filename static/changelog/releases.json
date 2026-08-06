@@ -1440,6 +1440,33 @@
           "sort_order": 100
         }
       ]
+    },
+    {
+      "release_key": "2026-08-06",
+      "release_date": "2026-08-06",
+      "title": "Client P.O. Details Register",
+      "summary": "Authorized users can now keep a clear, searchable record of client purchase orders.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-06-po-details-register",
+          "category": "Client Records",
+          "description": "The new P.O. Details register records a client, P.O. date, P.O. number, and whether the order is a Contract or Single Visit, without adding financial amounts.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-06-po-records-access",
+          "category": "Settings",
+          "description": "Superadmins can grant P.O. records access from Settings. Authorized users see the P.O. Details link under Records and can add, edit, or delete entries.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
+        }
+      ]
     }
   ]
 }

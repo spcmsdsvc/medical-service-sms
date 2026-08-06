@@ -1817,6 +1817,7 @@
             const personnelAdminChecked = user.personnel_admin_access ? 'checked' : '';
             const reportsAdminChecked = user.reports_admin_access ? 'checked' : '';
             const scheduleAdminChecked = user.schedule_admin_access ? 'checked' : '';
+            const poAdminChecked = user.po_admin_access ? 'checked' : '';
             const inventoryBranch = user.stock_inventory_branch_code || '';
             return `
                 <div class="approval-user-card" data-user-id="${user.id}">
@@ -1901,6 +1902,13 @@
                                     <label class="form-check-label small fw-bold">Schedule management access</label>
                                 </div>
                                 <div class="form-text small">Create, edit, move, and complete calendar schedules across the schedule surface.</div>
+                            </div>
+                            <div class="col-lg-4">
+                                <div class="form-check form-switch mb-0">
+                                    <input class="form-check-input po-admin-access-input" type="checkbox" ${poAdminChecked} onchange="toggleAdminCapability(this)">
+                                    <label class="form-check-label small fw-bold">P.O. records access</label>
+                                </div>
+                                <div class="form-text small">Add, edit, and remove client purchase-order records.</div>
                             </div>
                         </div>
                     </div>
@@ -2060,6 +2068,7 @@
             personnel_admin_access: Boolean(card.querySelector('.personnel-admin-access-input')?.checked),
             reports_admin_access: Boolean(card.querySelector('.reports-admin-access-input')?.checked),
             schedule_admin_access: Boolean(card.querySelector('.schedule-admin-access-input')?.checked),
+            po_admin_access: Boolean(card.querySelector('.po-admin-access-input')?.checked),
             approval_title: card.querySelector('.approval-title-input')?.value || '',
             approval_scope: card.querySelector('.approval-scope-input')?.value || '',
             is_active: Boolean(card.querySelector('.approval-active-input')?.checked)
@@ -2455,7 +2464,7 @@
         const inventoryAccess = card.querySelector('.stock-inventory-access-input');
         const inventoryOnly = card.querySelector('.stock-inventory-only-input');
         const hrScheduleView = card.querySelector('.hr-schedule-view-input');
-        const adminCapabilities = card.querySelectorAll('.personnel-admin-access-input, .reports-admin-access-input, .schedule-admin-access-input');
+        const adminCapabilities = card.querySelectorAll('.personnel-admin-access-input, .reports-admin-access-input, .schedule-admin-access-input, .po-admin-access-input');
         if (canApprove) canApprove.checked = true;
         if (inventoryAccess) inventoryAccess.checked = false;
         if (inventoryOnly) inventoryOnly.checked = false;
@@ -2469,7 +2478,7 @@
         const inventoryAccess = card.querySelector('.stock-inventory-access-input');
         const approverOnly = card.querySelector('.approval-approver-only-input');
         const hrScheduleView = card.querySelector('.hr-schedule-view-input');
-        const adminCapabilities = card.querySelectorAll('.personnel-admin-access-input, .reports-admin-access-input, .schedule-admin-access-input');
+        const adminCapabilities = card.querySelectorAll('.personnel-admin-access-input, .reports-admin-access-input, .schedule-admin-access-input, .po-admin-access-input');
         if (inventoryAccess) inventoryAccess.checked = true;
         if (approverOnly) approverOnly.checked = false;
         if (hrScheduleView) hrScheduleView.checked = false;

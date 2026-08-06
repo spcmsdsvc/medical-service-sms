@@ -1,0 +1,719 @@
+{% extends "layout.html" %}
+
+{% block page_head %}
+<style>
+    .po-page {
+        color: var(--app-text, #16243a);
+    }
+
+    .po-hero {
+        background: linear-gradient(135deg, #14243a, #244d8f);
+        color: #fff;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        box-shadow: 0 0.8rem 2rem rgba(11, 30, 58, 0.18);
+    }
+
+    .po-hero h1 {
+        font-size: clamp(1.45rem, 2.4vw, 2.25rem);
+        margin: 0;
+    }
+
+    .po-panel,
+    .po-kpi,
+    .po-filter-panel {
+        background: var(--app-surface, #fff);
+        border: 1px solid var(--app-border, #d6e0ec);
+        border-radius: 0.85rem;
+        box-shadow: 0 0.35rem 1.2rem rgba(16, 38, 69, 0.08);
+    }
+
+    .po-kpi {
+        padding: 1rem;
+        min-height: 6.2rem;
+    }
+
+    .po-kpi-label {
+        color: var(--app-muted-text, #60738d);
+        font-size: .74rem;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+
+    .po-kpi-value {
+        color: var(--app-text, #16243a);
+        font-size: 1.75rem;
+        font-weight: 900;
+    }
+
+    .po-filter-panel {
+        padding: 1rem;
+    }
+
+    .po-filter-panel label {
+        color: var(--app-muted-text, #60738d);
+        font-size: .75rem;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .po-table-wrap {
+        overflow-x: auto;
+    }
+
+    .po-table {
+        color: var(--app-text, #16243a);
+        margin: 0;
+        min-width: 760px;
+    }
+
+    .po-table thead th {
+        background: var(--app-table-head, #16243a);
+        color: #fff;
+        border: 0;
+        font-size: .75rem;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+
+    .po-table tbody td {
+        border-color: var(--app-border, #d6e0ec);
+        vertical-align: middle;
+    }
+
+    .po-sort-button {
+        background: transparent;
+        border: 0;
+        color: inherit;
+        font: inherit;
+        padding: 0;
+    }
+
+    .po-sort-button:focus-visible,
+    .po-icon-button:focus-visible {
+        outline: 3px solid var(--app-focus-ring, #5aa7ff);
+        outline-offset: 2px;
+    }
+
+    .po-type-badge {
+        border-radius: 999px;
+        display: inline-flex;
+        font-size: .72rem;
+        font-weight: 800;
+        padding: .35rem .6rem;
+        white-space: nowrap;
+    }
+
+    .po-type-badge.contract {
+        background: #d9f7e7;
+        color: #087443;
+    }
+
+    .po-type-badge.single_visit {
+        background: #e0edff;
+        color: #135bb4;
+    }
+
+    .po-number {
+        color: var(--app-text, #16243a);
+        font-weight: 850;
+        overflow-wrap: anywhere;
+    }
+
+    .po-muted {
+        color: var(--app-muted-text, #60738d);
+    }
+
+    .po-action-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem;
+        justify-content: flex-end;
+    }
+
+    .po-action-group .btn {
+        min-height: 2.55rem;
+    }
+
+    .po-mobile-list {
+        display: none;
+    }
+
+    .po-mobile-card {
+        background: var(--app-raised-surface, #f7fafd);
+        border: 1px solid var(--app-border, #d6e0ec);
+        border-radius: .8rem;
+        padding: 1rem;
+    }
+
+    .po-modal-content {
+        background: var(--app-surface, #fff);
+        color: var(--app-text, #16243a);
+        border: 1px solid var(--app-border, #d6e0ec);
+    }
+
+    .po-confirm-backdrop {
+        align-items: center;
+        background: rgba(6, 17, 32, .68);
+        display: none;
+        inset: 0;
+        justify-content: center;
+        padding: 1rem;
+        position: fixed;
+        z-index: 2050;
+    }
+
+    .po-confirm-backdrop.show {
+        display: flex;
+    }
+
+    .po-confirm-card {
+        background: var(--app-surface, #fff);
+        border: 1px solid var(--app-border, #d6e0ec);
+        border-radius: .85rem;
+        box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .24);
+        color: var(--app-text, #16243a);
+        max-width: 30rem;
+        padding: 1.25rem;
+        width: 100%;
+    }
+
+    [data-app-theme="dark"] .po-confirm-card {
+        background: var(--app-surface, #172538);
+    }
+
+    [data-app-theme="dark"] .po-hero {
+        background: linear-gradient(135deg, #101b2c, #1c3f7e);
+    }
+
+    [data-app-theme="dark"] .po-type-badge.contract {
+        background: #103e2a;
+        color: #9af1c1;
+    }
+
+    [data-app-theme="dark"] .po-type-badge.single_visit {
+        background: #123462;
+        color: #a9ceff;
+    }
+
+    @media (max-width: 767.98px) {
+        .po-hero,
+        .po-filter-panel,
+        .po-panel {
+            border-radius: .7rem;
+        }
+
+        .po-hero {
+            padding: 1.1rem;
+        }
+
+        .po-table-wrap {
+            display: none;
+        }
+
+        .po-mobile-list {
+            display: grid;
+            gap: .7rem;
+        }
+
+        .po-action-group {
+            justify-content: stretch;
+        }
+
+        .po-action-group .btn {
+            flex: 1 1 8rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="container-fluid py-3 po-page" id="po-page">
+    <div id="po-alert" class="alert d-none no-print" role="status" aria-live="polite"></div>
+
+    <section class="po-hero mb-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div>
+            <div class="small text-uppercase fw-bold opacity-75">Client Records</div>
+            <h1><i class="fa-solid fa-file-invoice me-2" aria-hidden="true"></i>P.O. Details</h1>
+            <p class="mb-0 mt-2 opacity-75">Record client purchase orders and classify them as Contract or Single Visit.</p>
+        </div>
+        <button type="button" class="btn btn-light fw-bold" id="po-add-button">
+            <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>Add P.O.
+        </button>
+    </section>
+
+    <section class="row g-3 mb-3" aria-label="Purchase order summary">
+        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Total P.O.s</div><div class="po-kpi-value" id="po-total-count">0</div></div></div>
+        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Contracts</div><div class="po-kpi-value" id="po-contract-count">0</div></div></div>
+        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Single Visits</div><div class="po-kpi-value" id="po-single-count">0</div></div></div>
+        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Medical Centers</div><div class="po-kpi-value" id="po-client-count">0</div></div></div>
+    </section>
+
+    <section class="po-filter-panel mb-3 no-print" aria-label="Purchase order filters">
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-lg-3">
+                <label for="po-client-search">Medical Center</label>
+                <input id="po-client-search" class="form-control" type="search" placeholder="Search client">
+            </div>
+            <div class="col-12 col-lg-3">
+                <label for="po-number-search">P.O. Number</label>
+                <input id="po-number-search" class="form-control" type="search" placeholder="Search number">
+            </div>
+            <div class="col-6 col-lg-2">
+                <label for="po-type-filter">Type</label>
+                <select id="po-type-filter" class="form-select">
+                    <option value="">All types</option>
+                    <option value="contract">Contract</option>
+                    <option value="single_visit">Single Visit</option>
+                </select>
+            </div>
+            <div class="col-6 col-lg-2">
+                <label for="po-date-from">From date</label>
+                <input id="po-date-from" class="form-control" type="date">
+            </div>
+            <div class="col-6 col-lg-2">
+                <label for="po-date-to">To date</label>
+                <input id="po-date-to" class="form-control" type="date">
+            </div>
+        </div>
+        <div class="d-flex justify-content-end mt-2">
+            <button type="button" class="btn btn-outline-secondary" id="po-clear-filters">
+                <i class="fa-solid fa-rotate-left me-1" aria-hidden="true"></i>Clear Filters
+            </button>
+        </div>
+    </section>
+
+    <section class="po-panel overflow-hidden">
+        <div class="p-3 d-flex flex-wrap justify-content-between align-items-center gap-2 border-bottom">
+            <div>
+                <h2 class="h5 mb-1">Purchase Order Register</h2>
+                <div class="small po-muted" id="po-result-count">Loading P.O. records...</div>
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm no-print" id="po-refresh-button">
+                <i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Refresh
+            </button>
+        </div>
+        <div class="po-table-wrap">
+            <table class="table po-table" aria-describedby="po-result-count">
+                <thead>
+                    <tr>
+                        <th><button class="po-sort-button" type="button" data-sort="client_name">Medical Center <span data-sort-indicator="client_name">↕</span></button></th>
+                        <th><button class="po-sort-button" type="button" data-sort="po_date">P.O. Date <span data-sort-indicator="po_date">↕</span></button></th>
+                        <th><button class="po-sort-button" type="button" data-sort="po_number">P.O. Number <span data-sort-indicator="po_number">↕</span></button></th>
+                        <th><button class="po-sort-button" type="button" data-sort="po_type">Type <span data-sort-indicator="po_type">↕</span></button></th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="po-table-body"></tbody>
+            </table>
+        </div>
+        <div class="po-mobile-list p-3" id="po-mobile-list"></div>
+        <div class="p-3 po-muted d-none" id="po-empty-state">No P.O. records match the current filters.</div>
+    </section>
+</main>
+
+<div class="modal fade" id="po-modal" tabindex="-1" aria-labelledby="po-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content po-modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="po-modal-title">Add P.O.</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="po-form">
+                <div class="modal-body">
+                    <input type="hidden" id="po-id">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold" for="po-client">Medical Center</label>
+                        <select class="form-select" id="po-client" required></select>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold" for="po-date">P.O. Date</label>
+                            <input class="form-control" type="date" id="po-date" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold" for="po-number">P.O. Number</label>
+                            <input class="form-control" type="text" id="po-number" maxlength="60" autocomplete="off" required>
+                        </div>
+                    </div>
+                    <fieldset class="mt-3">
+                        <legend class="form-label fw-bold mb-2">P.O. Type</legend>
+                        <div class="d-flex flex-wrap gap-3">
+                            <label class="form-check">
+                                <input class="form-check-input" type="radio" name="po-type" value="contract" required>
+                                <span class="form-check-label">Contract</span>
+                            </label>
+                            <label class="form-check">
+                                <input class="form-check-input" type="radio" name="po-type" value="single_visit">
+                                <span class="form-check-label">Single Visit</span>
+                            </label>
+                        </div>
+                    </fieldset>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="po-save-button"><i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Save P.O.</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="po-confirm-backdrop" id="po-confirm-backdrop" aria-hidden="true">
+    <div class="po-confirm-card" role="dialog" aria-modal="true" aria-labelledby="po-confirm-title">
+        <h2 class="h5 mb-2" id="po-confirm-title">Confirm Action</h2>
+        <p class="mb-4 po-muted" id="po-confirm-message">Continue?</p>
+        <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-outline-secondary" id="po-confirm-cancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="po-confirm-ok">Continue</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+    'use strict';
+    const state = {
+        rows: [],
+        clients: [],
+        sortKey: localStorage.getItem('po_details_sort_key') || 'po_date',
+        sortDirection: localStorage.getItem('po_details_sort_direction') || 'desc',
+        editingId: null,
+        modal: null,
+    };
+
+    const byId = (id) => document.getElementById(id);
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+    const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+    function notify(message, kind = 'info') {
+        const alert = byId('po-alert');
+        if (!alert) return;
+        alert.className = `alert alert-${kind}`;
+        alert.textContent = message;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function setNativeModalVisibility(visible) {
+        const modal = byId('po-modal');
+        if (!modal) return;
+        modal.classList.toggle('show', visible);
+        modal.style.display = visible ? 'block' : 'none';
+        modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        if (visible) {
+            modal.setAttribute('aria-modal', 'true');
+            document.body.classList.add('modal-open');
+            if (!byId('po-modal-backdrop')) {
+                const backdrop = document.createElement('div');
+                backdrop.id = 'po-modal-backdrop';
+                backdrop.className = 'modal-backdrop fade show';
+                document.body.appendChild(backdrop);
+            }
+        } else {
+            modal.removeAttribute('aria-modal');
+            document.body.classList.remove('modal-open');
+            byId('po-modal-backdrop')?.remove();
+        }
+    }
+
+    function createModalController() {
+        if (window.bootstrap?.Modal) {
+            return window.bootstrap.Modal.getOrCreateInstance(byId('po-modal'));
+        }
+        return {
+            show: () => setNativeModalVisibility(true),
+            hide: () => setNativeModalVisibility(false),
+        };
+    }
+
+    function confirmAction({ title = 'Confirm Action', message = 'Continue?', confirmText = 'Continue', danger = false } = {}) {
+        return new Promise((resolve) => {
+            const backdrop = byId('po-confirm-backdrop');
+            const titleNode = byId('po-confirm-title');
+            const messageNode = byId('po-confirm-message');
+            const cancelButton = byId('po-confirm-cancel');
+            const confirmButton = byId('po-confirm-ok');
+            if (!backdrop || !titleNode || !messageNode || !cancelButton || !confirmButton) {
+                resolve(false);
+                return;
+            }
+
+            let finished = false;
+            const onKeyDown = (event) => {
+                if (event.key === 'Escape') cleanup(false);
+            };
+            const cleanup = (accepted) => {
+                if (finished) return;
+                finished = true;
+                backdrop.classList.remove('show');
+                backdrop.setAttribute('aria-hidden', 'true');
+                cancelButton.onclick = null;
+                confirmButton.onclick = null;
+                backdrop.onclick = null;
+                document.removeEventListener('keydown', onKeyDown);
+                resolve(accepted);
+            };
+
+            titleNode.textContent = title;
+            messageNode.textContent = message;
+            confirmButton.textContent = confirmText;
+            confirmButton.className = `btn ${danger ? 'btn-danger' : 'btn-primary'}`;
+            cancelButton.onclick = () => cleanup(false);
+            confirmButton.onclick = () => cleanup(true);
+            backdrop.onclick = (event) => {
+                if (event.target === backdrop) cleanup(false);
+            };
+            document.addEventListener('keydown', onKeyDown);
+            backdrop.classList.add('show');
+            backdrop.setAttribute('aria-hidden', 'false');
+            setTimeout(() => confirmButton.focus(), 0);
+        });
+    }
+
+    function currentFilters() {
+        return {
+            client: (byId('po-client-search')?.value || '').trim().toLowerCase(),
+            number: (byId('po-number-search')?.value || '').trim().toLowerCase(),
+            type: byId('po-type-filter')?.value || '',
+            from: byId('po-date-from')?.value || '',
+            to: byId('po-date-to')?.value || '',
+        };
+    }
+
+    function filteredRows() {
+        const filters = currentFilters();
+        return state.rows.filter((row) => {
+            const client = String(row.client_name || '').toLowerCase();
+            const number = String(row.po_number || '').toLowerCase();
+            const inDateRange = (!filters.from || row.po_date >= filters.from)
+                && (!filters.to || row.po_date <= filters.to);
+            return (!filters.client || client.includes(filters.client))
+                && (!filters.number || number.includes(filters.number))
+                && (!filters.type || row.po_type === filters.type)
+                && inDateRange;
+        }).sort((left, right) => {
+            const a = String(left[state.sortKey] ?? '').toLowerCase();
+            const b = String(right[state.sortKey] ?? '').toLowerCase();
+            const result = state.sortKey === 'po_date'
+                ? (a || '0000-00-00').localeCompare(b || '0000-00-00')
+                : a.localeCompare(b, undefined, { numeric: true });
+            return state.sortDirection === 'asc' ? result : -result;
+        });
+    }
+
+    function updateSortIndicators() {
+        document.querySelectorAll('[data-sort-indicator]').forEach((indicator) => {
+            const active = indicator.dataset.sortIndicator === state.sortKey;
+            indicator.textContent = active ? (state.sortDirection === 'asc' ? '↑' : '↓') : '↕';
+        });
+    }
+
+    function renderKpis() {
+        byId('po-total-count').textContent = state.rows.length;
+        byId('po-contract-count').textContent = state.rows.filter((row) => row.po_type === 'contract').length;
+        byId('po-single-count').textContent = state.rows.filter((row) => row.po_type === 'single_visit').length;
+        byId('po-client-count').textContent = new Set(state.rows.map((row) => row.client_id)).size;
+    }
+
+    function actionHtml(row) {
+        return `<div class="po-action-group">
+            <button type="button" class="btn btn-outline-primary btn-sm" data-edit-po="${row.id}"><i class="fa-solid fa-pen me-1" aria-hidden="true"></i>Edit</button>
+            <button type="button" class="btn btn-outline-danger btn-sm" data-delete-po="${row.id}"><i class="fa-solid fa-trash me-1" aria-hidden="true"></i>Delete</button>
+        </div>`;
+    }
+
+    function rowFields(row) {
+        return `<div class="po-number">${escapeHtml(row.client_name)}</div>
+            <div class="small po-muted">${escapeHtml(row.client_address || '')}</div>`;
+    }
+
+    function renderRows() {
+        const rows = filteredRows();
+        const tableBody = byId('po-table-body');
+        const mobileList = byId('po-mobile-list');
+        const empty = byId('po-empty-state');
+        byId('po-result-count').textContent = `${rows.length} of ${state.rows.length} P.O. record(s) shown`;
+        empty.classList.toggle('d-none', rows.length > 0);
+
+        tableBody.innerHTML = rows.map((row) => `<tr>
+            <td>${rowFields(row)}</td>
+            <td>${escapeHtml(row.po_date)}</td>
+            <td><span class="po-number">${escapeHtml(row.po_number)}</span></td>
+            <td><span class="po-type-badge ${escapeHtml(row.po_type)}">${escapeHtml(row.po_type_label)}</span></td>
+            <td>${actionHtml(row)}</td>
+        </tr>`).join('');
+
+        mobileList.innerHTML = rows.map((row) => `<article class="po-mobile-card">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+                <div>${rowFields(row)}</div>
+                <span class="po-type-badge ${escapeHtml(row.po_type)}">${escapeHtml(row.po_type_label)}</span>
+            </div>
+            <div class="small mt-3"><strong>P.O. date:</strong> ${escapeHtml(row.po_date)}</div>
+            <div class="small"><strong>P.O. number:</strong> <span class="po-number">${escapeHtml(row.po_number)}</span></div>
+            <div class="mt-3">${actionHtml(row)}</div>
+        </article>`).join('');
+        updateSortIndicators();
+    }
+
+    function populateClients(selectedId = '') {
+        const select = byId('po-client');
+        select.innerHTML = `<option value="">Select medical center</option>` + state.clients.map((client) => `<option value="${client.id}" ${String(client.id) === String(selectedId) ? 'selected' : ''}>${escapeHtml(client.name)}</option>`).join('');
+    }
+
+    function resetForm() {
+        byId('po-form').reset();
+        byId('po-id').value = '';
+        byId('po-modal-title').textContent = 'Add P.O.';
+        byId('po-save-button').innerHTML = '<i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Save P.O.';
+        state.editingId = null;
+        populateClients();
+    }
+
+    function openForm(row = null) {
+        resetForm();
+        if (row) {
+            state.editingId = row.id;
+            byId('po-id').value = row.id;
+            byId('po-modal-title').textContent = 'Edit P.O.';
+            byId('po-save-button').innerHTML = '<i class="fa-solid fa-check me-1" aria-hidden="true"></i>Update P.O.';
+            populateClients(row.client_id);
+            byId('po-date').value = row.po_date;
+            byId('po-number').value = row.po_number;
+            const radio = document.querySelector(`input[name="po-type"][value="${row.po_type}"]`);
+            if (radio) radio.checked = true;
+        }
+        state.modal.show();
+        setTimeout(() => byId('po-client')?.focus(), 150);
+    }
+
+    async function loadData() {
+        const response = await fetch('/get_purchase_orders', { headers: { 'Accept': 'application/json' } });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'P.O. records could not be loaded.');
+        state.rows = data.purchase_orders || [];
+        state.clients = data.clients || [];
+        populateClients();
+        renderKpis();
+        renderRows();
+    }
+
+    async function sendRecord(url, method, payload) {
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf(), 'Accept': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.status === 409 && data.duplicate && !payload.force) {
+            const duplicate = data.duplicate;
+            const customProceed = await confirmAction({
+                title: 'Possible Duplicate P.O.',
+                message: `${data.error} ${duplicate.client_name} - ${duplicate.po_number} Save another record anyway?`,
+                confirmText: 'Save Anyway',
+            });
+            if (customProceed) return sendRecord(url, method, { ...payload, force: true });
+            throw new Error('P.O. save cancelled.');
+        }
+        if (!response.ok || !data.success) throw new Error(data.error || 'The P.O. could not be saved.');
+        return data;
+    }
+
+    async function saveForm(event) {
+        event.preventDefault();
+        const button = byId('po-save-button');
+        button.disabled = true;
+        const payload = {
+            client_id: Number(byId('po-client').value),
+            po_date: byId('po-date').value,
+            po_number: byId('po-number').value,
+            po_type: document.querySelector('input[name="po-type"]:checked')?.value || '',
+        };
+        try {
+            const data = await sendRecord(state.editingId ? `/update_purchase_order/${state.editingId}` : '/add_purchase_order', state.editingId ? 'PUT' : 'POST', payload);
+            state.modal.hide();
+            await loadData();
+            notify(state.editingId ? 'P.O. record updated.' : 'P.O. record added.', 'success');
+        } catch (error) {
+            notify(error.message, 'danger');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    async function deleteRow(id) {
+        const row = state.rows.find((item) => item.id === id);
+        if (!row) return;
+        const confirmed = await confirmAction({
+            title: 'Delete P.O. Record?',
+            message: `Delete P.O. ${row.po_number} for ${row.client_name}? This cannot be undone.`,
+            confirmText: 'Delete P.O.',
+            danger: true,
+        });
+        if (!confirmed) return;
+        try {
+            const response = await fetch(`/delete_purchase_order/${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': csrf(), 'Accept': 'application/json' } });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || 'The P.O. could not be deleted.');
+            await loadData();
+            notify('P.O. record deleted.', 'success');
+        } catch (error) {
+            notify(error.message, 'danger');
+        }
+    }
+
+    document.addEventListener('click', (event) => {
+        if (event.target.closest('[data-bs-dismiss="modal"]')) {
+            state.modal?.hide();
+            return;
+        }
+        const sortButton = event.target.closest('[data-sort]');
+        if (sortButton) {
+            const key = sortButton.dataset.sort;
+            if (state.sortKey === key) state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+            else { state.sortKey = key; state.sortDirection = 'asc'; }
+            localStorage.setItem('po_details_sort_key', state.sortKey);
+            localStorage.setItem('po_details_sort_direction', state.sortDirection);
+            renderRows();
+            return;
+        }
+        const editButton = event.target.closest('[data-edit-po]');
+        if (editButton) { openForm(state.rows.find((row) => row.id === Number(editButton.dataset.editPo))); return; }
+        const deleteButton = event.target.closest('[data-delete-po]');
+        if (deleteButton) { deleteRow(Number(deleteButton.dataset.deletePo)); }
+    });
+
+    byId('po-add-button').addEventListener('click', () => openForm());
+    byId('po-refresh-button').addEventListener('click', () => loadData().catch((error) => notify(error.message, 'danger')));
+    byId('po-form').addEventListener('submit', saveForm);
+    byId('po-client-search').addEventListener('input', renderRows);
+    byId('po-number-search').addEventListener('input', renderRows);
+    byId('po-type-filter').addEventListener('change', renderRows);
+    byId('po-date-from').addEventListener('change', renderRows);
+    byId('po-date-to').addEventListener('change', renderRows);
+    byId('po-clear-filters').addEventListener('click', () => {
+        byId('po-client-search').value = '';
+        byId('po-number-search').value = '';
+        byId('po-type-filter').value = '';
+        byId('po-date-from').value = '';
+        byId('po-date-to').value = '';
+        renderRows();
+    });
+
+    async function initializePage() {
+        state.modal = createModalController();
+        try { await loadData(); }
+        catch (error) { byId('po-result-count').textContent = 'Request failed.'; notify(error.message, 'danger'); }
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializePage, { once: true });
+    } else {
+        initializePage();
+    }
+})();
+</script>
+{% endblock %}

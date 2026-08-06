@@ -38,13 +38,16 @@ class AdminCapabilitySourceTests(unittest.TestCase):
             'personnel_admin_access = db.Column(db.Boolean, default=False, nullable=False)',
             'reports_admin_access = db.Column(db.Boolean, default=False, nullable=False)',
             'schedule_admin_access = db.Column(db.Boolean, default=False, nullable=False)',
+            'po_admin_access = db.Column(db.Boolean, default=False, nullable=False)',
             'def ensure_user_admin_capability_columns():',
             'def can_administer_personnel(user=None):',
             'def can_view_admin_reports(user=None):',
             'def can_manage_any_schedule(user=None):',
+            'def can_manage_purchase_orders(user=None):',
             'personnel_admin_access',
             'reports_admin_access',
             'schedule_admin_access',
+            'po_admin_access',
             'function toggleAdminCapability(input)',
         ):
             self.assertIn(marker, self.source + self.settings)
@@ -268,6 +271,7 @@ class AdminCapabilityWorkflowTests(unittest.TestCase):
             self.assertTrue(app_module.can_administer_personnel(self.superadmin))
             self.assertTrue(app_module.can_view_admin_reports(self.superadmin))
             self.assertTrue(app_module.can_manage_any_schedule(self.superadmin))
+            self.assertTrue(app_module.can_manage_purchase_orders(self.superadmin))
             self.assertFalse(app_module.can_administer_personnel(
                 app_module.db.session.get(app_module.User, self.plain_user_id)
             ))
@@ -277,12 +281,16 @@ class AdminCapabilityWorkflowTests(unittest.TestCase):
             self.assertFalse(app_module.can_manage_any_schedule(
                 app_module.db.session.get(app_module.User, self.plain_user_id)
             ))
+            self.assertFalse(app_module.can_manage_purchase_orders(
+                app_module.db.session.get(app_module.User, self.plain_user_id)
+            ))
 
         personnel = self._client_for(self.personnel_user_id)
         self.assertEqual(personnel.get('/engineers_page').status_code, 200)
         self.assertEqual(personnel.get('/export_engineers').status_code, 200)
         self.assertEqual(personnel.get('/reports_page').status_code, 302)
         self.assertEqual(personnel.get('/timeline').status_code, 302)
+        self.assertEqual(personnel.get('/po_details').status_code, 302)
 
         reports = self._client_for(self.reports_user_id)
         self.assertEqual(reports.get('/reports_page').status_code, 200)
@@ -291,17 +299,21 @@ class AdminCapabilityWorkflowTests(unittest.TestCase):
         self.assertEqual(reports.get('/export_reports_summary').status_code, 200)
         self.assertEqual(reports.get('/engineers_page').status_code, 302)
         self.assertEqual(reports.get('/timeline').status_code, 302)
+        self.assertEqual(reports.get('/po_details').status_code, 302)
 
         schedule = self._client_for(self.schedule_user_id)
         self.assertEqual(schedule.get('/timeline').status_code, 200)
         self.assertEqual(schedule.get('/get_timeline_data?offset=0&branch=ALL').status_code, 200)
         self.assertEqual(schedule.get('/engineers_page').status_code, 302)
         self.assertEqual(schedule.get('/reports_page').status_code, 302)
+        self.assertEqual(schedule.get('/po_details').status_code, 302)
 
         plain = self._client_for(self.plain_user_id)
         self.assertEqual(plain.get('/engineers_page').status_code, 302)
         self.assertEqual(plain.get('/reports_page').status_code, 302)
         self.assertEqual(plain.get('/timeline').status_code, 302)
+        self.assertEqual(plain.get('/po_details').status_code, 302)
+        self.assertEqual(plain.get('/get_purchase_orders').status_code, 403)
         self.assertEqual(plain.get('/get_timeline_data?offset=0&branch=ALL').status_code, 403)
 
     def test_superadmin_can_grant_flags_and_audit_old_and_new_values(self):
