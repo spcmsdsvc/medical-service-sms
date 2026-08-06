@@ -7724,9 +7724,17 @@ def approval_user_to_dict(user):
         'approval_title': getattr(user, 'approval_title', '') or '',
         'approval_scope': getattr(user, 'approval_scope', '') or '',
         'can_approve_requests': bool(getattr(user, 'can_approve_requests', False)),
+        # approver_only stays computed on purpose: there is no approver_only column, it is
+        # derived from role plus can_approve_requests, and the save route flips the role
+        # from it. The two below DO have stored columns, so they report the stored grant
+        # for the same reason as po_admin_access -- the switches round-trip through
+        # saveApprovalUser(), so a computed value silently rewrites what it displayed.
         'approver_only': is_approver_only_user(user),
-        'can_manage_stock_inventory': can_manage_stock_inventory(user),
-        'stock_inventory_only': is_stock_inventory_only_user(user),
+        # can_manage_stock_inventory() itself is deliberately unchanged: its superadmin
+        # bypass is reviewed and documented in pending-work.md section 5 and pinned by a
+        # test. This is only about what the Settings switch reports.
+        'can_manage_stock_inventory': bool(getattr(user, 'can_manage_stock_inventory', False)),
+        'stock_inventory_only': bool(getattr(user, 'stock_inventory_only', False)),
         'stock_inventory_branch_code': normalize_stock_inventory_branch(getattr(user, 'stock_inventory_branch_code', None)),
         'hr_schedule_view': bool(getattr(user, 'hr_schedule_view', False)),
         'personnel_admin_access': bool(getattr(user, 'personnel_admin_access', False)),

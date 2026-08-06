@@ -2,6 +2,46 @@
 
 claude changes - 2026-08-06
 
+## The same write-back in the stock inventory switches, at the owner's request
+
+* Fixed the two remaining Settings switches that reported an effective permission rather than
+  the stored grant. `approval_user_to_dict()` returned `can_manage_stock_inventory(user)` and
+  `is_stock_inventory_only_user(user)`; both now return `bool(getattr(user, ...))`, matching the
+  columns that actually back them. Same failure as the P.O. field fixed earlier today: the dict
+  drives the switches, `saveApprovalUser()` posts the rendered state straight back, so a computed
+  value silently rewrote what it displayed.
+* **The `can_manage_stock_inventory()` predicate is deliberately unchanged.** Its superadmin
+  bypass is recorded in `pending-work.md` section 5 as decided-against and is pinned by
+  `StockInventorySuperadminBypassTests`. Only the serializer moved. Verified both directions: a
+  superadmin's inventory switch now renders unchecked, and that same account still gets 200 on
+  `/stock_inventory` and `/api/stock-inventory/items`. Section 5 is not overturned.
+* **`approver_only` was deliberately left computed**, and a test now guards that decision. There
+  is no `approver_only` column — it is derived from `role` plus `can_approve_requests`, and the
+  save route flips the role from it, so reporting a stored value would report a column that does
+  not exist. The two fields changed above do have columns; that is the whole distinction, and it
+  was established by probing each field rather than by reading the predicates.
+* Mapped the behaviour before changing anything. `can_manage_stock_inventory` diverged in the
+  granting direction for superadmins (stored False, reported True). `stock_inventory_only`
+  diverged in the **opposite** direction — stored True, reported False whenever
+  `can_manage_stock_inventory()` was False — so a save would have silently *cleared* a grant an
+  admin did set. Both are now honest in all four probed combinations.
+* Added `StockInventorySettingsSwitchTests`: the switch reports the stored grant **while**
+  `can_manage_stock_inventory()` still returns True for a superadmin, so a future change cannot
+  be mistaken for revoking admin access; a superadmin's card round-trips without persisting the
+  flag; and `approver_only` has no column while the other two do.
+* **A first version of that test could not fail for `stock_inventory_only`.** For both fixtures
+  the stored and computed values agreed, so reverting that field left the test green. A third
+  account was added — only-mode stored True with access False, the one combination that
+  separates them — and the injection then reproduced the defect. Recorded because the assertion
+  looked complete and proved nothing, which is the failure mode this file keeps re-learning.
+* All three injections reproduced their defect with each field reverted **separately**, at the
+  byte level, confirmed applied by SHA with `app.py` byte-identical afterwards. Suite green at
+  **481** (was 478).
+* Also caught during editing, not shipped: an edit to `tests/test_stock_inventory.py` initially
+  truncated `test_an_ordinary_account_still_needs_the_flag`, orphaning its
+  `assertFalse(is_superadmin_user(ordinary))` line onto the new class. Restored, and confirmed by
+  `git diff` showing no removed lines. It would have quietly weakened the bypass positive control.
+
 ## P.O. Details review: the Settings switch reported the wrong thing
 
 * Reviewed `b01c78c` and `3dd83b1` against the recorded plan. **The implementation is sound.**

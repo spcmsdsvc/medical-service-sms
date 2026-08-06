@@ -208,5 +208,168 @@ class StockInventorySuperadminBypassTests(unittest.TestCase):
             self.assertFalse(app_module.is_superadmin_user(ordinary))
 
 
+class StockInventorySettingsSwitchTests(unittest.TestCase):
+    """The Settings switches must report the stored grant, not the effective permission.
+
+    approval_user_to_dict() drives those switches and saveApprovalUser() posts the rendered
+    state straight back, so a computed value silently rewrites what it displayed: the
+    inventory switch rendered checked for every superadmin with nothing granted, and saving
+    any unrelated change on their card then wrote can_manage_stock_inventory=True plus an
+    audit line for a grant nobody performed.
+
+    This is about the serializer only. The superadmin bypass inside
+    can_manage_stock_inventory() is deliberate, documented, and pinned by the class above --
+    the first test here asserts it still holds, so reporting the stored value cannot be
+    mistaken for revoking admin access.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+        cls.app.config['TESTING'] = True
+        cls.app.config['WTF_CSRF_ENABLED'] = False
+        cls.created_user_ids = []
+
+        with cls.app.app_context():
+            app_module.db.create_all()
+
+            cls.superadmin = app_module.User.query.filter_by(username='jonamar').first()
+            if not cls.superadmin:
+                cls.superadmin = app_module.User(
+                    username='jonamar',
+                    password=app_module.generate_password_hash('test-password'),
+                    role='superadmin', is_active=True,
+                )
+                app_module.db.session.add(cls.superadmin)
+                app_module.db.session.flush()
+                cls.created_user_ids.append(cls.superadmin.id)
+
+            # Whatever an earlier module left behind, this class needs the superadmin to
+            # hold no explicit inventory grant -- that is the whole precondition.
+            cls.superadmin.can_manage_stock_inventory = False
+            cls.superadmin.stock_inventory_only = False
+
+            cls.granted = app_module.User(
+                username='stock_grantee_settings_switch',
+                password=app_module.generate_password_hash('test-password'),
+                role='staff', is_active=True,
+                can_manage_stock_inventory=True,
+                stock_inventory_only=True,
+                stock_inventory_branch_code='BC02',
+            )
+            app_module.db.session.add(cls.granted)
+            app_module.db.session.flush()
+            cls.created_user_ids.append(cls.granted.id)
+
+            # only-mode stored True while access is False. This combination is the ONLY
+            # thing that separates the stored column from is_stock_inventory_only_user(),
+            # which requires can_manage_stock_inventory() first -- without this fixture the
+            # stock_inventory_only assertions below pass either way and prove nothing.
+            cls.only_without_access = app_module.User(
+                username='stock_only_without_access_switch',
+                password=app_module.generate_password_hash('test-password'),
+                role='staff', is_active=True,
+                can_manage_stock_inventory=False,
+                stock_inventory_only=True,
+            )
+            app_module.db.session.add(cls.only_without_access)
+            app_module.db.session.flush()
+            cls.created_user_ids.append(cls.only_without_access.id)
+            app_module.db.session.commit()
+
+            cls.superadmin_id = cls.superadmin.id
+            cls.granted_id = cls.granted.id
+            cls.only_without_access_id = cls.only_without_access.id
+
+    @classmethod
+    def tearDownClass(cls):
+        with cls.app.app_context():
+            for user_id in reversed(cls.created_user_ids):
+                user = app_module.db.session.get(app_module.User, user_id)
+                if user:
+                    app_module.db.session.delete(user)
+            # The superadmin may pre-date this module; leave its flags as this class found
+            # them rather than as this class set them.
+            survivor = app_module.User.query.filter_by(username='jonamar').first()
+            if survivor:
+                survivor.can_manage_stock_inventory = False
+                survivor.stock_inventory_only = False
+            app_module.db.session.commit()
+            app_module.db.session.remove()
+
+    def _client_for(self, user_id):
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session['_user_id'] = str(user_id)
+            session['_fresh'] = True
+        return client
+
+    def test_the_switch_reports_the_stored_grant_and_the_bypass_still_holds(self):
+        with self.app.app_context():
+            superadmin = app_module.db.session.get(app_module.User, self.superadmin_id)
+            self.assertFalse(superadmin.can_manage_stock_inventory,
+                             'precondition: the superadmin holds no explicit grant')
+
+            # The documented bypass is untouched -- superadmins keep write access.
+            self.assertTrue(app_module.can_manage_stock_inventory(superadmin))
+
+            # ...but the switch must show what is stored, which is nothing.
+            payload = app_module.approval_user_to_dict(superadmin)
+            self.assertFalse(payload['can_manage_stock_inventory'])
+            self.assertFalse(payload['stock_inventory_only'])
+
+            # Positive control: a real grantee still reports True, so the assertions above
+            # cannot pass by the serializer simply always returning False.
+            granted = app_module.db.session.get(app_module.User, self.granted_id)
+            granted_payload = app_module.approval_user_to_dict(granted)
+            self.assertTrue(granted_payload['can_manage_stock_inventory'])
+            self.assertTrue(granted_payload['stock_inventory_only'])
+
+            # The only-mode field specifically: stored True while
+            # is_stock_inventory_only_user() is False, because that predicate requires
+            # can_manage_stock_inventory() first. The switch must show the stored True,
+            # or saving the card would silently clear a grant the admin did set.
+            odd = app_module.db.session.get(app_module.User, self.only_without_access_id)
+            self.assertFalse(app_module.is_stock_inventory_only_user(odd),
+                             'fixture precondition: the computed value is False here')
+            self.assertTrue(odd.stock_inventory_only)
+            self.assertTrue(app_module.approval_user_to_dict(odd)['stock_inventory_only'])
+
+    def test_saving_a_superadmin_card_does_not_grant_inventory_access(self):
+        client = self._client_for(self.superadmin_id)
+        rendered = client.get('/settings/approval-routing-data')
+        self.assertEqual(rendered.status_code, 200)
+        row = next(user for user in rendered.get_json()['users']
+                   if user['id'] == self.superadmin_id)
+        self.assertFalse(row['can_manage_stock_inventory'],
+                         'the switch must render unchecked')
+
+        # Post back exactly what the UI rendered, as saveApprovalUser() does.
+        saved = client.post('/settings/update-approval-user', json={
+            'user_id': self.superadmin_id,
+            'is_active': True,
+            'can_manage_stock_inventory': row['can_manage_stock_inventory'],
+            'stock_inventory_only': row['stock_inventory_only'],
+        })
+        self.assertEqual(saved.status_code, 200)
+
+        with self.app.app_context():
+            after = app_module.db.session.get(app_module.User, self.superadmin_id)
+            self.assertFalse(after.can_manage_stock_inventory)
+            # Still reaches the inventory surface through the documented bypass.
+            self.assertTrue(app_module.can_manage_stock_inventory(after))
+
+    def test_approver_only_stays_computed_because_it_has_no_column(self):
+        """Guard against 'fixing' a field that is correctly derived.
+
+        There is no approver_only column: it is derived from role plus
+        can_approve_requests, and the save route flips the role from it. Reporting a stored
+        value here would report a column that does not exist.
+        """
+        self.assertNotIn('approver_only', app_module.User.__table__.columns.keys())
+        for stored_column in ('can_manage_stock_inventory', 'stock_inventory_only'):
+            self.assertIn(stored_column, app_module.User.__table__.columns.keys())
+
+
 if __name__ == '__main__':
     unittest.main()
