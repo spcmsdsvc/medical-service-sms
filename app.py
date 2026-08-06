@@ -14808,7 +14808,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v70-po-details';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v71-export-network-only';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -15034,6 +15034,27 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(request.url);
   const isSameOrigin = url.origin === self.location.origin;
+
+  // Authenticated exports are network-only: never written to the cache, never served
+  // from it. These routes return DIFFERENT CONTENT FOR THE SAME URL depending on who is
+  // asking -- /export_timeline redacts job titles and equipment for an HR account and
+  // does not for an admin -- while a cache entry is keyed on the URL alone. A superadmin's
+  // unredacted CSV was demonstrably returned to a logged-in HR session on the same browser,
+  // which is exactly the leak 5278df2 fixed on the server.
+  //
+  // This is checked BEFORE the navigate branch on purpose: the Export button is
+  // `window.location.href = ...`, so it arrives here as a navigation and would otherwise
+  // reach fieldNavigationFirst(), which caches every ok response and serves it back
+  // whenever the network throws.
+  //
+  // Deliberately a plain fetch with no fallback Response. Returning a synthetic body would
+  // be saved to disk as the downloaded file; letting the request fail offline is both
+  // honest and correct, since an export cannot be generated without the server. No offline
+  // workflow references an /export_ route.
+  if (isSameOrigin && url.pathname.startsWith('/export_')) {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   if (request.mode === 'navigate') {
     // Field navigation must work offline after the user opened the page online.

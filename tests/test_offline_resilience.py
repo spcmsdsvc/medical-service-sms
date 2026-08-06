@@ -212,6 +212,75 @@ class ShellPrecacheTests(unittest.TestCase):
         self.assertNotIn('cache.add(url)', self.install)
 
 
+class ExportsAreNeverCachedTests(unittest.TestCase):
+    """An authenticated export must never be written to or served from the runtime cache.
+
+    /export_timeline returns DIFFERENT CONTENT FOR THE SAME URL depending on who asks -- it
+    redacts job titles and equipment for an HR account and does not for an admin -- while a
+    cache entry is keyed on the URL alone. A superadmin's unredacted CSV was demonstrably
+    returned to a logged-in HR session on the same browser, which is the leak 5278df2 fixed
+    on the server and the service worker then reintroduced.
+
+    These are source assertions because this project has no JavaScript runner for the
+    generated worker. They are written as structural outcomes -- branch ordering, and the
+    absence of any cache call inside the branch -- rather than as pinned text, matching
+    ServiceWorkerAssetFallbackTests above. The behavioural proof is a browser pass: seed the
+    cache as an admin, sign in as HR, and confirm the redacted file comes back, online and
+    with the network genuinely stopped.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        cls.fetch_handler = cls.source.split("self.addEventListener('fetch', event => {")[1].split('\n});')[0]
+
+    def test_exports_are_handled_before_the_navigation_branch(self):
+        """Ordering is the whole fix.
+
+        The Export button is `window.location.href = '/export_timeline?...'`, so the request
+        arrives with mode 'navigate'. If the navigate branch ran first it would reach
+        fieldNavigationFirst(), which caches every ok response and serves it back whenever
+        the network throws -- so the leak would survive on exactly the path a real user takes.
+        """
+        export_at = self.fetch_handler.find("url.pathname.startsWith('/export_')")
+        navigate_at = self.fetch_handler.find("request.mode === 'navigate'")
+        self.assertGreater(export_at, -1, 'the export branch is missing')
+        self.assertGreater(navigate_at, -1, 'the navigate branch is missing')
+        self.assertLess(export_at, navigate_at,
+                        'exports must be matched before the navigation branch')
+
+    def test_the_export_branch_touches_no_cache_at_all(self):
+        branch = self.fetch_handler.split("url.pathname.startsWith('/export_')")[1].split('return;')[0]
+        self.assertIn('event.respondWith(fetch(request))', branch)
+        for forbidden in ('caches.', 'cache.put', 'cache.match', 'RUNTIME_CACHE',
+                          'networkFirst', 'staleWhileRevalidate', 'cacheFirst',
+                          'fieldNavigationFirst'):
+            self.assertNotIn(forbidden, branch,
+                             f'the export branch must not reach {forbidden}')
+
+    def test_exports_reach_no_other_strategy_later_in_the_handler(self):
+        """Positive control on the negative: prove the branch actually returns.
+
+        Without the `return;` the request would fall through to staleWhileRevalidate at the
+        bottom of the handler, which serves a cached copy even while online -- the exact way
+        the leak was first reproduced.
+        """
+        after_export = self.fetch_handler.split("url.pathname.startsWith('/export_')")[1]
+        self.assertRegex(after_export.split('}')[1] if '}' in after_export else after_export,
+                         r'\s*return;')
+
+    def test_the_worker_was_bumped_so_poisoned_entries_are_evicted(self):
+        """A fix that leaves the old cache in place fixes nothing on existing devices.
+
+        activate() deletes every cache whose name is not the current APP_SHELL/RUNTIME pair,
+        so renaming via CACHE_VERSION is what actually drops an already-poisoned entry.
+        """
+        from tests.sw_cache_version import assert_cache_version_at_least
+        assert_cache_version_at_least(self, 71, self.source)
+        activate = self.source.split("self.addEventListener('activate'")[1].split('});')[0]
+        self.assertIn('caches.delete(key)', activate)
+
+
 class OfflineQueueUnwrapTests(unittest.TestCase):
     """A missing IndexedDB record must never read as present."""
 

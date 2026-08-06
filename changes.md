@@ -2,6 +2,51 @@
 
 claude changes - 2026-08-06
 
+## Authenticated exports are network-only, closing the runtime-cache leak
+
+* Fixed the export cache leak recorded as open bug 1a. `/export_` requests are now handled by a
+  plain `fetch(request)` with no cache read and no cache write, and the branch is matched
+  **before** the navigation branch in the service worker's fetch handler.
+* **Why the ordering is the fix, not a detail.** The Export button is
+  `window.location.href = '/export_timeline?...'`, so the request arrives with
+  `mode === 'navigate'`. Matched after the navigate branch it would reach
+  `fieldNavigationFirst()`, which caches every ok response and serves it back whenever the network
+  throws — so the leak would have survived on exactly the path a real user takes, while looking
+  fixed on the path used to demonstrate it.
+* **Scoped to `/export_` because these routes return different content for the same URL.**
+  `/export_timeline` redacts job titles and equipment for an HR account and does not for an admin,
+  while a cache entry is keyed on the URL alone. That property — not "it is a download" — is what
+  makes caching unsafe here. All eight `/export_*` routes share it, and **none is referenced by any
+  offline workflow**, so network-only removes nothing a field engineer relies on.
+  `/preview_tsr_archive` and `/download_tsr_archive` were deliberately left on `networkFirst`: a
+  given file is either allowed or refused for an account, the content does not vary by role, and
+  they are part of field use.
+* **No fallback `Response` on failure, deliberately.** A synthetic body would be written to disk as
+  the downloaded file. Letting the request fail offline is honest — an export cannot be generated
+  without the server.
+* **Bumped the worker to `v71-export-network-only`.** This is what actually repairs devices that
+  already hold a poisoned entry: `activate()` deletes every cache whose name is not the current
+  APP_SHELL/RUNTIME pair, so renaming via `CACHE_VERSION` drops the old runtime cache. A fix without
+  the bump would have left existing devices leaking.
+* **Verified in a browser, both halves.** Online: as a superadmin, fetching `/export_timeline`
+  returned the unredacted CSV and wrote **nothing** to any cache; after logout and signing in as HR,
+  the same URL returned the **redacted** file, where before it returned the superadmin's copy.
+  Offline — the half that was previously only inferred — with the server genuinely stopped, no
+  export entry existed in any cache and the request **failed** rather than serving anyone's copy.
+* **Confirmed the fix did not break offline mode**, which was the real risk in touching this
+  handler: with the server still stopped, `/timeline` loaded from cache with its calendar intact.
+* Added `ExportsAreNeverCachedTests`: the export branch precedes the navigate branch (asserted by
+  index comparison, the same structural style as `ServiceWorkerAssetFallbackTests`), the branch
+  contains no `caches.`/`cache.put`/`cache.match`/strategy call, it returns rather than falling
+  through to `staleWhileRevalidate`, and the version floor is 71. These are source assertions
+  because there is no JavaScript runner for the generated worker; they assert structure and
+  ordering rather than pinned text, and the browser pass above is the behavioural proof.
+* All three injections reproduced their defect — including one that **only moved the branch**,
+  changing nothing else — verified by SHA with `app.py` byte-identical afterwards. Suite green at
+  **485** (was 481).
+* Added the `2026-08-06-exports-always-come-from-the-server` release item. This is a genuine
+  user-visible behaviour change: exports now require a connection.
+
 ## The same write-back in the stock inventory switches, at the owner's request
 
 * Fixed the two remaining Settings switches that reported an effective permission rather than

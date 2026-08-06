@@ -12,7 +12,8 @@ done and a seventh feature shipped and was reviewed**. Three things changed the 
 
 1. **All six 2026-08-05 features were driven through a browser.** That was the largest unverified
    block in this file and it is now closed — see section 3. Five passed. The pass found **two new
-   open bugs**, both in section 1, and **neither is fixed**.
+   bugs**, both in section 1. **1a (the export cache leak) was fixed the same day**; **1b (every
+   provisional-leave failure reason discarded before the user sees it) is still open.**
 2. **P.O. Details shipped** (`b01c78c`, `3dd83b1`, Codex) and was reviewed here (`5b40dde`). The
    implementation was sound; the review found the Settings switch reporting an effective
    permission rather than the stored grant, and that the journal claimed test coverage that did
@@ -97,8 +98,9 @@ reviews that followed.
 | `b01c78c` `3dd83b1` | P.O. Details register and its grantable access toggle (Codex) |
 | `5b40dde` | **Review fix** — the P.O. Settings switch reported the effective permission, not the stored grant; six missing tests added |
 | `ad463c8` | The same write-back fixed in the two stock inventory switches, at the owner's request |
+| `v71` bump | Authenticated exports made network-only, closing open bug 1a — the runtime-cache leak |
 
-Suite green at **481 tests**. Service worker cache at **`v70-po-details`** —
+Suite green at **485 tests**. Service worker cache at **`v71-export-network-only`** —
 **read the live value out of `app.py` immediately before committing**, never from a note.
 
 **Every review found something, and two were live privilege escalations.** That is the single
@@ -146,9 +148,43 @@ session recorded.
 
 ## 1. Open bugs
 
-**Two open, both found by the 2026-08-06 browser pass, and neither is fixed.** They were
-reported to the owner and left rather than fixed in passing, because the first is a decision
-and the second sits inside a feature shipped the day before.
+**One open.** Both were found by the 2026-08-06 browser pass; **1a was fixed later the same day**
+at the owner's request and is kept below with its reproduction, because the mechanism is worth
+knowing before touching the service worker again. **1b is still open and unfixed.**
+
+### ~~1a. The service worker runtime cache serves one account's export to another~~ — FIXED, `v71`
+
+**Fixed the same day.** `/export_` requests are now network-only — matched **before** the
+navigation branch, with no cache read and no cache write — and the worker was bumped to
+`v71-export-network-only`, which is what actually repairs devices already holding a poisoned
+entry, since `activate()` deletes every cache whose name is not the current pair.
+
+**Verified in a browser, both halves.** Online: a superadmin's fetch returned the unredacted CSV
+and wrote nothing to any cache; after logout and signing in as HR, the same URL returned the
+**redacted** file. Offline — the half that was previously only inferred — with the server genuinely
+stopped, no export entry existed in any cache and the request **failed** rather than serving
+anyone's copy. `/timeline` still loaded from cache with the server down, so offline mode survived.
+
+Three things worth carrying forward:
+
+- **The ordering was the fix.** The Export button is `window.location.href = ...`, so it arrives as
+  a **navigation**. Matched after the navigate branch it would have reached
+  `fieldNavigationFirst()` — which caches every ok response and serves it back on network failure —
+  so the leak would have survived on exactly the path a real user takes while looking fixed on the
+  path used to demonstrate it. A test asserts the ordering by index comparison.
+- **The scope test is "does the same URL return different content per role", not "is it a
+  download".** All eight `/export_*` routes vary by role and none appears in any offline workflow.
+  `/preview_tsr_archive` and `/download_tsr_archive` were deliberately left on `networkFirst`:
+  a given file is either allowed or refused for an account, the content does not vary by role, and
+  they are part of field use.
+- **No fallback `Response` on failure, deliberately** — a synthetic body would be written to disk
+  as the downloaded file.
+
+The original reproduction is kept below, because it is the clearest worked example in this file of
+a cache key being wrong rather than a cache being stale.
+
+<details>
+<summary>Original entry, retained for the mechanism</summary>
 
 ### 1a. The service worker runtime cache serves one account's export to another
 
@@ -174,6 +210,13 @@ path plus the confirmed cache entry; the online scripted-fetch leak is demonstra
 offline half needs a deliberate pass with the network genuinely down.
 
 This is the item that **re-opens a section 5 decision** — see the correction there.
+
+</details>
+
+**The section 5 question it raised is still open even though the leak is closed.** Fixing
+`/export_` fixed the route that was demonstrated. It did **not** answer whether the runtime cache
+should be cleared on logout in general — authenticated HTML still persists there after sign-out,
+and the reasoning that made that acceptable predates the HR role. Read the correction in section 5.
 
 ### 1b. Every provisional-leave failure reason is discarded before the user sees it
 
@@ -766,6 +809,10 @@ week and has since been completed has left the overdue set, so any reconstructed
 figure is systematically undercounted. That would be a wrong number wearing an authoritative
 arrow.
 
+> **STILL OPEN after the `v71` fix.** `/export_` is now network-only, so the *route* that was
+> demonstrated can no longer leak — but that closed one route, not the question below. Every other
+> authenticated response the runtime cache holds still survives a sign-out.
+>
 > **RE-OPENED 2026-08-06 — do not treat the entry below as settled.** It was decided on the
 > grounds that engineers are issued 1:1 devices, and it was written about cached **HTML**. The
 > 2026-08-06 browser pass demonstrated the same cache serving an **authenticated data export**
