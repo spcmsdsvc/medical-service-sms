@@ -7,11 +7,25 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last filled: 2026-08-05 (end of session), at the owner's request, after **six features shipped
-and were reviewed in one day**: HR schedule viewer, staff types on Add Personnel, provisional
-leave, request recall, grantable admin capabilities, and TSR previews on schedule cards. Every
-one was built by Codex from a plan recorded here and reviewed afterwards in this repository. The
-review found two privilege escalations and one silent-no-op; all are fixed and pushed.
+Last filled: 2026-08-06, at the owner's request, after **the 2026-08-05 browser pass was finally
+done and a seventh feature shipped and was reviewed**. Three things changed the picture:
+
+1. **All six 2026-08-05 features were driven through a browser.** That was the largest unverified
+   block in this file and it is now closed — see section 3. Five passed. The pass found **two new
+   open bugs**, both in section 1, and **neither is fixed**.
+2. **P.O. Details shipped** (`b01c78c`, `3dd83b1`, Codex) and was reviewed here (`5b40dde`). The
+   implementation was sound; the review found the Settings switch reporting an effective
+   permission rather than the stored grant, and that the journal claimed test coverage that did
+   not exist.
+3. **The same write-back was fixed in the stock inventory switches** (`ad463c8`) at the owner's
+   request, which **partly overturns an entry in section 5** — read that section's correction
+   before trusting it.
+
+Filled previously on 2026-08-05 (end of session) after **six features shipped and were reviewed in
+one day**: HR schedule viewer, staff types on Add Personnel, provisional leave, request recall,
+grantable admin capabilities, and TSR previews on schedule cards. Every one was built by Codex from
+a plan recorded here and reviewed afterwards in this repository. That review found two privilege
+escalations and one silent-no-op; all are fixed and pushed.
 
 Filled earlier the same day recording the barcode scanner verified clean and the What's New
 digest self-test sent, and on 2026-08-04 after the offline audit and the review of two commits
@@ -76,7 +90,15 @@ reviews that followed.
 | `6fa7fe4` `4748cac` | TSR previews from the schedule details popover (Codex) |
 | `9b33c02` | **Review fix** — three tests asserted source text, not behaviour |
 
-Suite green at **468 tests**. Service worker cache at **`v69-tsr-link-tap-target`** —
+**The 2026-08-06 run.**
+
+| Commit | What |
+| --- | --- |
+| `b01c78c` `3dd83b1` | P.O. Details register and its grantable access toggle (Codex) |
+| `5b40dde` | **Review fix** — the P.O. Settings switch reported the effective permission, not the stored grant; six missing tests added |
+| `ad463c8` | The same write-back fixed in the two stock inventory switches, at the owner's request |
+
+Suite green at **481 tests**. Service worker cache at **`v70-po-details`** —
 **read the live value out of `app.py` immediately before committing**, never from a note.
 
 **Every review found something, and two were live privilege escalations.** That is the single
@@ -124,9 +146,61 @@ session recorded.
 
 ## 1. Open bugs
 
-**None currently open.** Everything found in the 2026-08-01 offline audit has shipped; the
-five items it raised are all closed (`a01f2b6`, `515698f`, `f268397`, `ca00803`). The four
-defects found in the 2026-08-05 reviews are all fixed and pushed.
+**Two open, both found by the 2026-08-06 browser pass, and neither is fixed.** They were
+reported to the owner and left rather than fixed in passing, because the first is a decision
+and the second sits inside a feature shipped the day before.
+
+### 1a. The service worker runtime cache serves one account's export to another
+
+**Reproduced end to end, online.** As superadmin `jonamar`, `fetch('/export_timeline')`; log
+out; log in as an **HR** account; fetch the same URL — and receive the **unredacted** CSV,
+containing job titles and equipment. Those are the exact two fields the HR role exists to hide,
+and the exact leak `5278df2` fixed server-side.
+
+Confirmed to be the service worker rather than the HTTP cache: `caches.keys()` shows
+`/export_timeline` held in the `…-runtime` cache. The route matches none of the network-first
+prefixes in the fetch handler (`/get_`, `/api/`, `/preview_tsr_archive`, `/download_tsr_archive`,
+`/search_products`, `/search_clients`) and is not `/static/`, so a non-navigation GET falls
+through to `staleWhileRevalidate`. **Logout does not clear the runtime cache.**
+
+**Scope, stated precisely, because the two paths differ.** The real Export CSV button is
+`window.location.href = '/export_timeline?offset=..&branch=..'` (`templates/timeline.html`), which
+is `mode === 'navigate'` and therefore goes to `fieldNavigationFirst` — that is network-first, so
+**online the button always returns a correctly redacted file**. But the same function writes every
+successful response into the runtime cache and serves `exactCached` whenever the network throws.
+The user-reachable form is therefore: shared device, HR user offline or server unreachable, same
+`offset`/`branch` as the admin's earlier export. **That offline case is inferred from the code
+path plus the confirmed cache entry; the online scripted-fetch leak is demonstrated.** Proving the
+offline half needs a deliberate pass with the network genuinely down.
+
+This is the item that **re-opens a section 5 decision** — see the correction there.
+
+### 1b. Every provisional-leave failure reason is discarded before the user sees it
+
+`handleScheduleError` reads `errorPayload?.message`, but **every** failure return from
+`/api/leave-requests/provisional` sets `error`, never `message`. The payload also carries neither
+`status: 'conflict'` nor `conflict`, so the conflict branch does not fire either and it falls to
+the generic fallback.
+
+Observed: plotting provisional leave on a Sunday returns
+`400 {"error": "The selected range contains no weekdays."}` and the screen shows only
+**"Action Needed — Unable to record provisional Leave."** Seven actionable reasons are lost this
+way, including the most useful one — the 409, which returns `supersedable_provisionals` naming the
+conflicting request, its number, type and dates. A superadmin plotting over an existing
+provisional block is told it failed and given nothing to act on.
+
+The success path reads `.message` and the endpoint *does* set `message` on success, which is why
+this only shows on failure. The fix is one key, but check every caller of `handleScheduleError`
+before changing the helper rather than the endpoint.
+
+**Not a broken supersede, and this was nearly recorded as one.** Supersede fires on **approval of
+the formal Leave Request**, not on plotting a second provisional, so the 409 is correct behaviour.
+The `b5dd637` message naming both leave types lives on that approval path and was **not**
+re-verified in a browser — it is server-side text the earlier review proved by calling.
+
+**Everything else is closed.** The 2026-08-01 offline audit's five items all shipped
+(`a01f2b6`, `515698f`, `f268397`, `ca00803`), and the four defects from the 2026-08-05 reviews
+are all fixed and pushed.
 
 **Fixed on 2026-08-05, and worth reading even though they are closed — each was live on
 `origin/main` with a green suite:**
@@ -150,6 +224,34 @@ defects found in the 2026-08-05 reviews are all fixed and pushed.
 ---
 
 ## 2. Queued work
+
+### P.O. reporting on the Analytics page — AGREED, NOT PLANNED
+
+The owner asked for this in the same breath as the P.O. Details page: *"then we will update
+analytics page afterwards to show the reports regarding the P.O page."* The register shipped
+(`b01c78c`); this half has **no plan yet** and should get one before any code.
+
+**Decide this first, because it is a real choice and not an implementation detail:**
+`/analytics_page` gates on `can_view_admin_reports()` — a **different** flag from
+`po_admin_access`. So either the P.O. cards show to reports-admins, or to
+`can_view_admin_reports() or can_manage_purchase_orders()`, or a separate endpoint sits under the
+P.O. flag. Nobody has chosen.
+
+Settled already, and worth not relitigating: the P.O. record carries **no monetary amount** by
+owner decision, deliberately keeping this clear of the spend-reporting work deferred below. So the
+reports are **counts** — total in range, Contract vs Single Visit, top clients, P.O.s per month.
+
+Two things about the existing page that shape the endpoint:
+
+- **There is no charting library in this repo.** `renderMiniChart()` and `renderBars()` in
+  `templates/analytics.html` are hand-rolled flexbox bars that take a flat `{label: count}`
+  object, so an endpoint emitting that shape needs no new charting code at all.
+- **Both helpers interpolate labels unescaped**, into `title="${label}"` and the bar label. P.O.
+  labels are client names, which are user-entered. Fix the two helpers to escape — that also
+  benefits the existing branch and engineer charts — rather than escaping at each call site.
+
+Reuse `analytics_date_bounds()` unchanged for the range. The `purchase_order` indexes added in
+`b01c78c` (`(client_id, po_date)`, `(po_number)`, `(po_date)`) already serve the grouping.
 
 ### ~~Create TSR on a schedule that has not synced yet~~ — BUILT in `28ba1b0`
 
@@ -364,31 +466,36 @@ None of this is known broken — it simply has not been checked.
 | **Mobile viewport (375px)** | the What's New filter/search row. Every dashboard phase and the ratification were checked at 375px; this row still has not been |
 | **Skip link visual reveal on real keyboard focus** | layout shell |
 | **Offline schedule attachments from a real device camera** | the least-proven part of `709106c` — see below |
-| **Everything shipped on 2026-08-05, in a browser** | **All six features.** See the note directly below — this is the largest unverified block in the file |
+| **The provisional-leave supersede notice, in a browser** | `b5dd637` names both leave types on the **approval** path, which the 2026-08-06 pass did not reach — see section 1b |
+| **P.O. Details on Edge, Brave, and in dark mode** | verified in one browser, light theme only |
 
-### The 2026-08-05 features were proven by calling, not by using
+### ~~The 2026-08-05 features were proven by calling, not by using~~ — DONE, 2026-08-06
 
-Every review that day verified behaviour **through the endpoints** — building a user, hitting the
-route, asserting the status code and the response body. That is the right way to prove
-authorization, and it is how both privilege escalations were found. It proves nothing about
-whether the screens work.
+**All six were driven through a browser** at desktop and, where it mattered, 375 px. This was the
+largest unverified block in the file. **Five passed.** The pass found the two bugs now in section 1.
 
-Codex reports local browser and smoke checks in its `changes.md` entries; those were not
-independently repeated here. So for each of the six, the server behaviour is well proven and the
-interface is not:
+Screenshots were unavailable — the Browser pane does not composite frames — so verification used
+the accessibility tree, real click handlers, and measured geometry (`getBoundingClientRect` /
+`getComputedStyle`). **For tap targets that is stronger evidence than a screenshot**; for pure
+visual polish it is weaker, and that limit is why the dark-mode and other-browser row above stays open.
 
-| Feature | Proven by calling | Not seen on a real viewport |
-| --- | --- | --- |
-| HR schedule viewer | Redacted feed and export, all writes refused, stripped nav computed | The HR account's actual calendar, sidebar, and that no control is reachable |
-| Staff types on Add Personnel | All four escalation paths refused, three account shapes created | The modal's staff-type switching, which fields hide, the success message |
-| Provisional leave | Blocks created, superseded with zero duplicates, audit text | Plotting from the real Add Schedule modal; the engineer completing the record |
-| Request recall | Every guard, the race guard, provisional blocks preserved | The recall modal in all five requester templates, and its required-reason field |
-| Admin capabilities | Per-capability endpoint access, escalation refused, branch limit restored | The three Settings toggles, and what a grantee's sidebar actually shows |
-| Schedule-card TSR previews | `is_tsr` on both endpoints, HR redaction, identical shapes | **The whole point of the feature** — opening Details and clicking through to a TSR |
+| Feature | Outcome on a real viewport |
+| --- | --- |
+| Schedule-card TSR previews | **Pass.** Details lists only the recognised TSR and counts the other attachment separately, so photos are not presented as service reports; the link opens the right PDF; 66 px rendered on `min-height: 44px`; at 375 px the lite sheet shows the same list and **View Files opens no modal** — the Edit-modal workaround is genuinely gone |
+| HR schedule viewer | **Pass on screen**, but see section 1a. Sidebar stripped to Calendar + Password Settings, calendar redacted, five routes 403, the Details popover carries no attachments section. Its Edit/Delete/Send TSR buttons render but are `disabled` — cosmetic, not a hole |
+| Staff types on Add Personnel | **Pass.** Engineer / HR / Approver each show and hide the right fields; creating an HR account gave an accurate message. The `79d2847` refusal is reachable from Settings → Approval Routing, not the modal, and names "Can Approve Requests" — the switch actually ticked |
+| Grantable admin capabilities | **Pass.** Toggles persist; the grantee's sidebar gains Reports and Personnel. **`54c4aaa` holds**: as the regional admin with the branch filter on Manila, every row is View-only with zero Add/Edit/Delete, against a superadmin control showing those same rows editable |
+| Request recall | **Pass.** Withdraw appears only on Submitted rows; empty reason refused client-side with **no network call**; with a reason the request went Submitted → Draft with the provisional block untouched; at mobile width all three buttons 44 px, no overflow |
+| Provisional leave | **Works, but see section 1b.** Category → Leave reveals the type selector and notes; a Sick Leave block was recorded from the real Add Schedule modal |
 
-The last row matters most: it is a pure interface feature, so calling the endpoint confirms the
-data and says nothing about whether a user can reach it. Worth one deliberate browser pass across
-all six before the next feature lands on top, at 375 px as well as desktop.
+**Two fixture traps nearly became false findings**, both failing in the reassuring direction:
+`/export_timeline` joins `ShiftEngineer` while the calendar reads `Shift.engineer_id`, so a fixture
+setting only the latter renders a full calendar and an all-`-` export — which reads exactly like an
+over-redaction bug; and a long-lived Flask session held a stale SQLite snapshot, so rows inserted by
+a separate process stayed invisible until the server was restarted, which reads exactly like a write
+that silently failed. A third was pure measurement error: the sidebar's Reports and Resources groups
+are **collapsed accordions**, so filtering nav links on `offsetParent !== null` hid them and made a
+correctly-provisioned grantee look denied.
 
 On the skip link: the Browser pane does not composite frames, so CSS transitions never
 advance, and its window is unfocused so `:focus` never matches. Disabling the transition
@@ -563,6 +670,24 @@ total, and surface a mismatch warning. Raised with the owner as a business decis
 a technical one — the smoke case differed by ₱18,339 — and **the owner rectified it separately
 and confirmed the rule stands**. Do not "fix" this back to `row_total`.
 
+> **Corrected 2026-08-06 — the entry below still stands, but only for the predicate.** The
+> *serializer* beside it did not. `approval_user_to_dict()` reported
+> `can_manage_stock_inventory(user)` and `is_stock_inventory_only_user(user)` rather than the
+> stored columns, and because that dict renders the Settings switches while `saveApprovalUser()`
+> posts the rendered state straight back, a computed value silently rewrote what it displayed:
+> the inventory switch showed **checked** for every superadmin with nothing granted, and saving
+> any unrelated change on their card then wrote `can_manage_stock_inventory=True` plus an audit
+> line for a grant nobody performed. `stock_inventory_only` was wrong in the **opposite**
+> direction — stored True, shown False whenever access was False — so a save would have silently
+> *cleared* a grant an admin did set. Both fixed in `ad463c8`; the predicate is untouched and
+> `StockInventorySuperadminBypassTests` still pins it. A superadmin's switch now renders
+> unchecked **and** that account still gets 200 on `/stock_inventory`.
+>
+> `approver_only` was deliberately left computed and now has a test guarding that: it has no
+> column, being derived from `role` plus `can_approve_requests`, and the save route flips the role
+> from it. **The rule the three fields together teach: report the stored grant when a column backs
+> it, and only compute when nothing does.**
+
 **The superadmin bypass in `can_manage_stock_inventory`.** It returns true for superadmins
 regardless of the stored toggle. That looks like a hole and is not: `is_superadmin_user` is a
 hardcoded username allowlist rather than a settable flag, and `stock_inventory_can_administer`
@@ -641,6 +766,16 @@ week and has since been completed has left the overdue set, so any reconstructed
 figure is systematically undercounted. That would be a wrong number wearing an authoritative
 arrow.
 
+> **RE-OPENED 2026-08-06 — do not treat the entry below as settled.** It was decided on the
+> grounds that engineers are issued 1:1 devices, and it was written about cached **HTML**. The
+> 2026-08-06 browser pass demonstrated the same cache serving an **authenticated data export**
+> across accounts: a superadmin's unredacted `/export_timeline` CSV returned to a logged-in **HR**
+> session on the same browser. See section 1a for the reproduction and the precise scope. Two
+> things the original decision could not have weighed: the HR role did not exist on 2026-07-28,
+> and it is the first role whose entire purpose is to see **less** than another role on the same
+> screen — so the redaction contract is per-account while the cache key has no account in it.
+> The 1:1-device argument may still carry the day; it simply has not been tested against this case.
+
 **Clearing the service worker runtime cache on logout.** Authenticated HTML persists in
 `RUNTIME_CACHE` after sign-out, so on a shared device an offline user could see the previous
 user's cached pages. The owner confirmed on 2026-07-28 that engineers are issued **1:1
@@ -655,6 +790,34 @@ routine.
 ---
 
 ## 6. Patterns worth knowing before the next feature
+
+### The three from 2026-08-06
+
+**1. A value that is displayed and then posted back must be the stored value, not a computed one.**
+This is a whole *class*, not one bug: it was found in `po_admin_access`, then in
+`can_manage_stock_inventory` and `stock_inventory_only` beside it. `approval_user_to_dict()` renders
+the Settings switches and `saveApprovalUser()` posts the rendered state straight back, so any field
+reported as an effective permission silently **rewrites** what it displayed — persisting a flag
+nobody set and writing an audit line for a grant nobody performed. It is not an escalation, because
+the accounts already held the access; the damage is to the record of *intent*, in the one log that
+answers "who was given what". The rule: **report the stored grant wherever a column backs it, and
+compute only where nothing does.** `approver_only` is the legitimate exception — it has no column —
+and now carries a test saying so, because the next reader will otherwise "fix" it too.
+
+**2. Ask whether an odd-looking choice is a fresh fault or a replicated one, before grading it.**
+The P.O. serializer looked like a clear regression against its three siblings. Probing
+`can_manage_stock_inventory` showed identical behaviour — so it was a *precedent* being followed,
+just the older and odder one. That changed the finding from "Codex introduced a bug" to "this
+replicates a known wart", which is a different conversation with the owner and a different fix
+scope. One probe, and it was the difference between an accurate report and an unfair one.
+
+**3. Two fixtures that agree cannot test the thing that separates them.** The first version of the
+stock-inventory test passed whether `stock_inventory_only` reported the stored or the computed
+value, because in both fixtures those agreed. It read as complete coverage. It took a third account
+— only-mode stored True with access False, the single combination where the two diverge — to make
+the injection go red. When a fix changes *which* of two sources a value comes from, the fixture
+must contain a case where those two sources **disagree**, or the test is decoration. Related: run
+each field's injection **separately**; reverting both at once would have hidden this.
 
 ### The four lessons from 2026-08-05, in order of how much time they will save you
 
