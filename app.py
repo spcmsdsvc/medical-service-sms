@@ -14826,7 +14826,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v78-signature-stamp-scale';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v79-tsr-footer-reserve';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -22120,7 +22120,12 @@ def reimbursement_approval_signature_overlay_pdf(header, page_width, page_height
                 image_width, image_height = signature_image.size
 
             if image_width and image_height:
-                box_width = width * 0.82 * SIGNATURE_STAMP_SCALE
+                # Capped at the field's own width. 0.82 * 1.5 is 1.23, so the enlarged box
+                # was wider than the field it belongs to -- and because draw_x centres on
+                # `width` rather than on box_width, a wide signature hung ~11% of the field
+                # width past each edge, into whatever sits beside the APPROVED BY box.
+                # Height still grows freely; only the horizontal bleed is contained.
+                box_width = min(width, width * 0.82 * SIGNATURE_STAMP_SCALE)
                 box_height = sig_area_height * SIGNATURE_STAMP_SCALE
                 fit_scale = min(
                     box_width / float(image_width),
@@ -51145,6 +51150,18 @@ def lpr_form_field_rects(reader):
     return rects
 
 
+def lpr_scaled_fallback_box(x, y, width, height):
+    """Scale a measured fallback signature box, keeping its right edge on the line.
+
+    The measured fallbacks were taken at the pre-enlargement size. Growing width from the
+    left keeps the stamp anchored to the right-hand end of the signature line, which is
+    where lpr_signature_box() puts it and where the typed name is not.
+    """
+    scaled_width = width * SIGNATURE_STAMP_SCALE
+    scaled_height = height * SIGNATURE_STAMP_SCALE
+    return (x + width - scaled_width, y, scaled_width, scaled_height)
+
+
 def lpr_signature_box(field_rect, fallback):
     """Signature placement inside a signature line, clear of the printed name.
 
@@ -51227,12 +51244,17 @@ def lpr_fill_pdf_bytes(header, approved_by_user=None):
                 )
 
             # Fallbacks are the measured positions for the current template, used only if the
-            # field rectangles cannot be read.
+            # field rectangles cannot be read. They carry SIGNATURE_STAMP_SCALE too: a fallback
+            # left at the pre-enlargement size would silently hand back a small signature on
+            # exactly the templates whose fields could not be read, which is the case nobody
+            # looks at.
             field_rects = lpr_form_field_rects(reader)
             requester_box = lpr_signature_box(
-                field_rects.get('Requested by'), (189.1, 38.3, 83.8, 12.45))
+                field_rects.get('Requested by'),
+                lpr_scaled_fallback_box(189.1, 38.3, 83.8, 12.45))
             approver_box = lpr_signature_box(
-                field_rects.get('Approved by'), (447.8, 52.2, 86.0, 12.5))
+                field_rects.get('Approved by'),
+                lpr_scaled_fallback_box(447.8, 52.2, 86.0, 12.5))
 
             draw_signature(header.requester_signature_snapshot, *requester_box)
             draw_signature(header.approval_signature_snapshot, *approver_box)

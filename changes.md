@@ -1,5 +1,73 @@
 # Project Change Log
 
+claude changes - 2026-08-07 (signature stamp review)
+
+## Reviewed `8d97b58` against the recorded plan
+
+* **The implementation is sound.** One `SIGNATURE_STAMP_SCALE` knob reaches all eleven stamping
+  sites, the two `1.0` upscale caps were raised rather than removed, the Excel image dimensions and
+  their `OneCellAnchor` `ext` move together, the worker was bumped and the changelog entry added.
+* **The accepted overlap was measured on a rendered LPR, which the implementation did not do.**
+  Requester stamp `x[164.7, 255.4] y[38.3, 57.0]` crosses `EQUIPMENT ROW VALUE` at `y[52.6, 66.0]`
+  by **4.4 pt**; approver stamp `x[423.7, 514.8] y[52.2, 71.0]` crosses `INV-456` at
+  `y[66.5, 79.9]` by **4.5 pt**. Both grew exactly 1.5×. This is the trade the owner accepted, now
+  on the record with numbers rather than as a prediction.
+
+## Fixed: the TSR footer outgrew the space reserved for it
+
+* `reserveAfterActions` ended in a hardcoded `247` — which is **exactly** the old footer height:
+  the fixed spacing in `drawTSRSignatureFooter` is `20+27+12+52+22+28+18 = 179`, plus the old 68 px
+  signature row. Enlarging the row to 102 px made the footer 281 px while the reserve still said
+  247, so the page's bottom margin collapsed from 40 px to **6 px**, and any TSR whose Actions box
+  is already at its `Math.max(420, …)` floor overflowed **34 px** further.
+* Replaced with `TSR_SIGNATURE_FOOTER_HEIGHT = TSR_SIGNATURE_FOOTER_FIXED_HEIGHT + TSR_SIGNATURE_ROW_HEIGHT`,
+  used by both the reserve and the renderer, so the two cannot drift again. **Confirmed in the live
+  page**: the old constant equals the old footer height exactly, and the shortfall was 34 px.
+
+## Fixed: the loosened LPR guard checked the wrong row for the requester
+
+* Both fields were bounded against `rects['Intended for'][3]` (79.2) — but that is the row above the
+  **approver**. The requester's neighbour is `Equipment`, top **65.3**, so the guard allowed the
+  requester stamp to grow 14 pt further than its own row permits. At scale 2.5 it covers the
+  Equipment row outright and the suite still passes.
+* The bound is now per-field (`Requested by → Equipment`, `Approved by → Invoice No`), each with a
+  positive control asserting the named row really is the one immediately above.
+* **Restored the deleted downward bound.** `assertGreaterEqual(y, fy0)` had been removed outright
+  rather than loosened; the box `y` is unchanged at `y0 + 0.6`, so it would have passed as written.
+  Enlarging the stamp never required giving that guard up.
+
+## Fixed: the PCV stamp could hang outside its own field
+
+* `width * 0.82 * 1.5` is `1.23 × width`, so the enlarged box was wider than the field holding it,
+  while `draw_x` still centred on `width` — a wide signature hung roughly 11% of the field width
+  past **each** edge, into whatever sits beside the APPROVED BY box. Capped at the field width;
+  height still grows freely.
+* **The first version of this test proved nothing** — it recomputed the formula instead of calling
+  the code, so it passed with the defect injected. Rewritten to render the real overlay and measure
+  the placed image rect, at which point it went red. Same family as the traps in section 6 of
+  `pending-work.md`: a verification step failing in the reassuring direction.
+
+## Fixed: the LPR fallback boxes were left at the old size
+
+* `lpr_signature_box()` returns its `fallback` untouched when the template's field rectangles cannot
+  be read, and both fallbacks still carried pre-enlargement dimensions — so a template whose
+  AcroForm could not be parsed would silently produce small signatures, on exactly the path nobody
+  inspects. Added `lpr_scaled_fallback_box()`, which scales them and grows leftward so the right
+  edge stays on the signature line.
+
+## Tests
+
+* Replaced the source-string matching in `tests/test_signature_stamp_sizes.py` with assertions that
+  carry signal: the **absence** of each pre-enlargement literal (so a rewritten site still passes,
+  a reverted one fails), a rendered-and-measured PCV overlay, and the derived TSR reserve. An exact
+  usage count was tried and rejected — it would fail on every future edit to an unrelated site.
+* All five fixes proved to fail when re-injected, one at a time, verified by SHA with both files
+  restored byte-identical. Suite green at **534**. `app.py` compiles; the TSR inline script passes
+  `node --check` after Jinja substitution.
+* Worker `v78-signature-stamp-scale` → **`v79-tsr-footer-reserve`**, required because
+  `templates/offline_tsr.html` is an `APP_SHELL` entry and a cached device would keep the old
+  footer arithmetic.
+
 claude changes - 2026-08-07 (verification pass)
 
 ## A malformed engineer list 500s instead of returning a 400

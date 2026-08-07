@@ -247,9 +247,22 @@ class LPRSignaturePlacementTests(unittest.TestCase):
                 f'signature stamping no longer goes through the computed box: {call!r}'
             )
 
+    # The row sitting directly above each signature line on this template. The bound has to
+    # be per-field: 'Intended for' is above the APPROVER line, and using it for both let the
+    # requester stamp grow 14pt further than its own neighbour allows -- far enough to cover
+    # the Equipment row whole while the test still passed.
+    ROW_ABOVE = {'Requested by': 'Equipment', 'Approved by': 'Invoice No'}
+
     @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
-    def test_each_signature_sits_inside_its_own_field(self):
-        """The enlarged stamp may rise into the row above, but not past its top edge."""
+    def test_each_signature_stays_within_one_row_of_its_own_line(self):
+        """The enlarged stamp may rise into the row above, but not past that row's top.
+
+        The original assertion was that the stamp stayed inside its own field. That bound was
+        deliberately loosened when the owner accepted overflow in exchange for a bigger
+        signature -- so this now allows exactly one row of encroachment and no more. The
+        downward bound and both horizontal bounds are unchanged: nothing about enlarging the
+        stamp required giving those up.
+        """
         template = app_module.find_lpr_form_template_path()
         if not template:
             self.skipTest('LPR FORM.pdf is not available in this environment')
@@ -258,40 +271,64 @@ class LPRSignaturePlacementTests(unittest.TestCase):
         self.assertIn('Requested by', rects, 'template field rectangles could not be read')
         self.assertIn('Approved by', rects)
 
-        for field_name in ('Requested by', 'Approved by'):
+        for field_name, row_above in self.ROW_ABOVE.items():
             field = rects[field_name]
             x, y, width, height = app_module.lpr_signature_box(field, None)
             fx0, fy0, fx1, fy1 = field
-            row_above_top = rects['Intended for'][3]
+            row_above_top = rects[row_above][3]
+
+            # Positive control: the named row really is the one directly above this line.
+            self.assertGreater(rects[row_above][1], fy0,
+                               f'{row_above} is not above {field_name}')
+            self.assertLess(rects[row_above][1] - fy0, 20,
+                            f'{row_above} is not the row IMMEDIATELY above {field_name}')
+
+            self.assertGreaterEqual(y + 0.01, fy0, f'{field_name} stamp starts below its row')
             self.assertLessEqual(y + height, row_above_top + 0.01,
-                                 f'{field_name} stamp rises past the row above')
+                                 f'{field_name} stamp rises past the top of {row_above}')
             self.assertGreaterEqual(x + 0.01, fx0, f'{field_name} stamp starts left of its line')
             self.assertLessEqual(x + width, fx1 + 0.01, f'{field_name} stamp runs past its line')
 
     @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
-    def test_approver_signature_clears_the_invoice_row(self):
-        """Bound the enlarged stamp before the top of the row above the approval line."""
+    def test_approver_signature_does_not_swallow_the_invoice_row(self):
+        """The reported defect, re-bounded rather than abandoned.
+
+        The approver stamp may now reach into the Invoice No. row -- measured at 4.5pt on a
+        rendered form -- but it must never cover that row outright, which is what the original
+        report was about.
+        """
         template = app_module.find_lpr_form_template_path()
         if not template:
             self.skipTest('LPR FORM.pdf is not available in this environment')
 
         rects = app_module.lpr_form_field_rects(PdfReader(template))
         _, y, _, height = app_module.lpr_signature_box(rects['Approved by'], None)
-        row_above_top = rects['Intended for'][3]
+        invoice_bottom, invoice_top = rects['Invoice No'][1], rects['Invoice No'][3]
 
-        # Positive control: that row really does sit directly above the approver line, so a
-        # stamp of the old height genuinely would have collided with it.
-        self.assertGreater(row_above_top, rects['Approved by'][1])
-        self.assertLess(row_above_top - rects['Approved by'][1], 35)
+        # Positive control: the Invoice No. row really does sit directly above the approver
+        # line, so a tall enough stamp genuinely would collide with it.
+        self.assertGreater(invoice_bottom, rects['Approved by'][1])
+        self.assertLess(invoice_bottom - rects['Approved by'][1], 20)
 
-        self.assertLessEqual(y + height, row_above_top + 0.01,
-                             'approver signature passes the top of the row above')
+        self.assertLessEqual(y + height, invoice_top + 0.01,
+                             'approver signature covers the Invoice No. row outright')
 
     @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
     def test_signature_box_falls_back_when_the_field_is_missing(self):
         fallback = (1.0, 2.0, 3.0, 4.0)
         for bad in (None, (), (1, 2), (0, 0, 5, 1)):
             self.assertEqual(app_module.lpr_signature_box(bad, fallback), fallback)
+
+    @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+    def test_the_fallback_box_is_enlarged_too(self):
+        """A fallback left at the old size hands back a small signature exactly where nobody
+        is looking -- on a template whose field rectangles could not be read."""
+        x, y, width, height = app_module.lpr_scaled_fallback_box(189.1, 38.3, 83.8, 12.45)
+        self.assertAlmostEqual(width, 83.8 * app_module.SIGNATURE_STAMP_SCALE, places=3)
+        self.assertAlmostEqual(height, 12.45 * app_module.SIGNATURE_STAMP_SCALE, places=3)
+        # Grows leftward: the right edge stays on the end of the signature line.
+        self.assertAlmostEqual(x + width, 189.1 + 83.8, places=3)
+        self.assertEqual(y, 38.3)
 
 
 if __name__ == '__main__':

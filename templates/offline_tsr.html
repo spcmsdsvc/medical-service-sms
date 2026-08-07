@@ -512,6 +512,16 @@ const LOGGED_IN_ENGINEER_NAME = "{{ (current_user.engineer_profile.name if curre
 const LOGGED_IN_ENGINEER_INITIALS = "{{ (current_user.engineer_profile.initials if current_user.engineer_profile and current_user.engineer_profile.initials else '')|e }}";
 const OFFLINE_TSR_STORAGE_HEALTH_ADMIN = String("{{ 'true' if offline_storage_health_admin else 'false' }}").toLowerCase() === 'true';
 const SIGNATURE_STAMP_SCALE = Number({{ signature_stamp_scale|tojson }}) || 1.5;
+// The signature footer's height is reserved by renderTSRPrintSheetCanvases before the
+// Actions Taken box is sized, so the two must be derived from one place. Everything in
+// drawTSRSignatureFooter except the signature row itself is fixed spacing:
+// 20 + 27 + 12 (to the image top) + 52 + 22 + 28 + 18 = 179.
+// This was a hardcoded 247 -- exactly 179 + the old 68px row -- and enlarging the
+// signature without moving it left the footer taller than the space reserved for it,
+// eating the page's bottom margin and pushing content-heavy TSRs further off the page.
+const TSR_SIGNATURE_ROW_HEIGHT = Math.round(68 * SIGNATURE_STAMP_SCALE);
+const TSR_SIGNATURE_FOOTER_FIXED_HEIGHT = 179;
+const TSR_SIGNATURE_FOOTER_HEIGHT = TSR_SIGNATURE_FOOTER_FIXED_HEIGHT + TSR_SIGNATURE_ROW_HEIGHT;
 let activeTSRFilenameTemplate = (() => {
   try{
     return String(localStorage.getItem(TSR_FILENAME_TEMPLATE_CACHE_KEY) || DEFAULT_TSR_FILENAME_TEMPLATE || '').trim();
@@ -6936,7 +6946,7 @@ async function drawTSRSignatureFooter(ctx, data, margin, pageW, y){
   ctx.fillText('ACKNOWLEDGED BY:', margin + pageW/2 + 65, y);
   const sigY = y + 12;
   const sigW = 360;
-  const sigH = Math.round(68 * SIGNATURE_STAMP_SCALE);
+  const sigH = TSR_SIGNATURE_ROW_HEIGHT;
   const sigImageW = Math.min(340, Math.round(250 * SIGNATURE_STAMP_SCALE));
   const servicedSig = data.signatures && data.signatures.serviced ? await loadImageForCanvas(data.signatures.serviced) : null;
   const ackSig = data.signatures && data.signatures.acknowledged ? await loadImageForCanvas(data.signatures.acknowledged) : null;
@@ -7022,7 +7032,7 @@ async function renderTSRPrintSheetCanvases(dataOverride=null){
   const parts = (Array.isArray(data.parts) ? data.parts : []).filter(p => p && Object.values(p).some(Boolean));
   const visiblePartRows = Math.max(2, Math.min(5, parts.length || 2));
   const remarksHeight = 150;
-  const reserveAfterActions = remarksHeight + 140 + (64 + visiblePartRows * 38) + 80 + 247;
+  const reserveAfterActions = remarksHeight + 140 + (64 + visiblePartRows * 38) + 80 + TSR_SIGNATURE_FOOTER_HEIGHT;
   const actionsHeight = Math.max(420, Math.min(700, canvas.height - y - reserveAfterActions - 40));
   const actionsResult = drawActionsTakenBox(ctx, data['tsr-actions-taken'], margin, y, pageW, actionsHeight, 18);
   y += actionsHeight;
