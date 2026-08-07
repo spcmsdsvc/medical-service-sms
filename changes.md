@@ -55,6 +55,23 @@ claude changes - 2026-08-07 (signature stamp review)
   inspects. Added `lpr_scaled_fallback_box()`, which scales them and grows leftward so the right
   edge stays on the signature line.
 
+## Fixed: the traveller name could run under the participant signatures
+
+* Enlarging the participant group moved its left edge from **426 to 366**, into the 410 pt the
+  traveller name was free to occupy. Both sit in the same band (name baseline 866; group 842-896),
+  so a participant list past ~354 pt ran under the first signature cell. Four realistic names
+  measure 256 pt, so it took roughly six travellers — uncommon, not impossible.
+* Both now come from one calculation, `travel_request_traveller_row_layout()`, the same shape as
+  the TSR reserve fix: the group grows leftward from the page edge with `SIGNATURE_STAMP_SCALE`,
+  and the name takes whatever is left before it, with a 4 pt gap. Verified at scale 1.0 / 1.5 /
+  2.0: the name ends at 422 / 362 / 282 against a group starting at 446 / 366 / 286.
+* **When nobody has signed, the name keeps its full 410 pt** — nothing sits beside it then, so
+  truncating a long participant list would be a loss for free.
+* One injection was discarded for not reproducing the defect: pinning the group width to 1.5 while
+  the name is still derived from the group's x keeps them clear, so it proved nothing about the
+  invariant. Replaced with the real defect (name back to a fixed 410), which fails both tests with
+  `422.0 not less than or equal to 366.0`.
+
 ## Tests
 
 * Replaced the source-string matching in `tests/test_signature_stamp_sizes.py` with assertions that
@@ -62,7 +79,7 @@ claude changes - 2026-08-07 (signature stamp review)
   a reverted one fails), a rendered-and-measured PCV overlay, and the derived TSR reserve. An exact
   usage count was tried and rejected — it would fail on every future edit to an unrelated site.
 * All five fixes proved to fail when re-injected, one at a time, verified by SHA with both files
-  restored byte-identical. Suite green at **534**. `app.py` compiles; the TSR inline script passes
+  restored byte-identical. Suite green at **537**. `app.py` compiles; the TSR inline script passes
   `node --check` after Jinja substitution.
 * Worker `v78-signature-stamp-scale` → **`v79-tsr-footer-reserve`**, required because
   `templates/offline_tsr.html` is an `APP_SHELL` entry and a cached device would keep the old

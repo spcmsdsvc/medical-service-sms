@@ -6321,6 +6321,39 @@ def get_travel_request_official_form_template_path():
     return ''
 
 
+TRAVEL_REQUEST_FORM_PAGE_WIDTH = 612.0
+TRAVEL_REQUEST_TRAVELLER_NAME_X = 12.0
+TRAVEL_REQUEST_TRAVELLER_NAME_FULL_WIDTH = 410.0
+TRAVEL_REQUEST_SIGNATURE_GROUP_BASE_WIDTH = 160.0
+TRAVEL_REQUEST_SIGNATURE_GROUP_RIGHT_MARGIN = 6.0
+TRAVEL_REQUEST_TRAVELLER_NAME_GAP = 4.0
+
+
+def travel_request_traveller_row_layout(has_signatures=True):
+    """Geometry for the traveller name and the participant signature cells beside it.
+
+    Both sit in the same horizontal band on the official form, so they are computed together
+    rather than as two independent constants. The signature group grows leftward from the page
+    edge as SIGNATURE_STAMP_SCALE rises, and the name's width is whatever is left before it.
+
+    `has_signatures=False` gives the name the full width: with nothing to collide with, there
+    is no reason to truncate a long participant list.
+
+    Returns (name_x, name_max_width, group_x, group_width).
+    """
+    group_width = TRAVEL_REQUEST_SIGNATURE_GROUP_BASE_WIDTH * SIGNATURE_STAMP_SCALE
+    group_x = (TRAVEL_REQUEST_FORM_PAGE_WIDTH - group_width
+               - TRAVEL_REQUEST_SIGNATURE_GROUP_RIGHT_MARGIN)
+
+    if not has_signatures:
+        return (TRAVEL_REQUEST_TRAVELLER_NAME_X, TRAVEL_REQUEST_TRAVELLER_NAME_FULL_WIDTH,
+                group_x, group_width)
+
+    available = group_x - TRAVEL_REQUEST_TRAVELLER_NAME_X - TRAVEL_REQUEST_TRAVELLER_NAME_GAP
+    name_max_width = min(TRAVEL_REQUEST_TRAVELLER_NAME_FULL_WIDTH, max(0.0, available))
+    return (TRAVEL_REQUEST_TRAVELLER_NAME_X, name_max_width, group_x, group_width)
+
+
 def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None, remarks=''):
     """Build the official Travel Request / Order Form PDF for Accounting.
 
@@ -6664,9 +6697,20 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
         draw_text(514, 947, generated_date, size=8, max_width=60)
         draw_check(413, 912)  # Medical department
         draw_check(37, 899)   # Service department
-        draw_wrapped_text(12, 866, traveller_name, max_width=410, max_lines=1, size=8.5, bold=True)
-        traveller_group_width = 160 * SIGNATURE_STAMP_SCALE
-        traveller_group_x = 612 - traveller_group_width - 6.0
+        # The traveller name and the participant signature cells share this band, so both
+        # come from one calculation. Enlarging the group moved its left edge from 426 to 366,
+        # into the 410pt the name was free to use, and a long participant list would have run
+        # under the first signature.
+        has_traveller_signatures = any(
+            clean_str(person.get('signature_data'))
+            for person in (signature_people or [])
+            if isinstance(person, dict)
+        )
+        traveller_name_x, traveller_name_max_width, traveller_group_x, traveller_group_width = (
+            travel_request_traveller_row_layout(has_signatures=has_traveller_signatures)
+        )
+        draw_wrapped_text(traveller_name_x, 866, traveller_name, max_width=traveller_name_max_width,
+                          max_lines=1, size=8.5, bold=True)
         draw_signature_group(signature_people, traveller_group_x, 842, traveller_group_width, 54, max_columns=2)
 
         is_training = 'training' in request_type_lower or 'seminar' in request_type_lower

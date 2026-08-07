@@ -151,6 +151,41 @@ class SignatureStampSizeTests(unittest.TestCase):
         self.assertIn('pixels_to_EMU(signature_width)', self.app_source)
         self.assertIn('pixels_to_EMU(signature_height)', self.app_source)
 
+    @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+    def test_the_traveller_name_cannot_run_under_the_signature_cells(self):
+        """Enlarging the group moved its left edge from 426 to 366, into the 410pt the
+        traveller name was free to use. A participant list past ~354pt ran under the first
+        signature cell."""
+        name_x, name_width, group_x, group_width = app_module.travel_request_traveller_row_layout()
+        self.assertLessEqual(name_x + name_width, group_x,
+                             'the traveller name overlaps the signature group')
+        # Positive control: the group really did move left of where the name may reach.
+        self.assertLess(group_x, name_x + 410.0,
+                        'this form no longer has the overlap this test guards')
+        self.assertLessEqual(group_x + group_width, 612.0, 'the group runs off the page')
+
+    @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+    def test_the_name_keeps_its_full_width_when_no_one_signed(self):
+        """Nothing sits beside it then, so truncating a long list would be a loss for free."""
+        _, name_width, _, _ = app_module.travel_request_traveller_row_layout(has_signatures=False)
+        self.assertEqual(name_width, 410.0)
+        _, narrowed, _, _ = app_module.travel_request_traveller_row_layout(has_signatures=True)
+        self.assertLess(narrowed, name_width)
+
+    @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+    def test_the_two_stay_clear_of_each_other_at_any_scale(self):
+        """The pair is derived from one calculation, so raising the scale must not
+        re-create the overlap the way raising it from 1.0 to 1.5 did."""
+        original = app_module.SIGNATURE_STAMP_SCALE
+        try:
+            for scale in (1.0, 1.5, 2.0, 2.5):
+                app_module.SIGNATURE_STAMP_SCALE = scale
+                name_x, name_width, group_x, _ = app_module.travel_request_traveller_row_layout()
+                self.assertLessEqual(name_x + name_width, group_x,
+                                     f'name and signature group overlap at scale {scale}')
+        finally:
+            app_module.SIGNATURE_STAMP_SCALE = original
+
     def test_service_worker_cache_floor_is_v78(self):
         assert_cache_version_at_least(self, 78, self.app_source)
 
