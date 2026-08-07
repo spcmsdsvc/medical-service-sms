@@ -2,6 +2,25 @@
 
 claude changes - 2026-08-07 (signature stamp review)
 
+## Fixed: reopened LPR drafts rejected valid item edits
+
+- Updated `app.py` LPR serialization and save handling so saved drafts return their persisted
+  creation token, and the LPR ID remains the authoritative identity when an authorized browser
+  reopens a draft with a stale token. The server preserves its stable token, rejects only a
+  token that is being introduced onto a different existing draft, and reports reconciliation
+  explicitly without creating a second LPR.
+- Updated `templates/lpr.html` to restore the server token after every server-backed load,
+  draft save, submit response, direct `lpr_id` load, and history open. This covers the reported
+  leave-page/reopen/add-item/save flow and prevents a fresh page token from being sent for an
+  existing draft.
+- Added regression coverage in `tests/test_lpr_workflow.py` for persisted token responses,
+  draft reload, adding an item after reload, stale-token reconciliation, item-count preservation,
+  and the single-header invariant. Added the corresponding What’s New release item in
+  `static/changelog/releases.json`.
+- No database replacement or service-worker bump was needed: the fix is server-backed and
+  inline LPR page behavior, while `/lpr` is not part of the application shell cache. The local
+  `scheduler.db`, generated output, temporary files, and handoff artifact remain excluded.
+
 ## Reviewed `8d97b58` against the recorded plan
 
 * **The implementation is sound.** One `SIGNATURE_STAMP_SCALE` knob reaches all eleven stamping

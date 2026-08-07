@@ -51351,6 +51351,7 @@ def lpr_to_dict(header, include_items=True, include_attachments=False, include_a
     download_route = 'download_embedded_lpr' if embedded else 'download_lpr'
     payload = {
         'id': header.id, 'lpr_id': header.id, 'lpr_no': header.lpr_no or '', 'request_no': header.lpr_no or '',
+        'creation_token': header.creation_token or '',
         'user_id': header.user_id, 'requester_user_id': header.user_id, 'requester_name': lpr_requester_name(header),
         'parent_module': normalize_embedded_lpr_parent_module(getattr(header, 'parent_module', None)) if getattr(header, 'parent_module', None) else '',
         'parent_id': clean_int(getattr(header, 'cash_advance_id', None) or getattr(header, 'travel_request_id', None) or getattr(header, 'reimbursement_id', None)),
@@ -52032,12 +52033,22 @@ def save_lpr():
 
     header = db.session.get(LPRHeader, requested_id) if requested_id else None
     idempotent_replay = False
+    token_reconciled = False
     if header:
         if not lpr_can_manage(header) or not lpr_is_editable(header):
             return jsonify({'success': False, 'error': 'This LPR is no longer editable.'}), 409
         if creation_token and header.creation_token and header.creation_token != creation_token:
-            return jsonify({'success': False, 'error': 'This LPR save token belongs to a different draft.'}), 409
-        if creation_token and not header.creation_token:
+            # When an authorized LPR id is present, the server record is the
+            # source of truth. This covers a reopened draft from an older
+            # client that generated a fresh token before the response began
+            # returning the persisted token. Never replace the record's
+            # stable token with the stale browser value.
+            creation_token = header.creation_token
+            token_reconciled = True
+        elif creation_token and not header.creation_token:
+            token_owner = LPRHeader.query.filter_by(creation_token=creation_token).first()
+            if token_owner and token_owner.id != header.id:
+                return jsonify({'success': False, 'error': 'This LPR save token is already in use.'}), 409
             header.creation_token = creation_token
     else:
         if creation_token:
@@ -52089,6 +52100,7 @@ def save_lpr():
             'success': True,
             'message': 'Existing LPR draft recovered.' if idempotent_replay else 'LPR draft saved.',
             'idempotent_replay': idempotent_replay,
+            'token_reconciled': token_reconciled,
             'item': lpr_to_dict(header, include_items=True, include_attachments=True)
         })
     except IntegrityError:

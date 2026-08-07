@@ -1593,6 +1593,16 @@
             "admins"
           ],
           "sort_order": 50
+        },
+        {
+          "item_key": "2026-08-07-lpr-draft-token-recovery",
+          "category": "LPR",
+          "description": "Reopening a saved LPR now restores its draft identity, so adding items and saving again updates the same requisition instead of showing a different-draft error.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 60
         }
       ]
     }

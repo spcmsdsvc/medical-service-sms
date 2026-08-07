@@ -142,6 +142,10 @@ class LPRWorkflowTests(unittest.TestCase):
         self.assertIn('let lprSavePromise = null;', self.template_source)
         self.assertIn('if(lprSavePromise) return lprSavePromise;', self.template_source)
         self.assertIn('creation_token:ensureLprCreationToken()', self.template_source)
+        self.assertIn('function fillServerResponse(data)', self.template_source)
+        self.assertIn('fillServerResponse(data.item)', self.template_source)
+        self.assertIn("'creation_token': header.creation_token or ''", self.app_source)
+        self.assertIn("'token_reconciled': token_reconciled", self.app_source)
         self.assertIn('normalize_lpr_creation_token', self.app_source)
         self.assertIn('uq_lpr_header_creation_token', self.app_source)
 
@@ -199,6 +203,50 @@ class LPRWorkflowTests(unittest.TestCase):
                     self.assertFalse(first_data['idempotent_replay'])
                     self.assertTrue(second_data['idempotent_replay'])
                     self.assertEqual(first_data['item']['id'], second_data['item']['id'])
+                    self.assertEqual(first_data['item']['creation_token'], payload['creation_token'])
+
+                    # Reopening a draft must restore the server token before the user adds
+                    # another item and saves the same LPR again.
+                    lpr_id = first_data['item']['id']
+                    loaded = client.get(f'/get_lpr/{lpr_id}')
+                    loaded_data = loaded.get_json()
+                    self.assertEqual(loaded.status_code, 200)
+                    self.assertEqual(loaded_data['item']['creation_token'], payload['creation_token'])
+                    reopened_payload = dict(
+                        payload,
+                        id=lpr_id,
+                        items=payload['items'] + [{
+                            'description': 'LAN cable',
+                            'quantity': 2,
+                            'unit_measure': 'pcs',
+                            'unit_price': 15
+                        }]
+                    )
+                    reopened = client.post('/save_lpr', json=reopened_payload)
+                    reopened_data = reopened.get_json()
+                    self.assertEqual(reopened.status_code, 200)
+                    self.assertFalse(reopened_data['token_reconciled'])
+                    self.assertEqual(reopened_data['item']['id'], lpr_id)
+                    self.assertEqual(reopened_data['item']['item_count'], 2)
+
+                    # A stale browser token is reconciled only when the authorized LPR id
+                    # identifies the draft; the persisted server token remains unchanged.
+                    stale_payload = dict(
+                        reopened_payload,
+                        creation_token='lpr-stale-client-token-20260730',
+                        items=reopened_payload['items'] + [{
+                            'description': 'USB adapter',
+                            'quantity': 1,
+                            'unit_measure': 'pc',
+                            'unit_price': 10
+                        }]
+                    )
+                    repaired = client.post('/save_lpr', json=stale_payload)
+                    repaired_data = repaired.get_json()
+                    self.assertEqual(repaired.status_code, 200)
+                    self.assertTrue(repaired_data['token_reconciled'])
+                    self.assertEqual(repaired_data['item']['creation_token'], payload['creation_token'])
+                    self.assertEqual(repaired_data['item']['item_count'], 3)
                     self.assertEqual(
                         app_module.LPRHeader.query.filter_by(user_id=user.id).count(),
                         1
