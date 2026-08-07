@@ -57,10 +57,31 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Close the four open items: chart sizing, the runtime cache, two dead routes, the digest
 
-**Status:** `In progress`
+**Status:** `Executed — e0182a2`
 **Approved:** 2026-08-07
 **Started:** 2026-08-07 — the owner asked for the fixes directly rather than approving a plan and
 then releasing it, so the record and the execution are the same instruction.
+**Finished:** 2026-08-07 in `e0182a2`, after seven defect injections, the full 521-test suite, and a
+browser pass at 375 px and 1280 px against a throwaway database.
+
+**Where the outcome differed from the plan, recorded rather than quietly absorbed:**
+
+- **The `ResizeObserver` redraw could not be verified.** The Browser pane does not composite the
+  page, so `requestAnimationFrame` never runs and no `ResizeObserver` callback is delivered — a
+  control observer on the same node did not fire even its guaranteed initial callback. The
+  measurement logic it calls is proven by re-rendering at three container widths; the trigger is
+  not. Carried into `pending-work.md` section 3 as the one open item from this batch.
+- **One existing test had to be rewritten**, which the plan did not anticipate:
+  `test_exports_reach_no_other_strategy_later_in_the_handler` split the fetch handler on the first
+  `}` and searched the following fragment for a `return;`, so it was asserting the shape of
+  whichever branch came next. Adding the `/logout` branch broke it while the export branch it names
+  was untouched. It now reads the export branch itself, and was proved still red by deleting that
+  branch's `return;`.
+- **Two injections aborted and one passed green on the first run**, all three in the reassuring
+  direction: the CSS and JS assets are **LF** while `app.py` is **CRLF**, and commenting out
+  `caches.delete(RUNTIME_CACHE)` leaves the string where a source-level assertion still finds it.
+  The match-count check caught the first two; the third needed the injection changed from a comment
+  to a removal.
 **Detailed:** 2026-08-07, after reading the shipped chart renderers, the service worker fetch
 handler, and confirming both routes have zero callers.
 
