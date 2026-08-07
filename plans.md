@@ -55,6 +55,164 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Enlarge every stamped signature by about 50%
+
+**Status:** `Approved — awaiting go-ahead`
+**Approved:** 2026-08-07
+**Detailed:** 2026-08-07, after mapping every place a saved signature is stamped into a generated
+document — eight PDF sites, two Excel sheets and the client-side TSR canvas.
+
+**Do not start.** The plan was approved through a planning tool, which per `AGENTS.md` is the
+tool's default rather than the owner's instruction. Work begins only on a separate go-ahead.
+
+### Context
+
+Stamped signatures come out small on the generated forms. Every document carrying a saved signature
+— the requester/user's and the approver's — stamps it into a box tuned one form at a time, mostly to
+*avoid* colliding with neighbouring rows. The result is consistent only in being cramped: the Cash
+Advance approver box is 13 pt tall, the LPR boxes derive from a form row barely 14 pt high, and two
+sites additionally refuse to scale a signature above its natural pixel size at all.
+
+Intended outcome: a signature that reads as a signature on a printed form, at a size consistent
+across every document, and tunable from one number afterwards.
+
+### Decisions taken
+
+| Decision | Value |
+| --- | --- |
+| Scope | Approval forms **+** both Excel sheets **+** TSR |
+| Size | **~1.5×** the current box at each site |
+| LPR and Cash Advance approver | **Enlarge too**, accepting overlap into the row above |
+| How it is expressed | **One module-level constant**, not eleven edited magic numbers |
+| Upscale caps | Raised to the new scale, **not removed** — they still guard against blur |
+
+The overlap decision was raised explicitly with the owner, with the alternative of widening only,
+and the owner chose to enlarge and accept the risk. It is reversible by lowering one constant.
+
+### Investigation
+
+Verified by reading. The eleven stamping sites, with what limits each:
+
+| # | Document / signer | Where | Current box | Note |
+| --- | --- | --- | --- | --- |
+| 1 | Travel Request — approver | `app.py:6744` | 160 × 28 pt | Printed name sits just below at y=191; grow **upward** from the same bottom edge |
+| 2 | Travel Request — traveller group | `app.py:6662` | 160 × 54 pt at x=426 | **Cannot take a literal 50%**: 426+240 runs off the 612 pt page |
+| 3 | Reimbursement PCV — approver | `app.py:22104` | `width*0.82` × field height | Has a `min(..., 1.0)` **upscale cap** |
+| 4 | Reimbursement RFP — requester | `app.py:22206` | 91 × 24 pt | Scaled by page ratio from a 612×936 template |
+| 5 | Cash Advance — requester | `app.py:44611` | 72 × 22 pt | Free space around it |
+| 6 | Cash Advance — approver | `app.py:44627` | 150 × **13** pt | Name printed 11.5 pt below. **Tight** |
+| 7 | CA Liquidation RFP — approver | `app.py:47467` | `min(line*0.58, 124)` × 18 | Has a `min(..., 1.0)` **upscale cap** |
+| 8 | LPR — requester **and** approver | `app.py:51091` | ≤86 wide, `field_height - 1.2` | **Tight**: rows ~13.9 pt apart. Two tests guard it |
+| 9 | Travel Liquidation Excel — submitter | `app.py:31125` | 125 × 34 px | Also sets row 5 height to 34 |
+| 10 | CA Liquidation Excel — approver | `app.py:48166` | 95 × 22 px | Size appears **twice** — `.width/.height` and the `OneCellAnchor` `ext` |
+| 11 | TSR — serviced / acknowledged | `templates/offline_tsr.html:6937-6942` | 250 × 68 canvas px | Client-side canvas. Underline is only 360 wide |
+
+Three findings that shaped the approach:
+
+- **Source signatures are large enough to survive the enlargement.** Captured at `devicePixelRatio`
+  and stored up to 800 KB (`normalize_signature_data_url`, `app.py:4067`), then tightly cropped by
+  `reimbursement_signature_data_url_to_png_bytes` (`app.py:21876`). Every box above is far smaller
+  than the stored bitmap, so these are downscales today and remain downscales at 1.5× — **no new
+  blurriness**, except where a `1.0` cap currently binds.
+- **The two `1.0` caps are why a bigger box alone would do nothing** on sites 3 and 7: they forbid
+  scaling above natural size, so a small stored image ignores the box.
+- **Site 10 stores its size twice.** Changing `.width`/`.height` without the `ext=XDRPositiveSize2D`
+  produces a stretched or clipped image.
+
+### Execution steps
+
+1. **Add the knob.** `SIGNATURE_STAMP_SCALE = 1.5` in `app.py` beside the signature helpers, with a
+   comment recording why it exists and that sites 2, 6, 8 and 11 are clamped by form geometry.
+   *Done when* every site references it rather than a per-site literal.
+2. **The unconstrained PDF sites — 1, 4, 5.** Multiply box width and height by the constant and
+   re-anchor so the signature grows *away* from its printed name: site 1 keeps its bottom edge and
+   horizontal centre (160×28 → 240×42, x 421→381); sites 4 and 5 keep their centre.
+3. **The capped sites — 3 and 7.** Scale the box **and** raise the `min(..., 1.0)` cap to
+   `SIGNATURE_STAMP_SCALE`, so a smaller stored signature can fill the larger box. Keep the cap.
+4. **The Excel sheets — 9 and 10.** Scale the pixel sizes and the row heights together
+   (`row_dimensions[5]`; rows 36-37), or the image overlaps the rows below. For site 10, change
+   `.width`/`.height` **and** the `OneCellAnchor` `ext` in one edit.
+5. **The clamped sites — 2, 6, 8, 11**, each taking as much of the 1.5× as its geometry allows:
+   - **2:** shift x left rather than widening past 612 pt, and drop `max_columns` 3 → 2 so each cell
+     is ~50% wider at no layout cost. With 3+ signers this trades a second row — verify that case.
+   - **6:** 150×13 → 225×19.5, growing upward from the underline.
+   - **8:** widen to `min(129, max(60, field_width*0.75))` and take the full 1.5× on height, which
+     is what pushes it into the row above.
+   - **11:** 250×68 → **340×102**, not 375 — width is capped by the 360 px underline; start x moves
+     `margin+105` → `margin+70` to stay centred. Everything below derives from `sigY + sigH`, so the
+     footer shifts down 34 px; confirm the page still fits.
+6. **Relax the two LPR guards honestly, do not delete them.**
+   `test_each_signature_sits_inside_its_own_field` and `test_approver_signature_clears_the_invoice_row`
+   (`tests/test_lpr_workflow.py:251,270`) encode a real defect that was fixed — the approver stamp
+   landing on the Invoice No. row. The assertions become **bounded**: the stamp may rise above its
+   own field but must not pass the **top** of the row immediately above (`rects['Intended for'][3]`);
+   the horizontal assertions are unchanged. Each docstring records that the bound was deliberately
+   loosened, on whose instruction, and what it still protects.
+7. **Release plumbing.** `releases.json` dated the commit date. **Service worker bump required** —
+   `templates/offline_tsr.html` is an `APP_SHELL` entry, so a cached device keeps the old TSR
+   renderer. Read the live `CACHE_VERSION` out of `app.py` immediately before committing.
+
+### Deliberately excluded
+
+The **signature capture UI** and stored resolution — a rendering change only; raising capture
+resolution is a separate decision with an 800 KB limit attached. The **approvals-page on-screen
+signature panel** (`templates/approvals.html:5127`) — a web view, not a stamped document.
+**Re-tuning any printed name, underline or field position** beyond what moving the signature
+requires. **Signatures not stamped into a document**, such as email-body thumbnails.
+
+### Verification
+
+New `tests/test_signature_stamp_sizes.py`, each assertion with the positive control that proves it
+can fail:
+
+| Assertion | Positive control |
+| --- | --- |
+| `SIGNATURE_STAMP_SCALE` exists and every site references it | no site keeps a hardcoded box literal |
+| Each PDF site's box is ~1.5× its previous dimensions | the previous values are pinned as the "before", so a no-op edit fails |
+| The two upscale caps equal the scale, not `1.0` | a signature smaller than its box scales up to fill it |
+| Site 10's `.width/.height` and its `ext` agree | asserted **together**, since disagreeing is the actual defect |
+| `lpr_signature_box` stays inside its line horizontally | unchanged from today — proves only the vertical bound moved |
+| LPR stamp does not pass the top of the row above | the bounded replacement for the loosened guard |
+| Cache floor ≥ 78 | — |
+
+Prove each new test fails without its fix, one at a time, confirming by SHA that the injection
+applied and that the failure message is the expected one. **`app.py` is CRLF; the templates and
+static assets are LF** — a needle with the wrong line ending silently matches nothing and reads
+exactly like a vacuous test.
+
+**End-to-end, which is the part that actually matters here:** generate one real document of each of
+the eleven kinds against a throwaway database with a seeded signature, then measure the stamped
+image placement — PyMuPDF `get_image_rects()` for the PDFs, the drawing XML for the two XLSX files,
+the browser for the TSR canvas. Confirm for each that the image is ~1.5× its previous size, does not
+cover its own printed name or underline, and that on LPR and the Cash Advance approver line the
+overflow lands where the owner accepted it — **look at the rendered page, not only the numbers**.
+Then the full suite (currently 525), `node --check` on the TSR inline script, and a 375 px pass on
+the TSR since its footer moved.
+
+### After implementation
+
+Self-review the diff; `releases.json` dated the commit date; bump the service worker reading the
+live value out of `app.py`; `changes.md`; this plan to `Executed` with its hash; `pending-work.md`
+only if asked; commit per the standing checklist, staging file by file, never `scheduler.db`.
+
+### Risks
+
+| Risk | Blast radius | Mitigation |
+| --- | --- | --- |
+| **LPR and CA approver signatures cover the row above** — accepted, not hypothetical | Two official forms leave the building with a signature touching Invoice No. / Intended for | The bounded test keeps it to one row; the end-to-end render confirms it is acceptable. **Reversible by lowering one constant** |
+| The TSR footer shifts down 34 px | Content after the signature block could push off the page | Verify the rendered TSR; the footer is near the page bottom |
+| Travel traveller group with 3+ signers | Two columns forces a second row and *smaller* cells for 3+ people | Verify a 3-signer request; keep `max_columns` a named argument so it reverts alone |
+| Excel row heights not scaled with the image | The signature overlaps the rows below in the XLSX | Step 4 scales both; asserted together |
+| Forgotten worker bump | Field devices keep the old TSR renderer and none of this reaches a phone | The cache floor assertion |
+| One constant everywhere | A future change moves **all eleven** at once | That is the intent, and why the clamped sites are documented as clamped |
+
+### Critical files
+
+`app.py` — the constant plus sites 1-10 (`6662`, `6744`, `22104`, `22206`, `31125`, `44611`,
+`44627`, `47467`, `48166`, `51091`); `templates/offline_tsr.html` (~`6937`) plus the `APP_SHELL`
+bump; `tests/test_lpr_workflow.py` for the two loosened guards;
+`tests/test_signature_stamp_sizes.py` (**new**); `static/changelog/releases.json`.
+
 ## Close the four open items: chart sizing, the runtime cache, two dead routes, the digest
 
 **Status:** `Executed — e0182a2`
