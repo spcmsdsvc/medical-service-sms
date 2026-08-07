@@ -57,13 +57,13 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Enlarge every stamped signature by about 50%
 
-**Status:** `Approved — awaiting go-ahead`
+**Status:** `Executed — 8d97b58`
 **Approved:** 2026-08-07
+**Started:** 2026-08-07, after the project owner explicitly instructed execution.
+**Finished:** 2026-08-07 in commit `8d97b58`, after focused form-generation smoke checks and the full
+regression suite passed (531 tests, 1 skipped).
 **Detailed:** 2026-08-07, after mapping every place a saved signature is stamped into a generated
 document — eight PDF sites, two Excel sheets and the client-side TSR canvas.
-
-**Do not start.** The plan was approved through a planning tool, which per `AGENTS.md` is the
-tool's default rather than the owner's instruction. Work begins only on a separate go-ahead.
 
 ### Context
 

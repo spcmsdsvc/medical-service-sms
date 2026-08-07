@@ -37,6 +37,8 @@ claude changes - 2026-08-07 (verification pass)
 * Added `tests/test_signature_stamp_sizes.py`, updated LPR placement regression tests, bumped the
   service-worker cache to v78, and added the generated-form improvement to the 2026-08-07 What’s
   New release manifest.
+* Implementation committed as `8d97b58`; full regression verification passed with 531 tests and 1
+  skipped. The database file and generated artifacts were not staged.
 
 ## Verification pass — five open items closed, one entry found stale
 
