@@ -55,6 +55,143 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Stop TSR drafts disappearing when the browser clears site data
+
+**Status:** `Approved — awaiting go-ahead`
+**Approved:** 2026-08-07
+**Detailed:** 2026-08-07, after tracing where a TSR draft is actually stored and comparing it with
+every sibling module's draft handling.
+
+**Do not start.** Approved through a planning tool, which per `AGENTS.md` is the tool's default
+rather than the owner's instruction.
+
+### Context
+
+Reported by the owner as live data loss on **Microsoft Edge** (Chrome unaffected): a user created a
+TSR online, pressed **Save Draft**, shut the laptop down, reopened a bookmarked `/timeline`, was
+logged out, signed in again — and the draft was gone.
+
+**What the investigation found, and it reframes the problem:**
+
+1. **A TSR draft never leaves the device.** IndexedDB `medical_service_offline_tsr_db`, store
+   `tsr_drafts` (`offline_tsr.html:2752-2759`), with a localStorage fallback
+   (`medicalServiceStandaloneTSRDraftV1`, `:503`). The UI already says so — *"Draft saved on this
+   device."*
+2. **TSR is the only module without a server-side draft.** `/save_reimbursement_draft`
+   (`app.py:24008`), `/save_travel_request_draft` (`:26936`) and both liquidation drafts all persist
+   server-side. TSR is the outlier.
+3. **`navigator.storage.persist()` is never called** — only `estimate()`
+   (`offline_tsr.html:4140`). Without it the origin's storage is *best-effort* and the browser may
+   evict it. That is the one concrete lever we have; the rest is Edge configuration we cannot see.
+4. **Our own code is not the culprit** — every `clearStandaloneTSRDraftLocally()` call is a user
+   action or a successful submit, and the `v77` logout purge touches Cache Storage only, never
+   IndexedDB.
+
+Honest diagnosis: **the draft was only ever on that laptop, in storage the browser was entitled to
+discard.** Whether it was "clear browsing data on close", Storage Sense or eviction is not knowable
+from here, and the fix must not depend on knowing.
+
+### Decisions taken
+
+| Decision | Value |
+| --- | --- |
+| Approach | **Server-backed drafts *and* `navigator.storage.persist()`** |
+| What syncs | **Typed fields and the signature.** Photos stay on the device |
+| When | **Explicit Save Draft syncs immediately**; autosave debounced (~15s idle) |
+| Scoping | Per user. A draft is never visible to another account |
+| Conflict | **Last writer wins** on the device's `updated_at` |
+
+### Execution steps
+
+1. **Model and migration.** `TsrDraft` beside `OnlineTsrSubmission` (`app.py:2537`), whose
+   `payload_json` Text column is the pattern to copy: `user_id` (FK, indexed), `draft_key` (the
+   client's IndexedDB draft id, so the two sides correspond), the list fields the panel already
+   shows mirroring `buildOfflineTSRDraftRecord()` (`offline_tsr.html:3056`) — `schedule_id`,
+   `tsr_number`, `client_name`, `service_date`, `title`, `subtitle` — plus `payload_json`,
+   `attachment_count`, `device_updated_at`, `created_at`, `updated_at`. Unique on
+   `(user_id, draft_key)`. Add `ensure_tsr_draft_schema()` with a `_tsr_draft_schema_ready` global
+   following `ensure_online_tsr_submission_table()` (`app.py:2596`), swallowing and logging on
+   failure so a migration problem cannot take down login; register it in `initialize_database()`
+   and the `before_request` hook.
+2. **Three endpoints**, all `@login_required`, CSRF via the existing `getCSRFToken()` header:
+   `POST /save_tsr_draft` upserts by `(current_user.id, draft_key)`, rejects an oversized payload,
+   and ignores a write whose `device_updated_at` is older than the stored one;
+   `GET /get_tsr_drafts` returns this user's drafts only, filtered on `current_user.id` and never
+   on a parameter; `POST /delete_tsr_draft` deletes by `draft_key` scoped to the current user, 404
+   for anyone else's.
+3. **Ask for persistent storage.** Call `navigator.storage.persist()` once on load (guarded), store
+   the result in the existing `tsr_metadata` store beside the health record, and **show it in the
+   storage health panel**. This doubles as the diagnostic — the next report can say whether the
+   browser had granted persistence.
+4. **Sync the draft.** A successful local write in `saveStandaloneTSRDraftLocally()`
+   (`offline_tsr.html:3078`) schedules a server sync; explicit Save Draft flushes immediately,
+   autosave debounces. **Local write first, network strictly after** — a sync failure must never
+   block a field save. Strip attachments with the **existing**
+   `projectOfflineTSRPayloadForLocalStorage()` (`:2584`), recording `attachment_count` so a restored
+   draft can say the photos stayed on the original device. Delete the server copy wherever
+   `clearStandaloneTSRDraftLocally()` runs after a submit or explicit delete.
+5. **Restore after sign-in.** `renderStandaloneTSRDraftPanel()` merges `GET /get_tsr_drafts` into
+   the local list keyed on `draft_key`; a server draft with no local record renders as recovered,
+   with an Open action that writes it back into IndexedDB. Reuse the existing
+   `awaitingScheduleRepick` path (`:2014`) when a restored draft's schedule no longer matches.
+6. **Release plumbing.** `releases.json` dated the commit date; **service worker bump** —
+   `templates/offline_tsr.html` is an `APP_SHELL` entry.
+
+### Deliberately excluded
+
+**Uploading draft photos** — multi-megabyte uploads on a field connection for drafts usually
+submitted minutes later; the recovered draft names them instead. **Any change to the offline TSR
+queue**, which is submitted work with its own durable path. **Clearing IndexedDB on logout**, the
+opposite of this fix. **Guessing which Edge setting is responsible** — the fix must hold whichever
+it is.
+
+### Verification
+
+New `tests/test_tsr_draft_sync.py`, each with the positive control that proves it can fail:
+
+| Assertion | Positive control |
+| --- | --- |
+| Save then fetch returns the draft for its owner | a second account's fetch returns **none of it** |
+| Delete is scoped to the owner | the owner's delete returns 200; another account's 404s and the row survives |
+| Re-saving the same `draft_key` updates rather than duplicates | a different `draft_key` creates a second row |
+| An older `device_updated_at` does not overwrite a newer draft | a newer one does |
+| The stored payload carries no attachment blob | it does carry the typed fields and signature |
+| Anonymous requests refused on all three routes | the logged-in case succeeds |
+| Cache floor ≥ 80 | — |
+
+**End-to-end, reproducing the actual report** on a throwaway database: write a draft, confirm it
+reached the server, then **delete the site's IndexedDB and localStorage in the browser** — which is
+what Edge did, without needing Edge — sign out, sign in, and confirm the draft is offered and opens
+with its fields and signature intact and its photos named as left behind. Repeat **offline**: the
+local save must still work with the sync failing silently. Confirm `navigator.storage.persisted()`
+reports true afterwards and that the health panel shows it.
+
+### After implementation
+
+Self-review the diff; `releases.json`; bump the worker reading the live value out of `app.py`;
+`changes.md`; this plan to `Executed` with its hash; commit per the standing checklist, staging file
+by file, never `scheduler.db`.
+
+### Risks
+
+| Risk | Blast radius | Mitigation |
+| --- | --- | --- |
+| **A draft leaking to another account** | Confidential service content | Every route filters on `current_user.id`; the cross-account tests are the point, not a formality |
+| Sync failure blocking a field save | Lost work — worse than the bug being fixed | Local write first, network strictly after, failure a no-op retried next save |
+| Signature data URLs make payloads large | Slow syncs, bloated rows | Attachments stripped, server-side size cap, debounced autosave |
+| Last-writer-wins across two devices | The older device's edits lost | Bounded by `device_updated_at`; drafts are single-author. State it in the changelog rather than engineering a merge |
+| Restored draft whose schedule is gone | Confusing empty picker | Reuse `awaitingScheduleRepick`, which already handles it |
+| Forgotten worker bump | Devices keep the old page and never sync | The cache floor assertion |
+
+### Critical files
+
+`app.py` — `TsrDraft` (`2537`), `ensure_tsr_draft_schema()` (`2596`), three routes, worker
+`CACHE_VERSION`; `templates/offline_tsr.html` — persist request, sync in
+`saveStandaloneTSRDraftLocally` (`3078`), payload projection (`2584`), draft panel merge
+(`renderStandaloneTSRDraftPanel`); `tests/test_tsr_draft_sync.py` (**new**);
+`static/changelog/releases.json`. Reference while implementing: `/save_reimbursement_draft`
+(`app.py:24008`).
+
 ## Enlarge every stamped signature by about 50%
 
 **Status:** `Executed — 8d97b58`
