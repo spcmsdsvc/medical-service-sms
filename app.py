@@ -15167,7 +15167,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v80-tsr-server-drafts';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v81-backup-network-only';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -15202,6 +15202,13 @@ const FIELD_SAFE_ROUTES = [
   '/timeline',
   '/offline-tsr',
   '/offline'
+];
+
+// Authenticated downloads that must never touch a cache. See the fetch handler for why this
+// is a list rather than a single route, and why it is matched ahead of the navigate branch.
+const NETWORK_ONLY_DOWNLOAD_PREFIXES = [
+  '/export_',
+  '/admin/download-'
 ];
 
 // App shell entries that are only ever rendered for a signed-in account. These are dropped at
@@ -15421,23 +15428,32 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   const isSameOrigin = url.origin === self.location.origin;
 
-  // Authenticated exports are network-only: never written to the cache, never served
+  // Authenticated downloads are network-only: never written to the cache, never served
   // from it. These routes return DIFFERENT CONTENT FOR THE SAME URL depending on who is
-  // asking -- /export_timeline redacts job titles and equipment for an HR account and
-  // does not for an admin -- while a cache entry is keyed on the URL alone. A superadmin's
-  // unredacted CSV was demonstrably returned to a logged-in HR session on the same browser,
-  // which is exactly the leak 5278df2 fixed on the server.
+  // asking, or on when they asked -- /export_timeline redacts job titles and equipment for
+  // an HR account and does not for an admin, and /admin/download-backup is a point-in-time
+  // snapshot -- while a cache entry is keyed on the URL alone. A superadmin's unredacted CSV
+  // was demonstrably returned to a logged-in HR session on the same browser, which is exactly
+  // the leak 5278df2 fixed on the server.
   //
-  // This is checked BEFORE the navigate branch on purpose: the Export button is
-  // `window.location.href = ...`, so it arrives here as a navigation and would otherwise
-  // reach fieldNavigationFirst(), which caches every ok response and serves it back
-  // whenever the network throws.
+  // This is checked BEFORE the navigate branch on purpose: these arrive as navigations (an
+  // <a href> or `window.location.href = ...`) and would otherwise reach
+  // fieldNavigationFirst(), which caches every ok response and serves it back whenever the
+  // network throws. For the backup that produced three distinct faults at once: an 80MB+
+  // archive of the database and every upload written into Cache Storage; a STALE archive
+  // returned on a later attempt as though it were current; and, when the build outran the
+  // gunicorn timeout, the /offline page shown to an admin who was not offline -- which hid
+  // the real error for as long as the route stayed on this branch.
   //
-  // Deliberately a plain fetch with no fallback Response. Returning a synthetic body would
-  // be saved to disk as the downloaded file; letting the request fail offline is both
-  // honest and correct, since an export cannot be generated without the server. No offline
-  // workflow references an /export_ route.
-  if (isSameOrigin && url.pathname.startsWith('/export_')) {
+  // Note `Cache-Control: no-store` on the response does NOT prevent any of that: the Cache
+  // Storage API ignores HTTP cache headers, and cache.put() stores whatever it is handed.
+  //
+  // A prefix list rather than one route, because this is the second time the same gap has
+  // been found. Deliberately a plain fetch with no fallback Response: a synthetic body would
+  // be saved to disk as the downloaded file, and letting the request fail is both honest and
+  // correct, since none of these can be produced without the server. No offline workflow
+  // references any of them.
+  if (isSameOrigin && NETWORK_ONLY_DOWNLOAD_PREFIXES.some(prefix => url.pathname.startsWith(prefix))) {
     event.respondWith(fetch(request));
     return;
   }
@@ -17876,42 +17892,6 @@ def add_bucket_objects_to_backup_zip(zip_handle):
 
 
 
-def get_backup_source_paths():
-    """Return application source files/folders to include in manual backups.
-
-    This includes the deployed Flask source and templates needed to recreate the
-    current live system, while excluding secrets such as .env. Missing paths are
-    skipped safely so the same function works on Railway and local installs.
-    """
-    candidates = [
-        ('app.py', os.path.join(basedir, 'app.py')),
-        ('storage_backend.py', os.path.join(basedir, 'storage_backend.py')),
-        ('templates', os.path.join(basedir, 'templates')),
-        ('static', os.path.join(basedir, 'static')),
-        ('forms', os.path.join(basedir, 'forms')),
-        ('requirements.txt', os.path.join(basedir, 'requirements.txt')),
-        ('Procfile', os.path.join(basedir, 'Procfile')),
-        ('runtime.txt', os.path.join(basedir, 'runtime.txt')),
-        ('railway.json', os.path.join(basedir, 'railway.json')),
-    ]
-
-    source_paths = []
-    seen = set()
-    for archive_name, path_value in candidates:
-        if not path_value or not os.path.exists(path_value):
-            continue
-        normalized = os.path.abspath(path_value).replace('\\', '/').rstrip('/').lower()
-        if normalized in seen:
-            continue
-        seen.add(normalized)
-        source_paths.append({
-            'archive_name': archive_name,
-            'path': os.path.abspath(path_value)
-        })
-
-    return source_paths
-
-
 def managed_storage_roots():
     """Return upload families included in bucket migration and storage health."""
     return [
@@ -18682,7 +18662,6 @@ def download_system_backup():
 
         db_path = get_active_sqlite_database_path()
         upload_roots = get_backup_upload_roots()
-        source_paths = get_backup_source_paths()
         bucket_result = {
             'objects': [],
             'errors': [],
@@ -18692,21 +18671,13 @@ def download_system_backup():
 
         with zipfile.ZipFile(temp_file_path, 'w', zipfile.ZIP_DEFLATED) as backup_zip:
             db_count = add_path_to_backup_zip(backup_zip, db_path, 'database', backup_errors)
-            source_count = 0
-            source_manifest = []
-            for source_item in source_paths:
-                added_count = add_path_to_backup_zip(
-                    backup_zip,
-                    source_item['path'],
-                    f"source/{source_item['archive_name']}",
-                    backup_errors,
-                )
-                source_count += added_count
-                source_manifest.append({
-                    'path': source_item['path'],
-                    'archive_prefix': f"source/{source_item['archive_name']}",
-                    'file_count': added_count
-                })
+
+            # Application source is deliberately NOT archived. It lives in git, so a restore
+            # can fetch it there, and including it made the backup roughly three times the
+            # size it needed to be: 56MB of an 82MB measured archive. Worse, `static` was in
+            # the source list while `static/uploads` is an upload root, so every upload was
+            # stored twice -- 47MB of that 82MB was a duplicate of the uploads section. The
+            # archive is now the data that cannot be recreated: database, uploads, bucket.
 
             upload_count = 0
             uploaded_roots_manifest = []
@@ -18756,8 +18727,10 @@ def download_system_backup():
                 'generated_by': getattr(current_user, 'username', 'unknown'),
                 'database_path': db_path,
                 'database_included': bool(db_count),
-                'source_paths': source_manifest,
-                'source_file_count': source_count,
+                # Explicit so an archive can be told apart from the older ones that carried a
+                # source/ tree, rather than someone concluding the backup was truncated.
+                'archive_scope': 'data_only',
+                'source_included': False,
                 'upload_roots': uploaded_roots_manifest,
                 'upload_file_count': upload_count,
                 'bucket_name': file_storage.bucket_name if bucket_result.get('configured') else '',

@@ -234,6 +234,15 @@ class ExportsAreNeverCachedTests(unittest.TestCase):
         cls.source = (ROOT / 'app.py').read_text(encoding='utf-8')
         cls.fetch_handler = cls.source.split("self.addEventListener('fetch', event => {")[1].split('\n});')[0]
 
+    # The single branch that keeps authenticated downloads away from every cache. It began as
+    # an /export_ literal and became a prefix list when /admin/download-backup was found to
+    # have the same fault, so these read the list rather than one route's spelling.
+    BRANCH_MARKER = 'NETWORK_ONLY_DOWNLOAD_PREFIXES.some'
+
+    def test_exports_are_in_the_network_only_list(self):
+        prefixes = self.source.split('const NETWORK_ONLY_DOWNLOAD_PREFIXES = [')[1].split(']')[0]
+        self.assertIn("'/export_'", prefixes, 'exports fell out of the network-only list')
+
     def test_exports_are_handled_before_the_navigation_branch(self):
         """Ordering is the whole fix.
 
@@ -242,15 +251,15 @@ class ExportsAreNeverCachedTests(unittest.TestCase):
         fieldNavigationFirst(), which caches every ok response and serves it back whenever
         the network throws -- so the leak would survive on exactly the path a real user takes.
         """
-        export_at = self.fetch_handler.find("url.pathname.startsWith('/export_')")
+        export_at = self.fetch_handler.find(self.BRANCH_MARKER)
         navigate_at = self.fetch_handler.find("request.mode === 'navigate'")
-        self.assertGreater(export_at, -1, 'the export branch is missing')
+        self.assertGreater(export_at, -1, 'the network-only branch is missing')
         self.assertGreater(navigate_at, -1, 'the navigate branch is missing')
         self.assertLess(export_at, navigate_at,
                         'exports must be matched before the navigation branch')
 
     def test_the_export_branch_touches_no_cache_at_all(self):
-        branch = self.fetch_handler.split("url.pathname.startsWith('/export_')")[1].split('return;')[0]
+        branch = self.fetch_handler.split(self.BRANCH_MARKER)[1].split('return;')[0]
         self.assertIn('event.respondWith(fetch(request))', branch)
         for forbidden in ('caches.', 'cache.put', 'cache.match', 'RUNTIME_CACHE',
                           'networkFirst', 'staleWhileRevalidate', 'cacheFirst',
@@ -265,12 +274,12 @@ class ExportsAreNeverCachedTests(unittest.TestCase):
         bottom of the handler, which serves a cached copy even while online -- the exact way
         the leak was first reproduced.
 
-        Read the export branch itself rather than counting braces from it. The first version
-        split the handler on '}' and searched the next fragment for a `return;`, which meant
-        it was really asserting the shape of whatever branch happened to come next -- adding
-        the /logout branch after it broke the test while the export branch was untouched.
+        Read the branch itself rather than counting braces from it. The first version split
+        the handler on '}' and searched the next fragment for a `return;`, which meant it was
+        really asserting the shape of whatever branch happened to come next -- adding the
+        /logout branch after it broke the test while the export branch was untouched.
         """
-        branch = self.fetch_handler.split("url.pathname.startsWith('/export_')")[1].split('\n  }')[0]
+        branch = self.fetch_handler.split(self.BRANCH_MARKER)[1].split('\n  }')[0]
         self.assertIn('return;', branch,
                       'the export branch must return rather than fall through')
 

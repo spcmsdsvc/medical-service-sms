@@ -6,6 +6,8 @@ import unittest
 
 from sqlalchemy import create_engine
 
+from tests.sw_cache_version import assert_cache_version_at_least
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -88,7 +90,14 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         self.assertIn('Supporting files remain local to this device', self.app_source)
 
     def test_service_worker_cache_is_bumped_for_server_drafts(self):
-        self.assertIn('medical-service-pwa-offline-navigation-v80-tsr-server-drafts', self.app_source)
+        """A floor, never a pinned version.
+
+        This pinned the exact v80 string, so the next required bump failed the suite -- the
+        anti-pattern section 6 of pending-work.md records this repository having already had
+        to undo. The bump is a mandatory step for any APP_SHELL change; a test that punishes
+        it is a test that trains people to skip it.
+        """
+        assert_cache_version_at_least(self, 80, self.app_source)
         self.assertIn("'/offline-tsr',", self.app_source)
 
 

@@ -1,5 +1,75 @@
 # Project Change Log
 
+claude changes - 2026-08-07 (backup download)
+
+## Found: the service worker was replacing the backup download with the offline page
+
+* The reported symptom — *"it loads but then it displayed you are offline, which im not"* — was
+  **our own `/offline` page**, not a browser error. `templates/settings.html:266` is a plain
+  `<a href>`, so the download arrives at the worker as a **navigation**. The fetch handler
+  special-cases `/export_` and `/logout` as network-only and sends everything else that navigates
+  to `fieldNavigationFirst()`, which ends its failure chain at `caches.match('/offline')`.
+  `/admin/download-backup` matched neither prefix.
+* **That one placement produced three faults, two of them silent:**
+  1. every successful backup — an 80 MB+ archive of the database and every upload — was written
+     into **Cache Storage** by `runtimeCache.put()`;
+  2. on a later failure `fieldNavigationFirst()` returns `exactCached` **before** the offline
+     fallback, so a **stale archive could be handed back as though it were current** — the worst
+     of the three for a backup;
+  3. the real error was replaced by the offline page, which is why this has been hard to pin
+     down, and why the two earlier resilience commits could not be evaluated.
+* **`Cache-Control: no-store` does not prevent any of this.** The Cache Storage API ignores HTTP
+  cache headers; `cache.put()` stores whatever it is handed. Worth remembering before trusting a
+  header to keep something out of a cache.
+* Same class as the `/export_` leak fixed in `v71`. That fix enumerated the eight `/export_*`
+  routes; the backup does not carry that prefix, so it was never covered — despite being the most
+  sensitive download in the system.
+
+## Fixed: authenticated downloads are network-only, by prefix list
+
+* Added `NETWORK_ONLY_DOWNLOAD_PREFIXES` (`/export_`, `/admin/download-`) matched **before** the
+  navigate branch. A list rather than a route, because this is the second time the same gap has
+  been found; the next such route only has to be named once.
+* **The worker bump is part of the fix, not bookkeeping**: `v80-tsr-server-drafts` →
+  `v81-backup-network-only`. `activate()` deletes every cache whose name is not the current pair,
+  so the bump is what evicts any backup ZIP already sitting in an admin's browser.
+
+## Fixed: the backup archives data, not the application source
+
+* Application source is no longer included. It lives in git, and archiving it made the backup far
+  larger than it needed to be — **56 MB of an 82 MB measured archive**.
+* It also caused silent duplication: `static` was a source path while `static/uploads` is an
+  upload root, so **every upload was stored twice**. 47 MB of that 82 MB was a byte-for-byte
+  duplicate of the uploads section.
+* **Measured before and after on the same data: 82.2 MB → 39.1 MB, 6.8s → 3.6s, 327 → 134
+  entries, duplicated content 47.2 MB → 0.** Retired `get_backup_source_paths()` rather than
+  leaving it as dead code. The manifest now carries `archive_scope: data_only` and
+  `source_included: false` so a new archive cannot be mistaken for a truncated old one.
+* **Not done, and worth knowing:** the archive is still built completely before a single byte is
+  sent, and `Procfile` runs `gunicorn --timeout 120` with **no `-w`, so one sync worker**. A large
+  enough backup can still outrun the timeout, and while it builds no other user can load a page.
+  Streaming the ZIP and adding a worker are the durable fixes; both were deliberately left out of
+  this change.
+
+## Tests
+
+* New `BackupDownloadIsNeverCachedTests` and `BackupArchiveIsDataOnlyTests` in
+  `tests/test_system_backup.py`: the route is in the network-only list, the branch is matched
+  before the navigate branch, the branch returns and touches no cache, no `source/` tree in a
+  generated archive, and each upload appears exactly once — with the database and uploads asserted
+  present as the control, so none of it can pass on an empty backup.
+* **Two existing tests had to be corrected, not worked around.** The three
+  `ExportsAreNeverCachedTests` split the handler on the `/export_` literal that the prefix list
+  replaced; they now read the list and the shared branch marker, so they still guard exports.
+  `test_service_worker_cache_is_bumped_for_server_drafts` **pinned the exact `v80` string**, so
+  the next required bump failed the suite — the anti-pattern `pending-work.md` section 6 records
+  this repository having already undone. It now uses the `assert_cache_version_at_least` floor.
+* All four injections reproduced their defect, SHA-verified with `app.py` restored byte-identical.
+  **One injection was discarded first**: disabling the branch with `false &&` leaves the marker in
+  place, so it is not a defect any of these tests claim to catch. Replaced with the two real
+  failure modes — the branch losing its `return`, and a navigate branch placed ahead of it.
+* Suite green at **553**.
+
 claude changes - 2026-08-07 (signature stamp review)
 
 ## Fixed: system backup no longer fails on isolated storage errors

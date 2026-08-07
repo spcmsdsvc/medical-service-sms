@@ -1622,6 +1622,24 @@
             "admins"
           ],
           "sort_order": 80
+        },
+        {
+          "item_key": "2026-08-07-backup-download-offline-page",
+          "category": "System Administration",
+          "description": "Downloading a System Backup no longer ends on the \"you are offline\" page while you are online. The download is now handled directly by the network, so any real problem is reported instead of being replaced by the offline screen.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 90
+        },
+        {
+          "item_key": "2026-08-07-backup-data-only",
+          "category": "System Administration",
+          "description": "System Backup now contains the data that cannot be recreated - database, uploads and bucket files - and no longer bundles a copy of the application code. In testing this cut the archive from 82 MB to 39 MB and roughly halved the time it takes to build.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 100
         }
       ]
     }
