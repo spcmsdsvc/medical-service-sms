@@ -21,6 +21,32 @@ claude changes - 2026-08-07 (signature stamp review)
   inline LPR page behavior, while `/lpr` is not part of the application shell cache. The local
   `scheduler.db`, generated output, temporary files, and handoff artifact remain excluded.
 
+## Fixed: LPR continuation pages now use the official template
+
+- Refactored `app.py` LPR PDF generation around shared official field groups, common request
+  values, item-slot values, signature overlays, and continuation markers. The first page still
+  uses the existing official form behavior, while every overflow page now clones the same
+  `forms/LPR FORM.pdf` geometry and carries the next eight items.
+- Repeated Branch, Class, Department, Product, LPR number, request date, Intended For, Equipment,
+  PO No., Invoice No., Requested By, Approved By, Received By, and available signatures on each
+  continuation page. Unused item rows remain blank on the final page.
+- Replaced the custom twelve-row ReportLab continuation table and continuation total with a small
+  vector marker such as `CONTINUATION - ITEMS 9-16 - PAGE 2`. Continuation AcroForm appearances
+  are painted into static vector page content and widgets are removed, preventing duplicate field
+  names from bleeding values between pages while keeping text selectable.
+- Updated `tests/test_lpr_workflow.py` to cover 1, 8, 9, 16, and 17 item LPRs, official page size,
+  page markers, repeated values, blank continuation rows, and static continuation field isolation.
+- Regenerated the supplied unsubmitted example locally as
+  `C:\Users\jonamar\AppData\Local\Temp\LPR-20260807-01-corrected.pdf`; the Desktop source was
+  not overwritten. The rendered three-page sample uses the official layout on all pages.
+- Added the 2026-08-07 What’s New entry for the continuation-page repair. No database migration,
+  service-worker bump, historical PDF rewrite, or change to PDF consumers was made; `scheduler.db`,
+  generated output, temporary files, and handoff artifacts remain excluded.
+- Verification passed with the focused LPR suite, Python compilation, inline LPR JavaScript and
+  manifest checks, rendered/selectable-text checks for the corrected sample, synthetic repeated
+  signature placement on continuation pages, the full regression suite (**544 passed, 1 skipped**),
+  and `git diff --check`.
+
 ## Reviewed `8d97b58` against the recorded plan
 
 * **The implementation is sound.** One `SIGNATURE_STAMP_SCALE` knob reaches all eleven stamping

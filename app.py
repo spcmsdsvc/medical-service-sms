@@ -51530,8 +51530,155 @@ def lpr_signature_box(field_rect, fallback):
     return (x1 - width - 6.0, y0 + 0.6, width, height)
 
 
+def lpr_form_item_field_groups():
+    """Return the eight item-row field groups from the official LPR template."""
+    return [
+        ('ITEM  DESCRIPTION', 'QTY', 'UM', 'PRICE', 'N OTE'),
+        *[(f'ITEM  DESCRIPTION-{index}', f'QTY-{index}', f'UM-{index}', f'PRICE-{index}', f'N OTE-{index}')
+          for index in range(7)]
+    ]
+
+
+def lpr_form_common_values(header):
+    """Build values shared by the first page and every official continuation page."""
+    return {
+        'Branch': header.branch_code or '',
+        'Class': header.class_code or '',
+        'Dept': header.dept_code or '',
+        'Product': header.product_code or '',
+        'Textfield': (header.lpr_no or '').replace('LPR-', ''),
+        'Date': header.request_date.strftime('%m/%d/%Y') if header.request_date else '',
+        'Intended for': header.intended_for or '',
+        'Equipment': header.equipment or '',
+        'PO No': header.po_no or '',
+        'Invoice No': header.invoice_no or '',
+        'Requested by': header.requester_name_snapshot or lpr_requester_name(header),
+        'Received by': header.received_by or '',
+        'Approved by': header.approval_name_snapshot or '',
+    }
+
+
+def lpr_form_item_values(items):
+    """Fill all eight official item slots, explicitly blanking unused rows."""
+    values = {}
+    for index, fields in enumerate(lpr_form_item_field_groups()):
+        item = items[index] if index < len(items) else None
+        if item:
+            item_values = (
+                item.description or '',
+                f'{item.quantity:g}',
+                item.unit_measure or '',
+                f'{lpr_money(item.unit_price):,.2f}',
+                item.note or '',
+            )
+        else:
+            item_values = ('', '', '', '', '')
+        values.update(dict(zip(fields, item_values)))
+    return values
+
+
+def lpr_flatten_form_page(page):
+    """Paint official AcroForm appearances into page content and remove widgets.
+
+    pypdf's ``flatten=True`` creates read-only widget appearances, but those widgets still
+    share the official field names when several cloned pages are written together. Painting
+    each appearance at its field rectangle keeps the official template geometry and text while
+    making continuation pages genuinely static and independent.
+    """
+    try:
+        from pypdf._page import PageObject
+        from pypdf.generic import NameObject, RectangleObject
+    except Exception as exc:
+        raise RuntimeError('pypdf page helpers are required to flatten the LPR continuation page.') from exc
+
+    annotations = list(page.get('/Annots') or [])
+    for annotation_ref in annotations:
+        annotation = annotation_ref.get_object()
+        rect = annotation.get('/Rect')
+        appearance_dict = annotation.get('/AP')
+        normal_appearance = appearance_dict.get('/N') if appearance_dict else None
+        if not rect or not normal_appearance:
+            continue
+        normal_appearance = normal_appearance.get_object()
+        x0, y0, x1, y1 = (float(value) for value in rect)
+        appearance_page = PageObject.create_blank_page(width=x1 - x0, height=y1 - y0)
+        if normal_appearance.get('/Resources'):
+            appearance_page[NameObject('/Resources')] = normal_appearance.get('/Resources')
+        appearance_page[NameObject('/Contents')] = normal_appearance
+        appearance_page.mediabox = RectangleObject([0, 0, x1 - x0, y1 - y0])
+        page.merge_translated_page(appearance_page, x0, y0, over=True)
+    page.pop('/Annots', None)
+
+
+def lpr_signature_overlay_page(header, template_reader, PdfReader):
+    """Return a signature overlay page for the official template, or None."""
+    signature_data = [clean_str(header.requester_signature_snapshot), clean_str(header.approval_signature_snapshot)]
+    if not any(signature_data):
+        return None
+    try:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.utils import ImageReader
+
+        overlay = io.BytesIO()
+        canvas_obj = canvas.Canvas(overlay, pagesize=(576, 360))
+
+        def draw_signature(data, x, y, w, h):
+            if not clean_str(data):
+                return
+            try:
+                png = reimbursement_signature_data_url_to_png_bytes(clean_str(data) or '')
+            except Exception:
+                png = None
+            if not png:
+                return
+            canvas_obj.drawImage(
+                ImageReader(io.BytesIO(png)), x, y, width=w, height=h,
+                preserveAspectRatio=True, mask='auto'
+            )
+
+        # Fallbacks are the measured positions for the current template, used only if the
+        # field rectangles cannot be read. They carry SIGNATURE_STAMP_SCALE too: a fallback
+        # left at the pre-enlargement size would silently hand back a small signature on
+        # exactly the templates whose fields could not be read.
+        field_rects = lpr_form_field_rects(template_reader)
+        requester_box = lpr_signature_box(
+            field_rects.get('Requested by'),
+            lpr_scaled_fallback_box(189.1, 38.3, 83.8, 12.45))
+        approver_box = lpr_signature_box(
+            field_rects.get('Approved by'),
+            lpr_scaled_fallback_box(447.8, 52.2, 86.0, 12.5))
+
+        draw_signature(header.requester_signature_snapshot, *requester_box)
+        draw_signature(header.approval_signature_snapshot, *approver_box)
+        canvas_obj.save()
+        return PdfReader(io.BytesIO(overlay.getvalue())).pages[0]
+    except Exception as stamp_error:
+        print(f'[LPR] Signature overlay skipped: {stamp_error}', flush=True)
+        return None
+
+
+def lpr_continuation_marker_page(item_start, item_end, page_number, PdfReader):
+    """Return a small vector marker overlay placed above the official item table."""
+    try:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib import colors
+
+        overlay = io.BytesIO()
+        canvas_obj = canvas.Canvas(overlay, pagesize=(576, 360))
+        canvas_obj.setFillColor(colors.HexColor('#303030'))
+        canvas_obj.setFont('Helvetica-Bold', 8)
+        canvas_obj.drawString(
+            36, 274,
+            f'CONTINUATION - ITEMS {item_start}-{item_end} - PAGE {page_number}'
+        )
+        canvas_obj.save()
+        return PdfReader(io.BytesIO(overlay.getvalue())).pages[0]
+    except Exception as marker_error:
+        raise RuntimeError(f'Unable to generate LPR continuation marker: {marker_error}') from marker_error
+
+
 def lpr_fill_pdf_bytes(header, approved_by_user=None):
-    """Fill the official LPR AcroForm and append continuation pages after row eight."""
+    """Fill the official LPR AcroForm, cloning it for every eight-item page."""
     try:
         from pypdf import PdfReader, PdfWriter
     except Exception as exc:
@@ -51542,117 +51689,39 @@ def lpr_fill_pdf_bytes(header, approved_by_user=None):
     reader = PdfReader(template_path)
     writer = PdfWriter()
     writer.clone_document_from_reader(reader)
-    values = {
-        'Branch': header.branch_code or '', 'Class': header.class_code or '', 'Dept': header.dept_code or '',
-        'Product': header.product_code or '', 'Textfield': (header.lpr_no or '').replace('LPR-', ''),
-        'Date': header.request_date.strftime('%m/%d/%Y') if header.request_date else '',
-        'Intended for': header.intended_for or '', 'Equipment': header.equipment or '', 'PO No': header.po_no or '',
-        'Invoice No': header.invoice_no or '', 'Requested by': header.requester_name_snapshot or lpr_requester_name(header),
-        'Received by': header.received_by or '', 'Approved by': header.approval_name_snapshot or ''
-    }
+    values = lpr_form_common_values(header)
     items = sorted(header.items or [], key=lambda row: (row.row_index, row.id))
-    field_groups = [
-        ('ITEM  DESCRIPTION', 'QTY', 'UM', 'PRICE', 'N OTE'),
-        *[(f'ITEM  DESCRIPTION-{i}', f'QTY-{i}', f'UM-{i}', f'PRICE-{i}', f'N OTE-{i}') for i in range(7)]
-    ]
-    for index, item in enumerate(items[:8]):
-        desc_field, qty_field, um_field, price_field, note_field = field_groups[index]
-        values.update({
-            desc_field: item.description or '', qty_field: f"{item.quantity:g}", um_field: item.unit_measure or '',
-            price_field: f"{lpr_money(item.unit_price):,.2f}", note_field: item.note or ''
-        })
-    for page in writer.pages:
-        writer.update_page_form_field_values(page, values)
+    first_page_values = dict(values)
+    first_page_values.update(lpr_form_item_values(items[:8]))
+    writer.update_page_form_field_values(
+        writer.pages[0], first_page_values, auto_regenerate=False
+    )
+    first_signature_overlay = lpr_signature_overlay_page(header, reader, PdfReader)
+    if first_signature_overlay is not None:
+        writer.pages[0].merge_page(first_signature_overlay)
 
-    # Stamp signature images over the existing Requested by / Approved by lines.
-    signature_data = [clean_str(header.requester_signature_snapshot), clean_str(header.approval_signature_snapshot)]
-    if any(signature_data):
-        try:
-            from reportlab.pdfgen import canvas
-            from reportlab.lib.utils import ImageReader
-            overlay = io.BytesIO()
-            canvas_obj = canvas.Canvas(overlay, pagesize=(576, 360))
-
-            def draw_signature(data, x, y, w, h):
-                if not clean_str(data):
-                    return
-                try:
-                    png = reimbursement_signature_data_url_to_png_bytes(clean_str(data) or '')
-                except Exception:
-                    png = None
-                if not png:
-                    return
-                canvas_obj.drawImage(
-                    ImageReader(io.BytesIO(png)), x, y, width=w, height=h,
-                    preserveAspectRatio=True, mask='auto'
-                )
-
-            # Fallbacks are the measured positions for the current template, used only if the
-            # field rectangles cannot be read. They carry SIGNATURE_STAMP_SCALE too: a fallback
-            # left at the pre-enlargement size would silently hand back a small signature on
-            # exactly the templates whose fields could not be read, which is the case nobody
-            # looks at.
-            field_rects = lpr_form_field_rects(reader)
-            requester_box = lpr_signature_box(
-                field_rects.get('Requested by'),
-                lpr_scaled_fallback_box(189.1, 38.3, 83.8, 12.45))
-            approver_box = lpr_signature_box(
-                field_rects.get('Approved by'),
-                lpr_scaled_fallback_box(447.8, 52.2, 86.0, 12.5))
-
-            draw_signature(header.requester_signature_snapshot, *requester_box)
-            draw_signature(header.approval_signature_snapshot, *approver_box)
-            canvas_obj.save()
-            overlay_reader = PdfReader(io.BytesIO(overlay.getvalue()))
-            writer.pages[0].merge_page(overlay_reader.pages[0])
-        except Exception as stamp_error:
-            print(f'[LPR] Signature overlay skipped: {stamp_error}', flush=True)
-
-    overflow = items[8:]
-    if overflow:
-        try:
-            from reportlab.pdfgen import canvas
-            continuation = io.BytesIO()
-            page_width, page_height = 576, 360
-            page_index = 0
-            for start in range(0, len(overflow), 12):
-                page_index += 1
-                c = canvas.Canvas(continuation, pagesize=(page_width, page_height))
-                c.setStrokeColorRGB(0.25, 0.25, 0.25)
-                c.setFont('Helvetica-Bold', 13)
-                c.drawString(36, 326, 'LOCAL PURCHASE REQUISITION - CONTINUED')
-                c.setFont('Helvetica', 9)
-                c.drawString(36, 311, f"LPR No.: {header.lpr_no or ''}    Page {page_index + 1}")
-                y = 282
-                c.setFont('Helvetica-Bold', 8)
-                c.line(36, y + 12, 540, y + 12)
-                c.drawString(42, y, 'ITEM / DESCRIPTION')
-                c.drawString(300, y, 'QTY')
-                c.drawString(345, y, 'UM')
-                c.drawString(390, y, 'UNIT PRICE')
-                c.drawString(470, y, 'NOTE')
-                y -= 12
-                c.setFont('Helvetica', 8)
-                for item in overflow[start:start + 12]:
-                    if y < 48:
-                        break
-                    c.line(36, y + 12, 540, y + 12)
-                    c.drawString(42, y, (item.description or '')[:42])
-                    c.drawString(300, y, f'{item.quantity:g}')
-                    c.drawString(345, y, (item.unit_measure or '')[:8])
-                    c.drawRightString(450, y, f'{lpr_money(item.unit_price):,.2f}')
-                    c.drawString(470, y, (item.note or '')[:17])
-                    y -= 18
-                c.line(36, y + 12, 540, y + 12)
-                c.setFont('Helvetica-Bold', 9)
-                c.drawRightString(540, 28, f"Continuation total: PHP {lpr_money(sum(item.line_total for item in overflow[start:start + 12])):,.2f}")
-                c.showPage()
-            c.save()
-            continuation_reader = PdfReader(io.BytesIO(continuation.getvalue()))
-            for page in continuation_reader.pages:
-                writer.add_page(page)
-        except Exception as continuation_error:
-            raise RuntimeError(f'Unable to generate LPR continuation page: {continuation_error}') from continuation_error
+    for start in range(8, len(items), 8):
+        chunk = items[start:start + 8]
+        continuation_reader = PdfReader(template_path)
+        continuation_writer = PdfWriter()
+        continuation_writer.clone_document_from_reader(continuation_reader)
+        continuation_values = dict(values)
+        continuation_values.update(lpr_form_item_values(chunk))
+        continuation_writer.update_page_form_field_values(
+            continuation_writer.pages[0], continuation_values,
+            auto_regenerate=False, flatten=True
+        )
+        continuation_page = continuation_writer.pages[0]
+        lpr_flatten_form_page(continuation_page)
+        continuation_signature_overlay = lpr_signature_overlay_page(
+            header, continuation_reader, PdfReader
+        )
+        if continuation_signature_overlay is not None:
+            continuation_page.merge_page(continuation_signature_overlay)
+        continuation_page.merge_page(lpr_continuation_marker_page(
+            start + 1, start + len(chunk), (start // 8) + 1, PdfReader
+        ))
+        writer.add_page(continuation_page)
     output = io.BytesIO()
     writer.write(output)
     return output.getvalue()

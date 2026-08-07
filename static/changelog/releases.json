@@ -1603,6 +1603,16 @@
             "admins"
           ],
           "sort_order": 60
+        },
+        {
+          "item_key": "2026-08-07-lpr-continuation-template",
+          "category": "LPR",
+          "description": "LPRs with more than eight items now keep the official form layout, repeated request details, and signatures on every continuation page.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 70
         }
       ]
     }

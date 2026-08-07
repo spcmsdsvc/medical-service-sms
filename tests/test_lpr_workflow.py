@@ -78,48 +78,87 @@ class LPRWorkflowTests(unittest.TestCase):
         self.assertIn("{% if lpr_enabled %}", (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8'))
         self.assertIn("{% if lpr_enabled %}", (ROOT / 'templates' / 'approvals.html').read_text(encoding='utf-8'))
 
-    def test_lpr_pdf_fills_official_fields_and_continues_after_eight_rows(self):
+    def test_lpr_pdf_uses_official_template_for_every_eight_item_page(self):
         if app_module is None or PdfReader is None:
             self.skipTest(f'app dependencies unavailable: {APP_IMPORT_ERROR}')
 
         with app_module.app.app_context():
             app_module.ensure_lpr_tables()
-            header = app_module.LPRHeader(
-                user_id=1,
-                lpr_no='LPR-20990101-01',
-                request_date=app_module.get_manila_today(),
-                branch_code='BC01',
-                class_code='CC04',
-                dept_code='DC03',
-                product_code='PC18',
-                intended_for='QA fixture',
-                equipment='Demo unit',
-                requester_name_snapshot='QA Requester',
-                status='Draft',
-            )
-            for index in range(9):
-                header.items.append(app_module.LPRItem(
-                    row_index=index,
-                    description=f'Item {index + 1}',
-                    quantity=index + 1,
-                    unit_measure='pcs',
-                    unit_price=100,
-                    line_total=(index + 1) * 100,
-                    note='QA note',
-                ))
-
-            app_module.db.session.add(header)
-            app_module.db.session.flush()
             try:
-                pdf_bytes = app_module.lpr_fill_pdf_bytes(header)
-                reader = PdfReader(io.BytesIO(pdf_bytes))
-                fields = reader.get_fields() or {}
-                text = '\n'.join(page.extract_text() or '' for page in reader.pages)
-                self.assertEqual(len(reader.pages), 2)
-                self.assertEqual(fields['Branch']['/V'], 'BC01')
-                self.assertEqual(fields['ITEM  DESCRIPTION']['/V'], 'Item 1')
-                self.assertIn('Item 9', text)
-                self.assertIn('LOCAL PURCHASE REQUISITION - CONTINUED', text)
+                for item_count in (1, 8, 9, 16, 17):
+                    header = app_module.LPRHeader(
+                        user_id=1,
+                        lpr_no=f'LPR-20990101-{item_count:02d}',
+                        request_date=app_module.get_manila_today(),
+                        branch_code='BC01',
+                        class_code='CC04',
+                        dept_code='DC03',
+                        product_code='PC18',
+                        intended_for='QA fixture',
+                        equipment='Demo unit',
+                        requester_name_snapshot='QA Requester',
+                        status='Draft',
+                    )
+                    for index in range(item_count):
+                        header.items.append(app_module.LPRItem(
+                            row_index=index,
+                            description=f'Item {index + 1}',
+                            quantity=index + 1,
+                            unit_measure='pcs',
+                            unit_price=100,
+                            line_total=(index + 1) * 100,
+                            note='QA note',
+                        ))
+
+                    app_module.db.session.add(header)
+                    app_module.db.session.flush()
+                    pdf_bytes = app_module.lpr_fill_pdf_bytes(header)
+                    reader = PdfReader(io.BytesIO(pdf_bytes))
+                    expected_pages = max(1, (item_count + 7) // 8)
+                    self.assertEqual(len(reader.pages), expected_pages)
+                    for page in reader.pages:
+                        self.assertAlmostEqual(float(page.mediabox.width), 576.0, places=2)
+                        self.assertAlmostEqual(float(page.mediabox.height), 360.0, places=2)
+                        page_text = page.extract_text() or ''
+                        self.assertIn('SHIMADZU PHILIPPINES CORPORATION', page_text)
+                        self.assertIn('Local Purchase Requisition Form', page_text)
+
+                    fields = reader.get_fields() or {}
+                    self.assertEqual(fields['Branch']['/V'], 'BC01')
+                    self.assertEqual(fields['ITEM  DESCRIPTION']['/V'], 'Item 1')
+                    self.assertEqual(fields['ITEM  DESCRIPTION-6']['/V'], 'Item 8' if item_count >= 8 else '')
+
+                    if item_count <= 8:
+                        self.assertNotIn('CONTINUATION - ITEMS', '\n'.join(
+                            page.extract_text() or '' for page in reader.pages
+                        ))
+                    else:
+                        for page_number, start in enumerate(range(8, item_count, 8), start=2):
+                            chunk = list(range(start + 1, min(start + 8, item_count) + 1))
+                            page_text = reader.pages[page_number - 1].extract_text() or ''
+                            self.assertIn(
+                                f'CONTINUATION - ITEMS {chunk[0]}-{chunk[-1]} - PAGE {page_number}',
+                                page_text,
+                            )
+                            for item_number in chunk:
+                                self.assertIn(f'Item {item_number}', page_text)
+                            if chunk[-1] < item_count:
+                                self.assertNotIn(f'Item {chunk[-1] + 1}', page_text)
+
+                            self.assertIn('BC01', page_text)
+                            self.assertIn('CC04', page_text)
+                            self.assertIn('QA fixture', page_text)
+                            self.assertIn('Demo unit', page_text)
+
+                            # Continuation fields are painted into page content and have no
+                            # widgets left, so duplicate official names cannot bleed into page
+                            # one or be edited by a PDF viewer.
+                            self.assertFalse(reader.pages[page_number - 1].get('/Annots'))
+
+                        full_text = '\n'.join(page.extract_text() or '' for page in reader.pages)
+                        self.assertNotIn('LOCAL PURCHASE REQUISITION - CONTINUED', full_text)
+                        self.assertNotIn('Continuation total:', full_text)
+                    app_module.db.session.rollback()
             finally:
                 app_module.db.session.rollback()
 
