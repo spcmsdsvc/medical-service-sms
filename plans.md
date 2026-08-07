@@ -57,13 +57,15 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Stop TSR drafts disappearing when the browser clears site data
 
-**Status:** `Approved — awaiting go-ahead`
+**Status:** `Executed — f792d22`
 **Approved:** 2026-08-07
 **Detailed:** 2026-08-07, after tracing where a TSR draft is actually stored and comparing it with
 every sibling module's draft handling.
+**Finished:** 2026-08-07 in implementation commit `f792d22`; this documentation update records the
+completed outcome and verification state.
 
-**Do not start.** Approved through a planning tool, which per `AGENTS.md` is the tool's default
-rather than the owner's instruction.
+Execution authorized by the project owner on 2026-08-07. The implementation is proceeding locally
+with the existing database file and generated artifacts excluded from all changes.
 
 ### Context
 
@@ -168,9 +170,21 @@ reports true afterwards and that the health panel shows it.
 
 ### After implementation
 
-Self-review the diff; `releases.json`; bump the worker reading the live value out of `app.py`;
-`changes.md`; this plan to `Executed` with its hash; commit per the standing checklist, staging file
-by file, never `scheduler.db`.
+Self-review completed against `app.py`, `templates/offline_tsr.html`,
+`tests/test_tsr_draft_sync.py`, `static/changelog/releases.json`, and `changes.md`. The server now
+stores an owner-scoped typed TSR draft snapshot with stale-device protection; the browser still
+writes IndexedDB/localStorage first, then performs immediate Save Draft synchronization or a
+debounced autosave synchronization. Signatures remain in the account snapshot, while supporting
+file blobs remain on the originating device and are identified for re-selection after recovery.
+Explicit deletion removes the account copy when online and queues the deletion when offline. The
+storage persistence request and health indicator are also present.
+
+The service worker was bumped to `v80-tsr-server-drafts`, and the release manifest and detailed
+change journal were updated. Focused draft tests, TSR sync/layout tests, and the complete project
+suite passed: **544 tests passed, 1 skipped**. `app.py` and the new test module compile, the
+`offline_tsr.html` inline JavaScript parses, `releases.json` is valid JSON, and `git diff --check`
+is clean. The implementation commit is `f792d22`; this plan status records that hash. No
+database, generated output, temporary files, or handoff artifact was staged.
 
 ### Risks
 

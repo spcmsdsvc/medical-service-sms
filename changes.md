@@ -107,6 +107,9 @@ claude changes - 2026-08-07 (signature stamp review)
 - Bumped the application service worker to `v80-tsr-server-drafts` and added the release manifest
   entry for the recovery behavior. `scheduler.db`, generated output, temporary files, and the
   handoff artifact remain excluded from the release set.
+- Finalized the approved execution record in `plans.md` as `Executed — f792d22` after the complete
+  regression suite passed; the follow-up documentation commit contains only the plan/journal
+  status update and continues to exclude `scheduler.db`, `output/`, `tmp/`, and the handoff file.
 
 claude changes - 2026-08-07 (verification pass)
 
