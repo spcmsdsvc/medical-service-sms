@@ -18,6 +18,17 @@ claude changes - 2026-08-07 (signature stamp review)
   if audit logging itself is temporarily unavailable.
 - Added `tests/test_system_backup.py` covering retained bucket objects, per-object failures,
   unavailable bucket connections, manifest warnings, ZIP integrity, and database inclusion.
+- Added a backup-only short-timeout S3 client in `storage_backend.py` for bucket health checks,
+  listing, and object reads. Normal application storage reads keep their existing retry policy,
+  while backup reads fail quickly enough to be recorded as warnings instead of waiting for the
+  Gunicorn worker timeout.
+- Added a bounded 12-second bucket download budget in `app.py`. When a bucket endpoint or object
+  stalls, the backup now stops remaining bucket reads, writes `bucket_budget` or object warnings
+  into the ZIP manifest, and still returns the database/source/volume backup as a usable partial
+  archive. Added a regression test proving slow bucket reads stop within the budget.
+- Production verification identified the previous failure as a Railway Gunicorn worker timeout
+  during `storage_backend.py` `get_object()` reads, not a Flask exception. The deployed commit
+  `01e2cfa` was confirmed live before this timeout-specific repair.
 - Added the backup reliability improvement to the 2026-08-07 What’s New manifest. No database
   migration, storage deletion, service-worker change, or change to backup contents outside the
   existing database/source/volume/bucket scope was introduced. `scheduler.db`, `output/`, `tmp/`,

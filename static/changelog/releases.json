@@ -1617,7 +1617,7 @@
         {
           "item_key": "2026-08-07-backup-error-recovery",
           "category": "System Administration",
-          "description": "System Backup now remains downloadable when an individual bucket file or storage connection has a temporary problem, with clear warnings recorded inside the ZIP manifest.",
+          "description": "System Backup now remains downloadable when an individual bucket file, storage connection, or slow bucket response has a temporary problem, with clear warnings recorded inside the ZIP manifest.",
           "audiences": [
             "admins"
           ],

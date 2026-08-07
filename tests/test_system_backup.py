@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import tempfile
+import time
 import unittest
 import uuid
 import zipfile
@@ -109,6 +110,39 @@ class BackupBucketHandlingTests(unittest.TestCase):
                     app_module.db.session.delete(saved_user)
                     app_module.db.session.commit()
                 app_module.db.session.remove()
+
+    def test_slow_bucket_reads_stop_at_the_backup_budget(self):
+        class SlowStorage:
+            bucket_configured = True
+            bucket_name = 'private-files'
+
+            def test_connection_for_backup(self, *, timeout_seconds):
+                self.connection_timeout = timeout_seconds
+                return {'ok': True, 'message': 'connected'}
+
+            def iter_objects_for_backup(self, *, timeout_seconds):
+                self.list_timeout = timeout_seconds
+                for index in range(100):
+                    yield SimpleNamespace(key=f'reports/slow-{index}.pdf', size=4)
+
+            def download_bytes_for_backup(self, key, *, timeout_seconds):
+                time.sleep(0.01)
+                return b'slow'
+
+        buffer = io.BytesIO()
+        storage = SlowStorage()
+        with patch.object(app_module, 'file_storage', storage), \
+                patch.object(app_module, 'managed_storage_roots', return_value=[('reports', None)]), \
+                patch.object(app_module, 'BACKUP_BUCKET_DOWNLOAD_BUDGET_SECONDS', 0.03):
+            with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as backup_zip:
+                result = app_module.add_bucket_objects_to_backup_zip(backup_zip)
+
+        self.assertTrue(result['connected'])
+        self.assertTrue(result['budget_exhausted'])
+        self.assertLess(len(result['objects']), 100)
+        self.assertEqual([error['scope'] for error in result['errors']], ['bucket_budget'])
+        self.assertEqual(storage.connection_timeout, app_module.BACKUP_BUCKET_OPERATION_TIMEOUT_SECONDS)
+        self.assertEqual(storage.list_timeout, app_module.BACKUP_BUCKET_OPERATION_TIMEOUT_SECONDS)
 
 
 if __name__ == '__main__':

@@ -94,6 +94,8 @@ class FileStorageBackend:
             "STORAGE_VOLUME_FALLBACK", default=fallback_default
         ).lower() in TRUE_VALUES
         self._client = None
+        self._backup_client = None
+        self._backup_client_timeout = None
 
     @property
     def bucket_enabled(self) -> bool:
@@ -134,10 +136,13 @@ class FileStorageBackend:
                 "Bucket storage is enabled but the Railway bucket credentials are incomplete."
             )
 
-    def client(self):
-        self._require_bucket()
-        if self._client is not None:
-            return self._client
+    def _build_client(
+        self,
+        *,
+        connect_timeout: int,
+        read_timeout: int,
+        max_attempts: int,
+    ):
         try:
             import boto3
             from botocore.config import Config
@@ -146,8 +151,7 @@ class FileStorageBackend:
                 "boto3 is required when bucket storage is enabled."
             ) from exc
 
-        addressing_style = self.url_style
-        self._client = boto3.client(
+        return boto3.client(
             "s3",
             endpoint_url=self.endpoint_url,
             aws_access_key_id=self.access_key,
@@ -155,13 +159,41 @@ class FileStorageBackend:
             region_name=self.region,
             config=Config(
                 signature_version="s3v4",
-                s3={"addressing_style": addressing_style},
-                retries={"max_attempts": 4, "mode": "standard"},
-                connect_timeout=8,
-                read_timeout=60,
+                s3={"addressing_style": self.url_style},
+                retries={"max_attempts": max_attempts, "mode": "standard"},
+                connect_timeout=connect_timeout,
+                read_timeout=read_timeout,
             ),
         )
+
+    def client(self):
+        self._require_bucket()
+        if self._client is not None:
+            return self._client
+        self._client = self._build_client(
+            connect_timeout=8,
+            read_timeout=60,
+            max_attempts=4,
+        )
         return self._client
+
+    def _backup_client_for(self, timeout_seconds: float = 5.0):
+        """Return a short-timeout, single-attempt client for backup reads.
+
+        Normal application downloads retain their longer retry policy. Backup is
+        a best-effort operation, so a stalled bucket object must become a ZIP
+        warning before it can consume the Gunicorn request timeout.
+        """
+        self._require_bucket()
+        timeout = max(1, min(int(timeout_seconds or 5), 15))
+        if self._backup_client is None or self._backup_client_timeout != timeout:
+            self._backup_client = self._build_client(
+                connect_timeout=min(3, timeout),
+                read_timeout=timeout,
+                max_attempts=1,
+            )
+            self._backup_client_timeout = timeout
+        return self._backup_client
 
     @staticmethod
     def normalize_key(key: str) -> str:
@@ -269,6 +301,28 @@ class FileStorageBackend:
         body = response.get("Body")
         return body.read() if body is not None else b""
 
+    def download_bytes_for_backup(
+        self,
+        key: str,
+        *,
+        timeout_seconds: float = 5.0,
+    ) -> bytes:
+        """Read one object with bounded retries for the manual backup route."""
+        key = self.normalize_key(key)
+        try:
+            response = self._backup_client_for(timeout_seconds).get_object(
+                Bucket=self.bucket_name,
+                Key=key,
+            )
+        except Exception as exc:
+            response_meta = getattr(exc, "response", {}) or {}
+            error = response_meta.get("Error", {}) if isinstance(response_meta, dict) else {}
+            if str(error.get("Code", "")) in {"404", "NoSuchKey", "NotFound"}:
+                raise StorageObjectNotFound(key) from exc
+            raise
+        body = response.get("Body")
+        return body.read() if body is not None else b""
+
     def delete(self, key: str) -> None:
         self.client().delete_object(Bucket=self.bucket_name, Key=self.normalize_key(key))
 
@@ -285,11 +339,44 @@ class FileStorageBackend:
                         last_modified=item.get("LastModified"),
                     )
 
+    def iter_objects_for_backup(
+        self,
+        prefix: str = "",
+        *,
+        timeout_seconds: float = 5.0,
+    ) -> Iterator[StorageObjectInfo]:
+        """List bucket objects with the bounded backup client."""
+        normalized_prefix = str(prefix or "").replace("\\", "/").lstrip("/")
+        paginator = self._backup_client_for(timeout_seconds).get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket_name, Prefix=normalized_prefix):
+            for item in page.get("Contents") or []:
+                key = str(item.get("Key") or "")
+                if key:
+                    yield StorageObjectInfo(
+                        key=key,
+                        size=int(item.get("Size") or 0),
+                        last_modified=item.get("LastModified"),
+                    )
+
     def test_connection(self) -> Dict[str, object]:
         if not self.bucket_configured:
             return {"ok": False, "message": "Bucket credentials are not configured."}
         try:
             self.client().head_bucket(Bucket=self.bucket_name)
+            return {"ok": True, "message": "Bucket connection is healthy."}
+        except Exception as exc:
+            return {"ok": False, "message": str(exc)[:300]}
+
+    def test_connection_for_backup(
+        self,
+        *,
+        timeout_seconds: float = 5.0,
+    ) -> Dict[str, object]:
+        """Check bucket reachability without allowing a backup request to hang."""
+        if not self.bucket_configured:
+            return {"ok": False, "message": "Bucket credentials are not configured."}
+        try:
+            self._backup_client_for(timeout_seconds).head_bucket(Bucket=self.bucket_name)
             return {"ok": True, "message": "Bucket connection is healthy."}
         except Exception as exc:
             return {"ok": False, "message": str(exc)[:300]}

@@ -17780,6 +17780,10 @@ def add_path_to_backup_zip(zip_handle, source_path, archive_prefix, errors=None)
     return file_count
 
 
+BACKUP_BUCKET_DOWNLOAD_BUDGET_SECONDS = 12.0
+BACKUP_BUCKET_OPERATION_TIMEOUT_SECONDS = 5.0
+
+
 def add_bucket_objects_to_backup_zip(zip_handle):
     """Add managed bucket objects while preserving a usable partial backup.
 
@@ -17792,16 +17796,27 @@ def add_bucket_objects_to_backup_zip(zip_handle):
         'errors': [],
         'configured': bool(file_storage.bucket_configured),
         'connected': False,
+        'budget_exhausted': False,
     }
     if not result['configured']:
         return result
 
+    operation_timeout = BACKUP_BUCKET_OPERATION_TIMEOUT_SECONDS
     try:
-        connection = file_storage.test_connection()
+        connection_check = getattr(file_storage, 'test_connection_for_backup', None)
+        if callable(connection_check):
+            connection = connection_check(timeout_seconds=operation_timeout)
+        else:
+            connection = file_storage.test_connection()
     except Exception as connection_error:
         record_backup_error(result['errors'], 'bucket_connection', file_storage.bucket_name, connection_error)
         return result
 
+    if not isinstance(connection, dict):
+        connection = {
+            'ok': False,
+            'message': 'Bucket connection check returned an invalid response.',
+        }
     if not connection.get('ok'):
         record_backup_error(
             result['errors'],
@@ -17813,13 +17828,36 @@ def add_bucket_objects_to_backup_zip(zip_handle):
 
     result['connected'] = True
     allowed_prefixes = {prefix for prefix, _ in managed_storage_roots()}
+    deadline = time.monotonic() + BACKUP_BUCKET_DOWNLOAD_BUDGET_SECONDS
+    list_objects = getattr(file_storage, 'iter_objects_for_backup', None)
     try:
-        for object_info in file_storage.iter_objects():
+        if callable(list_objects):
+            objects = list_objects(timeout_seconds=operation_timeout)
+        else:
+            objects = file_storage.iter_objects()
+        download_for_backup = getattr(file_storage, 'download_bytes_for_backup', None)
+        for object_info in objects:
             top_prefix = object_info.key.split('/', 1)[0]
             if top_prefix not in allowed_prefixes:
                 continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                result['budget_exhausted'] = True
+                record_backup_error(
+                    result['errors'],
+                    'bucket_budget',
+                    file_storage.bucket_name,
+                    f'Bucket download budget of {BACKUP_BUCKET_DOWNLOAD_BUDGET_SECONDS:.1f} seconds was reached; remaining objects were not included.',
+                )
+                break
             try:
-                object_bytes = file_storage.download_bytes(object_info.key)
+                if callable(download_for_backup):
+                    object_bytes = download_for_backup(
+                        object_info.key,
+                        timeout_seconds=min(operation_timeout, max(1.0, remaining)),
+                    )
+                else:
+                    object_bytes = file_storage.download_bytes(object_info.key)
                 zip_handle.writestr(f"bucket_objects/{object_info.key}", object_bytes)
                 result['objects'].append({
                     'key': object_info.key,
