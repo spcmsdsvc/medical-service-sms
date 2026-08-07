@@ -107,6 +107,40 @@ class OfflineScheduleTokenTests(unittest.TestCase):
             self.assertEqual(normalize(rejected), '', f'should reject {rejected!r}')
 
 
+class ParseEngineerIdsTests(unittest.TestCase):
+    """A malformed engineer list must be refused, not crash the request.
+
+    Found while driving the two-tab reconnect: `engineers=1` on /add_shift returned a **500**
+    rather than a 400. `json.loads('1')` yields an int and the loop then iterates it, raising
+    TypeError -- even though the docstring says a single value is accepted.
+
+    The real UI always sends a JSON array, so this is not reachable from the calendar. It is
+    reachable from the **offline queue**, which replays whatever shape it serialized, and there
+    a 500 parks the schedule with a generic "The server refused this schedule." that names no
+    reason -- the engineer is told it failed and given nothing to act on.
+    """
+
+    def test_a_scalar_engineer_value_is_accepted_rather_than_raising(self):
+        self.assertEqual(app_module.parse_engineer_ids('1'), [1])
+        self.assertEqual(app_module.parse_engineer_ids(1), [1])
+        self.assertEqual(app_module.parse_engineer_ids('"3"'), [3])
+
+    def test_the_normal_json_array_shape_is_unchanged(self):
+        """Positive control: the shape the UI actually sends must not move."""
+        self.assertEqual(app_module.parse_engineer_ids('[1,2]'), [1, 2])
+        self.assertEqual(app_module.parse_engineer_ids([1, 2]), [1, 2])
+
+    def test_duplicates_and_junk_are_still_dropped(self):
+        self.assertEqual(app_module.parse_engineer_ids('[1,1,2]'), [1, 2])
+        for junk in ('', 'abc', None, '[]', '{}', []):
+            self.assertEqual(app_module.parse_engineer_ids(junk), [],
+                             f'{junk!r} should yield no engineer ids')
+
+    def test_the_fallback_still_applies_when_nothing_parses(self):
+        self.assertEqual(app_module.parse_engineer_ids('', fallback=7), [7])
+        self.assertEqual(app_module.parse_engineer_ids(None, fallback=7), [7])
+
+
 class OfflineScheduleReplayTests(unittest.TestCase):
     """Functional coverage: the queue replays, the server must not duplicate."""
 

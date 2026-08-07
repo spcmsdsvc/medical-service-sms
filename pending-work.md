@@ -11,8 +11,15 @@ Last updated: 2026-08-07, at the owner's request, after **four open items were c
 session** — the chart sizing, the runtime cache decision, the two dead routes, and the digest.
 
 **Start here if you are picking this up cold.** The state is good: **no open bugs**, suite green at
-**521**, service worker at **`v77-logout-cache-purge`**, nothing uncommitted but the four known
+**525**, service worker at **`v77-logout-cache-purge`**, nothing uncommitted but the four known
 artifacts.
+
+**A verification pass later the same day closed five more rows from section 3** — offline with the
+server genuinely stopped, the two-tab race, engineer stock inventory on a viewport, the What's New
+row at 375 px, and P.O. Details in dark mode — and found the `.dashboard-metric-link` entry was
+**stale rather than open**. It also found one real defect (`parse_engineer_ids` 500) and two
+observations now in section 5b. **What remains is almost entirely things this environment cannot
+do:** a real phone, Edge and Brave, a print preview, and keyboard focus.
 
 **What closed on 2026-08-07, and where the residue is:**
 
@@ -137,7 +144,7 @@ reviews that followed.
 | `45da21c` `a762b05` `d562654` (`v73`-`v75`) | Analytics upgrade: trends, themed SVG charts, P.O. reporting (Codex) |
 | `34f60b9` (`v76`) | **Review fix** — P.O. panel invisible to reports admins; a trend arrow on a metric that cannot carry one |
 
-Suite green at **521 tests**. Service worker cache at **`v77-logout-cache-purge`** —
+Suite green at **525 tests**. Service worker cache at **`v77-logout-cache-purge`** —
 **read the live value out of `app.py` immediately before committing**, never from a note.
 
 **Every review found something, and two were live privilege escalations.** That is the single
@@ -424,22 +431,23 @@ different endpoint — and an earlier plan assumed that was the same route. `Ret
 asserts both that the two dead routes are unregistered and that `/get_activity_logs` still is, so
 deleting one can never take the other with it.
 
-### Mobile tap target: `.dashboard-metric-link` is 25 px tall
+### ~~Mobile tap target: `.dashboard-metric-link` is 25 px tall~~ — ALREADY FIXED, confirmed 2026-08-07
 
-At a 375 px viewport this link renders **25 px high**, below the 44 px minimum the frontend
-baseline applies everywhere else. Measured in all three metric strips — `manager-executive`,
-`admin-counters` and `engineer-summary` — at the same 12.16 px font size, so it is the shared
-component and not one caller.
+**This entry was stale, not the code.** `.dashboard-metric-link` carries `min-height: 44px`
+(`app-dashboard.css:1222`); the fix landed inside the Analytics upgrade, which listed it as step 8,
+and the entry here was never struck through. **Re-measured on a real 375 px viewport: 44 px**, at the
+same 12.16 px font size the original 25 px measurement cited, with the strip not scrolling and no
+page overflow.
 
-**Pre-existing, from phase 1 or 3, not introduced by `5de1658`** — confirmed by measuring it
-inside and outside a `.dashboard-scope-personal` section and getting 25 px both ways. It slipped
-through the tap-target checks in phases 1–4, which measured cards and buttons but not this
-inline link.
+Only the `engineer-summary` strip was re-measured — the other two need an account that renders them —
+but `min-height` sits on the shared class rather than any one caller, which is what the original
+entry established.
 
-It is the "Open timeline →" / "Open analytics →" / "Open directory →" affordance, so it is
-genuinely tapped on phones. Fixing it means giving the link padding or a min-height inside
-`.dashboard-metric-strip` in `static/css/app-dashboard.css`, and re-checking that the strip
-still fits at 375 px without wrapping.
+**Four other controls do measure under 44 px at 375 px**, found while checking this and recorded
+here rather than fixed, because none was part of the reported item: the skip link (41 px, hidden
+until focus), the changelog header button (40 px, and a second instance at 34 px), and an unlabelled
+`.toggle-btn` (32 px). They appear on every page, so they belong to the layout shell rather than any
+one screen. Worth one deliberate pass rather than four separate fixes.
 
 ### ~~What's New — digest: real audience send~~ — SENT, 2026-08-07
 
@@ -565,20 +573,47 @@ steps. The measurement logic it calls is proven at three widths by re-rendering 
 observer fires is not. **Check it in a real browser** by dragging the window across the breakpoint:
 the charts should redraw once per settled width, and the page must not hang.
 
+### Verified on 2026-08-07 — five rows closed off this table
+
+Driven against a throwaway database at 375 px and desktop. Measured geometry and computed style,
+not screenshots; the pane still does not composite.
+
+| Item | Outcome |
+| --- | --- |
+| **Offline with the server genuinely stopped** | **Pass**, and this was the oldest item here. With the process killed, `/timeline` reloaded from cache with its calendar, the dashboard rendered with all six static assets from cache and none failing, the changelog button was present, and `window.offlineSchedule` was live — the exact regression the `?v=` fallback exists to prevent. The signed-out `/login` shell served with its password field intact. Note an uncached API GET resolves **200 with the `/offline` HTML**, not a rejection, so a caller doing `res.json()` gets a parse error rather than a clean offline signal — see the new observation in section 6 |
+| **The two-tab race** | **Pass on the outcome, with a correction to the premise** — see below |
+| **Engineer read-only stock inventory, in a browser** | **Pass.** Page and the **Currently Borrowed Items** panel both render at 375 px, no page overflow, and **no write control is visible** to the engineer — Register / Record Movement / Edit / Reverse exist only as modal headings with no reachable trigger. Complements the API result (reads 200, all four writes 403) |
+| **What's New filter/search row at 375 px** | **Pass.** `.changelog-filters` does not scroll, nothing extends past the viewport, and **every control measures exactly 44 px** — search, category select, Acknowledge All, Refresh, Got It, Previous/Next |
+| **P.O. Details in dark mode** | **Pass.** Every panel, filter and KPI surface goes dark with high-contrast text; no white slab; no overflow at 375 px. **Edge and Brave remain unverified** and stay on the list below |
+
+**The two-tab race, stated precisely, because the item asked the wrong question.** It asked whether
+"the single-flight guard holds". It cannot: `syncInFlight` (`app-offline-schedule.js:32`) is an
+in-memory, **per-tab** variable, so two tabs have two independent guards and nothing in the client
+coordinates them. What was observed and what actually protects the data:
+
+- Both tabs see the same queue — it is IndexedDB, shared across tabs.
+- In practice only one tab sent, twice over. Background-tab timer throttling serialised the two
+  `online` handlers, and the second tab then re-read the shared queue, found the item already
+  gone, and sent nothing. That is real browser behaviour, but it is **luck, not a guarantee**.
+- **The guarantee is server-side.** Two genuinely concurrent `POST /add_shift` with the same
+  `creation_token` — both in flight before either resolved — **both returned shift `82`**, and the
+  database holds exactly one row for it. A `GROUP BY creation_token HAVING COUNT(*) > 1` across the
+  whole table returns nothing.
+
+So the answer is: exactly one schedule per queued item, guaranteed by the creation token rather
+than by the client guard. **Do not "strengthen" the client guard and consider this hardened** — the
+token is what makes it safe, and it is what a second device, a refresh mid-sync or a retry relies on
+too.
+
 ### The rest
 
 | Item | Applies to |
 | --- | --- |
-| **The two-tab race** | `/timeline` and `/offline-tsr` open together, then reconnect. Both pages carry an `online` listener, so this is the only way to prove the single-flight guard holds and that exactly one `/add_shift` fires per queued schedule |
-| **Engineer read-only stock inventory, in a browser** | `6d824a5` was verified here through the API — reads 200, all four writes 403, branch requests always served the engineer's own branch. The **page and its Currently Borrowed panel** were not opened on a real viewport |
 | **Reimbursement totals against real data** | `aff9001` changes which number appears on the PCV, RFP, Excel and ZIP. Verified against fixtures and a smoke case, not against a real reimbursement with attachments |
-| **Edge and Brave** | every dashboard phase, login redesign, sidebar, What's New, digest modal |
-| **Offline behaviour against a real service worker registration** | login offline shell, dashboard assets, changelog assets. Real workers *were* registered through phases 2–4, the ratification and the offline schedule work (`v46` through `v55` observed), but the offline path itself has still not been exercised with the network genuinely down |
-| **Mobile viewport (375px)** | the What's New filter/search row. Every dashboard phase and the ratification were checked at 375px; this row still has not been |
-| **Skip link visual reveal on real keyboard focus** | layout shell |
-| **Offline schedule attachments from a real device camera** | the least-proven part of `709106c` — see below |
+| **Edge and Brave** | every dashboard phase, login redesign, sidebar, What's New, digest modal, P.O. Details, Analytics. **This is now the single largest unverified block in the file** — everything below the line has been driven in one browser only |
+| **Skip link visual reveal on real keyboard focus** | layout shell. Structurally unverifiable from here: the pane never advances transitions and its window is never focused, so `:focus` never matches |
+| **Offline schedule attachments from a real device camera** | the least-proven part of `709106c` — see below. **The largest genuine risk left in this file** |
 | **The provisional-leave supersede notice, in a browser** | `b5dd637` names both leave types on the **approval** path, which the 2026-08-06 pass did not reach — see section 1b |
-| **P.O. Details on Edge, Brave, and in dark mode** | verified in one browser, light theme only |
 | **The Analytics print view** | `app-analytics.css` has a real `@media print` block that hides each SVG and reveals its `.analytics-chart-table` as a bordered table. That is a genuinely better print than the page used to produce — and **it has never been print-previewed.** Cheap to check, and the only representation of the charts on paper |
 | **Analytics on Edge and Brave** | the SVG charts, the accent-following fills and the print block were checked in one browser only |
 | **Analytics keyboard pass** | the filter is a real `<form>` with `Apply` as `type="submit"`, headings run `h1`→`h2`→`h3`, and the scope/error regions are `role="status"` / `role="alert"`. Structure was verified; a full tab-through with visible focus was not |
@@ -917,6 +952,31 @@ Neither is an exposure on a personal device. Revisit only if loaner or shared la
 routine.
 
 ---
+
+## 5b. Observations from the 2026-08-07 verification pass — recorded, not fixed
+
+**An uncached API GET resolves 200 with the `/offline` page.** With the server down,
+`fetch('/get_engineers?anything')` returns **status 200 carrying the offline HTML**, because
+`networkFirst()` ends in `return caches.match('/offline')`. A caller that checks `response.ok`
+concludes success and then fails at `res.json()` with a `SyntaxError` — which is how it first
+surfaced during this pass, as a JSON parse error that looked like a corrupt payload.
+
+No field workflow is known to be harmed: the queues use their own error paths, and this is
+long-standing behaviour rather than anything new. But `app-analytics.js` would take `{}` from its
+`.catch(() => ({}))` and then read `data.range`, so an admin who opens Analytics offline is likelier
+to get a broken render than the honest "could not be loaded" message that page works hard to show.
+Fixing it properly means giving the fallback a non-200 status, which touches every consumer of
+`networkFirst` — its own task, and a decision rather than a cleanup.
+
+**Dark mode cannot be judged by computed style alone in this pane, and it nearly produced a false
+bug report.** Toggling `data-app-theme` and reading `getComputedStyle(document.body)` showed the page
+background stuck light while every panel went dark — which reads exactly like a broken dark-mode
+rule, and the `!important` rule at `app-dark-pages.css:29` made it look like a specificity fight.
+The real cause: `body` carries `transition: background-color 0.3s`, and **this pane never advances
+the animation timeline**, so the computed value stays at the *from* colour forever. Disabling
+transitions resolved it to `#0f1722` immediately. **Before reporting any colour as wrong here,
+disable transitions first** — the properties most likely to be transitioned are exactly the
+theme-driven ones.
 
 ## 6. Patterns worth knowing before the next feature
 

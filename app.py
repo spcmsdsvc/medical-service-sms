@@ -38003,6 +38003,14 @@ def parse_engineer_ids(raw_value, fallback=None):
         except Exception:
             engineers = [engineers] if engineers.strip() else []
 
+    # json.loads('1') returns an int, not a list, and iterating that raises TypeError --
+    # a 500 on /add_shift where the docstring promises a single value is accepted. The
+    # real UI always sends a JSON array, but a queued offline schedule replays whatever
+    # shape it was serialized with, and a 500 there parks the item with a generic
+    # "server refused" message that says nothing about why.
+    if engineers is not None and not isinstance(engineers, (list, tuple, set)):
+        engineers = [engineers]
+
     if not engineers and fallback:
         engineers = [fallback]
 

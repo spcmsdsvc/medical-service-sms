@@ -1,5 +1,50 @@
 # Project Change Log
 
+claude changes - 2026-08-07 (verification pass)
+
+## A malformed engineer list 500s instead of returning a 400
+
+* Fixed `parse_engineer_ids()` (`app.py`). `json.loads('1')` returns an **int**, and the loop then
+  iterates it — `TypeError: 'int' object is not iterable`, surfacing as a **500 on `/add_shift`**,
+  even though the function's own docstring says a single value is accepted. Non-list results are now
+  wrapped before the loop.
+* **Not reachable from the calendar**, which always sends a JSON array. It is reachable from the
+  **offline queue**, which replays whatever shape it serialized — and there a 500 is classified as
+  neither conflict nor rejection, so the schedule parks with a generic "The server refused this
+  schedule." naming no reason. That is the same failure shape as the provisional-leave bug fixed in
+  `v72`: the server knew why and the engineer was not told.
+* Found by driving the two-tab reconnect rather than by reading — the first probe payload was
+  malformed, and instead of a 400 it produced a 500 and a queued schedule with an unhelpful message.
+* Added `ParseEngineerIdsTests` (4 tests) covering scalar, JSON-array, duplicate, junk and fallback
+  shapes, with the JSON-array case as the positive control that the normal path did not move. Proved
+  red by removing the fix: `TypeError: 'int' object is not iterable`, file restored byte-identical
+  by SHA. Suite **525** (was 521).
+
+## Verification pass — five open items closed, one entry found stale
+
+* **Offline with the server genuinely stopped**, the oldest unverified item in the file. Process
+  killed, then `/timeline` reloaded from cache with its calendar, the dashboard rendered with all
+  static assets served from cache and none failing, and `window.offlineSchedule` was live. The
+  signed-out `/login` shell served correctly — confirming the new `v77` logout purge leaves an
+  offline device somewhere to land.
+* **The two-tab race**, with a correction to the question it asked. The single-flight guard
+  **cannot** hold across tabs — `syncInFlight` is per-tab and in-memory. What guarantees one
+  schedule is the **server-side creation token**: two genuinely concurrent `POST /add_shift` with
+  the same token both returned shift `82`, and the table holds exactly one row for it, with no token
+  anywhere carrying more than one shift.
+* **Engineer read-only stock inventory on a real viewport** — page and Currently Borrowed panel
+  render at 375 px with no write control reachable. **What's New filter row at 375 px** — no scroll,
+  every control exactly 44 px. **P.O. Details in dark mode** — every surface dark, no white slab.
+* **`.dashboard-metric-link` was already fixed**; the entry was stale. It carries `min-height: 44px`
+  from the Analytics upgrade and measures **44 px** on a real 375 px viewport, against the 25 px the
+  entry claimed. Four *other* shell controls do measure under 44 px and are now recorded as a
+  separate, unfixed observation.
+* **Two things recorded rather than fixed**, both in `pending-work.md`: an uncached API GET returns
+  **200 carrying the `/offline` page**, so `response.ok` lies and `res.json()` throws; and dark mode
+  cannot be judged from computed style in this pane, because `body` transitions its background and
+  the pane never advances the animation timeline — which produced a convincing false bug report
+  until transitions were disabled.
+
 claude changes - 2026-08-07
 
 ## Analytics charts are drawn to the screen they are read on
