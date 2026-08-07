@@ -55,6 +55,80 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## LPR continuation pages use the official template
+
+**Status:** `Executed — d5e6d60`
+**Approved:** 2026-08-07
+**Started:** 2026-08-07, after the project owner explicitly instructed execution.
+**Detailed:** 2026-08-07, after inspecting the supplied two-page LPR PDF and tracing the overflow branch in `app.py`.
+**Finished:** 2026-08-07 in implementation commit `d5e6d60`; the documentation follow-up records
+the completed outcome and verification state.
+
+### Context
+
+The first LPR page is filled from `forms/LPR FORM.pdf`, but `lpr_fill_pdf_bytes()` currently draws overflow pages with a custom ReportLab table. The supplied `LPR-20260807-01.pdf` demonstrates the resulting mismatch: page one uses the official geometry while page two has different branding, spacing, labels, and a separate continuation total. The continuation page must remain the same official LPR form while carrying the next item rows.
+
+### Decisions taken
+
+- Keep the official template unchanged for page one and for every continuation page.
+- Use eight item rows per page: items 1-8, 9-16, 17-24, and so on.
+- Repeat Branch, Class, Department, Product, LPR number, date, Intended For, Equipment, PO No., Invoice No., Requested By, Approved By, Received By, and the selected requester/approver signatures on each continuation page.
+- Add only a small vector continuation marker above the official item table; do not add a custom continuation total.
+- Flatten continuation form fields so duplicate AcroForm names cannot bleed values between pages.
+- Preserve existing first-page behavior for LPRs with eight or fewer items and leave historical submitted/archived PDFs unchanged.
+- Regenerate the supplied unsubmitted example locally into a temporary corrected file without overwriting the Desktop source.
+
+### Investigation
+
+- `app.py:51533` currently fills the first eight official fields, then creates a custom ReportLab continuation page with twelve rows at `app.py:51615-51654`.
+- `forms/LPR FORM.pdf` is a single 576 x 360 page with eight official item-row field groups and the complete request/signature layout.
+- Existing helpers `lpr_form_field_rects()` and `lpr_signature_box()` already provide the geometry needed to repeat signature overlays on cloned pages.
+- `tests/test_lpr_workflow.py` currently expects the old `LOCAL PURCHASE REQUISITION - CONTINUED` text and only verifies a nine-item two-page case; it must be updated to the official-template behavior.
+
+### Execution steps
+
+1. **Refactor the LPR PDF generator** — edit `app.py` near `lpr_fill_pdf_bytes()` and its signature helpers. Add shared helpers for the eight official field groups, common header/context values, item-slot values including blanks, signature overlays, and the vector continuation marker. Keep the first-page values and overlay behavior equivalent. For each overflow chunk, clone a fresh official template, fill at most eight items, repeat all shared fields/signatures, flatten the continuation page fields, add the marker, and append it to the output. Done means no custom twelve-row continuation table or continuation total remains.
+2. **Add regression coverage** — edit `tests/test_lpr_workflow.py`. Verify page counts for 1, 8, 9, 16, and 17 items; every page is 576 x 360; continuation pages contain official static labels and the marker; item 9 starts page two, item 16 is the eighth row, item 17 starts page three, unused rows are blank, and continuation shared fields are present without cross-page field bleed. Done means the old custom continuation assertion is removed and tests prove the new page contract.
+3. **Regenerate and inspect the local sample** — use the supplied unsubmitted LPR values to produce a corrected temporary PDF under `C:\Users\jonamar\AppData\Local\Temp`, render every page with PyMuPDF, inspect page one and continuation pages at normal and enlarged scale, and confirm the Desktop source is unchanged. Done means the sample visibly uses the same official template geometry on both pages.
+4. **Update release records** — append a detailed entry to the current `changes.md` date section and add a structured 2026-08-07 LPR continuation item to `static/changelog/releases.json`. No database migration or service-worker bump is required because this is a server-side PDF generator change and `/lpr` is not an application-shell page.
+5. **Self-review and verification** — run focused LPR tests, Python compilation, inline LPR JavaScript syntax, JSON parsing, PDF extraction/render checks, the full test suite, and `git diff --check`. Review the diff for unchanged first-page behavior, field isolation, signature repeat behavior, and excluded files. Done means all required checks pass and only intended code/tests/journals/manifest files are staged.
+6. **Release** — commit the verified code-only change and push the current branch. Never stage, commit, push, replace, or upload `scheduler.db`, `output/`, `tmp/`, or handoff artifacts.
+
+### Deliberately excluded
+
+- Historical saved/submitted LPR PDF repair is excluded; only the supplied unsubmitted sample is regenerated locally.
+- No database schema, record, storage, filename, approval, email, or frontend workflow changes are included.
+- No service-worker bump is included because the affected generator is server-side and the LPR page is not in the app shell.
+- The official `forms/LPR FORM.pdf` file is not modified.
+
+### Verification
+
+- Focused `tests/test_lpr_workflow.py` coverage for 1, 8, 9, 16, and 17 items, shared values, markers, blank rows, page sizes, and no old custom continuation text.
+- Render the corrected local sample and inspect page geometry, branding, fields, signatures, selectable text, page count, and item placement.
+- Run Python compilation, LPR inline JavaScript parsing, manifest parsing, full regression tests, and `git diff --check`.
+- Confirm first-page output has no continuation marker for eight or fewer items and existing PDF consumers still receive the same byte stream shape for one-page LPRs.
+
+### After implementation
+
+Self-review completed against `app.py`, `tests/test_lpr_workflow.py`, `changes.md`, `plans.md`, and
+`static/changelog/releases.json`. The supplied unsubmitted LPR was regenerated locally at
+`C:\Users\jonamar\AppData\Local\Temp\LPR-20260807-01-corrected.pdf` without changing the
+Desktop source. Focused LPR tests, Python compilation, inline JavaScript parsing, manifest parsing,
+PDF extraction/render checks, synthetic repeated-signature checks, the full suite (**544 passed,
+1 skipped**), and `git diff --check` passed. The implementation commit is `d5e6d60`; only the
+intended code, test, journal, and release-manifest files were staged. The database, generated
+output, temporary files, and handoff artifact were excluded.
+
+### Risks
+
+- Duplicate AcroForm names can cause field values to bleed between pages; fresh template readers, continuation flattening, and page-level extraction checks mitigate this.
+- The official template has tight signature fields; the existing signature-box helpers are reused rather than introducing new geometry.
+- A malformed template or unsupported PDF library behavior could make continuation generation fail; focused tests and visual rendering catch this before release.
+
+### Critical files
+
+`app.py` (`lpr_fill_pdf_bytes()` and shared LPR PDF helpers), `tests/test_lpr_workflow.py`, `changes.md`, `plans.md`, and `static/changelog/releases.json`. The official source remains `forms/LPR FORM.pdf`.
+
 ## Stop TSR drafts disappearing when the browser clears site data
 
 **Status:** `Executed — f792d22`
