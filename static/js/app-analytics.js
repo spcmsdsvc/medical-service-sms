@@ -93,45 +93,86 @@
         svg.append(titleNode, descNode);
     }
 
-    function chartScaffold(id, title, description, width = 640, height = 210) {
+    // Charts are drawn at one user unit per CSS pixel, measured from the frame. The first
+    // version shipped a fixed 640-unit viewBox scaled with preserveAspectRatio, which needed
+    // `min-width: 560px` to stop <text> shrinking to ~6px on a phone -- and that min-width is
+    // what made the frame scroll sideways at 375px with no affordance. Measuring instead means
+    // the chart is never wider than its container, so there is nothing to scroll, and label
+    // text stays at its declared size on every viewport.
+    const CHART_MIN_WIDTH = 240;
+    const CHART_HEIGHT = 210;
+
+    function chartWidth(target) {
+        if (!target) return CHART_MIN_WIDTH;
+        const style = window.getComputedStyle(target);
+        const padding = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+        return Math.max(CHART_MIN_WIDTH, Math.floor(target.clientWidth - padding));
+    }
+
+    function chartScaffold(id, title, description, height = CHART_HEIGHT) {
         const target = byId(id);
         if (!target) return null;
         clearNode(target);
-        const svg = svgElement('svg', { id: `${id}-svg`, viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: 'xMidYMid meet' });
+        const width = chartWidth(target);
+        // width/height attributes AND a matching viewBox: the viewBox alone would scale, which
+        // is the behaviour being removed.
+        const svg = svgElement('svg', { id: `${id}-svg`, width, height, viewBox: `0 0 ${width} ${height}` });
         setSvgMeta(svg, title, description);
         target.append(svg);
         return svg;
     }
 
+    // SVG has no text-overflow, so a label that does not fit its column must be cut here. The
+    // untruncated text still reaches the row's <title> and the hidden data table, so nothing
+    // is actually lost -- 11px bold averages a shade over 6px per character.
+    function truncateLabel(label, maxWidth) {
+        const text = String(label == null ? '' : label);
+        const maxChars = Math.max(3, Math.floor(maxWidth / 6.2));
+        return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
+    }
+
     function renderTrend(data) {
         const current = data && data.current ? data.current : [];
         const previous = data && data.previous ? data.previous : [];
-        const svg = chartScaffold('trend-chart', 'Service activity trend', 'Current-period daily service volume compared with the immediately preceding period.')
-            || null;
+        const svg = chartScaffold('trend-chart', 'Service activity trend', 'Current-period daily service volume compared with the immediately preceding period.');
         const table = byId('trend-table-body');
         clearNode(table);
         const rows = current.map((item, index) => ({ label: item.date, current: item.count, previous: previous[index] ? previous[index].count : 0 }));
         rows.forEach((row) => addTableRow(table, [row.label, row.current, row.previous]));
         if (!svg) return;
+        const width = Number(svg.getAttribute('width'));
         if (!rows.length) {
-            svg.append(svgElement('text', { x: 320, y: 110, 'text-anchor': 'middle', class: 'chart-muted' }, 'No trend data'));
+            svg.append(svgElement('text', { x: width / 2, y: 110, 'text-anchor': 'middle', class: 'chart-muted' }, 'No trend data'));
             return;
         }
         const max = Math.max(1, ...rows.map((row) => Math.max(row.current, row.previous)));
         const chartHeight = 150;
-        const left = 28;
-        const bottom = 30;
-        const slot = 590 / rows.length;
+        const left = 6;
+        const plotWidth = Math.max(60, width - left - 6);
+        const slot = plotWidth / rows.length;
+        // A 31-day range cannot carry 31 date labels in 320px. Draw every nth instead of
+        // letting them overlap into a grey smear; every row is in the table regardless.
+        const labelStep = Math.max(1, Math.ceil(34 / slot));
         rows.forEach((row, index) => {
-            const x = left + index * slot + Math.max(2, slot * 0.16);
-            const barWidth = Math.max(4, slot * 0.27);
+            const x = left + index * slot + Math.max(1, slot * 0.16);
+            const barWidth = Math.max(2, slot * 0.27);
             const currentHeight = (row.current / max) * chartHeight;
             const previousHeight = (row.previous / max) * chartHeight;
-            svg.append(
-                svgElement('rect', { x, y: 170 - currentHeight, width: barWidth, height: currentHeight, rx: 3, class: 'chart-current' }),
-                svgElement('rect', { x: x + barWidth + 2, y: 170 - previousHeight, width: barWidth, height: previousHeight, rx: 3, class: 'chart-previous' }),
-                svgElement('text', { x: x + barWidth, y: 198, 'text-anchor': 'middle', class: 'chart-muted' }, row.label.slice(5))
+            const group = svgElement('g', { class: 'analytics-chart-row' });
+            group.append(
+                svgElement('rect', { x, y: 170 - currentHeight, width: barWidth, height: currentHeight, rx: 2, class: 'chart-current' }),
+                svgElement('rect', { x: x + barWidth + 1, y: 170 - previousHeight, width: barWidth, height: previousHeight, rx: 2, class: 'chart-previous' })
             );
+            if (index % labelStep === 0) {
+                group.append(svgElement(
+                    'text',
+                    { x: x + barWidth, y: 198, 'text-anchor': 'middle', class: 'chart-muted' },
+                    row.label.slice(5)
+                ));
+            }
+            // Every bar keeps its own tooltip even when its label was thinned out.
+            group.append(svgElement('title', {}, `${row.label}: ${row.current} (previous period ${row.previous})`));
+            svg.append(group);
         });
     }
 
@@ -142,34 +183,43 @@
         clearNode(table);
         safeRows.forEach((row) => addTableRow(table, [row.label, row.count, row.previous == null ? '—' : row.previous]));
         if (!svg) return;
+        const width = Number(svg.getAttribute('width'));
         if (!safeRows.length) {
-            svg.append(svgElement('text', { x: 320, y: 110, 'text-anchor': 'middle', class: 'chart-muted' }, 'No data'));
+            svg.append(svgElement('text', { x: width / 2, y: 110, 'text-anchor': 'middle', class: 'chart-muted' }, 'No data'));
             return;
         }
+        // Columns as fractions of the measured width. The count and the change each keep their
+        // own column -- this chart used to be shadowed by a second, visible bar list that
+        // existed only to carry the change figure, and folding it in here leaves one
+        // representation of each dataset instead of two stacked copies.
+        const hasDelta = safeRows.some((row) => row.previous != null);
+        const labelWidth = Math.min(150, Math.max(72, Math.round(width * 0.28)));
+        const deltaWidth = hasDelta ? 38 : 0;
+        const countWidth = 30;
+        const barLeft = labelWidth + 8;
+        const barMax = Math.max(20, width - barLeft - countWidth - deltaWidth - 10);
+        const countRight = barLeft + barMax + countWidth;
         const max = Math.max(1, ...safeRows.map((row) => Number(row.count) || 0));
         safeRows.forEach((row, index) => {
             const y = 18 + index * 15;
-            // The bar track ends at 520 so the count and the change both have their own
-            // column. This chart used to be shadowed by a second, visible bar list that
-            // existed only to carry the change figure; folding it in here leaves one
-            // representation of each dataset instead of two stacked copies.
-            const width = Math.max(2, ((Number(row.count) || 0) / max) * 342);
+            const barWidth = Math.max(2, ((Number(row.count) || 0) / max) * barMax);
             const rowNode = svgElement('g', { class: 'analytics-chart-row' });
             rowNode.append(
-                svgElement('text', { x: 4, y: y + 9, class: 'chart-muted' }, row.label),
-                svgElement('rect', { x: 178, y, width, height: 10, rx: 3, class: 'chart-current' }),
-                svgElement('text', { x: 556, y: y + 9, 'text-anchor': 'end' }, row.count)
+                svgElement('text', { x: 4, y: y + 9, class: 'chart-muted' }, truncateLabel(row.label, labelWidth)),
+                svgElement('rect', { x: barLeft, y, width: barWidth, height: 10, rx: 3, class: 'chart-current' }),
+                svgElement('text', { x: countRight, y: y + 9, 'text-anchor': 'end' }, row.count)
             );
             const delta = row.previous == null ? null : compactDelta(row.count, row.previous);
             if (delta) {
                 rowNode.append(svgElement(
                     'text',
-                    { x: 636, y: y + 9, 'text-anchor': 'end', class: `chart-delta ${delta.cls}` },
+                    { x: width - 4, y: y + 9, 'text-anchor': 'end', class: `chart-delta ${delta.cls}` },
                     delta.text
                 ));
             }
-            // Per-row tooltip, and the accessible long form of the compact delta above.
-            // textContent, never an attribute built from data.
+            // Per-row tooltip, and the accessible long form of both the compact delta and any
+            // label the column was too narrow to show in full. textContent, never an attribute
+            // built from data.
             rowNode.append(svgElement(
                 'title',
                 {},
@@ -308,6 +358,40 @@
         });
     }
 
+    const CHART_FRAME_IDS = ['trend-chart', 'branch-chart', 'category-chart'];
+    const lastChartWidths = {};
+
+    function renderScheduleCharts(data) {
+        if (!data) return;
+        renderTrend(data.trend);
+        renderHorizontalChart('branch-chart', 'branch-table', data.branches, 'Branch concentration', 'Scoped schedule assignments by engineer branch.');
+        renderHorizontalChart('category-chart', 'category-table', data.categories, 'Service mix', 'Schedule categories in the selected period.');
+        CHART_FRAME_IDS.forEach((id) => { lastChartWidths[id] = chartWidth(byId(id)); });
+    }
+
+    // Charts are sized from their container, so a resize has to redraw them. Two guards, both
+    // load-bearing: only an INTEGER width change redraws (a sub-pixel reflow would otherwise
+    // trip the observer from inside its own callback), and nothing here ever writes to the
+    // container's width -- a chart that sets the width it measures is an infinite loop.
+    let resizeTimer = null;
+
+    function observeChartResize() {
+        if (typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(() => {
+            const changed = CHART_FRAME_IDS.some((id) => {
+                const node = byId(id);
+                return node && lastChartWidths[id] !== chartWidth(node);
+            });
+            if (!changed) return;
+            window.clearTimeout(resizeTimer);
+            resizeTimer = window.setTimeout(() => renderScheduleCharts(state.schedule), 100);
+        });
+        CHART_FRAME_IDS.forEach((id) => {
+            const node = byId(id);
+            if (node) observer.observe(node);
+        });
+    }
+
     function updateSchedule(data) {
         state.schedule = data;
         // Arrows come from the payload shape: flow metrics carry `previous`, stock metrics
@@ -319,9 +403,7 @@
         renderMetric('schedule-active', stock.active, false);
         renderMetric('schedule-open', stock.open_client_work, false);
         renderMetric('schedule-completed', stock.completed, false);
-        renderTrend(data.trend);
-        renderHorizontalChart('branch-chart', 'branch-table', data.branches, 'Branch concentration', 'Scoped schedule assignments by engineer branch.');
-        renderHorizontalChart('category-chart', 'category-table', data.categories, 'Service mix', 'Schedule categories in the selected period.');
+        renderScheduleCharts(data);
         renderStatusList(data.open_statuses);
         renderWorkload(data.engineers, data.engineer_total);
         const line = byId('schedule-scope-line');
@@ -424,6 +506,7 @@
         const form = byId('analytics-filter-form');
         if (form) form.addEventListener('submit', (event) => { event.preventDefault(); window.loadAnalytics(); });
         document.querySelectorAll('[data-analytics-preset]').forEach((button) => button.addEventListener('click', () => setRangePreset(button.dataset.analyticsPreset)));
+        observeChartResize();
         setRangePreset('month');
     });
 }());

@@ -232,11 +232,15 @@
     overflow-x: auto;
 }
 
+/* No min-width, deliberately. The chart is drawn at one user unit per CSS pixel from the
+   frame's own measured width, so it can never be wider than its container -- which is what
+   removes the sideways scroll at 375px. A min-width here would put it straight back, and a
+   viewBox that scales instead would shrink this text to ~6px on a phone. The frame keeps
+   overflow-x: auto as a floor for pathologically narrow viewports, not as the mechanism. */
 .analytics-chart-frame svg {
     display: block;
-    height: 210px;
-    min-width: 560px;
-    width: 100%;
+    height: auto;
+    max-width: 100%;
 }
 
 .analytics-chart-frame svg text {

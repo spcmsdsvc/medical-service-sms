@@ -1,5 +1,103 @@
 # Project Change Log
 
+claude changes - 2026-08-07
+
+## Analytics charts are drawn to the screen they are read on
+
+* Fixed the horizontal scroll recorded in `pending-work.md` section 3. `renderTrend` and
+  `renderHorizontalChart` now measure the frame and draw **one user unit per CSS pixel**, which is
+  what the approved Analytics plan specified and what shipped did not.
+* **Both halves had to change together, and that is why this was not a one-line CSS fix.** The
+  `min-width: 560px` on the SVG was not the bug so much as the brace holding it up: it existed to
+  stop the fixed `viewBox` scaling `<text>` down to roughly 6 px on a phone. Remove it alone and the
+  labels shrink; remove the scaling instead and every literal coordinate in both renderers — the 178
+  bar track, the 556 count column, the 636 delta column, the `590 / rows.length` trend slot — is
+  drawing against a canvas that no longer exists.
+* Columns are now fractions of the measured width, with the label column clamped to
+  `min(150, max(72, 28%))`. **Labels are truncated to their column** because SVG has no
+  `text-overflow` and an untruncated name draws straight over the bars; the full text still reaches
+  the row `<title>` and the hidden data table, which is also what the print stylesheet reveals.
+* **The trend thins its date labels** rather than overlapping them — a 28-day range rendered 7 labels
+  at 375 px instead of 28 in a grey smear. Every bar keeps its own tooltip naming the date and both
+  periods, so thinning the labels does not thin the data.
+* A debounced `ResizeObserver` redraws on a width change, guarded on **integer** width so a
+  sub-pixel reflow cannot trip it from inside its own callback, and nothing in the redraw path writes
+  to the container's width — the two halves of the loop the plan's risk table named.
+* **Verified at 375 px against a throwaway database.** No frame scrolls sideways
+  (`scrollWidth === clientWidth` on all three), no page overflow, and the rendered SVG width equals
+  its `width` attribute equals its `viewBox` — 1:1 confirmed. Re-measured at three container widths
+  (296, 441, 556) and the chart matched its container at each. Label text renders 12 px, not 6.
+* **What could not be verified here, stated plainly:** the `ResizeObserver` redraw. The Browser pane
+  does not composite the page — `requestAnimationFrame` never runs in it, and a control
+  `ResizeObserver` attached to the same node did not fire even the initial callback the spec
+  guarantees. Both are driven by the rendering steps. The measurement logic the observer calls is
+  proven at three widths; the trigger is not. Recorded in `pending-work.md` rather than claimed.
+
+## Signing out now clears what this device had cached for that account
+
+* Reversed the section 5 decision re-opened on 2026-08-06. `/logout` is now matched in the service
+  worker's fetch handler, network-only, and `purgeAuthenticatedCaches()` deletes the whole
+  `RUNTIME_CACHE` plus `/timeline` and `/offline-tsr` from the app shell.
+* **The shell had to be purged too or this would have been half a fix.** `precacheShellEntry()`
+  fetches those two routes with `credentials: 'same-origin'`, so signed-in HTML lives there as well
+  as in the runtime cache. `/login` and `/offline` are in the same list, carry no account data, and
+  are deliberately kept — they are the only thing an offline sign-out has to land on. Static assets
+  are not account-specific and dropping them would slow the next sign-in for nothing.
+* **Matched before the navigate branch**, the same ordering as `/export_` and for the same reason:
+  `/logout` arrives as a navigation, so `fieldNavigationFirst()` would otherwise cache the logout
+  response itself — which is exactly the residual behaviour section 5 had accepted.
+* The purge runs in `waitUntil()` so it survives the page being torn down, and runs **whether or not
+  the request reached the server**: someone who signs out offline still wanted their pages gone. That
+  path falls back to the clean signed-out `/login` copy in the shell.
+* **IndexedDB is deliberately untouched.** The offline schedule and TSR queues live there and hold
+  work an engineer has done and not yet synced; clearing them at sign-out would lose real field work,
+  which is a worse failure than the one being fixed. This also rules out `Clear-Site-Data`, the
+  server-side equivalent, which drops IndexedDB with everything else. A test pins it.
+* **Verified end to end in a browser.** Before: the runtime cache held `/analytics_page` and four
+  account-scoped API payloads, and the shell held `/offline-tsr`. After signing out: runtime cache
+  **empty**, both authenticated shell pages **gone**, `/login`, `/offline` and all 24 static assets
+  still present, landing on `/login`. Signing back in repopulated it, so the device is not left
+  degraded.
+
+## Two dead routes retired
+
+* Removed `/get_recent_activity` and `/get_engineer_dashboard_summary` from `app.py`, together with
+  their entries in the performance-log path list. Both were left registered when their callers were
+  retired, because retiring a route is a separate decision from retiring the markup that used it;
+  that decision has now been taken.
+* Confirmed dead before deleting, not assumed: no reference in any template, script or test. The
+  comment in `static/js/app-dashboard.js` that recorded the pending decision is updated rather than
+  left describing a route that no longer exists.
+* **`/activity_page` is unaffected and this is the trap worth naming**: it carries its own loader
+  against `/get_activity_logs` — plural, a different endpoint — which an earlier plan assumed was the
+  same route. A test now pins that distinction, so deleting one can never take the other with it.
+* Checked that no helper was orphaned by the deletion: `activity_log_to_dict`, `activity_scope_query`,
+  `has_engineer_profile`, `get_current_user_engineer_id`, `is_current_engineer_assigned_to_shift` and
+  `shift_has_tsr_file` all retain live callers.
+
+## Tests, and one existing test corrected
+
+* Added `tests/test_analytics_chart_sizing.py` (13 tests) and a `LogoutCachePurgeTests` class in
+  `tests/test_logout_session.py`, each assertion paired with the positive control that proves it can
+  fail — the frame still contains overflow, the full label still reaches the reader, the signed-out
+  pages survive the purge, `/get_activity_logs` is still registered.
+* **Rewrote `test_exports_reach_no_other_strategy_later_in_the_handler`, which the logout branch
+  broke while the code it tests was untouched.** It split the fetch handler on the first `}` and
+  searched the *next* fragment for a `return;` — so it was really asserting the shape of whichever
+  branch happened to come after the export branch. It now reads the export branch itself. Proved
+  still red by deleting that branch's `return;`.
+* **All seven injections reproduced their defect**, one at a time, each verified by SHA with the file
+  restored byte-identical. Two aborted on the first run rather than passing: the needle for the CSS
+  file used CRLF, and **the two static assets are LF while `app.py` is CRLF**. The match-count check
+  caught it — without it a silently-matched-nothing injection reads exactly like a healthy control.
+  A third injection initially passed *green* because commenting out `caches.delete(RUNTIME_CACHE)`
+  leaves the string in the source where a source-level assertion still finds it; replaced with a
+  removal, which is the real defect, and it went red.
+* Suite green at **521** (was 498), 1 intentional skip. `node --check` passes on the changed script.
+* Service worker `v76-analytics-flow-stock` → `v77-logout-cache-purge`, with both Analytics asset
+  query strings bumped to match. The bump is what actually delivers the logout purge: a device still
+  running the old worker would never run it.
+
 claude changes - 2026-08-06 (analytics review)
 
 ## A comparison that could not mean what it showed

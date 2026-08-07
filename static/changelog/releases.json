@@ -1539,6 +1539,43 @@
           "sort_order": 100
         }
       ]
+    },
+    {
+      "release_key": "2026-08-07",
+      "release_date": "2026-08-07",
+      "title": "Analytics on Phones, and a Cleaner Sign-Out",
+      "summary": "Analytics charts now fit the screen they are read on, and signing out clears the pages this device had stored for your account.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-07-analytics-charts-fit-the-screen",
+          "category": "Analytics",
+          "description": "Analytics charts are now drawn to the width of the screen instead of scrolling sideways on a phone. Long branch and category names are shortened to fit, with the full name still shown on tap and in the printed table.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-07-analytics-trend-labels",
+          "category": "Analytics",
+          "description": "The service volume trend now shows fewer date labels on narrow screens so they stay readable, and every bar still names its date and both periods when tapped.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-08-07-logout-clears-cached-pages",
+          "category": "Security",
+          "description": "Signing out now clears the pages and data this device had stored for your account, so the next person to sign in on the same device cannot open them offline. Schedules and TSRs waiting to sync are not affected and remain safely queued.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 30
+        }
+      ]
     }
   ]
 }

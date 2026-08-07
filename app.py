@@ -1156,7 +1156,6 @@ PERFORMANCE_LOG_PATHS = {
     '/get_products',
     '/get_engineers',
     '/get_open_tasks',
-    '/get_engineer_dashboard_summary',
     '/get_scheduler_dispatch_intelligence',
     '/get_scheduler_coordination_tools',
     '/get_manager_overview',
@@ -1172,7 +1171,6 @@ PERFORMANCE_LOG_PATHS = {
     '/get_accounting_liquidations_queue',
     '/scheduler_quick_assign_shift',
     '/scheduler_quick_reschedule_shift',
-    '/get_recent_activity',
     '/get_activity_logs',
     '/get_activity_filter_options',
     '/get_analytics_summary',
@@ -14809,7 +14807,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v76-analytics-flow-stock';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v77-logout-cache-purge';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -14845,6 +14843,31 @@ const FIELD_SAFE_ROUTES = [
   '/offline-tsr',
   '/offline'
 ];
+
+// App shell entries that are only ever rendered for a signed-in account. These are dropped at
+// sign-out; '/login' and '/offline' are signed-out pages and must survive it, or an offline
+// logout has nothing to land on. Static assets carry no account data and are never dropped.
+const AUTHENTICATED_SHELL_ROUTES = [
+  '/timeline',
+  '/offline-tsr'
+];
+
+// Signing out must not leave the previous account's pages readable on the device. The runtime
+// cache is keyed on the URL alone, with no account in the key, while what the server returns
+// for that URL varies by role -- the HR role exists precisely to see LESS than an admin on the
+// same screen. This was accepted while engineers were on 1:1 devices and the cache held only
+// HTML; it stopped being acceptable when the same mechanism was shown serving one account's
+// authenticated export to another.
+//
+// Deliberately NOT touched: IndexedDB. The offline schedule and TSR queues live there and hold
+// work an engineer has done and not yet synced. Clearing them on sign-out would lose real field
+// work, which is a far worse failure than the one this fixes.
+async function purgeAuthenticatedCaches() {
+  await caches.delete(RUNTIME_CACHE);
+
+  const shellCache = await caches.open(APP_SHELL_CACHE);
+  await Promise.all(AUTHENTICATED_SHELL_ROUTES.map(route => shellCache.delete(route)));
+}
 
 async function precacheShellEntry(cache, url) {
   // Cross-origin CDN assets keep using cache.add: an explicit fetch of those returns an
@@ -15056,6 +15079,31 @@ self.addEventListener('fetch', event => {
   // workflow references an /export_ route.
   if (isSameOrigin && url.pathname.startsWith('/export_')) {
     event.respondWith(fetch(request));
+    return;
+  }
+
+  // Signing out purges every cached page belonging to the session being ended.
+  //
+  // Matched BEFORE the navigate branch for the same reason /export_ is: /logout arrives as a
+  // navigation, so fieldNavigationFirst() would otherwise cache the logout response itself --
+  // the residual that made an offline logout potentially never reach the server.
+  //
+  // The purge runs in waitUntil() so it completes after the browser has left the page, and
+  // regardless of whether the network request succeeded: a user who signs out offline still
+  // wanted their pages gone from this device. The clean signed-out /login copy comes from the
+  // app shell, which the purge deliberately leaves in place.
+  if (isSameOrigin && url.pathname === '/logout') {
+    event.respondWith((async () => {
+      try {
+        return await fetch(request, { credentials: 'same-origin', cache: 'no-store' });
+      } catch (err) {
+        const shellCache = await caches.open(APP_SHELL_CACHE);
+        const cachedLogin = await shellCache.match('/login');
+        if (cachedLogin) return cachedLogin;
+        return caches.match('/offline');
+      }
+    })());
+    event.waitUntil(purgeAuthenticatedCaches());
     return;
   }
 
@@ -18556,16 +18604,6 @@ def parse_activity_date_bounds():
 
 
 
-@app.route('/get_recent_activity')
-@login_required
-def get_recent_activity():
-    """API v5.2: Fetches the latest 15 actions for the Admin Dashboard feed."""
-    query = activity_scope_query(ActivityLog.query)
-    logs = query.order_by(ActivityLog.timestamp.desc()).limit(15).all()
-    return jsonify([activity_log_to_dict(log) for log in logs])
-
-
-
 def build_activity_query():
     """Shared activity query builder for full log API and CSV export."""
     query = activity_scope_query(ActivityLog.query)
@@ -19124,114 +19162,6 @@ def get_open_tasks():
 
 
     return jsonify(results)
-
-
-@app.route('/get_engineer_dashboard_summary')
-@login_required
-def get_engineer_dashboard_summary():
-    """Engineer-focused dashboard summary cards.
-
-    Phase 2 backend support:
-    - avoids requiring engineer dashboards to load company-wide counters
-    - calculates true pending TSR and completed-this-month counts
-    - uses assigned engineer IDs instead of username text matching
-    """
-    if not has_engineer_profile():
-        return denied('Engineer dashboard summary is only available to accounts with a linked engineer profile.')
-
-    my_engineer_id = get_current_user_engineer_id()
-    if not my_engineer_id:
-        return jsonify({
-            'status': 'success',
-            'message': 'No linked engineer profile found for this account.',
-            'engineer_id': None,
-            'my_active_tasks': 0,
-            'upcoming_visits': 0,
-            'for_continuation': 0,
-            'waiting_items': 0,
-            'pending_tsr': 0,
-            'completed_this_month': 0,
-            'pending_tsr_rows': []
-        })
-
-    today = get_manila_today()
-    month_start = today.replace(day=1)
-    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
-
-    invalid_dashboard_categories = ['Completed', 'Training'] + LEAVE_CATEGORIES
-
-    base_query = (
-        Shift.query
-        .options(
-            joinedload(Shift.client),
-            joinedload(Shift.product),
-            selectinload(Shift.files)
-        )
-        .filter(Shift.client_id.isnot(None))
-        .order_by(Shift.start_time.desc())
-    )
-
-    assigned_service_shifts = [
-        shift for shift in base_query.limit(1000).all()
-        if is_current_engineer_assigned_to_shift(shift)
-    ]
-
-    active_tasks = [
-        shift for shift in assigned_service_shifts
-        if (shift.status or '') not in invalid_dashboard_categories
-    ]
-
-    completed_this_month_shifts = [
-        shift for shift in assigned_service_shifts
-        if (
-            (shift.status or '') == 'Completed' and
-            shift.start_time and
-            month_start <= shift.start_time.date() < next_month
-        )
-    ]
-
-    pending_tsr_shifts = [
-        shift for shift in assigned_service_shifts
-        if (
-            (shift.status or '') == 'Completed' and
-            not shift_has_tsr_file(shift)
-        )
-    ]
-
-    def pending_tsr_row(shift):
-        engineers = get_shift_engineer_records(shift)
-        return {
-            'id': shift.id,
-            'date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
-            'client': shift.client.name if shift.client else 'N/A',
-            'product': shift.product.name if shift.product else '',
-            'serial': shift.product.serial_number if shift.product else (shift.product_id or ''),
-            'task': shift.title or '',
-            'status': shift.status or '',
-            'engineers': ', '.join([engineer.name for engineer in engineers]) or ''
-        }
-
-    return jsonify({
-        'status': 'success',
-        'engineer_id': my_engineer_id,
-        'generated_at': get_manila_time().isoformat(),
-        'my_active_tasks': len(active_tasks),
-        'upcoming_visits': len([
-            shift for shift in active_tasks
-            if shift.start_time and shift.start_time.date() >= today
-        ]),
-        'for_continuation': len([
-            shift for shift in active_tasks
-            if (shift.status or '') == 'For Continuation'
-        ]),
-        'waiting_items': len([
-            shift for shift in active_tasks
-            if (shift.status or '') in {'Waiting for P.O', 'Waiting for Parts'}
-        ]),
-        'pending_tsr': len(pending_tsr_shifts),
-        'completed_this_month': len(completed_this_month_shifts),
-        'pending_tsr_rows': [pending_tsr_row(shift) for shift in pending_tsr_shifts[:10]]
-    })
 
 
 def dashboard_team_shift_row(shift):

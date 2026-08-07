@@ -1301,9 +1301,10 @@
             // and formatActivityText, all of which only that section reached.
             //
             // /activity_page is unaffected: templates/activity.html carries its own loader
-            // against /get_activity_logs and never used any of the above. That does leave
-            // /get_recent_activity without a caller -- noted for pending-work rather than
-            // removed here, since retiring a route is a separate decision.
+            // against /get_activity_logs and never used any of the above. The endpoint this
+            // feed used to call was left registered at the time, since retiring a route is a
+            // separate decision from retiring the markup; that decision has since been taken
+            // and it is gone.
 
             filterAndRender();
 

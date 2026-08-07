@@ -116,6 +116,49 @@ class DashboardSourceTests(unittest.TestCase):
         assert_cache_version_at_least(self, 41, self.app_source)
 
 
+class RetiredDashboardRouteTests(unittest.TestCase):
+    """Two endpoints outlived the markup that called them.
+
+    /get_recent_activity served the retired recent-activity dashboard section, and
+    /get_engineer_dashboard_summary never had a caller in any template or script. Both were
+    left in place when their callers went, because retiring a route is a separate decision
+    from retiring the markup that used it. The decision has now been taken: they are gone.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rules = {str(rule) for rule in app_module.app.url_map.iter_rules()}
+        cls.app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+
+    def test_the_two_dead_routes_are_no_longer_registered(self):
+        self.assertNotIn('/get_recent_activity', self.rules)
+        self.assertNotIn('/get_engineer_dashboard_summary', self.rules)
+
+    def test_the_activity_log_page_keeps_its_own_endpoint(self):
+        """The positive control, and the trap this nearly walked into.
+
+        /activity_page carries an independent loader against /get_activity_logs -- plural, a
+        different endpoint. An earlier plan assumed the opposite and would have deleted a
+        route the page depends on.
+        """
+        self.assertIn('/get_activity_logs', self.rules)
+        self.assertIn('/get_activity_filter_options', self.rules)
+
+    def test_the_retired_routes_left_no_entry_in_the_perf_log_list(self):
+        """A path list naming a route that no longer exists is a slow-burning lie."""
+        self.assertNotIn("'/get_recent_activity',", self.app_source)
+        self.assertNotIn("'/get_engineer_dashboard_summary',", self.app_source)
+
+    def test_no_client_code_still_calls_them(self):
+        """Deleting a route with a live caller is a 404 on a working page."""
+        for folder, pattern in (('templates', '*.html'), ('static/js', '*.js')):
+            for path in (ROOT / folder).glob(pattern):
+                text = path.read_text(encoding='utf-8', errors='ignore')
+                self.assertNotIn('/get_recent_activity', text, f'{path.name} still calls it')
+                self.assertNotIn('/get_engineer_dashboard_summary', text,
+                                 f'{path.name} still calls it')
+
+
 class DashboardLayoutApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

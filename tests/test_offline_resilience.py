@@ -264,10 +264,15 @@ class ExportsAreNeverCachedTests(unittest.TestCase):
         Without the `return;` the request would fall through to staleWhileRevalidate at the
         bottom of the handler, which serves a cached copy even while online -- the exact way
         the leak was first reproduced.
+
+        Read the export branch itself rather than counting braces from it. The first version
+        split the handler on '}' and searched the next fragment for a `return;`, which meant
+        it was really asserting the shape of whatever branch happened to come next -- adding
+        the /logout branch after it broke the test while the export branch was untouched.
         """
-        after_export = self.fetch_handler.split("url.pathname.startsWith('/export_')")[1]
-        self.assertRegex(after_export.split('}')[1] if '}' in after_export else after_export,
-                         r'\s*return;')
+        branch = self.fetch_handler.split("url.pathname.startsWith('/export_')")[1].split('\n  }')[0]
+        self.assertIn('return;', branch,
+                      'the export branch must return rather than fall through')
 
     def test_the_worker_was_bumped_so_poisoned_entries_are_evicted(self):
         """A fix that leaves the old cache in place fixes nothing on existing devices.

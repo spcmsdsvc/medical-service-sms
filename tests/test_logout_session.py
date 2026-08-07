@@ -65,6 +65,86 @@ class LogoutSourceTests(unittest.TestCase):
         self.assertIn("if request.path == '/logout':", self.app_source)
 
 
+class LogoutCachePurgeTests(unittest.TestCase):
+    """Signing out must take the previous account's cached pages with it.
+
+    A cache entry is keyed on the URL alone, with no account in the key, while what the
+    server returns for that URL varies by role -- the HR role exists to see less than an
+    admin on the same screen. This was accepted while the cache held only HTML and engineers
+    were on 1:1 devices; it stopped being acceptable once the same mechanism was shown
+    serving one account's authenticated export to another.
+
+    These assert the worker source because there is no service-worker runtime in the suite.
+    They assert an outcome -- what is purged, what survives, and the branch ordering -- not
+    how any of it is spelled.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        cls.worker = source.split("sw = r\"\"\"")[1].split('\n"""')[0]
+        cls.purge = cls.worker.split('async function purgeAuthenticatedCaches() {')[1].split('\n}')[0]
+
+    def test_the_runtime_cache_is_dropped_on_logout(self):
+        self.assertIn('caches.delete(RUNTIME_CACHE)', self.purge)
+
+    def test_the_authenticated_shell_pages_are_dropped_too(self):
+        """Purging only the runtime cache would be half a fix.
+
+        precacheShellEntry() fetches /timeline and /offline-tsr with credentials, so the app
+        shell holds signed-in HTML as well.
+        """
+        self.assertIn('AUTHENTICATED_SHELL_ROUTES', self.purge)
+        routes = self.worker.split('const AUTHENTICATED_SHELL_ROUTES = [')[1].split(']')[0]
+        self.assertIn("'/timeline'", routes)
+        self.assertIn("'/offline-tsr'", routes)
+
+    def test_the_signed_out_pages_and_assets_survive_the_purge(self):
+        """The positive control: an offline logout must still have somewhere to land.
+
+        /login and /offline carry no account data and are the only fallback once the runtime
+        cache is gone. Static assets are not account-specific and dropping them would make
+        the next sign-in slow for nothing.
+        """
+        routes = self.worker.split('const AUTHENTICATED_SHELL_ROUTES = [')[1].split(']')[0]
+        self.assertNotIn("'/login'", routes)
+        self.assertNotIn("'/offline'", routes)
+        self.assertNotIn('/static/', routes)
+        # Named entries are deleted from the shell cache; the shell cache itself is not.
+        self.assertNotIn('caches.delete(APP_SHELL_CACHE)', self.purge)
+
+    def test_the_offline_queues_are_never_touched(self):
+        """The one way this fix could have lost real work.
+
+        The offline schedule and TSR queues live in IndexedDB and hold work an engineer has
+        done and not yet synced. Clearing them at sign-out would be a far worse failure than
+        the one being fixed.
+        """
+        self.assertNotIn('indexedDB', self.purge)
+        self.assertNotIn('localStorage', self.purge)
+
+    def test_logout_is_matched_before_the_navigate_branch(self):
+        """Ordering is the fix, exactly as it was for /export_.
+
+        /logout arrives as a navigation. Matched after the navigate branch it would reach
+        fieldNavigationFirst(), which caches every ok response -- so the logout response
+        itself would be cached and the purge would race the handler that repopulates it.
+        """
+        handler = self.worker.split("self.addEventListener('fetch', event => {")[1]
+        logout_at = handler.find("url.pathname === '/logout'")
+        navigate_at = handler.find("request.mode === 'navigate'")
+        self.assertGreater(logout_at, -1, 'the /logout branch is missing')
+        self.assertGreater(navigate_at, -1, 'the navigate branch is missing')
+        self.assertLess(logout_at, navigate_at,
+                        '/logout must be matched before the navigate branch')
+
+    def test_the_purge_runs_even_when_the_request_cannot_reach_the_server(self):
+        """A user who signs out offline still wanted their pages gone from this device."""
+        handler = self.worker.split("url.pathname === '/logout'")[1].split('\n  if (')[0]
+        self.assertIn('event.waitUntil(purgeAuthenticatedCaches())', handler)
+        self.assertIn("shellCache.match('/login')", handler)
+
+
 class LogoutSessionTests(unittest.TestCase):
     """Sign in for real, sign out, and check what the browser is left holding."""
 

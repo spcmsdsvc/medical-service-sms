@@ -7,12 +7,33 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last filled: 2026-08-06 (end of session), at the owner's request, after **the Analytics upgrade
-shipped and was reviewed** — the largest single piece of work this repository has taken.
+Last updated: 2026-08-07, at the owner's request, after **four open items were closed in one
+session** — the chart sizing, the runtime cache decision, the two dead routes, and the digest.
 
 **Start here if you are picking this up cold.** The state is good: **no open bugs**, suite green at
-**498**, service worker at **`v76-analytics-flow-stock`**, nothing uncommitted but the four known
-artifacts. One deliberate deferral is in section 2 and one design decision is waiting in section 5.
+**521**, service worker at **`v77-logout-cache-purge`**, nothing uncommitted but the four known
+artifacts.
+
+**What closed on 2026-08-07, and where the residue is:**
+
+1. **Analytics charts are drawn at 1:1 and no longer scroll at 375 px** (section 3). Verified on a
+   real viewport. **One part is unverified — the `ResizeObserver` redraw**, because this Browser pane
+   does not composite the page and neither `requestAnimationFrame` nor any `ResizeObserver` callback
+   runs in it. The geometry is proven; the trigger is not. It is the only thing in this batch needing
+   a real browser.
+2. **Sign-out now purges the authenticated caches** (section 5, where the old decision is kept and
+   marked reversed). Verified end to end. IndexedDB is deliberately untouched and must stay that way
+   — the offline queues live there.
+3. **The two dead routes are gone**, with a test pinning that `/get_activity_logs` — the endpoint
+   `/activity_page` actually uses — is *not* one of them.
+4. **The digest went to the real audience.** Note there is **no idempotency**: a second send re-sends
+   to everyone who already received it.
+
+**The most useful thing to know before touching the service worker again:** the fetch handler's
+branch **order** is load-bearing twice over now. `/export_` and `/logout` are both matched ahead of
+the navigate branch because both arrive as navigations, and both would otherwise reach
+`fieldNavigationFirst()`, which caches every ok response. Two tests assert the ordering by index
+comparison rather than by reading the code.
 
 **What happened today, in order:**
 
@@ -116,7 +137,7 @@ reviews that followed.
 | `45da21c` `a762b05` `d562654` (`v73`-`v75`) | Analytics upgrade: trends, themed SVG charts, P.O. reporting (Codex) |
 | `34f60b9` (`v76`) | **Review fix** — P.O. panel invisible to reports admins; a trend arrow on a metric that cannot carry one |
 
-Suite green at **498 tests**. Service worker cache at **`v76-analytics-flow-stock`** —
+Suite green at **521 tests**. Service worker cache at **`v77-logout-cache-purge`** —
 **read the live value out of `app.py` immediately before committing**, never from a note.
 
 **Every review found something, and two were live privilege escalations.** That is the single
@@ -230,10 +251,10 @@ This is the item that **re-opens a section 5 decision** — see the correction t
 
 </details>
 
-**The section 5 question it raised is still open even though the leak is closed.** Fixing
-`/export_` fixed the route that was demonstrated. It did **not** answer whether the runtime cache
-should be cleared on logout in general — authenticated HTML still persists there after sign-out,
-and the reasoning that made that acceptable predates the HR role. Read the correction in section 5.
+**The section 5 question it raised was answered on 2026-08-07: the cache is now cleared on
+sign-out.** Fixing `/export_` fixed the route that was demonstrated; it did not answer the general
+question, and the general answer is that authenticated pages should not outlive the session that
+fetched them. See section 5, where the decision is recorded as reversed rather than deleted.
 
 ### ~~1b. Every provisional-leave failure reason is discarded before the user sees it~~ — FIXED, `v72`
 
@@ -390,21 +411,18 @@ most of the value for far less risk.
 
 </details>
 
-### `/get_recent_activity` now has zero callers
+### ~~`/get_recent_activity` and `/get_engineer_dashboard_summary` have zero callers~~ — REMOVED, 2026-08-07
 
-`app.py:17856`. Its only caller was `fetchActivityLog()` in `static/js/app-dashboard.js`,
-which served the `recent-activity` dashboard section — both retired in `5de1658`. The endpoint
-itself was left in place because retiring a route is a separate decision from retiring the
-markup that used it.
+**Both retired**, with their entries in the perf-log path list, after confirming no reference in any
+template, script or test. The comment in `static/js/app-dashboard.js` that recorded the pending
+decision was updated rather than left describing a route that no longer exists, and no helper was
+orphaned by the deletion — each was checked for remaining callers.
 
-**Do not assume `/activity_page` needs it.** `templates/activity.html` carries its own,
-independent loader against **`/get_activity_logs`** (plural, a different endpoint), and never
-referenced `/get_recent_activity` or any of the deleted client-side helpers. That was checked
-directly, because the opposite was assumed at first and written into a plan.
-
-Same shape as the two open dead-route items below. Decide whether to wire it up or remove it;
-if removing, drop its `/get_recent_activity` entry from the perf-log path list at `app.py:1172`
-as well.
+**The distinction that made this safe is now pinned by a test, because it nearly went the other
+way.** `/activity_page` carries its own loader against **`/get_activity_logs`** — plural, a
+different endpoint — and an earlier plan assumed that was the same route. `RetiredDashboardRouteTests`
+asserts both that the two dead routes are unregistered and that `/get_activity_logs` still is, so
+deleting one can never take the other with it.
 
 ### Mobile tap target: `.dashboard-metric-link` is 25 px tall
 
@@ -423,33 +441,25 @@ genuinely tapped on phones. Fixing it means giving the link padding or a min-hei
 `.dashboard-metric-strip` in `static/css/app-dashboard.css`, and re-checking that the strip
 still fits at 375 px without wrapping.
 
-### `/get_engineer_dashboard_summary` has zero callers
+### ~~What's New — digest: real audience send~~ — SENT, 2026-08-07
 
-`app.py:18488`. No references in any `.js` or template; appears only in the perf-log path
-list. The same dead-route shape as `/get_scheduler_dispatch_intelligence`, which phase 2
-activated, and the two hybrid endpoints phase 4 deleted. Decide whether to wire it up or
-remove it.
+**Closed. The owner sent the digest to the real audience and reported it on 2026-08-07.** All three
+steps of the sequence are behind us: the recipient count was the safeguard, the self-test went on
+2026-08-05, and the real send has now happened. `CHANGELOG_DIGEST_ENABLED` is `true` on Railway and
+the feature has been deployed since `0447392`.
 
-### What's New — digest: test send done, real audience send still open — DO THIS CAREFULLY
-
-**`CHANGELOG_DIGEST_ENABLED` is `true` on Railway** and the feature has been deployed since
-`0447392`. **The self-test has been sent and passed** — the owner ran **Send test to me** on
-2026-08-05 and confirmed it arrived and read correctly. **No digest has gone to a real
-audience yet.**
-
-That also closes what section 3 previously listed as unverified: the digest HTML had only ever
+That also closed what section 3 previously listed as unverified: the digest HTML had only ever
 been seen in the preview pane, never in an inbox, and mail clients strip and rewrite CSS. It
-has now been rendered by a real mail client.
+has now been rendered by a real mail client and delivered to a real audience.
 
-The three-step sequence, with step 2 behind us:
+**What the record does not contain**, the same gap as the barcode scanner below: the outcome is the
+owner's, reported directly. The resolved recipient count at send time, which audiences were chosen,
+and whether every intended recipient received it were **not captured here**. If someone reports a
+missing digest later there is no recorded baseline to diff against.
 
-1. Open What's New → **Email digest** and read the **resolved recipient count** for each
-   audience. That count is the safeguard; nothing else stands between a click and real mail.
-   **Still to do.**
-2. ~~**Send test to me** first — it goes only to the requesting admin's own address. Confirm
-   it arrives and reads correctly.~~ **Done, 2026-08-05.**
-3. Only then a real audience send, with the count confirmed. **Still to do, and it is the
-   irreversible one.**
+**The limitations below still apply to the next send, and one of them matters more now that a real
+send has happened: there is no idempotency, so pressing send again sends the same digest again** to
+people who have already received it.
 
 Expect the resolved count to be **higher** than "accounts with a profile email":
 `get_user_email_for_notification()` ends in a hardcoded username-to-email map (`diary`,
@@ -534,24 +544,26 @@ resurrect it as a money proxy.
 None of this is known broken — it simply has not been checked. **One item here is a known
 deviation rather than an unknown, and it is listed first.**
 
-### Analytics charts scroll horizontally at 375 px — known, contained, not fixed
+### ~~Analytics charts scroll horizontally at 375 px~~ — FIXED, `v77`
 
-`static/css/app-analytics.css` sets `min-width: 560px` on the chart SVG inside a frame that is
-~320 px wide on a phone. The frame carries `overflow-x: auto`, so it is **contained** — the page
-itself does not overflow and nothing is clipped — but the bars scroll sideways with **no affordance**
-(no fade, no styled scrollbar), which is the same complaint the old `.mini-chart` earned before the
-rewrite.
+**Fixed on 2026-08-07.** Both renderers now measure the frame and draw 1 user unit = 1 CSS px, which
+is what the approved plan specified. Verified at 375 px: no frame scrolls sideways, no page overflow,
+and rendered width equals the `width` attribute equals the `viewBox` on all three charts. Re-measured
+at three container widths and the chart matched its container each time.
 
-**This is a deviation from the approved plan, which is why it is recorded rather than shrugged at.**
-The plan specified drawing 1 user unit = 1 CSS px from `container.clientWidth`, precisely so the
-charts would never scroll; what shipped is `viewBox` + `preserveAspectRatio` scaling, which the plan
-had explicitly rejected because it shrinks `<text>` to ~6 px at 375 px. The `min-width` is what stops
-the text shrinking, at the cost of the scroll.
+Two things worth carrying forward. **The `min-width: 560px` was a brace, not the bug** — it existed
+to stop the fixed `viewBox` scaling `<text>` to ~6 px, so removing it alone would have traded a
+scroll for unreadable labels. And **SVG has no `text-overflow`**, so measuring made label truncation
+mandatory: an untruncated branch name draws over the bars. The full text stays in the row `<title>`
+and the hidden data table.
 
-Fixing it properly means rewriting both chart renderers in `static/js/app-analytics.js`
-(`renderHorizontalChart` and `renderTrend`) to measure and redraw at 1:1, plus a debounced
-`ResizeObserver` — guard on integer width change and never let the chart set its own container's
-width, or it re-renders itself in a loop. That is its own task, not review cleanup.
+**One thing in this fix is NOT verified, and it is the trigger rather than the geometry.** The
+debounced `ResizeObserver` redraw could not be observed: the Browser pane does not composite the
+page, `requestAnimationFrame` never runs in it, and a control `ResizeObserver` attached to the same
+node did not fire even the initial callback the spec guarantees — both are driven by the rendering
+steps. The measurement logic it calls is proven at three widths by re-rendering directly; that the
+observer fires is not. **Check it in a real browser** by dragging the window across the breakpoint:
+the charts should redraw once per settled width, and the page must not hang.
 
 ### The rest
 
@@ -868,19 +880,30 @@ week and has since been completed has left the overdue set, so any reconstructed
 figure is systematically undercounted. That would be a wrong number wearing an authoritative
 arrow.
 
-> **STILL OPEN after the `v71` fix.** `/export_` is now network-only, so the *route* that was
-> demonstrated can no longer leak — but that closed one route, not the question below. Every other
-> authenticated response the runtime cache holds still survives a sign-out.
+> **REVERSED 2026-08-07, in `v77`. The entry below is kept as the record of a decision that was
+> right when it was made and stopped being right.** Sign-out now purges the whole `RUNTIME_CACHE`
+> plus `/timeline` and `/offline-tsr` from the app shell — the shell mattered too, because
+> `precacheShellEntry()` fetches those with credentials. `/login`, `/offline` and every static asset
+> are deliberately kept, or an offline sign-out has nothing to land on.
 >
-> **RE-OPENED 2026-08-06 — do not treat the entry below as settled.** It was decided on the
-> grounds that engineers are issued 1:1 devices, and it was written about cached **HTML**. The
-> 2026-08-06 browser pass demonstrated the same cache serving an **authenticated data export**
-> across accounts: a superadmin's unredacted `/export_timeline` CSV returned to a logged-in **HR**
-> session on the same browser. See section 1a for the reproduction and the precise scope. Two
-> things the original decision could not have weighed: the HR role did not exist on 2026-07-28,
-> and it is the first role whose entire purpose is to see **less** than another role on the same
-> screen — so the redaction contract is per-account while the cache key has no account in it.
-> The 1:1-device argument may still carry the day; it simply has not been tested against this case.
+> **What changed between 2026-07-28 and now was not the argument but the facts under it.** The
+> original decision rested on 1:1 devices and was written about cached **HTML**. Then the HR role
+> arrived — the first role whose entire purpose is to see *less* than another role on the same
+> screen, so the redaction contract became per-account while the cache key still had no account in
+> it — and the 2026-08-06 pass demonstrated the same cache serving an authenticated export across
+> accounts. `v71` closed that one route; this closes the mechanism.
+>
+> **Both residuals below are also gone**, the first as a direct consequence: `/logout` is now
+> network-only, so it is no longer cached; and `staleWhileRevalidate` has nothing account-specific
+> left to serve after a sign-out. `staleWhileRevalidate` itself was deliberately not rewritten —
+> with the cache cleared at sign-out the exposure is gone, and rewriting the default handler is a
+> much wider blast radius.
+>
+> **The one thing deliberately NOT cleared, and it must stay that way: IndexedDB.** The offline
+> schedule and TSR queues live there and hold work an engineer has done and not yet synced. Clearing
+> them at sign-out would lose real field work — a worse failure than the one being fixed. This is
+> also why `Clear-Site-Data`, the tidy server-side equivalent, was rejected: it takes IndexedDB with
+> everything else. A test pins the exclusion.
 
 **Clearing the service worker runtime cache on logout.** Authenticated HTML persists in
 `RUNTIME_CACHE` after sign-out, so on a shared device an offline user could see the previous
