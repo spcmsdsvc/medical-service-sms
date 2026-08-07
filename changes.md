@@ -85,6 +85,29 @@ claude changes - 2026-08-07 (signature stamp review)
   `templates/offline_tsr.html` is an `APP_SHELL` entry and a cached device would keep the old
   footer arithmetic.
 
+### codex changes - 2026-08-07 (server-backed Create TSR drafts)
+
+- Added the additive `TsrDraft` server table and safe runtime schema creation in `app.py`; drafts
+  are uniquely scoped by signed-in user and browser draft key, with typed metadata, signatures,
+  device timestamps, and payload snapshots retained without replacing the live database.
+- Added owner-scoped `/save_tsr_draft`, `/get_tsr_drafts`, and `/delete_tsr_draft` APIs with
+  stale-device protection, payload-size limits, safe optional metadata normalization, and
+  projection that removes browser-only file/blob values while preserving typed TSR fields and
+  signatures.
+- Updated `templates/offline_tsr.html` so local IndexedDB/localStorage writes remain the first
+  durable step, then debounce or immediately synchronize typed drafts to the account when online;
+  explicit deletion removes the account copy or queues a deletion for the next connection.
+- Added server-draft hydration after sign-in/page startup, account/device source indicators,
+  supporting-file re-selection messaging when only local blobs remain, and browser storage
+  persistence status in the admin-only offline health panel.
+- Added `tests/test_tsr_draft_sync.py` for owner isolation, stale-write behavior, payload
+  projection, browser wiring, optional metadata handling, and service-worker cache coverage;
+  the route fixture uses separate request contexts and restores its temporary engine/config
+  reliably after every run.
+- Bumped the application service worker to `v80-tsr-server-drafts` and added the release manifest
+  entry for the recovery behavior. `scheduler.db`, generated output, temporary files, and the
+  handoff artifact remain excluded from the release set.
+
 claude changes - 2026-08-07 (verification pass)
 
 ## A malformed engineer list 500s instead of returning a 400

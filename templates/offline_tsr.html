@@ -11,7 +11,7 @@
   <div class="offline-tsr-hero no-print">
     <div>
       <h2 class="mb-1 fw-bold"><i class="fa-solid fa-file-pen text-primary me-2"></i>Create TSR</h2>
-      <p class="text-muted mb-0">Create a TSR from a selected schedule, save progress, and continue later on this device.</p>
+      <p class="text-muted mb-0">Create a TSR from a selected schedule, save progress, and continue later from this device or your account backup.</p>
     </div>
     <div class="offline-tsr-hero-actions">
       <button class="btn btn-outline-secondary fw-bold" type="button" onclick="resetStandaloneTSRForm()"><i class="fa-solid fa-file-circle-plus me-1"></i>Start New TSR</button>
@@ -92,6 +92,10 @@
         <div class="offline-tsr-health-value" id="offline-tsr-health-usage">Unavailable</div>
       </div>
       <div class="offline-tsr-health-tile">
+        <div class="offline-tsr-health-label">Storage Persistence</div>
+        <div class="offline-tsr-health-value" id="offline-tsr-health-persistence">Checking...</div>
+      </div>
+      <div class="offline-tsr-health-tile">
         <div class="offline-tsr-health-label">Last Sync</div>
         <div class="offline-tsr-health-value" id="offline-tsr-health-sync">No sync yet</div>
       </div>
@@ -105,9 +109,9 @@
       <div>
         <div class="small fw-bold text-primary text-uppercase">Drafted TSRs</div>
         <h5 class="fw-bold mb-1">Continue Saved Work</h5>
-        <div class="small text-muted">Drafts are saved on this device so interrupted TSRs can be opened again.</div>
+        <div class="small text-muted">Drafts are saved on this device and backed up to your account when online, so interrupted TSRs can be opened again.</div>
       </div>
-      <button class="btn btn-outline-primary btn-sm fw-bold" type="button" onclick="renderStandaloneTSRDraftPanel()">
+      <button class="btn btn-outline-primary btn-sm fw-bold" type="button" onclick="refreshStandaloneTSRDraftPanel()">
         <i class="fa-solid fa-rotate-right me-1"></i>Refresh Drafts
       </button>
     </div>
@@ -429,7 +433,7 @@
 <style>
 .offline-tsr-dialog-backdrop{position:fixed;inset:0;z-index:4100;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px}.offline-tsr-dialog-backdrop.show{display:flex}.offline-tsr-dialog-box{width:min(470px,100%);background:#fff;border-radius:22px;box-shadow:0 28px 90px rgba(15,23,42,.38);border:1px solid #dbeafe;overflow:hidden;animation:offlineTSRDialogIn .18s ease-out}.offline-tsr-dialog-header{padding:18px 18px 10px;display:flex;gap:12px;align-items:flex-start}.offline-tsr-dialog-icon{width:42px;height:42px;border-radius:16px;background:#eff6ff;color:#0d6efd;display:inline-flex;align-items:center;justify-content:center;font-size:1.05rem;flex:0 0 auto}.offline-tsr-dialog-box.danger .offline-tsr-dialog-icon{background:#fee2e2;color:#b91c1c}.offline-tsr-dialog-box.warning .offline-tsr-dialog-icon{background:#fffbeb;color:#b45309}.offline-tsr-dialog-box.success .offline-tsr-dialog-icon{background:#dcfce7;color:#166534}.offline-tsr-dialog-text{min-width:0;flex:1}.offline-tsr-dialog-title{margin:0;color:#0f172a;font-weight:950;font-size:1.08rem}.offline-tsr-dialog-message{margin-top:5px;color:#475569;font-weight:800;line-height:1.45;white-space:pre-wrap}.offline-tsr-dialog-actions{padding:12px 18px 18px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}.tsr-recommended-highlight{outline:3px solid rgba(245,158,11,.8)!important;box-shadow:0 0 0 6px rgba(245,158,11,.18)!important;border-radius:12px;transition:outline .18s ease,box-shadow .18s ease}@keyframes offlineTSRDialogIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}@media(max-width:768px){.offline-tsr-dialog-backdrop{align-items:flex-end;padding:12px}.offline-tsr-dialog-box{width:100%;border-radius:20px}}
 .offline-tsr-page{max-width:1180px;margin:0 auto}.offline-tsr-hero{display:flex;justify-content:space-between;gap:16px;align-items:center;background:#fff;border-radius:22px;padding:18px 20px;margin-bottom:16px;box-shadow:0 8px 28px rgba(15,23,42,.07)}.offline-tsr-eyebrow{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.08em}.offline-tsr-hero-actions{display:flex;gap:8px;flex-wrap:wrap}.offline-tsr-schedule-picker-card{border-left:5px solid #0d6efd}.schedule-picker-selected{border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.schedule-picker-title{font-weight:900;color:#0f172a}.schedule-picker-meta{font-size:.82rem;color:#475569}.tsr-schedule-coverage-panel{border:1px solid #bfdbfe;background:#f8fbff;border-radius:16px;padding:12px}.tsr-schedule-coverage-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.05em}.tsr-schedule-coverage-table{width:100%;border-collapse:collapse;font-size:.78rem}.tsr-schedule-coverage-table th,.tsr-schedule-coverage-table td{border:1px solid #bfdbfe;padding:6px 8px;text-align:left;vertical-align:top}.tsr-schedule-coverage-table th{background:#e7f1ff;color:#334155;font-weight:900}.standalone-pill{display:inline-flex;align-items:center;background:#e7f5ff;color:#0d6efd;border:1px solid #bfdbfe;border-radius:999px;padding:10px 14px;font-weight:900}.tsr-list-box{border:1px solid #e5e7eb;border-radius:14px;min-height:46px;padding:8px;background:#f8fafc}.tsr-list-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 10px;margin-bottom:6px}.tsr-action-text{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}.tsr-action-controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}.tsr-action-controls .btn{font-weight:800}.tsr-chip-box{display:flex;gap:6px;flex-wrap:wrap}.tsr-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#e7f1ff;border:1px solid #bfdbfe;color:#0d6efd;padding:6px 10px;font-size:.82rem;font-weight:800}.tsr-chip button{border:0;background:transparent;color:#0d6efd;font-weight:900}.tsr-parts-grid{display:grid;grid-template-columns:80px 1fr 1.5fr 70px 1fr;gap:6px;align-items:center}.tsr-parts-header{font-size:.72rem;text-transform:uppercase;font-weight:900;color:#64748b;margin-bottom:6px}.tsr-part-row{margin-bottom:6px}.signature-canvas{display:block;width:100%;height:min(48vh,430px);min-height:340px;border:2px dashed #94a3b8;border-radius:18px;background:#fff;touch-action:none}.tsr-saved-signature-panel{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.tsr-saved-signature-copy{min-width:0}.schedule-picker-open-btn{text-align:left;justify-content:flex-start;display:flex;align-items:center}.standalone-schedule-card-list{display:grid;gap:10px}.standalone-schedule-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:12px;box-shadow:0 6px 18px rgba(15,23,42,.05);cursor:pointer;transition:.15s ease}.standalone-schedule-card:hover{border-color:#0d6efd;transform:translateY(-1px);box-shadow:0 10px 24px rgba(13,110,253,.12)}.standalone-schedule-card.active{border:2px solid #0d6efd;background:#eff6ff}.standalone-schedule-card-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.standalone-schedule-client{font-weight:900;color:#0f172a}.standalone-schedule-date{font-size:.76rem;font-weight:900;color:#0d6efd;background:#e7f1ff;border:1px solid #bfdbfe;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-date-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.standalone-schedule-date-chip{border:1px solid #bfdbfe;background:#fff;color:#0d6efd;border-radius:999px;padding:6px 10px;font-size:.78rem;font-weight:900;cursor:pointer}.standalone-schedule-date-chip.active,.standalone-schedule-date-chip:hover{background:#0d6efd;color:#fff}.standalone-schedule-count-badge{font-size:.72rem;font-weight:900;color:#475569;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-product{font-size:.88rem;font-weight:800;color:#334155;margin-top:4px}.standalone-schedule-serial{font-size:.8rem;color:#64748b;margin-top:2px}.standalone-schedule-meta{font-size:.78rem;color:#64748b;margin-top:6px}.standalone-schedule-empty{background:#fff;border:1px dashed #cbd5e1;border-radius:16px;padding:22px;text-align:center;color:#64748b;font-weight:800}.tsr-inline-suggestions{border:1px dashed #bfdbfe;background:#f8fbff;border-radius:14px;padding:8px;display:grid;gap:8px;max-height:260px;overflow:auto}.tsr-schedule-locked{background:#f1f5f9!important;color:#475569!important;border-color:#cbd5e1!important;cursor:not-allowed}.tsr-missing-equipment-entry{background:#fffbeb!important;border-color:#f59e0b!important;box-shadow:0 0 0 3px rgba(245,158,11,.08)}.tsr-schedule-locked-note{font-size:.76rem;color:#64748b;font-weight:800;margin-top:4px}.tsr-knowledge-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.tsr-knowledge-meta{font-size:.76rem;color:#64748b;font-weight:800;margin-bottom:5px}.tsr-knowledge-text{font-size:.86rem;color:#0f172a;white-space:pre-wrap}.tsr-knowledge-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tsr-knowledge-section-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.04em;margin:2px 0 4px}.tsr-knowledge-quick-header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.76rem;font-weight:900;color:#334155}.tsr-knowledge-quick-context{font-size:.72rem;color:#64748b;font-weight:800}.tsr-knowledge-badges{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}.tsr-knowledge-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:.68rem;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#334155}.tsr-knowledge-badge.primary{border-color:#bfdbfe;background:#e7f1ff;color:#0d6efd}.tsr-knowledge-badge.success{border-color:#bbf7d0;background:#ecfdf5;color:#15803d}.tsr-knowledge-badge.warning{border-color:#fde68a;background:#fffbeb;color:#92400e}.tsr-knowledge-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:12px;text-align:center;color:#64748b;font-weight:800;background:#fff}@media(max-width:768px){.offline-tsr-hero{align-items:stretch;flex-direction:column}.offline-tsr-hero-actions .btn{width:100%}.tsr-list-item{align-items:stretch;flex-direction:column}.tsr-action-controls{justify-content:flex-start}.tsr-action-controls .btn{flex:1 1 auto}.tsr-parts-grid{grid-template-columns:1fr}.tsr-parts-header{display:none}.signature-canvas{height:360px;min-height:320px}.tsr-saved-signature-panel{align-items:stretch;flex-direction:column}.tsr-saved-signature-panel .btn{width:100%}}
-.offline-tsr-drafts-card{border-left:5px solid #f59e0b}.standalone-tsr-drafts-list{display:grid;gap:10px}.standalone-tsr-draft-card{border:1px solid #e5e7eb;background:#fff;border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 6px 18px rgba(15,23,42,.05)}.standalone-tsr-draft-card.active{border-color:#0d6efd;background:#eff6ff}.standalone-tsr-draft-title{font-weight:950;color:#0f172a}.standalone-tsr-draft-meta{font-size:.82rem;color:#64748b;font-weight:800;margin-top:3px}.standalone-tsr-draft-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.standalone-tsr-draft-empty{border:1px dashed #cbd5e1;border-radius:16px;padding:16px;text-align:center;color:#64748b;font-weight:800;background:#f8fafc}@media(max-width:768px){.standalone-tsr-draft-card{align-items:stretch;flex-direction:column}.standalone-tsr-draft-actions .btn{flex:1 1 auto}}
+ .offline-tsr-drafts-card{border-left:5px solid #f59e0b}.standalone-tsr-drafts-list{display:grid;gap:10px}.standalone-tsr-draft-card{border:1px solid #e5e7eb;background:#fff;border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 6px 18px rgba(15,23,42,.05)}.standalone-tsr-draft-card.active{border-color:#0d6efd;background:#eff6ff}.standalone-tsr-draft-title{font-weight:950;color:#0f172a}.standalone-tsr-draft-meta{font-size:.82rem;color:#64748b;font-weight:800;margin-top:3px}.standalone-tsr-draft-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.standalone-tsr-draft-empty{border:1px dashed #cbd5e1;border-radius:16px;padding:16px;text-align:center;color:#64748b;font-weight:800;background:#f8fafc}@media(max-width:768px){.standalone-tsr-draft-card{align-items:stretch;flex-direction:column}.standalone-tsr-draft-actions .btn{flex:1 1 auto}}
 .offline-tsr-connection-banner{border-radius:16px;padding:10px 12px;margin-bottom:12px;font-weight:800;display:flex;align-items:center;gap:8px}.offline-tsr-connection-banner.online{background:#ecfdf5;color:#15803d;border:1px solid #bbf7d0}.offline-tsr-connection-banner.offline{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}.offline-tsr-connection-banner.syncing{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}.offline-tsr-connection-banner.failed{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}.offline-tsr-queue-panel-syncing{border-left:5px solid #0d6efd!important}.offline-tsr-queue-panel-failed{border-left:5px solid #dc3545!important}.offline-tsr-queue-panel-success{border-left:5px solid #198754!important}
 
 /* Offline TSR cleanup helpers */
@@ -2758,6 +2762,13 @@ const OFFLINE_TSR_DB_STORES = {
   metadata: 'tsr_metadata'
 };
 
+const OFFLINE_TSR_STORAGE_PERSISTENCE_KEY = 'phase6_storage_persistence';
+const STANDALONE_TSR_SERVER_DELETE_KEY = 'medicalServiceStandaloneTSRServerDraftDeletesV1';
+const STANDALONE_TSR_SERVER_DRAFT_DEBOUNCE_MS = 15 * 1000;
+let standaloneTSRServerDraftSyncTimer = null;
+let standaloneTSRServerDraftSyncChain = Promise.resolve();
+let standaloneTSRServerDraftsHydrated = false;
+
 let offlineTSRDatabasePromise = null;
 
 function isIndexedDBSupported(){
@@ -2857,6 +2868,57 @@ function offlineTSRDBGetAll(storeName){
 
 function offlineTSRDBDelete(storeName, key){
   return offlineTSRDBRequest(storeName, 'readwrite', store => store.delete(key)).then(() => true);
+}
+
+async function requestOfflineTSRStoragePersistence(){
+  const result = {
+    key: OFFLINE_TSR_STORAGE_PERSISTENCE_KEY,
+    supported: Boolean(navigator.storage),
+    persisted: false,
+    requested: false,
+    granted: false,
+    checked_at: new Date().toISOString()
+  };
+
+  if(!navigator.storage){
+    return result;
+  }
+
+  try{
+    if(typeof navigator.storage.persisted === 'function'){
+      result.persisted = Boolean(await navigator.storage.persisted());
+    }
+    if(!result.persisted && typeof navigator.storage.persist === 'function'){
+      result.requested = true;
+      result.granted = Boolean(await navigator.storage.persist());
+      result.persisted = result.granted || (typeof navigator.storage.persisted === 'function' && Boolean(await navigator.storage.persisted()));
+    }else{
+      result.granted = result.persisted;
+    }
+  }catch(err){
+    result.error = err?.message || 'Storage persistence request failed';
+  }
+
+  try{
+    await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.metadata, result);
+  }catch(err){
+    console.warn('[Offline TSR] Unable to save storage persistence status', err);
+  }
+  return result;
+}
+
+async function getOfflineTSRStoragePersistence(){
+  try{
+    const stored = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.metadata, OFFLINE_TSR_STORAGE_PERSISTENCE_KEY);
+    if(stored) return stored;
+  }catch(err){
+    console.warn('[Offline TSR] Unable to read storage persistence status', err);
+  }
+  return {
+    supported: Boolean(navigator.storage),
+    persisted: false,
+    granted: false
+  };
 }
 
 async function initializeOfflineTSRDatabaseFoundation(){
@@ -3075,6 +3137,263 @@ async function buildOfflineTSRDraftRecord(data){
   };
 }
 
+function buildStandaloneTSRServerDraftRequest(record){
+  const sourcePayload = projectOfflineTSRPayloadForLocalStorage(record?.payload || {});
+  const payload = Object.assign({}, sourcePayload, { _draft_id: record?.id || sourcePayload._draft_id || '' });
+  const attachmentNames = normalizeQueuedAttachments(record?.payload?.attachments || [])
+    .filter(attachment => !isQueuedTSRSignatureAttachment(attachment))
+    .map(attachment => String(attachment?.name || attachment?.filename || '').trim())
+    .filter(Boolean)
+    .filter((name, index, names) => names.indexOf(name) === index)
+    .slice(0, 10);
+
+  return {
+    draft_key: String(record?.id || payload._draft_id || '').trim(),
+    schedule_id: record?.schedule_id || payload.schedule_id || payload.selectedScheduleId || '',
+    tsr_number: record?.tsr_number || payload['tsr-number'] || payload.tsr_number || '',
+    client_name: record?.client_name || payload['tsr-customer-name'] || '',
+    service_date: record?.service_date || payload['tsr-service-date'] || '',
+    title: record?.title || getStandaloneTSRDraftTitle(payload),
+    subtitle: record?.subtitle || getStandaloneTSRDraftSubtitle(payload),
+    attachment_count: attachmentNames.length,
+    attachment_names: attachmentNames,
+    device_updated_at: record?.updated_at || new Date().toISOString(),
+    payload
+  };
+}
+
+function parseOfflineTSRDate(value){
+  const timestamp = Date.parse(String(value || ''));
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+async function syncStandaloneTSRDraftToServer(record){
+  if(!record?.id) return { skipped:true, reason:'missing_draft_key' };
+  if(!navigator.onLine) return { skipped:true, reason:'offline' };
+
+  const headers = { 'Content-Type':'application/json', Accept:'application/json' };
+  const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
+  if(csrfToken) headers['X-CSRFToken'] = csrfToken;
+
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const timeout = controller ? setTimeout(() => controller.abort(), 12000) : null;
+  try{
+    const response = await fetch('/save_tsr_draft', {
+      method:'POST',
+      credentials:'same-origin',
+      cache:'no-store',
+      headers,
+      signal: controller?.signal,
+      body: JSON.stringify(buildStandaloneTSRServerDraftRequest(record))
+    });
+    const result = await response.json().catch(() => ({}));
+    if(!response.ok || result.status !== 'success'){
+      const error = new Error(result.message || `TSR draft backup failed (${response.status}).`);
+      error.httpStatus = response.status;
+      error.requiresLogin = response.status === 401 || response.status === 403;
+      throw error;
+    }
+    return result;
+  }catch(err){
+    if(err?.name === 'AbortError'){
+      err = new Error('TSR draft backup timed out while contacting the server.');
+      err.retryable = true;
+    }
+    throw err;
+  }finally{
+    if(timeout) clearTimeout(timeout);
+  }
+}
+
+function enqueueStandaloneTSRServerDraftSync(record, { immediate=false } = {}){
+  if(!record?.id || !navigator.onLine) return { pending:true, skipped:true, reason:'offline_or_missing_key' };
+  if(!immediate){
+    clearTimeout(standaloneTSRServerDraftSyncTimer);
+    standaloneTSRServerDraftSyncTimer = setTimeout(() => {
+      standaloneTSRServerDraftSyncTimer = null;
+      const operation = standaloneTSRServerDraftSyncChain
+        .catch(() => null)
+        .then(() => syncStandaloneTSRDraftToServer(record));
+      standaloneTSRServerDraftSyncChain = operation;
+      void operation.catch(err => console.warn('[Offline TSR] Debounced server draft backup failed', err));
+    }, STANDALONE_TSR_SERVER_DRAFT_DEBOUNCE_MS);
+    return { pending:true, scheduled:true };
+  }
+
+  clearTimeout(standaloneTSRServerDraftSyncTimer);
+  standaloneTSRServerDraftSyncTimer = null;
+  const operation = standaloneTSRServerDraftSyncChain
+    .catch(() => null)
+    .then(() => syncStandaloneTSRDraftToServer(record));
+  standaloneTSRServerDraftSyncChain = operation;
+  return operation;
+}
+
+function readStandaloneTSRServerDraftDeleteQueue(){
+  try{
+    const values = JSON.parse(localStorage.getItem(STANDALONE_TSR_SERVER_DELETE_KEY) || '[]');
+    return Array.isArray(values) ? values.map(value => String(value || '').trim()).filter(Boolean) : [];
+  }catch(err){
+    return [];
+  }
+}
+
+function writeStandaloneTSRServerDraftDeleteQueue(values){
+  try{
+    const unique = [...new Set((values || []).map(value => String(value || '').trim()).filter(Boolean))];
+    if(unique.length) localStorage.setItem(STANDALONE_TSR_SERVER_DELETE_KEY, JSON.stringify(unique));
+    else localStorage.removeItem(STANDALONE_TSR_SERVER_DELETE_KEY);
+  }catch(err){
+    console.warn('[Offline TSR] Unable to persist pending server draft deletions', err);
+  }
+}
+
+function queueStandaloneTSRServerDraftDelete(id){
+  const queued = readStandaloneTSRServerDraftDeleteQueue();
+  queued.push(String(id || '').trim());
+  writeStandaloneTSRServerDraftDeleteQueue(queued);
+}
+
+async function deleteStandaloneTSRServerDraftRemote(id){
+  const draftKey = String(id || '').trim();
+  if(!draftKey) return { skipped:true, reason:'missing_draft_key' };
+  const headers = { 'Content-Type':'application/json', Accept:'application/json' };
+  const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
+  if(csrfToken) headers['X-CSRFToken'] = csrfToken;
+  const response = await fetch('/delete_tsr_draft', {
+    method:'POST',
+    credentials:'same-origin',
+    cache:'no-store',
+    headers,
+    body: JSON.stringify({ draft_key: draftKey })
+  });
+  const result = await response.json().catch(() => ({}));
+  if(response.status === 404) return { status:'success', success:true, deleted:false, not_found:true };
+  if(!response.ok || result.status !== 'success'){
+    const error = new Error(result.message || `TSR draft deletion failed (${response.status}).`);
+    error.httpStatus = response.status;
+    throw error;
+  }
+  return result;
+}
+
+async function flushStandaloneTSRServerDraftDeletes(){
+  if(!navigator.onLine) return { skipped:true, reason:'offline' };
+  const queued = readStandaloneTSRServerDraftDeleteQueue();
+  if(!queued.length) return { deleted:0 };
+  const remaining = [];
+  let deleted = 0;
+  for(const draftKey of queued){
+    try{
+      await deleteStandaloneTSRServerDraftRemote(draftKey);
+      deleted += 1;
+    }catch(err){
+      remaining.push(draftKey);
+      console.warn('[Offline TSR] Pending server draft deletion failed', err);
+    }
+  }
+  writeStandaloneTSRServerDraftDeleteQueue(remaining);
+  return { deleted, remaining:remaining.length };
+}
+
+async function deleteStandaloneTSRDraftOnServer(id){
+  const draftKey = String(id || '').trim();
+  if(!draftKey) return { skipped:true, reason:'missing_draft_key' };
+  clearTimeout(standaloneTSRServerDraftSyncTimer);
+  standaloneTSRServerDraftSyncTimer = null;
+  await standaloneTSRServerDraftSyncChain.catch(() => null);
+  if(!navigator.onLine){
+    queueStandaloneTSRServerDraftDelete(draftKey);
+    return { pending:true, reason:'offline' };
+  }
+  try{
+    const result = await deleteStandaloneTSRServerDraftRemote(draftKey);
+    const remaining = readStandaloneTSRServerDraftDeleteQueue().filter(value => value !== draftKey);
+    writeStandaloneTSRServerDraftDeleteQueue(remaining);
+    return result;
+  }catch(err){
+    queueStandaloneTSRServerDraftDelete(draftKey);
+    return { pending:true, error:err };
+  }
+}
+
+async function mergeServerStandaloneTSRDrafts(){
+  if(!navigator.onLine) return { skipped:true, reason:'offline' };
+  await flushStandaloneTSRServerDraftDeletes();
+  try{
+    const response = await fetch('/get_tsr_drafts', { credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'} });
+    const result = await response.json().catch(() => ({}));
+    if(!response.ok || result.status !== 'success'){
+      if(response.status !== 401 && response.status !== 403) console.warn('[Offline TSR] Server draft list failed', result.message || response.status);
+      return { skipped:true, reason:'request_failed', http_status:response.status };
+    }
+
+    const remoteDrafts = Array.isArray(result.drafts) ? result.drafts : [];
+    const localRecords = await loadStandaloneTSRDraftRecordsFromIndexedDB().catch(() => []);
+    const localByKey = new Map(localRecords.map(record => [String(record.id || ''), record]));
+    const remoteKeys = new Set(remoteDrafts.map(draft => String(draft.draft_key || draft.id || '')));
+
+    for(const localRecord of localRecords){
+      const localKey = String(localRecord.id || '');
+      if(localKey && !remoteKeys.has(localKey) && isStandaloneTSRDraftMeaningful(localRecord.payload)){
+        await enqueueStandaloneTSRServerDraftSync(localRecord, { immediate:true }).catch(err => {
+          console.warn('[Offline TSR] Local draft could not be uploaded during hydration', err);
+        });
+      }
+    }
+
+    for(const remote of remoteDrafts){
+      const draftKey = String(remote.draft_key || remote.id || '').trim();
+      if(!draftKey) continue;
+      const local = localByKey.get(draftKey);
+      const localTimestamp = parseOfflineTSRDate(local?.updated_at || local?.payload?.savedAt);
+      const remoteTimestamp = parseOfflineTSRDate(remote.updated_at || remote.device_updated_at);
+      const deviceTimestamp = parseOfflineTSRDate(remote.device_updated_at);
+      if(local && localTimestamp && remoteTimestamp && localTimestamp > Math.max(remoteTimestamp, deviceTimestamp || 0)){
+        await enqueueStandaloneTSRServerDraftSync(local, { immediate:true }).catch(err => {
+          console.warn('[Offline TSR] Newer local draft could not replace server copy', err);
+        });
+        continue;
+      }
+
+      const payload = Object.assign({}, remote.payload || {}, {
+        _draft_id: draftKey,
+        _server_draft_attachment_count: Number(remote.attachment_count || 0),
+        _server_draft_attachment_names: Array.isArray(remote.attachment_names) ? remote.attachment_names : [],
+        attachments: local?.payload?.attachments || []
+      });
+      const record = {
+        id: draftKey,
+        schedule_id: remote.schedule_id || payload.schedule_id || payload.selectedScheduleId || '',
+        selected_schedule_id: payload.selectedScheduleId || payload.selectedSchedule?.id || payload.selected_schedule?.id || '',
+        title: remote.title || getStandaloneTSRDraftTitle(payload),
+        subtitle: remote.subtitle || getStandaloneTSRDraftSubtitle(payload),
+        service_date: remote.service_date || payload['tsr-service-date'] || '',
+        client_name: remote.client_name || payload['tsr-customer-name'] || '',
+        tsr_number: remote.tsr_number || payload['tsr-number'] || '',
+        payload,
+        updated_at: remote.updated_at || remote.device_updated_at || new Date().toISOString(),
+        created_at: remote.created_at || remote.updated_at || new Date().toISOString(),
+        source: 'server_draft',
+        server_attachment_count: Number(remote.attachment_count || 0),
+        server_attachment_names: Array.isArray(remote.attachment_names) ? remote.attachment_names : [],
+        phase: 'phase6-server-draft-hydration'
+      };
+      await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, record);
+    }
+    standaloneTSRServerDraftsHydrated = true;
+    return { success:true, count:remoteDrafts.length };
+  }catch(err){
+    console.warn('[Offline TSR] Server draft hydration failed', err);
+    return { skipped:true, reason:err?.message || 'hydration_failed' };
+  }
+}
+
+async function refreshStandaloneTSRDraftPanel(){
+  await mergeServerStandaloneTSRDrafts();
+  await renderStandaloneTSRDraftPanel();
+}
+
 async function saveStandaloneTSRDraftToIndexedDB(data){
   const record = await buildOfflineTSRDraftRecord(data);
   await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, record);
@@ -3289,16 +3608,34 @@ async function loadOnlineTSRRevisionFromUrl(){
   }
 }
 
-async function saveStandaloneTSRDraftLocally(data){
+async function saveStandaloneTSRDraftLocally(data, { serverSync='debounced' } = {}){
   if(!isStandaloneTSRDraftMeaningful(data)){
     return { skipped:true, reason:'empty_tsr_draft' };
   }
   await warnOfflineTSRStoragePressure({ silent:true });
+  let record = null;
   try{
-    const record = await saveStandaloneTSRDraftToIndexedDB(data);
+    record = await saveStandaloneTSRDraftToIndexedDB(data);
     offlineTSRAttachments = normalizeQueuedAttachments(record.payload?.attachments || offlineTSRAttachments);
     const mirrorSaved = saveStandaloneTSRDraftToLocalStorageFallback(record.payload || data);
-    return Object.assign({}, record, { localstorage_mirror_saved: mirrorSaved });
+    const syncResult = serverSync === 'none'
+      ? { skipped:true, reason:'disabled' }
+      : enqueueStandaloneTSRServerDraftSync(record, { immediate:serverSync === 'immediate' });
+    let serverSyncError = null;
+    let resolvedSyncResult = syncResult;
+    if(syncResult && typeof syncResult.then === 'function'){
+      try{
+        resolvedSyncResult = await syncResult;
+      }catch(err){
+        serverSyncError = err;
+        console.warn('[Offline TSR] Immediate server draft backup failed', err);
+      }
+    }
+    return Object.assign({}, record, {
+      localstorage_mirror_saved: mirrorSaved,
+      server_sync_result: resolvedSyncResult,
+      server_sync_error: serverSyncError
+    });
   }catch(err){
     console.warn('[Offline TSR DB] IndexedDB draft save failed. Falling back to metadata-only localStorage.', err);
     const fallbackId = resolveStandaloneTSRDraftId(data);
@@ -3315,19 +3652,48 @@ async function saveStandaloneTSRDraftLocally(data){
         updated_at:new Date().toISOString()
       };
     }
-    return {
+    const fallbackRecord = {
       id:fallbackId,
       payload:projectOfflineTSRPayloadForLocalStorage(payload),
-      source:'localstorage',
+      schedule_id:payload.schedule_id || payload.selectedScheduleId || '',
+      tsr_number:payload['tsr-number'] || '',
+      client_name:payload['tsr-customer-name'] || '',
+      service_date:payload['tsr-service-date'] || '',
+      title:getStandaloneTSRDraftTitle(payload),
+      subtitle:getStandaloneTSRDraftSubtitle(payload),
+      updated_at:new Date().toISOString(),
+      source:'localstorage'
+    };
+    let serverSyncError = null;
+    let serverSyncResult = { skipped:true, reason:'localstorage_fallback' };
+    if(serverSync !== 'none'){
+      const syncResult = enqueueStandaloneTSRServerDraftSync(fallbackRecord, { immediate:serverSync === 'immediate' });
+      if(syncResult && typeof syncResult.then === 'function'){
+        try{
+          serverSyncResult = await syncResult;
+        }catch(syncError){
+          serverSyncError = syncError;
+          console.warn('[Offline TSR] Immediate fallback server draft backup failed', syncError);
+        }
+      }else{
+        serverSyncResult = syncResult;
+      }
+    }
+    return Object.assign({}, fallbackRecord, {
+      id:fallbackId,
       attachments_not_durable: normalizeQueuedAttachments(payload.attachments || []).length > 0,
       storage_error:err?.message || 'indexeddb_unavailable',
-      updated_at:new Date().toISOString()
-    };
+      server_sync_result:serverSyncResult,
+      server_sync_error:serverSyncError
+    });
   }
 }
 
 async function clearStandaloneTSRDraftLocally(id=null){
+  const targetId = id || standaloneCurrentDraftId || OFFLINE_TSR_ACTIVE_DRAFT_ID;
+  const serverDelete = await deleteStandaloneTSRDraftOnServer(targetId);
   await clearStandaloneTSRDraftFromIndexedDB(id);
+  return serverDelete;
 }
 
 async function getStandaloneTSRDraftRecords(){
@@ -3367,7 +3733,7 @@ async function renderStandaloneTSRDraftPanel(){
   if(!records.length){
     list.innerHTML = hasScheduleFilter
       ? '<div class="standalone-tsr-draft-empty">No saved TSR drafts for the selected schedule.</div>'
-      : '<div class="standalone-tsr-draft-empty">No saved TSR drafts on this device.</div>';
+      : '<div class="standalone-tsr-draft-empty">No saved TSR drafts on this device or account.</div>';
     return;
   }
   list.innerHTML = records.map(record => {
@@ -3376,11 +3742,19 @@ async function renderStandaloneTSRDraftPanel(){
     const subtitle = record.subtitle || getStandaloneTSRDraftSubtitle(payload);
     const updated = formatStandaloneTSRDraftTime(record.updated_at || payload.savedAt);
     const active = record.id && record.id === standaloneCurrentDraftId;
+    const remoteAttachmentCount = Number(record.server_attachment_count || payload._server_draft_attachment_count || 0);
+    const attachmentNote = remoteAttachmentCount && !normalizeQueuedAttachments(payload.attachments || []).length
+      ? `<div class="standalone-tsr-draft-meta text-warning"><i class="fa-solid fa-paperclip me-1"></i>${remoteAttachmentCount} supporting file${remoteAttachmentCount === 1 ? '' : 's'} remain on the original device.</div>`
+      : '';
+    const sourceNote = record.source === 'server_draft'
+      ? '<span class="badge text-bg-success ms-1">Account backup</span>'
+      : '<span class="badge text-bg-secondary ms-1">Device copy</span>';
     return `<div class="standalone-tsr-draft-card ${active ? 'active' : ''}">
       <div class="min-w-0">
-        <div class="standalone-tsr-draft-title"><i class="fa-solid fa-file-lines text-warning me-1"></i>${escapeHTML(title)}</div>
+        <div class="standalone-tsr-draft-title"><i class="fa-solid fa-file-lines text-warning me-1"></i>${escapeHTML(title)}${sourceNote}</div>
         <div class="standalone-tsr-draft-meta">${escapeHTML(subtitle)}</div>
         <div class="standalone-tsr-draft-meta">Last saved: ${escapeHTML(updated)}</div>
+        ${attachmentNote}
       </div>
       <div class="standalone-tsr-draft-actions">
         <button class="btn btn-primary btn-sm fw-bold" type="button" onclick="openStandaloneTSRDraft('${escapeAttr(record.id)}')"><i class="fa-solid fa-folder-open me-1"></i>Open</button>
@@ -3411,7 +3785,7 @@ async function openStandaloneTSRDraft(id){
   try{
     applyStandaloneTSRDraftData(Object.assign({}, record.payload, { _draft_id: record.id }));
     const draftMessage = hasStandaloneScheduleSelection()
-      ? 'Loaded saved TSR draft from this device.'
+      ? (record.source === 'server_draft' ? 'Loaded saved TSR draft from your account backup.' : 'Loaded saved TSR draft from this device.')
       : (awaitingScheduleRepick
         ? 'Loaded saved TSR draft. Everything you typed is still here, but its schedule is no longer in your list — pick the schedule again to continue and save.'
         : 'Loaded saved TSR draft for visibility. Select a schedule first to continue editing or saving.');
@@ -3433,13 +3807,18 @@ async function deleteStandaloneTSRDraft(id){
     icon: 'trash'
   });
   if(!shouldDelete) return;
+  const existingRecord = await loadStandaloneTSRDraftRecordById(id).catch(() => null);
+  const wasServerBacked = existingRecord?.source === 'server_draft' || Boolean(existingRecord?.payload?._server_draft_attachment_count);
   const deletingCurrent = id === standaloneCurrentDraftId;
   await clearStandaloneTSRDraftLocally(id);
   if(deletingCurrent){
     initializeBlankStandaloneTSR();
   }
   await renderStandaloneTSRDraftPanel();
-  showTSRStatus('Saved TSR draft deleted from this device.', 'info');
+  const deleteMessage = wasServerBacked
+    ? 'Saved TSR draft deleted from your account and this device.'
+    : 'Saved TSR draft deleted from this device and queued for account deletion.';
+  showTSRStatus(deleteMessage, 'info');
 }
 
 /* =========================================================
@@ -4192,6 +4571,7 @@ async function collectOfflineTSRStorageHealth(){
     attachments: 0,
     usage: null,
     quota: null,
+    persistence: null,
     migration: null,
     sync: null
   };
@@ -4207,6 +4587,7 @@ async function collectOfflineTSRStorageHealth(){
     health.attachments = await getOfflineTSRStoreCount(OFFLINE_TSR_DB_STORES.attachments);
     health.migration = await getOfflineTSRMigrationStatus();
     health.sync = await getOfflineTSRSyncMetadata();
+    health.persistence = await getOfflineTSRStoragePersistence();
     health.cleanup = await offlineTSRDBGet(OFFLINE_TSR_DB_STORES.metadata, OFFLINE_TSR_CLEANUP_METADATA_KEY).catch(() => null);
 
     const estimate = await getOfflineTSRStorageEstimate();
@@ -4234,6 +4615,7 @@ async function renderOfflineTSRStorageHealth(){
     setOfflineTSRHealthValue('offline-tsr-health-queue', readOfflineTSRQueue().length || '0', 'warn');
     setOfflineTSRHealthValue('offline-tsr-health-attachments', 'Fallback only', 'warn');
     setOfflineTSRHealthValue('offline-tsr-health-usage', 'Unavailable');
+    setOfflineTSRHealthValue('offline-tsr-health-persistence', 'Unavailable', 'warn');
     setOfflineTSRHealthValue('offline-tsr-health-sync', 'IndexedDB unavailable', 'warn');
     return;
   }
@@ -4249,6 +4631,18 @@ async function renderOfflineTSRStorageHealth(){
   }else{
     setOfflineTSRHealthValue('offline-tsr-health-usage', 'Unavailable');
   }
+
+  const persistence = health.persistence || {};
+  const persistenceLabel = persistence.persisted || persistence.granted
+    ? 'Granted'
+    : persistence.supported
+      ? 'Browser-managed'
+      : 'Unavailable';
+  setOfflineTSRHealthValue(
+    'offline-tsr-health-persistence',
+    persistenceLabel,
+    persistence.persisted || persistence.granted ? 'good' : 'warn'
+  );
 
   const syncLabel = health.sync?.last_finished_at
     ? formatOfflineQueueTime(health.sync.last_finished_at)
@@ -4267,7 +4661,10 @@ async function renderOfflineTSRStorageHealth(){
       : 'Migration pending or unavailable.';
     const syncText = health.sync?.last_status ? ` Last sync status: ${health.sync.last_status}.` : '';
     const cleanupText = health.cleanup?.last_cleanup_at ? ` Last cleanup: ${formatOfflineQueueTime(health.cleanup.last_cleanup_at)}.` : '';
-    notes.textContent = `${migrationText}${syncText}${cleanupText}`;
+    const persistenceText = persistence.persisted || persistence.granted
+      ? ' Browser storage persistence is granted.'
+      : ' Browser storage persistence is browser-managed; keep the account backup online when possible.';
+    notes.textContent = `${migrationText}${syncText}${cleanupText}${persistenceText}`;
   }
 }
 
@@ -5354,6 +5751,7 @@ function scheduleOfflineTSRAutoSync(){
       showTSRStatus('Internet connection restored. Checking pending offline TSR queue...', 'info');
       syncOfflineTSRQueue({ silent:false });
     });
+    void mergeServerStandaloneTSRDrafts().then(() => renderStandaloneTSRDraftPanel());
   });
   window.addEventListener('offline', () => {
     clearOfflineTSRSyncRetryTimer();
@@ -5369,11 +5767,13 @@ function scheduleOfflineTSRAutoSync(){
     }
   });
   window.addEventListener('focus', () => {
+    if(navigator.onLine) void mergeServerStandaloneTSRDrafts().then(() => renderStandaloneTSRDraftPanel());
     if(navigator.onLine && readOfflineTSRQueue().length){
       syncOfflineTSRQueue({ silent:true });
     }
   });
   document.addEventListener('visibilitychange', () => {
+    if(document.visibilityState === 'visible' && navigator.onLine) void mergeServerStandaloneTSRDrafts().then(() => renderStandaloneTSRDraftPanel());
     if(document.visibilityState === 'visible' && navigator.onLine && readOfflineTSRQueue().length){
       syncOfflineTSRQueue({ silent:true });
     }
@@ -5919,13 +6319,19 @@ async function saveStandaloneTSRLocalDraft(){
   }
   try{
     const data=collectTSRData();
-    const result = await saveStandaloneTSRDraftLocally(data);
+    const result = await saveStandaloneTSRDraftLocally(data, { serverSync:'immediate' });
     if(result?.skipped){
       showTSRStatus('Nothing to save yet. Add TSR details such as actions taken, remarks, documents, signature, or contact details before saving a draft.', 'info');
       return;
     }
     await renderStandaloneTSRDraftPanel();
-    showTSRStatus('Draft saved on this device. You can leave this page and continue later.', 'success');
+    if(result?.server_sync_error){
+      showTSRStatus('Draft saved on this device. Account backup is temporarily unavailable and will retry when the connection returns.', 'warning');
+    }else if(result?.server_sync_result?.pending || result?.server_sync_result?.skipped){
+      showTSRStatus('Draft saved on this device. It will be backed up to your account when you are online.', 'warning');
+    }else{
+      showTSRStatus('Draft saved on this device and backed up to your account.', 'success');
+    }
     if(isOfflineTSRStorageHealthAdmin()) renderOfflineTSRStorageHealth();
   }catch(err){
     console.warn('[Offline TSR] Manual draft save failed', err);
@@ -7301,12 +7707,13 @@ document.addEventListener('DOMContentLoaded',()=>{
   // next ordinary schedule selection would silently re-point a queued TSR instead.
   document.getElementById('standaloneSchedulePickerModal')
     ?.addEventListener('hidden.bs.modal', () => { queuedTSRAwaitingSchedulePick = ''; });
-  initializeOfflineTSRDatabaseFoundation()
+  const offlineTSRStartup = initializeOfflineTSRDatabaseFoundation()
+    .then(() => requestOfflineTSRStoragePersistence())
     .then(() => runOfflineTSRPhase5MigrationLayer())
     .catch(err => console.warn('[Offline TSR Migration] Startup migration check failed', err));
   window.tsrInlineKnowledgeEntries={complaint:[],action:[]};
   resetAllInlineTSRKnowledgeSuggestions();
-  runOfflineTSRPhase5MigrationLayer().then(()=>{
+  offlineTSRStartup.then(()=>mergeServerStandaloneTSRDrafts()).then(()=>{
     initializeBlankStandaloneTSR();
     return renderStandaloneTSRDraftPanel();
   }).then(()=>{

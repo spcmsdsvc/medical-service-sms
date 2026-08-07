@@ -1583,6 +1583,16 @@
             "everyone"
           ],
           "sort_order": 40
+        },
+        {
+          "item_key": "2026-08-07-tsr-account-draft-backup",
+          "category": "Create TSR",
+          "description": "Create TSR drafts now remain available through an account backup when the browser clears local site data; supporting file blobs stay on the original device and are clearly identified for re-selection.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 50
         }
       ]
     }

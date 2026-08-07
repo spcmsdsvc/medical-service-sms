@@ -2556,8 +2556,38 @@ class OnlineTsrSubmission(db.Model):
     revised_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
 
 
+class TsrDraft(db.Model):
+    """Server-backed Create TSR draft metadata and typed field snapshot.
+
+    Supporting-file blobs intentionally remain in the browser's IndexedDB. The
+    server stores only their metadata/count so a cleared browser can explain
+    which local files must be selected again without turning autosave into a
+    large multipart upload.
+    """
+    __tablename__ = 'tsr_draft'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    draft_key = db.Column(db.String(140), nullable=False)
+    schedule_id = db.Column(db.String(140), nullable=True, index=True)
+    tsr_number = db.Column(db.String(120), nullable=True)
+    client_name = db.Column(db.String(200), nullable=True)
+    service_date = db.Column(db.String(40), nullable=True, index=True)
+    title = db.Column(db.String(255), nullable=True)
+    subtitle = db.Column(db.String(500), nullable=True)
+    payload_json = db.Column(db.Text, nullable=False)
+    attachment_count = db.Column(db.Integer, default=0, nullable=False)
+    device_updated_at = db.Column(db.String(40), nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False, index=True)
+
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'draft_key', name='uq_tsr_draft_user_key'),
+    )
+
+
 _tsr_knowledge_entry_table_ready = False
 _online_tsr_submission_table_ready = False
+_tsr_draft_table_ready = False
 _engineer_signature_column_ready = False
 _contact_designation_column_ready = False
 _universal_approval_audit_table_ready = False
@@ -2671,6 +2701,40 @@ def ensure_online_tsr_submission_table():
     except Exception as table_error:
         print(f"[OnlineTSR] Unable to ensure online_tsr_submission table: {table_error}", flush=True)
         raise
+
+
+def ensure_tsr_draft_schema():
+    """Create the server-backed TSR draft table without disrupting login.
+
+    The regular startup path and ``before_request`` both call this helper so
+    Gunicorn/Railway workers and existing SQLite volumes converge safely. A
+    migration failure is logged and left for the next request rather than
+    making the whole application unavailable.
+    """
+    global _tsr_draft_table_ready
+    if _tsr_draft_table_ready:
+        return True
+
+    try:
+        TsrDraft.__table__.create(db.engine, checkfirst=True)
+        with db.engine.begin() as connection:
+            index_statements = (
+                "CREATE INDEX IF NOT EXISTS idx_tsr_draft_user_id ON tsr_draft (user_id)",
+                "CREATE INDEX IF NOT EXISTS idx_tsr_draft_updated_at ON tsr_draft (updated_at)",
+                "CREATE INDEX IF NOT EXISTS idx_tsr_draft_schedule_id ON tsr_draft (schedule_id)",
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_tsr_draft_user_key ON tsr_draft (user_id, draft_key)",
+            )
+            for statement in index_statements:
+                try:
+                    connection.exec_driver_sql(statement)
+                except Exception as index_error:
+                    print(f"[TSR-DRAFT] Index step skipped ({index_error}): {statement}", flush=True)
+        _tsr_draft_table_ready = True
+        return True
+    except Exception as table_error:
+        db.session.rollback()
+        print(f"[TSR-DRAFT] Unable to ensure tsr_draft table: {table_error}", flush=True)
+        return False
 
 
 def ensure_contact_designation_column():
@@ -13943,6 +14007,239 @@ def completed_online_tsr_response(submission, duplicate=False):
     }
 
 
+TSR_DRAFT_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
+TSR_DRAFT_MAX_ATTACHMENT_COUNT = 10
+
+
+def tsr_draft_text(value, limit):
+    """Normalize an optional draft metadata value without slicing ``None``."""
+    normalized = clean_str(value)
+    return normalized[:limit] if normalized else None
+
+
+def normalize_tsr_draft_key(value):
+    """Normalize a browser draft id without making it guessable across users."""
+    normalized = re.sub(r'[^A-Za-z0-9_-]+', '-', clean_str(value) or '')[:140]
+    return normalized.strip('-_')
+
+
+def parse_tsr_draft_device_timestamp(value):
+    """Return a comparable Unix timestamp for a browser ISO timestamp."""
+    raw = clean_str(value)
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def project_tsr_draft_payload_for_server(payload):
+    """Keep typed TSR data/signatures while removing browser-only file values."""
+    if not isinstance(payload, dict):
+        return {}
+
+    def project_value(value, key=None, depth=0):
+        if depth > 10:
+            return None
+        if key in {'blob', 'file', 'data_url', 'pdf_blob', 'pdf_data_url'}:
+            return None
+        if isinstance(value, dict):
+            return {
+                str(child_key): child_value
+                for child_key, child in value.items()
+                if (child_value := project_value(child, str(child_key), depth + 1)) is not None
+            }
+        if isinstance(value, list):
+            return [project_value(child, key, depth + 1) for child in value]
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)
+
+    projected = project_value(payload)
+    return projected if isinstance(projected, dict) else {}
+
+
+def tsr_draft_attachment_manifest(payload):
+    """Return names for genuine supporting files; signature pseudo-files are excluded."""
+    names = []
+    attachments = payload.get('attachments') if isinstance(payload, dict) else []
+    for attachment in attachments if isinstance(attachments, list) else []:
+        if not isinstance(attachment, dict):
+            continue
+        source = clean_str(attachment.get('source')).lower()
+        identifier = clean_str(attachment.get('id')).lower()
+        if 'signature' in source or 'signature-serviced' in identifier or 'signature-acknowledged' in identifier:
+            continue
+        name = os.path.basename(clean_str(attachment.get('name')) or '')
+        if name and name not in names:
+            names.append(name)
+    return names[:TSR_DRAFT_MAX_ATTACHMENT_COUNT]
+
+
+def tsr_draft_to_dict(draft, stale_ignored=False):
+    try:
+        payload = json.loads(draft.payload_json or '{}')
+    except (TypeError, ValueError):
+        payload = {}
+    names = tsr_draft_attachment_manifest(payload)
+    return {
+        'id': draft.id,
+        'draft_key': draft.draft_key,
+        'schedule_id': draft.schedule_id or '',
+        'tsr_number': draft.tsr_number or '',
+        'client_name': draft.client_name or '',
+        'service_date': draft.service_date or '',
+        'title': draft.title or '',
+        'subtitle': draft.subtitle or '',
+        'payload': payload,
+        'attachment_count': int(draft.attachment_count or len(names) or 0),
+        'attachment_names': names,
+        'device_updated_at': draft.device_updated_at or '',
+        'created_at': draft.created_at.isoformat() if draft.created_at else None,
+        'updated_at': draft.updated_at.isoformat() if draft.updated_at else None,
+        'stale_ignored': bool(stale_ignored),
+    }
+
+
+@app.route('/save_tsr_draft', methods=['POST'])
+@login_required
+def save_tsr_draft():
+    """Upsert the signed-in user's typed Create TSR draft backup."""
+    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+        return denied()
+    if not ensure_tsr_draft_schema():
+        return jsonify({'status': 'error', 'message': 'TSR draft backup is temporarily unavailable.'}), 503
+
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({'status': 'error', 'message': 'Invalid TSR draft payload.'}), 400
+
+    draft_key = normalize_tsr_draft_key(body.get('draft_key') or body.get('id'))
+    payload = body.get('payload') if isinstance(body.get('payload'), dict) else {}
+    if not draft_key or not payload:
+        return jsonify({'status': 'error', 'message': 'A TSR draft key and payload are required.'}), 400
+
+    projected_payload = project_tsr_draft_payload_for_server(payload)
+    try:
+        payload_json = json.dumps(projected_payload, ensure_ascii=False, separators=(',', ':'))
+    except (TypeError, ValueError):
+        return jsonify({'status': 'error', 'message': 'TSR draft payload could not be serialized.'}), 400
+    if len(payload_json.encode('utf-8')) > TSR_DRAFT_MAX_PAYLOAD_BYTES:
+        return jsonify({
+            'status': 'error',
+            'message': 'TSR draft is too large for server backup. Supporting files remain local to this device.'
+        }), 413
+
+    device_updated_at = tsr_draft_text(body.get('device_updated_at'), 40) or ''
+    incoming_timestamp = parse_tsr_draft_device_timestamp(device_updated_at)
+    if incoming_timestamp is None:
+        device_updated_at = get_manila_time().isoformat()
+        incoming_timestamp = parse_tsr_draft_device_timestamp(device_updated_at)
+
+    existing = TsrDraft.query.filter_by(
+        user_id=getattr(current_user, 'id', None),
+        draft_key=draft_key,
+    ).first()
+    if existing:
+        stored_timestamp = parse_tsr_draft_device_timestamp(existing.device_updated_at)
+        if stored_timestamp is not None and incoming_timestamp is not None and incoming_timestamp < stored_timestamp:
+            return jsonify({
+                'status': 'success',
+                'success': True,
+                'stale_ignored': True,
+                'draft': tsr_draft_to_dict(existing, stale_ignored=True),
+                'message': 'An older device draft was ignored; the newer server copy was kept.'
+            })
+        draft = existing
+    else:
+        draft = TsrDraft(user_id=getattr(current_user, 'id', None), draft_key=draft_key)
+        db.session.add(draft)
+
+    attachment_names = tsr_draft_attachment_manifest(projected_payload)
+    try:
+        attachment_count = int(body.get('attachment_count') or len(attachment_names) or 0)
+    except (TypeError, ValueError):
+        attachment_count = len(attachment_names)
+    attachment_count = max(len(attachment_names), min(TSR_DRAFT_MAX_ATTACHMENT_COUNT, max(0, attachment_count)))
+    draft.schedule_id = tsr_draft_text(
+        body.get('schedule_id') or projected_payload.get('schedule_id') or projected_payload.get('selectedScheduleId'),
+        140,
+    )
+    draft.tsr_number = tsr_draft_text(
+        body.get('tsr_number') or projected_payload.get('tsr-number') or projected_payload.get('tsr_number'),
+        120,
+    )
+    draft.client_name = tsr_draft_text(body.get('client_name') or projected_payload.get('tsr-customer-name'), 200)
+    draft.service_date = tsr_draft_text(body.get('service_date') or projected_payload.get('tsr-service-date'), 40)
+    draft.title = tsr_draft_text(body.get('title'), 255)
+    draft.subtitle = tsr_draft_text(body.get('subtitle'), 500)
+    draft.payload_json = payload_json
+    draft.attachment_count = attachment_count
+    draft.device_updated_at = device_updated_at or None
+    draft.updated_at = get_manila_time()
+
+    try:
+        db.session.commit()
+    except Exception as save_error:
+        db.session.rollback()
+        print(f"[TSR-DRAFT] Save failed for user={getattr(current_user, 'id', None)} key={draft_key}: {save_error}", flush=True)
+        return jsonify({'status': 'error', 'message': 'TSR draft backup could not be saved.'}), 500
+
+    return jsonify({
+        'status': 'success',
+        'success': True,
+        'draft': tsr_draft_to_dict(draft),
+        'message': 'TSR draft backed up to your account.'
+    })
+
+
+@app.route('/get_tsr_drafts', methods=['GET'])
+@login_required
+def get_tsr_drafts():
+    """Return only the signed-in user's server-backed TSR drafts."""
+    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+        return denied()
+    if not ensure_tsr_draft_schema():
+        return jsonify({'status': 'error', 'message': 'TSR draft backup is temporarily unavailable.'}), 503
+    drafts = TsrDraft.query.filter_by(user_id=getattr(current_user, 'id', None)).order_by(
+        TsrDraft.updated_at.desc(), TsrDraft.id.desc()
+    ).all()
+    serialized = [tsr_draft_to_dict(draft) for draft in drafts]
+    return jsonify({'status': 'success', 'success': True, 'drafts': serialized, 'rows': serialized})
+
+
+@app.route('/delete_tsr_draft', methods=['POST'])
+@login_required
+def delete_tsr_draft():
+    """Delete one server-backed TSR draft within the signed-in user's scope."""
+    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+        return denied()
+    if not ensure_tsr_draft_schema():
+        return jsonify({'status': 'error', 'message': 'TSR draft backup is temporarily unavailable.'}), 503
+    body = request.get_json(silent=True) or {}
+    draft_key = normalize_tsr_draft_key(body.get('draft_key') or body.get('id')) if isinstance(body, dict) else ''
+    if not draft_key:
+        return jsonify({'status': 'error', 'message': 'A TSR draft key is required.'}), 400
+    draft = TsrDraft.query.filter_by(
+        user_id=getattr(current_user, 'id', None),
+        draft_key=draft_key,
+    ).first()
+    if not draft:
+        return jsonify({'status': 'error', 'message': 'TSR draft was not found for this account.'}), 404
+    try:
+        db.session.delete(draft)
+        db.session.commit()
+    except Exception as delete_error:
+        db.session.rollback()
+        print(f"[TSR-DRAFT] Delete failed for user={getattr(current_user, 'id', None)} key={draft_key}: {delete_error}", flush=True)
+        return jsonify({'status': 'error', 'message': 'TSR draft backup could not be deleted.'}), 500
+    return jsonify({'status': 'success', 'success': True, 'draft_key': draft_key, 'message': 'TSR draft backup deleted.'})
+
+
 @app.route('/offline_tsr_sync_ping', methods=['GET'])
 @login_required
 def offline_tsr_sync_ping():
@@ -14870,7 +15167,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v79-tsr-footer-reserve';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v80-tsr-server-drafts';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -43184,6 +43481,7 @@ def ensure_runtime_sqlite_migrations_before_request():
     ensure_schedule_delete_indexes()
     ensure_approval_routing_schema()
     ensure_default_approval_routes()
+    ensure_tsr_draft_schema()
     ensure_reimbursement_approval_columns()
     ensure_reimbursement_receipt_columns()
 
@@ -43402,6 +43700,7 @@ def initialize_database():
         ensure_product_contract_column()
         ensure_schedule_delete_indexes()
         ensure_approval_routing_schema()
+        ensure_tsr_draft_schema()
         migrate_hierarchy_accounts()
         bootstrap_credentials = bootstrap_static_accounts()
         migrate_hierarchy_accounts()
