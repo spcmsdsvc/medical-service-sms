@@ -17704,8 +17704,25 @@ def get_backup_upload_roots():
     return upload_roots
 
 
-def add_path_to_backup_zip(zip_handle, source_path, archive_prefix):
-    """Add one file or directory to a backup ZIP, preserving relative paths."""
+def record_backup_error(errors, scope, name, error):
+    """Keep backup warnings safe and actionable inside the generated manifest."""
+    if errors is None:
+        return
+    message = clean_str(error) or 'Unknown backup error.'
+    errors.append({
+        'scope': clean_str(scope) or 'backup',
+        'name': clean_str(name) or 'unknown',
+        'message': message[:500],
+    })
+
+
+def add_path_to_backup_zip(zip_handle, source_path, archive_prefix, errors=None):
+    """Add one file or directory to a backup ZIP, preserving relative paths.
+
+    A file can disappear while uploads are being written. Record that individual
+    failure so the rest of the backup remains usable instead of returning an
+    opaque server error.
+    """
     source_path = os.path.abspath(source_path)
 
     if not os.path.exists(source_path):
@@ -17716,8 +17733,13 @@ def add_path_to_backup_zip(zip_handle, source_path, archive_prefix):
     archive_prefix = archive_prefix.replace('\\', '/').strip('/')
 
     if os.path.isfile(source_path):
-        zip_handle.write(source_path, os.path.join(archive_prefix, os.path.basename(source_path)))
-        return 1
+        archive_name = os.path.join(archive_prefix, os.path.basename(source_path))
+        try:
+            zip_handle.write(source_path, archive_name)
+            return 1
+        except (OSError, RuntimeError, ValueError) as backup_error:
+            record_backup_error(errors, 'file', source_path, backup_error)
+            return 0
 
     # Add a directory marker so uploads/reports is visible even when empty.
     zip_handle.writestr(f"{archive_prefix}/", "")
@@ -17726,7 +17748,10 @@ def add_path_to_backup_zip(zip_handle, source_path, archive_prefix):
     if os.path.isdir(reports_dir):
         zip_handle.writestr(f"{archive_prefix}/reports/", "")
 
-    for root, _, files in os.walk(source_path):
+    def handle_walk_error(walk_error):
+        record_backup_error(errors, 'directory', source_path, walk_error)
+
+    for root, _, files in os.walk(source_path, onerror=handle_walk_error):
         for filename in files:
             full_path = os.path.join(root, filename)
             if not os.path.isfile(full_path):
@@ -17746,10 +17771,70 @@ def add_path_to_backup_zip(zip_handle, source_path, archive_prefix):
                 continue
 
             archive_name = os.path.join(archive_prefix, relative_path)
-            zip_handle.write(full_path, archive_name)
-            file_count += 1
+            try:
+                zip_handle.write(full_path, archive_name)
+                file_count += 1
+            except (OSError, RuntimeError, ValueError) as backup_error:
+                record_backup_error(errors, 'file', full_path, backup_error)
 
     return file_count
+
+
+def add_bucket_objects_to_backup_zip(zip_handle):
+    """Add managed bucket objects while preserving a usable partial backup.
+
+    Bucket listing/download failures are recorded per object. The database,
+    source, and volume portions can still be restored, and the manifest makes
+    the missing bucket objects explicit instead of hiding them behind HTTP 500.
+    """
+    result = {
+        'objects': [],
+        'errors': [],
+        'configured': bool(file_storage.bucket_configured),
+        'connected': False,
+    }
+    if not result['configured']:
+        return result
+
+    try:
+        connection = file_storage.test_connection()
+    except Exception as connection_error:
+        record_backup_error(result['errors'], 'bucket_connection', file_storage.bucket_name, connection_error)
+        return result
+
+    if not connection.get('ok'):
+        record_backup_error(
+            result['errors'],
+            'bucket_connection',
+            file_storage.bucket_name,
+            connection.get('message') or 'Bucket connection failed.',
+        )
+        return result
+
+    result['connected'] = True
+    allowed_prefixes = {prefix for prefix, _ in managed_storage_roots()}
+    try:
+        for object_info in file_storage.iter_objects():
+            top_prefix = object_info.key.split('/', 1)[0]
+            if top_prefix not in allowed_prefixes:
+                continue
+            try:
+                object_bytes = file_storage.download_bytes(object_info.key)
+                zip_handle.writestr(f"bucket_objects/{object_info.key}", object_bytes)
+                result['objects'].append({
+                    'key': object_info.key,
+                    'size': len(object_bytes),
+                    'listed_size': object_info.size,
+                    'sha256': hashlib.sha256(object_bytes).hexdigest(),
+                })
+            except (OSError, RuntimeError, ValueError, StorageObjectNotFound) as object_error:
+                record_backup_error(result['errors'], 'bucket_object', object_info.key, object_error)
+            except Exception as object_error:
+                record_backup_error(result['errors'], 'bucket_object', object_info.key, object_error)
+    except Exception as listing_error:
+        record_backup_error(result['errors'], 'bucket_listing', file_storage.bucket_name, listing_error)
+
+    return result
 
 
 
@@ -18541,29 +18626,42 @@ def download_system_backup():
     """Superadmin-only manual backup download for SQLite DB and uploads."""
     if not is_superadmin_user():
         return denied('Only superadmins can download system backups.')
-
-    db.session.commit()
-
-    timestamp = get_manila_time().strftime('%Y%m%d_%H%M%S')
-    backup_filename = f"medical_service_backup_{timestamp}.zip"
-    temp_file = tempfile.NamedTemporaryFile(prefix='medical_service_backup_', suffix='.zip', delete=False)
-    temp_file_path = temp_file.name
-    temp_file.close()
-
-    db_path = get_active_sqlite_database_path()
-    upload_roots = get_backup_upload_roots()
-    source_paths = get_backup_source_paths()
-
+    temp_file_path = None
+    backup_errors = []
     try:
+        # Finish any normal request work before copying the SQLite file. Keep this
+        # inside the guarded block so a locked/invalid session is rolled back and
+        # reported consistently rather than escaping as an unhandled 500.
+        db.session.commit()
+
+        timestamp = get_manila_time().strftime('%Y%m%d_%H%M%S')
+        backup_filename = f"medical_service_backup_{timestamp}.zip"
+        temp_file = tempfile.NamedTemporaryFile(
+            prefix='medical_service_backup_', suffix='.zip', delete=False
+        )
+        temp_file_path = temp_file.name
+        temp_file.close()
+
+        db_path = get_active_sqlite_database_path()
+        upload_roots = get_backup_upload_roots()
+        source_paths = get_backup_source_paths()
+        bucket_result = {
+            'objects': [],
+            'errors': [],
+            'configured': bool(file_storage.bucket_configured),
+            'connected': False,
+        }
+
         with zipfile.ZipFile(temp_file_path, 'w', zipfile.ZIP_DEFLATED) as backup_zip:
-            db_count = add_path_to_backup_zip(backup_zip, db_path, 'database')
+            db_count = add_path_to_backup_zip(backup_zip, db_path, 'database', backup_errors)
             source_count = 0
             source_manifest = []
             for source_item in source_paths:
                 added_count = add_path_to_backup_zip(
                     backup_zip,
                     source_item['path'],
-                    f"source/{source_item['archive_name']}"
+                    f"source/{source_item['archive_name']}",
+                    backup_errors,
                 )
                 source_count += added_count
                 source_manifest.append({
@@ -18579,7 +18677,9 @@ def download_system_backup():
                 for upload_root in upload_roots:
                     root_name = os.path.basename(upload_root.rstrip(os.sep)) or 'uploads'
                     archive_prefix = 'uploads' if root_name == 'uploads' else f"uploads/{root_name}"
-                    added_count = add_path_to_backup_zip(backup_zip, upload_root, archive_prefix)
+                    added_count = add_path_to_backup_zip(
+                        backup_zip, upload_root, archive_prefix, backup_errors
+                    )
                     upload_count += added_count
                     uploaded_roots_manifest.append({
                         'path': upload_root,
@@ -18590,35 +18690,28 @@ def download_system_backup():
                 backup_zip.writestr('uploads/', '')
                 backup_zip.writestr('uploads/reports/', '')
 
-            bucket_object_manifest = []
             if file_storage.bucket_configured:
-                connection = file_storage.test_connection()
-                if not connection.get('ok'):
-                    raise RuntimeError(
-                        f"Bucket objects could not be backed up: {connection.get('message') or 'connection failed'}"
-                    )
-                allowed_prefixes = {prefix for prefix, _ in managed_storage_roots()}
-                for object_info in file_storage.iter_objects():
-                    if object_info.key.split('/', 1)[0] not in allowed_prefixes:
-                        continue
-                    object_bytes = file_storage.download_bytes(object_info.key)
-                    checksum = hashlib.sha256(object_bytes).hexdigest()
-                    backup_zip.writestr(f"bucket_objects/{object_info.key}", object_bytes)
-                    bucket_object_manifest.append({
-                        'key': object_info.key,
-                        'size': len(object_bytes),
-                        'sha256': checksum,
-                    })
+                bucket_result = add_bucket_objects_to_backup_zip(backup_zip)
+                backup_errors.extend(bucket_result.get('errors') or [])
                 backup_zip.writestr(
                     'bucket_objects_manifest.json',
-                    json.dumps(bucket_object_manifest, indent=2)
+                    json.dumps(bucket_result.get('objects') or [], indent=2)
                 )
 
             migration_state_source = bucket_migration_state_path()
             migration_state_included = False
             if os.path.isfile(migration_state_source):
-                backup_zip.write(migration_state_source, 'storage/bucket_migration_state.json')
-                migration_state_included = True
+                try:
+                    backup_zip.write(migration_state_source, 'storage/bucket_migration_state.json')
+                    migration_state_included = True
+                except (OSError, RuntimeError, ValueError) as migration_error:
+                    record_backup_error(backup_errors, 'file', migration_state_source, migration_error)
+
+            if backup_errors:
+                backup_zip.writestr(
+                    'backup_errors.json',
+                    json.dumps(backup_errors, indent=2),
+                )
 
             manifest = {
                 'generated_at_manila': get_manila_time().isoformat(),
@@ -18629,19 +18722,34 @@ def download_system_backup():
                 'source_file_count': source_count,
                 'upload_roots': uploaded_roots_manifest,
                 'upload_file_count': upload_count,
-                'bucket_name': file_storage.bucket_name if file_storage.bucket_configured else '',
-                'bucket_object_count': len(bucket_object_manifest),
-                'bucket_objects_manifest': 'bucket_objects_manifest.json' if file_storage.bucket_configured else '',
+                'bucket_name': file_storage.bucket_name if bucket_result.get('configured') else '',
+                'bucket_connection_ok': bool(bucket_result.get('connected')),
+                'bucket_object_count': len(bucket_result.get('objects') or []),
+                'bucket_object_error_count': sum(
+                    1 for error in (bucket_result.get('errors') or [])
+                    if error.get('scope') == 'bucket_object'
+                ),
+                'bucket_objects_manifest': 'bucket_objects_manifest.json' if bucket_result.get('configured') else '',
                 'bucket_migration_state_included': migration_state_included,
+                'backup_complete': not bool(backup_errors),
+                'backup_warning_count': len(backup_errors),
+                'backup_errors_file': 'backup_errors.json' if backup_errors else '',
                 'app': 'MEDICAL SERVICE Scheduler'
             }
             backup_zip.writestr('backup_manifest.json', json.dumps(manifest, indent=2))
 
-        db.session.add(ActivityLog(
-            user=(getattr(current_user, 'username', '') or 'Superadmin').capitalize(),
-            action=f"Downloaded system backup: {backup_filename}"
-        ))
-        db.session.commit()
+        activity_action = f"Downloaded system backup: {backup_filename}"
+        if backup_errors:
+            activity_action += f" ({len(backup_errors)} warning(s); see backup_errors.json)"
+        try:
+            db.session.add(ActivityLog(
+                user=(getattr(current_user, 'username', '') or 'Superadmin').capitalize(),
+                action=activity_action,
+            ))
+            db.session.commit()
+        except Exception as log_error:
+            db.session.rollback()
+            print(f"[BACKUP] Activity log skipped: {log_error}", flush=True)
 
         response = send_file(
             temp_file_path,
@@ -18650,6 +18758,8 @@ def download_system_backup():
             mimetype='application/zip'
         )
         response.headers['Cache-Control'] = 'no-store'
+        response.headers['X-Backup-Complete'] = 'false' if backup_errors else 'true'
+        response.headers['X-Backup-Warning-Count'] = str(len(backup_errors))
 
         @response.call_on_close
         def cleanup_backup_file():
@@ -18661,8 +18771,10 @@ def download_system_backup():
         return response
 
     except Exception as backup_error:
+        db.session.rollback()
         try:
-            os.remove(temp_file_path)
+            if temp_file_path:
+                os.remove(temp_file_path)
         except OSError:
             pass
         print(f"[BACKUP] Manual backup failed: {backup_error}", flush=True)

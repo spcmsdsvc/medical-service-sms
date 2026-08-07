@@ -2,6 +2,29 @@
 
 claude changes - 2026-08-07 (signature stamp review)
 
+## Fixed: system backup no longer fails on isolated storage errors
+
+- Hardened the superadmin System Backup route in `app.py` so database-session failures are
+  rolled back and temporary ZIP files are always cleaned up instead of escaping as an opaque
+  internal server error.
+- Bucket connection, bucket listing, and individual bucket-object download failures are now
+  recorded in `backup_errors.json` while the usable database, source, and volume portions of the
+  backup continue to download. The manifest reports `backup_complete`, warning counts, bucket
+  connection state, object counts, and the error-manifest path so a partial backup cannot be
+  mistaken for a complete one.
+- Volume/source files that disappear during a live upload are handled the same way, and the
+  response exposes `X-Backup-Complete` and `X-Backup-Warning-Count` headers for operational
+  monitoring. Activity Logs record when a backup contains warnings without blocking the download
+  if audit logging itself is temporarily unavailable.
+- Added `tests/test_system_backup.py` covering retained bucket objects, per-object failures,
+  unavailable bucket connections, manifest warnings, ZIP integrity, and database inclusion.
+- Added the backup reliability improvement to the 2026-08-07 What’s New manifest. No database
+  migration, storage deletion, service-worker change, or change to backup contents outside the
+  existing database/source/volume/bucket scope was introduced. `scheduler.db`, `output/`, `tmp/`,
+  and handoff artifacts remain excluded from version control and deployment.
+- Verification: focused backup tests pass, Python compilation passes, and `git diff --check`
+  passes.
+
 ## Fixed: reopened LPR drafts rejected valid item edits
 
 - Updated `app.py` LPR serialization and save handling so saved drafts return their persisted
