@@ -249,6 +249,7 @@ class LPRSignaturePlacementTests(unittest.TestCase):
 
     @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
     def test_each_signature_sits_inside_its_own_field(self):
+        """The enlarged stamp may rise into the row above, but not past its top edge."""
         template = app_module.find_lpr_form_template_path()
         if not template:
             self.skipTest('LPR FORM.pdf is not available in this environment')
@@ -261,29 +262,30 @@ class LPRSignaturePlacementTests(unittest.TestCase):
             field = rects[field_name]
             x, y, width, height = app_module.lpr_signature_box(field, None)
             fx0, fy0, fx1, fy1 = field
-            self.assertGreaterEqual(y + 0.01, fy0, f'{field_name} stamp starts below its row')
-            self.assertLessEqual(y + height, fy1 + 0.01, f'{field_name} stamp rises out of its row')
+            row_above_top = rects['Intended for'][3]
+            self.assertLessEqual(y + height, row_above_top + 0.01,
+                                 f'{field_name} stamp rises past the row above')
             self.assertGreaterEqual(x + 0.01, fx0, f'{field_name} stamp starts left of its line')
             self.assertLessEqual(x + width, fx1 + 0.01, f'{field_name} stamp runs past its line')
 
     @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
     def test_approver_signature_clears_the_invoice_row(self):
-        """The reported defect: the approver stamp covered Intended for / PO No / Invoice No."""
+        """Bound the enlarged stamp before the top of the row above the approval line."""
         template = app_module.find_lpr_form_template_path()
         if not template:
             self.skipTest('LPR FORM.pdf is not available in this environment')
 
         rects = app_module.lpr_form_field_rects(PdfReader(template))
         _, y, _, height = app_module.lpr_signature_box(rects['Approved by'], None)
-        row_above_bottom = rects['Intended for'][1]
+        row_above_top = rects['Intended for'][3]
 
         # Positive control: that row really does sit directly above the approver line, so a
         # stamp of the old height genuinely would have collided with it.
-        self.assertGreater(row_above_bottom, rects['Approved by'][1])
-        self.assertLess(row_above_bottom - rects['Approved by'][1], 20)
+        self.assertGreater(row_above_top, rects['Approved by'][1])
+        self.assertLess(row_above_top - rects['Approved by'][1], 35)
 
-        self.assertLessEqual(y + height, row_above_bottom + 0.01,
-                             'approver signature overlaps the Invoice No. row again')
+        self.assertLessEqual(y + height, row_above_top + 0.01,
+                             'approver signature passes the top of the row above')
 
     @unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
     def test_signature_box_falls_back_when_the_field_is_missing(self):

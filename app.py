@@ -4037,6 +4037,12 @@ def get_current_signature_engineer():
     return getattr(current_user, 'engineer_profile', None)
 
 
+# Keep generated-document signature stamps readable without changing capture or storage.
+# A few official form regions are geometry-limited; those sites clamp this scale to their
+# available line/row space while still using the same tuning knob.
+SIGNATURE_STAMP_SCALE = 1.5
+
+
 def normalize_signature_data_url(raw_value):
     """Validate and normalize a signature image data URL.
 
@@ -6659,7 +6665,9 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
         draw_check(413, 912)  # Medical department
         draw_check(37, 899)   # Service department
         draw_wrapped_text(12, 866, traveller_name, max_width=410, max_lines=1, size=8.5, bold=True)
-        draw_signature_group(signature_people, 426, 842, 160, 54, max_columns=3)
+        traveller_group_width = 160 * SIGNATURE_STAMP_SCALE
+        traveller_group_x = 612 - traveller_group_width - 6.0
+        draw_signature_group(signature_people, traveller_group_x, 842, traveller_group_width, 54, max_columns=2)
 
         is_training = 'training' in request_type_lower or 'seminar' in request_type_lower
         is_meeting = 'meeting' in request_type_lower
@@ -6741,7 +6749,17 @@ def build_travel_request_accounting_pdf_bytes(request_rec, approved_by_user=None
         # name while keeping the name/date in the corrected F4A5J4 position.
         # A shorter/lower signature box prevents the saved signature from
         # floating too high above the official Approved By line.
-        draw_signature_data_url(manager_signature_data, 421, 195, 160, 28, label='', label_size=4.8)
+        approver_signature_width = 160 * SIGNATURE_STAMP_SCALE
+        approver_signature_x = 421 - ((approver_signature_width - 160) / 2.0)
+        draw_signature_data_url(
+            manager_signature_data,
+            approver_signature_x,
+            195,
+            approver_signature_width,
+            28 * SIGNATURE_STAMP_SCALE,
+            label='',
+            label_size=4.8
+        )
         # F4A5J4: Keep the printed name below the official underline and center
         # it inside the Approved By line. The previous Y value made the underline
         # cut through the approver name on the generated PDF.
@@ -9914,6 +9932,7 @@ def offline_tsr_page():
         'offline_tsr.html',
         offline_storage_health_admin=is_admin_authorized(),
         tsr_filename_template=filename_template,
+        signature_stamp_scale=SIGNATURE_STAMP_SCALE,
     )
 
 
@@ -14807,7 +14826,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v77-logout-cache-purge';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v78-signature-stamp-scale';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -22101,13 +22120,17 @@ def reimbursement_approval_signature_overlay_pdf(header, page_width, page_height
                 image_width, image_height = signature_image.size
 
             if image_width and image_height:
-                box_width = width * 0.82
-                box_height = sig_area_height
-                fit_scale = min(box_width / float(image_width), box_height / float(image_height), 1.0)
+                box_width = width * 0.82 * SIGNATURE_STAMP_SCALE
+                box_height = sig_area_height * SIGNATURE_STAMP_SCALE
+                fit_scale = min(
+                    box_width / float(image_width),
+                    box_height / float(image_height),
+                    SIGNATURE_STAMP_SCALE
+                )
                 draw_width = image_width * fit_scale
                 draw_height = image_height * fit_scale
                 draw_x = x + ((width - draw_width) / 2.0)
-                draw_y = signature_bottom + ((sig_area_height - draw_height) / 2.0)
+                draw_y = signature_bottom + ((box_height - draw_height) / 2.0)
                 c.drawImage(
                     ImageReader(io.BytesIO(png_bytes)),
                     draw_x,
@@ -22201,10 +22224,16 @@ def reimbursement_rfp_signature_overlay_pdf(signature_data, page_width, page_hei
     # Coordinates below place the image centered just above the underline.
     scale_x = float(page_width) / 612.0
     scale_y = float(page_height) / 936.0
-    box_x = 462.0 * scale_x
-    box_y = (936.0 - 148.0 + 2.0) * scale_y
-    box_width = 91.0 * scale_x
-    box_height = 24.0 * scale_y
+    base_box_x = 462.0 * scale_x
+    base_box_y = (936.0 - 148.0 + 2.0) * scale_y
+    base_box_width = 91.0 * scale_x
+    base_box_height = 24.0 * scale_y
+    box_center_x = base_box_x + (base_box_width / 2.0)
+    box_center_y = base_box_y + (base_box_height / 2.0)
+    box_width = base_box_width * SIGNATURE_STAMP_SCALE
+    box_height = base_box_height * SIGNATURE_STAMP_SCALE
+    box_x = box_center_x - (box_width / 2.0)
+    box_y = box_center_y - (box_height / 2.0)
 
     fit_scale = min(box_width / float(image_width), box_height / float(image_height))
     draw_width = image_width * fit_scale
@@ -31116,14 +31145,17 @@ def add_signature_image_to_liquidation_sheet(ws, signature_data, anchor_cell='C5
             return False
 
         try:
-            ws.row_dimensions[5].height = max(float(ws.row_dimensions[5].height or 0), 34.0)
+            ws.row_dimensions[5].height = max(
+                float(ws.row_dimensions[5].height or 0),
+                34.0 * SIGNATURE_STAMP_SCALE
+            )
         except Exception:
-            ws.row_dimensions[5].height = 34.0
+            ws.row_dimensions[5].height = 34.0 * SIGNATURE_STAMP_SCALE
 
         signature_stream = io.BytesIO(png_bytes)
         signature_image = OpenpyxlImage(signature_stream)
-        signature_image.width = 125
-        signature_image.height = 34
+        signature_image.width = int(round(125 * SIGNATURE_STAMP_SCALE))
+        signature_image.height = int(round(34 * SIGNATURE_STAMP_SCALE))
         signature_image.anchor = anchor_cell
         ws.add_image(signature_image)
         return True
@@ -44608,7 +44640,20 @@ def build_cash_advance_accounting_pdf_bytes(header, approved_by_user=None, remar
         draw_text_top(pdf_canvas, page_height, 421, 115.3, request_date, max_width=96, font_size=9)
         draw_text_top(pdf_canvas, page_height, 236, 134.3, ctx.get('requester_name') or '', max_width=150, font_size=9)
         # Stamp requester signature image captured when the Cash Advance was submitted.
-        draw_signature_top(pdf_canvas, page_height, 451, 124.5, 72, 22, requester_signature_path, 'requester')
+        requester_signature_width = 72 * SIGNATURE_STAMP_SCALE
+        requester_signature_height = 22 * SIGNATURE_STAMP_SCALE
+        requester_signature_x = 451 - ((requester_signature_width - 72) / 2.0)
+        requester_signature_top = 124.5 - ((requester_signature_height - 22) / 2.0)
+        draw_signature_top(
+            pdf_canvas,
+            page_height,
+            requester_signature_x,
+            requester_signature_top,
+            requester_signature_width,
+            requester_signature_height,
+            requester_signature_path,
+            'requester'
+        )
 
         draw_text_top(pdf_canvas, page_height, 190, 153.2, amount_words, max_width=329, font_size=8.5)
         draw_text_top(pdf_canvas, page_height, 104, 172.2, amount_number, max_width=148, font_size=9)
@@ -44624,7 +44669,21 @@ def build_cash_advance_accounting_pdf_bytes(header, approved_by_user=None, remar
         # signature sits close above it, using the same center point.
         approved_line_x = 157
         approved_line_width = 150
-        draw_signature_top(pdf_canvas, page_height, approved_line_x, 388.5, approved_line_width, 13, approver_signature_path, 'approver')
+        approver_signature_width = approved_line_width * SIGNATURE_STAMP_SCALE
+        approver_signature_height = 13 * SIGNATURE_STAMP_SCALE
+        approver_signature_x = approved_line_x - ((approver_signature_width - approved_line_width) / 2.0)
+        # Keep the bottom edge near the underline while allowing the larger stamp to grow upward.
+        approver_signature_top = 388.5 - (approver_signature_height - 13)
+        draw_signature_top(
+            pdf_canvas,
+            page_height,
+            approver_signature_x,
+            approver_signature_top,
+            approver_signature_width,
+            approver_signature_height,
+            approver_signature_path,
+            'approver'
+        )
         draw_centered_text_top(pdf_canvas, page_height, approved_line_x, 400.0, approved_line_width, approved_by, font_size=8.5)
         # Approval remarks stay in the email/audit trail, not on this official form.
 
@@ -47464,8 +47523,11 @@ def cash_advance_liquidation_rfp_approval_signature_overlay_pdf(header, page_wid
     # F4A5G4: Trim signature canvas first, then center the visible strokes
     # inside the official APPROVED BY underline. Move the block downward so the
     # signature no longer floats into the NOTED BY area or crowds the label.
-    signature_area_width = min(line_width * 0.58, 124.0)
-    signature_area_height = 18.0
+    signature_area_width = min(
+        line_width * 0.58 * SIGNATURE_STAMP_SCALE,
+        124.0 * SIGNATURE_STAMP_SCALE
+    )
+    signature_area_height = 18.0 * SIGNATURE_STAMP_SCALE
     signature_bottom = line_y + 5.2
 
     png_bytes = reimbursement_signature_data_url_to_png_bytes(signature_data) if signature_data else None
@@ -47479,7 +47541,7 @@ def cash_advance_liquidation_rfp_approval_signature_overlay_pdf(header, page_wid
                 fit_scale = min(
                     signature_area_width / float(image_width),
                     signature_area_height / float(image_height),
-                    1.0
+                    SIGNATURE_STAMP_SCALE
                 )
                 draw_width = image_width * fit_scale
                 draw_height = image_height * fit_scale
@@ -48153,8 +48215,14 @@ def add_cash_advance_liquidation_approved_signature_to_sheet(ws, signature_data)
         cash_advance_liquidation_remove_approved_signature_images(ws)
 
         try:
-            ws.row_dimensions[36].height = max(float(ws.row_dimensions[36].height or 0), 18.0)
-            ws.row_dimensions[37].height = max(float(ws.row_dimensions[37].height or 0), 18.0)
+            ws.row_dimensions[36].height = max(
+                float(ws.row_dimensions[36].height or 0),
+                18.0 * SIGNATURE_STAMP_SCALE
+            )
+            ws.row_dimensions[37].height = max(
+                float(ws.row_dimensions[37].height or 0),
+                18.0 * SIGNATURE_STAMP_SCALE
+            )
         except Exception:
             pass
 
@@ -48163,8 +48231,10 @@ def add_cash_advance_liquidation_approved_signature_to_sheet(ws, signature_data)
 
         # Visual target from latest test: move the RAJ signature right from the
         # old G37/G36 start and keep it in the row above the printed name.
-        signature_image.width = 95
-        signature_image.height = 22
+        signature_width = int(round(95 * SIGNATURE_STAMP_SCALE))
+        signature_height = int(round(22 * SIGNATURE_STAMP_SCALE))
+        signature_image.width = signature_width
+        signature_image.height = signature_height
         signature_image.anchor = OneCellAnchor(
             _from=AnchorMarker(
                 col=7,  # H column, zero-based
@@ -48172,7 +48242,10 @@ def add_cash_advance_liquidation_approved_signature_to_sheet(ws, signature_data)
                 colOff=pixels_to_EMU(30),
                 rowOff=pixels_to_EMU(6)
             ),
-            ext=XDRPositiveSize2D(pixels_to_EMU(95), pixels_to_EMU(22))
+            ext=XDRPositiveSize2D(
+                pixels_to_EMU(signature_width),
+                pixels_to_EMU(signature_height)
+            )
         )
         ws.add_image(signature_image)
         return True
@@ -51088,8 +51161,11 @@ def lpr_signature_box(field_rect, fallback):
     if field_width <= 12 or field_height <= 4:
         return fallback
 
-    width = min(86.0, max(40.0, field_width * 0.5))
-    height = max(8.0, field_height - 1.2)
+    width = min(
+        86.0 * SIGNATURE_STAMP_SCALE,
+        max(40.0 * SIGNATURE_STAMP_SCALE, field_width * 0.5 * SIGNATURE_STAMP_SCALE)
+    )
+    height = max(8.0, field_height - 1.2) * SIGNATURE_STAMP_SCALE
     return (x1 - width - 6.0, y0 + 0.6, width, height)
 
 

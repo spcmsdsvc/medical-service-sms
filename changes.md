@@ -20,6 +20,24 @@ claude changes - 2026-08-07 (verification pass)
   red by removing the fix: `TypeError: 'int' object is not iterable`, file restored byte-identical
   by SHA. Suite **525** (was 521).
 
+## Generated signature stamp enlargement
+
+* Added the module-level `SIGNATURE_STAMP_SCALE = 1.5` control in `app.py` and applied it across
+  generated Travel Request, Reimbursement, Cash Advance, Travel Liquidation, Cash Advance
+  Liquidation, and LPR documents, including the two Excel signature anchors.
+* Enlarged the client-rendered TSR Serviced By and Acknowledged By stamps to a 340 x 102 canvas
+  image area while retaining the existing 360 px underline and moving the footer from the derived
+  signature baseline.
+* Widened the Travel Request participant signature group to two columns, kept the approver stamp
+  centered over its existing line, and grew the Cash Advance approver upward from the underline so
+  printed names remain in their existing positions.
+* Raised only the two reimbursement approval image-fit caps from `1.0` to the shared scale; the
+  caps remain in place to prevent uncontrolled upscaling. LPR vertical assertions now preserve a
+  bounded row-above safety limit while retaining horizontal field containment.
+* Added `tests/test_signature_stamp_sizes.py`, updated LPR placement regression tests, bumped the
+  service-worker cache to v78, and added the generated-form improvement to the 2026-08-07 What’s
+  New release manifest.
+
 ## Verification pass — five open items closed, one entry found stale
 
 * **Offline with the server genuinely stopped**, the oldest unverified item in the file. Process

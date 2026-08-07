@@ -1574,6 +1574,15 @@
             "admins"
           ],
           "sort_order": 30
+        },
+        {
+          "item_key": "2026-08-07-signature-stamps-readable",
+          "category": "Generated Forms",
+          "description": "Saved requester and approver signatures are now stamped larger and more consistently across generated TSRs, travel requests, reimbursements, cash advances, liquidations, LPRs, and Excel forms.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 40
         }
       ]
     }

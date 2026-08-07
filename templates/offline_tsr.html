@@ -511,6 +511,7 @@ const LEGACY_TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY = 'medicalServiceTimelineOfflineS
 const LOGGED_IN_ENGINEER_NAME = "{{ (current_user.engineer_profile.name if current_user.engineer_profile else current_user.username)|e }}";
 const LOGGED_IN_ENGINEER_INITIALS = "{{ (current_user.engineer_profile.initials if current_user.engineer_profile and current_user.engineer_profile.initials else '')|e }}";
 const OFFLINE_TSR_STORAGE_HEALTH_ADMIN = String("{{ 'true' if offline_storage_health_admin else 'false' }}").toLowerCase() === 'true';
+const SIGNATURE_STAMP_SCALE = Number({{ signature_stamp_scale|tojson }}) || 1.5;
 let activeTSRFilenameTemplate = (() => {
   try{
     return String(localStorage.getItem(TSR_FILENAME_TEMPLATE_CACHE_KEY) || DEFAULT_TSR_FILENAME_TEMPLATE || '').trim();
@@ -6935,11 +6936,12 @@ async function drawTSRSignatureFooter(ctx, data, margin, pageW, y){
   ctx.fillText('ACKNOWLEDGED BY:', margin + pageW/2 + 65, y);
   const sigY = y + 12;
   const sigW = 360;
-  const sigH = 68;
+  const sigH = Math.round(68 * SIGNATURE_STAMP_SCALE);
+  const sigImageW = Math.min(340, Math.round(250 * SIGNATURE_STAMP_SCALE));
   const servicedSig = data.signatures && data.signatures.serviced ? await loadImageForCanvas(data.signatures.serviced) : null;
   const ackSig = data.signatures && data.signatures.acknowledged ? await loadImageForCanvas(data.signatures.acknowledged) : null;
-  if(servicedSig) ctx.drawImage(servicedSig, margin + 105, sigY, 250, sigH);
-  if(ackSig) ctx.drawImage(ackSig, margin + pageW/2 + 105, sigY, 250, sigH);
+  if(servicedSig) ctx.drawImage(servicedSig, margin + 70, sigY, sigImageW, sigH);
+  if(ackSig) ctx.drawImage(ackSig, margin + pageW/2 + 70, sigY, sigImageW, sigH);
   ctx.beginPath();
   ctx.moveTo(margin + 60, sigY + sigH); ctx.lineTo(margin + 60 + sigW, sigY + sigH);
   ctx.moveTo(margin + pageW/2 + 60, sigY + sigH); ctx.lineTo(margin + pageW/2 + 60 + sigW, sigY + sigH);
