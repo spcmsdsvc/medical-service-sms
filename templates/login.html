@@ -51,6 +51,11 @@
         <form method="POST" action="/login" id="login-form" novalidate>
             <!-- NEW SECURITY TOKEN FOR HIERARCHY -->
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if next_target %}
+            <!-- Where the user was actually heading before being bounced here.
+                 Server-validated as a local path; see resolve_safe_next_target(). -->
+            <input type="hidden" name="next" value="{{ next_target }}">
+            {% endif %}
 
             <div class="mb-3">
                 <label class="field-label" for="username">Username</label>

@@ -1642,6 +1642,45 @@
           "sort_order": 100
         }
       ]
+    },
+    {
+      "release_key": "2026-08-08",
+      "release_date": "2026-08-08",
+      "title": "TSR Drafts Back Up for Everyone, and Bookmarks Remember Where You Were",
+      "summary": "Every account that can open Create TSR can now back a draft up to that account, and signing in returns you to the page you originally opened.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-08-tsr-draft-backup-all-accounts",
+          "category": "Create TSR",
+          "description": "TSR drafts now back up to your account for every user who can open Create TSR. Previously only engineers and system administrators were backed up - other accounts could write a draft that stayed on that one device even though the panel said it had been saved to the account.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 110
+        },
+        {
+          "item_key": "2026-08-08-tsr-draft-backup-honest-message",
+          "category": "Create TSR",
+          "description": "If a draft cannot be backed up, Create TSR now says whether it will retry, whether you need to sign in again, or whether this account cannot back drafts up at all - instead of always promising a retry.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 120
+        },
+        {
+          "item_key": "2026-08-08-login-returns-to-bookmark",
+          "category": "Sign In",
+          "description": "Opening a bookmarked page while signed out now returns you to that page after you sign in, instead of always landing on the Dashboard.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 130
+        }
+      ]
     }
   ]
 }

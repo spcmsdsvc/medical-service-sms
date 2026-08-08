@@ -174,5 +174,139 @@ class TsrDraftRouteTests(unittest.TestCase):
                 os.unlink(database_path)
 
 
+@unittest.skipUnless(app_module is not None, f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+class TsrDraftAccessMatchesThePageGateTests(unittest.TestCase):
+    """The page gate and the three endpoint gates must admit the same accounts.
+
+    The original implementation gated the routes on
+    `is_admin_authorized() or role == 'engineer'` while `/offline-tsr` admitted
+    everyone except approver-only users, so five account shapes could open
+    Create TSR and write a draft that was silently never backed up. This is the
+    fifth time a page/endpoint gate mismatch has reached main, and every previous
+    one was found the same way: build one account of each shape and call the
+    route. See pending-work.md bug 1z.
+    """
+
+    # Each entry is the account shape from the bug's reproduction table. The
+    # approver-only row is the positive control: it is the one shape that must
+    # still be refused, so a gate that simply returned True everywhere fails.
+    # (label, columns, may_back_up, expected endpoint status when refused)
+    #
+    # The refused accounts are refused by TWO different mechanisms, and the
+    # status tells them apart: `can_back_up_tsr_drafts()` answers 403, while the
+    # inventory-only and HR-only before_request fences redirect. Asserting the
+    # exact status keeps those distinct, so a fence quietly disappearing cannot
+    # be absorbed as "still refused somehow".
+    ACCOUNT_SHAPES = (
+        ('engineer', dict(role='engineer'), True, None),
+        ('plain-staff', dict(role='staff'), True, None),
+        ('scheduler', dict(role='staff', schedule_admin_access=True), True, None),
+        ('personnel-admin', dict(role='staff', personnel_admin_access=True), True, None),
+        ('reports-admin', dict(role='staff', reports_admin_access=True), True, None),
+        ('stock-inventory', dict(role='staff', can_manage_stock_inventory=True), True, None),
+        # The one shape this gate itself must refuse.
+        ('approver-only', dict(role='approver', can_approve_requests=True), False, 403),
+        # Fenced off from /offline-tsr entirely by their own before_request
+        # guards, not by this gate. Listed so the boundary is pinned: if either
+        # fence is relaxed, this test forces a deliberate decision about draft
+        # backup rather than silently recreating bug 1z for a new account shape.
+        ('stock-inventory-only', dict(role='staff', can_manage_stock_inventory=True, stock_inventory_only=True), False, 302),
+        ('hr-schedule-only', dict(role='staff', hr_schedule_view=True), False, 302),
+    )
+
+    def test_every_account_that_can_open_create_tsr_can_back_a_draft_up(self):
+        fd, database_path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        extension = None
+        original_engine = None
+        original_ready = None
+        test_engine = None
+        original_csrf = None
+        try:
+            with app_module.app.app_context():
+                extension = app_module.app.extensions['sqlalchemy']
+                engines = extension._app_engines[app_module.app]
+                original_engine = engines[None]
+                original_ready = app_module._tsr_draft_table_ready
+                original_csrf = app_module.app.config.get('WTF_CSRF_ENABLED')
+                app_module.app.config['WTF_CSRF_ENABLED'] = False
+                test_engine = create_engine(f"sqlite:///{database_path.replace(os.sep, '/')}")
+                engines[None] = test_engine
+                app_module._tsr_draft_table_ready = False
+                app_module.db.session.remove()
+                app_module.db.create_all()
+                app_module.ensure_tsr_draft_schema()
+
+                user_ids = {}
+                for label, columns, _, _refused_status in self.ACCOUNT_SHAPES:
+                    user = app_module.User(
+                        username=f'draft-gate-{label}',
+                        password='test-only',
+                        is_active=True,
+                        **columns,
+                    )
+                    app_module.db.session.add(user)
+                    app_module.db.session.commit()
+                    user_ids[label] = user.id
+
+            for label, _, may_back_up, refused_status in self.ACCOUNT_SHAPES:
+                with self.subTest(account=label):
+                    client = app_module.app.test_client()
+                    with client.session_transaction() as session:
+                        session['_user_id'] = str(user_ids[label])
+                        session['_fresh'] = True
+
+                    page = client.get('/offline-tsr')
+                    save = client.post('/save_tsr_draft', json={
+                        'draft_key': f'draft-gate-{label}',
+                        'device_updated_at': '2026-08-08T08:00:00+00:00',
+                        'payload': {'tsr-complaint': 'gate check', 'attachments': []},
+                    })
+                    fetch = client.get('/get_tsr_drafts')
+
+                    if may_back_up:
+                        # The page opening while the endpoints refuse IS the bug.
+                        self.assertEqual(page.status_code, 200, f'{label} cannot open Create TSR')
+                        self.assertEqual(save.status_code, 200, f'{label} can write a draft that is never backed up')
+                        self.assertEqual(fetch.status_code, 200, f'{label} cannot recover a backed-up draft')
+                        keys = [row['draft_key'] for row in fetch.get_json()['drafts']]
+                        self.assertIn(f'draft-gate-{label}', keys, f'{label} draft did not reach the server')
+                    else:
+                        self.assertEqual(page.status_code, 302, f'{label} should be redirected away from Create TSR')
+                        self.assertEqual(save.status_code, refused_status)
+                        self.assertEqual(fetch.status_code, refused_status)
+        finally:
+            if extension is not None and app_module is not None:
+                with app_module.app.app_context():
+                    app_module.db.session.remove()
+                    if original_engine is not None:
+                        extension._app_engines[app_module.app][None] = original_engine
+                    if original_ready is not None:
+                        app_module._tsr_draft_table_ready = original_ready
+                    if original_csrf is not None:
+                        app_module.app.config['WTF_CSRF_ENABLED'] = original_csrf
+            if test_engine is not None:
+                test_engine.dispose()
+            if database_path and os.path.exists(database_path):
+                os.unlink(database_path)
+
+    def test_a_permanent_refusal_is_not_described_as_temporary(self):
+        """The 403 message must not tell the user to wait for a retry.
+
+        This is the half of bug 1z that kept it unreported: the user was told
+        the backup was "temporarily unavailable and will retry", so nobody
+        raised it.
+        """
+        source = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+        self.assertIn('function standaloneTSRServerBackupFailureText(', source)
+        self.assertIn('standaloneTSRServerBackupFailureText(result.server_sync_error)', source)
+        # The status is what separates the three outcomes; without branching on
+        # it the function is just the old single message with extra steps.
+        self.assertIn("error?.httpStatus === 403", source)
+        self.assertIn("error?.httpStatus === 401", source)
+        # The temporary wording must survive for the case where it is true.
+        self.assertIn('temporarily unavailable and will retry', source)
+
+
 if __name__ == '__main__':
     unittest.main()

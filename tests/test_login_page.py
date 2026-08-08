@@ -198,5 +198,173 @@ class PasswordResetTokenTests(unittest.TestCase):
         self.assertIsNone(app_module.load_user_from_password_reset_token(token))
 
 
+class LoginNextTargetTests(unittest.TestCase):
+    """`next` must send the user where they were going, and nowhere else.
+
+    Bookmarking /timeline, being bounced to /login and then landing on the
+    dashboard was the reported papercut. The redirect is only safe if the target
+    is validated as a local path, or the fix trades a papercut for an open
+    redirect.
+    """
+
+    SAFE_TARGETS = (
+        '/timeline',
+        '/timeline?offset=2&branch=Cebu',
+        '/offline-tsr',
+        '/analytics_page',
+        '/',
+    )
+
+    # Each of these must be refused. The first group would take a user off this
+    # site entirely; the second would be actively unhelpful to land on.
+    UNSAFE_TARGETS = (
+        'https://evil.example.com/steal',
+        'http://evil.example.com',
+        '//evil.example.com',            # protocol-relative: no scheme, still off-site
+        '/\\evil.example.com',           # several browsers normalize this into a host
+        '\\\\evil.example.com',
+        'javascript:alert(1)',
+        'data:text/html,<script>alert(1)</script>',
+        '/timeline\r\nSet-Cookie: x=1',  # header smuggling via a control character
+        'timeline',                      # relative, so it depends on the current path
+        '',
+        None,
+        '/logout',                       # would undo the sign-in that just happened
+        '/login',
+        '/login?next=/timeline',
+        '/forgot_password',
+        '/reset_password/sometoken',
+    )
+
+    def test_safe_local_paths_are_accepted(self):
+        for target in self.SAFE_TARGETS:
+            with self.subTest(target=target):
+                self.assertEqual(app_module.resolve_safe_next_target(target), target)
+
+    def test_off_site_and_unhelpful_targets_are_refused(self):
+        for target in self.UNSAFE_TARGETS:
+            with self.subTest(target=target):
+                self.assertEqual(app_module.resolve_safe_next_target(target), '')
+
+    def test_a_path_that_merely_starts_with_a_blocked_name_is_still_allowed(self):
+        # /logout_report is not /logout. A naive startswith() check would refuse
+        # it, so the boundary is asserted explicitly.
+        self.assertEqual(app_module.resolve_safe_next_target('/logout_report'), '/logout_report')
+        self.assertEqual(app_module.resolve_safe_next_target('/logins'), '/logins')
+
+    def test_an_overlong_target_is_refused(self):
+        self.assertEqual(app_module.resolve_safe_next_target('/' + 'a' * 600), '')
+
+    def test_the_route_reads_next_from_the_form_on_post_and_the_query_on_get(self):
+        source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        self.assertIn('next_target = resolve_safe_next_target(', source)
+        self.assertIn("request.form.get('next') if request.method == 'POST' else request.args.get('next')", source)
+        # The validated target must win over the role default, or the papercut
+        # is still there.
+        self.assertIn('if next_target:', source)
+        self.assertIn('response = redirect(next_target)', source)
+        # And the GET must hand it to the template, or a failed first attempt
+        # silently drops the destination.
+        self.assertIn("render_template('login.html', next_target=next_target)", source)
+
+    def test_the_form_carries_next_through_a_failed_attempt(self):
+        login_source = (ROOT / 'templates' / 'login.html').read_text(encoding='utf-8')
+        self.assertIn('name="next"', login_source)
+        self.assertIn('{% if next_target %}', login_source)
+
+
+class LoginNextRoundTripTests(unittest.TestCase):
+    """The whole bounce-and-return journey, end to end.
+
+    The source assertions above cannot see the one thing this depends on: the
+    exact shape Flask-Login uses for `next`. It arrives percent-encoded
+    (`/login?next=%2Ftimeline%3Foffset%3D2`), so if that ever changes, the
+    helper would silently start refusing every real target and every user would
+    quietly land on the dashboard again -- the original papercut, restored, with
+    all the source-level tests still green.
+    """
+
+    PASSWORD = 'round-trip-probe-123'
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+        app_module.db.create_all()
+        cls.original_csrf = cls.app.config.get('WTF_CSRF_ENABLED')
+        cls.app.config['WTF_CSRF_ENABLED'] = False
+
+        existing = app_module.User.query.filter_by(username='login_next_probe').first()
+        if existing:
+            app_module.db.session.delete(existing)
+            app_module.db.session.commit()
+        cls.user = app_module.User(
+            username='login_next_probe',
+            password=app_module.generate_password_hash(cls.PASSWORD),
+            role='staff',
+            is_active=True,
+        )
+        app_module.db.session.add(cls.user)
+        app_module.db.session.commit()
+
+    @classmethod
+    def tearDownClass(cls):
+        # Leaving this account behind would let it drift into another module's
+        # fixtures; the suite shares one database within a run.
+        user = app_module.User.query.filter_by(username='login_next_probe').first()
+        if user:
+            app_module.db.session.delete(user)
+            app_module.db.session.commit()
+        if cls.original_csrf is not None:
+            cls.app.config['WTF_CSRF_ENABLED'] = cls.original_csrf
+        app_module.db.session.remove()
+        cls.ctx.pop()
+
+    def _sign_in(self, client, path='/login', **extra):
+        data = {'username': 'login_next_probe', 'password': self.PASSWORD}
+        data.update(extra)
+        return client.post(path, data=data)
+
+    def test_a_bookmarked_page_is_returned_to_after_signing_in(self):
+        client = self.app.test_client()
+
+        bounced = client.get('/timeline?offset=2&branch=Cebu')
+        self.assertEqual(bounced.status_code, 302)
+        location = bounced.headers.get('Location', '')
+        self.assertIn('next=', location)
+
+        # The login page must carry the destination into the form, or a single
+        # mistyped password loses it.
+        page = client.get(location)
+        self.assertIn('name="next"', page.get_data(as_text=True))
+
+        landed = self._sign_in(client, location, next='/timeline?offset=2&branch=Cebu')
+        self.assertEqual(landed.status_code, 302)
+        self.assertEqual(landed.headers.get('Location'), '/timeline?offset=2&branch=Cebu')
+
+    def test_without_a_next_the_role_default_still_wins(self):
+        # The control: proves the test above is not passing because every
+        # sign-in happens to redirect somewhere.
+        landed = self._sign_in(self.app.test_client())
+        self.assertEqual(landed.status_code, 302)
+        self.assertEqual(landed.headers.get('Location'), '/')
+
+    def test_an_off_site_next_is_ignored_rather_than_followed(self):
+        landed = self._sign_in(self.app.test_client(), next='https://evil.example.com/steal')
+        self.assertEqual(landed.status_code, 302)
+        self.assertEqual(landed.headers.get('Location'), '/')
+
+    def test_a_failed_attempt_does_not_lose_the_destination(self):
+        client = self.app.test_client()
+        refused = client.post('/login', data={
+            'username': 'login_next_probe',
+            'password': 'definitely-not-the-password',
+            'next': '/timeline',
+        })
+        self.assertEqual(refused.status_code, 200)
+        self.assertIn('value="/timeline"', refused.get_data(as_text=True))
+
+
 if __name__ == '__main__':
     unittest.main()

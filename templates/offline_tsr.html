@@ -3205,6 +3205,17 @@ async function syncStandaloneTSRDraftToServer(record){
   }
 }
 
+function standaloneTSRServerBackupFailureText(error){
+  // Three genuinely different outcomes, which the old single message conflated.
+  if(error?.httpStatus === 403){
+    return 'Draft saved on this device only. This account is not permitted to back TSR drafts up, so it will NOT sync — copy anything you cannot lose before leaving this page.';
+  }
+  if(error?.httpStatus === 401){
+    return 'Draft saved on this device. Your session has expired, so it was not backed up — sign in again to sync it.';
+  }
+  return 'Draft saved on this device. Account backup is temporarily unavailable and will retry when the connection returns.';
+}
+
 function enqueueStandaloneTSRServerDraftSync(record, { immediate=false } = {}){
   if(!record?.id || !navigator.onLine) return { pending:true, skipped:true, reason:'offline_or_missing_key' };
   if(!immediate){
@@ -6326,7 +6337,10 @@ async function saveStandaloneTSRLocalDraft(){
     }
     await renderStandaloneTSRDraftPanel();
     if(result?.server_sync_error){
-      showTSRStatus('Draft saved on this device. Account backup is temporarily unavailable and will retry when the connection returns.', 'warning');
+      // A 401/403 is a permanent refusal, not a connection problem. Calling it
+      // "temporary, will retry" is what stopped bug 1z ever being reported: the
+      // user was told to wait for something that was never going to happen.
+      showTSRStatus(standaloneTSRServerBackupFailureText(result.server_sync_error), 'warning');
     }else if(result?.server_sync_result?.pending || result?.server_sync_result?.skipped){
       showTSRStatus('Draft saved on this device. It will be backed up to your account when you are online.', 'warning');
     }else{

@@ -1,5 +1,67 @@
 # Project Change Log
 
+claude changes - 2026-08-08 (TSR draft gate, login destination)
+
+## Fixed: five account shapes wrote TSR drafts that were never backed up (bug 1z)
+
+* `f792d22` gated the three draft routes on `is_admin_authorized() or role == 'engineer'` while
+  `/offline-tsr` admitted **everyone except approver-only users**. Plain staff, schedulers,
+  personnel admins, reports admins and stock-inventory users could open Create TSR, write a
+  draft, and have every backup silently refused with a 403.
+* **The page gate and the endpoint gates are now one expression**, `can_back_up_tsr_drafts()`,
+  called by all four. That is the actual fix — the previous shape let the two drift, which is how
+  this reached `main` for the fifth time.
+* **Not a security hole**: it failed closed, 403 rather than 200. The damage was silent data loss
+  in the one feature whose entire purpose is preventing it.
+
+## Fixed: a permanent refusal was reported as a temporary one
+
+* The explicit Save Draft path said *"Account backup is temporarily unavailable and will retry
+  when the connection returns"* for **every** failure, including a 403 that will never succeed.
+  That wording is why the bug was never reported — users were told to wait.
+* `standaloneTSRServerBackupFailureText()` now separates the three real outcomes: a 403 says this
+  account cannot back drafts up and to copy anything that cannot be lost, a 401 says the session
+  expired and to sign in again, and everything else keeps the retry wording, which is true there.
+  `error.httpStatus` was already being set and had no reader.
+
+## Fixed: signing in no longer forgets where you were going
+
+* `/login` ignored `next` entirely, so a bookmarked `/timeline` bounced to the sign-in page and
+  then landed on the dashboard. The validated target now wins over the role default.
+* **`resolve_safe_next_target()` is the whole risk of this change**, so it is deliberately strict:
+  local paths only, rejecting any scheme or host, protocol-relative `//evil.com`, the backslash
+  variant `/\evil.com` that some browsers normalize into a host, control characters, and anything
+  over 500 characters. Without it this is an open redirect.
+* `/logout`, `/login`, `/forgot_password` and `/reset_password` are refused as targets — the first
+  would undo the sign-in that just happened. The check is path-boundary aware, so `/logout_report`
+  is still allowed.
+* The form carries `next` in a hidden field, so one mistyped password does not lose the
+  destination.
+
+## Tests
+
+* New `TsrDraftAccessMatchesThePageGateTests` builds **one account of each shape** and calls the
+  page and both endpoints — the four-line test this repository's journal says has now caught five
+  gate mismatches, and which `tests/test_tsr_draft_sync.py` could not have done because it builds
+  two engineer accounts.
+* **The fixture was wrong before the code was**: an inventory-**only** account cannot reach
+  `/offline-tsr` at all, fenced off by `restrict_stock_inventory_only_accounts()`. It and the
+  HR-schedule-only account are now pinned as refused-by-a-different-mechanism, with the expected
+  status asserted per shape (403 from this gate, 302 from a fence) so a fence disappearing cannot
+  be absorbed as "still refused somehow".
+* New `LoginNextTargetTests` (16 refused targets, 5 accepted, plus the `/logout_report` boundary)
+  and `LoginNextRoundTripTests`, which drives the real bounce-and-return journey. The round trip
+  is not redundant with the unit tests: it is the only thing that sees Flask-Login's actual
+  percent-encoded `next=%2Ftimeline%3Foffset%3D2` format. If that shape ever changes, every
+  source-level test stays green while every user quietly lands on the dashboard again.
+* **Seven injections, all RED for the expected reason**, `app.py` and the template restored
+  byte-identically each time. The harness asserts the needle occurs exactly once and that the SHA
+  changed before running anything, per the CRLF trap this file has recorded repeatedly.
+* Service worker bumped `v81-backup-network-only` → **`v82-tsr-draft-gate`**: both
+  `templates/offline_tsr.html` and `templates/login.html` are `APP_SHELL` entries, so without it a
+  cached device keeps the old page and none of this reaches a field phone.
+* Suite green at **565** (553 + 12).
+
 claude changes - 2026-08-07 (backup download)
 
 ## Found: the service worker was replacing the backup download with the offline page

@@ -74,6 +74,8 @@ from werkzeug.security import (
 
 from werkzeug.utils import secure_filename
 
+from urllib.parse import urlparse
+
 from sqlalchemy import (
     func, 
     and_, 
@@ -5032,6 +5034,21 @@ def is_approver_only_user(user=None):
     )
 
 
+def can_back_up_tsr_drafts(user=None):
+    """Single source of truth for who may reach Create TSR *and* back a draft up.
+
+    The page gate and the three draft endpoints must be the same expression. When
+    they were not, five account shapes (plain staff, scheduler, personnel admin,
+    reports admin, stock-inventory user) could open Create TSR and write a draft
+    that was never backed up, while the panel promised a backup and the failure
+    was reported as temporary. See pending-work.md bug 1z.
+    """
+    target = user or current_user
+    if not (target and getattr(target, 'is_authenticated', False)):
+        return False
+    return not is_approver_only_user(target)
+
+
 def is_approver_only_engineer_profile(engineer=None):
     """Return True when a Personnel/Engineer row belongs to an approver-only login."""
     if not engineer:
@@ -9228,9 +9245,48 @@ def ensure_timeline_performance_indexes():
         raise
 
 
+# Signing in must never be able to bounce a user off this site, so a `next`
+# target is accepted only when it is unambiguously a path on our own origin.
+# These are the pages it would be actively unhelpful to land on afterwards:
+# /logout would undo the sign-in that just happened, and the rest send the user
+# straight back where they came from.
+UNSAFE_NEXT_TARGET_PREFIXES = ('/login', '/logout', '/forgot_password', '/reset_password')
+
+
+def resolve_safe_next_target(candidate):
+    """Return `candidate` when it is a safe local path, otherwise ''.
+
+    Rejects anything with a scheme or host, protocol-relative `//evil.com` and
+    its backslash variant `/\\evil.com` (which several browsers normalize into
+    a host), and control characters that can smuggle a second header line.
+    Without this the redirect below would be an open redirect.
+    """
+    target = (candidate or '').strip()
+    if not target or len(target) > 500:
+        return ''
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in target):
+        return ''
+    if not target.startswith('/'):
+        return ''
+    if target.startswith('//') or target.startswith('/\\'):
+        return ''
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        return ''
+    path = parsed.path or '/'
+    if any(path == prefix or path.startswith(prefix + '/') for prefix in UNSAFE_NEXT_TARGET_PREFIXES):
+        return ''
+    return target
+
+
 @app.route('/login', methods=['GET', 'POST'])
 @limiter.limit('10 per minute; 60 per hour', methods=['POST'])
 def login():
+    # Flask-Login puts the blocked destination in ?next=; the form posts it back
+    # in a hidden field so it survives a failed attempt.
+    next_target = resolve_safe_next_target(
+        request.form.get('next') if request.method == 'POST' else request.args.get('next')
+    )
     if request.method == 'POST':
         username = clean_str(request.form.get('username'))
         password = request.form.get('password') or ''
@@ -9275,7 +9331,12 @@ def login():
                 else:
                     session.pop('force_pw_change', None)
 
-                if getattr(user_rec, 'role', None) == 'engineer' and is_mobile_request():
+                # A bookmarked page the user was bounced off wins over the
+                # role default; without this, bookmarking /timeline always
+                # landed on the dashboard after signing in.
+                if next_target:
+                    response = redirect(next_target)
+                elif getattr(user_rec, 'role', None) == 'engineer' and is_mobile_request():
                     response = redirect(url_for('timeline_page'))
                 else:
                     response = redirect(url_for('dashboard_page'))
@@ -9285,7 +9346,7 @@ def login():
         else:
             flash('Invalid Credentials - Access Denied')
 
-    response = Response(render_template('login.html'), mimetype='text/html')
+    response = Response(render_template('login.html', next_target=next_target), mimetype='text/html')
     # no-store is deliberately omitted so the service worker can cache the signed-out
     # login shell for offline use. must-revalidate still forces a fresh copy whenever
     # the network is available, and the page itself carries no account data.
@@ -10033,7 +10094,7 @@ def offline_tsr_page():
     Offline Storage Health is server-side gated to authorized admins only so
     engineers do not receive the diagnostic panel markup or controls.
     """
-    if is_approver_only_user():
+    if not can_back_up_tsr_drafts():
         return redirect(url_for('dashboard_page'))
     filename_template = get_email_template_value('tsr_pdf_filename')
     return render_template(
@@ -14109,7 +14170,7 @@ def tsr_draft_to_dict(draft, stale_ignored=False):
 @login_required
 def save_tsr_draft():
     """Upsert the signed-in user's typed Create TSR draft backup."""
-    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+    if not can_back_up_tsr_drafts():
         return denied()
     if not ensure_tsr_draft_schema():
         return jsonify({'status': 'error', 'message': 'TSR draft backup is temporarily unavailable.'}), 503
@@ -14201,7 +14262,7 @@ def save_tsr_draft():
 @login_required
 def get_tsr_drafts():
     """Return only the signed-in user's server-backed TSR drafts."""
-    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+    if not can_back_up_tsr_drafts():
         return denied()
     if not ensure_tsr_draft_schema():
         return jsonify({'status': 'error', 'message': 'TSR draft backup is temporarily unavailable.'}), 503
@@ -14216,7 +14277,7 @@ def get_tsr_drafts():
 @login_required
 def delete_tsr_draft():
     """Delete one server-backed TSR draft within the signed-in user's scope."""
-    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+    if not can_back_up_tsr_drafts():
         return denied()
     if not ensure_tsr_draft_schema():
         return jsonify({'status': 'error', 'message': 'TSR draft backup is temporarily unavailable.'}), 503
@@ -15167,7 +15228,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v81-backup-network-only';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v82-tsr-draft-gate';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
