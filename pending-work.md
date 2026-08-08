@@ -7,11 +7,40 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last updated: 2026-08-07 (end of session), at the owner's request.
+Last updated: 2026-08-08, at the owner's request.
 
-**Start here if you are picking this up cold.** Suite green at **553**, service worker at
-**`v81-backup-network-only`**, nothing uncommitted but the four known artifacts. **One open defect
-is in section 1 and it is the first thing to read** — it is a silent one, and it is not fixed.
+**Start here if you are picking this up cold.** Suite green at **579**, service worker at
+**`v83-offline-api-status`**, nothing uncommitted but the four known artifacts. **There is no open
+defect.** Section 1 is empty for the first time in this file's history; what is left is queued work,
+two owner decisions, and a verification backlog whose largest item is still "nobody has opened this
+in Edge".
+
+## The 2026-08-08 session
+
+Two commits, both pushed. Everything below was closed here rather than deferred.
+
+| Work | Commit | Note |
+| --- | --- | --- |
+| TSR draft backup opened to every account that can write one | `2e3c2d1` | closes bug 1z |
+| A permanent 403 no longer reported as a temporary retry | `2e3c2d1` | the half that kept 1z unreported |
+| `/login` honours `next`, with an open-redirect guard | `2e3c2d1` | closes the papercut in section 2 |
+| Backup no longer blocks every other user | `d28483d` | Procfile, gthread |
+| Offline API reads return 503 rather than the offline page with 200 | `d28483d` | closes the 5b observation |
+| Six shell controls raised to 44×44 on touch | `d28483d` | closes the section 3 tap-target note |
+
+**Three claims in this file turned out to be wrong, all of them reassuring rather than alarming** —
+each is corrected in place below rather than deleted:
+
+1. The tap-target note called the `.toggle-btn` **unlabelled**. It has carried
+   `aria-label="Hide navigation"` the whole time.
+2. The same note **missed two controls**, because they were already 44 px tall and only failed on
+   width.
+3. Section 5b estimated that fixing the offline-200 fallback would "touch every consumer of
+   `networkFirst`". It touched one function; the fetch handler's ordering already contained it.
+
+None was careless — each was written from reading rather than measuring, which is the failure mode
+worth naming. **Re-measure before acting on a number in here.** A test fixture in the 1z work was
+wrong the same way, and was wrong *before* the code was.
 
 ## The short version of 2026-08-07
 
@@ -153,14 +182,17 @@ reviews that followed.
 | `45da21c` `a762b05` `d562654` (`v73`-`v75`) | Analytics upgrade: trends, themed SVG charts, P.O. reporting (Codex) |
 | `34f60b9` (`v76`) | **Review fix** — P.O. panel invisible to reports admins; a trend arrow on a metric that cannot carry one |
 
-Suite green at **553 tests**. Service worker cache at **`v81-backup-network-only`** —
-**read the live value out of `app.py` immediately before committing**, never from a note.
+Suite green at **579 tests** as of 2026-08-08. Service worker cache at **`v83-offline-api-status`** —
+**read the live value out of `app.py` immediately before committing**, never from a note. This line
+has now gone stale three times.
 
 **Every review found something, and two were live privilege escalations.** That is the single
 most useful fact for the next reader: the implementations were competent, the suites were green,
 and the defects were still there. Both escalations passed hundreds of tests because **nothing
 exercised the affected account**. See section 6. **That held again on 2026-08-07** — the TSR draft
-work shipped green with the gap now recorded as bug 1z, for exactly the same reason.
+work shipped green with the gap recorded as bug 1z, for exactly the same reason. **1z was fixed on
+2026-08-08 by removing the second gate rather than correcting it**, so the pattern now has a durable
+answer as well as a diagnosis.
 
 **Every plan in `plans.md` reads `Executed` again** — `d5e6d60`, `f792d22`, `8d97b58`, `e0182a2`.
 Nothing is waiting for a go-ahead, but read `git log` rather than a `Status` line, per the warning
@@ -206,7 +238,36 @@ session recorded.
 
 ## 1. Open bugs
 
-### 1z. TSR draft backup silently does nothing for five account shapes — OPEN, found 2026-08-07
+**None.** For the first time since this file was created there is no open defect. Everything below
+this line is a fixed entry kept for its mechanism — each one is a worked example of a class this
+project keeps meeting, which is why they are struck through rather than deleted.
+
+### ~~1z. TSR draft backup silently does nothing for five account shapes~~ — FIXED, `2e3c2d1`
+
+**Fixed 2026-08-08.** The page gate and the three endpoint gates are now **one expression**,
+`can_back_up_tsr_drafts()`, called by `/offline-tsr` and all three routes. That is the actual fix:
+the previous shape let the two drift, which is how this reached `main` for the fifth time. The
+message was fixed too — `standaloneTSRServerBackupFailureText()` now separates a permanent 403 from
+an expired 401 from a genuine connection failure, so nobody is told to wait for a retry that will
+never come.
+
+**The test found a fixture wrong before it found the code wrong, and that is the useful part.**
+Building the "stock inventory user" row with `stock_inventory_only=True` failed: an inventory-**only**
+account cannot reach `/offline-tsr` at all, fenced off by `restrict_stock_inventory_only_accounts()`.
+So the affected shape was a stock-inventory user *without* only-mode. Both fenced shapes
+(inventory-only, HR-schedule-only) are now pinned with their **expected refusal status** — 403 from
+this gate, 302 from a fence — so a fence quietly disappearing cannot be absorbed as "still refused
+somehow".
+
+**Still not verified:** the new 403 message has never been seen on screen. See section 3.
+
+The original entry is kept below: it is the clearest worked example in this file of a page gate and
+an endpoint gate disagreeing, and the reproduction table is how the next one should be found.
+
+<details>
+<summary>Original entry, retained for the mechanism</summary>
+
+### 1z. TSR draft backup silently does nothing for five account shapes
 
 **This is the one open defect and it is silent.** `f792d22` added server-backed TSR drafts, gating
 all three routes on `is_admin_authorized() or role == 'engineer'`. But `/offline-tsr` admits
@@ -236,6 +297,8 @@ anyone who can create a TSR can back one up, and stop describing a permanent 403
 reason this file records four times already: `tests/test_tsr_draft_sync.py` builds **two engineer
 accounts**, so nothing exercised the affected users. Its owner-isolation test is good — it just
 tests the wrong axis.
+
+</details>
 
 ### The two from 2026-08-06 — both FIXED, kept for the mechanism
 
@@ -383,24 +446,22 @@ are all fixed and pushed.
 
 ## 2. Queued work
 
-### System backup: streaming and worker count — deliberately not done in `f08068f`
+### ~~System backup: streaming and worker count~~ — WORKER COUNT FIXED, STREAMING DECIDED AGAINST, `d28483d`
 
-The backup download was fixed by taking it off the service worker's navigate branch and by dropping
-application source from the archive (**82.2 MB → 39.1 MB, 6.8 s → 3.6 s, 47.2 MB of duplication →
-none**, measured on the same data). Two things were left, and they are what to reach for **if the
-owner reports it failing again**:
+**The blocking half is fixed.** `Procfile` is now
+`gunicorn --worker-class gthread --workers 1 --threads 8 --timeout 180`. A backup no longer blocks
+every other user, and gthread runs the arbiter heartbeat **in the accept loop rather than the
+request**, so a slow build can no longer have its worker killed — that, not the raised timeout
+number, is what actually closes the timeout risk.
 
-- **The archive is still built completely before a single byte is sent.** `Procfile` is
-  `gunicorn --timeout 120` with **no `-w`, so one sync worker**. A large enough backup still outruns
-  the timeout, and while it builds **no other user can load a page**. Streaming the ZIP is the
-  durable fix: bytes flow immediately, no temp file, and neither the worker timeout nor a proxy
-  idle timeout can bite. Cost: no `Content-Length`, and the status code is committed before errors
-  are known — acceptable, since the manifest already records `backup_complete` and the warning count
-  inside the archive.
-- **A second worker or threads**, so a backup cannot block the whole app.
+**Threads rather than a second worker process, deliberately.** Two processes would contend on the
+same SQLite file with the 60s busy timeout that exists for exactly that reason; threads share one
+engine and connection pool and cost far less memory. A test pins `--workers 1`, because "more
+workers is better" is the obvious wrong optimisation here.
 
-**The reason this is now reportable at all** is that the offline page no longer masks the error. If
-it fails again the owner will see the real message — get it before designing anything.
+**Streaming is now a decision, not a queued task — see section 5.** It was prototyped rather than
+assumed, and it works; it is simply the wrong trade at 39 MB / 3.6 s. Do not re-raise it without
+reading that entry first.
 
 ### The Edge session loss — diagnosed, not fixed, and mostly not ours
 
@@ -427,10 +488,19 @@ expiry before shutdown — if they are gone afterwards while the dates were stil
 cleared them. **If it is clear-on-close, staying signed in is not fixable in code** — the browser has
 been told to forget the site.
 
-**One genuine papercut that IS ours:** `/login` ignores `next` entirely (`app.py`, the redirect after
-a successful sign-in goes to `/dashboard`, or `/timeline` only for engineers on mobile). Bookmark
-`/timeline`, get bounced, sign in, and you land on the dashboard. Small fix, but it must validate the
-target as a local path or it becomes an open redirect.
+**~~One genuine papercut that IS ours:~~ FIXED in `2e3c2d1`.** `/login` ignored `next` entirely, so
+a bookmarked `/timeline` bounced to sign-in and then landed on the dashboard. It now honours the
+target, validated by `resolve_safe_next_target()` — local paths only, rejecting schemes, hosts,
+protocol-relative `//evil.com`, the backslash variant `/\evil.com`, control characters and over-long
+targets, plus `/logout` and the auth pages as destinations. **That validation is the whole risk of
+the change**; without it the fix would have traded a papercut for an open redirect.
+
+The round trip is covered end to end because it is the only thing that sees Flask-Login's actual
+`next=%2Ftimeline%3Foffset%3D2` encoding — if that format ever changes, every source-level assertion
+stays green while every user silently lands on the dashboard again.
+
+**This does not fix the Edge session loss**, which is the item above and is still almost certainly
+browser-side. It only means that when a user *does* get bounced, signing in returns them.
 
 ### LPR continuation pages now carry a signature on every page — confirm this is wanted
 
@@ -551,11 +621,29 @@ Only the `engineer-summary` strip was re-measured — the other two need an acco
 but `min-height` sits on the shared class rather than any one caller, which is what the original
 entry established.
 
-**Four other controls do measure under 44 px at 375 px**, found while checking this and recorded
-here rather than fixed, because none was part of the reported item: the skip link (41 px, hidden
-until focus), the changelog header button (40 px, and a second instance at 34 px), and an unlabelled
-`.toggle-btn` (32 px). They appear on every page, so they belong to the layout shell rather than any
-one screen. Worth one deliberate pass rather than four separate fixes.
+**~~Four other controls do measure under 44 px at 375 px~~ — FIXED, `d28483d`, and the note below
+was wrong twice.** All are now **44×44**, measured at 375 px: skip link, both changelog bells, both
+appearance buttons, and the `.toggle-btn` hamburger. Sidebar header overflow 0, page overflow none.
+Desktop re-measured and **unchanged** at 34/34/32 — the rule is scoped to `max-width: 768px`,
+because these are compact by design where the pointer is a mouse and the sidebar is only 240 px.
+
+**Two corrections to what was written here, both of which read as reassuring:**
+
+- **The `.toggle-btn` was never unlabelled.** It carries `aria-label="Hide navigation"` and did at
+  the time this was written. Whoever wrote it inferred the missing label from the icon.
+- **It missed two controls entirely** — both appearance buttons, which were already 44 px *tall* and
+  only 34 px and 42 px *wide*. **A target is 44×44, not 44 in whichever direction is convenient.**
+  A height-only audit finds four; a height-and-width audit finds six.
+
+`.sidebar-header` now wraps at mobile: the title plus three 44 px controls came to **253 px of
+content in a 240 px sidebar**, and without wrapping flex shrinks them straight back under the
+minimum the rule exists to enforce.
+
+**Observed while measuring, not fixed:** the `.sidebar` element reports **38 px of horizontal
+overflow at 375 px**. Confirmed pre-existing by neutralising the new rules and re-measuring —
+identical 38 px with and without them — and no descendant is wider than the sidebar, so it is
+likely padding or a scrollbar artifact in the off-canvas drawer. Unrelated to tap targets and
+deliberately left out of that change.
 
 ### ~~What's New — digest: real audience send~~ — SENT, 2026-08-07
 
@@ -724,7 +812,9 @@ too.
 | **The provisional-leave supersede notice, in a browser** | `b5dd637` names both leave types on the **approval** path, which the 2026-08-06 pass did not reach — see section 1b |
 | **The whole TSR draft round trip, on a real browser** | `f792d22` was reviewed by calling the endpoints and reading the client. The actual scenario it exists for — write a draft, delete the site's IndexedDB and localStorage, sign out, sign in, recover it — was **never driven**. That is the one test that proves the feature does its job, and it does not need Edge: deleting the storage by hand is what Edge was doing anyway |
 | **The enlarged signatures on a real printed page** | Every stamp was measured in the PDF and the two accepted overlaps quantified (4.4 pt and 4.5 pt into the row above), but nothing was **printed**. The Analytics print block is also still un-previewed |
-| **The backup download end to end from a browser** | `f08068f` was verified by generating the archive through the test client and measuring it. Nobody has clicked the button in a browser since the fix — which is precisely how the offline-page symptom stayed hidden |
+| **The backup download end to end from a browser** | `f08068f` was verified by generating the archive through the test client and measuring it. Nobody has clicked the button in a browser since the fix — which is precisely how the offline-page symptom stayed hidden. **`d28483d` raises the stakes slightly**: the process now runs gthread rather than a sync worker, and while no request handling changed, nothing has exercised a real backup under it |
+| **The new TSR draft 403 message, on screen** | `2e3c2d1` separates a permanent 403 from an expired 401 from a real connection failure. The wording is asserted by test and was never *seen*. Reaching it now needs an approver-only account, since every other shape is permitted — which also means this is a low-frequency path worth checking once rather than watching |
+| **The 44 px shell controls on a real phone** | Measured at 375 px in the pane, which is stronger than a screenshot for geometry. What that cannot show is whether the wrapped sidebar header **looks** right, since the title now sits on its own row above the three controls |
 | **The Analytics print view** | `app-analytics.css` has a real `@media print` block that hides each SVG and reveals its `.analytics-chart-table` as a bordered table. That is a genuinely better print than the page used to produce — and **it has never been print-previewed.** Cheap to check, and the only representation of the charts on paper |
 | **Analytics on Edge and Brave** | the SVG charts, the accent-following fills and the print block were checked in one browser only |
 | **Analytics keyboard pass** | the filter is a real `<form>` with `Apply` as `type="submit"`, headings run `h1`→`h2`→`h3`, and the scope/error regions are `role="status"` / `role="alert"`. Structure was verified; a full tab-through with visible focus was not |
@@ -924,6 +1014,25 @@ shift seeded in one module can land inside another's week-over-week window. Keep
 
 ## 5. Decided against — do not re-raise
 
+**Streaming the system backup ZIP.** Queued in section 2 for two sessions as "the durable fix", and
+rejected on 2026-08-08 **after prototyping it rather than after arguing about it**. The prototype
+works: a queue-backed non-seekable ZIP produced a valid archive — `testzip()` clean, the large file
+byte-identical after a round trip, memory flat at ~16 KB chunks — and Windows `Expand-Archive` read
+its data descriptors without complaint. It was rejected on what it costs, not on whether it works:
+
+- Since the data-only change the archive is **39 MB built in 3.6 s**, nowhere near the 180 s
+  timeout. Streaming solves a problem that is not currently occurring.
+- It would lose the **`Content-Length`**, and with it the real progress bar on a 39 MB download.
+- It would lose **`X-Backup-Complete`** and **`X-Backup-Warning-Count`**, which cannot be set once
+  the body has started and are the only machine-readable signal that a backup came back partial.
+  Streaming commits `200` before any error is known.
+- Both symptoms that motivated it — blocking other users, and the worker being killed — are fixed
+  in the Procfile instead, at no cost.
+
+**Revisit only if the build itself approaches the timeout**, and expect to trade the progress bar
+and those two headers for it. The reasoning is duplicated in the `/admin/download-backup` docstring
+deliberately, because that is where someone will be standing when they reconsider.
+
 **Reimbursement rows where the component columns and the saved `row_total` disagree.** Since
 `aff9001` the generated PCV, RFP, Excel and ZIP all use the **component sum**, not the saved
 total, and surface a mismatch warning. Raised with the owner as a business decision rather than
@@ -1066,6 +1175,26 @@ routine.
 
 ## 5b. Observations from the 2026-08-07 verification pass — recorded, not fixed
 
+### ~~An uncached API GET resolves 200 with the `/offline` page~~ — FIXED, `d28483d`
+
+`networkFirst()` now ends at `offlineApiResponse()`: **503**, `application/json`, `offline: true`,
+with both `error` and `message` set to the same text because consumers here read one or the other
+(`app-analytics.js` renders `message`, the schedule and leave paths read `error`).
+
+**The estimate below was wrong about the cost, and the correction is the useful part.** This entry
+said fixing it "touches every consumer of `networkFirst`". It does not: the **navigate branch is
+matched before the networkFirst prefixes**, so only programmatic fetches ever reach that fallback.
+Nothing that renders HTML does. `fieldNavigationFirst()` still returns the offline page and a test
+pins that it does — a page must still get a page. What looked like a wide, risky change was a
+contained one, and it was the *ordering* in the fetch handler that made it so.
+
+Verified in a browser against a genuinely stopped server: the API read returned 503 with parseable
+JSON, navigating to `/timeline` still landed on the offline page, and `/static/` still served from
+cache.
+
+<details>
+<summary>Original entry, retained for the mechanism and the wrong estimate</summary>
+
 **An uncached API GET resolves 200 with the `/offline` page.** With the server down,
 `fetch('/get_engineers?anything')` returns **status 200 carrying the offline HTML**, because
 `networkFirst()` ends in `return caches.match('/offline')`. A caller that checks `response.ok`
@@ -1079,6 +1208,8 @@ to get a broken render than the honest "could not be loaded" message that page w
 Fixing it properly means giving the fallback a non-200 status, which touches every consumer of
 `networkFirst` — its own task, and a decision rather than a cleanup.
 
+</details>
+
 **Dark mode cannot be judged by computed style alone in this pane, and it nearly produced a false
 bug report.** Toggling `data-app-theme` and reading `getComputedStyle(document.body)` showed the page
 background stuck light while every panel went dark — which reads exactly like a broken dark-mode
@@ -1090,6 +1221,35 @@ disable transitions first** — the properties most likely to be transitioned ar
 theme-driven ones.
 
 ## 6. Patterns worth knowing before the next feature
+
+### The four from 2026-08-08
+
+**1. The gate mismatch was fixed by deleting the second gate, not by correcting it.** Five previous
+occurrences were all fixed by editing one expression to match the other — which leaves two
+expressions that must be kept in agreement by whoever edits next, and is why it kept recurring.
+`can_back_up_tsr_drafts()` is now called by the page *and* all three endpoints, so there is nothing
+left to drift. **When two places must agree about who sees something, the durable fix is one place.**
+Compare the `stock` block in the Analytics work: a value that must not be shown should not exist.
+
+**2. This file was wrong three times, always in the reassuring direction.** The tap-target note
+called a button unlabelled that carries an `aria-label`; it missed two controls that passed on
+height and failed on width; and the 5b entry estimated a change would "touch every consumer" when
+the fetch handler's ordering made it contained. None of these was a lie — each was a careful note
+written from reading rather than measuring. **Re-measure before acting on a number in here.** The
+`.dashboard-metric-link` entry was already stale in exactly this way on 2026-08-07.
+
+**3. Prototype the thing you are about to reject, before rejecting it.** Streaming the backup could
+have been dismissed on reasoning alone; building it took one throwaway script and produced a much
+better answer — *it works, and here is what it costs*. That turns "we decided not to" into "we
+measured the trade", which is the difference between a decision the next reader can evaluate and one
+they will simply re-litigate. The same script also proved the compatibility worry (data descriptors)
+was unfounded, which reasoning would never have settled.
+
+**4. A tap target is 44×44, and a height-only audit will tell you it is fine.** Both appearance
+buttons were already 44 px tall and failed at 34 px and 42 px wide. The controls that pass one
+dimension and fail the other are precisely the ones a quick check misses, because the number you
+look at first is the right one. Assert both, and assert them against the shared token
+(`--mobile-touch-height`) so one edit cannot silently lower all of them.
 
 ### The four from 2026-08-07, in order of how much they will save you
 
