@@ -7,40 +7,49 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last updated: 2026-08-07, at the owner's request, after **four open items were closed in one
-session** — the chart sizing, the runtime cache decision, the two dead routes, and the digest.
+Last updated: 2026-08-07 (end of session), at the owner's request.
 
-**Start here if you are picking this up cold.** The state is good: **no open bugs**, suite green at
-**525**, service worker at **`v77-logout-cache-purge`**, nothing uncommitted but the four known
-artifacts.
+**Start here if you are picking this up cold.** Suite green at **553**, service worker at
+**`v81-backup-network-only`**, nothing uncommitted but the four known artifacts. **One open defect
+is in section 1 and it is the first thing to read** — it is a silent one, and it is not fixed.
 
-**A verification pass later the same day closed five more rows from section 3** — offline with the
-server genuinely stopped, the two-tab race, engineer stock inventory on a viewport, the What's New
-row at 375 px, and P.O. Details in dark mode — and found the `.dashboard-metric-link` entry was
-**stale rather than open**. It also found one real defect (`parse_engineer_ids` 500) and two
-observations now in section 5b. **What remains is almost entirely things this environment cannot
-do:** a real phone, Edge and Brave, a print preview, and keyboard focus.
+## The short version of 2026-08-07
 
-**What closed on 2026-08-07, and where the residue is:**
+A long session. Four items closed in the morning, a verification pass closed five more, then three
+Codex batches landed and were reviewed here.
 
-1. **Analytics charts are drawn at 1:1 and no longer scroll at 375 px** (section 3). Verified on a
-   real viewport. **One part is unverified — the `ResizeObserver` redraw**, because this Browser pane
-   does not composite the page and neither `requestAnimationFrame` nor any `ResizeObserver` callback
-   runs in it. The geometry is proven; the trigger is not. It is the only thing in this batch needing
-   a real browser.
-2. **Sign-out now purges the authenticated caches** (section 5, where the old decision is kept and
-   marked reversed). Verified end to end. IndexedDB is deliberately untouched and must stay that way
-   — the offline queues live there.
-3. **The two dead routes are gone**, with a test pinning that `/get_activity_logs` — the endpoint
-   `/activity_page` actually uses — is *not* one of them.
-4. **The digest went to the real audience.** Note there is **no idempotency**: a second send re-sends
-   to everyone who already received it.
+**Shipped and reviewed:**
 
-**The most useful thing to know before touching the service worker again:** the fetch handler's
-branch **order** is load-bearing twice over now. `/export_` and `/logout` are both matched ahead of
-the navigate branch because both arrive as navigations, and both would otherwise reach
-`fieldNavigationFirst()`, which caches every ok response. Two tests assert the ordering by index
-comparison rather than by reading the code.
+| Work | Built by | Reviewed in |
+| --- | --- | --- |
+| Analytics chart sizing, logout cache purge, two dead routes retired | here | — |
+| `parse_engineer_ids` 500 fix + five verification rows closed | here | — |
+| Signature stamps enlarged ~1.5× everywhere | Codex `8d97b58` | `92f6e0e`, `5ab6555` |
+| Server-backed TSR drafts | Codex `f792d22` | **findings open — section 1** |
+| LPR draft recovery after reload | Codex `ac521f4` | clean |
+| LPR continuation pages on the official template | Codex `d5e6d60` | clean, one question in section 2 |
+| Backup resilience + bucket timeouts | Codex `01e2cfa`, `d3eed50` | superseded by `f08068f` |
+| Backup download fixed (service worker) | here `f08068f` | — |
+
+**Every review found something. Two of the three Codex batches shipped with a real defect**, both of
+a shape this file already records. That is not a criticism of the work — the implementations were
+competent and the suites were green — it is the reason the review step exists.
+
+## The three things most worth knowing before you touch anything
+
+1. **The service worker's navigate branch swallows authenticated downloads, and it has now done it
+   twice.** Anything reached by an `<a href>` or `window.location` arrives as a navigation; matched
+   after the navigate branch it reaches `fieldNavigationFirst()`, which caches every ok response and
+   ends its failure chain at the `/offline` page. That produced the export leak (`v71`) and then the
+   backup download failure (`v81`) — where an admin saw *"you are offline"* while online, an 80 MB
+   archive was being written into Cache Storage, and a **stale archive could be served as current**.
+   There is now a `NETWORK_ONLY_DOWNLOAD_PREFIXES` list; **add to it rather than rediscovering this**.
+   And note `Cache-Control: no-store` does **not** keep anything out of Cache Storage — that API
+   ignores HTTP cache headers entirely.
+2. **A page gate and its endpoint gate must be the same expression.** Section 6 recorded four
+   occurrences; the TSR draft work made it **five**. See section 1 — it is open.
+3. **IndexedDB is where unsynced field work lives.** The logout purge clears Cache Storage only, and
+   must keep doing so. Offline schedule queues, TSR queues and TSR drafts are all in IndexedDB.
 
 **What happened today, in order:**
 
@@ -144,13 +153,18 @@ reviews that followed.
 | `45da21c` `a762b05` `d562654` (`v73`-`v75`) | Analytics upgrade: trends, themed SVG charts, P.O. reporting (Codex) |
 | `34f60b9` (`v76`) | **Review fix** — P.O. panel invisible to reports admins; a trend arrow on a metric that cannot carry one |
 
-Suite green at **525 tests**. Service worker cache at **`v77-logout-cache-purge`** —
+Suite green at **553 tests**. Service worker cache at **`v81-backup-network-only`** —
 **read the live value out of `app.py` immediately before committing**, never from a note.
 
 **Every review found something, and two were live privilege escalations.** That is the single
 most useful fact for the next reader: the implementations were competent, the suites were green,
 and the defects were still there. Both escalations passed hundreds of tests because **nothing
-exercised the affected account**. See section 6.
+exercised the affected account**. See section 6. **That held again on 2026-08-07** — the TSR draft
+work shipped green with the gap now recorded as bug 1z, for exactly the same reason.
+
+**Every plan in `plans.md` reads `Executed` again** — `d5e6d60`, `f792d22`, `8d97b58`, `e0182a2`.
+Nothing is waiting for a go-ahead, but read `git log` rather than a `Status` line, per the warning
+below.
 
 **A third journal now exists.** `plans.md` holds what was **agreed and is waiting to be
 built**; `changes.md` what **was** done; this file what is **still open**. Approving a plan is
@@ -192,7 +206,40 @@ session recorded.
 
 ## 1. Open bugs
 
-**None open.** Both bugs found by the 2026-08-06 browser pass were fixed the same day, at the
+### 1z. TSR draft backup silently does nothing for five account shapes — OPEN, found 2026-08-07
+
+**This is the one open defect and it is silent.** `f792d22` added server-backed TSR drafts, gating
+all three routes on `is_admin_authorized() or role == 'engineer'`. But `/offline-tsr` admits
+**everyone except approver-only users**. Verified by calling, not by reading:
+
+| Account | `/offline-tsr` | `/save_tsr_draft` | `/get_tsr_drafts` |
+| --- | --- | --- | --- |
+| engineer | 200 | 200 | 200 |
+| plain staff | 200 | **403** | **403** |
+| scheduler | 200 | **403** | **403** |
+| personnel admin | 200 | **403** | **403** |
+| reports admin | 200 | **403** | **403** |
+| stock inventory user | 200 | **403** | **403** |
+
+Those five can open Create TSR and write a draft, and **none of it is ever backed up**. What they
+see makes it worse: the panel says *"backed up to your account when online"* unconditionally;
+autosave failures are `console.warn` only; and the explicit Save Draft reports *"Account backup is
+temporarily unavailable and will retry when the connection returns"* — but a 403 is **permanent**,
+so that message is wrong in a way that will keep them from reporting it.
+
+For a feature whose entire purpose is preventing data loss, promising a backup that never happens
+is the wrong failure direction. **Not a security hole** — it fails closed, 403 not 200.
+
+**The fix is small:** make the three routes match the page gate (everyone except approver-only), so
+anyone who can create a TSR can back one up, and stop describing a permanent 403 as temporary
+(`error.requiresLogin` is already set for 401/403 and never used). The reason it shipped is the
+reason this file records four times already: `tests/test_tsr_draft_sync.py` builds **two engineer
+accounts**, so nothing exercised the affected users. Its owner-isolation test is good — it just
+tests the wrong axis.
+
+### The two from 2026-08-06 — both FIXED, kept for the mechanism
+
+Both bugs found by the 2026-08-06 browser pass were fixed the same day, at the
 owner's request — 1a in `v71`, 1b in `v72`. Both entries are kept below with their reproductions,
 because each is a clean worked example of a defect class this project keeps meeting: a cache key
 that is wrong rather than stale, and two modules that disagree about a payload key.
@@ -335,6 +382,67 @@ are all fixed and pushed.
 ---
 
 ## 2. Queued work
+
+### System backup: streaming and worker count — deliberately not done in `f08068f`
+
+The backup download was fixed by taking it off the service worker's navigate branch and by dropping
+application source from the archive (**82.2 MB → 39.1 MB, 6.8 s → 3.6 s, 47.2 MB of duplication →
+none**, measured on the same data). Two things were left, and they are what to reach for **if the
+owner reports it failing again**:
+
+- **The archive is still built completely before a single byte is sent.** `Procfile` is
+  `gunicorn --timeout 120` with **no `-w`, so one sync worker**. A large enough backup still outruns
+  the timeout, and while it builds **no other user can load a page**. Streaming the ZIP is the
+  durable fix: bytes flow immediately, no temp file, and neither the worker timeout nor a proxy
+  idle timeout can bite. Cost: no `Content-Length`, and the status code is committed before errors
+  are known — acceptable, since the manifest already records `backup_complete` and the warning count
+  inside the archive.
+- **A second worker or threads**, so a backup cannot block the whole app.
+
+**The reason this is now reportable at all** is that the offline page no longer masks the error. If
+it fails again the owner will see the real message — get it before designing anything.
+
+### The Edge session loss — diagnosed, not fixed, and mostly not ours
+
+The owner reported that a bookmarked `/timeline` opens fine on Chrome but redirects to login on Edge
+for the same previously-signed-in user. **Nothing server-side explains it.** All three cookies are
+persistent and refreshed each request — `medical_service_session` (30 days, `session.permanent`),
+`medical_service_remember_token` (30 days), and the signed `medical_service_pwa_login` restore
+cookie built for exactly this — and `login_manager.session_protection = None` means a changed IP or
+user-agent will not invalidate them. For Edge to bounce, **all three had to be gone**.
+
+**The unifying insight, and the reason this sits next to the vanished-draft report:** whatever
+discards cookies also discards IndexedDB. The lost session and the lost TSR draft are very likely
+**one cause, not two bugs**. Three candidates, each of which wipes both together:
+
+1. **Edge "Clear browsing data on close"** (`edge://settings/clearBrowsingDataOnClose`), often set by
+   enterprise policy — which would explain why Edge and not Chrome on the same machine.
+2. **A different origin** — the bookmark pointing at a different scheme/host/port than where they
+   signed in. Cookies are host-scoped, IndexedDB is origin-scoped; the page looks identical.
+3. **A different Edge profile**, which has its own cookie jar and its own storage.
+
+To tell them apart: compare the exact address-bar origin against Chrome's, check that settings page,
+check the profile avatar, and in DevTools → Application → Cookies note the three cookies and their
+expiry before shutdown — if they are gone afterwards while the dates were still future, something
+cleared them. **If it is clear-on-close, staying signed in is not fixable in code** — the browser has
+been told to forget the site.
+
+**One genuine papercut that IS ours:** `/login` ignores `next` entirely (`app.py`, the redirect after
+a successful sign-in goes to `/dashboard`, or `/timeline` only for engineers on mobile). Bookmark
+`/timeline`, get bounced, sign in, and you land on the dashboard. Small fix, but it must validate the
+target as a local path or it becomes an open redirect.
+
+### LPR continuation pages now carry a signature on every page — confirm this is wanted
+
+`d5e6d60` rebuilt continuation pages on the official template. Verified by rendering a 20-item LPR:
+**3 pages, items 1-8 / 9-16 / 17-20, none missing, none duplicated**, and the AcroForm flattening
+works as documented (page 1 keeps its 53 widgets, continuation pages have 0).
+
+But the requester and approver signatures now appear on **every** page — 2 signature-shaped images
+on all three. The old hand-drawn continuation pages carried none. It is defensible, since each page
+is now a complete official form with its own signature lines, but on a 3-page LPR the approver's
+signature appears three times, and that changes what leaves the building. **Ask the owner before
+treating it as settled.**
 
 ### ~~P.O. reporting on the Analytics page~~ — BUILT in `45da21c`, reviewed in `34f60b9`
 
@@ -614,6 +722,9 @@ too.
 | **Skip link visual reveal on real keyboard focus** | layout shell. Structurally unverifiable from here: the pane never advances transitions and its window is never focused, so `:focus` never matches |
 | **Offline schedule attachments from a real device camera** | the least-proven part of `709106c` — see below. **The largest genuine risk left in this file** |
 | **The provisional-leave supersede notice, in a browser** | `b5dd637` names both leave types on the **approval** path, which the 2026-08-06 pass did not reach — see section 1b |
+| **The whole TSR draft round trip, on a real browser** | `f792d22` was reviewed by calling the endpoints and reading the client. The actual scenario it exists for — write a draft, delete the site's IndexedDB and localStorage, sign out, sign in, recover it — was **never driven**. That is the one test that proves the feature does its job, and it does not need Edge: deleting the storage by hand is what Edge was doing anyway |
+| **The enlarged signatures on a real printed page** | Every stamp was measured in the PDF and the two accepted overlaps quantified (4.4 pt and 4.5 pt into the row above), but nothing was **printed**. The Analytics print block is also still un-previewed |
+| **The backup download end to end from a browser** | `f08068f` was verified by generating the archive through the test client and measuring it. Nobody has clicked the button in a browser since the fix — which is precisely how the offline-page symptom stayed hidden |
 | **The Analytics print view** | `app-analytics.css` has a real `@media print` block that hides each SVG and reveals its `.analytics-chart-table` as a bordered table. That is a genuinely better print than the page used to produce — and **it has never been print-previewed.** Cheap to check, and the only representation of the charts on paper |
 | **Analytics on Edge and Brave** | the SVG charts, the accent-following fills and the print block were checked in one browser only |
 | **Analytics keyboard pass** | the filter is a real `<form>` with `Apply` as `type="submit"`, headings run `h1`→`h2`→`h3`, and the scope/error regions are `role="status"` / `role="alert"`. Structure was verified; a full tab-through with visible focus was not |
@@ -979,6 +1090,56 @@ disable transitions first** — the properties most likely to be transitioned ar
 theme-driven ones.
 
 ## 6. Patterns worth knowing before the next feature
+
+### The four from 2026-08-07, in order of how much they will save you
+
+**1. Anything reached by a link is a navigation, and the service worker will eat it.** This has now
+caused two production faults. `/export_` leaked one account's CSV to another (`v71`); the backup
+download showed an admin *"you are offline"* while online, wrote an 80 MB archive into Cache
+Storage, and could return a **stale archive as if it were current** (`v81`). Both because the route
+was matched *after* the navigate branch and fell into `fieldNavigationFirst()`, which caches every
+ok response and ends its failure chain at `/offline`. There is now a
+`NETWORK_ONLY_DOWNLOAD_PREFIXES` list matched ahead of that branch — **put new authenticated
+downloads in it.** Two further things worth carrying:
+
+- **`Cache-Control: no-store` does not keep anything out of Cache Storage.** That API ignores HTTP
+  cache headers; `cache.put()` stores whatever it is handed. The route had the header the whole time.
+- **The offline page is an excellent way to hide a bug.** Two commits of backup hardening shipped
+  while nobody could see the real error, because the worker had replaced it. When a symptom is "it
+  says I'm offline", suspect the worker before the network.
+
+**2. The gate mismatch reached `main` for the fifth time.** A page that admits N roles and an
+endpoint that admits fewer is not a security bug — it fails closed — but it silently disables a
+feature for real users, and the UI usually keeps promising it works. Every previous occurrence was
+found the same way: **build one account of each shape and call the route.** That is four lines of
+test and it has now caught five defects. See section 1z, which is open.
+
+**3. Two "before/after" numbers are worth more than a paragraph of reasoning.** The backup was
+diagnosed by generating the real archive and printing its composition: 56 MB of source, 47 MB of it
+duplicated, of an 82 MB total. That immediately showed both what was wrong and what to remove, and
+gave an unarguable 82 → 39 MB to verify against afterwards. Prefer measuring the artifact to
+reading the code that produces it.
+
+**4. An invalid injection is not a vacuous test, and telling them apart matters.** Three injections
+this session came back green or aborted, and **none of them meant the test was worthless**:
+disabling a branch with `false &&` leaves the marker in place, so no test claiming to check the
+branch's *content* can catch it; pinning the travel signature group's width keeps the name clear
+because the name is derived from the group. In each case the injection did not reproduce the defect
+the test guards. **Before concluding a test is decorative, check that the defect you injected is the
+one it claims to catch.** The genuinely vacuous case is different and did occur — a PCV test that
+recomputed the formula instead of calling the code, and passed with the defect injected.
+
+### Two smaller ones from the same day
+
+**A test that punishes a mandatory step will be worked around.** `test_service_worker_cache_is_bumped_for_server_drafts`
+pinned the exact `v80` string, so the next required worker bump failed the suite. This file already
+recorded that anti-pattern once; it came back. Use `assert_cache_version_at_least` — a **floor**.
+
+**When a value must be derived from another, derive it.** Three separate defects this session were
+the same shape: a constant that used to agree with something it no longer tracked. The TSR footer
+reserve was hardcoded `247` — exactly the old footer height — and broke when the signature grew; the
+traveller name's 410 pt width stopped clearing the signature group when the group moved left; the
+LPR fallback boxes kept pre-enlargement sizes. Each fix replaced the literal with the calculation.
 
 ### From the Analytics review, and the first one generalises well beyond it
 
