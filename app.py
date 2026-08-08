@@ -15228,7 +15228,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v82-tsr-draft-gate';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v83-offline-api-status';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -15352,6 +15352,41 @@ function isLoginLikeResponse(request, response) {
   }
 }
 
+// An uncached API read with the server unreachable used to resolve as the /offline PAGE
+// with status 200. A caller that checks response.ok concluded success and then died at
+// res.json() with a SyntaxError -- so a device that was simply offline reported itself as
+// a corrupt payload, which is how it was first mistaken for one.
+//
+// This branch is only ever reached by programmatic fetches: navigations are matched
+// earlier and go to fieldNavigationFirst(), which still falls back to the offline PAGE,
+// which is right for a page. Nothing that renders HTML reaches here.
+//
+// The body stays valid JSON on purpose, so BOTH caller styles degrade sanely: one that
+// checks response.ok takes its error path with an honest 503, and one that goes straight
+// to res.json() gets an object carrying `offline: true` rather than a parse error.
+function offlineApiResponse() {
+  return new Response(
+    // `error` and `message` carry the same text because consumers here read one or
+    // the other -- app-analytics.js renders `data.message`, while the leave and
+    // schedule endpoints use `error`. Setting both means the user sees the real
+    // reason rather than a bare "Request failed (503)".
+    JSON.stringify({
+      status: 'offline',
+      offline: true,
+      error: 'You are offline and no saved copy of this request is stored on this device.',
+      message: 'You are offline and no saved copy of this request is stored on this device.'
+    }),
+    {
+      status: 503,
+      statusText: 'Offline',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Offline-Fallback': 'service-worker'
+      }
+    }
+  );
+}
+
 async function networkFirst(request) {
   try {
     const response = await fetch(request);
@@ -15374,7 +15409,7 @@ async function networkFirst(request) {
     const cached = await caches.match(request);
     if (cached) return cached;
 
-    return caches.match('/offline');
+    return offlineApiResponse();
   }
 }
 
@@ -18702,7 +18737,24 @@ def admin_storage_health():
 @app.route('/admin/download-backup')
 @login_required
 def download_system_backup():
-    """Superadmin-only manual backup download for SQLite DB and uploads."""
+    """Superadmin-only manual backup download for SQLite DB and uploads.
+
+    The archive is deliberately still built completely before it is sent, rather
+    than streamed. Streaming was the recorded plan and was rejected on measurement:
+    since the data-only change the archive is 39MB built in 3.6s, nowhere near any
+    timeout, while streaming would cost three things that matter more than those
+    seconds -- the Content-Length that gives the admin a real progress bar on a
+    39MB download, and the X-Backup-Complete / X-Backup-Warning-Count headers,
+    which cannot be set once the body has started and are the only machine-readable
+    signal that a backup came back partial.
+
+    Both symptoms that motivated streaming are addressed in the Procfile instead:
+    the server now runs gthread rather than one sync worker, so a backup no longer
+    blocks every other user, and the arbiter heartbeat lives in the accept loop
+    rather than the request, so a slow build can no longer have its worker killed.
+    Revisit streaming only if the archive grows enough for the build itself to
+    approach the timeout -- and expect to give up the progress bar for it.
+    """
     if not is_superadmin_user():
         return denied('Only superadmins can download system backups.')
     temp_file_path = None

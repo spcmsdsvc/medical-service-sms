@@ -1679,6 +1679,35 @@
             "admins"
           ],
           "sort_order": 130
+        },
+        {
+          "item_key": "2026-08-08-backup-no-longer-blocks-the-app",
+          "category": "System Administration",
+          "description": "Downloading a System Backup no longer freezes the app for everyone else while the archive is being built, and a slow backup is no longer cut off partway through.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 140
+        },
+        {
+          "item_key": "2026-08-08-offline-reads-say-so",
+          "category": "Offline",
+          "description": "When you are offline and a screen needs something this device has not saved, it now says you are offline instead of showing a half-loaded page with missing numbers.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 150
+        },
+        {
+          "item_key": "2026-08-08-shell-tap-targets",
+          "category": "Mobile",
+          "description": "The sidebar and top-bar controls - What's New, appearance, and the navigation toggle - are now full-size tap targets on phones instead of small icons that were easy to miss.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 160
         }
       ]
     }

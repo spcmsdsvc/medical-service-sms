@@ -686,7 +686,9 @@ body.sidebar-collapsed .main-content {
     }
 
     /* Sidebar controls are excluded: they own their own sizing above and this
-       rule previously inflated them unevenly. */
+       rule previously inflated them unevenly. They get their touch sizing from
+       the dedicated block below instead, which sets a minimum without imposing
+       this rule's border-radius and font-size on an icon button. */
     button:not(.toggle-btn):not(.sidebar-section-toggle):not(.sidebar-calendar-arrow),
     .btn:not(.toggle-btn),
     input[type="submit"],
@@ -694,6 +696,47 @@ body.sidebar-collapsed .main-content {
         min-height: var(--mobile-touch-height) !important;
         border-radius: 12px !important;
         font-size: 0.95rem !important;
+    }
+
+    /* Touch targets in the layout shell.
+       ---------------------------------------------------------------------
+       Every control below lives in the shell, so it renders on every page and
+       a target that is too small is too small everywhere. Measured at 375px
+       before this block existed: skip link 40.6px tall, mobile-nav bell 40px,
+       sidebar bell 34px, sidebar hamburger 32px, and BOTH appearance buttons
+       already 44px tall but only 34px and 42px WIDE -- a target is 44x44, not
+       44 in whichever direction happens to be convenient.
+
+       Deliberately scoped to touch widths. These are compact by design on
+       desktop, where the pointer is a mouse, and the sidebar is only 240px
+       wide -- so the desktop header keeps its density and only the drawer,
+       which is what a thumb actually reaches, is sized up.
+
+       min-width/min-height rather than width/height so each control keeps its
+       own shape and only grows to the floor when it is under it. */
+    .skip-to-content,
+    .sidebar-header .changelog-header-button,
+    .sidebar-header .appearance-header-button,
+    .mobile-nav .changelog-header-button,
+    .mobile-nav .appearance-header-button,
+    .toggle-btn {
+        min-width: var(--mobile-touch-height);
+        min-height: var(--mobile-touch-height);
+    }
+
+    /* The skip link is a text anchor, so it needs to become a flex box before a
+       min-height can centre its label rather than just padding the bottom. */
+    .skip-to-content {
+        display: inline-flex;
+        align-items: center;
+    }
+
+    /* The title plus three 44px controls come to 253px of content in a 240px
+       sidebar. Wrapping drops the controls onto their own row; the alternative
+       was letting flex shrink them straight back under the touch minimum this
+       block exists to enforce. */
+    .sidebar-header {
+        flex-wrap: wrap;
     }
 
     input,

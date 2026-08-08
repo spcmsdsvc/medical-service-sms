@@ -1,5 +1,87 @@
 # Project Change Log
 
+claude changes - 2026-08-08 (backup concurrency, offline API status, shell tap targets)
+
+## Fixed: a backup froze the app for everyone, and could have its worker killed
+
+* `Procfile` was `gunicorn --timeout 120` with **no `-w`, so one sync worker**. One superadmin
+  downloading a backup blocked every other user for the whole build, and a build that outran the
+  timeout had its worker killed mid-request.
+* Now `--worker-class gthread --workers 1 --threads 8 --timeout 180`. gthread runs the arbiter
+  heartbeat in the **accept loop rather than the request**, so a slow build no longer looks like a
+  hung worker — that is the part that actually fixes the timeout, not the raised number.
+* **Threads, not a second process, deliberately.** Two workers would contend on the same SQLite
+  file with the 60s busy timeout already configured for that reason; threads share one engine and
+  connection pool, and cost far less memory. A test pins `--workers 1` so this is not "optimised"
+  later by someone who reads more workers as strictly better.
+
+### Streaming the ZIP was the recorded plan, and was rejected on measurement
+
+`pending-work.md` queued streaming as the durable fix. **It is the wrong trade today and the
+reasoning is now next to the code**, in the route docstring, so it is not silently rediscovered:
+
+* Since the data-only change the archive is **39MB built in 3.6s** — nowhere near any timeout. The
+  problem streaming solves is not the problem being reported.
+* Streaming costs three things worth more than those seconds: the **`Content-Length`** that gives an
+  admin a real progress bar on a 39MB download, and the **`X-Backup-Complete` /
+  `X-Backup-Warning-Count`** headers, which cannot be set once the body has started and are the only
+  machine-readable signal that a backup came back partial.
+* It was prototyped rather than assumed: a queue-backed non-seekable ZIP produces a valid archive
+  (`testzip()` clean, big file byte-identical, memory flat at ~16KB chunks) and Windows
+  `Expand-Archive` reads its data descriptors. **It works — it is just not worth the progress bar.**
+
+## Fixed: an offline API read claimed to succeed
+
+* An uncached API GET with the server unreachable returned `caches.match('/offline')` — the offline
+  **page**, with status **200**. A caller checking `response.ok` concluded success and then died at
+  `res.json()` with a `SyntaxError`, so an offline device reported itself as a corrupt payload.
+  That is exactly how it was first misread during the 2026-08-07 pass.
+* `networkFirst()` now ends at `offlineApiResponse()`: **503**, `application/json`, `offline: true`.
+* **The blast radius was much smaller than `pending-work.md` estimated**, and that is worth
+  recording: the navigate branch is matched *before* the networkFirst prefixes, so only programmatic
+  fetches ever reach this fallback. Nothing that renders HTML does. `fieldNavigationFirst()` still
+  returns the offline page, and a test asserts that it does — a page must still get a page.
+* The body carries **both `error` and `message`** with the same text, because consumers here read one
+  or the other: `app-analytics.js` renders `data.message`, the schedule and leave paths read `error`.
+  Without both, Analytics offline would show a bare "Request failed (503)".
+* Verified in a browser against a **genuinely stopped server**: the API read returned
+  503 / `application/json` / `offline:true` and parsed cleanly, while navigating to `/timeline`
+  still landed on the offline page and `/static/` still served from cache.
+
+## Fixed: six controls in the layout shell were under the tap-target minimum
+
+* Measured at 375px **before**: skip link 40.6px tall, mobile-nav bell 40px, sidebar bell 34px,
+  sidebar hamburger 32px, and both appearance buttons already 44px tall but only **34px and 42px
+  wide**. **After: all 44x44**, sidebar header overflow 0, page overflow none.
+* **Two corrections to what `pending-work.md` recorded.** It called the `.toggle-btn` hamburger
+  *unlabelled* — it carries `aria-label="Hide navigation"` and always did. And it missed the two
+  appearance buttons entirely, because they pass on height and fail on width: **a target is 44x44,
+  not 44 in whichever direction is convenient.**
+* Scoped to `max-width: 768px` on purpose. These are compact by design on desktop, where the pointer
+  is a mouse, and the sidebar is 240px wide. Desktop re-measured after the change and is unchanged
+  at 34/34/32, `nowrap`, no overflow.
+* `.sidebar-header` now wraps at mobile: the title plus three 44px controls came to **253px of
+  content in a 240px sidebar**, and without wrapping flex shrinks them straight back under the
+  minimum the rule exists to enforce.
+* **Observed, not fixed:** the `.sidebar` element itself reports 38px of horizontal overflow at
+  375px. Confirmed **pre-existing** by neutralising these rules and re-measuring — identical 38px
+  with and without them — and no descendant is wider than the sidebar. Left alone rather than
+  widened into this change.
+
+## Tests
+
+* New `tests/test_offline_api_status.py`: the offline fallback's status and content type, the
+  **navigation control** proving pages still get the offline page, both body keys, the Procfile's
+  concurrency and single-writer choices, and every shell control's touch minimum including the
+  **width** assertion that the height-only version would have missed.
+* **Six injections, all RED for the expected reason**, every file restored byte-identically. The
+  most useful was inverting the navigation fallback to JSON: it fails on
+  `test_navigations_still_fall_back_to_the_offline_page`, which is the regression this change could
+  most plausibly have caused.
+* Service worker bumped `v82-tsr-draft-gate` → **`v83-offline-api-status`** — the worker source and
+  `static/css/app-shell.css` both changed, and the latter is an `APP_SHELL` entry.
+* Suite green at **579** (565 + 14).
+
 claude changes - 2026-08-08 (TSR draft gate, login destination)
 
 ## Fixed: five account shapes wrote TSR drafts that were never backed up (bug 1z)
