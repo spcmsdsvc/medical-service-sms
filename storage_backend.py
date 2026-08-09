@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
 from dataclasses import dataclass
 from typing import Dict, Iterator, Optional
 
@@ -96,6 +97,13 @@ class FileStorageBackend:
         self._client = None
         self._backup_client = None
         self._backup_client_timeout = None
+        # This object is a module-level singleton shared by every gunicorn thread
+        # (the deploy runs gthread with 8 of them). Without this lock, a background
+        # backup and a storage-health request can both find _backup_client stale,
+        # both rebuild it, and one caller ends up using a client configured with
+        # the other's timeout -- which is exactly the wrong outcome for the client
+        # whose entire purpose is a short, bounded timeout.
+        self._client_lock = threading.Lock()
 
     @property
     def bucket_enabled(self) -> bool:
@@ -170,11 +178,13 @@ class FileStorageBackend:
         self._require_bucket()
         if self._client is not None:
             return self._client
-        self._client = self._build_client(
-            connect_timeout=8,
-            read_timeout=60,
-            max_attempts=4,
-        )
+        with self._client_lock:
+            if self._client is None:
+                self._client = self._build_client(
+                    connect_timeout=8,
+                    read_timeout=60,
+                    max_attempts=4,
+                )
         return self._client
 
     def _backup_client_for(self, timeout_seconds: float = 5.0):
@@ -186,14 +196,18 @@ class FileStorageBackend:
         """
         self._require_bucket()
         timeout = max(1, min(int(timeout_seconds or 5), 15))
-        if self._backup_client is None or self._backup_client_timeout != timeout:
-            self._backup_client = self._build_client(
-                connect_timeout=min(3, timeout),
-                read_timeout=timeout,
-                max_attempts=1,
-            )
-            self._backup_client_timeout = timeout
-        return self._backup_client
+        with self._client_lock:
+            if self._backup_client is None or self._backup_client_timeout != timeout:
+                self._backup_client = self._build_client(
+                    connect_timeout=min(3, timeout),
+                    read_timeout=timeout,
+                    max_attempts=1,
+                )
+                self._backup_client_timeout = timeout
+            # Return the client we just validated while still holding the lock, so
+            # a concurrent caller requesting a different timeout cannot swap it out
+            # from under this one between the check and the return.
+            return self._backup_client
 
     @staticmethod
     def normalize_key(key: str) -> str:

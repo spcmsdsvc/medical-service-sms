@@ -15,6 +15,9 @@ env/
 *.db
 *.sqlite3
 
+# Durable local runtime state and generated backup archives
+instance/
+
 # Uploads
 static/uploads/
 

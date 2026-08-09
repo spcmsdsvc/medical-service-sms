@@ -1,5 +1,15 @@
 # Project Change Log
 
+codex changes - 2026-08-09
+- Reworked the superadmin System Backup flow in `app.py` from request-time archive generation to a background build-and-download workflow with durable job state under the runtime volume, cooperative cancellation, progress reporting, stale-job reconciliation, atomic publication, 24-hour latest-archive retention, and explicit delete support.
+- Added a consistent SQLite snapshot path using SQLite's backup API and integrity checks, with a recorded raw-copy fallback for database errors; backup manifests now identify database inclusion, snapshot method, archive scope, bucket status, skipped objects, checksums, warnings, and completeness.
+- Added bounded bucket backup handling with per-object size limits, a background time budget, cancellation checks, skipped-object manifests, and thread-safe storage backend client construction for the multi-threaded deployment.
+- Added storage preflight checks and archive-aware Storage Health reporting so insufficient volume space is refused before a build, a previous archive is reclaimed only when that makes the build fit, and published backup archives are counted separately from uploads and database usage.
+- Added the superadmin-only Backup Center page and access-denied page with dark-mode-safe styling, build/cancel/download/delete controls, progress, storage details, database snapshot status, archive checksum, and warning visibility; changed the Settings backup card to open this center and removed the obsolete application-source claim.
+- Kept `/admin/download-backup` stable and resumable with `send_file` range support, no-store headers, byte-stable published files, and HTML responses for unauthorized or not-yet-built states; added service-worker network-first handling for `/admin/backup` and bumped the cache version to v84 so account-specific backup state is never served from offline caches.
+- Added backup regression coverage for SQLite archive generation, bucket failures and budget limits, manifest-write degradation, storage accounting, preflight 507 behavior, stale/reclaim logic, HTML access/error pages, byte-identical repeat downloads, HTTP Range responses, and service-worker cache ordering; focused backup/offline tests pass 29/29.
+- Added the 2026-08-09 System Backup Center What's New entry. No database, generated output, temporary artifacts, or existing handoff file is included in the release scope.
+
 claude changes - 2026-08-09 (review of `29b2b9e`)
 
 ## Reviewed the LPR page marker against the recorded plan

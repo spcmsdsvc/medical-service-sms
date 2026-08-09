@@ -1,0 +1,216 @@
+{% extends "layout.html" %}
+
+{% block page_head %}
+<style>
+    .backup-page { max-width: 1180px; margin: 0 auto; color: var(--app-text); }
+    .backup-hero, .backup-panel, .backup-stat {
+        background: var(--app-surface);
+        border: 1px solid var(--app-border);
+        border-radius: 10px;
+        box-shadow: var(--app-shadow);
+    }
+    .backup-hero { padding: clamp(1.25rem, 3vw, 2rem); margin-bottom: 1rem; }
+    .backup-hero h1 { font-size: clamp(1.6rem, 3vw, 2.3rem); }
+    .backup-muted { color: var(--app-muted); }
+    .backup-panel { padding: 1.25rem; }
+    .backup-stat { padding: 1rem; height: 100%; background: var(--app-surface-raised); box-shadow: none; }
+    .backup-stat-label { color: var(--app-muted); font-size: .76rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+    .backup-stat-value { color: var(--app-text); font-weight: 800; font-size: 1.2rem; margin-top: .35rem; }
+    .backup-status-line { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+    .backup-badge { border-radius: 999px; padding: .35rem .7rem; font-size: .78rem; font-weight: 800; }
+    .backup-badge[data-status="running"] { background: rgba(13,110,253,.16); color: #75b6ff; }
+    .backup-badge[data-status="completed"] { background: rgba(25,135,84,.17); color: #61d49a; }
+    .backup-badge[data-status="completed_with_warnings"] { background: rgba(255,193,7,.2); color: #f7ca55; }
+    .backup-badge[data-status="failed"], .backup-badge[data-status="cancelled"] { background: rgba(220,53,69,.18); color: #ff8e99; }
+    .backup-badge[data-status="idle"] { background: var(--app-surface-raised); color: var(--app-muted); }
+    .backup-progress { height: 12px; border-radius: 999px; background: var(--app-surface-raised); overflow: hidden; }
+    .backup-progress > div { height: 100%; width: 0; background: var(--app-primary); transition: width .2s ease; }
+    .backup-warning-list { max-height: 240px; overflow: auto; }
+    .backup-warning { border-left: 3px solid #f0ad4e; padding: .55rem .7rem; color: var(--app-muted); background: var(--app-surface-raised); }
+    .backup-code { word-break: break-all; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .78rem; color: var(--app-muted); }
+    .backup-action-row { display: flex; gap: .6rem; flex-wrap: wrap; }
+    @media (max-width: 576px) {
+        .backup-page { margin: 0; }
+        .backup-panel { padding: 1rem; }
+        .backup-action-row .btn { flex: 1 1 100%; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="backup-page" aria-labelledby="backup-title">
+    <section class="backup-hero">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+            <div>
+                <div class="text-primary fw-bold small text-uppercase">Superadmin Operations</div>
+                <h1 id="backup-title" class="fw-bold mb-2"><i class="fa-solid fa-database me-2" aria-hidden="true"></i>System Backup</h1>
+                <p class="backup-muted mb-0">Build a consistent data-only archive first, then download the finished file. The archive contains the database snapshot, upload files, bucket objects, and a checksum manifest.</p>
+            </div>
+            <span id="backup-status-badge" class="backup-badge" data-status="idle">Checking status...</span>
+        </div>
+    </section>
+
+    <section class="backup-panel mb-3" aria-labelledby="backup-controls-title">
+        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+            <div>
+                <h2 id="backup-controls-title" class="h5 fw-bold mb-1">Backup Center</h2>
+                <p id="backup-message" class="backup-muted mb-0">No backup job is running.</p>
+            </div>
+            <div class="backup-action-row">
+                <button id="backup-start" type="button" class="btn btn-primary fw-bold"><i class="fa-solid fa-play me-2" aria-hidden="true"></i>Build Backup</button>
+                <button id="backup-cancel" type="button" class="btn btn-outline-danger fw-bold" hidden><i class="fa-solid fa-stop me-2" aria-hidden="true"></i>Cancel Build</button>
+                <a id="backup-download" class="btn btn-success fw-bold" href="{{ url_for('download_system_backup') }}" hidden><i class="fa-solid fa-download me-2" aria-hidden="true"></i>Download Backup</a>
+                <button id="backup-delete" type="button" class="btn btn-outline-danger fw-bold" hidden><i class="fa-solid fa-trash me-2" aria-hidden="true"></i>Delete Stored Backup</button>
+            </div>
+        </div>
+        <div class="mt-4" aria-live="polite">
+            <div class="backup-status-line small mb-2">
+                <span id="backup-phase" class="fw-bold">Waiting</span>
+                <span id="backup-progress-text" class="backup-muted">0%</span>
+                <span id="backup-file-count" class="backup-muted"></span>
+            </div>
+            <div class="backup-progress" role="progressbar" aria-label="Backup build progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="backup-progress-bar"></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="row g-3 mb-3" aria-label="Backup and storage summary">
+        <div class="col-6 col-lg-3"><div class="backup-stat"><div class="backup-stat-label">Storage Used</div><div id="storage-used" class="backup-stat-value">-</div><div id="storage-percent" class="backup-muted small">-</div></div></div>
+        <div class="col-6 col-lg-3"><div class="backup-stat"><div class="backup-stat-label">Storage Remaining</div><div id="storage-free" class="backup-stat-value">-</div><div class="backup-muted small">Volume capacity</div></div></div>
+        <div class="col-6 col-lg-3"><div class="backup-stat"><div class="backup-stat-label">Database Snapshot</div><div id="database-status" class="backup-stat-value">Not built</div><div id="database-method" class="backup-muted small">-</div></div></div>
+        <div class="col-6 col-lg-3"><div class="backup-stat"><div class="backup-stat-label">Stored Archive</div><div id="archive-size" class="backup-stat-value">None</div><div id="archive-age" class="backup-muted small">-</div></div></div>
+    </section>
+
+    <section class="backup-panel mb-3" aria-labelledby="backup-result-title">
+        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+            <div>
+                <h2 id="backup-result-title" class="h5 fw-bold mb-1">Latest Archive</h2>
+                <p id="archive-name" class="backup-muted mb-1">No published backup archive is available.</p>
+                <div id="archive-sha" class="backup-code" hidden></div>
+            </div>
+            <span id="archive-completeness" class="backup-badge" data-status="idle">Not built</span>
+        </div>
+        <div id="backup-warnings-wrap" class="mt-3" hidden>
+            <div class="fw-bold mb-2"><i class="fa-solid fa-triangle-exclamation text-warning me-2" aria-hidden="true"></i>Build warnings</div>
+            <div id="backup-warnings" class="backup-warning-list d-grid gap-2"></div>
+        </div>
+    </section>
+
+    <section class="backup-panel">
+        <h2 class="h6 fw-bold"><i class="fa-solid fa-circle-info me-2" aria-hidden="true"></i>Operational notes</h2>
+        <ul class="backup-muted small mb-0">
+            <li>The database is copied through SQLite’s backup API and stored as a self-contained snapshot.</li>
+            <li>Private bucket objects are included when configured; size limits and skipped objects are recorded in the manifest.</li>
+            <li>The latest archive is retained for about 24 hours. This page does not restore or replace the live database.</li>
+        </ul>
+    </section>
+</main>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+    'use strict';
+    const endpoints = {
+        status: {{ url_for('admin_backup_status')|tojson }},
+        start: {{ url_for('admin_backup_start')|tojson }},
+        cancel: {{ url_for('admin_backup_cancel')|tojson }},
+        remove: {{ url_for('admin_backup_delete')|tojson }},
+        download: {{ url_for('download_system_backup')|tojson }}
+    };
+    const $ = (id) => document.getElementById(id);
+    const csrf = () => (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+    let pollTimer = null;
+    let loading = false;
+
+    function setText(id, value) { const node = $(id); if (node) node.textContent = value == null ? '' : String(value); }
+    function setHidden(id, hidden) { const node = $(id); if (node) node.hidden = !!hidden; }
+    function escapeText(value) { return String(value == null ? '' : value); }
+    function humanAge(seconds) {
+        const age = Number(seconds || 0);
+        if (!age) return 'Just created';
+        if (age < 3600) return `${Math.max(1, Math.floor(age / 60))} min ago`;
+        return `${Math.floor(age / 3600)} hr ago`;
+    }
+    function setStatusBadge(id, status, label) {
+        const node = $(id); if (!node) return;
+        node.dataset.status = status || 'idle';
+        node.textContent = label || status || 'Idle';
+    }
+    function renderWarnings(warnings) {
+        const list = $('backup-warnings');
+        if (!list) return;
+        list.replaceChildren();
+        (warnings || []).forEach((warning) => {
+            const item = document.createElement('div');
+            item.className = 'backup-warning small';
+            item.textContent = `${escapeText(warning.scope || 'backup')}: ${escapeText(warning.message || warning.name || 'Warning')}`;
+            list.appendChild(item);
+        });
+        setHidden('backup-warnings-wrap', !(warnings && warnings.length));
+    }
+    function render(payload) {
+        const job = payload.job || {};
+        const archive = payload.archive || null;
+        const storage = payload.storage || {};
+        const running = job.status === 'running';
+        const percent = Math.max(0, Math.min(100, Number(job.percent || 0)));
+        const badgeLabels = { idle: 'Idle', running: 'Building', completed: 'Ready', completed_with_warnings: 'Ready with warnings', failed: 'Failed', cancelled: 'Cancelled' };
+        setStatusBadge('backup-status-badge', job.status, badgeLabels[job.status] || job.status || 'Idle');
+        setText('backup-message', job.message || (running ? 'The backup is being built in the background.' : 'No backup job is running.'));
+        setText('backup-phase', job.phase_label || (running ? 'Building backup' : 'Waiting'));
+        setText('backup-progress-text', `${percent}%`);
+        setText('backup-file-count', job.files_total ? `${job.files_done || 0} of ${job.files_total} files` : '');
+        const bar = $('backup-progress-bar');
+        if (bar) bar.style.width = `${percent}%`;
+        const progress = document.querySelector('.backup-progress');
+        if (progress) progress.setAttribute('aria-valuenow', String(percent));
+        setHidden('backup-start', running);
+        setHidden('backup-cancel', !running);
+        setHidden('backup-download', !archive);
+        setHidden('backup-delete', !archive || running);
+        if ($('backup-download')) $('backup-download').href = payload.download_url || endpoints.download;
+        setText('storage-used', storage.used_human || '-');
+        setText('storage-free', storage.free_human || '-');
+        setText('storage-percent', storage.usage_percent == null ? '-' : `${storage.usage_percent}% used`);
+        setText('database-status', job.database_included ? 'Included' : (job.status === 'failed' ? 'Failed' : 'Not built'));
+        setText('database-method', job.database_snapshot_method || '-');
+        setText('archive-size', archive ? (archive.size_human || '-') : 'None');
+        setText('archive-age', archive ? humanAge(archive.age_seconds) : '-');
+        setText('archive-name', archive ? `${archive.filename} (${archive.size_human || 'size unavailable'})` : 'No published backup archive is available.');
+        const sha = $('archive-sha');
+        if (sha) { sha.hidden = !archive || !archive.sha256; sha.textContent = archive && archive.sha256 ? `SHA-256: ${archive.sha256}` : ''; }
+        setStatusBadge('archive-completeness', job.backup_complete ? 'completed' : (archive ? 'completed_with_warnings' : 'idle'), job.backup_complete ? 'Complete' : (archive ? 'Warnings recorded' : 'Not built'));
+        renderWarnings(job.warnings || []);
+        if (running) startPolling(); else stopPolling();
+    }
+    async function requestJson(url, options = {}) {
+        const response = await fetch(url, { cache: 'no-store', credentials: 'same-origin', ...options, headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf(), ...(options.headers || {}) } });
+        let payload = null;
+        try { payload = await response.json(); } catch (_) { payload = {}; }
+        if (!response.ok) throw new Error(payload.message || payload.error || `Request failed (${response.status})`);
+        return payload;
+    }
+    async function loadStatus() {
+        if (loading) return;
+        loading = true;
+        try { render(await requestJson(endpoints.status)); }
+        catch (error) { setText('backup-message', error.message || 'Backup status could not be loaded.'); }
+        finally { loading = false; }
+    }
+    function startPolling() { if (!pollTimer) pollTimer = window.setInterval(loadStatus, 2500); }
+    function stopPolling() { if (pollTimer) { window.clearInterval(pollTimer); pollTimer = null; } }
+    async function runAction(url, message) {
+        try { await requestJson(url, { method: 'POST', body: '{}' }); await loadStatus(); }
+        catch (error) { setText('backup-message', error.message || message); }
+    }
+    $('backup-start')?.addEventListener('click', () => runAction(endpoints.start, 'The backup could not be started.'));
+    $('backup-cancel')?.addEventListener('click', () => runAction(endpoints.cancel, 'The backup could not be cancelled.'));
+    $('backup-delete')?.addEventListener('click', () => {
+        if (window.confirm('Delete the stored system backup? This does not change the live database.')) runAction(endpoints.remove, 'The stored backup could not be deleted.');
+    });
+    loadStatus();
+})();
+</script>
+{% endblock %}

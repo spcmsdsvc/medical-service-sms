@@ -257,17 +257,17 @@
                     </h5>
                     <span class="badge bg-light text-success small fw-bold">Superadmin Only</span>
                 </div>
-                <div class="card-body p-4 bg-white">
+                <div class="card-body p-4">
                     <p class="text-muted small mb-3">
-                        Download a ZIP backup containing the active scheduler database, application source,
-                        TSR metadata, volume uploads, and private bucket objects with a checksum manifest.
-                        Save the downloaded file to OneDrive, Google Drive, or an external drive.
+                        Open Backup Center to build a data-only ZIP containing a consistent database snapshot,
+                        TSR metadata, volume uploads, private bucket objects, and a checksum manifest.
+                        The archive is built first and remains available for resumable downloads for 24 hours.
                     </p>
-                    <a class="btn btn-success fw-bold rounded-3 shadow-sm" href="{{ url_for('download_system_backup') }}">
-                        <i class="fa-solid fa-download me-2"></i>Download System Backup
+                    <a class="btn btn-success fw-bold rounded-3 shadow-sm" href="{{ url_for('system_backup_page') }}">
+                        <i class="fa-solid fa-shield-halved me-2"></i>Open Backup Center
                     </a>
                     <div class="xsmall text-muted mt-3">
-                        Recommended before major updates and at least once per week during rollout.
+                        Recommended before major updates and at least once per week during rollout. Backup Center is superadmin-only.
                     </div>
                 </div>
             </div>

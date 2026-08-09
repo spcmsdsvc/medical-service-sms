@@ -1727,6 +1727,15 @@
             "admins"
           ],
           "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-09-system-backup-center",
+          "category": "System Administration",
+          "description": "Superadmins can now build a consistent system backup in the Backup Center, review database and storage warnings, and download the finished archive with resumable support without replacing the live database.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
         }
       ]
     }

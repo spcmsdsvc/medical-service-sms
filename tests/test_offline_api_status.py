@@ -72,7 +72,7 @@ class OfflineApiFallbackTests(unittest.TestCase):
     def test_cache_version_bumped_so_devices_actually_receive_this(self):
         # A floor, never a pinned version -- pinning is the anti-pattern that has
         # already broken this suite twice on a required bump.
-        assert_cache_version_at_least(self, 83, self.app_source)
+        assert_cache_version_at_least(self, 84, self.app_source)
 
 
 class BackupConcurrencyTests(unittest.TestCase):

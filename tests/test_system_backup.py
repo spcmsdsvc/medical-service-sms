@@ -2,6 +2,8 @@ import io
 import json
 import os
 import pathlib
+import shutil
+import sqlite3
 import tempfile
 import time
 import unittest
@@ -18,7 +20,32 @@ os.environ.setdefault('MEDICAL_SERVICE_TEST_DB', str(TEST_DB_PATH))
 import app as app_module  # noqa: E402
 
 
+def save_completed_backup_state(result):
+    state = app_module.empty_backup_job_state()
+    state.update({
+        'status': 'completed_with_warnings' if result.get('warnings') else 'completed',
+        'phase': 'done',
+        'phase_label': 'Backup ready',
+        'percent': 100,
+        'backup_complete': bool(result.get('backup_complete')),
+        'database_included': bool(result.get('database_included')),
+        'database_snapshot_method': result.get('database_snapshot_method', ''),
+        'warning_count': len(result.get('warnings') or []),
+        'warnings': result.get('warnings') or [],
+        'archive': {
+            'filename': result.get('filename', ''),
+            'path': result.get('path', ''),
+            'size_bytes': result.get('size_bytes', 0),
+            'size_human': result.get('size_human', ''),
+            'sha256': result.get('sha256', ''),
+            'created_at': result.get('created_at', ''),
+        },
+    })
+    app_module.save_backup_job_state(state)
+
+
 class BackupBucketHandlingTests(unittest.TestCase):
+
     def test_bucket_object_failures_are_reported_without_dropping_other_objects(self):
         class StubStorage:
             bucket_configured = True
@@ -81,14 +108,24 @@ class BackupBucketHandlingTests(unittest.TestCase):
             session['_fresh'] = True
 
         with tempfile.NamedTemporaryFile(delete=False) as db_file:
-            db_file.write(b'isolated backup database')
             db_path = db_file.name
+        connection = sqlite3.connect(db_path)
+        connection.execute('CREATE TABLE backup_probe (value TEXT)')
+        connection.execute('INSERT INTO backup_probe(value) VALUES (?)', ('bucket warning test',))
+        connection.commit()
+        connection.close()
 
+        backup_root = tempfile.mkdtemp(prefix='medical_service_backup_archive_')
+        state_root = tempfile.mkdtemp(prefix='medical_service_backup_state_')
         try:
             with patch.object(app_module, 'is_superadmin_user', return_value=True), \
                     patch.object(app_module, 'file_storage', UnavailableStorage()), \
                     patch.object(app_module, 'get_active_sqlite_database_path', return_value=db_path), \
-                    patch.object(app_module, 'get_backup_upload_roots', return_value=[]):
+                    patch.object(app_module, 'get_backup_upload_roots', return_value=[]), \
+                    patch.object(app_module, 'BACKUP_ARCHIVE_DIR', backup_root), \
+                    patch.object(app_module, 'RUNTIME_STATE_DIR', state_root):
+                result = app_module.build_system_backup_archive('a' * 16, 'backup-test')
+                save_completed_backup_state(result)
                 response = client.get('/admin/download-backup')
 
             self.assertEqual(response.status_code, 200)
@@ -100,9 +137,23 @@ class BackupBucketHandlingTests(unittest.TestCase):
                 self.assertEqual(manifest['backup_warning_count'], 1)
                 self.assertEqual(errors[0]['scope'], 'bucket_connection')
                 self.assertIn(f'database/{pathlib.Path(db_path).name}', backup_zip.namelist())
+            response_bytes = response.data
             response.close()
+            with patch.object(app_module, 'is_superadmin_user', return_value=True), \
+                    patch.object(app_module, 'BACKUP_ARCHIVE_DIR', backup_root), \
+                    patch.object(app_module, 'RUNTIME_STATE_DIR', state_root):
+                second_response = client.get('/admin/download-backup')
+                ranged_response = client.get('/admin/download-backup', headers={'Range': 'bytes=0-31'})
+            self.assertEqual(second_response.status_code, 200)
+            self.assertEqual(response_bytes, second_response.data)
+            self.assertEqual(ranged_response.status_code, 206)
+            self.assertTrue(ranged_response.headers.get('Content-Range', '').startswith('bytes 0-31/'))
+            second_response.close()
+            ranged_response.close()
         finally:
             os.remove(db_path)
+            shutil.rmtree(backup_root, ignore_errors=True)
+            shutil.rmtree(state_root, ignore_errors=True)
             with app.app_context():
                 saved_user = app_module.db.session.get(app_module.User, user_id)
                 if saved_user:
@@ -171,6 +222,20 @@ class BackupDownloadIsNeverCachedTests(unittest.TestCase):
         self.assertIn("'/admin/download-'", prefixes)
         self.assertIn("'/export_'", prefixes, 'the export fix must not have been dropped')
 
+    def test_the_backup_center_is_network_first_and_uncached(self):
+        prefixes = self.worker.split('const NETWORK_FIRST_AUTHENTICATED_PREFIXES = [')[1].split(']')[0]
+        self.assertIn("'/admin/backup'", prefixes)
+        branch_at = self.handler.find('NETWORK_FIRST_AUTHENTICATED_PREFIXES.some')
+        download_at = self.handler.find('NETWORK_ONLY_DOWNLOAD_PREFIXES.some')
+        navigate_at = self.handler.find("request.mode === 'navigate'")
+        self.assertGreater(branch_at, -1)
+        self.assertLess(branch_at, download_at)
+        self.assertLess(branch_at, navigate_at)
+        branch = self.handler[branch_at:].split('\n  }')[0]
+        self.assertIn("cache: 'no-store'", branch)
+        self.assertIn('return;', branch)
+        self.assertNotIn('cache.put', branch)
+
     def test_it_is_matched_before_the_navigation_branch(self):
         """Ordering is the whole fix, exactly as it was for /export_."""
         network_only_at = self.handler.find('NETWORK_ONLY_DOWNLOAD_PREFIXES.some')
@@ -181,17 +246,125 @@ class BackupDownloadIsNeverCachedTests(unittest.TestCase):
                         'authenticated downloads must be matched before the navigate branch')
 
     def test_the_branch_touches_no_cache_and_returns(self):
-        """Positive control on the negative: prove the branch actually returns.
-
-        Without the `return` the request would fall through to the navigate branch anyway,
-        which is the defect this guards.
-        """
+        """Positive control on the negative: prove the branch actually returns."""
         branch = self.handler.split('NETWORK_ONLY_DOWNLOAD_PREFIXES.some')[1].split('\n  }')[0]
         self.assertIn('event.respondWith(fetch(request))', branch)
         self.assertIn('return;', branch)
         for forbidden in ('caches.', 'cache.put', 'RUNTIME_CACHE', 'fieldNavigationFirst'):
             self.assertNotIn(forbidden, branch, f'the branch must not reach {forbidden}')
 
+
+class BackupCenterRouteTests(unittest.TestCase):
+    def setUp(self):
+        self.app = app_module.app
+        self.app.config['TESTING'] = True
+        self.app.config['WTF_CSRF_ENABLED'] = False
+        with self.app.app_context():
+            app_module.db.create_all()
+            self.user = app_module.User(
+                username=f'backup-route-{uuid.uuid4().hex[:8]}',
+                password=app_module.generate_password_hash('test-password'),
+                role='staff',
+                is_active=True,
+            )
+            app_module.db.session.add(self.user)
+            app_module.db.session.commit()
+            self.user_id = self.user.id
+        self.client = self.app.test_client()
+        with self.client.session_transaction() as session:
+            session['_user_id'] = str(self.user_id)
+            session['_fresh'] = True
+
+    def tearDown(self):
+        with self.app.app_context():
+            saved_user = app_module.db.session.get(app_module.User, self.user_id)
+            if saved_user:
+                app_module.db.session.delete(saved_user)
+                app_module.db.session.commit()
+            app_module.db.session.remove()
+
+    def test_backup_center_denies_non_superadmins_with_html(self):
+        with patch.object(app_module, 'is_superadmin_user', return_value=False):
+            response = self.client.get('/admin/backup')
+        self.assertEqual(response.status_code, 403)
+        self.assertIn(b'Access denied', response.data)
+
+    def test_download_without_archive_is_a_clear_html_404(self):
+        archive_root = tempfile.mkdtemp(prefix='medical_service_backup_archive_')
+        state_root = tempfile.mkdtemp(prefix='medical_service_backup_state_')
+        try:
+            with patch.object(app_module, 'is_superadmin_user', return_value=True), \
+                    patch.object(app_module, 'BACKUP_ARCHIVE_DIR', archive_root), \
+                    patch.object(app_module, 'RUNTIME_STATE_DIR', state_root):
+                response = self.client.get('/admin/download-backup')
+            self.assertEqual(response.status_code, 404)
+            self.assertIn(b'No backup is stored', response.data)
+            self.assertIn(b'Backup Center', response.data)
+        finally:
+            shutil.rmtree(archive_root, ignore_errors=True)
+            shutil.rmtree(state_root, ignore_errors=True)
+
+    def test_start_refuses_low_space_before_spawning_a_thread(self):
+        preflight = {
+            'ok': False,
+            'reason': 'Not enough space to build a backup.',
+            'required_human': '1 GB',
+            'free_human': '1 MB',
+        }
+        with patch.object(app_module, 'is_superadmin_user', return_value=True), \
+                patch.object(app_module, 'backup_preflight_report', return_value=preflight), \
+                patch.object(app_module.threading, 'Thread') as thread:
+            response = self.client.post('/admin/backup/start', json={})
+        self.assertEqual(response.status_code, 507)
+        self.assertIn('Not enough space', response.get_json()['message'])
+        thread.assert_not_called()
+
+    def test_preflight_reclaims_previous_archive_only_when_that_makes_space(self):
+        fake_archive = {
+            'filename': 'medical_service_backup_20260809_120000.zip',
+            'size_bytes': 300 * 1024 * 1024,
+        }
+        with patch.object(app_module, 'estimate_backup_source_bytes', return_value=1024), \
+                patch.object(app_module, 'current_backup_archive', return_value=fake_archive), \
+                patch.object(app_module.shutil, 'disk_usage', return_value=SimpleNamespace(free=100 * 1024 * 1024)):
+            report = app_module.backup_preflight_report()
+        self.assertTrue(report['ok'])
+        self.assertTrue(report['reclaim_existing'])
+
+        small_archive = {**fake_archive, 'size_bytes': 100 * 1024 * 1024}
+        with patch.object(app_module, 'estimate_backup_source_bytes', return_value=1024), \
+                patch.object(app_module, 'current_backup_archive', return_value=small_archive), \
+                patch.object(app_module.shutil, 'disk_usage', return_value=SimpleNamespace(free=1)):
+            report = app_module.backup_preflight_report()
+        self.assertFalse(report['ok'])
+        self.assertFalse(report['reclaim_existing'])
+
+    def test_storage_health_reports_published_archive_separately(self):
+        archive_root = tempfile.mkdtemp(prefix='medical_service_backup_archive_')
+        with tempfile.NamedTemporaryFile(delete=False) as db_file:
+            db_path = db_file.name
+        archive_path = os.path.join(archive_root, 'medical_service_backup_20260809_120000.zip')
+        with open(archive_path, 'wb') as archive_file:
+            archive_file.write(b'published backup')
+        try:
+            with patch.object(app_module, 'BACKUP_ARCHIVE_DIR', archive_root), \
+                    patch.object(app_module, 'get_active_sqlite_database_path', return_value=db_path), \
+                    patch.object(app_module, 'get_backup_upload_roots', return_value=[]), \
+                    patch.object(app_module, 'get_bucket_migration_report', return_value={
+                        'volume': {'file_count': 0, 'size_bytes': 0, 'size_human': '0 B'},
+                        'bucket': {'object_count': 0, 'size_bytes': 0, 'size_human': '0 B'},
+                        'connection': {'ok': False, 'message': 'not configured'},
+                    }):
+                report = app_module.get_storage_health_report()
+            self.assertEqual(report['backup_archive']['file_count'], 1)
+            self.assertEqual(report['backup_archive']['size_bytes'], len(b'published backup'))
+            self.assertGreaterEqual(report['used_bytes'], len(b'published backup'))
+        finally:
+            try:
+                os.remove(db_path)
+            except OSError:
+                pass
+            shutil.rmtree(archive_root, ignore_errors=True)
 
 class BackupArchiveIsDataOnlyTests(unittest.TestCase):
     """Application source is no longer archived.
@@ -205,6 +378,53 @@ class BackupArchiveIsDataOnlyTests(unittest.TestCase):
     def test_the_source_helper_is_gone(self):
         self.assertFalse(hasattr(app_module, 'get_backup_source_paths'),
                          'the source archive helper is back')
+
+    def test_manifest_write_failure_keeps_archive_and_reports_warning(self):
+        """A final metadata write failure must not turn the whole build into a 500."""
+        with tempfile.NamedTemporaryFile(delete=False) as db_file:
+            db_path = db_file.name
+        connection = sqlite3.connect(db_path)
+        connection.execute('CREATE TABLE backup_probe (value TEXT)')
+        connection.execute('INSERT INTO backup_probe(value) VALUES (?)', ('manifest warning test',))
+        connection.commit()
+        connection.close()
+
+        backup_root = tempfile.mkdtemp(prefix='medical_service_backup_archive_')
+        state_root = tempfile.mkdtemp(prefix='medical_service_backup_state_')
+        original_writer = app_module.safe_zip_writestr
+
+        def fail_manifest(zip_handle, archive_name, data, errors=None, scope='archive_member'):
+            if archive_name == 'backup_manifest.json':
+                app_module.record_backup_error(errors, scope, archive_name, 'manifest disk write failed')
+                return False
+            return original_writer(zip_handle, archive_name, data, errors, scope)
+
+        class NoBucket:
+            bucket_configured = False
+            bucket_name = ''
+
+        try:
+            with patch.object(app_module, 'file_storage', NoBucket()), \
+                    patch.object(app_module, 'get_active_sqlite_database_path', return_value=db_path), \
+                    patch.object(app_module, 'get_backup_upload_roots', return_value=[]), \
+                    patch.object(app_module, 'BACKUP_ARCHIVE_DIR', backup_root), \
+                    patch.object(app_module, 'RUNTIME_STATE_DIR', state_root), \
+                    patch.object(app_module, 'safe_zip_writestr', side_effect=fail_manifest):
+                result = app_module.build_system_backup_archive('c' * 16, 'backup-manifest-warning')
+
+            self.assertTrue(os.path.isfile(result['path']))
+            self.assertFalse(result['backup_complete'])
+            self.assertTrue(any(
+                warning.get('scope') == 'archive_member'
+                and warning.get('name') == 'backup_manifest.json'
+                for warning in result['warnings']
+            ))
+            with zipfile.ZipFile(result['path']) as backup_zip:
+                self.assertNotIn('backup_manifest.json', backup_zip.namelist())
+        finally:
+            os.remove(db_path)
+            shutil.rmtree(backup_root, ignore_errors=True)
+            shutil.rmtree(state_root, ignore_errors=True)
 
     def test_a_generated_archive_carries_no_source_tree(self):
         app = app_module.app
@@ -232,18 +452,28 @@ class BackupArchiveIsDataOnlyTests(unittest.TestCase):
         with open(os.path.join(upload_root, 'report.pdf'), 'wb') as upload_file:
             upload_file.write(b'an uploaded report')
         with tempfile.NamedTemporaryFile(delete=False) as db_file:
-            db_file.write(b'isolated backup database')
             db_path = db_file.name
+        connection = sqlite3.connect(db_path)
+        connection.execute('CREATE TABLE backup_probe (value TEXT)')
+        connection.execute('INSERT INTO backup_probe(value) VALUES (?)', ('data only test',))
+        connection.commit()
+        connection.close()
 
         class NoBucket:
             bucket_configured = False
             bucket_name = ''
 
+        backup_root = tempfile.mkdtemp(prefix='medical_service_backup_archive_')
+        state_root = tempfile.mkdtemp(prefix='medical_service_backup_state_')
         try:
             with patch.object(app_module, 'is_superadmin_user', return_value=True), \
                     patch.object(app_module, 'file_storage', NoBucket()), \
                     patch.object(app_module, 'get_active_sqlite_database_path', return_value=db_path), \
-                    patch.object(app_module, 'get_backup_upload_roots', return_value=[upload_root]):
+                    patch.object(app_module, 'get_backup_upload_roots', return_value=[upload_root]), \
+                    patch.object(app_module, 'BACKUP_ARCHIVE_DIR', backup_root), \
+                    patch.object(app_module, 'RUNTIME_STATE_DIR', state_root):
+                result = app_module.build_system_backup_archive('b' * 16, 'backup-scope')
+                save_completed_backup_state(result)
                 response = client.get('/admin/download-backup')
 
             self.assertEqual(response.status_code, 200)
@@ -271,6 +501,8 @@ class BackupArchiveIsDataOnlyTests(unittest.TestCase):
             os.remove(db_path)
             os.remove(os.path.join(upload_root, 'report.pdf'))
             os.rmdir(upload_root)
+            shutil.rmtree(backup_root, ignore_errors=True)
+            shutil.rmtree(state_root, ignore_errors=True)
             with app.app_context():
                 saved_user = app_module.db.session.get(app_module.User, user_id)
                 if saved_user:

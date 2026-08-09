@@ -119,6 +119,8 @@ import traceback
 import hashlib
 import mimetypes
 import types
+import shutil
+import sqlite3
 from email.message import EmailMessage
 from email.utils import formataddr
 
@@ -15228,7 +15230,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v83-offline-api-status';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v84-system-backup-center';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -15270,6 +15272,13 @@ const FIELD_SAFE_ROUTES = [
 const NETWORK_ONLY_DOWNLOAD_PREFIXES = [
   '/export_',
   '/admin/download-'
+];
+
+// Authenticated admin pages that must always be fetched from the server. Backup status
+// contains account-specific state and an in-progress job must never be served from an
+// offline shell or runtime cache.
+const NETWORK_FIRST_AUTHENTICATED_PREFIXES = [
+  '/admin/backup'
 ];
 
 // App shell entries that are only ever rendered for a signed-in account. These are dropped at
@@ -15549,6 +15558,11 @@ self.addEventListener('fetch', event => {
   // be saved to disk as the downloaded file, and letting the request fail is both honest and
   // correct, since none of these can be produced without the server. No offline workflow
   // references any of them.
+  if (isSameOrigin && NETWORK_FIRST_AUTHENTICATED_PREFIXES.some(prefix => url.pathname.startsWith(prefix))) {
+    event.respondWith(fetch(request, { credentials: 'same-origin', cache: 'no-store' }));
+    return;
+  }
+
   if (isSameOrigin && NETWORK_ONLY_DOWNLOAD_PREFIXES.some(prefix => url.pathname.startsWith(prefix))) {
     event.respondWith(fetch(request));
     return;
@@ -17828,12 +17842,32 @@ def record_backup_error(errors, scope, name, error):
     })
 
 
-def add_path_to_backup_zip(zip_handle, source_path, archive_prefix, errors=None):
+def safe_zip_writestr(zip_handle, archive_name, data, errors=None, scope='archive_member'):
+    """Write one small member, recording a failure instead of raising.
+
+    Every bare `writestr` in the backup used to be unguarded, so a failure writing
+    a directory marker or a manifest escaped to the route's blanket 500 and threw
+    away a fully built archive. A missing manifest is a warning; a discarded
+    backup is a disaster. Returns True when the member was written.
+    """
+    try:
+        zip_handle.writestr(archive_name, data)
+        return True
+    except (OSError, RuntimeError, ValueError, zipfile.BadZipFile) as write_error:
+        record_backup_error(errors, scope, archive_name, write_error)
+        return False
+
+
+def add_path_to_backup_zip(zip_handle, source_path, archive_prefix, errors=None, progress=None):
     """Add one file or directory to a backup ZIP, preserving relative paths.
 
     A file can disappear while uploads are being written. Record that individual
     failure so the rest of the backup remains usable instead of returning an
     opaque server error.
+
+    `progress` is an optional callable invoked once per file added, so a
+    background build can report real counts. It is keyword-optional on purpose:
+    every existing caller keeps working untouched.
     """
     source_path = os.path.abspath(source_path)
 
@@ -17844,21 +17878,31 @@ def add_path_to_backup_zip(zip_handle, source_path, archive_prefix, errors=None)
 
     archive_prefix = archive_prefix.replace('\\', '/').strip('/')
 
+    def note_progress():
+        if progress is None:
+            return
+        try:
+            progress()
+        except Exception:
+            # Progress reporting must never be able to fail a backup.
+            pass
+
     if os.path.isfile(source_path):
         archive_name = os.path.join(archive_prefix, os.path.basename(source_path))
         try:
             zip_handle.write(source_path, archive_name)
+            note_progress()
             return 1
         except (OSError, RuntimeError, ValueError) as backup_error:
             record_backup_error(errors, 'file', source_path, backup_error)
             return 0
 
     # Add a directory marker so uploads/reports is visible even when empty.
-    zip_handle.writestr(f"{archive_prefix}/", "")
+    safe_zip_writestr(zip_handle, f"{archive_prefix}/", "", errors, 'directory_marker')
 
     reports_dir = os.path.join(source_path, 'reports')
     if os.path.isdir(reports_dir):
-        zip_handle.writestr(f"{archive_prefix}/reports/", "")
+        safe_zip_writestr(zip_handle, f"{archive_prefix}/reports/", "", errors, 'directory_marker')
 
     def handle_walk_error(walk_error):
         record_backup_error(errors, 'directory', source_path, walk_error)
@@ -17886,6 +17930,7 @@ def add_path_to_backup_zip(zip_handle, source_path, archive_prefix, errors=None)
             try:
                 zip_handle.write(full_path, archive_name)
                 file_count += 1
+                note_progress()
             except (OSError, RuntimeError, ValueError) as backup_error:
                 record_backup_error(errors, 'file', full_path, backup_error)
 
@@ -17895,24 +17940,148 @@ def add_path_to_backup_zip(zip_handle, source_path, archive_prefix, errors=None)
 BACKUP_BUCKET_DOWNLOAD_BUDGET_SECONDS = 12.0
 BACKUP_BUCKET_OPERATION_TIMEOUT_SECONDS = 5.0
 
+# The 12-second budget above exists because the archive used to be built inside a
+# request, where every second was borrowed from the gunicorn timeout. A background
+# build has no such constraint, so it passes this instead and can actually finish
+# the bucket section.
+BACKUP_BUCKET_BACKGROUND_BUDGET_SECONDS = 900.0
 
-def add_bucket_objects_to_backup_zip(zip_handle):
+# storage_backend has no ranged or streaming reads -- every object is read whole
+# into memory -- so an anomalous object would be an OOM on the single worker.
+# Uploads are capped at MAX_CONTENT_LENGTH (40MB), so this only trips on something
+# that should be looked at rather than silently archived.
+BACKUP_BUCKET_MAX_OBJECT_BYTES = 64 * 1024 * 1024
+
+
+def sha256_of_file(path, chunk_size=1024 * 1024):
+    """Checksum a file without reading it into memory."""
+    digest = hashlib.sha256()
+    with open(path, 'rb') as handle:
+        for chunk in iter(lambda: handle.read(chunk_size), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def create_sqlite_snapshot(source_path, destination_path):
+    """Copy a live SQLite database into a consistent, self-contained file.
+
+    **This is the correctness fix the whole rework hangs on.** The backup used to
+    `zip_handle.write()` the live database file directly. That is a raw byte copy
+    of a file the application is writing to: a commit landing mid-copy yields a
+    torn database, and the `-wal`/`-shm`/`-journal` sidecars that would make it
+    recoverable were never archived. The failure is silent -- the archive looks
+    perfectly normal until someone needs to restore it.
+
+    `sqlite3.Connection.backup()` copies page by page through SQLite's own
+    locking, so the result is transactionally consistent against a live writer and
+    folds any WAL content into a single file with no sidecars.
+
+    Chosen over `VACUUM INTO`, deliberately: VACUUM rebuilds every table and index
+    (much slower on the same file), refuses outright on a database with a defect
+    that `backup()` would happily copy for later inspection, and its compaction is
+    worthless here because the archive is deflated anyway.
+
+    Single-step (`pages=-1`) rather than incremental, also deliberately: an
+    incremental backup **restarts from scratch whenever the source is written**,
+    which livelocks under a steady write stream. The single-step copy holds a
+    shared lock for one short bounded window that the existing 60s busy timeout
+    absorbs. If contention ever becomes a real problem the incremental form is
+    `backup(dst, pages=1024, sleep=0.05)` -- but measure before reaching for it.
+
+    Returns a dict describing what happened. Raises only when the source is
+    unusable, which the caller must treat as a failed backup rather than a warning.
+    """
+    if not source_path or not os.path.isfile(source_path):
+        raise FileNotFoundError(f'The database file was not found: {source_path}')
+
+    result = {
+        'method': 'sqlite_backup_api',
+        'quick_check': '',
+        'page_count': 0,
+        'sidecars_included': [],
+    }
+
+    source_connection = None
+    destination_connection = None
+    try:
+        # `timeout` here is the busy timeout: if a writer holds the lock we wait
+        # rather than failing the backup outright.
+        source_connection = sqlite3.connect(source_path, timeout=60)
+        destination_connection = sqlite3.connect(destination_path)
+        source_connection.backup(destination_connection)
+        destination_connection.commit()
+
+        row = destination_connection.execute('PRAGMA quick_check').fetchone()
+        result['quick_check'] = (row[0] if row else '') or ''
+        page_row = destination_connection.execute('PRAGMA page_count').fetchone()
+        result['page_count'] = int(page_row[0]) if page_row else 0
+    except sqlite3.DatabaseError as snapshot_error:
+        # Not a usable SQLite database, or the API refused. Fall back to a raw copy
+        # WITH its sidecars -- which is what the old code did minus the sidecars --
+        # and say so loudly rather than presenting it as a clean snapshot.
+        for connection in (source_connection, destination_connection):
+            try:
+                if connection is not None:
+                    connection.close()
+            except sqlite3.Error:
+                pass
+        source_connection = destination_connection = None
+        try:
+            os.remove(destination_path)
+        except OSError:
+            pass
+
+        shutil.copy2(source_path, destination_path)
+        result['method'] = 'raw_copy_fallback'
+        result['error'] = clean_str(snapshot_error) or 'SQLite snapshot failed.'
+        for suffix in ('-wal', '-shm', '-journal'):
+            sidecar = f'{source_path}{suffix}'
+            if os.path.isfile(sidecar):
+                try:
+                    shutil.copy2(sidecar, f'{destination_path}{suffix}')
+                    result['sidecars_included'].append(suffix)
+                except OSError:
+                    pass
+    finally:
+        for connection in (source_connection, destination_connection):
+            try:
+                if connection is not None:
+                    connection.close()
+            except sqlite3.Error:
+                pass
+
+    result['size_bytes'] = os.path.getsize(destination_path) if os.path.isfile(destination_path) else 0
+    result['sha256'] = sha256_of_file(destination_path) if result['size_bytes'] else ''
+    return result
+
+
+def add_bucket_objects_to_backup_zip(zip_handle, progress=None, budget_seconds=None, cancel=None):
     """Add managed bucket objects while preserving a usable partial backup.
 
-    Bucket listing/download failures are recorded per object. The database,
-    source, and volume portions can still be restored, and the manifest makes
-    the missing bucket objects explicit instead of hiding them behind HTTP 500.
+    Bucket listing/download failures are recorded per object. The database and
+    volume portions can still be restored, and the manifest makes the missing
+    bucket objects explicit instead of hiding them behind HTTP 500.
+
+    `budget_seconds=None` resolves BACKUP_BUCKET_DOWNLOAD_BUDGET_SECONDS **at call
+    time**, so patching the module constant still works; a background build passes
+    the far larger background budget instead. `progress` and `cancel` are optional
+    callables for a background build. All three are keyword-optional so existing
+    callers are untouched.
     """
     result = {
         'objects': [],
         'errors': [],
+        'skipped': [],
         'configured': bool(file_storage.bucket_configured),
         'connected': False,
         'budget_exhausted': False,
+        'cancelled': False,
     }
     if not result['configured']:
         return result
 
+    if budget_seconds is None:
+        budget_seconds = BACKUP_BUCKET_DOWNLOAD_BUDGET_SECONDS
     operation_timeout = BACKUP_BUCKET_OPERATION_TIMEOUT_SECONDS
     try:
         connection_check = getattr(file_storage, 'test_connection_for_backup', None)
@@ -17940,28 +18109,70 @@ def add_bucket_objects_to_backup_zip(zip_handle):
 
     result['connected'] = True
     allowed_prefixes = {prefix for prefix, _ in managed_storage_roots()}
-    deadline = time.monotonic() + BACKUP_BUCKET_DOWNLOAD_BUDGET_SECONDS
+    deadline = time.monotonic() + budget_seconds
     list_objects = getattr(file_storage, 'iter_objects_for_backup', None)
+
+    def cancelled():
+        if cancel is None:
+            return False
+        try:
+            return bool(cancel())
+        except Exception:
+            return False
+
     try:
         if callable(list_objects):
             objects = list_objects(timeout_seconds=operation_timeout)
         else:
             objects = file_storage.iter_objects()
         download_for_backup = getattr(file_storage, 'download_bytes_for_backup', None)
+        stopped = False
         for object_info in objects:
             top_prefix = object_info.key.split('/', 1)[0]
             if top_prefix not in allowed_prefixes:
                 continue
+
+            # Once we have stopped, keep walking the listing purely to ENUMERATE
+            # what was left out. Previously this loop just broke, so the archive
+            # was quietly short and nothing recorded which objects were missing --
+            # the manifest said "budget exhausted" and left you to guess.
+            if stopped:
+                result['skipped'].append({'key': object_info.key, 'listed_size': object_info.size})
+                continue
+
+            if cancelled():
+                result['cancelled'] = True
+                stopped = True
+                result['skipped'].append({'key': object_info.key, 'listed_size': object_info.size})
+                continue
+
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 result['budget_exhausted'] = True
+                stopped = True
                 record_backup_error(
                     result['errors'],
                     'bucket_budget',
                     file_storage.bucket_name,
-                    f'Bucket download budget of {BACKUP_BUCKET_DOWNLOAD_BUDGET_SECONDS:.1f} seconds was reached; remaining objects were not included.',
+                    f'Bucket download budget of {budget_seconds:.1f} seconds was reached; remaining objects were not included.',
                 )
-                break
+                result['skipped'].append({'key': object_info.key, 'listed_size': object_info.size})
+                continue
+
+            # Check the size from the LISTING, before spending memory on it.
+            listed_size = int(getattr(object_info, 'size', 0) or 0)
+            if listed_size > BACKUP_BUCKET_MAX_OBJECT_BYTES:
+                result['skipped'].append({'key': object_info.key, 'listed_size': listed_size})
+                record_backup_error(
+                    result['errors'],
+                    'bucket_object_oversize',
+                    object_info.key,
+                    f'Object is {bytes_to_human_size(listed_size)}, above the '
+                    f'{bytes_to_human_size(BACKUP_BUCKET_MAX_OBJECT_BYTES)} backup limit, and was not included.',
+                )
+                continue
+
+            object_bytes = None
             try:
                 if callable(download_for_backup):
                     object_bytes = download_for_backup(
@@ -17970,17 +18181,29 @@ def add_bucket_objects_to_backup_zip(zip_handle):
                     )
                 else:
                     object_bytes = file_storage.download_bytes(object_info.key)
-                zip_handle.writestr(f"bucket_objects/{object_info.key}", object_bytes)
+                # zip.open(...,'w') compresses as it writes rather than buffering a
+                # second full copy the way writestr does.
+                with zip_handle.open(f"bucket_objects/{object_info.key}", 'w') as member:
+                    member.write(object_bytes)
                 result['objects'].append({
                     'key': object_info.key,
                     'size': len(object_bytes),
                     'listed_size': object_info.size,
                     'sha256': hashlib.sha256(object_bytes).hexdigest(),
                 })
+                if progress is not None:
+                    try:
+                        progress()
+                    except Exception:
+                        pass
             except (OSError, RuntimeError, ValueError, StorageObjectNotFound) as object_error:
                 record_backup_error(result['errors'], 'bucket_object', object_info.key, object_error)
             except Exception as object_error:
                 record_backup_error(result['errors'], 'bucket_object', object_info.key, object_error)
+            finally:
+                # Drop the reference promptly: peak memory is one object, not the
+                # accumulated set.
+                object_bytes = None
     except Exception as listing_error:
         record_backup_error(result['errors'], 'bucket_listing', file_storage.bucket_name, listing_error)
 
@@ -18037,10 +18260,39 @@ def managed_storage_volume_inventory(include_checksums=False):
     return inventory
 
 
+# Durable runtime state. Only /data survives a Railway redeploy; everything under
+# /app is replaced. These are created ONCE at import rather than inside a request:
+# bucket_migration_state_path() used to os.makedirs() on every call, which meant an
+# unwritable root could raise OSError midway through a backup and discard an
+# otherwise complete archive. Path helpers below are now pure joins.
+RUNTIME_STATE_DIR = '/data' if os.environ.get('RAILWAY_ENVIRONMENT') else os.path.join(basedir, 'instance')
+BACKUP_ARCHIVE_DIR = os.path.join(RUNTIME_STATE_DIR, 'backups')
+
+# Regenerated every time the module is imported, so a job state file written by a
+# process that no longer exists is recognisable. A pid cannot do this job -- pids
+# are reused, and a reused pid would make a dead job look alive.
+PROCESS_BOOT_ID = secrets.token_hex(8)
+
+
+def ensure_runtime_state_dirs():
+    """Create the durable state directories, tolerating a read-only filesystem.
+
+    Swallows and logs rather than raising: a backup that cannot write its state is
+    a broken backup, but an import that raises is a broken application.
+    """
+    for directory in (RUNTIME_STATE_DIR, BACKUP_ARCHIVE_DIR):
+        try:
+            os.makedirs(directory, exist_ok=True)
+        except OSError as state_dir_error:
+            print(f"[RUNTIME-STATE] Could not create {directory}: {state_dir_error}", flush=True)
+
+
+ensure_runtime_state_dirs()
+
+
 def bucket_migration_state_path():
-    root = '/data' if os.environ.get('RAILWAY_ENVIRONMENT') else os.path.join(basedir, 'instance')
-    os.makedirs(root, exist_ok=True)
-    return os.path.join(root, '_bucket_migration_state.json')
+    """Pure path join. Deliberately performs no filesystem work -- see above."""
+    return os.path.join(RUNTIME_STATE_DIR, '_bucket_migration_state.json')
 
 
 def load_bucket_migration_state():
@@ -18058,12 +18310,357 @@ def save_bucket_migration_state(state):
     temp_path = f"{path}.tmp-{secrets.token_hex(4)}"
     state['updated_at'] = get_manila_time().isoformat()
     try:
+        # The directory is created at import, but a volume can be remounted under a
+        # long-running process, so re-create lazily rather than failing the write.
+        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
         with open(temp_path, 'w', encoding='utf-8') as state_file:
             json.dump(state, state_file, indent=2, sort_keys=True)
         os.replace(temp_path, path)
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+# --- SYSTEM BACKUP JOB STATE ------------------------------------------------
+#
+# The archive is built by a background thread and downloaded later, so the job's
+# state has to outlive the request that started it AND be readable by any of the
+# other request threads. It lives on disk rather than in memory for one reason:
+# a Railway redeploy replaces the container mid-build, and in-memory state would
+# simply vanish, leaving the page spinning forever with nothing to explain it.
+
+BACKUP_JOB_STALE_SECONDS = 300
+BACKUP_ARCHIVE_MAX_AGE_SECONDS = 24 * 3600
+BACKUP_ARCHIVE_FILENAME_PATTERN = re.compile(r'^medical_service_backup_\d{8}_\d{6}\.zip$')
+BACKUP_BUILDING_FILENAME_PATTERN = re.compile(r'^\.building-[0-9a-f]{8,}\.zip$')
+BACKUP_WORKDIR_PATTERN = re.compile(r'^\.build-[0-9a-f]{8,}$')
+BACKUP_MAX_RECORDED_WARNINGS = 50
+
+BACKUP_TERMINAL_STATUSES = {'idle', 'completed', 'completed_with_warnings', 'failed', 'cancelled'}
+
+_backup_job_lock = threading.Lock()
+_backup_sweep_last_run = 0.0
+
+
+def backup_job_state_path():
+    """Pure path join, deliberately doing no filesystem work."""
+    return os.path.join(RUNTIME_STATE_DIR, '_system_backup_job.json')
+
+
+def empty_backup_job_state():
+    return {
+        'job_id': '',
+        'boot_id': '',
+        'status': 'idle',
+        'phase': '',
+        'phase_label': '',
+        'percent': 0,
+        'files_total': 0,
+        'files_done': 0,
+        'started_at': '',
+        'updated_at': '',
+        'finished_at': '',
+        'started_by': '',
+        'message': '',
+        'cancel_requested': False,
+        'database_included': False,
+        'database_snapshot_method': '',
+        'backup_complete': False,
+        'warning_count': 0,
+        'warnings': [],
+        'warnings_truncated': False,
+        'bucket': {},
+        'archive': {},
+        'preflight': {},
+    }
+
+
+def load_backup_job_state():
+    try:
+        with open(backup_job_state_path(), 'r', encoding='utf-8') as state_file:
+            state = json.load(state_file)
+        if not isinstance(state, dict):
+            return empty_backup_job_state()
+        merged = empty_backup_job_state()
+        merged.update(state)
+        return merged
+    except (OSError, ValueError, TypeError):
+        return empty_backup_job_state()
+
+
+def save_backup_job_state(state):
+    path = backup_job_state_path()
+    temp_path = f"{path}.tmp-{secrets.token_hex(4)}"
+    state['updated_at'] = get_manila_time().isoformat()
+    try:
+        os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+        with open(temp_path, 'w', encoding='utf-8') as state_file:
+            json.dump(state, state_file, indent=2, sort_keys=True)
+        os.replace(temp_path, path)
+        return True
+    except OSError as state_error:
+        print(f"[BACKUP] Could not persist job state: {state_error}", flush=True)
+        return False
+    finally:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+
+def update_backup_job_state(**fields):
+    """Read-modify-write the job state under the module lock."""
+    with _backup_job_lock:
+        state = load_backup_job_state()
+        state.update(fields)
+        save_backup_job_state(state)
+        return state
+
+
+def parse_state_timestamp(value):
+    try:
+        return datetime.fromisoformat(clean_str(value)) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
+def reconcile_backup_job_state():
+    """Turn a job that cannot still be running into an honest terminal state.
+
+    Two ways a `running` job is a lie:
+
+    1. **The process that owned it is gone.** `boot_id` is regenerated at import,
+       so a state file carrying a different one was written by a process that no
+       longer exists -- a Railway redeploy mid-build being the ordinary cause. A
+       pid check cannot do this: pids are reused, and a reused pid makes a dead
+       job look alive.
+    2. **The thread stopped heartbeating.** The builder refreshes `updated_at`
+       on every phase and periodically inside file loops.
+
+    Without this the page would spin forever on a job that died silently.
+    """
+    with _backup_job_lock:
+        state = load_backup_job_state()
+        if state.get('status') != 'running':
+            return state
+
+        reason = ''
+        if clean_str(state.get('boot_id')) != PROCESS_BOOT_ID:
+            reason = 'The server restarted while this backup was building. Nothing was corrupted; start a new one.'
+        else:
+            updated = parse_state_timestamp(state.get('updated_at'))
+            if updated is not None:
+                age = (get_manila_time() - updated).total_seconds()
+                if age > BACKUP_JOB_STALE_SECONDS:
+                    reason = f'The backup build stopped responding after {int(age)} seconds and was marked failed.'
+
+        if reason:
+            state['status'] = 'failed'
+            state['message'] = reason
+            state['finished_at'] = get_manila_time().isoformat()
+            state['percent'] = state.get('percent') or 0
+            save_backup_job_state(state)
+        return state
+
+
+def backup_job_is_running(state=None):
+    state = state if state is not None else load_backup_job_state()
+    return state.get('status') == 'running'
+
+
+def sweep_backup_artifacts(active_job_id=''):
+    """Delete stale build artifacts and expired archives.
+
+    **The allowlist is strict on purpose.** `tests/test_system_backup.py` names its
+    isolated database `<tmp>/medical_service_backup_<hex>.db`, so a well-meaning
+    `medical_service_backup_*` glob over the temp directory would delete the test
+    database out from under a running suite. Every rule below is anchored, and the
+    temp-directory rule matches `.zip` only.
+    """
+    removed = []
+
+    # 1. Inside our own archive directory: keep the newest valid archive, drop the rest.
+    try:
+        entries = os.listdir(BACKUP_ARCHIVE_DIR)
+    except OSError:
+        entries = []
+
+    archives = []
+    for name in entries:
+        full_path = os.path.join(BACKUP_ARCHIVE_DIR, name)
+        if BACKUP_ARCHIVE_FILENAME_PATTERN.match(name):
+            try:
+                archives.append((os.path.getmtime(full_path), full_path))
+            except OSError:
+                pass
+        elif BACKUP_BUILDING_FILENAME_PATTERN.match(name) or BACKUP_WORKDIR_PATTERN.match(name):
+            # Leave the running job's own workspace alone.
+            if active_job_id and active_job_id in name:
+                continue
+            try:
+                if os.path.isdir(full_path):
+                    shutil.rmtree(full_path, ignore_errors=True)
+                else:
+                    os.remove(full_path)
+                removed.append(full_path)
+            except OSError:
+                pass
+
+    archives.sort(reverse=True)
+    for index, (mtime, path) in enumerate(archives):
+        expired = (time.time() - mtime) > BACKUP_ARCHIVE_MAX_AGE_SECONDS
+        if index == 0 and not expired:
+            continue
+        try:
+            os.remove(path)
+            removed.append(path)
+        except OSError:
+            pass
+
+    # 2. Legacy orphans from the old in-request implementation, which wrote into
+    #    the system temp directory and leaked one file per killed process.
+    #    ZIP ONLY -- see the docstring.
+    try:
+        temp_root = tempfile.gettempdir()
+        for name in os.listdir(temp_root):
+            if not name.lower().endswith('.zip'):
+                continue
+            if not name.startswith('medical_service_backup_'):
+                continue
+            path = os.path.join(temp_root, name)
+            try:
+                if os.path.isfile(path) and (time.time() - os.path.getmtime(path)) > 3600:
+                    os.remove(path)
+                    removed.append(path)
+            except OSError:
+                pass
+    except OSError:
+        pass
+
+    return removed
+
+
+def sweep_backup_artifacts_throttled(active_job_id=''):
+    """Sweep at most every 30 seconds; polling must not thrash the volume."""
+    global _backup_sweep_last_run
+    now = time.monotonic()
+    if now - _backup_sweep_last_run < 30:
+        return []
+    _backup_sweep_last_run = now
+    return sweep_backup_artifacts(active_job_id)
+
+
+def current_backup_archive():
+    """Return the newest valid archive on disk, or None."""
+    try:
+        entries = os.listdir(BACKUP_ARCHIVE_DIR)
+    except OSError:
+        return None
+    candidates = []
+    for name in entries:
+        if not BACKUP_ARCHIVE_FILENAME_PATTERN.match(name):
+            continue
+        path = os.path.join(BACKUP_ARCHIVE_DIR, name)
+        try:
+            stat_result = os.stat(path)
+        except OSError:
+            continue
+        candidates.append((stat_result.st_mtime, name, path, stat_result.st_size))
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    mtime, name, path, size = candidates[0]
+    return {
+        'filename': name,
+        'path': path,
+        'size_bytes': size,
+        'size_human': bytes_to_human_size(size),
+        'modified_at': datetime.fromtimestamp(mtime).isoformat(),
+        'age_seconds': int(max(0, time.time() - mtime)),
+        'expires_in_seconds': int(max(0, BACKUP_ARCHIVE_MAX_AGE_SECONDS - (time.time() - mtime))),
+    }
+
+
+def estimate_backup_source_bytes():
+    """Stat-only estimate of what the archive will contain.
+
+    Bucket bytes are deliberately excluded: listing them costs a network round
+    trip before the user has even been told whether there is room, and the bucket
+    phase is budget-bounded anyway. The slack in the caller covers it.
+    """
+    total = 0
+    database_path = get_active_sqlite_database_path()
+    try:
+        if database_path and os.path.isfile(database_path):
+            total += os.path.getsize(database_path)
+    except OSError:
+        pass
+    for upload_root in get_backup_upload_roots():
+        for root, _, files in os.walk(upload_root, onerror=lambda err: None):
+            for filename in files:
+                try:
+                    total += os.path.getsize(os.path.join(root, filename))
+                except OSError:
+                    pass
+    return total
+
+
+def backup_preflight_report():
+    """Decide whether there is room to build, BEFORE spending minutes on it.
+
+    Filling the volume is strictly worse than not having a backup: uploads start
+    failing for every user and SQLite itself can fail to write. This is the first
+    free-space check in the codebase.
+    """
+    estimated = estimate_backup_source_bytes()
+    required = int(estimated * 1.1) + (256 * 1024 * 1024)
+
+    free_bytes = 0
+    free_space_checked = True
+    try:
+        free_bytes = shutil.disk_usage(BACKUP_ARCHIVE_DIR).free
+    except OSError as usage_error:
+        print(f"[BACKUP] Could not read disk usage: {usage_error}", flush=True)
+        free_space_checked = False
+
+    existing = current_backup_archive()
+    report = {
+        'estimated_bytes': estimated,
+        'estimated_human': bytes_to_human_size(estimated),
+        'required_bytes': required,
+        'required_human': bytes_to_human_size(required),
+        'free_bytes': free_bytes,
+        'free_human': bytes_to_human_size(free_bytes),
+        'existing_archive_bytes': (existing or {}).get('size_bytes', 0),
+        'reclaim_existing': False,
+        'ok': True,
+        'reason': '',
+    }
+
+    if not free_space_checked:
+        report['ok'] = False
+        report['reason'] = 'The server could not verify free storage space, so the backup was not started.'
+    elif free_bytes < required:
+        reclaimable = report['existing_archive_bytes']
+        if reclaimable and free_bytes + reclaimable >= required:
+            report['reclaim_existing'] = True
+            report['reason'] = (
+                f'Free space is below the estimated {report["required_human"]} build requirement. '
+                f'The previous {bytes_to_human_size(reclaimable)} archive will be replaced before building.'
+            )
+            return report
+        report['ok'] = False
+        report['reason'] = (
+            f'Not enough space to build a backup. About {report["required_human"]} is needed and '
+            f'{report["free_human"]} is free.'
+        )
+        if reclaimable:
+            report['reason'] += (
+                f' Even deleting the stored backup would leave less than the required '
+                f'{report["required_human"]}.'
+            )
+    return report
 
 
 def get_bucket_object_snapshot():
@@ -18610,6 +19207,50 @@ def get_storage_health_report():
 
     active_upload_snapshot = get_directory_storage_snapshot(app.config.get('UPLOAD_FOLDER'), label='Active Reports Folder', largest_limit=10)
 
+    # Backup archives are durable volume data, but they are intentionally tracked
+    # separately from user uploads so the Storage Health page can explain why space
+    # is being consumed. Count only published, valid archives; dot-prefixed build
+    # workspaces are transient and are handled by the backup sweeper.
+    backup_archive_snapshot = {
+        'label': 'System Backup Archive',
+        'path': os.path.abspath(BACKUP_ARCHIVE_DIR),
+        'exists': os.path.isdir(BACKUP_ARCHIVE_DIR),
+        'size_bytes': 0,
+        'size_human': '0 B',
+        'file_count': 0,
+        'directory_count': 0,
+        'largest_files': [],
+    }
+    backup_archive_paths = []
+    try:
+        for archive_name in os.listdir(BACKUP_ARCHIVE_DIR):
+            if not BACKUP_ARCHIVE_FILENAME_PATTERN.match(archive_name):
+                continue
+            archive_path = os.path.abspath(os.path.join(BACKUP_ARCHIVE_DIR, archive_name))
+            if not os.path.isfile(archive_path):
+                continue
+            try:
+                archive_size = os.path.getsize(archive_path)
+                archive_mtime = datetime.fromtimestamp(os.path.getmtime(archive_path)).strftime('%Y-%m-%d %H:%M')
+            except OSError:
+                continue
+            backup_archive_paths.append(archive_path)
+            backup_archive_snapshot['size_bytes'] += archive_size
+            backup_archive_snapshot['file_count'] += 1
+            backup_archive_snapshot['largest_files'].append({
+                'name': archive_name,
+                'relative_path': archive_name,
+                'path': archive_path,
+                'size_bytes': archive_size,
+                'size_human': bytes_to_human_size(archive_size),
+                'modified_at': archive_mtime,
+            })
+    except OSError:
+        pass
+    backup_archive_snapshot['largest_files'].sort(key=lambda item: item.get('size_bytes', 0), reverse=True)
+    backup_archive_snapshot['largest_files'] = backup_archive_snapshot['largest_files'][:5]
+    backup_archive_snapshot['size_human'] = bytes_to_human_size(backup_archive_snapshot['size_bytes'])
+
     unique_storage_paths = {}
     if db_path and os.path.isfile(db_path):
         unique_storage_paths[os.path.abspath(db_path)] = get_file_size_safe(db_path)
@@ -18627,6 +19268,14 @@ def get_storage_health_report():
                     unique_storage_paths[file_path] = os.path.getsize(file_path)
                 except OSError:
                     continue
+
+    for archive_path in backup_archive_paths:
+        if archive_path in unique_storage_paths:
+            continue
+        try:
+            unique_storage_paths[archive_path] = os.path.getsize(archive_path)
+        except OSError:
+            continue
 
     total_used_bytes = sum(unique_storage_paths.values())
     limit_bytes, limit_gb = get_storage_limit_bytes()
@@ -18646,6 +19295,7 @@ def get_storage_health_report():
     all_largest_files = []
     for root_snapshot in upload_snapshots:
         all_largest_files.extend(root_snapshot.get('largest_files') or [])
+    all_largest_files.extend(backup_archive_snapshot.get('largest_files') or [])
     all_largest_files.sort(key=lambda item: item.get('size_bytes', 0), reverse=True)
 
     try:
@@ -18701,6 +19351,8 @@ def get_storage_health_report():
         'bucket_connection': bucket_migration.get('connection'),
         'bucket_migration': bucket_migration,
         'active_upload_folder': active_upload_snapshot,
+        'backup_archive': backup_archive_snapshot,
+        'backup_archive_usage': backup_archive_snapshot,
         'upload_roots': upload_snapshots,
         'total_file_count': len(unique_storage_paths),
         'largest_files': all_largest_files[:15],
@@ -18734,112 +19386,175 @@ def admin_storage_health():
         }), 500
 
 
-@app.route('/admin/download-backup')
-@login_required
-def download_system_backup():
-    """Superadmin-only manual backup download for SQLite DB and uploads.
+def build_system_backup_archive(job_id, username, cancel=None, progress_sink=None):
+    """Build the archive on disk and return a result dict. Raises on a fatal fault.
 
-    The archive is deliberately still built completely before it is sent, rather
-    than streamed. Streaming was the recorded plan and was rejected on measurement:
-    since the data-only change the archive is 39MB built in 3.6s, nowhere near any
-    timeout, while streaming would cost three things that matter more than those
-    seconds -- the Content-Length that gives the admin a real progress bar on a
-    39MB download, and the X-Backup-Complete / X-Backup-Warning-Count headers,
-    which cannot be set once the body has started and are the only machine-readable
-    signal that a backup came back partial.
-
-    Both symptoms that motivated streaming are addressed in the Procfile instead:
-    the server now runs gthread rather than one sync worker, so a backup no longer
-    blocks every other user, and the arbiter heartbeat lives in the accept loop
-    rather than the request, so a slow build can no longer have its worker killed.
-    Revisit streaming only if the archive grows enough for the build itself to
-    approach the timeout -- and expect to give up the progress bar for it.
+    Called by run_system_backup_job() on a background thread, and directly by the
+    tests, which is why it takes no request context and reads nothing from `g`.
     """
-    if not is_superadmin_user():
-        return denied('Only superadmins can download system backups.')
-    temp_file_path = None
-    backup_errors = []
+    errors = []
+    workdir = os.path.join(BACKUP_ARCHIVE_DIR, f'.build-{job_id}')
+    building_path = os.path.join(BACKUP_ARCHIVE_DIR, f'.building-{job_id}.zip')
+    timestamp = get_manila_time().strftime('%Y%m%d_%H%M%S')
+    final_name = f'medical_service_backup_{timestamp}.zip'
+    final_path = os.path.join(BACKUP_ARCHIVE_DIR, final_name)
+    started_monotonic = time.monotonic()
+
+    def cancelled():
+        if cancel is None:
+            return False
+        try:
+            return bool(cancel())
+        except Exception:
+            return False
+
+    def report(**fields):
+        if progress_sink is not None:
+            try:
+                progress_sink(**fields)
+            except Exception:
+                pass
+
+    os.makedirs(workdir, exist_ok=True)
+    db_path = get_active_sqlite_database_path()
+    upload_roots = get_backup_upload_roots()
+
+    # Count first so the percentage is real rather than decorative.
+    report(phase='preflight', phase_label='Measuring what needs to be archived', percent=1)
+    files_total = 1
+    for upload_root in upload_roots:
+        for _, _, files in os.walk(upload_root, onerror=lambda err: None):
+            files_total += len(files)
+    files_done = 0
+    last_heartbeat = 0.0
+
+    def note_file():
+        nonlocal files_done, last_heartbeat
+        files_done += 1
+        now = time.monotonic()
+        # Rate-limit: a state write per file would thrash the volume.
+        if now - last_heartbeat < 1.5:
+            return
+        last_heartbeat = now
+        percent = 5 + int(85 * (files_done / files_total)) if files_total else 90
+        report(files_done=files_done, files_total=files_total, percent=min(percent, 90))
+
+    bucket_result = {
+        'objects': [], 'errors': [], 'skipped': [],
+        'configured': bool(file_storage.bucket_configured),
+        'connected': False, 'budget_exhausted': False, 'cancelled': False,
+    }
+    snapshot_info = {}
+    migration_state_included = False
+    upload_count = 0
+    uploaded_roots_manifest = []
+
     try:
-        # Finish any normal request work before copying the SQLite file. Keep this
-        # inside the guarded block so a locked/invalid session is rolled back and
-        # reported consistently rather than escaping as an unhandled 500.
-        db.session.commit()
+        with zipfile.ZipFile(building_path, 'w', zipfile.ZIP_DEFLATED, compresslevel=1) as backup_zip:
+            # --- database ---------------------------------------------------
+            report(phase='database', phase_label='Taking a consistent database snapshot', percent=5)
+            snapshot_path = os.path.join(workdir, os.path.basename(db_path) or 'scheduler.db')
+            # A raised FileNotFoundError here FAILS the job. An archive with no
+            # database cannot restore the business, and reporting that as a
+            # complete backup was the defect -- not the missing file itself.
+            snapshot_info = create_sqlite_snapshot(db_path, snapshot_path)
+            if snapshot_info.get('method') == 'raw_copy_fallback':
+                record_backup_error(
+                    errors, 'database_snapshot', db_path,
+                    snapshot_info.get('error') or 'The database was copied without a consistent snapshot.',
+                )
+            elif clean_str(snapshot_info.get('quick_check')).lower() not in ('ok', ''):
+                record_backup_error(
+                    errors, 'database_integrity', db_path,
+                    f"PRAGMA quick_check reported: {snapshot_info.get('quick_check')}",
+                )
+            db_count = add_path_to_backup_zip(backup_zip, snapshot_path, 'database', errors)
+            note_file()
+            # The snapshot is a second full copy of the database; do not leave it
+            # sitting on a volume we have just checked for headroom.
+            for suffix in ('', '-wal', '-shm', '-journal'):
+                try:
+                    os.remove(f'{snapshot_path}{suffix}')
+                except OSError:
+                    pass
+            if not db_count:
+                raise RuntimeError('The database snapshot could not be added to the archive.')
 
-        timestamp = get_manila_time().strftime('%Y%m%d_%H%M%S')
-        backup_filename = f"medical_service_backup_{timestamp}.zip"
-        temp_file = tempfile.NamedTemporaryFile(
-            prefix='medical_service_backup_', suffix='.zip', delete=False
-        )
-        temp_file_path = temp_file.name
-        temp_file.close()
+            if cancelled():
+                raise BackupCancelled()
 
-        db_path = get_active_sqlite_database_path()
-        upload_roots = get_backup_upload_roots()
-        bucket_result = {
-            'objects': [],
-            'errors': [],
-            'configured': bool(file_storage.bucket_configured),
-            'connected': False,
-        }
-
-        with zipfile.ZipFile(temp_file_path, 'w', zipfile.ZIP_DEFLATED) as backup_zip:
-            db_count = add_path_to_backup_zip(backup_zip, db_path, 'database', backup_errors)
-
-            # Application source is deliberately NOT archived. It lives in git, so a restore
-            # can fetch it there, and including it made the backup roughly three times the
-            # size it needed to be: 56MB of an 82MB measured archive. Worse, `static` was in
-            # the source list while `static/uploads` is an upload root, so every upload was
-            # stored twice -- 47MB of that 82MB was a duplicate of the uploads section. The
-            # archive is now the data that cannot be recreated: database, uploads, bucket.
-
-            upload_count = 0
-            uploaded_roots_manifest = []
-
+            # --- volume uploads ---------------------------------------------
+            report(phase='uploads', phase_label='Copying volume uploads', percent=10)
             if upload_roots:
                 for upload_root in upload_roots:
                     root_name = os.path.basename(upload_root.rstrip(os.sep)) or 'uploads'
-                    archive_prefix = 'uploads' if root_name == 'uploads' else f"uploads/{root_name}"
+                    archive_prefix = 'uploads' if root_name == 'uploads' else f'uploads/{root_name}'
                     added_count = add_path_to_backup_zip(
-                        backup_zip, upload_root, archive_prefix, backup_errors
+                        backup_zip, upload_root, archive_prefix, errors, progress=note_file
                     )
                     upload_count += added_count
                     uploaded_roots_manifest.append({
                         'path': upload_root,
                         'archive_prefix': archive_prefix,
-                        'file_count': added_count
+                        'file_count': added_count,
                     })
+                    if cancelled():
+                        raise BackupCancelled()
             else:
-                backup_zip.writestr('uploads/', '')
-                backup_zip.writestr('uploads/reports/', '')
+                safe_zip_writestr(backup_zip, 'uploads/', '', errors, 'directory_marker')
+                safe_zip_writestr(backup_zip, 'uploads/reports/', '', errors, 'directory_marker')
 
+            # --- bucket objects ---------------------------------------------
             if file_storage.bucket_configured:
-                bucket_result = add_bucket_objects_to_backup_zip(backup_zip)
-                backup_errors.extend(bucket_result.get('errors') or [])
-                backup_zip.writestr(
-                    'bucket_objects_manifest.json',
-                    json.dumps(bucket_result.get('objects') or [], indent=2)
+                report(phase='bucket', phase_label='Downloading private bucket objects', percent=90)
+                bucket_result = add_bucket_objects_to_backup_zip(
+                    backup_zip,
+                    progress=note_file,
+                    budget_seconds=BACKUP_BUCKET_BACKGROUND_BUDGET_SECONDS,
+                    cancel=cancel,
                 )
+                errors.extend(bucket_result.get('errors') or [])
+                safe_zip_writestr(
+                    backup_zip, 'bucket_objects_manifest.json',
+                    json.dumps(bucket_result.get('objects') or [], indent=2), errors,
+                )
+                if bucket_result.get('skipped'):
+                    safe_zip_writestr(
+                        backup_zip, 'bucket_objects_skipped.json',
+                        json.dumps(bucket_result.get('skipped'), indent=2), errors,
+                    )
+                if bucket_result.get('cancelled'):
+                    raise BackupCancelled()
 
+            if cancelled():
+                raise BackupCancelled()
+
+            # --- auxiliary state --------------------------------------------
+            report(phase='manifest', phase_label='Writing the manifest', percent=95)
             migration_state_source = bucket_migration_state_path()
-            migration_state_included = False
             if os.path.isfile(migration_state_source):
                 try:
                     backup_zip.write(migration_state_source, 'storage/bucket_migration_state.json')
                     migration_state_included = True
                 except (OSError, RuntimeError, ValueError) as migration_error:
-                    record_backup_error(backup_errors, 'file', migration_state_source, migration_error)
+                    record_backup_error(errors, 'file', migration_state_source, migration_error)
 
-            if backup_errors:
-                backup_zip.writestr(
-                    'backup_errors.json',
-                    json.dumps(backup_errors, indent=2),
-                )
+            if errors:
+                # Keep this member's write failure in the in-memory result so the
+                # published archive is visibly incomplete even if the warning
+                # file itself cannot be written.
+                safe_zip_writestr(backup_zip, 'backup_errors.json', json.dumps(errors, indent=2), errors)
 
             manifest = {
                 'generated_at_manila': get_manila_time().isoformat(),
-                'generated_by': getattr(current_user, 'username', 'unknown'),
+                'generated_by': username or 'unknown',
+                'job_id': job_id,
                 'database_path': db_path,
                 'database_included': bool(db_count),
+                'database_sha256': snapshot_info.get('sha256', ''),
+                'database_snapshot_method': snapshot_info.get('method', ''),
+                'database_quick_check': snapshot_info.get('quick_check', ''),
+                'database_page_count': snapshot_info.get('page_count', 0),
                 # Explicit so an archive can be told apart from the older ones that carried a
                 # source/ tree, rather than someone concluding the backup was truncated.
                 'archive_scope': 'data_only',
@@ -18853,59 +19568,393 @@ def download_system_backup():
                     1 for error in (bucket_result.get('errors') or [])
                     if error.get('scope') == 'bucket_object'
                 ),
+                'bucket_objects_skipped_count': len(bucket_result.get('skipped') or []),
+                'bucket_budget_seconds': BACKUP_BUCKET_BACKGROUND_BUDGET_SECONDS,
                 'bucket_objects_manifest': 'bucket_objects_manifest.json' if bucket_result.get('configured') else '',
                 'bucket_migration_state_included': migration_state_included,
-                'backup_complete': not bool(backup_errors),
-                'backup_warning_count': len(backup_errors),
-                'backup_errors_file': 'backup_errors.json' if backup_errors else '',
-                'app': 'MEDICAL SERVICE Scheduler'
+                'backup_complete': not bool(errors),
+                'backup_warning_count': len(errors),
+                'backup_errors_file': 'backup_errors.json' if errors else '',
+                'build_duration_seconds': round(time.monotonic() - started_monotonic, 2),
+                'app': 'MEDICAL SERVICE Scheduler',
             }
-            backup_zip.writestr('backup_manifest.json', json.dumps(manifest, indent=2))
+            # A manifest write failure must degrade to a warning, not discard the
+            # otherwise usable archive or report it as complete.
+            safe_zip_writestr(backup_zip, 'backup_manifest.json', json.dumps(manifest, indent=2), errors)
 
-        activity_action = f"Downloaded system backup: {backup_filename}"
-        if backup_errors:
-            activity_action += f" ({len(backup_errors)} warning(s); see backup_errors.json)"
+        # Publish atomically. Until this line the archive is a dotfile that the
+        # download route will never serve, so a crashed build can never hand back
+        # a half-written ZIP.
+        report(phase='finalizing', phase_label='Finishing up', percent=98)
+        os.replace(building_path, final_path)
+
+        archive_sha = sha256_of_file(final_path)
+        size_bytes = os.path.getsize(final_path)
+
+        # Only now is the previous archive expendable.
+        for name in os.listdir(BACKUP_ARCHIVE_DIR):
+            if name != final_name and BACKUP_ARCHIVE_FILENAME_PATTERN.match(name):
+                try:
+                    os.remove(os.path.join(BACKUP_ARCHIVE_DIR, name))
+                except OSError:
+                    pass
+
+        return {
+            'filename': final_name,
+            'path': final_path,
+            'size_bytes': size_bytes,
+            'size_human': bytes_to_human_size(size_bytes),
+            'sha256': archive_sha,
+            'created_at': get_manila_time().isoformat(),
+            'warnings': errors,
+            'backup_complete': not bool(errors),
+            'database_included': bool(db_count),
+            'database_snapshot_method': snapshot_info.get('method', ''),
+            'bucket': {
+                'configured': bool(bucket_result.get('configured')),
+                'connected': bool(bucket_result.get('connected')),
+                'object_count': len(bucket_result.get('objects') or []),
+                'skipped_count': len(bucket_result.get('skipped') or []),
+                'budget_exhausted': bool(bucket_result.get('budget_exhausted')),
+            },
+            'files_done': files_done,
+            'duration_seconds': round(time.monotonic() - started_monotonic, 2),
+        }
+    finally:
+        for path in (building_path,):
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+class BackupCancelled(Exception):
+    """Raised inside the builder when the admin asks it to stop."""
+
+
+def run_system_backup_job(job_id, username):
+    """Background entry point. Always leaves the job in a terminal state.
+
+    Runs on a daemon thread inside the single gunicorn worker, so it shares the
+    process with the seven request threads. That is why the builder uses
+    compresslevel=1 and why the bucket phase is budget-bounded: this work has to
+    be a considerate neighbour, not just a correct one.
+    """
+    with app.app_context():
+        def cancel():
+            return bool(load_backup_job_state().get('cancel_requested'))
+
+        def progress_sink(**fields):
+            update_backup_job_state(**fields)
+
+        try:
+            result = build_system_backup_archive(
+                job_id, username, cancel=cancel, progress_sink=progress_sink
+            )
+        except BackupCancelled:
+            update_backup_job_state(
+                status='cancelled', phase='done', percent=0, finished_at=get_manila_time().isoformat(),
+                message='The backup was cancelled. Any previous backup is untouched.',
+            )
+            return
+        except Exception as build_error:
+            print(f"[BACKUP] Build failed for job {job_id}: {build_error}", flush=True)
+            traceback.print_exc()
+            update_backup_job_state(
+                status='failed', phase='done', percent=0, finished_at=get_manila_time().isoformat(),
+                message=clean_str(build_error) or 'The backup could not be built.',
+            )
+            return
+
+        warnings = result.get('warnings') or []
+        update_backup_job_state(
+            status='completed_with_warnings' if warnings else 'completed',
+            phase='done',
+            phase_label='Backup ready',
+            percent=100,
+            finished_at=get_manila_time().isoformat(),
+            message=(
+                f"Backup ready with {len(warnings)} warning(s). Check the details before relying on it."
+                if warnings else 'Backup ready to download.'
+            ),
+            backup_complete=bool(result.get('backup_complete')),
+            database_included=bool(result.get('database_included')),
+            database_snapshot_method=result.get('database_snapshot_method', ''),
+            warning_count=len(warnings),
+            warnings=warnings[:BACKUP_MAX_RECORDED_WARNINGS],
+            warnings_truncated=len(warnings) > BACKUP_MAX_RECORDED_WARNINGS,
+            bucket=result.get('bucket') or {},
+            files_done=result.get('files_done', 0),
+            archive={
+                'filename': result.get('filename', ''),
+                'path': result.get('path', ''),
+                'size_bytes': result.get('size_bytes', 0),
+                'size_human': result.get('size_human', ''),
+                'sha256': result.get('sha256', ''),
+                'created_at': result.get('created_at', ''),
+            },
+        )
+
+        action = f"Built system backup: {result.get('filename')} ({result.get('size_human')})"
+        if warnings:
+            action += f" with {len(warnings)} warning(s)"
         try:
             db.session.add(ActivityLog(
-                user=(getattr(current_user, 'username', '') or 'Superadmin').capitalize(),
-                action=activity_action,
+                user=(username or 'Superadmin').capitalize(),
+                action=action,
             ))
             db.session.commit()
         except Exception as log_error:
             db.session.rollback()
             print(f"[BACKUP] Activity log skipped: {log_error}", flush=True)
 
-        response = send_file(
-            temp_file_path,
-            as_attachment=True,
-            download_name=backup_filename,
-            mimetype='application/zip'
-        )
-        response.headers['Cache-Control'] = 'no-store'
-        response.headers['X-Backup-Complete'] = 'false' if backup_errors else 'true'
-        response.headers['X-Backup-Warning-Count'] = str(len(backup_errors))
 
-        @response.call_on_close
-        def cleanup_backup_file():
-            try:
-                os.remove(temp_file_path)
-            except OSError:
-                pass
+def backup_status_payload():
+    """The single shape the page polls, assembled from state plus the disk."""
+    state = reconcile_backup_job_state()
+    sweep_backup_artifacts_throttled(state.get('job_id') if state.get('status') == 'running' else '')
+    archive = current_backup_archive()
+    if archive:
+        saved_archive = state.get('archive') or {}
+        archive = {
+            **archive,
+            'sha256': saved_archive.get('sha256', ''),
+            'created_at': saved_archive.get('created_at', '') or archive.get('modified_at', ''),
+        }
+    health = {}
+    try:
+        report = get_storage_health_report()
+        health = {
+            'used_human': report.get('used_human', ''),
+            'limit_human': report.get('limit_human', ''),
+            'free_human': report.get('remaining_human', ''),
+            'usage_percent': report.get('usage_percent', 0),
+            'status': report.get('storage_status', ''),
+            'status_label': report.get('storage_status_label', ''),
+            'backup_archive': report.get('backup_archive') or {},
+        }
+    except Exception as health_error:
+        print(f"[BACKUP] Storage health unavailable: {health_error}", flush=True)
 
-        return response
+    return {
+        'status': 'success',
+        'job': {
+            'status': state.get('status', 'idle'),
+            'phase': state.get('phase', ''),
+            'phase_label': state.get('phase_label', ''),
+            'percent': state.get('percent', 0),
+            'files_done': state.get('files_done', 0),
+            'files_total': state.get('files_total', 0),
+            'started_at': state.get('started_at', ''),
+            'finished_at': state.get('finished_at', ''),
+            'started_by': state.get('started_by', ''),
+            'message': state.get('message', ''),
+            'backup_complete': bool(state.get('backup_complete')),
+            'database_included': bool(state.get('database_included')),
+            'database_snapshot_method': state.get('database_snapshot_method', ''),
+            'warning_count': state.get('warning_count', 0),
+            'warnings': state.get('warnings') or [],
+            'warnings_truncated': bool(state.get('warnings_truncated')),
+            'bucket': state.get('bucket') or {},
+            'cancel_requested': bool(state.get('cancel_requested')),
+        },
+        'archive': archive,
+        'storage': health,
+        'download_url': url_for('download_system_backup') if archive else '',
+    }
 
-    except Exception as backup_error:
-        db.session.rollback()
-        try:
-            if temp_file_path:
-                os.remove(temp_file_path)
-        except OSError:
-            pass
-        print(f"[BACKUP] Manual backup failed: {backup_error}", flush=True)
+
+@app.route('/admin/backup')
+@login_required
+def system_backup_page():
+    """The Backup Center. Superadmin only."""
+    if not is_superadmin_user():
+        return render_template('access_denied.html',
+                               denied_message='Only superadmins can manage system backups.'), 403
+    reconcile_backup_job_state()
+    sweep_backup_artifacts_throttled()
+    return render_template('system_backup.html')
+
+
+@app.route('/admin/backup/status')
+@login_required
+def admin_backup_status():
+    if not is_superadmin_user():
+        return denied('Only superadmins can view system backups.')
+    return jsonify(backup_status_payload())
+
+
+@app.route('/admin/backup/start', methods=['POST'])
+@login_required
+def admin_backup_start():
+    if not is_superadmin_user():
+        return denied('Only superadmins can start system backups.')
+
+    state = reconcile_backup_job_state()
+    if backup_job_is_running(state):
         return jsonify({
             'status': 'error',
-            'message': 'System backup could not be generated. Please check server logs.'
-        }), 500
+            'message': 'A backup is already being built. Watch its progress below.',
+        }), 409
+
+    preflight = backup_preflight_report()
+    if not preflight['ok']:
+        # 507 Insufficient Storage: refuse BEFORE spending minutes on a build that
+        # would fill the volume and break uploads for every user.
+        return jsonify({'status': 'error', 'message': preflight['reason'], 'preflight': preflight}), 507
+
+    if preflight.get('reclaim_existing'):
+        previous_archive = current_backup_archive()
+        if previous_archive:
+            try:
+                os.remove(previous_archive['path'])
+                record_storage_activity(
+                    f"Replaced previous system backup before rebuild: {previous_archive['filename']}"
+                )
+            except OSError as reclaim_error:
+                return jsonify({
+                    'status': 'error',
+                    'message': f"The previous backup could not be replaced safely: {clean_str(reclaim_error)}",
+                    'preflight': preflight,
+                }), 507
+
+    job_id = secrets.token_hex(8)
+    username = getattr(current_user, 'username', '') or 'superadmin'
+    with _backup_job_lock:
+        fresh = empty_backup_job_state()
+        fresh.update({
+            'job_id': job_id,
+            'boot_id': PROCESS_BOOT_ID,
+            'status': 'running',
+            'phase': 'preflight',
+            'phase_label': 'Starting',
+            'percent': 0,
+            'started_at': get_manila_time().isoformat(),
+            'started_by': username,
+            'message': 'Building the backup. You can leave this page and come back.',
+            'preflight': preflight,
+        })
+        save_backup_job_state(fresh)
+
+    sweep_backup_artifacts(job_id)
+    threading.Thread(
+        target=run_system_backup_job, args=(job_id, username), daemon=True
+    ).start()
+    return jsonify({'status': 'success', 'job_id': job_id, 'message': 'Backup started.'}), 202
+
+
+@app.route('/admin/backup/cancel', methods=['POST'])
+@login_required
+def admin_backup_cancel():
+    if not is_superadmin_user():
+        return denied('Only superadmins can cancel system backups.')
+    state = reconcile_backup_job_state()
+    if not backup_job_is_running(state):
+        return jsonify({'status': 'error', 'message': 'No backup is currently building.'}), 409
+    update_backup_job_state(cancel_requested=True, message='Cancelling...')
+    return jsonify({'status': 'success', 'message': 'Cancelling the backup.'})
+
+
+@app.route('/admin/backup/delete', methods=['POST'])
+@login_required
+def admin_backup_delete():
+    if not is_superadmin_user():
+        return denied('Only superadmins can delete system backups.')
+    state = reconcile_backup_job_state()
+    if backup_job_is_running(state):
+        return jsonify({
+            'status': 'error',
+            'message': 'A backup is being built right now. Cancel it before deleting the stored archive.',
+        }), 409
+
+    archive = current_backup_archive()
+    if not archive:
+        return jsonify({'status': 'error', 'message': 'There is no stored backup to delete.'}), 404
+    try:
+        os.remove(archive['path'])
+    except OSError as delete_error:
+        return jsonify({'status': 'error', 'message': f'Could not delete the archive: {clean_str(delete_error)}'}), 500
+
+    update_backup_job_state(archive={}, message='The stored backup was deleted.')
+    record_storage_activity(f"Deleted stored system backup: {archive['filename']}")
+    return jsonify({'status': 'success', 'message': 'The stored backup was deleted.'})
+
+
+@app.route('/admin/download-backup')
+@login_required
+def download_system_backup():
+    """Serve the already-built archive from disk. Superadmin only.
+
+    **The path and function name are deliberately unchanged.** The service worker
+    matches `/admin/download-` in NETWORK_ONLY_DOWNLOAD_PREFIXES ahead of its
+    navigate branch; a new URL would silently fall back into the runtime cache and
+    re-create the leak that fix exists to prevent.
+
+    **Why build-then-download, recorded here because this is where someone will
+    stand when they reconsider it.** Three approaches have now been tried:
+
+    1. *Build inside the request, buffer, then send.* Kept `Content-Length` (a real
+       progress bar) and the `X-Backup-*` completeness headers, but sent no bytes
+       for the whole build, so an idle proxy timeout closed the connection. It also
+       deleted the temp file on response close, which made Resume structurally
+       impossible -- the browser offered a button that could never work. **This is
+       what failed in production on 2026-08-09.**
+    2. *Stream the ZIP as it is built.* Fixes the timeout, but gives up
+       `Content-Length` and both completeness headers, because the status is
+       committed before any error is known. A failed download also restarts from
+       nothing.
+    3. *Build ahead of time, then serve a finished file* -- what this does. The
+       first byte leaves immediately because nothing is built here, AND the length
+       is known exactly, AND `send_file` serves Range requests off a stable file so
+       Resume genuinely resumes. gthread still matters: the build runs on a
+       background thread beside the request threads.
+
+    Note `send_file`'s `conditional=True` and `etag=True` DEFAULTS are what provide
+    Range/206/ETag. Do not pass them explicitly and do not disable them -- they are
+    the resume support.
+    """
+    if not is_superadmin_user():
+        return render_template('access_denied.html',
+                               denied_message='Only superadmins can download system backups.'), 403
+
+    reconcile_backup_job_state()
+    archive = current_backup_archive()
+    if not archive or not os.path.isfile(archive['path']):
+        return render_template('access_denied.html',
+                               denied_title='No backup is stored',
+                               denied_message='There is no backup archive on the server yet. Build one first.',
+                               denied_action_url=url_for('system_backup_page'),
+                               denied_action_label='Go to Backup Center'), 404
+
+    state = load_backup_job_state()
+    response = send_file(
+        archive['path'],
+        as_attachment=True,
+        download_name=archive['filename'],
+        mimetype='application/zip',
+        max_age=0,
+    )
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['X-Backup-Complete'] = 'true' if state.get('backup_complete') else 'false'
+    response.headers['X-Backup-Warning-Count'] = str(state.get('warning_count', 0) or 0)
+    response.headers['X-Backup-Sha256'] = (state.get('archive') or {}).get('sha256', '')
+
+    # Log the start of a download, not every range request, or a resumed download
+    # would spam the audit trail with one line per chunk.
+    if not request.headers.get('Range') or request.headers.get('Range', '').strip() in ('bytes=0-',):
+        try:
+            db.session.add(ActivityLog(
+                user=(getattr(current_user, 'username', '') or 'Superadmin').capitalize(),
+                action=f"Downloaded system backup: {archive['filename']}",
+            ))
+            db.session.commit()
+        except Exception as log_error:
+            db.session.rollback()
+            print(f"[BACKUP] Activity log skipped: {log_error}", flush=True)
+
+    return response
 
 
 
