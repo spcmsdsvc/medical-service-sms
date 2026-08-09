@@ -57,12 +57,12 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Every LPR page says which page it is, and how many there are
 
-**Status:** `In progress`
+**Status:** `Executed - 29b2b9e`
 **Approved:** 2026-08-08
 **Detailed:** 2026-08-08, after probing `forms/LPR FORM.pdf` geometry directly to confirm the marker
 strip is free on page one and clear of the enlarged signatures.
 
-**Nothing has been built. Do not start without a separate go-ahead from the project owner.**
+**Executed in `29b2b9e` after the project owner gave the separate go-ahead.**
 
 ### Context
 

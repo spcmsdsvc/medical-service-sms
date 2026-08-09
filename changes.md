@@ -8,6 +8,7 @@ codex changes - 2026-08-09
 - Added the 2026-08-09 LPR page-numbering What's New release metadata in `static/changelog/releases.json`.
 - Full regression verification passed with 580 tests and 1 pre-existing skipped test; `git diff --check`, Python compilation, rendered PDF checks, and release-manifest validation also passed.
 - No historical LPR PDFs were regenerated, no database migration was added, and no service-worker bump was needed because this is server-side PDF rendering.
+- Committed as `29b2b9e`; `scheduler.db`, `output/`, `tmp/`, and the existing handoff artifact were not staged or included.
 
 claude changes - 2026-08-08 (backup concurrency, offline API status, shell tap targets)
 
