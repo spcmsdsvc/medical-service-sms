@@ -51893,7 +51893,22 @@ def lpr_signature_overlay_page(header, template_reader, PdfReader):
         return None
 
 
-def lpr_continuation_marker_page(item_start, item_end, page_number, PdfReader):
+def lpr_page_marker_text(lpr_no, item_start, item_end, page_number, page_total):
+    """Return a page marker that fits the clear strip above the official item table."""
+    from reportlab.pdfbase import pdfmetrics
+
+    lpr_no = str(lpr_no or 'LPR')
+    marker = f'{lpr_no} - ITEMS {item_start}-{item_end} - PAGE {page_number} OF {page_total}'
+    if 36 + pdfmetrics.stringWidth(marker, 'Helvetica-Bold', 8) >= 401:
+        marker = f'{lpr_no} - PAGE {page_number} OF {page_total}'
+    marker_width = pdfmetrics.stringWidth(marker, 'Helvetica-Bold', 8)
+    if 36 + marker_width >= 401:
+        raise ValueError('LPR page marker is too long for the official template.')
+    assert 36 + marker_width < 401
+    return marker
+
+
+def lpr_page_marker_page(lpr_no, item_start, item_end, page_number, page_total, PdfReader):
     """Return a small vector marker overlay placed above the official item table."""
     try:
         from reportlab.pdfgen import canvas
@@ -51905,12 +51920,12 @@ def lpr_continuation_marker_page(item_start, item_end, page_number, PdfReader):
         canvas_obj.setFont('Helvetica-Bold', 8)
         canvas_obj.drawString(
             36, 274,
-            f'CONTINUATION - ITEMS {item_start}-{item_end} - PAGE {page_number}'
+            lpr_page_marker_text(lpr_no, item_start, item_end, page_number, page_total)
         )
         canvas_obj.save()
         return PdfReader(io.BytesIO(overlay.getvalue())).pages[0]
     except Exception as marker_error:
-        raise RuntimeError(f'Unable to generate LPR continuation marker: {marker_error}') from marker_error
+        raise RuntimeError(f'Unable to generate LPR page marker: {marker_error}') from marker_error
 
 
 def lpr_fill_pdf_bytes(header, approved_by_user=None):
@@ -51927,6 +51942,8 @@ def lpr_fill_pdf_bytes(header, approved_by_user=None):
     writer.clone_document_from_reader(reader)
     values = lpr_form_common_values(header)
     items = sorted(header.items or [], key=lambda row: (row.row_index, row.id))
+    page_total = max(1, (len(items) + 7) // 8)
+    marker_lpr_no = header.lpr_no or f'LPR-{header.id}'
     first_page_values = dict(values)
     first_page_values.update(lpr_form_item_values(items[:8]))
     writer.update_page_form_field_values(
@@ -51935,6 +51952,10 @@ def lpr_fill_pdf_bytes(header, approved_by_user=None):
     first_signature_overlay = lpr_signature_overlay_page(header, reader, PdfReader)
     if first_signature_overlay is not None:
         writer.pages[0].merge_page(first_signature_overlay)
+    first_item_end = min(8, len(items)) if items else 0
+    writer.pages[0].merge_page(lpr_page_marker_page(
+        marker_lpr_no, 1 if items else 0, first_item_end, 1, page_total, PdfReader
+    ))
 
     for start in range(8, len(items), 8):
         chunk = items[start:start + 8]
@@ -51954,8 +51975,8 @@ def lpr_fill_pdf_bytes(header, approved_by_user=None):
         )
         if continuation_signature_overlay is not None:
             continuation_page.merge_page(continuation_signature_overlay)
-        continuation_page.merge_page(lpr_continuation_marker_page(
-            start + 1, start + len(chunk), (start // 8) + 1, PdfReader
+        continuation_page.merge_page(lpr_page_marker_page(
+            marker_lpr_no, start + 1, start + len(chunk), (start // 8) + 1, page_total, PdfReader
         ))
         writer.add_page(continuation_page)
     output = io.BytesIO()

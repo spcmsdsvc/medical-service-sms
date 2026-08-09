@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Every LPR page says which page it is, and how many there are
 
-**Status:** `Approved — awaiting go-ahead`
+**Status:** `In progress`
 **Approved:** 2026-08-08
 **Detailed:** 2026-08-08, after probing `forms/LPR FORM.pdf` geometry directly to confirm the marker
 strip is free on page one and clear of the enlarged signatures.
@@ -179,7 +179,7 @@ silently matches nothing and reads exactly like a vacuous test.
 2-page and a 3-page LPR against a throwaway database with a seeded signature, and confirm on the
 **rendered** pages that the marker is legible, does not touch the form title above or the `LPR No.`
 label below, does not run into the right-hand box, and does not collide with the enlarged
-signatures. Then the full suite (currently 579) and `git diff --check`.
+signatures. Then the full suite (580 tests, 1 pre-existing skipped test) and `git diff --check`.
 
 ### After implementation
 

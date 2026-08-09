@@ -1,5 +1,14 @@
 # Project Change Log
 
+codex changes - 2026-08-09
+- Updated `lpr_fill_pdf_bytes()` so every newly generated official LPR page carries the LPR number, item range, and `PAGE X OF Y` marker, including single-page LPRs.
+- Replaced the continuation-only marker helper with a shared vector page-marker helper that computes the total before rendering and keeps the marker inside the official template's clear header strip.
+- Added a width guard that removes the item-range segment for unusually long LPR numbers before the marker can overlap the template's right-hand box; standard identifiers retain the full marker.
+- Updated `tests/test_lpr_workflow.py` for 1, 8, 9, 16, and 17 item page boundaries, marker text, page totals, official geometry, and the long-number fallback.
+- Added the 2026-08-09 LPR page-numbering What's New release metadata in `static/changelog/releases.json`.
+- Full regression verification passed with 580 tests and 1 pre-existing skipped test; `git diff --check`, Python compilation, rendered PDF checks, and release-manifest validation also passed.
+- No historical LPR PDFs were regenerated, no database migration was added, and no service-worker bump was needed because this is server-side PDF rendering.
+
 claude changes - 2026-08-08 (backup concurrency, offline API status, shell tap targets)
 
 ## Fixed: a backup froze the app for everyone, and could have its worker killed

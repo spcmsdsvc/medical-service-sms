@@ -1710,6 +1710,25 @@
           "sort_order": 160
         }
       ]
+    },
+    {
+      "release_key": "2026-08-09",
+      "release_date": "2026-08-09",
+      "title": "LPR Pages Stay Together",
+      "summary": "Every LPR page now identifies its request, item range, and position in the complete requisition.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-09-lpr-page-numbering",
+          "category": "LPR",
+          "description": "Generated LPR pages now carry the LPR number, item range, and a PAGE X OF Y marker so detached pages can be recognised as part of one requisition.",
+          "audiences": [
+            "engineers",
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
     }
   ]
 }

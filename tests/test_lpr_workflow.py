@@ -79,6 +79,9 @@ class LPRWorkflowTests(unittest.TestCase):
         self.assertIn("{% if lpr_enabled %}", (ROOT / 'templates' / 'approvals.html').read_text(encoding='utf-8'))
 
     def test_lpr_pdf_uses_official_template_for_every_eight_item_page(self):
+        """Official-template coverage now includes the all-page marker, replacing the old
+        continuation-only marker assertion without changing the item/page checks.
+        """
         if app_module is None or PdfReader is None:
             self.skipTest(f'app dependencies unavailable: {APP_IMPORT_ERROR}')
 
@@ -128,39 +131,54 @@ class LPRWorkflowTests(unittest.TestCase):
                     self.assertEqual(fields['ITEM  DESCRIPTION']['/V'], 'Item 1')
                     self.assertEqual(fields['ITEM  DESCRIPTION-6']['/V'], 'Item 8' if item_count >= 8 else '')
 
-                    if item_count <= 8:
-                        self.assertNotIn('CONTINUATION - ITEMS', '\n'.join(
-                            page.extract_text() or '' for page in reader.pages
-                        ))
-                    else:
-                        for page_number, start in enumerate(range(8, item_count, 8), start=2):
-                            chunk = list(range(start + 1, min(start + 8, item_count) + 1))
-                            page_text = reader.pages[page_number - 1].extract_text() or ''
-                            self.assertIn(
-                                f'CONTINUATION - ITEMS {chunk[0]}-{chunk[-1]} - PAGE {page_number}',
-                                page_text,
-                            )
-                            for item_number in chunk:
-                                self.assertIn(f'Item {item_number}', page_text)
-                            if chunk[-1] < item_count:
-                                self.assertNotIn(f'Item {chunk[-1] + 1}', page_text)
+                    for page_number, start in enumerate(range(0, item_count, 8), start=1):
+                        chunk = list(range(start + 1, min(start + 8, item_count) + 1))
+                        page_text = reader.pages[page_number - 1].extract_text() or ''
+                        self.assertIn(
+                            f'{header.lpr_no} - ITEMS {chunk[0]}-{chunk[-1]} '
+                            f'- PAGE {page_number} OF {expected_pages}',
+                            page_text,
+                        )
+                        self.assertNotIn('CONTINUATION - ITEMS', page_text)
+                        if page_number == 1:
+                            continue
 
-                            self.assertIn('BC01', page_text)
-                            self.assertIn('CC04', page_text)
-                            self.assertIn('QA fixture', page_text)
-                            self.assertIn('Demo unit', page_text)
+                        for item_number in chunk:
+                            self.assertIn(f'Item {item_number}', page_text)
+                        if chunk[-1] < item_count:
+                            self.assertNotIn(f'Item {chunk[-1] + 1}', page_text)
 
+                        self.assertIn('BC01', page_text)
+                        self.assertIn('CC04', page_text)
+                        self.assertIn('QA fixture', page_text)
+                        self.assertIn('Demo unit', page_text)
+
+                        if page_number > 1:
                             # Continuation fields are painted into page content and have no
                             # widgets left, so duplicate official names cannot bleed into page
                             # one or be edited by a PDF viewer.
                             self.assertFalse(reader.pages[page_number - 1].get('/Annots'))
 
-                        full_text = '\n'.join(page.extract_text() or '' for page in reader.pages)
-                        self.assertNotIn('LOCAL PURCHASE REQUISITION - CONTINUED', full_text)
-                        self.assertNotIn('Continuation total:', full_text)
+                    full_text = '\n'.join(page.extract_text() or '' for page in reader.pages)
+                    self.assertNotIn('LOCAL PURCHASE REQUISITION - CONTINUED', full_text)
+                    self.assertNotIn('Continuation total:', full_text)
                     app_module.db.session.rollback()
             finally:
                 app_module.db.session.rollback()
+
+    def test_lpr_page_marker_drops_item_range_when_needed_for_width(self):
+        """A long request number keeps the page total visible without entering the right box."""
+        if app_module is None:
+            self.skipTest(f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+
+        from reportlab.pdfbase import pdfmetrics
+
+        marker = app_module.lpr_page_marker_text(
+            'LPR-' + ('9' * 60), 1, 8, 1, 2
+        )
+        self.assertNotIn('ITEMS', marker)
+        self.assertIn('PAGE 1 OF 2', marker)
+        self.assertLess(36 + pdfmetrics.stringWidth(marker, 'Helvetica-Bold', 8), 401)
 
     def test_lpr_validation_requires_positive_item_and_php_only(self):
         if app_module is None:
