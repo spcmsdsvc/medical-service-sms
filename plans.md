@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Every LPR page says which page it is, and how many there are
 
-**Status:** `Executed — 29b2b9e`, reviewed in `<review commit>`
+**Status:** `Executed — 29b2b9e`, reviewed in `ca4cacb`
 **Approved:** 2026-08-08
 **Detailed:** 2026-08-08, after probing `forms/LPR FORM.pdf` geometry directly to confirm the marker
 strip is free on page one and clear of the enlarged signatures.
