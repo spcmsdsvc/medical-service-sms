@@ -1,5 +1,69 @@
 # Project Change Log
 
+claude changes - 2026-08-09 (review of `29b2b9e`)
+
+## Reviewed the LPR page marker against the recorded plan
+
+**The implementation is sound and nothing was reverted.** Verified by re-running rather than by
+reading the journal: the suite really is 580/1-skip, and 1-, 2- and 3-page LPRs were rendered and
+**measured**. The marker lands on every page including page one, the totals are right
+(`1 OF 1`, `1 OF 2`/`2 OF 2`, `1 OF 3`…), it clears the template's right-hand box by 197 pt, sits
+4.3 pt below the form title, and overlaps no text.
+
+**The signature question that started this whole thread is closed by measurement:** with real
+signature bitmaps seeded, the marker clears the stamps by **214.6 pt**. Worth recording *how* that
+was nearly missed — the first render had **no signature seeded at all**, so its "no image overlap"
+result was vacuous and read exactly like a pass. The plan called for a seeded signature for this
+reason; the re-run is what makes the result mean anything.
+
+## Correcting the record: every existing LPR now shows the marker
+
+`29b2b9e`'s journal says *"No historical LPR PDFs were regenerated"*. That is **technically true and
+practically misleading**, and the plan carried the same blind spot, so this correction is as much
+about the plan as the implementation.
+
+**No LPR PDF is stored anywhere.** All eight call sites — preview, download, the approval package,
+the reimbursement package and the procurement email — call `lpr_fill_pdf_bytes()` on demand. There
+were no historical files to regenerate, which is why the sentence is accurate; the *effect* is that
+**an LPR approved last month and re-downloaded today now carries the marker** and no longer matches
+the copy filed at the time. Already-sent procurement emails hold frozen attachments and are
+unaffected.
+
+Left as-is deliberately: the change is additive, the content is identical, and applying the
+page-count protection to older requisitions is arguably the better outcome. **Recorded rather than
+fixed**, so nobody concludes from the old wording that historical documents render unchanged.
+
+## Fixed: three small things the review found
+
+* **A long LPR number could stop the whole document being produced.** `lpr_page_marker_text()` ended
+  in `raise ValueError`, and it is called inside `lpr_page_marker_page()`'s try block — so the
+  exception became a `RuntimeError` and **no LPR was generated at all**. A cosmetic header must never
+  be able to refuse an official document. It now degrades in priority order instead: item range
+  first, then the request number truncated with an ellipsis, so **`PAGE n OF N` always survives** —
+  it is the reason the marker exists. Confirmed at 70, 80, 90 and 200-character numbers, which
+  previously raised and now render inside the box.
+  **Not reachable today** — `lpr_no` is server-generated as `LPR-YYYYMMDD-NN` — but the column is
+  `String(80)` and the failure direction was wrong.
+* **`ITEMS 0-0` on an itemless draft**, which reads as a fault rather than an empty requisition. The
+  range is now omitted when there is nothing to describe: `LPR-20260809-01 - PAGE 1 OF 1`. Same
+  guard as above, so both fixes are one branch rather than two special cases.
+* **Removed dead code** — an `assert` sitting immediately after a `raise` for the identical
+  condition, therefore unreachable, and stripped entirely under `python -O`.
+* The magic numbers `36` and `401` became `LPR_PAGE_MARKER_LEFT` / `LPR_PAGE_MARKER_RIGHT_LIMIT`
+  with the measurement that produced them recorded beside them.
+
+## Tests
+
+* Three additions to `tests/test_lpr_workflow.py`: the marker never raises and never loses its page
+  total across six request-number lengths, an empty item range is omitted, and — the **positive
+  control the existing width test lacked** — a normal request number still *keeps* its item range.
+  Without that control, a marker that always dropped the range would have passed.
+* **Three injections, all RED for the expected reason**, `app.py` restored byte-identically. The
+  most useful inverted the control: dropping the item range when it fits fails both the new control
+  and the main page-marker test.
+* Suite green at **582** (580 + 2 net; one existing test gained the control assertion).
+* No service worker bump — server-side PDF generation, and `/lpr` is not an `APP_SHELL` entry.
+
 codex changes - 2026-08-09
 - Updated `lpr_fill_pdf_bytes()` so every newly generated official LPR page carries the LPR number, item range, and `PAGE X OF Y` marker, including single-page LPRs.
 - Replaced the continuation-only marker helper with a shared vector page-marker helper that computes the total before rendering and keeps the marker inside the official template's clear header strip.

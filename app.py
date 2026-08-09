@@ -51893,19 +51893,55 @@ def lpr_signature_overlay_page(header, template_reader, PdfReader):
         return None
 
 
+# Geometry of the clear strip above the official item table, measured against
+# forms/LPR FORM.pdf: the marker is drawn from x=36, and x=401 is the left edge of
+# the template's Branch/Class/Dept/Product box, which it must never reach.
+LPR_PAGE_MARKER_LEFT = 36
+LPR_PAGE_MARKER_RIGHT_LIMIT = 401
+LPR_PAGE_MARKER_FONT = 'Helvetica-Bold'
+LPR_PAGE_MARKER_FONT_SIZE = 8
+
+
 def lpr_page_marker_text(lpr_no, item_start, item_end, page_number, page_total):
-    """Return a page marker that fits the clear strip above the official item table."""
+    """Return a page marker guaranteed to fit the strip above the official item table.
+
+    Degrades in priority order rather than failing. `PAGE n OF N` is the reason this
+    marker exists -- it is what makes a page detached from a signed multi-page
+    requisition recognisable as a fragment -- so the item range is dropped first and
+    the request number is truncated second.
+
+    **This must never raise.** It is called from inside the PDF generator's try block,
+    so an exception here becomes a RuntimeError that produces no LPR at all: a
+    cosmetic header would then be able to stop an official document being issued.
+    An abbreviated marker is a far better outcome than no document.
+    """
     from reportlab.pdfbase import pdfmetrics
 
+    def right_edge(text):
+        return LPR_PAGE_MARKER_LEFT + pdfmetrics.stringWidth(
+            text, LPR_PAGE_MARKER_FONT, LPR_PAGE_MARKER_FONT_SIZE
+        )
+
     lpr_no = str(lpr_no or 'LPR')
-    marker = f'{lpr_no} - ITEMS {item_start}-{item_end} - PAGE {page_number} OF {page_total}'
-    if 36 + pdfmetrics.stringWidth(marker, 'Helvetica-Bold', 8) >= 401:
-        marker = f'{lpr_no} - PAGE {page_number} OF {page_total}'
-    marker_width = pdfmetrics.stringWidth(marker, 'Helvetica-Bold', 8)
-    if 36 + marker_width >= 401:
-        raise ValueError('LPR page marker is too long for the official template.')
-    assert 36 + marker_width < 401
-    return marker
+    suffix = f' - PAGE {page_number} OF {page_total}'
+
+    # A draft with no items has no meaningful range, and "ITEMS 0-0" reads as a
+    # fault rather than as an empty requisition.
+    if item_start and item_end:
+        full = f'{lpr_no} - ITEMS {item_start}-{item_end}{suffix}'
+        if right_edge(full) < LPR_PAGE_MARKER_RIGHT_LIMIT:
+            return full
+
+    without_items = f'{lpr_no}{suffix}'
+    if right_edge(without_items) < LPR_PAGE_MARKER_RIGHT_LIMIT:
+        return without_items
+
+    # Only an abnormally long request number reaches here. Trim the number, never
+    # the page total.
+    trimmed = lpr_no
+    while trimmed and right_edge(f'{trimmed}...{suffix}') >= LPR_PAGE_MARKER_RIGHT_LIMIT:
+        trimmed = trimmed[:-1]
+    return f'{trimmed}...{suffix}'
 
 
 def lpr_page_marker_page(lpr_no, item_start, item_end, page_number, page_total, PdfReader):

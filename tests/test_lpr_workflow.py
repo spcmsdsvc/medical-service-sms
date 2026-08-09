@@ -180,6 +180,46 @@ class LPRWorkflowTests(unittest.TestCase):
         self.assertIn('PAGE 1 OF 2', marker)
         self.assertLess(36 + pdfmetrics.stringWidth(marker, 'Helvetica-Bold', 8), 401)
 
+        # Positive control: a normal request number must KEEP the item range, or
+        # the assertion above would also pass on a marker that always drops it.
+        normal = app_module.lpr_page_marker_text('LPR-20260809-01', 1, 8, 1, 2)
+        self.assertIn('ITEMS 1-8', normal)
+
+    def test_lpr_page_marker_never_raises_and_never_loses_the_page_total(self):
+        """A cosmetic marker must never be able to stop an LPR being produced.
+
+        The marker is built inside the PDF generator's try block, so raising here
+        becomes a RuntimeError and no document is generated at all. Degrading the
+        marker is always better than refusing the requisition.
+        """
+        if app_module is None:
+            self.skipTest(f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+
+        from reportlab.pdfbase import pdfmetrics
+
+        for number_length in (15, 40, 60, 70, 90, 200):
+            with self.subTest(lpr_no_length=number_length):
+                marker = app_module.lpr_page_marker_text(
+                    'LPR-' + ('9' * number_length), 3, 10, 2, 4
+                )
+                # The page total is the load-bearing part and survives every tier.
+                self.assertIn('PAGE 2 OF 4', marker)
+                self.assertLess(
+                    36 + pdfmetrics.stringWidth(marker, 'Helvetica-Bold', 8), 401,
+                    'marker entered the template right-hand box',
+                )
+
+    def test_lpr_page_marker_omits_an_empty_item_range(self):
+        """An itemless draft previously rendered "ITEMS 0-0", which reads as a fault."""
+        if app_module is None:
+            self.skipTest(f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+
+        marker = app_module.lpr_page_marker_text('LPR-20260809-01', 0, 0, 1, 1)
+        self.assertNotIn('ITEMS', marker)
+        self.assertNotIn('0-0', marker)
+        self.assertIn('LPR-20260809-01', marker)
+        self.assertIn('PAGE 1 OF 1', marker)
+
     def test_lpr_validation_requires_positive_item_and_php_only(self):
         if app_module is None:
             self.skipTest(f'app dependencies unavailable: {APP_IMPORT_ERROR}')

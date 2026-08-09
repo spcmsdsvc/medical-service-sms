@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Every LPR page says which page it is, and how many there are
 
-**Status:** `Executed - 29b2b9e`
+**Status:** `Executed — 29b2b9e`, reviewed in `<review commit>`
 **Approved:** 2026-08-08
 **Detailed:** 2026-08-08, after probing `forms/LPR FORM.pdf` geometry directly to confirm the marker
 strip is free on page one and clear of the enlarged signatures.
@@ -88,7 +88,7 @@ it, and it is why the total matters more than the page number.
 | Format | **`LPR-<no> - ITEMS <a>-<b> - PAGE <n> OF <N>`** |
 | The total | **Required.** `PAGE 2` says where you are; `PAGE 2 OF 3` says whether one is missing |
 | Single-page LPRs | **`PAGE 1 OF 1`** — the owner took the recommendation |
-| Historical PDFs | **Not regenerated.** New renders only |
+| Historical PDFs | **Not regenerated.** New renders only — **this line was wrong, see the correction below** |
 
 **The single-page decision was the one real trade and is recorded so it is not silently reversed.**
 It changes the appearance of the *most common* LPR, which today carries no marker at all. It was
@@ -151,6 +151,13 @@ Verified by probing the template with PyMuPDF, not by reading the generator.
 ### Deliberately excluded
 
 - **Regenerating historical or already-submitted LPR PDFs.** They are records of what was issued.
+  **Corrected after implementation: this exclusion was meaningless as written.** No LPR PDF is
+  stored anywhere — all eight call sites build it on demand — so there was nothing to regenerate,
+  and the practical effect is that **every existing LPR now carries the marker when re-downloaded**.
+  Already-sent procurement emails hold frozen attachments and are unaffected. Left as-is on review:
+  the change is additive and applying the page-count protection to older requisitions is arguably
+  better. **The lesson for the next plan: check whether an artifact is stored or regenerated before
+  writing an exclusion that assumes it is stored.**
 - **Any change to the signature scheme itself.** The owner chose page numbering *instead of* removing
   the repeated signatures; this plan does not quietly do both.
 - **Changing the marker's position, font or colour**, which are proven on continuation pages.
