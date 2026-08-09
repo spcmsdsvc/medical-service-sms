@@ -7,13 +7,36 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last updated: 2026-08-08, at the owner's request.
+Last updated: 2026-08-09, at the owner's request, after an owner verification pass closed six items
+and opened one.
 
-**Start here if you are picking this up cold.** Suite green at **579**, service worker at
-**`v83-offline-api-status`**, nothing uncommitted but the four known artifacts. **There is no open
-defect.** Section 1 is empty for the first time in this file's history; what is left is queued work,
-two owner decisions, and a verification backlog whose largest item is still "nobody has opened this
-in Edge".
+**Start here if you are picking this up cold.** Suite green at **582**, service worker at
+**`v83-offline-api-status`**, nothing uncommitted but the four known artifacts.
+
+**One open defect: the System Backup download fails in production.** It is section 1 and it is the
+first thing to read — it is the only thing here that is actually broken, it was reported by the
+owner rather than found by us, and **it meets the exact trigger condition recorded for reversing the
+"do not stream the backup" decision in section 5.**
+
+## The 2026-08-09 owner verification pass
+
+The owner drove the app directly and reported back. **Six items closed, one bug opened.** This is
+the single most productive entry in this file's history, and all of it came from using the app
+rather than reading it.
+
+| Item | Outcome |
+| --- | --- |
+| LPR printing | **Pass.** Printed on paper — *"LPR printing is good"*. Closes the page-marker and signature-stamp print items |
+| Sidebar on mobile | **Pass.** *"looks good now"* — the wrapped header reads correctly on a real phone |
+| TSR draft round trip | **Pass.** Draft survives; *"it does not disappear"*. This was the one test that proved the feature does its job |
+| Analytics charts on resize | **Pass.** *"charts are good even when dragging the window"* — closes the `ResizeObserver` trigger that was structurally unverifiable from here |
+| Brave | **Covered.** The owner uses Brave daily, so it is verified by real use rather than by a pass |
+| Analytics print view | **FAIL.** *"print preview looks bad. we should add a proper print button"* — now queued work, section 2 |
+| System Backup download | **FAIL.** *"the download keeps failing even when clicking resume"* — now bug 2a, section 1 |
+
+**The browser blind spot has shrunk but not closed.** Brave is the owner's daily browser, so
+everything shipped has in fact been used there. **Edge remains unverified**, and Edge is where the
+session-loss report came from, so it is not an idle gap.
 
 ## The 2026-08-08 session
 
@@ -182,7 +205,7 @@ reviews that followed.
 | `45da21c` `a762b05` `d562654` (`v73`-`v75`) | Analytics upgrade: trends, themed SVG charts, P.O. reporting (Codex) |
 | `34f60b9` (`v76`) | **Review fix** — P.O. panel invisible to reports admins; a trend arrow on a metric that cannot carry one |
 
-Suite green at **579 tests** as of 2026-08-08. Service worker cache at **`v83-offline-api-status`** —
+Suite green at **582 tests** as of 2026-08-09. Service worker cache at **`v83-offline-api-status`** —
 **read the live value out of `app.py` immediately before committing**, never from a note. This line
 has now gone stale three times.
 
@@ -238,9 +261,54 @@ session recorded.
 
 ## 1. Open bugs
 
-**None.** For the first time since this file was created there is no open defect. Everything below
-this line is a fixed entry kept for its mechanism — each one is a worked example of a class this
-project keeps meeting, which is why they are struck through rather than deleted.
+### 2a. The System Backup download fails in production — OPEN, reported 2026-08-09
+
+**Reported by the owner, in production, on Brave:** the download starts and then fails, and
+**pressing Resume does not recover it**. The browser shows *"Check internet connection"* against
+`medical_service_backup_20260809_140711.zip`.
+
+**One half is already certain from the code, without any further diagnosis: Resume can never work.**
+`download_system_backup()` builds the archive into a `NamedTemporaryFile` and registers
+`@response.call_on_close` to `os.remove()` it. The moment the response closes — including when it
+fails — **the file the browser would resume from is gone**. Retrying the URL does not resume
+anything either; it builds a brand-new archive with a new timestamp and different bytes. So "click
+Resume" is not a workaround and never was, and the browser offering the button is misleading.
+
+**The likely cause of the primary failure, stated as a hypothesis and not yet proven:** the archive
+is still **built completely before a single byte is sent**. Nothing reaches the browser during the
+build, so any idle timeout between the client and the app — Railway's edge proxy being the obvious
+candidate — closes a connection that looks dead. That reads to the browser exactly as a dropped
+connection, which is the message shown. Production is also much larger than the 39 MB / 3.6 s
+measured locally: it has real uploads and a bucket read carrying a 12-second budget of its own.
+
+**This is the trigger for reversing a decision recorded in section 5, and that should be done
+deliberately rather than quietly.** On 2026-08-08 streaming the ZIP was rejected on measurement,
+with the recorded condition *"revisit only if the archive grows enough for the build itself to
+approach the timeout"*. **That condition has now been met by a real report.** Streaming sends bytes
+immediately, so no idle timeout can bite. The costs are unchanged and must be accepted with open
+eyes: **no `Content-Length`** (so no progress bar), and **no `X-Backup-Complete` /
+`X-Backup-Warning-Count`** headers, because the status is committed before any error is known. The
+prototype already exists and was proven valid — see section 5.
+
+**Do not build anything before getting the real error.** `f08068f` removed the offline page that was
+masking it, so the true failure is now visible and nobody has looked at it yet. What to collect:
+
+- **Does the request reach the app at all?** Railway logs for `/admin/download-backup` — a gunicorn
+  worker timeout, a memory kill and a proxy timeout look completely different there.
+- **Is the gthread Procfile change actually deployed?** `d28483d` landed 2026-08-08; if Railway has
+  not redeployed, the failure is still being produced by the old single sync worker.
+- **How long does it survive, and how big does it get?** A failure at a consistent number of seconds
+  points at a timeout; a consistent number of megabytes points at something else entirely.
+- **The response headers**, if any arrive — `X-Backup-Complete` tells you the build finished.
+
+**Fixing the Resume half is worth doing regardless of the cause**, because it is a certain defect
+rather than a hypothesis: either keep the archive long enough to serve a range request, or make the
+response explicitly non-resumable so the browser stops offering a button that cannot work.
+
+### The rest of section 1 is closed
+
+Everything below this line is a fixed entry kept for its mechanism — each one is a worked example of
+a class this project keeps meeting, which is why they are struck through rather than deleted.
 
 ### ~~1z. TSR draft backup silently does nothing for five account shapes~~ — FIXED, `2e3c2d1`
 
@@ -446,6 +514,42 @@ are all fixed and pushed.
 
 ## 2. Queued work
 
+### Analytics needs a real print button, and a print layout worth printing — raised 2026-08-09
+
+**The owner previewed it and it failed:** *"print preview looks bad. we should add a proper print
+button."* This closes the "never print-previewed" row that sat in section 3 for two sessions — it
+has now been previewed, and the answer is that the print block does not do its job.
+
+**What the owner's preview actually showed**, from the screenshot, because these are the specific
+faults to fix rather than "make it nicer":
+
+- **Six sheets of paper** for a page that is mostly four numbers and two tables.
+- **Each KPI is a full-width box with a huge empty right-hand side**, so Total / Active / Open /
+  Completed consume most of page 1 on their own. They want to be a compact row or a small grid.
+- **The browser's own headers and footers are printing** — the date and time, `MEDICAL SERVICE -
+  Management System`, the full `https://web-production-…/analytics_page` URL and `1/6`. Those are
+  the browser's default margins boxes, not ours, which is a large part of why it looks unfinished.
+- The chart data tables print correctly, which is the part that already worked — `@media print`
+  hides each SVG and reveals its `.analytics-chart-table`. **Keep that.** The defect is layout and
+  density, not the table substitution.
+
+**Two separate pieces of work, and they are worth not conflating:**
+
+1. **A real Print button on the page**, so printing is a deliberate action rather than Ctrl+P. It can
+   set up the view before calling `window.print()`.
+2. **A print stylesheet that produces a report**, not a screenshot of a dashboard: KPIs on one row,
+   page-break control so a chart's table is not split mid-way, and the scope line (date range,
+   branch, counts) printed once at the top where a reader needs it.
+
+**The browser header/footer cannot be removed by CSS.** No stylesheet can suppress them — that is a
+browser print setting the user controls. What a page *can* do is stop competing with them: set a
+sensible `@page` margin so the content does not collide, and put the report's own title, date range
+and scope at the top of the first page so the browser's version is redundant rather than the only
+label. Do not promise the owner that the URL and page numbers will disappear; they will not unless
+they untick "Headers and footers" in the print dialog.
+
+Cheap, self-contained, and entirely verifiable from a print preview.
+
 ### ~~System backup: streaming and worker count~~ — WORKER COUNT FIXED, STREAMING DECIDED AGAINST, `d28483d`
 
 **The blocking half is fixed.** `Procfile` is now
@@ -502,7 +606,32 @@ stays green while every user silently lands on the dashboard again.
 **This does not fix the Edge session loss**, which is the item above and is still almost certainly
 browser-side. It only means that when a user *does* get bounced, signing in returns them.
 
-### LPR continuation pages now carry a signature on every page — confirm this is wanted
+### ~~LPR continuation pages now carry a signature on every page~~ — ANSWERED and SHIPPED, `29b2b9e` / `ca4cacb`
+
+**The owner's answer was not "remove the signatures" but "make the pages belong together":** *"we can
+add a page number with the lpr number so that each page won't come off as an individual page."*
+Every page now carries `LPR-<no> - ITEMS <a>-<b> - PAGE <n> OF <N>`, including page one, which
+previously had no marker at all.
+
+**The total is the part that does the work.** `PAGE 2` says where you are; `PAGE 2 OF 3` says whether
+one is missing — which is the actual risk when every page is a complete signed form and any single
+sheet reads as a fully approved requisition. Single-page LPRs say `PAGE 1 OF 1` so the marker's
+absence never has to be interpreted.
+
+**Printed and confirmed by the owner on 2026-08-09: *"LPR printing is good."*** That also closes the
+"enlarged signatures on a real printed page" row that had been open in section 3 since `8d97b58`.
+
+**One consequence worth carrying, recorded in `plans.md` as a correction:** no LPR PDF is stored
+anywhere — all eight call sites build it on demand — so **every existing LPR now shows the marker
+when re-downloaded** and no longer matches the copy filed at the time. Already-sent procurement
+emails hold frozen attachments and are unaffected. Left deliberately, since the change is additive,
+but it may be worth telling whoever files them so a difference is not read as tampering.
+
+The original entry is kept below because its rendering measurements are still the reference for how
+continuation pages were verified.
+
+<details>
+<summary>Original entry, retained for its measurements</summary>
 
 `d5e6d60` rebuilt continuation pages on the official template. Verified by rendering a 20-item LPR:
 **3 pages, items 1-8 / 9-16 / 17-20, none missing, none duplicated**, and the AcroForm flattening
@@ -513,6 +642,8 @@ on all three. The old hand-drawn continuation pages carried none. It is defensib
 is now a complete official form with its own signature lines, but on a 3-page LPR the approver's
 signature appears three times, and that changes what leaves the building. **Ask the owner before
 treating it as settled.**
+
+</details>
 
 ### ~~P.O. reporting on the Analytics page~~ — BUILT in `45da21c`, reviewed in `34f60b9`
 
@@ -761,13 +892,17 @@ scroll for unreadable labels. And **SVG has no `text-overflow`**, so measuring m
 mandatory: an untruncated branch name draws over the bars. The full text stays in the row `<title>`
 and the hidden data table.
 
-**One thing in this fix is NOT verified, and it is the trigger rather than the geometry.** The
-debounced `ResizeObserver` redraw could not be observed: the Browser pane does not composite the
-page, `requestAnimationFrame` never runs in it, and a control `ResizeObserver` attached to the same
-node did not fire even the initial callback the spec guarantees — both are driven by the rendering
-steps. The measurement logic it calls is proven at three widths by re-rendering directly; that the
-observer fires is not. **Check it in a real browser** by dragging the window across the breakpoint:
-the charts should redraw once per settled width, and the page must not hang.
+**~~One thing in this fix is NOT verified~~ — CLOSED by the owner on 2026-08-09:** *"charts are good
+even when dragging the window."* The debounced `ResizeObserver` redraw could not be observed from
+here at all — the Browser pane does not composite the page, `requestAnimationFrame` never runs in
+it, and a control observer on the same node did not fire even the initial callback the spec
+guarantees, because both are driven by the rendering steps. The measurement logic was proven at
+three widths by re-rendering directly; only a real browser could ever prove the observer fires.
+
+**Worth keeping as a pattern:** this sat open for two sessions purely because the tooling here
+cannot run a browser's rendering loop. When something is *structurally* unverifiable rather than
+merely unchecked, say so plainly and hand it to whoever has a real browser — it will not resolve
+itself with more effort on this side.
 
 ### Verified on 2026-08-07 — five rows closed off this table
 
@@ -806,18 +941,25 @@ too.
 | Item | Applies to |
 | --- | --- |
 | **Reimbursement totals against real data** | `aff9001` changes which number appears on the PCV, RFP, Excel and ZIP. Verified against fixtures and a smoke case, not against a real reimbursement with attachments |
-| **Edge and Brave** | every dashboard phase, login redesign, sidebar, What's New, digest modal, P.O. Details, Analytics. **This is now the single largest unverified block in the file** — everything below the line has been driven in one browser only |
+| **Microsoft Edge** | every dashboard phase, login redesign, sidebar, What's New, digest modal, P.O. Details, Analytics. **Narrowed on 2026-08-09: Brave is closed**, because the owner uses it daily, so everything shipped has been used there. Edge is the remaining gap and is not idle — the session-loss report in section 2 came from Edge |
 | **Skip link visual reveal on real keyboard focus** | layout shell. Structurally unverifiable from here: the pane never advances transitions and its window is never focused, so `:focus` never matches |
-| **Offline schedule attachments from a real device camera** | the least-proven part of `709106c` — see below. **The largest genuine risk left in this file** |
+| **Offline schedule attachments from a real device camera** | the least-proven part of `709106c` — see below. **Now the largest genuine risk left in this file**, since the browser block has shrunk to Edge alone |
 | **The provisional-leave supersede notice, in a browser** | `b5dd637` names both leave types on the **approval** path, which the 2026-08-06 pass did not reach — see section 1b |
-| **The whole TSR draft round trip, on a real browser** | `f792d22` was reviewed by calling the endpoints and reading the client. The actual scenario it exists for — write a draft, delete the site's IndexedDB and localStorage, sign out, sign in, recover it — was **never driven**. That is the one test that proves the feature does its job, and it does not need Edge: deleting the storage by hand is what Edge was doing anyway |
-| **The enlarged signatures on a real printed page** | Every stamp was measured in the PDF and the two accepted overlaps quantified (4.4 pt and 4.5 pt into the row above), but nothing was **printed**. The Analytics print block is also still un-previewed |
-| **The backup download end to end from a browser** | `f08068f` was verified by generating the archive through the test client and measuring it. Nobody has clicked the button in a browser since the fix — which is precisely how the offline-page symptom stayed hidden. **`d28483d` raises the stakes slightly**: the process now runs gthread rather than a sync worker, and while no request handling changed, nothing has exercised a real backup under it |
 | **The new TSR draft 403 message, on screen** | `2e3c2d1` separates a permanent 403 from an expired 401 from a real connection failure. The wording is asserted by test and was never *seen*. Reaching it now needs an approver-only account, since every other shape is permitted — which also means this is a low-frequency path worth checking once rather than watching |
-| **The 44 px shell controls on a real phone** | Measured at 375 px in the pane, which is stronger than a screenshot for geometry. What that cannot show is whether the wrapped sidebar header **looks** right, since the title now sits on its own row above the three controls |
-| **The Analytics print view** | `app-analytics.css` has a real `@media print` block that hides each SVG and reveals its `.analytics-chart-table` as a bordered table. That is a genuinely better print than the page used to produce — and **it has never been print-previewed.** Cheap to check, and the only representation of the charts on paper |
-| **Analytics on Edge and Brave** | the SVG charts, the accent-following fills and the print block were checked in one browser only |
 | **Analytics keyboard pass** | the filter is a real `<form>` with `Apply` as `type="submit"`, headings run `h1`→`h2`→`h3`, and the scope/error regions are `role="status"` / `role="alert"`. Structure was verified; a full tab-through with visible focus was not |
+
+**Closed by the owner's 2026-08-09 pass**, listed so nobody re-opens them from an old copy of this
+file:
+
+| Item | Outcome |
+| --- | --- |
+| ~~The whole TSR draft round trip, on a real browser~~ | **Pass.** *"tested TSR draft. it does not disappear."* This was the one test that proved the feature does its job |
+| ~~The enlarged signatures on a real printed page~~ | **Pass**, via the LPR print — *"LPR printing is good."* Open since `8d97b58` |
+| ~~The 44 px shell controls on a real phone~~ | **Pass.** *"sidebar on mobile looks good now"* — the wrapped header reads correctly |
+| ~~The `ResizeObserver` redraw on Analytics~~ | **Pass.** *"charts are good even when dragging the window."* This was structurally unverifiable from here — the pane never runs the rendering steps — so only a real browser could ever close it |
+| ~~Brave~~ | **Covered by daily use**, not by a pass |
+| ~~The Analytics print view~~ | **Previewed, and it FAILED.** Now queued work in section 2 rather than an unknown |
+| ~~The backup download end to end from a browser~~ | **Clicked, and it FAILED.** Now bug 2a in section 1 |
 
 ### ~~The 2026-08-05 features were proven by calling, not by using~~ — DONE, 2026-08-06
 
@@ -1032,6 +1174,22 @@ its data descriptors without complaint. It was rejected on what it costs, not on
 **Revisit only if the build itself approaches the timeout**, and expect to trade the progress bar
 and those two headers for it. The reasoning is duplicated in the `/admin/download-backup` docstring
 deliberately, because that is where someone will be standing when they reconsider.
+
+> **THAT TRIGGER FIRED ON 2026-08-09 — one day later.** The owner reported the production download
+> failing, with Resume not recovering it. See **bug 2a in section 1**, which is where the work lives.
+>
+> **The decision was still correct when it was made, and this is the useful part of the record.** It
+> was taken on measurement — 39 MB in 3.6 s, locally — and the measurement was true. What it did not
+> account for was that **production is not the local machine**: real uploads, a bucket read with its
+> own 12-second budget, and a proxy between the client and the app that the local test does not have.
+> A number measured in the wrong environment is not a wrong number, it is a number about something
+> else.
+>
+> **Do not simply reverse it on the strength of this note.** The costs are unchanged and real, and
+> the cause of the failure is still a hypothesis — get the production error first, per bug 2a. If it
+> turns out to be a proxy idle timeout during the build, streaming is the right answer and the
+> prototype above is ready. If it turns out to be memory, or a deploy that never picked up the
+> gthread Procfile, streaming would be a large change that fixes nothing.
 
 **Reimbursement rows where the component columns and the saved `row_total` disagree.** Since
 `aff9001` the generated PCV, RFP, Excel and ZIP all use the **component sum**, not the saved
