@@ -55,6 +55,156 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Every LPR page says which page it is, and how many there are
+
+**Status:** `Approved — awaiting go-ahead`
+**Approved:** 2026-08-08
+**Detailed:** 2026-08-08, after probing `forms/LPR FORM.pdf` geometry directly to confirm the marker
+strip is free on page one and clear of the enlarged signatures.
+
+**Nothing has been built. Do not start without a separate go-ahead from the project owner.**
+
+### Context
+
+`d5e6d60` rebuilt LPR continuation pages on the official template, which means **every page is now a
+complete official form carrying the requester's and approver's signatures**. `pending-work.md`
+section 2 raised that as a question rather than a defect: on a 3-page LPR the approver's signature
+appears three times, and that changes what leaves the building.
+
+The owner's answer, on 2026-08-08: *"i think we can add a page number with the lpr number so that
+each page won't come off as an individual page."*
+
+**The real problem this solves is detachment, not tidiness.** Because each page is a complete signed
+form, any single page on its own reads as a fully approved requisition. A page left in a printer or
+dropped from a stack cannot currently be recognised as a fragment. A page count does not prevent
+that, but it makes it **visible**, on a document that authorises spending. That is the reason to do
+it, and it is why the total matters more than the page number.
+
+### Decisions taken
+
+| Decision | Value |
+| --- | --- |
+| Marker on which pages | **Every page, including page one** |
+| Format | **`LPR-<no> - ITEMS <a>-<b> - PAGE <n> OF <N>`** |
+| The total | **Required.** `PAGE 2` says where you are; `PAGE 2 OF 3` says whether one is missing |
+| Single-page LPRs | **`PAGE 1 OF 1`** — the owner took the recommendation |
+| Historical PDFs | **Not regenerated.** New renders only |
+
+**The single-page decision was the one real trade and is recorded so it is not silently reversed.**
+It changes the appearance of the *most common* LPR, which today carries no marker at all. It was
+chosen because the entire value of the scheme is that the marker's absence never has to be
+interpreted — if only multi-page LPRs are marked, an unmarked page is ambiguous between "complete
+one-pager" and "page torn off a longer document", which is the exact ambiguity being removed.
+
+### Investigation
+
+Verified by probing the template with PyMuPDF, not by reading the generator.
+
+- `lpr_continuation_marker_page()` (`app.py:51896`) draws at `(36, 274)` in ReportLab coordinates,
+  8pt Helvetica-Bold, on a 576×360 page. It is called **only** from the continuation loop
+  (`app.py:51957`), so **page one has no marker of any kind today** — the page most likely to be
+  treated as the whole document is the one with nothing on it.
+- **The LPR number is already on every page.** `lpr_form_common_values()` puts it in `Textfield`
+  and the continuation loop applies those values to each cloned page. So the owner's "add the LPR
+  number" half **already exists**; what is missing is the page position and the total.
+- **The marker strip is free on page one.** ReportLab `y=274` is `y≈77..89` from the top. In that
+  band the only content is the `Product` label at `x=414.2` and its widget at `x=471.6`, plus a
+  drawing box starting at `x=401.2`. From `x=36` the band is clear, sitting in the ~24pt gap between
+  the form title (ends `y=73.1`) and the `LPR No.` label (starts `y=97.4`).
+- **No signature collision.** `Requested by`, `Approved by` and `Received by` widgets sit at
+  `y≈294..322` from the top — far below the marker band — so the `8d97b58` signature enlargement
+  cannot reach it.
+- **The nearest thing to the right is at `x=401.2`**, which is the width budget the longer string
+  must respect. This is the one geometric risk and step 3 measures it rather than eyeballing it.
+- `tests/test_lpr_workflow.py:140` asserts the **exact** current string, and `:132` asserts a
+  single-page LPR contains **no** `CONTINUATION - ITEMS` text. **Both must change**, and the second
+  is the one that would otherwise be quietly deleted — it becomes an assertion about the *new*
+  marker instead.
+- **No service worker bump is required.** This is server-side PDF generation and `/lpr` is not an
+  `APP_SHELL` entry — the same reasoning recorded for `d5e6d60`.
+
+### Execution steps
+
+1. **Generalise the marker helper.** In `app.py`, rename `lpr_continuation_marker_page()` to
+   `lpr_page_marker_page()` and give it `(lpr_no, item_start, item_end, page_number, page_total,
+   PdfReader)`. It renders `f'{lpr_no} - ITEMS {a}-{b} - PAGE {n} OF {N}'`. Keep the position,
+   font, size and colour exactly as they are — they are already proven on continuation pages.
+   *Done when* no caller passes a hardcoded `CONTINUATION` string.
+2. **Compute the page total before rendering any page.** In `lpr_fill_pdf_bytes()`
+   (`app.py:51916`), derive `page_total = max(1, (len(items) + 7) // 8)` **before** the first page is
+   written, and merge a marker onto page one with `(1, min(8, len(items)), 1, page_total)`. Then
+   pass the same `page_total` into the continuation loop. *Done when* a 1, 8, 9, 16 and 17-item LPR
+   each carry a marker on every page whose `OF N` equals the real page count.
+3. **Measure the string, do not assume it fits.** Use `reportlab.pdfbase.pdfmetrics.stringWidth(text,
+   'Helvetica-Bold', 8)` and assert `36 + width < 401` — the left edge of the template's right-hand
+   box. If a long LPR number ever breaches it, drop the `ITEMS <a>-<b>` segment rather than shrinking
+   the font, because the page total is the load-bearing part and small print defeats the purpose.
+   *Done when* the check exists in code, not only in a test.
+4. **Update the two existing assertions honestly** in `tests/test_lpr_workflow.py`. `:140` becomes
+   the new format. `:132` **inverts**: a single-page LPR must now contain `PAGE 1 OF 1`. Record in
+   each docstring that the old assertion was replaced because the marker scheme changed, not
+   because it was failing.
+5. **Release plumbing.** `releases.json` entry dated the commit date, in the LPR category, describing
+   it as pages now being identifiable as part of one requisition. **No service worker bump** — state
+   that reasoning in `changes.md` so the omission reads as a decision.
+
+### Deliberately excluded
+
+- **Regenerating historical or already-submitted LPR PDFs.** They are records of what was issued.
+- **Any change to the signature scheme itself.** The owner chose page numbering *instead of* removing
+  the repeated signatures; this plan does not quietly do both.
+- **Changing the marker's position, font or colour**, which are proven on continuation pages.
+- **A "page 1 of 1" suppression option.** One behaviour, no configuration.
+- **Any watermark, "COPY" marking, or per-page unique identifier.** A larger anti-detachment scheme
+  is a different decision; this is the cheap 90%.
+
+### Verification
+
+Additions to `tests/test_lpr_workflow.py`, each with the positive control that proves it can fail:
+
+| Assertion | Positive control |
+| --- | --- |
+| Page one of a 17-item LPR carries `PAGE 1 OF 3` | page two carries `PAGE 2 OF 3`, so a constant is not passing |
+| A 1-item LPR carries `PAGE 1 OF 1` | the 9-item case carries `OF 2`, so the total is computed not hardcoded |
+| `OF N` equals the real page count for 1, 8, 9, 16, 17 items | the 8 vs 9 boundary, where N changes from 1 to 2 |
+| The LPR number appears in the marker text itself | a page whose `Textfield` differs still shows its own number |
+| Marker width stays left of `x=401` | a deliberately long LPR number is measured, not assumed |
+| No page has `CONTINUATION - ITEMS` any more | every page still has the official header text |
+
+Prove each new test fails without its fix, **one at a time**, confirming by SHA that the injection
+applied and that the failure message is the expected one. **`app.py` is CRLF** — a `\n` needle
+silently matches nothing and reads exactly like a vacuous test.
+
+**Then render and look at it, which is the part that actually matters here.** Generate a 1-page, a
+2-page and a 3-page LPR against a throwaway database with a seeded signature, and confirm on the
+**rendered** pages that the marker is legible, does not touch the form title above or the `LPR No.`
+label below, does not run into the right-hand box, and does not collide with the enlarged
+signatures. Then the full suite (currently 579) and `git diff --check`.
+
+### After implementation
+
+Self-review the diff; `releases.json` dated the commit date; **no service worker bump, stated as a
+decision**; `changes.md`; this plan to `Executed` with its hash; `pending-work.md` only if the owner
+asks — the section 2 entry asking this question can then be closed. Commit per the standing
+checklist, staging file by file, never `scheduler.db`.
+
+### Risks
+
+| Risk | Blast radius | Mitigation |
+| --- | --- | --- |
+| **Every LPR's appearance changes**, including the common single-page one | Every requisition issued from now on looks different from every one already filed | Deliberate and owner-approved; the marker is small, monochrome, and in dead space. Reversible by not drawing it on page one |
+| A long LPR number pushes the text into the right-hand box | An official form with overlapping print | Step 3 measures the string in code, with a test using a deliberately long number |
+| The two rewritten tests lose what they were guarding | A real continuation regression ships unnoticed | Neither is deleted: `:140` changes format, `:132` inverts to assert the new marker. Both keep the item-placement assertions around them |
+| `OF N` computed after pages are built and coming out wrong on page one | A form that states its own page count incorrectly — worse than no count | Step 2 derives the total **before** any page is written; tests cross-check the 8/9 boundary |
+| Someone later reverts single-page marking as clutter | The ambiguity this exists to remove comes back | The reasoning is in Decisions, not just in a commit message |
+
+### Critical files
+
+`app.py` — `lpr_continuation_marker_page()` → `lpr_page_marker_page()` (`51896`), `lpr_fill_pdf_bytes()`
+(`51916`), reference `lpr_form_common_values()` for the LPR number source;
+`tests/test_lpr_workflow.py` (`132`, `140`); `static/changelog/releases.json`; `changes.md`.
+The official source `forms/LPR FORM.pdf` is **not** modified.
+
 ## LPR continuation pages use the official template
 
 **Status:** `Executed — d5e6d60`
