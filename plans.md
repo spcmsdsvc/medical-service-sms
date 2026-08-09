@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## System Backup rework: build first, then download
 
-**Status:** `In progress — owner authorized execution 2026-08-09. Implementation and verification are complete locally; commit and push are pending.`
+**Status:** `Executed — b4b17fc. Implementation and verification are complete; push follows the journal status commit.`
 **Approved:** 2026-08-09
 **Detailed:** 2026-08-09, after mapping the backup end to end and confirming three load-bearing facts
 by running them rather than reading them.
@@ -70,9 +70,9 @@ by running them rather than reading them.
 
 ### Implementation status — READ FIRST
 
-The implementation is complete locally and has not yet been committed or pushed. The working tree
-contains only the planned code, template, test, release-manifest, and journal changes; `scheduler.db`,
-`output/`, `tmp/`, and the existing handoff artifact remain outside the release scope.
+The implementation is complete in commit `b4b17fc`. The release scope contains only the planned code,
+template, test, release-manifest, and journal changes; `scheduler.db`, `output/`, `tmp/`, and the
+existing handoff artifact remain outside the release scope.
 
 **Done and verified by running it, not by reading it:**
 
