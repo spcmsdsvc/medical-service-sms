@@ -57,11 +57,11 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## P.O. Dates, Amount, and Complete Excel Export
 
-**Status:** `In progress — local implementation and focused verification complete; commit pending owner release instruction`
+**Status:** `Executed — 3d66caf. Local implementation and focused verification passed; the implementation commit is ready for the authorized push.`
 **Approved:** 2026-08-10
 **Detailed:** 2026-08-10, after inspecting the existing `PurchaseOrder` model, additive schema
 initializer, P.O. API routes, register template, access tests, and established Excel export patterns.
-**Finished:** Pending verification and commit.
+**Finished:** 2026-08-10 in implementation commit `3d66caf`; focused verification passed and the release remains code-only.
 
 ### Context
 
