@@ -79,11 +79,67 @@ class ProvisionalLeaveWorkflowTests(unittest.TestCase):
             target_engineer.user_id = target_user.id
             db.session.add_all([super_engineer, target_engineer])
             db.session.flush()
+
+            regional_admin_user = app_module.User.query.filter_by(username='kevin').first()
+            if regional_admin_user is None:
+                regional_admin_user = app_module.User(
+                    username='kevin',
+                    password=app_module.generate_password_hash('ProvisionalTest123'),
+                    role='regional_admin',
+                    is_active=True,
+                )
+                db.session.add(regional_admin_user)
+                db.session.flush()
+                cls.created_user_ids.append(regional_admin_user.id)
+            regional_admin_user.role = 'regional_admin'
+            regional_admin_user.is_active = True
+
+            regional_admin_engineer = app_module.Engineer.query.filter_by(
+                employee_id=app_module.REGIONAL_ADMIN_EMPLOYEE_ID
+            ).first()
+            if not regional_admin_engineer:
+                regional_admin_engineer = app_module.Engineer(
+                    user_id=regional_admin_user.id,
+                    employee_id=app_module.REGIONAL_ADMIN_EMPLOYEE_ID,
+                    name='Provisional Test Regional Admin',
+                    initials='PRA',
+                    branch='Cebu',
+                    signature_data=SIGNATURE,
+                )
+                db.session.add(regional_admin_engineer)
+                db.session.flush()
+                cls.created_engineer_ids.append(regional_admin_engineer.id)
+            else:
+                regional_admin_engineer.user_id = regional_admin_user.id
+                regional_admin_engineer.branch = 'Cebu'
+
+            regional_target_user = app_module.User(
+                username='provisional_regional_target',
+                password=app_module.generate_password_hash('ProvisionalTest123'),
+                role='engineer',
+                is_active=True,
+            )
+            db.session.add(regional_target_user)
+            db.session.flush()
+            regional_target_engineer = app_module.Engineer(
+                user_id=regional_target_user.id,
+                employee_id='PROV-REGIONAL-TARGET',
+                name='Provisional Test Regional Engineer',
+                initials='PRE',
+                branch='Davao',
+                signature_data=SIGNATURE,
+            )
+            db.session.add(regional_target_engineer)
+            db.session.flush()
+
             cls.target_user_id = target_user.id
             cls.target_engineer_id = target_engineer.id
             cls.superuser_id = cls.superuser.id
+            cls.regional_admin_user_id = regional_admin_user.id
+            cls.regional_target_engineer_id = regional_target_engineer.id
             cls.created_user_ids.append(target_user.id)
-            cls.created_engineer_ids.extend([super_engineer.id, target_engineer.id])
+            cls.created_user_ids.append(regional_target_user.id)
+            cls.created_engineer_ids.extend([super_engineer.id, target_engineer.id, regional_target_engineer.id])
 
             route = app_module.ApprovalRouting(
                 requester_user_id=target_user.id,
@@ -188,7 +244,7 @@ class ProvisionalLeaveWorkflowTests(unittest.TestCase):
             self.assertEqual(len(rows), 5)
             self.assertTrue(all(row.status == 'Approved' for row in rows))
 
-    def test_only_named_superadmin_can_create_provisional_leave(self):
+    def test_non_admin_cannot_create_provisional_leave(self):
         start, end = self._range(40)
         target_client = self._client_as(self.target_user_id)
         response = target_client.post(
@@ -196,6 +252,24 @@ class ProvisionalLeaveWorkflowTests(unittest.TestCase):
             json=self._provisional_payload(start, end),
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_regional_admin_can_create_only_for_regional_engineers(self):
+        start, end = self._range(440)
+        regional_client = self._client_as(self.regional_admin_user_id)
+
+        allowed = regional_client.post(
+            '/api/leave-requests/provisional',
+            json={**self._provisional_payload(start, end), 'engineer_id': self.regional_target_engineer_id},
+        )
+        self.assertEqual(allowed.status_code, 201, allowed.get_data(as_text=True))
+        self.created_leave_ids.append(allowed.get_json()['leave_request']['id'])
+
+        blocked = regional_client.post(
+            '/api/leave-requests/provisional',
+            json={**self._provisional_payload(self._range(460)[0], self._range(460)[1]), 'engineer_id': self.target_engineer_id},
+        )
+        self.assertEqual(blocked.status_code, 403, blocked.get_data(as_text=True))
+        self.assertIn('Cebu or Davao', blocked.get_json().get('error', ''))
 
     def test_separate_formal_request_supersedes_mismatched_provisional(self):
         start, end = self._range(20)

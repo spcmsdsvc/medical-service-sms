@@ -1738,6 +1738,24 @@
           "sort_order": 20
         }
       ]
+    },
+    {
+      "release_key": "2026-08-10",
+      "release_date": "2026-08-10",
+      "title": "Regional Administrators Can Record Provisional Leave",
+      "summary": "Regional administrators can now record branch-scoped provisional Leave blocks while employees complete and submit the signed form.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-10-regional-provisional-leave",
+          "category": "Leave Request",
+          "description": "Regional administrators can record provisional/Form-to-Follow Leave for Cebu and Davao personnel. Manila targets remain protected, and the employee still completes and submits the signed formal Leave Request.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
     }
   ]
 }

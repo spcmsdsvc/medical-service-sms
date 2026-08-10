@@ -779,7 +779,7 @@
                         <option value="Maternity Leave">Maternity Leave</option>
                         <option value="Leave Without Pay">Leave Without Pay</option>
                     </select>
-                    {% if timeline_is_named_superadmin %}
+                    {% if timeline_can_record_provisional_leave %}
                     <div class="mt-2">
                         <label for="f-leave-verbal-approval-notes" class="small fw-bold text-muted text-uppercase mb-1 d-block">Verbal / Chat Approval Notes (Optional)</label>
                         <textarea id="f-leave-verbal-approval-notes" class="form-control shadow-none" rows="2" placeholder="Optional reference for the verbal or chat approval"></textarea>
@@ -8531,6 +8531,8 @@ async function fetchTimelineDataWithOfflineTimeout(url){
         "{{ 'true' if timeline_read_only_hr else 'false' }}" === "true";
     const isNamedSuperAdmin =
         "{{ 'true' if timeline_is_named_superadmin else 'false' }}" === "true";
+    const canRecordProvisionalLeave =
+        "{{ 'true' if timeline_can_record_provisional_leave else 'false' }}" === "true";
     const canManageAnySchedule =
         "{{ 'true' if timeline_can_manage_schedules else 'false' }}" === "true";
     const isSuperAdmin = authRole === "superadmin";
@@ -12657,7 +12659,7 @@ function collectMobileEngineerSchedules(){
         const startDate = document.getElementById('f-start-date')?.value || '';
         const editingExistingLeave = Boolean(document.getElementById('f-id')?.value) && category?.value === 'Leave';
         const historicalDate = Boolean(startDate && startDate < timelineTodayISO());
-        const allowLegacyLeave = editingExistingLeave || historicalDate || isNamedSuperAdmin;
+        const allowLegacyLeave = editingExistingLeave || historicalDate || canRecordProvisionalLeave;
         if(!category || !leaveOption) return allowLegacyLeave;
 
         leaveOption.hidden = !allowLegacyLeave;
@@ -16119,10 +16121,10 @@ async function openTSRClientEmailModal(shiftId){
         }
 
         // Current/future Leave entries must be Leave Requests, not ordinary Shift rows.
-        // Named superadmins may record a provisional block for one employee while the
+        // Authorized administrators may record a provisional block for one employee while the
         // employee completes the signed form. Keep this branch separate from /add_shift
         // so the existing leave restriction remains effective for every other caller.
-        if (!activeID && categoryVal === "Leave" && isNamedSuperAdmin) {
+        if (!activeID && categoryVal === "Leave" && canRecordProvisionalLeave) {
             if (selectedEngineersUI.length !== 1) {
                 timelineAlert("Select exactly one employee for provisional Leave.");
                 return;

@@ -1,5 +1,12 @@
 # Project Change Log
 
+codex changes - 2026-08-10
+- Extended the Timeline provisional/Form-to-Follow Leave workflow to named regional administrators in addition to named superadmins, while keeping ordinary employees and other roles blocked from creating provisional leave for another person.
+- Added a server-side Cebu/Davao branch check for regional administrators on `/api/leave-requests/provisional`; superadmins retain all-branch access, and regional administrators cannot create a provisional leave block for Manila personnel by changing the request payload.
+- Added the shared `timeline_can_record_provisional_leave` template capability so regional administrators see the calendar leave controls and verbal/chat approval notes that the backend will accept, without broadening unrelated schedule or Leave Request permissions.
+- Added regression coverage for successful regional-admin creation for a Davao engineer, rejection of a Manila target, and continued rejection of a normal engineer account; focused Leave Request tests pass.
+- Added a 2026-08-10 What's New entry for regional-admin provisional leave access. No database file, generated output, temporary artifact, or existing handoff file is included in the release scope.
+
 codex changes - 2026-08-09
 - Reworked the superadmin System Backup flow in `app.py` from request-time archive generation to a background build-and-download workflow with durable job state under the runtime volume, cooperative cancellation, progress reporting, stale-job reconciliation, atomic publication, 24-hour latest-archive retention, and explicit delete support.
 - Added a consistent SQLite snapshot path using SQLite's backup API and integrity checks, with a recorded raw-copy fallback for database errors; backup manifests now identify database inclusion, snapshot method, archive scope, bucket status, skipped objects, checksums, warnings, and completeness.

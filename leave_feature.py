@@ -64,6 +64,8 @@ def register_leave_feature(ctx):
     render_email_template = ctx['render_email_template']
     send_email_with_attachments = ctx['send_email_with_attachments']
     is_superadmin_user = ctx['is_superadmin_user']
+    is_regional_admin_user = ctx['is_regional_admin_user']
+    regional_admin_branches = set(ctx.get('REGIONAL_ADMIN_BRANCHES') or {'Cebu', 'Davao'})
     STORAGE_PREFIX_LEAVE_REQUESTS = ctx['STORAGE_PREFIX_LEAVE_REQUESTS']
     basedir = ctx['basedir']
 
@@ -795,9 +797,12 @@ def register_leave_feature(ctx):
     @app.route('/api/leave-requests/provisional', methods=['POST'])
     @login_required
     def create_provisional_leave_request():
-        """Plot a superadmin-created leave block while the signed form is pending."""
-        if not is_superadmin_user():
-            return jsonify({'success': False, 'error': 'Only named superadmins can record provisional leave.'}), 403
+        """Plot an administrator-created leave block while the signed form is pending."""
+        if not (is_superadmin_user() or is_regional_admin_user()):
+            return jsonify({
+                'success': False,
+                'error': 'Only named superadmins or regional administrators can record provisional leave.'
+            }), 403
 
         payload = request.get_json(silent=True) or {}
         engineer_id = clean_int(payload.get('engineer_id'))
@@ -805,6 +810,11 @@ def register_leave_feature(ctx):
         target_user = db.session.get(User, engineer.user_id) if engineer and engineer.user_id else None
         if not engineer or not target_user:
             return jsonify({'success': False, 'error': 'Select an engineer with a linked user account.'}), 400
+        if is_regional_admin_user() and (clean_str(getattr(engineer, 'branch', None)) or '') not in regional_admin_branches:
+            return jsonify({
+                'success': False,
+                'error': 'Regional administrators can record provisional leave only for Cebu or Davao employees.'
+            }), 403
 
         leave_type = clean_str(payload.get('leave_type')) or ''
         if leave_type not in LEAVE_TYPES:

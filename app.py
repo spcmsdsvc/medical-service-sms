@@ -16837,6 +16837,7 @@ def timeline_page():
         timeline_read_only_approver=(is_configured_approver_user() and not is_admin_authorized() and not has_engineer_profile()),
         timeline_read_only_hr=is_hr_schedule_only_user(),
         timeline_is_named_superadmin=is_superadmin_user(),
+        timeline_can_record_provisional_leave=(is_superadmin_user() or is_regional_admin_user()),
         # Flag-only, matching the server helpers. The client runs the same
         # superadmin -> capability -> regional-admin ladder, so passing the broad
         # predicate here would offer the regional admin buttons for Manila that the
