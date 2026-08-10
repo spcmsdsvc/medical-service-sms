@@ -92,6 +92,7 @@ from datetime import (
     timedelta,
     timezone
 )
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 # --- NEW SECURITY IMPORTS ---
 from flask_wtf.csrf import CSRFProtect, generate_csrf
@@ -1836,18 +1837,16 @@ PO_TYPE_LABELS = {
 
 
 class PurchaseOrder(db.Model):
-    """Standalone client purchase-order register.
-
-    Purchase orders intentionally record identity and classification only. Financial
-    amounts remain out of this page until a separate reporting decision is made.
-    """
+    """Standalone client purchase-order register."""
     __tablename__ = 'purchase_order'
 
     id = db.Column(db.Integer, primary_key=True)
     client_id = db.Column(db.Integer, db.ForeignKey('client.id'), nullable=False, index=True)
     po_number = db.Column(db.String(60), nullable=False, index=True)
     po_date = db.Column(db.Date, nullable=False, index=True)
+    end_date = db.Column(db.Date, nullable=True, index=True)
     po_type = db.Column(db.String(20), nullable=False, default=PO_TYPE_SINGLE_VISIT)
+    amount = db.Column(db.Numeric(14, 2), nullable=True)
     created_at = db.Column(db.DateTime, nullable=True, default=get_manila_time)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
     updated_at = db.Column(db.DateTime, nullable=True, default=get_manila_time, onupdate=get_manila_time)
@@ -3446,6 +3445,8 @@ def ensure_purchase_order_schema():
                 'created_at': 'DATETIME',
                 'created_by': 'INTEGER',
                 'updated_at': 'DATETIME',
+                'end_date': 'DATE',
+                'amount': 'NUMERIC(14, 2)',
             }
             for column_name, column_type in additive_columns.items():
                 if column_name not in columns:
@@ -39224,18 +39225,70 @@ def normalize_purchase_order_type(value):
     return normalized if normalized in PO_TYPE_LABELS else None
 
 
+PURCHASE_ORDER_SORT_KEYS = {
+    'client_name',
+    'po_date',
+    'start_date',
+    'end_date',
+    'po_number',
+    'po_type',
+    'amount',
+}
+
+
+def normalize_purchase_order_amount(value):
+    """Normalize an optional PHP amount without introducing float rounding drift."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None, None
+
+    try:
+        amount = Decimal(str(value).replace(',', '').replace('₱', '').strip())
+    except (InvalidOperation, TypeError, ValueError):
+        return None, 'Enter a valid PHP amount.'
+
+    if not amount.is_finite() or amount <= 0:
+        return None, 'Amount must be greater than zero.'
+
+    rounded = amount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if rounded != amount:
+        return None, 'Amount may contain no more than two decimal places.'
+    return rounded, None
+
+
+def purchase_order_amount_string(value):
+    if value is None or value == '':
+        return ''
+    try:
+        return format(Decimal(str(value)).quantize(Decimal('0.01')), 'f')
+    except (InvalidOperation, TypeError, ValueError):
+        return ''
+
+
+def purchase_order_amount_display(value):
+    amount = purchase_order_amount_string(value)
+    return f'\u20b1{Decimal(amount):,.2f}' if amount else ''
+
+
 def purchase_order_to_dict(purchase_order):
     po_type = normalize_purchase_order_type(purchase_order.po_type) or PO_TYPE_SINGLE_VISIT
+    amount = purchase_order_amount_string(getattr(purchase_order, 'amount', None))
     return {
         'id': purchase_order.id,
         'client_id': purchase_order.client_id,
         'client_name': purchase_order.client.name if purchase_order.client else '',
         'client_address': purchase_order.client.address if purchase_order.client else '',
         'po_number': purchase_order.po_number or '',
+        'start_date': purchase_order.po_date.isoformat() if purchase_order.po_date else '',
+        # Keep the original API key for existing clients and saved browser state.
         'po_date': purchase_order.po_date.isoformat() if purchase_order.po_date else '',
+        'end_date': purchase_order.end_date.isoformat() if purchase_order.end_date else '',
         'po_type': po_type,
         'po_type_label': PO_TYPE_LABELS.get(po_type, PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT]),
+        'amount': amount,
+        'amount_display': purchase_order_amount_display(getattr(purchase_order, 'amount', None)),
         'created_at': purchase_order.created_at.isoformat() if purchase_order.created_at else None,
+        'created_by': purchase_order.created_by,
+        'created_by_username': purchase_order.created_by_user.username if purchase_order.created_by_user else '',
         'updated_at': purchase_order.updated_at.isoformat() if purchase_order.updated_at else None,
     }
 
@@ -39259,19 +39312,37 @@ def validate_purchase_order_payload(payload, existing=None):
     po_number = normalize_purchase_order_number(
         payload.get('po_number') if 'po_number' in payload else getattr(existing, 'po_number', None)
     )
-    raw_date = payload.get('po_date') if 'po_date' in payload else getattr(existing, 'po_date', None)
-    po_date = raw_date if isinstance(raw_date, date) else parse_date(raw_date)
+    raw_start_date = (
+        payload.get('start_date')
+        if 'start_date' in payload
+        else payload.get('po_date')
+        if 'po_date' in payload
+        else getattr(existing, 'po_date', None)
+    )
+    po_date = raw_start_date if isinstance(raw_start_date, date) else parse_date(raw_start_date)
+    raw_end_date = payload.get('end_date') if 'end_date' in payload else getattr(existing, 'end_date', None)
+    end_date = raw_end_date if isinstance(raw_end_date, date) else parse_date(raw_end_date)
     po_type = normalize_purchase_order_type(
         payload.get('po_type') if 'po_type' in payload else getattr(existing, 'po_type', None)
     )
+    raw_amount = payload.get('amount') if 'amount' in payload else getattr(existing, 'amount', None)
+    if isinstance(raw_amount, str):
+        raw_amount = raw_amount.replace('\\u20b1', '')
+    amount, amount_error = normalize_purchase_order_amount(raw_amount)
     if not client_id:
         return None, 'Select a medical center.'
     if not po_number:
         return None, 'Enter a P.O. number.'
     if not po_date:
-        return None, 'Select a P.O. date.'
+        return None, 'Select a Start Date.'
     if not po_type:
         return None, 'Select Contract or Single Visit.'
+    if po_type == PO_TYPE_CONTRACT and not end_date:
+        return None, 'Select an End Date for a Contract P.O.'
+    if end_date and end_date < po_date:
+        return None, 'End Date cannot be earlier than Start Date.'
+    if amount_error:
+        return None, amount_error
     client = db.session.get(Client, client_id)
     if not client:
         return None, 'Medical center not found.'
@@ -39279,7 +39350,9 @@ def validate_purchase_order_payload(payload, existing=None):
         'client_id': client_id,
         'po_number': po_number,
         'po_date': po_date,
+        'end_date': end_date,
         'po_type': po_type,
+        'amount': amount,
     }, None
 
 
@@ -39298,7 +39371,10 @@ def get_purchase_orders():
     if not can_manage_purchase_orders():
         return denied('You do not have access to P.O. Details.')
     ensure_purchase_order_schema()
-    purchase_orders = PurchaseOrder.query.options(joinedload(PurchaseOrder.client)).order_by(
+    purchase_orders = PurchaseOrder.query.options(
+        joinedload(PurchaseOrder.client),
+        joinedload(PurchaseOrder.created_by_user),
+    ).order_by(
         PurchaseOrder.po_date.desc(), PurchaseOrder.id.desc()
     ).all()
     clients = Client.query.order_by(func.lower(Client.name).asc(), Client.id.asc()).all()
@@ -39311,6 +39387,178 @@ def get_purchase_orders():
             {'value': PO_TYPE_SINGLE_VISIT, 'label': PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT]},
         ],
     })
+
+
+def purchase_order_export_records():
+    """Return P.O. records matching the register's current filters and sort."""
+    client_filter = (request.args.get('client') or '').strip().casefold()
+    number_filter = (request.args.get('number') or '').strip().casefold()
+    type_filter = normalize_purchase_order_type(request.args.get('type')) if request.args.get('type') else ''
+    start_from_text = (request.args.get('from') or '').strip()
+    start_to_text = (request.args.get('to') or '').strip()
+    start_from = parse_date(start_from_text) if start_from_text else None
+    start_to = parse_date(start_to_text) if start_to_text else None
+    if start_from_text and not start_from:
+        raise ValueError('The Start Date from filter is invalid.')
+    if start_to_text and not start_to:
+        raise ValueError('The Start Date to filter is invalid.')
+    if start_from and start_to and start_from > start_to:
+        raise ValueError('The Start Date from filter cannot be later than the to filter.')
+
+    sort_key = (request.args.get('sort') or 'po_date').strip().lower()
+    if sort_key == 'start_date':
+        sort_key = 'po_date'
+    if sort_key not in PURCHASE_ORDER_SORT_KEYS:
+        sort_key = 'po_date'
+    direction = (request.args.get('direction') or 'desc').strip().lower()
+    descending = direction != 'asc'
+
+    records = PurchaseOrder.query.options(
+        joinedload(PurchaseOrder.client),
+        joinedload(PurchaseOrder.created_by_user),
+    ).all()
+    filtered = []
+    for record in records:
+        client_name = record.client.name if record.client else ''
+        po_number = record.po_number or ''
+        if client_filter and client_filter not in client_name.casefold():
+            continue
+        if number_filter and number_filter not in po_number.casefold():
+            continue
+        if type_filter and normalize_purchase_order_type(record.po_type) != type_filter:
+            continue
+        if start_from and (not record.po_date or record.po_date < start_from):
+            continue
+        if start_to and (not record.po_date or record.po_date > start_to):
+            continue
+        filtered.append(record)
+
+    def sort_value(record):
+        if sort_key == 'client_name':
+            return (record.client.name if record.client else '').casefold()
+        if sort_key == 'po_number':
+            return (record.po_number or '').casefold()
+        if sort_key == 'po_type':
+            return (normalize_purchase_order_type(record.po_type) or PO_TYPE_SINGLE_VISIT).casefold()
+        if sort_key == 'amount':
+            return Decimal(str(record.amount)) if record.amount is not None else Decimal('0')
+        if sort_key == 'end_date':
+            return record.end_date or date.min
+        return record.po_date or date.min
+
+    def is_empty(record):
+        if sort_key == 'client_name':
+            return not (record.client.name if record.client else '')
+        if sort_key == 'po_number':
+            return not (record.po_number or '')
+        if sort_key == 'amount':
+            return record.amount is None
+        if sort_key == 'end_date':
+            return record.end_date is None
+        return False
+
+    filtered.sort(key=sort_value, reverse=descending)
+    # Keep blank optional values at the bottom in both directions.
+    filtered.sort(key=lambda record: 1 if is_empty(record) else 0)
+    return filtered
+
+
+@app.route('/export_purchase_orders')
+@login_required
+def export_purchase_orders():
+    if not can_manage_purchase_orders():
+        return denied('You do not have access to P.O. Details.')
+    ensure_purchase_order_schema()
+    try:
+        purchase_orders = purchase_order_export_records()
+    except ValueError as export_error:
+        return jsonify({'success': False, 'error': str(export_error)}), 400
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = 'P.O. Register'
+    headers = [
+        'P.O. ID',
+        'Start Date',
+        'End Date',
+        'P.O. Number',
+        'Medical Center',
+        'Complete Address',
+        'P.O. Type',
+        'Amount (PHP)',
+        'Created At',
+        'Created By',
+        'Updated At',
+    ]
+    worksheet.append(headers)
+
+    for record in purchase_orders:
+        worksheet.append([
+            record.id,
+            record.po_date,
+            record.end_date,
+            record.po_number or '',
+            record.client.name if record.client else '',
+            record.client.address if record.client else '',
+            PO_TYPE_LABELS.get(
+                normalize_purchase_order_type(record.po_type) or PO_TYPE_SINGLE_VISIT,
+                PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT],
+            ),
+            Decimal(str(record.amount)) if record.amount is not None else None,
+            record.created_at,
+            record.created_by_user.username if record.created_by_user else '',
+            record.updated_at,
+        ])
+
+    header_fill = PatternFill('solid', fgColor='16243A')
+    header_font = Font(color='FFFFFF', bold=True)
+    border = Border(bottom=Side(style='thin', color='D6E0EC'))
+    for cell in worksheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = border
+
+    for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
+        for cell in row:
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
+            cell.border = border
+        row[1].number_format = 'yyyy-mm-dd'
+        row[2].number_format = 'yyyy-mm-dd'
+        row[7].number_format = '#,##0.00'
+        row[8].number_format = 'yyyy-mm-dd hh:mm'
+        row[10].number_format = 'yyyy-mm-dd hh:mm'
+
+    last_data_row = worksheet.max_row
+    if purchase_orders:
+        total_row = last_data_row + 2
+        worksheet.cell(total_row, 1, 'TOTAL AMOUNT')
+        worksheet.cell(total_row, 8, f'=SUM(H2:H{last_data_row})')
+        worksheet.cell(total_row, 1).font = Font(bold=True)
+        worksheet.cell(total_row, 8).font = Font(bold=True)
+        worksheet.cell(total_row, 8).number_format = '#,##0.00'
+
+    worksheet.freeze_panes = 'A2'
+    worksheet.auto_filter.ref = f'A1:K{max(1, len(purchase_orders) + 1)}'
+    widths = [10, 14, 14, 22, 34, 46, 18, 18, 22, 22, 22]
+    for index, width in enumerate(widths, start=1):
+        worksheet.column_dimensions[chr(64 + index)].width = width
+    worksheet.row_dimensions[1].height = 24
+
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    add_activity_log_entry(f'Exported P.O. register ({len(purchase_orders)} record(s))')
+    filename = f'purchase_order_register_{get_manila_time().strftime("%Y%m%d")}.xlsx'
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
 
 
 @app.route('/add_purchase_order', methods=['POST'])
@@ -39335,7 +39583,9 @@ def add_purchase_order():
     purchase_order = PurchaseOrder(**values, created_by=current_user.id)
     db.session.add(purchase_order)
     add_activity_log_entry(
-        f"Added P.O. {values['po_number']} for client #{values['client_id']} ({values['po_type']})"
+        f"Added P.O. {values['po_number']} for client #{values['client_id']} ({values['po_type']}) "
+        f"for {values['po_date'].isoformat()} to {values['end_date'].isoformat() if values['end_date'] else 'no end date'} "
+        f"at {purchase_order_amount_display(values['amount']) or 'amount not recorded'}"
     )
     try:
         db.session.commit()
@@ -39370,10 +39620,14 @@ def update_purchase_order(id):
         }), 409
 
     old_summary = f"{purchase_order.po_number} for client #{purchase_order.client_id}"
+    old_dates = f"{purchase_order.po_date.isoformat()} to {purchase_order.end_date.isoformat() if purchase_order.end_date else 'no end date'}"
+    old_amount = purchase_order_amount_display(purchase_order.amount) or 'amount not recorded'
     for field, value in values.items():
         setattr(purchase_order, field, value)
     add_activity_log_entry(
-        f"Updated P.O. {old_summary} to {values['po_number']} for client #{values['client_id']}"
+        f"Updated P.O. {old_summary} to {values['po_number']} for client #{values['client_id']}; "
+        f"dates {old_dates} -> {values['po_date'].isoformat()} to {values['end_date'].isoformat() if values['end_date'] else 'no end date'}; "
+        f"amount {old_amount} -> {purchase_order_amount_display(values['amount']) or 'amount not recorded'}"
     )
     try:
         db.session.commit()

@@ -1754,6 +1754,15 @@
             "admins"
           ],
           "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-10-po-dates-amount-export",
+          "category": "P.O. Details",
+          "description": "P.O. Details now records Start and End Dates and optional PHP amounts, with a complete filtered Excel export for the register.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
         }
       ]
     }

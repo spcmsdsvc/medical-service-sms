@@ -58,6 +58,7 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
                     client_id=cls.client_one.id,
                     po_number=f'AN-PO-1-{cls.suffix}',
                     po_date=date(2026, 8, 6),
+                    end_date=date(2026, 12, 31),
                     po_type=app_module.PO_TYPE_CONTRACT,
                 ),
                 app_module.PurchaseOrder(
@@ -70,6 +71,7 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
                     client_id=cls.client_two.id,
                     po_number=f'AN-PO-3-{cls.suffix}',
                     po_date=date(2026, 7, 31),
+                    end_date=date(2026, 12, 31),
                     po_type=app_module.PO_TYPE_CONTRACT,
                 ),
             ]

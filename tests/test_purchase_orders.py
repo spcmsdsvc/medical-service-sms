@@ -3,8 +3,11 @@
 import pathlib
 import unittest
 import uuid
+from io import BytesIO
+from urllib.parse import quote
 
 import app as app_module  # noqa: E402
+from openpyxl import load_workbook
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -155,13 +158,18 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         created = client.post('/add_purchase_order', json={
             'client_id': self.client_one_id,
             'po_date': '2026-08-06',
+            'end_date': '2026-12-31',
             'po_number': ' PO-001  ',
             'po_type': 'contract',
+            'amount': '1250.50',
         })
         self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
         record = created.get_json()['purchase_order']
         self.assertEqual(record['po_number'], 'PO-001')
         self.assertEqual(record['po_type'], 'contract')
+        self.assertEqual(record['start_date'], '2026-08-06')
+        self.assertEqual(record['end_date'], '2026-12-31')
+        self.assertEqual(record['amount'], '1250.50')
 
         duplicate = client.post('/add_purchase_order', json={
             'client_id': self.client_one_id,
@@ -216,6 +224,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         second = client.post('/add_purchase_order', json={
             'client_id': self.client_two_id,
             'po_date': '2026-08-06',
+            'end_date': '2026-08-20',
             'po_number': f'CASCADE-TWO-{self.suffix}',
             'po_type': 'contract',
         })
@@ -234,7 +243,8 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
 
     def test_model_has_no_financial_or_schedule_linkage(self):
         columns = set(app_module.PurchaseOrder.__table__.columns.keys())
-        self.assertFalse({'amount', 'shift_id', 'tsr_id', 'product_id'} & columns)
+        self.assertTrue({'amount', 'end_date'} <= columns)
+        self.assertFalse({'shift_id', 'tsr_id', 'product_id'} & columns)
         self.assertEqual(
             app_module.Client.purchase_orders.property.cascade.delete_orphan,
             True,
@@ -299,6 +309,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         seeded = owner.post('/add_purchase_order', json={
             'client_id': self.client_two_id,
             'po_date': '2026-08-06',
+            'end_date': '2026-08-20',
             'po_number': f'GUARD-{self.suffix}',
             'po_type': 'contract',
         })
@@ -309,6 +320,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         self.assertEqual(intruder.post('/add_purchase_order', json={
             'client_id': self.client_two_id,
             'po_date': '2026-08-06',
+            'end_date': '2026-08-20',
             'po_number': f'INTRUDER-{self.suffix}',
             'po_type': 'contract',
         }).status_code, 403)
@@ -342,12 +354,15 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         client = self._client_for(self.po_user_id)
 
         def add(po_type, number):
-            return client.post('/add_purchase_order', json={
+            payload = {
                 'client_id': self.client_two_id,
                 'po_date': '2026-08-06',
                 'po_number': number,
                 'po_type': po_type,
-            })
+            }
+            if po_type == 'contract':
+                payload['end_date'] = '2026-08-20'
+            return client.post('/add_purchase_order', json=payload)
 
         for rejected in ('maybe', '', 'Contracts', 'true', '1'):
             response = add(rejected, f'TYPE-BAD-{self.suffix}')
@@ -369,6 +384,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             return client.post('/add_purchase_order', json={
                 'client_id': self.client_two_id,
                 'po_date': po_date,
+                'end_date': '2026-08-20',
                 'po_number': number,
                 'po_type': 'contract',
             })
@@ -382,6 +398,141 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         response = add('2026-08-06', f'DATE-OK-{self.suffix}')
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.get_json()['purchase_order']['po_date'], '2026-08-06')
+
+    def test_contract_end_date_and_amount_rules(self):
+        client = self._client_for(self.po_user_id)
+
+        missing_end = client.post('/add_purchase_order', json={
+            'client_id': self.client_two_id,
+            'start_date': '2026-08-06',
+            'po_number': f'END-REQUIRED-{self.suffix}',
+            'po_type': 'contract',
+        })
+        self.assertEqual(missing_end.status_code, 400)
+        self.assertIn('End Date', missing_end.get_json()['error'])
+
+        reversed_dates = client.post('/add_purchase_order', json={
+            'client_id': self.client_two_id,
+            'start_date': '2026-08-20',
+            'end_date': '2026-08-06',
+            'po_number': f'END-REVERSED-{self.suffix}',
+            'po_type': 'contract',
+        })
+        self.assertEqual(reversed_dates.status_code, 400)
+        self.assertIn('earlier', reversed_dates.get_json()['error'])
+
+        for invalid_amount in ('0', '-1', '12.345', 'not-a-number'):
+            response = client.post('/add_purchase_order', json={
+                'client_id': self.client_two_id,
+                'start_date': '2026-08-06',
+                'po_number': f'AMOUNT-BAD-{invalid_amount}-{self.suffix}',
+                'po_type': 'single_visit',
+                'amount': invalid_amount,
+            })
+            self.assertEqual(response.status_code, 400, invalid_amount)
+            self.assertIn('amount', response.get_json()['error'].lower())
+
+        single_visit = client.post('/add_purchase_order', json={
+            'client_id': self.client_two_id,
+            'start_date': '2026-08-06',
+            'po_number': f'SINGLE-NO-END-{self.suffix}',
+            'po_type': 'single_visit',
+            'amount': '99.90',
+        })
+        self.assertEqual(single_visit.status_code, 201)
+        record = single_visit.get_json()['purchase_order']
+        self.assertEqual(record['end_date'], '')
+        self.assertEqual(record['amount'], '99.90')
+
+        cleared = client.put(f"/update_purchase_order/{record['id']}", json={
+            'start_date': '2026-08-06',
+            'end_date': '',
+            'po_number': f'SINGLE-NO-END-{self.suffix}',
+            'po_type': 'single_visit',
+            'amount': '',
+            'client_id': self.client_two_id,
+        })
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(cleared.get_json()['purchase_order']['amount'], '')
+
+    def test_legacy_contract_without_end_date_remains_readable_but_edit_requires_completion(self):
+        with self.app.app_context():
+            legacy = app_module.PurchaseOrder(
+                client_id=self.client_two_id,
+                po_number=f'LEGACY-CONTRACT-{self.suffix}',
+                po_date=app_module.date(2026, 7, 1),
+                end_date=None,
+                po_type=app_module.PO_TYPE_CONTRACT,
+            )
+            app_module.db.session.add(legacy)
+            app_module.db.session.commit()
+            legacy_id = legacy.id
+
+        client = self._client_for(self.po_user_id)
+        listing = client.get('/get_purchase_orders')
+        self.assertEqual(listing.status_code, 200)
+        legacy_payload = next(
+            item for item in listing.get_json()['purchase_orders']
+            if item['id'] == legacy_id
+        )
+        self.assertEqual(legacy_payload['end_date'], '')
+        self.assertEqual(legacy_payload['po_type'], 'contract')
+
+        edit_without_end = client.put(f'/update_purchase_order/{legacy_id}', json={
+            'client_id': self.client_two_id,
+            'start_date': '2026-07-01',
+            'po_number': f'LEGACY-CONTRACT-EDITED-{self.suffix}',
+            'po_type': 'contract',
+        })
+        self.assertEqual(edit_without_end.status_code, 400)
+        self.assertIn('End Date', edit_without_end.get_json()['error'])
+
+    def test_filtered_sorted_excel_export_contains_complete_register_details(self):
+        client = self._client_for(self.po_user_id)
+        first = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'start_date': '2026-08-01',
+            'end_date': '2026-08-31',
+            'po_number': f'EXPORT-A-{self.suffix}',
+            'po_type': 'contract',
+            'amount': '25.00',
+        })
+        second = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'start_date': '2026-08-02',
+            'po_number': f'EXPORT-B-{self.suffix}',
+            'po_type': 'single_visit',
+            'amount': '100.00',
+        })
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 201)
+
+        query = (
+            f'/export_purchase_orders?number={quote("EXPORT-")}'
+            '&sort=amount&direction=desc'
+        )
+        response = client.get(query)
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(BytesIO(response.data), data_only=False)
+        worksheet = workbook['P.O. Register']
+        self.assertEqual(
+            [cell.value for cell in worksheet[1]],
+            [
+                'P.O. ID', 'Start Date', 'End Date', 'P.O. Number',
+                'Medical Center', 'Complete Address', 'P.O. Type',
+                'Amount (PHP)', 'Created At', 'Created By', 'Updated At',
+            ],
+        )
+        self.assertEqual(worksheet['D2'].value, f'EXPORT-B-{self.suffix}')
+        self.assertEqual(worksheet['H2'].value, 100)
+        self.assertEqual(worksheet['H3'].value, 25)
+        self.assertEqual(worksheet['F2'].value, 'Test address one')
+        self.assertEqual(worksheet['H5'].value, '=SUM(H2:H3)')
+        self.assertEqual(worksheet.freeze_panes, 'A2')
+        self.assertEqual(worksheet.auto_filter.ref, 'A1:K3')
+
+        unauthorized = self._client_for(self.plain_user_id)
+        self.assertEqual(unauthorized.get('/export_purchase_orders').status_code, 403)
 
     def test_missing_records_report_404_rather_than_a_silent_success(self):
         """delete_client() reports success for an id that never existed; this must not."""

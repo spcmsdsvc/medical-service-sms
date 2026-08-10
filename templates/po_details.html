@@ -65,7 +65,7 @@
     .po-table {
         color: var(--app-text, #16243a);
         margin: 0;
-        min-width: 760px;
+        min-width: 1040px;
     }
 
     .po-table thead th {
@@ -120,6 +120,13 @@
         color: var(--app-text, #16243a);
         font-weight: 850;
         overflow-wrap: anywhere;
+    }
+
+    .po-amount {
+        color: var(--app-text, #16243a);
+        font-variant-numeric: tabular-nums;
+        font-weight: 850;
+        white-space: nowrap;
     }
 
     .po-muted {
@@ -270,11 +277,11 @@
                 </select>
             </div>
             <div class="col-6 col-lg-2">
-                <label for="po-date-from">From date</label>
+                <label for="po-date-from">Start date from</label>
                 <input id="po-date-from" class="form-control" type="date">
             </div>
             <div class="col-6 col-lg-2">
-                <label for="po-date-to">To date</label>
+                <label for="po-date-to">Start date to</label>
                 <input id="po-date-to" class="form-control" type="date">
             </div>
         </div>
@@ -291,18 +298,25 @@
                 <h2 class="h5 mb-1">Purchase Order Register</h2>
                 <div class="small po-muted" id="po-result-count">Loading P.O. records...</div>
             </div>
-            <button type="button" class="btn btn-outline-primary btn-sm no-print" id="po-refresh-button">
-                <i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Refresh
-            </button>
+            <div class="d-flex flex-wrap gap-2 no-print">
+                <button type="button" class="btn btn-outline-success btn-sm" id="po-export-button">
+                    <i class="fa-solid fa-file-excel me-1" aria-hidden="true"></i>Export Excel
+                </button>
+                <button type="button" class="btn btn-outline-primary btn-sm" id="po-refresh-button">
+                    <i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Refresh
+                </button>
+            </div>
         </div>
         <div class="po-table-wrap">
             <table class="table po-table" aria-describedby="po-result-count">
-                <thead>
+                <thead id="po-table-head">
                     <tr>
-                        <th><button class="po-sort-button" type="button" data-sort="client_name">Medical Center <span data-sort-indicator="client_name">↕</span></button></th>
-                        <th><button class="po-sort-button" type="button" data-sort="po_date">P.O. Date <span data-sort-indicator="po_date">↕</span></button></th>
-                        <th><button class="po-sort-button" type="button" data-sort="po_number">P.O. Number <span data-sort-indicator="po_number">↕</span></button></th>
-                        <th><button class="po-sort-button" type="button" data-sort="po_type">Type <span data-sort-indicator="po_type">↕</span></button></th>
+                        <th><button class="po-sort-button" type="button" data-sort="client_name">Medical Center <span data-sort-indicator="client_name">&#8597;</span></button></th>
+                        <th><button class="po-sort-button" type="button" data-sort="po_date">Start Date <span data-sort-indicator="po_date">&#8597;</span></button></th>
+                        <th><button class="po-sort-button" type="button" data-sort="end_date">End Date <span data-sort-indicator="end_date">&#8597;</span></button></th>
+                        <th><button class="po-sort-button" type="button" data-sort="po_number">P.O. Number <span data-sort-indicator="po_number">&#8597;</span></button></th>
+                        <th><button class="po-sort-button" type="button" data-sort="po_type">Type <span data-sort-indicator="po_type">&#8597;</span></button></th>
+                        <th><button class="po-sort-button" type="button" data-sort="amount">Amount <span data-sort-indicator="amount">&#8597;</span></button></th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </thead>
@@ -330,12 +344,20 @@
                     </div>
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-bold" for="po-date">P.O. Date</label>
+                            <label class="form-label fw-bold" for="po-date">Start Date</label>
                             <input class="form-control" type="date" id="po-date" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold" for="po-end-date">End Date <span class="po-muted" id="po-end-date-note">(required for Contract)</span></label>
+                            <input class="form-control" type="date" id="po-end-date">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold" for="po-number">P.O. Number</label>
                             <input class="form-control" type="text" id="po-number" maxlength="60" autocomplete="off" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold" for="po-amount">Amount (PHP) <span class="po-muted">(optional)</span></label>
+                            <input class="form-control" type="number" id="po-amount" min="0.01" step="0.01" inputmode="decimal" placeholder="e.g. 25000.00">
                         </div>
                     </div>
                     <fieldset class="mt-3">
@@ -486,23 +508,37 @@
 
     function filteredRows() {
         const filters = currentFilters();
-        return state.rows.filter((row) => {
+        const rows = state.rows.filter((row) => {
             const client = String(row.client_name || '').toLowerCase();
             const number = String(row.po_number || '').toLowerCase();
-            const inDateRange = (!filters.from || row.po_date >= filters.from)
-                && (!filters.to || row.po_date <= filters.to);
+            const startDate = row.start_date || row.po_date || '';
+            const inDateRange = (!filters.from || startDate >= filters.from)
+                && (!filters.to || startDate <= filters.to);
             return (!filters.client || client.includes(filters.client))
                 && (!filters.number || number.includes(filters.number))
                 && (!filters.type || row.po_type === filters.type)
                 && inDateRange;
-        }).sort((left, right) => {
-            const a = String(left[state.sortKey] ?? '').toLowerCase();
-            const b = String(right[state.sortKey] ?? '').toLowerCase();
-            const result = state.sortKey === 'po_date'
-                ? (a || '0000-00-00').localeCompare(b || '0000-00-00')
-                : a.localeCompare(b, undefined, { numeric: true });
+        });
+
+        const sortKey = state.sortKey === 'start_date' ? 'po_date' : state.sortKey;
+        const sortValue = (row) => {
+            if (sortKey === 'amount') return row.amount === '' || row.amount == null ? null : Number(row.amount);
+            if (sortKey === 'end_date') return row.end_date || null;
+            if (sortKey === 'po_date') return row.start_date || row.po_date || null;
+            return String(row[sortKey] ?? '').toLowerCase();
+        };
+        const isEmpty = (value) => value === null || value === '' || value === undefined;
+        rows.sort((left, right) => {
+            const a = sortValue(left);
+            const b = sortValue(right);
+            if (isEmpty(a) !== isEmpty(b)) return isEmpty(a) ? 1 : -1;
+            if (isEmpty(a) && isEmpty(b)) return 0;
+            const result = typeof a === 'number'
+                ? a - b
+                : String(a).localeCompare(String(b), undefined, { numeric: true });
             return state.sortDirection === 'asc' ? result : -result;
         });
+        return rows;
     }
 
     function updateSortIndicators() {
@@ -531,6 +567,20 @@
             <div class="small po-muted">${escapeHtml(row.client_address || '')}</div>`;
     }
 
+    function renderHeader() {
+        const header = document.querySelector('#po-table-head');
+        if (!header) return;
+        header.innerHTML = `<tr>
+            <th><button class="po-sort-button" type="button" data-sort="client_name">Medical Center <span data-sort-indicator="client_name">&#8597;</span></button></th>
+            <th><button class="po-sort-button" type="button" data-sort="po_date">Start Date <span data-sort-indicator="po_date">&#8597;</span></button></th>
+            <th><button class="po-sort-button" type="button" data-sort="end_date">End Date <span data-sort-indicator="end_date">&#8597;</span></button></th>
+            <th><button class="po-sort-button" type="button" data-sort="po_number">P.O. Number <span data-sort-indicator="po_number">&#8597;</span></button></th>
+            <th><button class="po-sort-button" type="button" data-sort="po_type">Type <span data-sort-indicator="po_type">&#8597;</span></button></th>
+            <th><button class="po-sort-button" type="button" data-sort="amount">Amount <span data-sort-indicator="amount">&#8597;</span></button></th>
+            <th class="text-end">Actions</th>
+        </tr>`;
+    }
+
     function renderRows() {
         const rows = filteredRows();
         const tableBody = byId('po-table-body');
@@ -541,9 +591,11 @@
 
         tableBody.innerHTML = rows.map((row) => `<tr>
             <td>${rowFields(row)}</td>
-            <td>${escapeHtml(row.po_date)}</td>
+            <td>${escapeHtml(row.start_date || row.po_date || '—')}</td>
+            <td>${escapeHtml(row.end_date || '—')}</td>
             <td><span class="po-number">${escapeHtml(row.po_number)}</span></td>
             <td><span class="po-type-badge ${escapeHtml(row.po_type)}">${escapeHtml(row.po_type_label)}</span></td>
+            <td><span class="po-amount">${escapeHtml(row.amount_display || '—')}</span></td>
             <td>${actionHtml(row)}</td>
         </tr>`).join('');
 
@@ -552,8 +604,10 @@
                 <div>${rowFields(row)}</div>
                 <span class="po-type-badge ${escapeHtml(row.po_type)}">${escapeHtml(row.po_type_label)}</span>
             </div>
-            <div class="small mt-3"><strong>P.O. date:</strong> ${escapeHtml(row.po_date)}</div>
+            <div class="small mt-3"><strong>Start Date:</strong> ${escapeHtml(row.start_date || row.po_date || '—')}</div>
+            <div class="small"><strong>End Date:</strong> ${escapeHtml(row.end_date || '—')}</div>
             <div class="small"><strong>P.O. number:</strong> <span class="po-number">${escapeHtml(row.po_number)}</span></div>
+            <div class="small"><strong>Amount:</strong> <span class="po-amount">${escapeHtml(row.amount_display || '—')}</span></div>
             <div class="mt-3">${actionHtml(row)}</div>
         </article>`).join('');
         updateSortIndicators();
@@ -571,6 +625,16 @@
         byId('po-save-button').innerHTML = '<i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Save P.O.';
         state.editingId = null;
         populateClients();
+        updateEndDateRequirement();
+    }
+
+    function updateEndDateRequirement() {
+        const endDate = byId('po-end-date');
+        const note = byId('po-end-date-note');
+        const type = document.querySelector('input[name="po-type"]:checked')?.value || '';
+        const required = type === 'contract';
+        if (endDate) endDate.required = required;
+        if (note) note.textContent = required ? '(required for Contract)' : '(optional for Single Visit)';
     }
 
     function openForm(row = null) {
@@ -581,10 +645,13 @@
             byId('po-modal-title').textContent = 'Edit P.O.';
             byId('po-save-button').innerHTML = '<i class="fa-solid fa-check me-1" aria-hidden="true"></i>Update P.O.';
             populateClients(row.client_id);
-            byId('po-date').value = row.po_date;
+            byId('po-date').value = row.start_date || row.po_date || '';
+            byId('po-end-date').value = row.end_date || '';
             byId('po-number').value = row.po_number;
+            byId('po-amount').value = row.amount || '';
             const radio = document.querySelector(`input[name="po-type"][value="${row.po_type}"]`);
             if (radio) radio.checked = true;
+            updateEndDateRequirement();
         }
         state.modal.show();
         setTimeout(() => byId('po-client')?.focus(), 150);
@@ -628,9 +695,11 @@
         button.disabled = true;
         const payload = {
             client_id: Number(byId('po-client').value),
-            po_date: byId('po-date').value,
+            start_date: byId('po-date').value,
+            end_date: byId('po-end-date').value,
             po_number: byId('po-number').value,
             po_type: document.querySelector('input[name="po-type"]:checked')?.value || '',
+            amount: byId('po-amount').value,
         };
         try {
             const data = await sendRecord(state.editingId ? `/update_purchase_order/${state.editingId}` : '/add_purchase_order', state.editingId ? 'PUT' : 'POST', payload);
@@ -694,6 +763,9 @@
     byId('po-type-filter').addEventListener('change', renderRows);
     byId('po-date-from').addEventListener('change', renderRows);
     byId('po-date-to').addEventListener('change', renderRows);
+    document.querySelectorAll('input[name="po-type"]').forEach((radio) => {
+        radio.addEventListener('change', updateEndDateRequirement);
+    });
     byId('po-clear-filters').addEventListener('click', () => {
         byId('po-client-search').value = '';
         byId('po-number-search').value = '';
@@ -703,8 +775,47 @@
         renderRows();
     });
 
+    async function exportRegister() {
+        const button = byId('po-export-button');
+        if (!button || button.disabled) return;
+        button.disabled = true;
+        const filters = currentFilters();
+        const params = new URLSearchParams({
+            ...filters,
+            sort: state.sortKey,
+            direction: state.sortDirection,
+        });
+        try {
+            const response = await fetch(`/export_purchase_orders?${params.toString()}`, {
+                headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.error || 'The P.O. register could not be exported.');
+            }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'purchase_order_register.xlsx';
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            URL.revokeObjectURL(url);
+            notify('P.O. register exported.', 'success');
+        } catch (error) {
+            notify(error.message, 'danger');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    byId('po-export-button').addEventListener('click', exportRegister);
+
     async function initializePage() {
         state.modal = createModalController();
+        renderHeader();
+        updateEndDateRequirement();
         try { await loadData(); }
         catch (error) { byId('po-result-count').textContent = 'Request failed.'; notify(error.message, 'danger'); }
     }

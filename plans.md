@@ -55,6 +55,138 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## P.O. Dates, Amount, and Complete Excel Export
+
+**Status:** `In progress — local implementation and focused verification complete; commit pending owner release instruction`
+**Approved:** 2026-08-10
+**Detailed:** 2026-08-10, after inspecting the existing `PurchaseOrder` model, additive schema
+initializer, P.O. API routes, register template, access tests, and established Excel export patterns.
+**Finished:** Pending verification and commit.
+
+### Context
+
+The P.O. Details register currently stores the client, P.O. number, one date, type, and audit
+timestamps. The existing date is the P.O. start date, but the page labels it only as P.O. Date and
+has no end-date or amount support. The owner requested a complete, usable P.O. register with a
+positive optional PHP amount and an Excel export that can be limited by the page's active filters.
+
+The existing `po_date` column is retained as the internal Start Date because existing records and
+analytics already depend on it. End Date is additive and nullable so legacy records continue to
+load. Contract records created or edited through the new form require an End Date; Single Visit
+records may leave it blank.
+
+### Decisions taken
+
+- Store amounts in PHP only.
+- Amount is optional for backward compatibility; when supplied it must be greater than zero and
+  use at most two decimal places.
+- The existing `po_date` column remains the Start Date; new API consumers may use `start_date`,
+  while legacy `po_date` payloads remain accepted.
+- Contract P.O.s require End Date. Single Visit P.O.s may omit it.
+- End Date cannot precede Start Date.
+- Export is a formatted Excel workbook containing the currently active filters and all matching
+  records, not only a visual subset.
+- Existing P.O. permissions and count-only P.O. analytics remain unchanged.
+- No database replacement, destructive migration, historical record rewrite, or artifact cleanup is
+  part of this work.
+
+### Investigation
+
+- `app.py:1838-1868` defines `PurchaseOrder` with `po_date`, `po_number`, `po_type`, client, and
+  audit fields but no amount or end date.
+- `app.py:3429-3473` provides `ensure_purchase_order_schema()`, the established additive runtime
+  migration boundary for the P.O. table.
+- `app.py:39227-39399` contains the serializer, validation, list, add, update, and delete routes;
+  these will remain behind `can_manage_purchase_orders()`.
+- `templates/po_details.html:230-715` contains the modal, filters, sortable desktop table, mobile
+  cards, and client-side export insertion point.
+- `tests/test_purchase_orders.py` covers authorization, persistence, validation, duplicate handling,
+  and client-delete cascade; its old no-financial-fields assertion must be replaced with amount and
+  end-date compatibility coverage.
+- Existing Excel generation uses `openpyxl` in `app.py`; the new export will use the same dependency
+  and protected-route conventions.
+
+### Execution steps
+
+1. **Record the approved plan and schema boundary.** Update `plans.md` with this status and retain
+   the known excluded files. Update the existing 2026-08-10 section in `changes.md` when behavior
+   changes are complete. Do not run a database migration against `scheduler.db`.
+2. **Extend the P.O. model and additive schema.** In `app.py`, add nullable `end_date` and nullable
+   two-decimal PHP `amount` fields to `PurchaseOrder`. Extend `ensure_purchase_order_schema()` to add
+   only missing columns and keep existing indexes and client cascade behavior intact. Existing rows
+   remain readable with null values.
+3. **Extend validation and API serialization.** Update `validate_purchase_order_payload()` to accept
+   `start_date` with `po_date` fallback, parse `end_date`, normalize optional amount, require End Date
+   for Contract values, reject reversed date ranges and invalid/non-positive/over-precision amounts,
+   and allow an explicit blank amount to clear it on update. Update `purchase_order_to_dict()` with
+   `start_date`, compatibility `po_date`, `end_date`, exact amount data, and creator metadata without
+   breaking existing consumers. Include meaningful old/new date and amount details in update logs.
+4. **Add the protected filtered Excel export.** Add `/export_purchase_orders` beside the P.O. routes in
+   `app.py`, using the same access guard as `/get_purchase_orders`. Accept the existing client,
+   number, type, and Start Date range filters plus a whitelisted sort key/direction. Export Start Date,
+   End Date, P.O. ID/Number, Medical Center, complete address, type, amount, created/updated dates,
+   and creator. Format headers, dates, PHP currency, widths, freeze panes, autofilter, and a total
+   amount row. Log the export without exposing private data in the log.
+5. **Update the P.O. Details interface.** In `templates/po_details.html`, rename the modal field to
+   Start Date, add the End Date picker, and add optional Amount (PHP). Restore all values in edit mode;
+   clear them for new records. Add Start Date, End Date, and Amount columns to desktop/mobile views,
+   amount sorting, display formatting, and an Export Excel button that sends the current filters and
+   sort state. Keep native validation, duplicate confirmation, filters, saved sorting, dark mode, and
+   mobile layout intact.
+6. **Add focused regression coverage.** Extend `tests/test_purchase_orders.py` for additive columns,
+   Contract/Single Visit date rules, reversed dates, amount validation/clearing, serializer
+   compatibility, and existing-record loading. Add export tests that inspect the generated workbook,
+   filters, sorting, currency values, total, and authorization. Keep analytics count tests passing
+   unchanged and add a template/static assertion only where it protects the new controls.
+7. **Update release records and self-review.** Add detailed bullets to the current `changes.md` section
+   and a human-readable P.O. register entry to `static/changelog/releases.json`. Confirm no service
+   worker bump is needed unless the implementation touches an app-shell asset. Review the diff for
+   accidental edits to `scheduler.db`, `output/`, `tmp/`, or handoff artifacts.
+8. **Verify and close the plan.** Run focused P.O. tests, Excel workbook inspection, Python compilation,
+   JavaScript syntax checks, the relevant regression suite, `git diff --check`, and a final status/diff
+   review. Only after all checks pass may the plan status be changed to `Executed` with its commit
+   hash; deployment/push remains subject to the owner's explicit release instruction.
+
+### Deliberately excluded
+
+- No currency selector, multi-currency support, or exchange-rate logic.
+- No purchase-order amount totals in the existing analytics count panels.
+- No automatic backfill of End Date or amount for legacy P.O. records.
+- No changes to Products, Calendar, client records, approval routing, or P.O. workflow permissions.
+- No replacement, direct edit, staging, commit, or push of `scheduler.db` or generated artifacts.
+
+### Verification bar
+
+- Positive controls must prove existing legacy P.O.s still load, Single Visit records can omit End
+  Date, valid Contract ranges save, and export works with and without active filters.
+- Negative controls must prove Contract without End Date, reversed ranges, zero/negative amounts,
+  malformed amounts, unauthorized routes, and unsupported sort keys are rejected safely.
+- Workbook checks must inspect actual cell values and formatting rather than only response status.
+- Browser checks must cover Add/Edit, filters, amount sorting, export, modal scrolling, mobile cards,
+  and dark mode without page overflow or broken actions.
+- The final diff must contain only intentional code, template, test, release-manifest, journal, and
+  plan changes.
+
+### Risks and safeguards
+
+- Legacy rows may have no End Date or amount; nullable columns and compatibility serialization prevent
+  load failures.
+- Decimal conversion can lose cents if serialized as binary floats; preserve a normalized decimal
+  representation for JSON and use numeric cells only in the workbook.
+- Export filters could drift from the page filters; share one parameter contract and test a filtered
+  subset against the rendered register.
+- A client delete must continue cascading P.O. records; retain and run the existing cascade test.
+
+### After implementation
+
+- Re-read the completed plan against the diff and amend this entry if implementation differs.
+- Keep the current dated `changes.md` section newest and detailed; do not log secrets or database
+  contents.
+- Validate the release manifest, run the focused and regression tests, and record exact results.
+- Stage only intentional source/template/test/journal/manifest files if the owner later authorizes a
+  commit. Never stage `scheduler.db`, `output/`, `tmp/`, or handoff artifacts.
+- Push or deploy only after a separate owner instruction.
+
 ## System Backup rework: build first, then download
 
 **Status:** `Executed — b4b17fc. Implementation and verification are complete; push follows the journal status commit.`
