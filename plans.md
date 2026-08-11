@@ -55,6 +55,225 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Reimbursement Tracker
+
+**Status:** `Approved — awaiting go-ahead. Nothing has been built.`
+**Implementer:** Codex, by the owner's decision on 2026-08-11. This plan was written here and
+deliberately not started; the review afterwards happens in this repository, per the established
+build-then-review split.
+**Approved:** 2026-08-11
+**Detailed:** 2026-08-11, after reading all three sheets of `forms/Reimbursement tracker.xlsm`
+(including its VBA project, data validations, defined names and array formulas), profiling its 222
+log rows, and inspecting the `Engineer` model, the capability-flag pattern, and the P.O. register
+that this feature copies.
+
+### Context
+
+`forms/Reimbursement tracker.xlsm` is a macro workbook maintained by hand by **one user (Diary
+Dizon)**. It holds **222 rows, 25 engineers, Jun 2025 – Aug 2026, ₱2,086,392.26**. Sheet `Input` is a
+data-entry form, sheet `Sheet` is the log sent to Accounting, `Sheet1` holds lookup lists. This
+feature replaces the workbook with a register page plus an Excel export that reproduces `Sheet`, so
+Accounting's downstream process is unchanged.
+
+This is **not** the app's existing reimbursement feature (`ReimbursementHeader` / `ReimbursementRow`,
+submit → approve → accounting → paid), which stays untouched. The tracker is a standalone log, and
+many of its rows never were app reimbursements — *"PostQual with BAC of Davao Occidental General
+Hospital"*, *"Service Meeting Meals"*.
+
+### Decisions taken
+
+Settled by the owner on 2026-08-11. An executor should not reopen any of these.
+
+1. **Manual entry, standalone.** Rows are typed. Not auto-fed from app reimbursements.
+2. **The xlsm's 10 categories exactly** — not the app's `REIMBURSEMENT_EXPENSE_FIELDS` (app.py:22053),
+   which differ: the app has `office_supplies` + `parking_coding` where the sheet has Service
+   Materials + Hotel Accommodation.
+3. **A new grantable capability flag**, following `po_admin_access`. Starts granted to one account.
+4. **Start empty.** The 222 historical rows are not imported.
+5. **Fix the two Control # bugs, keep the format.**
+6. **Track columns S–U in the app**; export V–X blank with live formulas for Accounting to fill.
+7. **Engineer names come from the `Engineer` table**, not a static list.
+
+### Investigation
+
+**Two defects in the workbook, both fixed by construction rather than by reimplementing the formula:**
+
+- `Input!H2` is `IFS(...ISNUMBER(SEARCH("Jim",))...)` — the second argument is missing, so the
+  abbreviation is an error. **7 of 222 rows carry Control # `#N/A`.**
+- The same formula tests `"Rod"→RB` before `"Rod"→RAJ`, so the later branch is unreachable and
+  **Rodito Aretano Jr. receives Rodney Banza's initials.**
+
+`Engineer.initials` (app.py:1774, `String(10)`, NOT NULL) already exists and the live table already
+holds the correct codes — `Jim Frederick Lim→JFL`, `Rodito Aretano Jr→RAJ`, the exact two values the
+formula gets wrong. **No new column is needed for abbreviations**, and reading this column makes both
+defects unreachable.
+
+**The finding that changed the design, and it contradicts the first reading of the sheet.** The `NN`
+in `INITIALS-DATE-NN` was assumed to be a per-engineer daily sequence. Measured against the 222 rows,
+it is **the batch number**:
+
+- `NN == batch number` in **188 of 208** parseable rows (BATCH-001→`01`, BATCH-010→`010`,
+  BATCH-014→`014`). The 20 mismatches are manual drift inside a batch.
+- **Control numbers are NOT unique — 43 are shared by more than one row** (`MDC-2026087-029` appears
+  6 times). A unique index would reject real usage outright.
+- The date token is the **submission date** (206/208), rendered `yyyy` + `mm` + **unpadded** `d`.
+- Width is `%03d` in practice (192 rows are 3-digit), despite `Input!D8` instructing "Use 2 digits".
+
+Consequences: **no unique index, no sequence allocation, no concurrency retry, no 99-exhaustion
+case.** The control number is a pure function of `(initials, submission_date, reference)`.
+
+**Reference pattern to copy**, verified: `po_details_page()` app.py:39375, `/get_purchase_orders`
+39384, `purchase_order_export_records()` 39408 (not a route — re-applies the register's filters and
+sort server-side from `request.args`), `/export_purchase_orders` 39482 (openpyxl, header fill
+`16243A`, `number_format`, `freeze_panes`, `auto_filter`, `add_activity_log_entry`, `io.BytesIO` →
+`send_file`), CRUD 39580/39614/39656, and `templates/po_details.html`.
+
+**Capability wiring**, verified: `_has_active_account_capability` app.py:8015, `can_manage_purchase_orders`
+8040, capability columns 1498-1514, `ensure_user_admin_capability_columns()` already loops a tuple at
+3411-3417 so the new column is a one-line addition. `NETWORK_ONLY_DOWNLOAD_PREFIXES` (app.py:15273)
+already contains `'/export_'`, so the export route is covered **by prefix** — to be pinned by a test
+rather than trusted.
+
+### Execution steps
+
+1. **Model.** Add `ReimbursementTrackerEntry` beside `PurchaseOrder` (app.py:1839), table
+   `reimbursement_tracker_entry`, with the columns listed in the approved plan: `reference`,
+   `submission_date`, `control_number` (stored, **not** unique), `batch_sequence`, `description`,
+   `engineer_id` + `engineer_name_snapshot` + `engineer_initials_snapshot`, `office`, `total`, the
+   ten `Numeric(12,2)` category columns, `paid_in_full` / `paid_amount` / `paid_transfer_date`,
+   `remarks`, and the `created_*` / `updated_*` pair. Use `Numeric(12,2)`, not `Float`, reusing the
+   `PurchaseOrder.amount` precedent (app.py:39256). **Done:** the model imports and
+   `__table__.create()` succeeds against a scratch database.
+2. **Category constant.** Add `REIMBURSEMENT_TRACKER_EXPENSE_FIELDS` beside the model — the ten
+   `(field, label)` pairs in sheet order, **including the sheet's typos `Trasnportation` and
+   `Hotel Accomodation`**, with a comment saying they are deliberate because Accounting pastes these
+   columns downstream. Deliberately not placed near `REIMBURSEMENT_EXPENSE_FIELDS` (app.py:22053) so
+   the two are not conflated. **Done:** one constant drives model, form and export.
+3. **Migration.** Add `ensure_reimbursement_tracker_schema()` after `ensure_purchase_order_schema()`
+   (app.py:3428) with a `_reimbursement_tracker_schema_ready` global: `__table__.create(checkfirst=True)`,
+   additive-column dict against `PRAGMA table_info`, `CREATE INDEX IF NOT EXISTS` on
+   `submission_date`, `reference`, `control_number`, `office`. Call it at startup beside
+   `ensure_purchase_order_schema()` at **app.py:45030 and 45252**. **Done:** a fresh database and an
+   existing one both come up clean.
+4. **Capability column + helper.** Add `reimbursement_tracker_access` at app.py:1514; add
+   `'reimbursement_tracker_access'` to the tuple at 3411-3417; add
+   `can_manage_reimbursement_tracker()` at app.py:8043. **This single helper is the page gate, every
+   endpoint gate and the nav predicate** — the "same expression" rule satisfied structurally.
+   **Done:** the helper is the only gate expression anywhere in the feature.
+5. **Settings + nav wiring.** `approval_user_to_dict` **app.py:7894 reporting the stored grant** with
+   the comment from 7887-7893; nav context 1303; save route 17288, 17306, 17381, 17420, 17447;
+   Add-Personnel 44294 / 44373; `templates/settings.html` 1820, ~1910 (class
+   `reimbursement-tracker-access-input`, label "Reimbursement tracker access"), 2071;
+   `templates/layout.html` 130, 135 (`records_paths`), ~267 (`nav_link` in Records).
+   **Done:** granting the flag in Settings makes the nav entry appear for the grantee and nobody else.
+6. **Control-number helper.** One function producing
+   `f'{initials}-{d.year}{d.month:02d}{d.day}-{batch_sequence:03d}'` from the **submission date**
+   (never `TODAY()`), behind `REIMBURSEMENT_TRACKER_CONTROL_DATE_FORMAT`. Computed once at save and
+   stored. **Done:** deriving `NN` from `reference` removes the 20 drift rows by construction.
+7. **Validator.** `total` always recomputed server-side as the sum of the ten fields, ignoring any
+   client-supplied total; `paid_amount` forced to `total` when `paid_in_full` and `NULL` otherwise,
+   in one place, mirroring `T =IF(S=TRUE,G,"")`. **Done:** the two can never drift.
+8. **Routes.** The six in the approved plan, each calling the migration first, page redirecting to
+   `dashboard_page` and APIs returning `denied(...)`. The list endpoint also returns `offices`,
+   `engineers`, `suggested_reference` and `duplicate_initials`. Every mutation calls
+   `add_activity_log_entry` naming the control number. **Done:** all six behave correctly for a
+   granted and a non-granted account.
+9. **Export helper.** `reimbursement_tracker_export_records()` modelled on
+   `purchase_order_export_records()` (app.py:39408) — `request.args`, a sort whitelist, `ValueError`
+   on bad input, caller returns 400.
+10. **Excel export.** Reproduce `Sheet` exactly: banners `A1`/`S1`/`V1`, headers on rows 2 and 6,
+    `A5 'Reimbursements'`, data from **row 7**. Per row `r`: `G` `=SUM(I{r}:R{r})`, `H` empty, `S`
+    a real bool, `T`/`U` literals, `V` blank, and live formulas for `W`, `X`, `Y`, `Z`. **Every
+    formula built with an f-string on `r` — a hard-coded `7` is the most likely defect here.** Set
+    `workbook.calculation.iterate = True` (with `iterateCount`/`iterateDelta`), because `X` is
+    self-referential exactly as the workbook's `U` and `X` are and Excel otherwise computes 0 behind a
+    circular-reference warning. No TOTAL row. **Done:** a real export opens in Excel with no warning
+    and computes when a `V` box is ticked.
+11. **Frontend.** New `templates/reimbursement_tracker.html` modelled on `po_details.html`, with the
+    form mirroring the `Input` sheet in order and the office→engineer filter replacing `INDIRECT`.
+    Warning banner when `duplicate_initials` is non-empty.
+12. **Service worker.** Bump `CACHE_VERSION` (app.py:15234) because `layout.html` is an `APP_SHELL`
+    asset. **Read the live value out of `app.py` immediately before committing**, never from this plan.
+13. **Changelog.** Add a `static/changelog/releases.json` entry dated the commit date, or
+    `tests/test_changelog_coverage.py` fails.
+
+### Deliberately excluded
+
+- **Importing the 222 historical rows.** The owner chose to start empty.
+- **Auto-populating from `ReimbursementHeader`.** Rejected: many tracker rows never were app
+  reimbursements, and the two category sets do not match.
+- **A unique constraint on `control_number`.** Measured to be wrong — 43 real control numbers are
+  shared by more than one row.
+- **Padding the date token to `yyyymmdd`.** The ambiguity is real (Jan 12 and Nov 2 both render
+  `2026112`) but the owner chose to keep the existing format; the constant makes it a one-line change.
+- **Auto-disambiguating the duplicate `JP` initials.** That would invent a code Accounting has never
+  seen. Surfaced as a warning for the owner to fix in Personnel instead.
+- **Touching the existing reimbursement feature** in any way.
+
+### Verification
+
+Tests in `tests/test_reimbursement_tracker.py`, modelled on `tests/test_purchase_orders.py`, with
+accounts built in `setUpClass`. **Authorization is tested by building an account and calling the
+route — never by asserting source text.** Each test must be proven to fail without its fix, and the
+injection confirmed to have applied (files are CRLF; a `\n` needle silently matches nothing).
+
+- `test_authorization_and_escalation_boundary` — non-granted: page 302 **and all five APIs 403**;
+  granted: 200/201. Granting the flag via `/add_engineer` as a non-superadmin → 403.
+- `test_page_and_endpoints_flip_together` — flip the stored flag, assert page and every endpoint move
+  in lockstep.
+- `test_settings_reports_the_stored_grant_not_the_effective_permission` (mirror :253) and
+  `test_saving_an_unrelated_permission_does_not_grant_tracker_access` (mirror :284).
+- `test_writes_are_refused_without_the_capability` (mirror :307), asserting the row count is unchanged.
+- `test_control_number_uses_engineer_initials_from_the_table` — `JFL-`/`RAJ-`, never `RB-`, never `#N/A`.
+- `test_control_number_sequence_comes_from_the_batch_reference` — three engineers in `BATCH-031` all
+  get `-031`, and a second row for the same engineer in the same batch is **allowed and identical**,
+  pinning that control numbers are deliberately not unique.
+- `test_control_number_is_stable_after_engineer_initials_change`.
+- `test_total_is_recomputed_server_side` — a forged total is ignored; `paid_amount == total` iff `paid_in_full`.
+- `test_export_reproduces_the_workbook_layout` — banners, both header rows **including the two
+  typos**, `A5`, data at row 7, and with **two** records `W8/X8/Y8/Z8` carrying row-**8** formulas
+  while `V7`/`V8` are `None`. This is the positive control against a hard-coded row number.
+- `test_export_enables_iterative_calculation`.
+- `test_export_route_is_network_only_in_the_service_worker` — parse `NETWORK_ONLY_DOWNLOAD_PREFIXES`
+  out of the inlined worker and assert the route matches a prefix.
+- `assert_cache_version_at_least(...)` — a **floor**, never an exact pin.
+
+Then: the focused run, then the full suite against the **605 green + 1 skip** baseline. Browser bar:
+drive the real page with an explicit `MEDICAL_SERVICE_TEST_DB` (never port 5000) — create, confirm
+the control number, edit, tick Paid in Full, delete — then 375 px and dark mode (disable transitions
+first; the Browser pane never advances the animation timeline), console clean. **Open a real exported
+`.xlsx` in Excel** and confirm the banners and both header rows land where Accounting expects, that
+ticking a `V` box makes `W`/`X`/`Y`/`Z` compute, and that no circular-reference warning appears.
+
+### After implementation
+
+- Re-read this plan against the diff and amend the entry if the implementation differed.
+- Add a dated `changes.md` section, newest first; do not log secrets or database contents.
+- Validate the release manifest, run the focused and regression tests, and record exact results.
+- Stage only intentional source/template/test/journal/manifest files if the owner later authorizes a
+  commit. Never stage `scheduler.db`, `output/`, `tmp/`, or handoff artifacts.
+- Push or deploy only after a separate owner instruction.
+
+### Risks
+
+1. **Two engineers share initials `JP`** — Jonamar Paunil (Manila) and Jocel Prudente (Davao). Their
+   rows in the same batch on the same date get identical control numbers. Since control numbers are
+   already non-unique by design, this is a **data-quality note, not a blocker**; surfaced via
+   `duplicate_initials` for the owner to fix in Personnel (`String(10)`, no schema change).
+2. **`yyyymmd` is ambiguous** — Jan 12 and Nov 2 both render `2026112`. Kept by owner decision.
+3. **`=IFS` needs Excel 2016+**; older Excel or LibreOffice yields `#NAME?` in column Z. A nested
+   `IF` is the identical fallback. Worth confirming what Accounting opens these in.
+4. **`office` is denormalised from `Engineer.branch`** — a transferring engineer keeps the office each
+   historical row was filed under. Correct for an accounting log; comment it so it does not read as a bug.
+5. **The `S1` banner hard-codes one person's name.** Correct today, wrong if the capability is ever
+   granted to a second account.
+6. **`Engineer` has no `is_active`** — departed engineers stay in the dropdown. Left unfiltered
+   deliberately; filtering through the linked `User` would silently drop engineers with no user row.
+7. **Blast radius.** Additive throughout: a new table, a new nullable-defaulted capability column, a
+   new page and routes. The one shared edit is the capability plumbing in Settings, where the failure
+   mode is a phantom grant — covered by the two mirrored tests. The service worker bump is the other
+   shared surface; getting it wrong ships stale nav to field devices.
+
 ## P.O. Dates, Amount, and Complete Excel Export
 
 **Status:** `Executed — 3d66caf; documentation closeout 30c087c. Local implementation and focused verification passed; both commits are pushed to origin/main.`
