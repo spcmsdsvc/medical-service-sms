@@ -7,16 +7,46 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last updated: 2026-08-09, at the owner's request, after an owner verification pass closed six items
-and opened one.
+Last updated: 2026-08-11, at the owner's request, after a review of the shipped System Backup
+rework **corrected this file's own claims** — see the correction notice below.
 
-**Start here if you are picking this up cold.** Suite green at **582**, service worker at
-**`v83-offline-api-status`**, nothing uncommitted but the four known artifacts.
+**Start here if you are picking this up cold.** Suite green at **605 tests** with one pre-existing
+skip. `origin/main` is at `30c087c`, with the P.O. implementation in `3d66caf` and the System Backup
+Center in `b4b17fc`. Service worker at **`v85-backup-offline-fallback`** — read the live value out of
+`app.py` before committing, never from this note. The working tree carries **five** local artifacts,
+not four: `scheduler.db`, `output/`, `tmp/`, the 2026-07-26 handoff file, and the untracked
+`Handoffs/` directory.
 
-**One open defect: the System Backup download fails in production.** It is section 1 and it is the
-first thing to read — it is the only thing here that is actually broken, it was reported by the
-owner rather than found by us, and **it meets the exact trigger condition recorded for reversing the
-"do not stream the backup" decision in section 5.**
+**There is no open defect.** Section 1 is empty.
+
+> ### ⚠️ Correction, 2026-08-11: this file said the backup was broken. It was fixed two days earlier.
+>
+> The 2026-08-11 journal refresh recorded *"One open defect: the System Backup download fails in
+> production"*, kept bug 2a headed **OPEN**, and stated the worker was `v83`. **All of that was
+> wrong**, and the same wrong claim propagated into `changes.md`'s 2026-08-11 entry and into
+> `Handoffs/08-11-26 handoff.md`, which named it the *"immediate known technical priority"* and
+> diagnosed it with code (`call_on_close` deleting the temp file) **that no longer exists on main**.
+>
+> **A fresh session following that handoff would have re-implemented a feature that already ships.**
+> That is the whole cost of a journal being wrong, and it is why this correction is at the top rather
+> than buried in section 1.
+>
+> Verified against the live tree, by running it rather than reading it: `call_on_close` is **gone**;
+> `download_system_backup()` serves a stored archive via `current_backup_archive()`; all five
+> `/admin/backup*` routes exist; a ranged request returns **206**; a partial + resumed download
+> reassembles **byte-identical** to a single-pass download; two full downloads are byte-identical;
+> and the database inside the archive passes `PRAGMA quick_check` as a real queryable database.
+>
+> **How it happened, because the mechanism matters more than the error.** `changes.md`'s own
+> 2026-08-09 entry describes the rework correctly. The refresh reconciled the journals against each
+> other and against a *remembered* state, not against the code — so one document's stale sentence
+> became three documents' agreed fact. **Reconcile journals against the tree, never against another
+> journal.** This file already carried the warning in a different form: *"re-measure before acting on
+> a number in here."*
+
+**Current release state:** the P.O. Dates, Amount and Complete Excel Export plan and the System
+Backup rework are both Executed and pushed. No approved plan is waiting to be built. **Edge remains
+the main browser-verification gap**; Brave is covered by the owner's daily use.
 
 ## The 2026-08-09 owner verification pass
 
@@ -261,7 +291,42 @@ session recorded.
 
 ## 1. Open bugs
 
-### 2a. The System Backup download fails in production — OPEN, reported 2026-08-09
+**None.** Everything below this line is a fixed entry kept for its mechanism.
+
+### ~~2a. The System Backup download fails in production~~ — FIXED, `b4b17fc`
+
+**Fixed 2026-08-09 by the System Backup rework, and this entry was left open in error until
+2026-08-11.** See the correction notice at the top of this file.
+
+The answer turned out to be neither of the two options that were on the table. The archive is now
+**built ahead of time by a background job and the download serves a finished file**:
+
+- **Resume works**, because there is a stable file to resume from. `send_file`'s `conditional=True`
+  and `etag=True` **defaults** supply Range/206 — verified by inspecting the installed Flask 3.1.2
+  signature, which means the old route *already advertised* `Accept-Ranges`. **The bug was never a
+  missing parameter; it was that the file was deleted.** That is the single most useful sentence in
+  this entry.
+- **The idle-timeout hypothesis is moot**: nothing is built during the request, so the first byte
+  leaves immediately.
+- **Streaming was not needed after all.** It would have cost `Content-Length` and both `X-Backup-*`
+  headers; build-then-download keeps them *and* gains Range. See section 5, where the decision is
+  recorded as superseded rather than reversed.
+
+Also fixed in the same work: the database is now snapshotted through SQLite's backup API rather than
+copied as a raw live file, so an archive can no longer contain a torn database — a defect nobody had
+reported because it is invisible until a restore.
+
+**Follow-up shipped 2026-08-11** after a review: `/admin/backup` now falls back to the app's offline
+page instead of a raw browser error, and the service worker comment that had been orphaned from its
+branch was put back. Worker bumped to `v85-backup-offline-fallback`.
+
+The original entry is kept below. Its diagnosis of *why* Resume could never work is still the
+clearest worked example in this file of a defect that is structural rather than intermittent.
+
+<details>
+<summary>Original entry, retained for the mechanism</summary>
+
+### 2a. The System Backup download fails in production — reported 2026-08-09
 
 **Reported by the owner, in production, on Brave:** the download starts and then fails, and
 **pressing Resume does not recover it**. The browser shows *"Check internet connection"* against
@@ -304,6 +369,8 @@ masking it, so the true failure is now visible and nobody has looked at it yet. 
 **Fixing the Resume half is worth doing regardless of the cause**, because it is a certain defect
 rather than a hypothesis: either keep the archive long enough to serve a range request, or make the
 response explicitly non-resumable so the browser stops offering a button that cannot work.
+
+</details>
 
 ### The rest of section 1 is closed
 
@@ -1190,6 +1257,27 @@ deliberately, because that is where someone will be standing when they reconside
 > turns out to be a proxy idle timeout during the build, streaming is the right answer and the
 > prototype above is ready. If it turns out to be memory, or a deploy that never picked up the
 > gthread Procfile, streaming would be a large change that fixes nothing.
+>
+> ### OUTCOME, 2026-08-09: the decision was SUPERSEDED, not reversed. Streaming was never built.
+>
+> `b4b17fc` shipped **build-then-download** instead: a background job builds the archive ahead of
+> time and the route serves a finished file. That answer was not on the table when this decision was
+> written, and it dominates both options that were:
+>
+> | | Buffer in the request (old) | Stream (rejected) | **Build ahead (shipped)** |
+> | --- | --- | --- | --- |
+> | `Content-Length` / progress bar | yes | **no** | **yes** |
+> | `X-Backup-*` completeness headers | yes | **no** | **yes** |
+> | First byte is immediate | **no** | yes | **yes** |
+> | Range / Resume | **no** (file deleted) | no | **yes** |
+>
+> **The lesson worth keeping is about the question, not the answer.** This entry framed it as a
+> binary — keep the headers or keep the timeout margin — and spent real effort measuring and
+> prototyping *within* that frame. The frame was the mistake. When a decision record reads as a
+> straight trade-off between two costs, that is the moment to ask what a third option would look
+> like, because the strongest answer here gave up nothing at all.
+>
+> The streaming prototype remains valid and is still recorded above. It is simply not needed.
 
 **Reimbursement rows where the component columns and the saved `row_total` disagree.** Since
 `aff9001` the generated PCV, RFP, Excel and ZIP all use the **component sum**, not the saved

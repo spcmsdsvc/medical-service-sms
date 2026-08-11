@@ -132,7 +132,11 @@ class LogoutCachePurgeTests(unittest.TestCase):
         """
         handler = self.worker.split("self.addEventListener('fetch', event => {")[1]
         logout_at = handler.find("url.pathname === '/logout'")
-        navigate_at = handler.find("request.mode === 'navigate'")
+        # Match the navigate BRANCH, not the bare expression: another branch now
+        # tests `request.mode === 'navigate'` inside its own offline fallback, and
+        # a loose find() would locate that instead and compare the handler against
+        # a point earlier than the branch this test is about.
+        navigate_at = handler.find("if (request.mode === 'navigate') {")
         self.assertGreater(logout_at, -1, 'the /logout branch is missing')
         self.assertGreater(navigate_at, -1, 'the navigate branch is missing')
         self.assertLess(logout_at, navigate_at,

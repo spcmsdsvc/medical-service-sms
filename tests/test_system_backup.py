@@ -222,12 +222,20 @@ class BackupDownloadIsNeverCachedTests(unittest.TestCase):
         self.assertIn("'/admin/download-'", prefixes)
         self.assertIn("'/export_'", prefixes, 'the export fix must not have been dropped')
 
+    # Locate the navigate BRANCH by its full `if (...) {` form, never by the bare
+    # expression. The bare text now appears twice: the Backup Center branch tests
+    # `request.mode === 'navigate'` inside its own offline fallback, so a `.find()`
+    # on the expression returns that occurrence and silently compares the handler
+    # against itself -- which turned one of these tests red and would have made the
+    # other pass vacuously.
+    NAVIGATE_BRANCH = "if (request.mode === 'navigate') {"
+
     def test_the_backup_center_is_network_first_and_uncached(self):
         prefixes = self.worker.split('const NETWORK_FIRST_AUTHENTICATED_PREFIXES = [')[1].split(']')[0]
         self.assertIn("'/admin/backup'", prefixes)
         branch_at = self.handler.find('NETWORK_FIRST_AUTHENTICATED_PREFIXES.some')
         download_at = self.handler.find('NETWORK_ONLY_DOWNLOAD_PREFIXES.some')
-        navigate_at = self.handler.find("request.mode === 'navigate'")
+        navigate_at = self.handler.find(self.NAVIGATE_BRANCH)
         self.assertGreater(branch_at, -1)
         self.assertLess(branch_at, download_at)
         self.assertLess(branch_at, navigate_at)
@@ -236,10 +244,26 @@ class BackupDownloadIsNeverCachedTests(unittest.TestCase):
         self.assertIn('return;', branch)
         self.assertNotIn('cache.put', branch)
 
+    def test_the_backup_center_still_fails_like_the_rest_of_the_app(self):
+        """A rejected fetch must not put a raw browser error page on screen.
+
+        Before the fallback existed, opening /admin/backup offline landed on
+        `chrome-error://chromewebdata/` while every other navigation in the app
+        reached /offline. The API calls degrade separately, into the JSON body the
+        page's own requestJson() already renders.
+        """
+        branch_at = self.handler.find('NETWORK_FIRST_AUTHENTICATED_PREFIXES.some')
+        branch = self.handler[branch_at:].split('\n  }')[0]
+        self.assertIn("caches.match('/offline')", branch)
+        self.assertIn('offlineApiResponse()', branch)
+        # The page fallback must be reached only for navigations; an API caller
+        # getting HTML back is the defect this whole class of fix exists to stop.
+        self.assertIn("request.mode === 'navigate'", branch)
+
     def test_it_is_matched_before_the_navigation_branch(self):
         """Ordering is the whole fix, exactly as it was for /export_."""
         network_only_at = self.handler.find('NETWORK_ONLY_DOWNLOAD_PREFIXES.some')
-        navigate_at = self.handler.find("request.mode === 'navigate'")
+        navigate_at = self.handler.find(self.NAVIGATE_BRANCH)
         self.assertGreater(network_only_at, -1, 'the network-only branch is missing')
         self.assertGreater(navigate_at, -1, 'the navigate branch is missing')
         self.assertLess(network_only_at, navigate_at,
@@ -509,6 +533,258 @@ class BackupArchiveIsDataOnlyTests(unittest.TestCase):
                     app_module.db.session.delete(saved_user)
                     app_module.db.session.commit()
                 app_module.db.session.remove()
+
+
+class SqliteSnapshotTests(unittest.TestCase):
+    """The snapshot is the most serious correctness fix in the whole rework.
+
+    Before it, the live database was copied as a raw file with no `-wal`/`-shm`/
+    `-journal` sidecars, so a commit landing mid-copy produced a torn archive that
+    looked perfectly normal until someone needed to restore it. Nothing tested
+    `create_sqlite_snapshot` directly -- it was only ever exercised sideways
+    through a full build, which cannot tell a consistent snapshot from a lucky one.
+    """
+
+    def setUp(self):
+        self.work = pathlib.Path(tempfile.mkdtemp(prefix='snapshot_test_'))
+        self.addCleanup(shutil.rmtree, self.work, True)
+        self.source = self.work / 'source.db'
+        connection = sqlite3.connect(self.source)
+        connection.execute('CREATE TABLE widget (id INTEGER PRIMARY KEY, label TEXT)')
+        connection.executemany(
+            'INSERT INTO widget (label) VALUES (?)', [(f'row-{index}',) for index in range(250)]
+        )
+        connection.commit()
+        connection.close()
+
+    def test_the_snapshot_is_a_consistent_self_contained_database(self):
+        destination = self.work / 'snapshot.db'
+        result = app_module.create_sqlite_snapshot(str(self.source), str(destination))
+
+        self.assertEqual(result['method'], 'sqlite_backup_api')
+        self.assertEqual(result['quick_check'], 'ok')
+        self.assertTrue(result['sha256'], 'the snapshot must be checksummed')
+
+        # Self-contained means exactly this: no sidecar had to come with it.
+        self.assertEqual(result['sidecars_included'], [])
+        for suffix in ('-wal', '-shm', '-journal'):
+            self.assertFalse(os.path.exists(f'{destination}{suffix}'))
+
+        # And it must be a real, queryable database with the real rows in it.
+        copy = sqlite3.connect(destination)
+        self.assertEqual(copy.execute('SELECT COUNT(*) FROM widget').fetchone()[0], 250)
+        self.assertEqual(copy.execute('PRAGMA quick_check').fetchone()[0], 'ok')
+        copy.close()
+
+    def test_an_unreadable_database_falls_back_to_a_raw_copy_and_says_so(self):
+        """Positive control on the test above.
+
+        Without this, `method == 'sqlite_backup_api'` could be passing because the
+        function always returns that string. The fallback must also RECORD itself,
+        or a degraded backup is indistinguishable from a clean one.
+        """
+        broken = self.work / 'broken.db'
+        broken.write_bytes(b'this is emphatically not a sqlite database')
+        destination = self.work / 'broken_snapshot.db'
+
+        result = app_module.create_sqlite_snapshot(str(broken), str(destination))
+        self.assertEqual(result['method'], 'raw_copy_fallback')
+        self.assertTrue(result.get('error'), 'the fallback must record why it happened')
+        self.assertTrue(destination.exists())
+
+    def test_a_missing_database_raises_so_the_job_fails(self):
+        """A backup without the database must never be offered as complete.
+
+        Raising is the point: `add_path_to_backup_zip` returns 0 for a missing path
+        without recording anything, which is how a green `backup_complete: true`
+        could once ship with `database_included: false`.
+        """
+        with self.assertRaises(FileNotFoundError):
+            app_module.create_sqlite_snapshot(
+                str(self.work / 'not_here.db'), str(self.work / 'out.db')
+            )
+
+
+class BackupArtifactSweeperTests(unittest.TestCase):
+    """The sweeper deletes files, so its allowlist is safety-critical."""
+
+    def setUp(self):
+        self.work = pathlib.Path(tempfile.mkdtemp(prefix='sweeper_test_'))
+        self.addCleanup(shutil.rmtree, self.work, True)
+
+    def test_the_sweeper_never_deletes_a_test_database(self):
+        """This suite's own database is named `medical_service_backup_<hex>.db`.
+
+        A broadened glob over the temp directory would therefore delete the
+        database out from under a running suite, and the resulting failures would
+        look like anything except their real cause. The rule is `.zip` only.
+        """
+        temp_root = pathlib.Path(tempfile.gettempdir())
+        decoy = temp_root / f'medical_service_backup_{uuid.uuid4().hex}.db'
+        decoy.write_bytes(b'pretend test database')
+        # Old enough that an age check would not save it.
+        os.utime(decoy, (0, 0))
+        self.addCleanup(lambda: decoy.exists() and decoy.unlink())
+
+        # The real suite DB shares the same shape; assert on it too, since that is
+        # the file that actually matters.
+        self.assertTrue(str(TEST_DB_PATH.name).startswith('medical_service_backup_'))
+
+        with patch.object(app_module, 'BACKUP_ARCHIVE_DIR', str(self.work)):
+            app_module.sweep_backup_artifacts()
+
+        self.assertTrue(decoy.exists(), 'the sweeper deleted a .db file it must never touch')
+
+    def test_the_sweeper_does_remove_a_stale_temp_archive(self):
+        """Positive control: prove the sweeper is not simply inert.
+
+        Without this, the test above would pass just as happily against a sweeper
+        that had been commented out.
+        """
+        temp_root = pathlib.Path(tempfile.gettempdir())
+        stale = temp_root / f'medical_service_backup_{uuid.uuid4().hex}.zip'
+        stale.write_bytes(b'stale archive')
+        os.utime(stale, (0, 0))
+        self.addCleanup(lambda: stale.exists() and stale.unlink())
+
+        with patch.object(app_module, 'BACKUP_ARCHIVE_DIR', str(self.work)):
+            app_module.sweep_backup_artifacts()
+
+        self.assertFalse(stale.exists(), 'a stale legacy .zip should have been swept')
+
+    def test_only_the_latest_archive_is_kept(self):
+        older = self.work / 'medical_service_backup_20260101_010101.zip'
+        newer = self.work / 'medical_service_backup_20260102_010101.zip'
+        older.write_bytes(b'older')
+        newer.write_bytes(b'newer')
+        os.utime(older, (time.time() - 600, time.time() - 600))
+
+        with patch.object(app_module, 'BACKUP_ARCHIVE_DIR', str(self.work)):
+            app_module.sweep_backup_artifacts()
+
+        self.assertTrue(newer.exists(), 'the newest archive must survive')
+        self.assertFalse(older.exists(), 'older archives must be reclaimed')
+
+
+class BackupJobReconcileTests(unittest.TestCase):
+    """A job whose process is gone must not leave the page spinning forever."""
+
+    def setUp(self):
+        self.work = pathlib.Path(tempfile.mkdtemp(prefix='reconcile_test_'))
+        self.addCleanup(shutil.rmtree, self.work, True)
+        self.state_patch = patch.object(app_module, 'RUNTIME_STATE_DIR', str(self.work))
+        self.state_patch.start()
+        self.addCleanup(self.state_patch.stop)
+
+    def _write_running(self, boot_id, updated_at=None):
+        state = app_module.empty_backup_job_state()
+        state.update({
+            'job_id': 'job-under-test',
+            'boot_id': boot_id,
+            'status': 'running',
+            'started_at': app_module.get_manila_time().isoformat(),
+        })
+        app_module.save_backup_job_state(state)
+        if updated_at is not None:
+            stored = app_module.load_backup_job_state()
+            stored['updated_at'] = updated_at
+            path = app_module.backup_job_state_path()
+            with open(path, 'w', encoding='utf-8') as handle:
+                json.dump(stored, handle)
+
+    def test_a_job_from_a_previous_process_is_marked_failed(self):
+        """A Railway redeploy mid-build is the ordinary cause.
+
+        `boot_id` rather than pid, because pids are reused and a reused pid would
+        make a dead job look alive.
+        """
+        self._write_running('a-boot-id-from-a-process-that-no-longer-exists')
+        state = app_module.reconcile_backup_job_state()
+        self.assertEqual(state['status'], 'failed')
+        self.assertIn('restart', state['message'].lower())
+
+    def test_a_live_job_in_this_process_is_left_alone(self):
+        """Positive control: reconcile must not fail every job it sees."""
+        self._write_running(app_module.PROCESS_BOOT_ID)
+        state = app_module.reconcile_backup_job_state()
+        self.assertEqual(state['status'], 'running')
+
+    def test_a_job_that_stopped_heartbeating_is_marked_failed(self):
+        stale_timestamp = (
+            app_module.get_manila_time()
+            - __import__('datetime').timedelta(seconds=app_module.BACKUP_JOB_STALE_SECONDS + 120)
+        ).isoformat()
+        self._write_running(app_module.PROCESS_BOOT_ID, updated_at=stale_timestamp)
+        state = app_module.reconcile_backup_job_state()
+        self.assertEqual(state['status'], 'failed')
+
+
+class BucketBudgetEnumerationTests(unittest.TestCase):
+    """Budget exhaustion must say WHICH objects were left out.
+
+    The old behaviour simply `break`ed, so the archive was quietly short and the
+    manifest said only "budget exhausted" -- leaving whoever restores it to guess
+    what is missing. Enumerating the remainder is the actual fix, and nothing
+    asserted it.
+    """
+
+    def test_budget_exhaustion_enumerates_the_skipped_objects(self):
+        class SlowStorage:
+            bucket_configured = True
+            bucket_name = 'private-files'
+
+            def test_connection_for_backup(self, *, timeout_seconds):
+                return {'ok': True, 'message': 'connected'}
+
+            def iter_objects_for_backup(self, *, timeout_seconds):
+                for index in range(40):
+                    yield SimpleNamespace(key=f'reports/slow-{index}.pdf', size=4)
+
+            def download_bytes_for_backup(self, key, *, timeout_seconds):
+                time.sleep(0.01)
+                return b'slow'
+
+        buffer = io.BytesIO()
+        with patch.object(app_module, 'file_storage', SlowStorage()), \
+                patch.object(app_module, 'managed_storage_roots', return_value=[('reports', None)]):
+            with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as backup_zip:
+                result = app_module.add_bucket_objects_to_backup_zip(backup_zip, budget_seconds=0.03)
+
+        self.assertTrue(result['budget_exhausted'])
+        self.assertTrue(result['skipped'], 'the skipped objects must be enumerated, not just counted')
+        self.assertIn('key', result['skipped'][0])
+        # Every object is either archived or named as skipped -- none may vanish.
+        self.assertEqual(len(result['objects']) + len(result['skipped']), 40)
+
+    def test_an_oversized_object_is_skipped_with_a_warning(self):
+        class HugeStorage:
+            bucket_configured = True
+            bucket_name = 'private-files'
+
+            def test_connection_for_backup(self, *, timeout_seconds):
+                return {'ok': True, 'message': 'connected'}
+
+            def iter_objects_for_backup(self, *, timeout_seconds):
+                yield SimpleNamespace(key='reports/small.pdf', size=10)
+                yield SimpleNamespace(
+                    key='reports/enormous.bin',
+                    size=app_module.BACKUP_BUCKET_MAX_OBJECT_BYTES + 1,
+                )
+
+            def download_bytes_for_backup(self, key, *, timeout_seconds):
+                if 'enormous' in key:
+                    raise AssertionError('an oversized object must never be downloaded')
+                return b'small'
+
+        buffer = io.BytesIO()
+        with patch.object(app_module, 'file_storage', HugeStorage()), \
+                patch.object(app_module, 'managed_storage_roots', return_value=[('reports', None)]):
+            with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as backup_zip:
+                result = app_module.add_bucket_objects_to_backup_zip(backup_zip)
+
+        self.assertEqual([item['key'] for item in result['objects']], ['reports/small.pdf'])
+        self.assertEqual([item['key'] for item in result['skipped']], ['reports/enormous.bin'])
+        self.assertIn('bucket_object_oversize', [error['scope'] for error in result['errors']])
 
 
 if __name__ == '__main__':

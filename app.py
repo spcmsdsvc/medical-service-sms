@@ -15231,7 +15231,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v84-system-backup-center';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v85-backup-offline-fallback';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -15554,16 +15554,32 @@ self.addEventListener('fetch', event => {
   // Note `Cache-Control: no-store` on the response does NOT prevent any of that: the Cache
   // Storage API ignores HTTP cache headers, and cache.put() stores whatever it is handed.
   //
+  // The Backup Center is always fetched from the server and never cached: a job in
+  // progress is account-specific live state, and a stale copy would show an admin a
+  // build that finished minutes ago or one that never started.
+  //
+  // It still has to FAIL like the rest of the app. Without the catch below a plain
+  // fetch rejection put `chrome-error://chromewebdata/` on screen -- a raw browser
+  // error page -- where every other navigation in this app lands on /offline. The
+  // page's own requestJson() already renders `.message` from the JSON body, so the
+  // API calls degrade into a readable message instead of a thrown network error.
+  if (isSameOrigin && NETWORK_FIRST_AUTHENTICATED_PREFIXES.some(prefix => url.pathname.startsWith(prefix))) {
+    event.respondWith((async () => {
+      try {
+        return await fetch(request, { credentials: 'same-origin', cache: 'no-store' });
+      } catch (err) {
+        if (request.mode === 'navigate') return caches.match('/offline');
+        return offlineApiResponse();
+      }
+    })());
+    return;
+  }
+
   // A prefix list rather than one route, because this is the second time the same gap has
   // been found. Deliberately a plain fetch with no fallback Response: a synthetic body would
   // be saved to disk as the downloaded file, and letting the request fail is both honest and
   // correct, since none of these can be produced without the server. No offline workflow
   // references any of them.
-  if (isSameOrigin && NETWORK_FIRST_AUTHENTICATED_PREFIXES.some(prefix => url.pathname.startsWith(prefix))) {
-    event.respondWith(fetch(request, { credentials: 'same-origin', cache: 'no-store' }));
-    return;
-  }
-
   if (isSameOrigin && NETWORK_ONLY_DOWNLOAD_PREFIXES.some(prefix => url.pathname.startsWith(prefix))) {
     event.respondWith(fetch(request));
     return;

@@ -252,7 +252,11 @@ class ExportsAreNeverCachedTests(unittest.TestCase):
         the network throws -- so the leak would survive on exactly the path a real user takes.
         """
         export_at = self.fetch_handler.find(self.BRANCH_MARKER)
-        navigate_at = self.fetch_handler.find("request.mode === 'navigate'")
+        # Match the navigate BRANCH, not the bare expression: another branch now
+        # tests `request.mode === 'navigate'` inside its own offline fallback, and
+        # a loose find() would locate that instead and compare the handler against
+        # a point earlier than the branch this test is about.
+        navigate_at = self.fetch_handler.find("if (request.mode === 'navigate') {")
         self.assertGreater(export_at, -1, 'the network-only branch is missing')
         self.assertGreater(navigate_at, -1, 'the navigate branch is missing')
         self.assertLess(export_at, navigate_at,

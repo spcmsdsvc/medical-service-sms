@@ -1,5 +1,82 @@
 # Project Change Log
 
+claude changes - 2026-08-11 (record correction + backup review follow-up)
+
+## Corrected: three documents said the System Backup was still broken. It shipped on 2026-08-09.
+
+* `pending-work.md` headed bug 2a **OPEN** and called it *"the only thing here that is actually
+  broken"*; the 2026-08-11 entry below says *"the outstanding production issue remains the System
+  Backup download defect"*; and `Handoffs/08-11-26 handoff.md` named it the **immediate technical
+  priority**, diagnosing it with `call_on_close` deleting the temp file — **code that is not on
+  main.** All three are corrected.
+* **A fresh session following that handoff would have re-implemented a feature that already ships.**
+  That is the entire cost of a wrong journal, and it is why this is recorded as its own entry.
+* **Only the one incorrect sentence in the 2026-08-11 Codex entry was touched**, per the standing
+  rule that another agent's journal entries are left alone. Its 2026-08-09 entry was already correct
+  and is untouched.
+* **How it happened.** The refresh reconciled the journals against each other and against a
+  remembered state rather than against the code, so one document's stale sentence became three
+  documents' agreed fact. **Reconcile against the tree, never against another journal.**
+
+## Reviewed `b4b17fc` by running it, not by reading it
+
+* **The implementation is sound and the reported bug is genuinely fixed.** A ranged request returns
+  **206**; a partial + resumed download reassembles **byte-identical** to a single-pass download; two
+  full downloads are byte-identical; the archive survives them; the database inside passes
+  `PRAGMA quick_check` as a real queryable database. Concurrent start returns 409, cancel raises and
+  cleans up, and a missing database fails the job instead of reporting a complete backup.
+* **The root cause was subtler than the original diagnosis.** Flask 3.1.2 defaults `send_file` to
+  `conditional=True`/`etag=True` — verified from the installed signature — so the old route
+  **already advertised `Accept-Ranges`**. Resume failed purely because the file was deleted. The fix
+  was never a parameter; it was keeping the file.
+* **Two of my own review claims were wrong and are corrected here.** I reported byte-identical and
+  Range coverage as missing; both exist (`tests/test_system_backup.py:148`, `:149-150`). A keyword
+  grep missed them because the assertions do not use those words. Gaps were then re-derived by
+  counting references to the actual functions.
+
+## Fixed: `/admin/backup` showed a raw browser error offline
+
+* Verified: navigating offline landed on `chrome-error://chromewebdata/` while every other
+  navigation in the app reaches `/offline`. The branch was a bare `fetch()` with no fallback.
+* It now falls back to the offline page for navigations and to `offlineApiResponse()` for the status
+  polls — which the page's own `requestJson()` already renders as a readable message. **The
+  no-cache behaviour is unchanged**, since that is why the branch exists.
+* Re-verified in a browser with the server stopped: the page renders *"You are offline"* and a status
+  poll returns `503` with a readable message.
+
+## Fixed: a load-bearing service worker comment sat above the wrong branch
+
+* `b4b17fc` inserted the `/admin/backup` branch **between** the download branch's explanatory comment
+  and the download branch itself, so *"a synthetic body would be saved to disk as the downloaded
+  file"* introduced the Backup Center. In a file where these comments are repeatedly what stops
+  someone reintroducing a cache leak, that is worth more than tidiness. Comment restored; the new
+  branch got its own.
+
+## Tests
+
+* Closed the gaps that were real: **`create_sqlite_snapshot`, `sweep_backup_artifacts` and
+  `reconcile_backup_job_state` had zero references anywhere in the suite** — the most serious
+  correctness fix in the rework had no direct test at all. Added 12 tests covering snapshot
+  consistency, the raw-copy fallback, a missing database raising, the sweeper's test-database guard
+  with an inert-sweeper positive control, `boot_id` reconciliation, budget skip enumeration, and the
+  oversize-object skip.
+* **Three existing tests located the navigate branch by the bare expression
+  `request.mode === 'navigate'`.** The new fallback contains that text, so all three silently
+  measured the wrong position — one went red, and the other two would have passed **vacuously**.
+  All now match `if (request.mode === 'navigate') {`. This is the source-text fragility this journal
+  keeps recording; it cost three tests in one change.
+* **Seven injections, all RED for the expected reason**, `app.py` restored byte-identically. The
+  sweeper pair is the one to copy: widening the glob fails the safety test, and making the sweeper
+  inert fails the positive control.
+* Worker bumped `v84-system-backup-center` → **`v85-backup-offline-fallback`**.
+* Suite green at **605**.
+
+codex changes - 2026-08-11
+- Refreshed `changes.md`, `plans.md`, and `pending-work.md` for the next project handoff. The latest completed work is the P.O. Dates, Amount, and Complete Excel Export release, implemented in `3d66caf` and closed out in `30c087c`, both present on `origin/main`.
+- Reconciled the current project state: all recorded plans are marked Executed; the latest focused P.O. verification passed 16 tests plus Python compilation, inline JavaScript syntax, release-manifest parsing, and `git diff --check`; ~~the outstanding production issue remains the System Backup download defect recorded in `pending-work.md`~~ — **CORRECTED 2026-08-11: that was wrong. The System Backup download was fixed on 2026-08-09 in `b4b17fc` and verified by running it. There is no open defect. See the correction entry above.**
+- Confirmed this journal refresh changes documentation only. `scheduler.db`, `output/`, `tmp/`, and `medical-service-sms-detailed-handoff-2026-07-26.md` remain untouched and are not part of any release.
+- Created the detailed next-session handoff `Handoffs/08-11-26 handoff.md` with the project state, operating rules, latest pushed commits, open System Backup defect, verification gaps, release checklist, and suggested skills. Sensitive credentials and personal data were excluded.
+
 codex changes - 2026-08-10
 - Began implementation of the P.O. Dates, Amount, and Complete Excel Export plan: the approved execution record was added to `plans.md`; source, template, test, release-manifest, and journal changes remain scoped to the P.O. register, with `scheduler.db`, `output/`, `tmp/`, and handoff artifacts excluded.
 - Extended `PurchaseOrder` with nullable additive `end_date` and PHP `amount` columns while preserving `po_date` as the compatibility-backed Start Date and keeping existing P.O. analytics behavior unchanged.
