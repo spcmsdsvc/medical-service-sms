@@ -13,9 +13,10 @@ rework **corrected this file's own claims** — see the correction notice below.
 **Start here if you are picking this up cold.** Suite green at **605 tests** with one pre-existing
 skip. `origin/main` is at `30c087c`, with the P.O. implementation in `3d66caf` and the System Backup
 Center in `b4b17fc`. Service worker at **`v85-backup-offline-fallback`** — read the live value out of
-`app.py` before committing, never from this note. The working tree carries **five** local artifacts,
-not four: `scheduler.db`, `output/`, `tmp/`, the 2026-07-26 handoff file, and the untracked
-`Handoffs/` directory.
+`app.py` before committing, never from this note. The working tree carries **four** local artifacts:
+`scheduler.db`, `output/`, `tmp/`, and the loose 2026-07-26 handoff file.
+
+**`Handoffs/` is now tracked**, by the owner's decision on 2026-08-11 — see section 4.
 
 **There is no open defect.** Section 1 is empty.
 
@@ -1136,9 +1137,24 @@ Standing checklist for any commit here:
 - [ ] Confirm the commit contents with `git show --name-only` before pushing
 - [ ] Focused commit message; push `main`
 - [ ] Confirm only known local artifacts remain dirty: `scheduler.db`, `output/`, `tmp/`,
-      and the 2026-07-26 handoff document
+      and the loose 2026-07-26 handoff document
 - [ ] A user-facing change needs a `releases.json` entry dated the commit date, or
       `tests/test_changelog_coverage.py` fails the commit
+- [ ] If the work makes a line in `Handoffs/` stale, **fix it in the same commit** — see below
+
+**`Handoffs/` is tracked, changed by the owner on 2026-08-11.** Handoff documents are published
+with the code rather than kept as local scratch, so they carry the same obligation as `changes.md`:
+a stale line now travels to everyone who clones the repository.
+
+**The reason this changed is worth keeping.** `Handoffs/08-11-26 handoff.md` confidently described
+the System Backup download as the immediate priority, in detail, citing `response.call_on_close`
+code that had already been deleted — because it was written by reconciling journals against each
+other rather than against the tree. It was untracked, so the correction would have lived on one
+machine while the wrong version was what any fresh session actually read. Tracking it means the
+correction travels with the mistake.
+
+**The loose `medical-service-sms-detailed-handoff-2026-07-26.md` at the repo root stays untracked.**
+It predates the convention and is superseded; leave it alone rather than tidying it in.
 
 **`scheduler.db` is tracked.** `.gitignore` lists `*.db`, but that only applies to
 *untracked* files, so **gitignore does not protect it**. Exclude it by name at every step.

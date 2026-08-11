@@ -1765,6 +1765,24 @@
           "sort_order": 20
         }
       ]
+    },
+    {
+      "release_key": "2026-08-11",
+      "release_date": "2026-08-11",
+      "title": "Backup Center Behaves Offline",
+      "summary": "Opening Backup Center without a connection now shows the usual offline screen instead of a browser error page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-11-backup-center-offline-page",
+          "category": "System Administration",
+          "description": "Opening Backup Center while offline now shows the app's own \"You are offline\" screen, and its status panel reports that you are offline, instead of the browser's error page.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
     }
   ]
 }

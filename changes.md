@@ -1,5 +1,28 @@
 # Project Change Log
 
+claude changes - 2026-08-11 (handoff documents are now tracked)
+
+## Changed by the owner: `Handoffs/` is committed with the code
+
+* Handoff documents were untracked local scratch. **They are now tracked**, so they travel with the
+  repository and carry the same obligation as `changes.md`: correct a stale line in the same commit
+  as the work that made it stale.
+* **The reason is the failure this convention was changed in response to.** `Handoffs/08-11-26
+  handoff.md` named the System Backup download as the immediate technical priority and diagnosed it
+  with `response.call_on_close` code that had already been deleted. Because the file was untracked,
+  the correction would have lived on one machine while the wrong version stayed the thing a fresh
+  session actually read. **Tracking it means the correction travels with the mistake.**
+* The handoff's own stale lines were fixed before tracking it, so a published document does not
+  contradict itself: the "first item is the production System Backup download defect" pointer, the
+  repository state (now `14eee82`, worker `v85`, suite 605), the artifact list, and its own
+  "do not stage handoff artifacts" rule.
+* **Read in full before publishing.** It contains no credentials or personal data — Codex's claim to
+  that effect was verified rather than assumed, because committing publishes it to GitHub.
+* The loose `medical-service-sms-detailed-handoff-2026-07-26.md` at the repo root **stays
+  untracked**: it predates the convention and is superseded. Tidying it in was declined deliberately.
+* `pending-work.md` section 4 records the rule and adds a checklist line; the standing artifact list
+  goes back to four, since `Handoffs/` is no longer an untracked artifact.
+
 claude changes - 2026-08-11 (record correction + backup review follow-up)
 
 ## Corrected: three documents said the System Backup was still broken. It shipped on 2026-08-09.
