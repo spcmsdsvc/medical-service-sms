@@ -57,7 +57,18 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Reimbursement Tracker
 
-**Status:** `Approved — awaiting go-ahead. Nothing has been built.`
+**Status:** `Executed — 018cfd0` (implementation by Codex, plus four fixes from the review here, in
+the same commit). Suite green at 623 with one pre-existing skip.
+**Reviewed:** 2026-08-11, by running it rather than reading it. Four defects were found and fixed
+before the commit — the one that mattered was **dark mode at 1.04:1 contrast**, caused by the
+transposed token `--app-raised-surface` (the real one is `--app-surface-raised`) silently taking a
+light-only fallback. **It landed exactly in the verification gap Codex had honestly declared**, the
+375 px pass it could not run. The other three: a constant that looked like a switch and controlled
+nothing, `office` accepted as unvalidated free text by the endpoint, and the release item filed
+under an unrelated headline. **Two spec errors were mine, not the implementation's** — the plan said
+the export helper raises on a bad sort key, but the P.O. precedent it was told to mirror falls back
+to a default and only raises for dates; and a review probe asserted 403 for an inactive account
+where `login_required` correctly returns 302 first.
 **Implementer:** Codex, by the owner's decision on 2026-08-11. This plan was written here and
 deliberately not started; the review afterwards happens in this repository, per the established
 build-then-review split.
