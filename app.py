@@ -1301,6 +1301,7 @@ def inject_navigation_access():
         'nav_can_view_admin_reports': can_view_admin_reports(),
         'nav_can_manage_any_schedule': can_manage_any_schedule(),
         'nav_can_manage_purchase_orders': can_manage_purchase_orders(),
+        'nav_can_manage_reimbursement_tracker': can_manage_reimbursement_tracker(),
     }
 
 
@@ -1512,6 +1513,7 @@ class User(UserMixin, db.Model):
     reports_admin_access = db.Column(db.Boolean, default=False, nullable=False)
     schedule_admin_access = db.Column(db.Boolean, default=False, nullable=False)
     po_admin_access = db.Column(db.Boolean, default=False, nullable=False)
+    reimbursement_tracker_access = db.Column(db.Boolean, default=False, nullable=False)
 
     # Last successful sign-in. Older accounts stay NULL until their next login.
     last_login_at = db.Column(db.DateTime, nullable=True)
@@ -1861,6 +1863,71 @@ class PurchaseOrder(db.Model):
         foreign_keys=[client_id],
     )
     created_by_user = db.relationship('User', foreign_keys=[created_by])
+
+
+REIMBURSEMENT_TRACKER_EXPENSE_FIELDS = (
+    # These labels intentionally preserve the workbook's Accounting-facing spellings.
+    ('representation', 'Representation'),
+    ('per_diem', 'Per Diem'),
+    ('parking', 'Parking'),
+    ('toll', 'Toll'),
+    ('transportation', 'Trasnportation'),
+    ('gasoline', 'Gasoline'),
+    ('car_repair', 'Car Repair'),
+    ('service_materials', 'Service Materials'),
+    ('hotel_accommodation', 'Hotel Accomodation'),
+    ('others_misc', 'Others/Misc'),
+)
+# The workbook's control-number date token, reproduced exactly: four-digit year, a
+# PADDED month, and an UNPADDED day -- Excel's TEXT(TODAY(),"yyyymmd"). Kept by the
+# owner's decision even though it is ambiguous: Jan 12 and Nov 2 both render 2026112.
+# This string is the single source of that format -- reimbursement_tracker_control_number()
+# formats through it, so switching to '{d.year}{d.month:02d}{d.day:02d}' here is all it
+# takes to pad the day. Do not inline the format anywhere, or this stops being a knob.
+REIMBURSEMENT_TRACKER_CONTROL_DATE_FORMAT = '{d.year}{d.month:02d}{d.day}'
+
+
+class ReimbursementTrackerEntry(db.Model):
+    """Standalone reimbursement register row, separate from app reimbursements."""
+    __tablename__ = 'reimbursement_tracker_entry'
+
+    id = db.Column(db.Integer, primary_key=True)
+    reference = db.Column(db.String(100), nullable=False, index=True)
+    submission_date = db.Column(db.Date, nullable=False, index=True)
+    # Control numbers intentionally remain non-unique: the source workbook uses one
+    # batch sequence for every row in a batch, including repeated engineers.
+    control_number = db.Column(db.String(80), nullable=False, index=True)
+    batch_sequence = db.Column(db.Integer, nullable=False)
+    description = db.Column(db.String(500), nullable=False, default='')
+    engineer_id = db.Column(db.Integer, db.ForeignKey('engineer.id'), nullable=True, index=True)
+    engineer_name_snapshot = db.Column(db.String(150), nullable=False, default='')
+    engineer_initials_snapshot = db.Column(db.String(10), nullable=False, default='')
+    office = db.Column(db.String(50), nullable=False, default='', index=True)
+    total = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal('0.00'))
+
+    representation = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal('0.00'))
+    per_diem = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal('0.00'))
+    parking = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal('0.00'))
+    toll = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal('0.00'))
+    transportation = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal('0.00'))
+    gasoline = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal('0.00'))
+    car_repair = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal('0.00'))
+    service_materials = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal('0.00'))
+    hotel_accommodation = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal('0.00'))
+    others_misc = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal('0.00'))
+
+    paid_in_full = db.Column(db.Boolean, nullable=False, default=False)
+    paid_amount = db.Column(db.Numeric(12, 2), nullable=True)
+    paid_transfer_date = db.Column(db.Date, nullable=True)
+    remarks = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=True, default=get_manila_time)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    updated_at = db.Column(db.DateTime, nullable=True, default=get_manila_time, onupdate=get_manila_time)
+    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+
+    engineer = db.relationship('Engineer', foreign_keys=[engineer_id])
+    created_by_user = db.relationship('User', foreign_keys=[created_by])
+    updated_by_user = db.relationship('User', foreign_keys=[updated_by])
 
 
 class Contact(db.Model):
@@ -2605,6 +2672,7 @@ _user_approval_columns_ready = False
 _hr_schedule_view_column_ready = False
 _user_admin_capability_columns_ready = False
 _purchase_order_schema_ready = False
+_reimbursement_tracker_schema_ready = False
 _reimbursement_accounting_columns_ready = False
 _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
@@ -3414,6 +3482,7 @@ def ensure_user_admin_capability_columns():
                 'reports_admin_access',
                 'schedule_admin_access',
                 'po_admin_access',
+                'reimbursement_tracker_access',
             ):
                 if column_name not in user_columns:
                     connection.exec_driver_sql(
@@ -3471,6 +3540,81 @@ def ensure_purchase_order_schema():
     except Exception as purchase_order_schema_error:
         print(
             f"[Purchase Orders] Unable to ensure purchase_order table: {purchase_order_schema_error}",
+            flush=True,
+        )
+
+
+def ensure_reimbursement_tracker_schema():
+    """Create the standalone reimbursement tracker table without replacing live data."""
+    global _reimbursement_tracker_schema_ready
+
+    if _reimbursement_tracker_schema_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            ReimbursementTrackerEntry.__table__.create(bind=connection, checkfirst=True)
+            columns = {
+                row[1]
+                for row in connection.exec_driver_sql(
+                    "PRAGMA table_info(reimbursement_tracker_entry)"
+                ).fetchall()
+            }
+            additive_columns = {
+                'reference': "VARCHAR(100) DEFAULT '' NOT NULL",
+                'submission_date': 'DATE',
+                'control_number': "VARCHAR(80) DEFAULT '' NOT NULL",
+                'batch_sequence': 'INTEGER DEFAULT 0 NOT NULL',
+                'description': "VARCHAR(500) DEFAULT '' NOT NULL",
+                'engineer_id': 'INTEGER',
+                'engineer_name_snapshot': "VARCHAR(150) DEFAULT '' NOT NULL",
+                'engineer_initials_snapshot': "VARCHAR(10) DEFAULT '' NOT NULL",
+                'office': "VARCHAR(50) DEFAULT '' NOT NULL",
+                'total': 'NUMERIC(12, 2) DEFAULT 0 NOT NULL',
+                **{
+                    field: 'NUMERIC(12, 2) DEFAULT 0 NOT NULL'
+                    for field, _label in REIMBURSEMENT_TRACKER_EXPENSE_FIELDS
+                },
+                'paid_in_full': 'BOOLEAN DEFAULT 0 NOT NULL',
+                'paid_amount': 'NUMERIC(12, 2)',
+                'paid_transfer_date': 'DATE',
+                'remarks': 'TEXT',
+                'created_at': 'DATETIME',
+                'created_by': 'INTEGER',
+                'updated_at': 'DATETIME',
+                'updated_by': 'INTEGER',
+            }
+            for column_name, column_type in additive_columns.items():
+                if column_name not in columns:
+                    connection.exec_driver_sql(
+                        f"ALTER TABLE reimbursement_tracker_entry ADD COLUMN {column_name} {column_type}"
+                    )
+                    print(
+                        f"[DB MIGRATION] Added reimbursement_tracker_entry.{column_name}",
+                        flush=True,
+                    )
+
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_reimbursement_tracker_submission_date "
+                "ON reimbursement_tracker_entry (submission_date)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_reimbursement_tracker_reference "
+                "ON reimbursement_tracker_entry (reference)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_reimbursement_tracker_control_number "
+                "ON reimbursement_tracker_entry (control_number)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_reimbursement_tracker_office "
+                "ON reimbursement_tracker_entry (office)"
+            )
+        _reimbursement_tracker_schema_ready = True
+    except Exception as reimbursement_tracker_schema_error:
+        print(
+            "[Reimbursement Tracker] Unable to ensure reimbursement_tracker_entry table: "
+            f"{reimbursement_tracker_schema_error}",
             flush=True,
         )
 
@@ -7871,8 +8015,8 @@ def approval_user_to_dict(user):
         'can_approve_requests': bool(getattr(user, 'can_approve_requests', False)),
         # approver_only stays computed on purpose: there is no approver_only column, it is
         # derived from role plus can_approve_requests, and the save route flips the role
-        # from it. The two below DO have stored columns, so they report the stored grant
-        # for the same reason as po_admin_access -- the switches round-trip through
+        # from it. The capability fields below have stored columns, so they report stored
+        # grants for the same reason as po_admin_access -- the switches round-trip through
         # saveApprovalUser(), so a computed value silently rewrites what it displayed.
         'approver_only': is_approver_only_user(user),
         # can_manage_stock_inventory() itself is deliberately unchanged: its superadmin
@@ -7892,6 +8036,9 @@ def approval_user_to_dict(user):
         # the regional admin, and saving any unrelated change on their card then wrote
         # po_admin_access=True plus an audit line for a grant nobody performed.
         'po_admin_access': bool(getattr(user, 'po_admin_access', False)),
+        # The tracker switch also reports the STORED grant. Effective admin access is
+        # deliberately not reflected here so an unrelated Settings save cannot grant it.
+        'reimbursement_tracker_access': bool(getattr(user, 'reimbursement_tracker_access', False)),
         'is_active': bool(getattr(user, 'is_active', True)),
         'engineer_id': getattr(profile, 'id', None),
         'employee_id': getattr(profile, 'employee_id', '') if profile else '',
@@ -8040,6 +8187,11 @@ def can_manage_any_schedule(user=None):
 def can_manage_purchase_orders(user=None):
     """Allow the standalone client P.O. register and its management APIs."""
     return _has_active_account_capability(user, 'po_admin_access')
+
+
+def can_manage_reimbursement_tracker(user=None):
+    """Allow the standalone reimbursement tracker and its management APIs."""
+    return _has_active_account_capability(user, 'reimbursement_tracker_access')
 
 
 def has_schedule_admin_capability(user=None):
@@ -15231,7 +15383,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v85-backup-offline-fallback';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v86-reimbursement-tracker';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -17286,6 +17438,7 @@ def resolve_staff_permission_request(payload, target_user=None):
     reports_admin_requested = bool(payload.get('reports_admin_access'))
     schedule_admin_requested = bool(payload.get('schedule_admin_access'))
     po_admin_requested = bool(payload.get('po_admin_access'))
+    reimbursement_tracker_requested = bool(payload.get('reimbursement_tracker_access'))
     if stock_inventory_only_requested:
         # Inventory-only is a restricted inventory mode, so it always carries the
         # underlying inventory capability even when a stale client omitted it.
@@ -17305,6 +17458,8 @@ def resolve_staff_permission_request(payload, target_user=None):
         capability_labels.append('Schedule management access')
     if po_admin_requested:
         capability_labels.append('P.O. records access')
+    if reimbursement_tracker_requested:
+        capability_labels.append('Reimbursement tracker access')
     if capability_labels and approver_only_requested:
         return None, (
             ', '.join(capability_labels) +
@@ -17379,6 +17534,7 @@ def resolve_staff_permission_request(payload, target_user=None):
         'reports_admin_access': reports_admin_requested,
         'schedule_admin_access': schedule_admin_requested,
         'po_admin_access': po_admin_requested,
+        'reimbursement_tracker_access': reimbursement_tracker_requested,
         'approver_only': approver_only_requested,
     }, None
 
@@ -17418,6 +17574,7 @@ def settings_update_approval_user():
         'reports_admin_access',
         'schedule_admin_access',
         'po_admin_access',
+        'reimbursement_tracker_access',
     )
     old_permission_values = {}
     for field in tracked_permission_fields:
@@ -17445,6 +17602,7 @@ def settings_update_approval_user():
     target_user.reports_admin_access = permission_values['reports_admin_access']
     target_user.schedule_admin_access = permission_values['schedule_admin_access']
     target_user.po_admin_access = permission_values['po_admin_access']
+    target_user.reimbursement_tracker_access = permission_values['reimbursement_tracker_access']
 
     if approver_only_requested:
         target_user.role = 'approver'
@@ -39669,6 +39827,573 @@ def delete_purchase_order(id):
     return jsonify({'success': True, 'deleted_id': id})
 
 
+def reimbursement_tracker_money_display(value):
+    """Return a stable two-decimal string for tracker JSON and Excel literals."""
+    if value is None or value == '':
+        return ''
+    return format(Decimal(str(value)).quantize(Decimal('0.01')), 'f')
+
+
+def normalize_reimbursement_tracker_amount(value, label):
+    """Parse one tracker amount without silently rounding forged precision."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return Decimal('0.00'), None
+    try:
+        amount = Decimal(str(value).replace(',', '').replace('\u20b1', '').strip())
+    except (InvalidOperation, ValueError, TypeError):
+        return None, f'{label} must be a valid amount.'
+    if not amount.is_finite() or amount < 0:
+        return None, f'{label} cannot be negative or invalid.'
+    quantized = amount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    if quantized != amount:
+        return None, f'{label} may have at most two decimal places.'
+    if amount > Decimal('9999999999.99'):
+        return None, f'{label} is too large.'
+    return quantized, None
+
+
+def reimbursement_tracker_bool(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def reimbursement_tracker_batch_sequence(reference):
+    """Extract the workbook's batch number from a BATCH-### reference."""
+    match = re.search(r'\bbatch[-\s#]*0*(\d{1,3})\b', reference or '', re.IGNORECASE)
+    if not match:
+        return None
+    sequence = int(match.group(1))
+    return sequence if 1 <= sequence <= 999 else None
+
+
+def reimbursement_tracker_control_number(initials, submission_date, batch_sequence):
+    """Reproduce INITIALS-<date token>-NNN using the stored submission date.
+
+    The date token comes from REIMBURSEMENT_TRACKER_CONTROL_DATE_FORMAT rather than
+    being spelled out here, so that constant is a real switch rather than a comment.
+    Always the submission date, never TODAY() -- the workbook's formula drifts daily.
+    """
+    date_token = REIMBURSEMENT_TRACKER_CONTROL_DATE_FORMAT.format(d=submission_date)
+    return f'{(initials or "").strip()}-{date_token}-{int(batch_sequence):03d}'
+
+
+def _reimbursement_tracker_payload_value(payload, key, existing=None, default=None):
+    if key in payload:
+        return payload.get(key)
+    if existing is not None:
+        return getattr(existing, key, default)
+    return default
+
+
+def validate_reimbursement_tracker_payload(payload, existing=None):
+    payload = payload or {}
+    reference_raw = _reimbursement_tracker_payload_value(payload, 'reference', existing)
+    reference = clean_str(reference_raw)
+    if not reference:
+        return None, 'Enter a batch reference such as BATCH-001.'
+    if len(reference) > 100:
+        return None, 'Reference must be 100 characters or fewer.'
+
+    batch_sequence = reimbursement_tracker_batch_sequence(reference)
+    if not batch_sequence:
+        return None, 'Reference must contain a batch number from BATCH-001 to BATCH-999.'
+
+    submission_raw = _reimbursement_tracker_payload_value(payload, 'submission_date', existing)
+    if isinstance(submission_raw, datetime):
+        submission_date = submission_raw.date()
+    elif isinstance(submission_raw, date):
+        submission_date = submission_raw
+    else:
+        submission_date = parse_date(submission_raw)
+    if not submission_date:
+        return None, 'Select a valid submission date.'
+
+    engineer_id = clean_int(_reimbursement_tracker_payload_value(payload, 'engineer_id', existing))
+    engineer = db.session.get(Engineer, engineer_id) if engineer_id else None
+    if not engineer:
+        return None, 'Select an engineer.'
+    engineer_name = clean_str(getattr(engineer, 'name', None)) or ''
+    engineer_initials = clean_str(getattr(engineer, 'initials', None)) or ''
+    if not engineer_name or not engineer_initials:
+        return None, 'The selected engineer is missing a name or initials in Personnel.'
+
+    if existing is not None and engineer_id == existing.engineer_id:
+        # Historical rows stay tied to the identity used when they were filed. A later
+        # Personnel initials correction must not rewrite their stored control number.
+        engineer_name_snapshot = clean_str(existing.engineer_name_snapshot) or engineer_name
+        engineer_initials_snapshot = clean_str(existing.engineer_initials_snapshot) or engineer_initials
+    else:
+        engineer_name_snapshot = engineer_name
+        engineer_initials_snapshot = engineer_initials
+
+    if 'office' in payload:
+        office = clean_str(payload.get('office')) or ''
+    elif existing is not None:
+        office = clean_str(existing.office) or clean_str(getattr(engineer, 'branch', None)) or ''
+    else:
+        office = clean_str(getattr(engineer, 'branch', None)) or ''
+    if not office:
+        return None, 'Select or assign an office for the engineer.'
+    if len(office) > 50:
+        return None, 'Office must be 50 characters or fewer.'
+
+    # The workbook made this structurally impossible: its engineer dropdown was an
+    # INDIRECT on the office cell, so you could not file a Davao engineer under Manila.
+    # The page reproduces that by rebuilding the engineer list on every office change,
+    # but the endpoint accepted whatever it was sent -- any string at all, including one
+    # matching no branch. Office drives the register filter and the export's Office
+    # column, so a value contradicting the engineer is a silently wrong accounting row.
+    engineer_branch = clean_str(getattr(engineer, 'branch', None)) or ''
+    # An engineer who transfers branch must not make their historical rows unsaveable,
+    # so an unchanged stored office is always allowed -- office is a snapshot of where
+    # the row was filed, deliberately denormalised, not a live read of the engineer.
+    office_unchanged = existing is not None and office == (clean_str(existing.office) or '')
+    if engineer_branch and office != engineer_branch and not office_unchanged:
+        return None, (
+            f'{engineer_name} is assigned to {engineer_branch}. '
+            f'Select {engineer_branch} as the office, or choose an engineer from {office}.'
+        )
+
+    description_raw = _reimbursement_tracker_payload_value(payload, 'description', existing, '')
+    description = clean_str(description_raw) or ''
+    if len(description) > 500:
+        return None, 'Reimbursement description must be 500 characters or fewer.'
+
+    category_values = {}
+    for field, label in REIMBURSEMENT_TRACKER_EXPENSE_FIELDS:
+        amount, amount_error = normalize_reimbursement_tracker_amount(
+            _reimbursement_tracker_payload_value(payload, field, existing, 0),
+            label,
+        )
+        if amount_error:
+            return None, amount_error
+        category_values[field] = amount
+    total = sum(category_values.values(), Decimal('0.00')).quantize(Decimal('0.01'))
+
+    paid_in_full = reimbursement_tracker_bool(
+        _reimbursement_tracker_payload_value(payload, 'paid_in_full', existing, False)
+    )
+    paid_amount = total if paid_in_full else None
+    paid_transfer_raw = _reimbursement_tracker_payload_value(payload, 'paid_transfer_date', existing)
+    if isinstance(paid_transfer_raw, datetime):
+        paid_transfer_date = paid_transfer_raw.date()
+    elif isinstance(paid_transfer_raw, date):
+        paid_transfer_date = paid_transfer_raw
+    elif paid_transfer_raw:
+        paid_transfer_date = parse_date(paid_transfer_raw)
+    else:
+        paid_transfer_date = None
+    if paid_transfer_raw and not paid_transfer_date:
+        return None, 'Transfer date must be a valid date.'
+    if not paid_in_full:
+        paid_transfer_date = None
+
+    remarks_raw = _reimbursement_tracker_payload_value(payload, 'remarks', existing, '')
+    remarks = clean_str(remarks_raw) or ''
+    if len(remarks) > 2000:
+        return None, 'Remarks must be 2,000 characters or fewer.'
+
+    return {
+        'reference': reference,
+        'submission_date': submission_date,
+        'control_number': reimbursement_tracker_control_number(
+            engineer_initials_snapshot, submission_date, batch_sequence
+        ),
+        'batch_sequence': batch_sequence,
+        'description': description,
+        'engineer_id': engineer.id,
+        'engineer_name_snapshot': engineer_name_snapshot,
+        'engineer_initials_snapshot': engineer_initials_snapshot,
+        'office': office,
+        'total': total,
+        **category_values,
+        'paid_in_full': paid_in_full,
+        'paid_amount': paid_amount,
+        'paid_transfer_date': paid_transfer_date,
+        'remarks': remarks,
+    }, None
+
+
+def reimbursement_tracker_entry_to_dict(entry):
+    data = {
+        'id': entry.id,
+        'reference': entry.reference or '',
+        'submission_date': entry.submission_date.isoformat() if entry.submission_date else '',
+        'control_number': entry.control_number or '',
+        'batch_sequence': entry.batch_sequence,
+        'description': entry.description or '',
+        'engineer_id': entry.engineer_id,
+        'engineer_name': entry.engineer_name_snapshot or (entry.engineer.name if entry.engineer else ''),
+        'engineer_initials': entry.engineer_initials_snapshot or '',
+        'office': entry.office or '',
+        'total': reimbursement_tracker_money_display(entry.total),
+        'paid_in_full': bool(entry.paid_in_full),
+        'paid_amount': reimbursement_tracker_money_display(entry.paid_amount),
+        'paid_transfer_date': entry.paid_transfer_date.isoformat() if entry.paid_transfer_date else '',
+        'remarks': entry.remarks or '',
+        'created_at': entry.created_at.isoformat() if entry.created_at else None,
+        'updated_at': entry.updated_at.isoformat() if entry.updated_at else None,
+    }
+    for field, _label in REIMBURSEMENT_TRACKER_EXPENSE_FIELDS:
+        data[field] = reimbursement_tracker_money_display(getattr(entry, field, None))
+    return data
+
+
+def reimbursement_tracker_engineer_payload(engineer):
+    return {
+        'id': engineer.id,
+        'name': engineer.name or '',
+        'initials': engineer.initials or '',
+        'office': engineer.branch or '',
+    }
+
+
+def reimbursement_tracker_export_records():
+    """Return tracker rows matching the register's current filters and sort."""
+    reference_filter = (request.args.get('reference') or '').strip().casefold()
+    engineer_filter = (request.args.get('engineer') or '').strip().casefold()
+    office_filter = (request.args.get('office') or '').strip().casefold()
+    from_text = (request.args.get('from') or '').strip()
+    to_text = (request.args.get('to') or '').strip()
+    start_from = parse_date(from_text) if from_text else None
+    start_to = parse_date(to_text) if to_text else None
+    if from_text and not start_from:
+        raise ValueError('The submission date from filter is invalid.')
+    if to_text and not start_to:
+        raise ValueError('The submission date to filter is invalid.')
+    if start_from and start_to and start_from > start_to:
+        raise ValueError('The submission date from filter cannot be later than the to filter.')
+
+    paid_filter = (request.args.get('paid') or '').strip().lower()
+    if paid_filter not in {'', 'paid', 'unpaid'}:
+        raise ValueError('The paid filter is invalid.')
+
+    sort_key = (request.args.get('sort') or 'submission_date').strip().lower()
+    sort_keys = {
+        'submission_date', 'reference', 'control_number', 'description',
+        'engineer_name', 'office', 'total', 'paid_in_full', 'paid_amount',
+        'paid_transfer_date',
+    }
+    if sort_key not in sort_keys:
+        sort_key = 'submission_date'
+    descending = (request.args.get('direction') or 'desc').strip().lower() != 'asc'
+
+    records = ReimbursementTrackerEntry.query.options(
+        joinedload(ReimbursementTrackerEntry.engineer),
+    ).all()
+    filtered = []
+    for record in records:
+        engineer_name = record.engineer_name_snapshot or (record.engineer.name if record.engineer else '')
+        if reference_filter and reference_filter not in (record.reference or '').casefold():
+            continue
+        if engineer_filter and engineer_filter not in engineer_name.casefold():
+            continue
+        if office_filter and office_filter not in (record.office or '').casefold():
+            continue
+        if start_from and (not record.submission_date or record.submission_date < start_from):
+            continue
+        if start_to and (not record.submission_date or record.submission_date > start_to):
+            continue
+        if paid_filter == 'paid' and not record.paid_in_full:
+            continue
+        if paid_filter == 'unpaid' and record.paid_in_full:
+            continue
+        filtered.append(record)
+
+    def sort_value(record):
+        if sort_key == 'engineer_name':
+            return (record.engineer_name_snapshot or (record.engineer.name if record.engineer else '')).casefold()
+        if sort_key == 'office':
+            return (record.office or '').casefold()
+        if sort_key in {'total', 'paid_amount'}:
+            raw = getattr(record, sort_key, None)
+            return Decimal(str(raw)) if raw is not None else Decimal('0')
+        if sort_key == 'paid_in_full':
+            return bool(record.paid_in_full)
+        if sort_key in {'submission_date', 'paid_transfer_date'}:
+            return getattr(record, sort_key, None) or date.min
+        return (getattr(record, sort_key, '') or '').casefold()
+
+    def is_empty(record):
+        if sort_key == 'engineer_name':
+            return not (record.engineer_name_snapshot or (record.engineer.name if record.engineer else ''))
+        if sort_key in {'office', 'reference', 'control_number', 'description'}:
+            return not getattr(record, sort_key, None)
+        if sort_key in {'paid_amount', 'paid_transfer_date'}:
+            return getattr(record, sort_key, None) is None
+        return False
+
+    filtered.sort(key=sort_value, reverse=descending)
+    filtered.sort(key=lambda record: 1 if is_empty(record) else 0)
+    return filtered
+
+
+def build_reimbursement_tracker_workbook(records):
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = 'Sheet'
+    worksheet.sheet_view.showGridLines = False
+    worksheet['A1'] = 'Current Input'
+    worksheet['S1'] = 'by: Diary Dizon'
+    worksheet['V1'] = 'Accounting'
+    worksheet.merge_cells('S1:U1')
+    worksheet.merge_cells('V1:X1')
+    worksheet['A5'] = 'Reimbursements'
+
+    headers = [
+        'Reference', 'Submission Date', 'Control #', 'Reimbursement', 'Engineer', 'Office',
+        'Total', 'Summary',
+        *[label for _field, label in REIMBURSEMENT_TRACKER_EXPENSE_FIELDS],
+        'Paid in Full', 'Paid Amount', 'Transfer Date\n(Auto Fill)',
+        'Reimbursed in Full', 'Reimbursed Amount', 'Transfer Date\n(Auto Fill)',
+        'Difference\nPaid to Engr Vs. Reimbursed by Acctg.',
+        'Payment Status to Engineers', 'Remarks',
+    ]
+    for row_number in (2, 6):
+        for column_number, header in enumerate(headers, start=1):
+            worksheet.cell(row_number, column_number, header)
+
+    for offset, record in enumerate(records):
+        row_number = 7 + offset
+        category_values = [
+            Decimal(str(getattr(record, field) or 0)).quantize(Decimal('0.01'))
+            for field, _label in REIMBURSEMENT_TRACKER_EXPENSE_FIELDS
+        ]
+        engineer_name = record.engineer_name_snapshot or (record.engineer.name if record.engineer else '')
+        values = [
+            record.reference or '',
+            record.submission_date,
+            record.control_number or '',
+            record.description or '',
+            engineer_name,
+            record.office or '',
+            None,
+            None,
+            *category_values,
+            bool(record.paid_in_full),
+            Decimal(str(record.paid_amount)).quantize(Decimal('0.01')) if record.paid_amount is not None else None,
+            record.paid_transfer_date,
+            None,
+            None,
+            None,
+            None,
+            None,
+            record.remarks or '',
+        ]
+        for column_number, value in enumerate(values, start=1):
+            worksheet.cell(row_number, column_number, value)
+        worksheet.cell(row_number, 7, f'=SUM(I{row_number}:R{row_number})')
+        worksheet.cell(row_number, 23, f'=IF(V{row_number}=TRUE,G{row_number},"")')
+        worksheet.cell(row_number, 24, f'=IF(W{row_number}<>"",IF(X{row_number}="",TODAY(),X{row_number}),"")')
+        worksheet.cell(row_number, 25, f'=IF(OR(V{row_number}=TRUE,W{row_number}<>""),W{row_number}-G{row_number},0)')
+        worksheet.cell(
+            row_number,
+            26,
+            f'=IF(Y{row_number}<0,"OVER PAID",IF(Y{row_number}>0,"EXCESS REIMBURSEMENT BY ACCTG.",""))',
+        )
+
+    dark_fill = PatternFill('solid', fgColor='16243A')
+    banner_fill = PatternFill('solid', fgColor='244D8F')
+    header_font = Font(color='FFFFFF', bold=True)
+    banner_font = Font(color='FFFFFF', bold=True)
+    border = Border(bottom=Side(style='thin', color='D6E0EC'))
+    for cell in worksheet[1]:
+        if cell.value:
+            cell.fill = banner_fill
+            cell.font = banner_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+    for row_number in (2, 6):
+        for cell in worksheet[row_number]:
+            cell.fill = dark_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            cell.border = border
+    last_row = max(6, 6 + len(records))
+    for row_number in range(7, last_row + 1):
+        for cell in worksheet[row_number]:
+            cell.alignment = Alignment(vertical='top', wrap_text=True)
+            cell.border = border
+        worksheet.cell(row_number, 2).number_format = 'yyyy-mm-dd'
+        worksheet.cell(row_number, 21).number_format = 'yyyy-mm-dd'
+        worksheet.cell(row_number, 24).number_format = 'yyyy-mm-dd'
+        for column_number in [7, *range(9, 19), 20, 23, 25]:
+            worksheet.cell(row_number, column_number).number_format = '#,##0.00'
+
+    worksheet.freeze_panes = 'A7'
+    worksheet.auto_filter.ref = f'A6:AA{last_row}'
+    widths = [18, 16, 20, 34, 28, 14, 15, 16, 14, 14, 14, 14, 18, 14, 14, 18, 20, 16, 16, 15, 18, 18, 18, 18, 22, 30, 32]
+    for column_number, width in enumerate(widths, start=1):
+        worksheet.column_dimensions[get_column_letter(column_number)].width = width
+    worksheet.row_dimensions[1].height = 24
+    worksheet.row_dimensions[2].height = 38
+    worksheet.row_dimensions[6].height = 38
+
+    # Column X intentionally carries the workbook's self-reference. Iterative
+    # calculation makes Excel resolve it without a circular-reference warning.
+    workbook.calculation.iterate = True
+    workbook.calculation.iterateCount = 100
+    workbook.calculation.iterateDelta = 0.001
+    workbook.calculation.fullCalcOnLoad = True
+    workbook.calculation.forceFullCalc = True
+    return workbook
+
+
+@app.route('/reimbursement_tracker')
+@login_required
+def reimbursement_tracker_page():
+    if not can_manage_reimbursement_tracker():
+        return redirect(url_for('dashboard_page'))
+    ensure_reimbursement_tracker_schema()
+    return render_template('reimbursement_tracker.html')
+
+
+@app.route('/get_reimbursement_tracker_entries')
+@login_required
+def get_reimbursement_tracker_entries():
+    if not can_manage_reimbursement_tracker():
+        return denied('You do not have access to the Reimbursement Tracker.')
+    ensure_reimbursement_tracker_schema()
+    entries = ReimbursementTrackerEntry.query.options(
+        joinedload(ReimbursementTrackerEntry.engineer),
+    ).order_by(
+        ReimbursementTrackerEntry.submission_date.desc(),
+        ReimbursementTrackerEntry.id.desc(),
+    ).all()
+    engineers = Engineer.query.order_by(func.lower(Engineer.name).asc(), Engineer.id.asc()).all()
+    offices = {
+        office
+        for office in [
+            *(clean_str(engineer.branch) for engineer in engineers),
+            *(clean_str(entry.office) for entry in entries),
+        ]
+        if office
+    }
+    initials_map = {}
+    for engineer in engineers:
+        initials = (clean_str(engineer.initials) or '').upper()
+        if initials:
+            initials_map.setdefault(initials, []).append(engineer)
+    duplicate_initials = sorted(initials for initials, matches in initials_map.items() if len(matches) > 1)
+    highest_batch = db.session.query(func.max(ReimbursementTrackerEntry.batch_sequence)).scalar() or 0
+    suggested_batch = min(int(highest_batch) + 1, 999)
+    return jsonify({
+        'success': True,
+        'entries': [reimbursement_tracker_entry_to_dict(entry) for entry in entries],
+        'engineers': [reimbursement_tracker_engineer_payload(engineer) for engineer in engineers],
+        'offices': sorted(offices, key=lambda value: value.casefold()),
+        'suggested_reference': f'BATCH-{suggested_batch:03d}',
+        'duplicate_initials': duplicate_initials,
+    })
+
+
+@app.route('/export_reimbursement_tracker')
+@login_required
+def export_reimbursement_tracker():
+    if not can_manage_reimbursement_tracker():
+        return denied('You do not have access to the Reimbursement Tracker.')
+    ensure_reimbursement_tracker_schema()
+    try:
+        records = reimbursement_tracker_export_records()
+    except ValueError as export_error:
+        return jsonify({'success': False, 'error': str(export_error)}), 400
+
+    workbook = build_reimbursement_tracker_workbook(records)
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    add_activity_log_entry(f'Exported Reimbursement Tracker ({len(records)} record(s))')
+    filename = f'reimbursement_tracker_{get_manila_time().strftime("%Y%m%d")}.xlsx'
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+
+
+@app.route('/add_reimbursement_tracker_entry', methods=['POST'])
+@login_required
+def add_reimbursement_tracker_entry():
+    if not can_manage_reimbursement_tracker():
+        return denied('You do not have access to the Reimbursement Tracker.')
+    ensure_reimbursement_tracker_schema()
+    payload = request.get_json(silent=True) or {}
+    values, validation_error = validate_reimbursement_tracker_payload(payload)
+    if validation_error:
+        return jsonify({'success': False, 'error': validation_error}), 400
+
+    entry = ReimbursementTrackerEntry(
+        **values,
+        created_at=get_manila_time(),
+        created_by=current_user.id,
+        updated_at=get_manila_time(),
+        updated_by=current_user.id,
+    )
+    db.session.add(entry)
+    add_activity_log_entry(
+        f"Added Reimbursement Tracker row {values['control_number']} ({values['reference']})"
+    )
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'The reimbursement row could not be saved.'}), 409
+    return jsonify({'success': True, 'entry': reimbursement_tracker_entry_to_dict(entry)}), 201
+
+
+@app.route('/update_reimbursement_tracker_entry/<int:id>', methods=['PUT', 'POST'])
+@login_required
+def update_reimbursement_tracker_entry(id):
+    if not can_manage_reimbursement_tracker():
+        return denied('You do not have access to the Reimbursement Tracker.')
+    ensure_reimbursement_tracker_schema()
+    entry = db.session.get(ReimbursementTrackerEntry, id)
+    if not entry:
+        return jsonify({'success': False, 'error': 'Reimbursement row not found.'}), 404
+    payload = request.get_json(silent=True) or {}
+    values, validation_error = validate_reimbursement_tracker_payload(payload, existing=entry)
+    if validation_error:
+        return jsonify({'success': False, 'error': validation_error}), 400
+
+    old_control_number = entry.control_number
+    for field, value in values.items():
+        setattr(entry, field, value)
+    entry.updated_at = get_manila_time()
+    entry.updated_by = current_user.id
+    add_activity_log_entry(
+        f"Updated Reimbursement Tracker row {old_control_number} -> {values['control_number']}"
+    )
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'The reimbursement row could not be updated.'}), 409
+    return jsonify({'success': True, 'entry': reimbursement_tracker_entry_to_dict(entry)})
+
+
+@app.route('/delete_reimbursement_tracker_entry/<int:id>', methods=['DELETE', 'POST'])
+@login_required
+def delete_reimbursement_tracker_entry(id):
+    if not can_manage_reimbursement_tracker():
+        return denied('You do not have access to the Reimbursement Tracker.')
+    ensure_reimbursement_tracker_schema()
+    entry = db.session.get(ReimbursementTrackerEntry, id)
+    if not entry:
+        return jsonify({'success': False, 'error': 'Reimbursement row not found.'}), 404
+    control_number = entry.control_number
+    db.session.delete(entry)
+    add_activity_log_entry(f'Deleted Reimbursement Tracker row {control_number}')
+    db.session.commit()
+    return jsonify({'success': True, 'deleted_id': id})
+
+
 # --- SCHEDULE MANAGEMENT CORE ACTIONS ---
 
 
@@ -44292,6 +45017,7 @@ def add_engineer():
         'reports_admin_access',
         'schedule_admin_access',
         'po_admin_access',
+        'reimbursement_tracker_access',
         'is_active',
     }
     if not is_superadmin_user() and (
@@ -44371,6 +45097,7 @@ def add_engineer():
     new_user.reports_admin_access = permission_values['reports_admin_access']
     new_user.schedule_admin_access = permission_values['schedule_admin_access']
     new_user.po_admin_access = permission_values['po_admin_access']
+    new_user.reimbursement_tracker_access = permission_values['reimbursement_tracker_access']
 
     db.session.add(new_user)
     db.session.flush()
@@ -45028,6 +45755,7 @@ def ensure_runtime_sqlite_migrations_before_request():
     db.create_all()
     ensure_user_admin_capability_columns()
     ensure_purchase_order_schema()
+    ensure_reimbursement_tracker_schema()
 
     # Fresh Railway volume emergency login bootstrap.
     ensure_emergency_superadmin_from_env()
@@ -45250,6 +45978,7 @@ def initialize_database():
         ensure_user_hr_schedule_view_column()
         ensure_user_admin_capability_columns()
         ensure_purchase_order_schema()
+        ensure_reimbursement_tracker_schema()
         ensure_engineer_signature_column()
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()

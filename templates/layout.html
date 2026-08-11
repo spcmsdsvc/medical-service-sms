@@ -128,11 +128,12 @@
             {% set is_approver_only_user = nav_is_approver_only %}
             {% set is_accounting_center_user = nav_can_access_accounting_center %}
             {% set can_manage_purchase_orders = nav_can_manage_purchase_orders %}
+            {% set can_manage_reimbursement_tracker = nav_can_manage_reimbursement_tracker %}
             {% set is_reports_sidebar_user = is_reports_admin_user or is_engineer_only %}
             {% set field_ops_paths = ['/travel_request', '/reimbursement', '/cash_advance', '/leave_request'] %}
             {% if lpr_enabled %}{% set field_ops_paths = field_ops_paths + ['/lpr'] %}{% endif %}
             {% set reports_paths = ['/analytics_page', '/reports_page'] %}
-            {% set records_paths = ['/engineers_page', '/clients_page', '/products_page', '/po_details'] %}
+            {% set records_paths = ['/engineers_page', '/clients_page', '/products_page', '/po_details', '/reimbursement_tracker'] %}
             {% set admin_paths = ['/activity_page', '/settings', '/stock_inventory'] %}
 
             <div class="sidebar-group-label" aria-hidden="true">Main</div>
@@ -264,6 +265,9 @@
                     {{ nav_link('/products_page', 'fa-boxes-stacked', 'Inventory') }}
                     {% if can_manage_purchase_orders %}
                         {{ nav_link('/po_details', 'fa-file-invoice', 'P.O. Details') }}
+                    {% endif %}
+                    {% if can_manage_reimbursement_tracker %}
+                        {{ nav_link('/reimbursement_tracker', 'fa-receipt', 'Reimbursement Tracker') }}
                     {% endif %}
                 </div>
             {% endif %}

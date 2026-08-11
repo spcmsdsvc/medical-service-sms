@@ -1,0 +1,595 @@
+{% extends "layout.html" %}
+
+{% block title %}Reimbursement Tracker{% endblock %}
+
+{% block page_head %}
+<style>
+    .rt-page { color: var(--app-text, #16243a); }
+    .rt-hero, .rt-panel, .rt-kpi, .rt-filter-panel {
+        background: var(--app-surface, #fff);
+        border: 1px solid var(--app-border, #d6e0ec);
+        border-radius: .9rem;
+        box-shadow: 0 .35rem 1.2rem rgba(16, 38, 69, .08);
+    }
+    .rt-hero {
+        background: linear-gradient(135deg, #14243a, #244d8f);
+        color: #fff;
+        padding: 1.5rem;
+    }
+    .rt-hero h1 { font-size: clamp(1.4rem, 2.4vw, 2.2rem); margin: 0; }
+    .rt-kpi { min-height: 6rem; padding: 1rem; }
+    .rt-kpi-label {
+        color: var(--app-muted-text, #60738d);
+        font-size: .72rem;
+        font-weight: 800;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+    }
+    .rt-kpi-value { color: var(--app-text, #16243a); font-size: 1.7rem; font-weight: 900; }
+    .rt-filter-panel { padding: 1rem; }
+    .rt-filter-panel label { color: var(--app-muted-text, #60738d); font-size: .72rem; font-weight: 800; text-transform: uppercase; }
+    .rt-panel { overflow: hidden; }
+    .rt-table-wrap { overflow-x: auto; }
+    .rt-table { color: var(--app-text, #16243a); margin: 0; min-width: 1050px; }
+    .rt-table thead th {
+        background: var(--app-table-head, #16243a);
+        border: 0;
+        color: #fff;
+        font-size: .72rem;
+        letter-spacing: .04em;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+    .rt-table tbody td { border-color: var(--app-border, #d6e0ec); vertical-align: middle; }
+    .rt-sort-button { background: transparent; border: 0; color: inherit; font: inherit; padding: 0; }
+    .rt-sort-button:focus-visible, .rt-icon-button:focus-visible { outline: 3px solid var(--app-focus-ring, #5aa7ff); outline-offset: 2px; }
+    .rt-control { color: var(--app-text, #16243a); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 800; white-space: nowrap; }
+    .rt-description { color: var(--app-text, #16243a); font-weight: 750; max-width: 25rem; overflow-wrap: anywhere; }
+    .rt-muted { color: var(--app-muted-text, #60738d); }
+    .rt-amount { color: var(--app-text, #16243a); font-variant-numeric: tabular-nums; font-weight: 850; white-space: nowrap; }
+    .rt-status { border-radius: 999px; display: inline-flex; font-size: .72rem; font-weight: 800; padding: .35rem .6rem; white-space: nowrap; }
+    .rt-status.paid { background: #d9f7e7; color: #087443; }
+    .rt-status.unpaid { background: #fff0d6; color: #8a5300; }
+    .rt-actions { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }
+    .rt-actions .btn { min-height: 2.5rem; }
+    .rt-mobile-list { display: none; }
+    .rt-mobile-card { background: var(--app-surface-raised, #f7fafd); border: 1px solid var(--app-border, #d6e0ec); border-radius: .8rem; padding: 1rem; }
+    .rt-modal-content { background: var(--app-surface, #fff); border: 1px solid var(--app-border, #d6e0ec); color: var(--app-text, #16243a); }
+    .rt-category-grid .form-label { color: var(--app-muted-text, #60738d); font-size: .75rem; font-weight: 800; }
+    .rt-total-box { background: var(--app-surface-raised, #f7fafd); border: 1px solid var(--app-border, #d6e0ec); border-radius: .7rem; padding: .75rem 1rem; }
+    .rt-total-value { color: var(--app-text, #16243a); font-size: 1.35rem; font-weight: 900; }
+    .rt-confirm-backdrop { align-items: center; background: rgba(6, 17, 32, .68); display: none; inset: 0; justify-content: center; padding: 1rem; position: fixed; z-index: 2060; }
+    .rt-confirm-backdrop.show { display: flex; }
+    .rt-confirm-card { background: var(--app-surface, #fff); border: 1px solid var(--app-border, #d6e0ec); border-radius: .85rem; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .24); color: var(--app-text, #16243a); max-width: 30rem; padding: 1.25rem; width: 100%; }
+    [data-app-theme="dark"] .rt-hero { background: linear-gradient(135deg, #101b2c, #1c3f7e); }
+    [data-app-theme="dark"] .rt-status.paid { background: #103e2a; color: #9af1c1; }
+    [data-app-theme="dark"] .rt-status.unpaid { background: #4a3514; color: #ffd68a; }
+    @media (max-width: 767.98px) {
+        .rt-hero, .rt-filter-panel, .rt-panel { border-radius: .7rem; }
+        .rt-hero { padding: 1.1rem; }
+        .rt-table-wrap { display: none; }
+        .rt-mobile-list { display: grid; gap: .7rem; padding: .75rem; }
+        .rt-actions { justify-content: stretch; }
+        .rt-actions .btn { flex: 1 1 8rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="container-fluid py-3 rt-page" id="reimbursement-tracker-page">
+    <div id="rt-alert" class="alert d-none no-print" role="status" aria-live="polite"></div>
+
+    <section class="rt-hero mb-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div>
+            <div class="small text-uppercase fw-bold opacity-75">Accounting Register</div>
+            <h1><i class="fa-solid fa-receipt me-2" aria-hidden="true"></i>Reimbursement Tracker</h1>
+            <p class="mb-0 mt-2 opacity-75">Record standalone reimbursement batches and export the Accounting register.</p>
+        </div>
+        <button type="button" class="btn btn-light fw-bold" id="rt-add-button">
+            <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>Add reimbursement
+        </button>
+    </section>
+
+    <div id="rt-duplicate-warning" class="alert alert-warning d-none mb-3" role="alert"></div>
+
+    <section class="row g-3 mb-3" aria-label="Reimbursement tracker summary">
+        <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Rows</div><div class="rt-kpi-value" id="rt-total-count">0</div></div></div>
+        <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Paid in full</div><div class="rt-kpi-value" id="rt-paid-count">0</div></div></div>
+        <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Unpaid</div><div class="rt-kpi-value" id="rt-unpaid-count">0</div></div></div>
+        <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Total PHP</div><div class="rt-kpi-value" id="rt-total-amount">0.00</div></div></div>
+    </section>
+
+    <section class="rt-filter-panel mb-3 no-print" aria-label="Reimbursement tracker filters">
+        <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-4 col-lg-2">
+                <label for="rt-reference-filter">Reference</label>
+                <input class="form-control" id="rt-reference-filter" type="search" placeholder="Search batch reference">
+            </div>
+            <div class="col-12 col-md-4 col-lg-2">
+                <label for="rt-engineer-filter">Engineer</label>
+                <select class="form-select" id="rt-engineer-filter"><option value="">All engineers</option></select>
+            </div>
+            <div class="col-12 col-md-4 col-lg-2">
+                <label for="rt-office-filter">Office</label>
+                <select class="form-select" id="rt-office-filter"><option value="">All offices</option></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label for="rt-date-from">From</label>
+                <input class="form-control" id="rt-date-from" type="date">
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label for="rt-date-to">To</label>
+                <input class="form-control" id="rt-date-to" type="date">
+            </div>
+            <div class="col-12 col-md-4 col-lg-2">
+                <label for="rt-paid-filter">Payment</label>
+                <select class="form-select" id="rt-paid-filter">
+                    <option value="">All payment states</option>
+                    <option value="paid">Paid in full</option>
+                    <option value="unpaid">Unpaid</option>
+                </select>
+            </div>
+            <div class="col-12 d-flex flex-wrap gap-2 justify-content-between align-items-center mt-2">
+                <span class="small rt-muted" id="rt-result-count">0 rows</span>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="rt-clear-filters"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear</button>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="rt-refresh-button"><i class="fa-solid fa-rotate me-1"></i>Refresh</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="rt-export-button"><i class="fa-solid fa-file-excel me-1"></i>Export Excel</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="rt-panel" aria-label="Reimbursement tracker records">
+        <div class="rt-table-wrap">
+            <table class="table rt-table">
+                <thead id="rt-table-head"></thead>
+                <tbody id="rt-table-body"></tbody>
+            </table>
+        </div>
+        <div class="rt-mobile-list" id="rt-mobile-list"></div>
+        <div id="rt-empty-state" class="p-4 text-center rt-muted">No reimbursement rows match the current filters.</div>
+    </section>
+</main>
+
+<div class="rt-confirm-backdrop" id="rt-confirm-backdrop" aria-hidden="true">
+    <div class="rt-confirm-card" role="dialog" aria-modal="true" aria-labelledby="rt-confirm-title">
+        <h2 class="h5 mb-2" id="rt-confirm-title">Delete reimbursement row?</h2>
+        <p class="mb-4 rt-muted" id="rt-confirm-message">This cannot be undone.</p>
+        <div class="d-flex justify-content-end gap-2">
+            <button type="button" class="btn btn-outline-secondary" id="rt-confirm-cancel">Cancel</button>
+            <button type="button" class="btn btn-danger" id="rt-confirm-ok">Delete row</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="rt-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content rt-modal-content">
+            <form id="rt-form">
+                <div class="modal-header">
+                    <h2 class="modal-title h5" id="rt-modal-title">Add reimbursement</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="rt-id">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label" for="rt-reference">Reference</label>
+                            <input class="form-control" id="rt-reference" required maxlength="100" placeholder="BATCH-001">
+                            <div class="form-text">The batch number becomes the final control-number sequence.</div>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label" for="rt-submission-date">Submission date</label>
+                            <input class="form-control" id="rt-submission-date" type="date" required>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label" for="rt-office">Office</label>
+                            <select class="form-select" id="rt-office" required></select>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label" for="rt-engineer">Engineer</label>
+                            <select class="form-select" id="rt-engineer" required></select>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label class="form-label">Control number preview</label>
+                            <div class="form-control bg-body-secondary rt-control" id="rt-control-preview">—</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="rt-description">Reimbursement</label>
+                            <input class="form-control" id="rt-description" maxlength="500" placeholder="Short reimbursement description">
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+                    <h3 class="h6 mb-3">Expense categories</h3>
+                    <div class="row g-3 rt-category-grid" id="rt-category-grid"></div>
+                    <div class="rt-total-box d-flex align-items-center justify-content-between mt-3">
+                        <span class="fw-bold">Server-calculated total</span>
+                        <span class="rt-total-value" id="rt-form-total">PHP 0.00</span>
+                    </div>
+
+                    <hr class="my-4">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-4">
+                            <div class="form-check form-switch pt-2">
+                                <input class="form-check-input" id="rt-paid-in-full" type="checkbox">
+                                <label class="form-check-label fw-bold" for="rt-paid-in-full">Paid in full</label>
+                            </div>
+                            <div class="form-text">Paid amount is locked to the server-calculated total.</div>
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label" for="rt-paid-transfer-date">Transfer date</label>
+                            <input class="form-control" id="rt-paid-transfer-date" type="date">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="rt-remarks">Remarks</label>
+                            <textarea class="form-control" id="rt-remarks" rows="2" maxlength="2000" placeholder="Optional notes for the register"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="rt-save-button"><i class="fa-solid fa-floppy-disk me-1"></i>Save row</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+    'use strict';
+    const state = {
+        rows: [], engineers: [], offices: [], editingId: null, modal: null,
+        sortKey: localStorage.getItem('reimbursement_tracker_sort_key') || 'submission_date',
+        sortDirection: localStorage.getItem('reimbursement_tracker_sort_direction') || 'desc'
+    };
+    const categories = [
+        ['representation', 'Representation'], ['per_diem', 'Per Diem'], ['parking', 'Parking'],
+        ['toll', 'Toll'], ['transportation', 'Trasnportation'], ['gasoline', 'Gasoline'],
+        ['car_repair', 'Car Repair'], ['service_materials', 'Service Materials'],
+        ['hotel_accommodation', 'Hotel Accomodation'], ['others_misc', 'Others/Misc']
+    ];
+    const byId = (id) => document.getElementById(id);
+    const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+    const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const moneyNumber = (value) => Number.parseFloat(String(value ?? '').replace(/,/g, '')) || 0;
+    const formatMoney = (value) => moneyNumber(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    function notify(message, kind = 'info') {
+        const alert = byId('rt-alert');
+        if (!alert) return;
+        alert.className = `alert alert-${kind}`;
+        alert.textContent = message;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function currentFilters() {
+        return {
+            reference: (byId('rt-reference-filter')?.value || '').trim().toLowerCase(),
+            engineer: byId('rt-engineer-filter')?.value || '',
+            office: byId('rt-office-filter')?.value || '',
+            from: byId('rt-date-from')?.value || '',
+            to: byId('rt-date-to')?.value || '',
+            paid: byId('rt-paid-filter')?.value || ''
+        };
+    }
+
+    function filteredRows() {
+        const filters = currentFilters();
+        const rows = state.rows.filter((row) => {
+            const inDates = (!filters.from || row.submission_date >= filters.from) && (!filters.to || row.submission_date <= filters.to);
+            return (!filters.reference || String(row.reference).toLowerCase().includes(filters.reference))
+                && (!filters.engineer || String(row.engineer_id) === String(filters.engineer))
+                && (!filters.office || row.office === filters.office)
+                && (!filters.paid || (filters.paid === 'paid' ? row.paid_in_full : !row.paid_in_full))
+                && inDates;
+        });
+        const key = state.sortKey;
+        const value = (row) => {
+            if (key === 'total' || key === 'paid_amount') return moneyNumber(row[key]);
+            if (key === 'paid_in_full') return row.paid_in_full ? 1 : 0;
+            return String(row[key] ?? '').toLowerCase();
+        };
+        rows.sort((a, b) => {
+            const left = value(a), right = value(b);
+            const result = typeof left === 'number' ? left - right : String(left).localeCompare(String(right), undefined, { numeric: true });
+            return state.sortDirection === 'asc' ? result : -result;
+        });
+        return rows;
+    }
+
+    function updateSortIndicators() {
+        document.querySelectorAll('[data-rt-sort-indicator]').forEach((indicator) => {
+            const active = indicator.dataset.rtSortIndicator === state.sortKey;
+            indicator.textContent = active ? (state.sortDirection === 'asc' ? '↑' : '↓') : '↕';
+        });
+    }
+
+    function renderKpis() {
+        byId('rt-total-count').textContent = state.rows.length;
+        byId('rt-paid-count').textContent = state.rows.filter((row) => row.paid_in_full).length;
+        byId('rt-unpaid-count').textContent = state.rows.filter((row) => !row.paid_in_full).length;
+        byId('rt-total-amount').textContent = formatMoney(state.rows.reduce((sum, row) => sum + moneyNumber(row.total), 0));
+    }
+
+    function actionHtml(row) {
+        return `<div class="rt-actions">
+            <button type="button" class="btn btn-outline-primary btn-sm" data-rt-edit="${row.id}"><i class="fa-solid fa-pen me-1"></i>Edit</button>
+            <button type="button" class="btn btn-outline-danger btn-sm" data-rt-delete="${row.id}"><i class="fa-solid fa-trash me-1"></i>Delete</button>
+        </div>`;
+    }
+
+    function renderHeader() {
+        byId('rt-table-head').innerHTML = `<tr>
+            <th><button class="rt-sort-button" type="button" data-rt-sort="reference">Reference <span data-rt-sort-indicator="reference">↕</span></button></th>
+            <th><button class="rt-sort-button" type="button" data-rt-sort="submission_date">Date <span data-rt-sort-indicator="submission_date">↕</span></button></th>
+            <th><button class="rt-sort-button" type="button" data-rt-sort="control_number">Control # <span data-rt-sort-indicator="control_number">↕</span></button></th>
+            <th><button class="rt-sort-button" type="button" data-rt-sort="description">Reimbursement <span data-rt-sort-indicator="description">↕</span></button></th>
+            <th><button class="rt-sort-button" type="button" data-rt-sort="engineer_name">Engineer <span data-rt-sort-indicator="engineer_name">↕</span></button></th>
+            <th><button class="rt-sort-button" type="button" data-rt-sort="office">Office <span data-rt-sort-indicator="office">↕</span></button></th>
+            <th><button class="rt-sort-button" type="button" data-rt-sort="total">Total <span data-rt-sort-indicator="total">↕</span></button></th>
+            <th><button class="rt-sort-button" type="button" data-rt-sort="paid_in_full">Payment <span data-rt-sort-indicator="paid_in_full">↕</span></button></th>
+            <th class="text-end">Actions</th>
+        </tr>`;
+    }
+
+    function renderRows() {
+        const rows = filteredRows();
+        byId('rt-result-count').textContent = `${rows.length} of ${state.rows.length} row(s) shown`;
+        byId('rt-empty-state').classList.toggle('d-none', rows.length > 0);
+        byId('rt-table-body').innerHTML = rows.map((row) => `<tr>
+            <td><span class="rt-control">${escapeHtml(row.reference)}</span></td>
+            <td>${escapeHtml(row.submission_date || '—')}</td>
+            <td><span class="rt-control">${escapeHtml(row.control_number)}</span></td>
+            <td><div class="rt-description">${escapeHtml(row.description || '—')}</div></td>
+            <td><strong>${escapeHtml(row.engineer_name)}</strong><div class="small rt-muted">${escapeHtml(row.engineer_initials)}</div></td>
+            <td>${escapeHtml(row.office)}</td>
+            <td><span class="rt-amount">${escapeHtml(formatMoney(row.total))}</span></td>
+            <td><span class="rt-status ${row.paid_in_full ? 'paid' : 'unpaid'}">${row.paid_in_full ? 'Paid in full' : 'Unpaid'}</span></td>
+            <td>${actionHtml(row)}</td>
+        </tr>`).join('');
+        byId('rt-mobile-list').innerHTML = rows.map((row) => `<article class="rt-mobile-card">
+            <div class="d-flex justify-content-between align-items-start gap-2"><div><div class="rt-control">${escapeHtml(row.control_number)}</div><div class="small rt-muted">${escapeHtml(row.reference)} · ${escapeHtml(row.submission_date)}</div></div><span class="rt-status ${row.paid_in_full ? 'paid' : 'unpaid'}">${row.paid_in_full ? 'Paid' : 'Unpaid'}</span></div>
+            <div class="rt-description mt-3">${escapeHtml(row.description || 'No description')}</div>
+            <div class="small mt-2"><strong>Engineer:</strong> ${escapeHtml(row.engineer_name)} (${escapeHtml(row.engineer_initials)})</div>
+            <div class="small"><strong>Office:</strong> ${escapeHtml(row.office)}</div>
+            <div class="small"><strong>Total:</strong> <span class="rt-amount">${escapeHtml(formatMoney(row.total))}</span></div>
+            <div class="mt-3">${actionHtml(row)}</div>
+        </article>`).join('');
+        updateSortIndicators();
+    }
+
+    function populateFilters() {
+        const engineerFilter = byId('rt-engineer-filter');
+        const selectedEngineer = engineerFilter.value;
+        engineerFilter.innerHTML = `<option value="">All engineers</option>` + state.engineers.map((engineer) => `<option value="${engineer.id}">${escapeHtml(engineer.name)} (${escapeHtml(engineer.initials)})</option>`).join('');
+        engineerFilter.value = selectedEngineer;
+        const officeFilter = byId('rt-office-filter');
+        const selectedOffice = officeFilter.value;
+        officeFilter.innerHTML = `<option value="">All offices</option>` + state.offices.map((office) => `<option value="${escapeHtml(office)}">${escapeHtml(office)}</option>`).join('');
+        officeFilter.value = selectedOffice;
+    }
+
+    function populateOfficeOptions(selected = '') {
+        const select = byId('rt-office');
+        select.innerHTML = `<option value="">Select office</option>` + state.offices.map((office) => `<option value="${escapeHtml(office)}">${escapeHtml(office)}</option>`).join('');
+        if (selected) select.value = selected;
+    }
+
+    function populateEngineerOptions(selected = '') {
+        const office = byId('rt-office').value;
+        const select = byId('rt-engineer');
+        const candidates = state.engineers.filter((engineer) => !office || engineer.office === office || String(engineer.id) === String(selected));
+        select.innerHTML = `<option value="">Select engineer</option>` + candidates.map((engineer) => `<option value="${engineer.id}">${escapeHtml(engineer.name)} (${escapeHtml(engineer.initials)})</option>`).join('');
+        if (selected && candidates.some((engineer) => String(engineer.id) === String(selected))) select.value = selected;
+    }
+
+    function resetForm() {
+        byId('rt-form').reset();
+        byId('rt-id').value = '';
+        byId('rt-modal-title').textContent = 'Add reimbursement';
+        byId('rt-save-button').innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Save row';
+        state.editingId = null;
+        byId('rt-reference').value = '';
+        byId('rt-submission-date').value = new Date().toISOString().slice(0, 10);
+        populateOfficeOptions('');
+        populateEngineerOptions('');
+        byId('rt-control-preview').textContent = '—';
+        categories.forEach(([field]) => { byId(`rt-${field}`).value = ''; });
+        byId('rt-form-total').textContent = 'PHP 0.00';
+    }
+
+    function openForm(row = null) {
+        resetForm();
+        if (row) {
+            state.editingId = row.id;
+            byId('rt-id').value = row.id;
+            byId('rt-modal-title').textContent = 'Edit reimbursement';
+            byId('rt-save-button').innerHTML = '<i class="fa-solid fa-check me-1"></i>Update row';
+            byId('rt-reference').value = row.reference || '';
+            byId('rt-submission-date').value = row.submission_date || '';
+            populateOfficeOptions(row.office || '');
+            populateEngineerOptions(row.engineer_id || '');
+            byId('rt-description').value = row.description || '';
+            categories.forEach(([field]) => { byId(`rt-${field}`).value = row[field] || ''; });
+            byId('rt-paid-in-full').checked = Boolean(row.paid_in_full);
+            byId('rt-paid-transfer-date').value = row.paid_transfer_date || '';
+            byId('rt-remarks').value = row.remarks || '';
+        }
+        updateControlPreview();
+        updateFormTotal();
+        state.modal.show();
+        setTimeout(() => byId('rt-reference')?.focus(), 150);
+    }
+
+    function updateControlPreview() {
+        const reference = byId('rt-reference').value.trim();
+        const date = byId('rt-submission-date').value;
+        const engineer = state.engineers.find((item) => String(item.id) === String(byId('rt-engineer').value));
+        const match = reference.match(/\bbatch[-\s#]*0*(\d{1,3})\b/i);
+        if (!match || !date || !engineer) { byId('rt-control-preview').textContent = '—'; return; }
+        const sequence = Number(match[1]);
+        const parts = date.split('-').map(Number);
+        if (!sequence || sequence > 999 || parts.length !== 3) { byId('rt-control-preview').textContent = '—'; return; }
+        byId('rt-control-preview').textContent = `${engineer.initials}-${parts[0]}${String(parts[1]).padStart(2, '0')}${parts[2]}-${String(sequence).padStart(3, '0')}`;
+    }
+
+    function updateFormTotal() {
+        const total = categories.reduce((sum, [field]) => sum + moneyNumber(byId(`rt-${field}`)?.value), 0);
+        byId('rt-form-total').textContent = `PHP ${formatMoney(total)}`;
+    }
+
+    function confirmDeleteAction(row) {
+        return new Promise((resolve) => {
+            const backdrop = byId('rt-confirm-backdrop');
+            const cancelButton = byId('rt-confirm-cancel');
+            const confirmButton = byId('rt-confirm-ok');
+            const message = byId('rt-confirm-message');
+            if (!backdrop || !cancelButton || !confirmButton || !message) { resolve(false); return; }
+            let finished = false;
+            const cleanup = (accepted) => {
+                if (finished) return;
+                finished = true;
+                backdrop.classList.remove('show');
+                backdrop.setAttribute('aria-hidden', 'true');
+                cancelButton.onclick = null;
+                confirmButton.onclick = null;
+                backdrop.onclick = null;
+                document.removeEventListener('keydown', onKeyDown);
+                resolve(accepted);
+            };
+            const onKeyDown = (event) => { if (event.key === 'Escape') cleanup(false); };
+            message.textContent = `Delete reimbursement row ${row.control_number}? This cannot be undone.`;
+            cancelButton.onclick = () => cleanup(false);
+            confirmButton.onclick = () => cleanup(true);
+            backdrop.onclick = (event) => { if (event.target === backdrop) cleanup(false); };
+            document.addEventListener('keydown', onKeyDown);
+            backdrop.classList.add('show');
+            backdrop.setAttribute('aria-hidden', 'false');
+            setTimeout(() => confirmButton.focus(), 0);
+        });
+    }
+
+    async function loadData() {
+        const response = await fetch('/get_reimbursement_tracker_entries', { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Reimbursement tracker could not be loaded.');
+        state.rows = data.entries || [];
+        state.engineers = data.engineers || [];
+        state.offices = data.offices || [];
+        populateFilters();
+        renderKpis();
+        renderRows();
+        const warning = byId('rt-duplicate-warning');
+        if (data.duplicate_initials?.length) {
+            warning.textContent = `Duplicate engineer initials detected: ${data.duplicate_initials.join(', ')}. Control numbers may match until Personnel is corrected.`;
+            warning.classList.remove('d-none');
+        } else warning.classList.add('d-none');
+    }
+
+    async function saveForm(event) {
+        event.preventDefault();
+        const button = byId('rt-save-button');
+        button.disabled = true;
+        const payload = {
+            reference: byId('rt-reference').value,
+            submission_date: byId('rt-submission-date').value,
+            engineer_id: Number(byId('rt-engineer').value),
+            office: byId('rt-office').value,
+            description: byId('rt-description').value,
+            paid_in_full: byId('rt-paid-in-full').checked,
+            paid_transfer_date: byId('rt-paid-transfer-date').value,
+            remarks: byId('rt-remarks').value
+        };
+        categories.forEach(([field]) => { payload[field] = byId(`rt-${field}`).value; });
+        try {
+            const editingId = state.editingId;
+            const response = await fetch(editingId ? `/update_reimbursement_tracker_entry/${editingId}` : '/add_reimbursement_tracker_entry', {
+                method: editingId ? 'PUT' : 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf(), 'Accept': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) throw new Error(data.error || 'The reimbursement row could not be saved.');
+            state.modal.hide();
+            await loadData();
+            notify(editingId ? 'Reimbursement row updated.' : 'Reimbursement row added.', 'success');
+        } catch (error) { notify(error.message, 'danger'); }
+        finally { button.disabled = false; }
+    }
+
+    async function deleteRow(id) {
+        const row = state.rows.find((item) => item.id === id);
+        if (!row || !(await confirmDeleteAction(row))) return;
+        try {
+            const response = await fetch(`/delete_reimbursement_tracker_entry/${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': csrf(), 'Accept': 'application/json' } });
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.error || 'The reimbursement row could not be deleted.');
+            await loadData();
+            notify('Reimbursement row deleted.', 'success');
+        } catch (error) { notify(error.message, 'danger'); }
+    }
+
+    async function exportRegister() {
+        const button = byId('rt-export-button');
+        button.disabled = true;
+        try {
+            const params = new URLSearchParams({ ...currentFilters(), sort: state.sortKey, direction: state.sortDirection });
+            const response = await fetch(`/export_reimbursement_tracker?${params.toString()}`, { headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } });
+            if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || 'The tracker could not be exported.'); }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a'); link.href = url; link.download = 'reimbursement_tracker.xlsx'; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+            notify('Reimbursement tracker exported.', 'success');
+        } catch (error) { notify(error.message, 'danger'); }
+        finally { button.disabled = false; }
+    }
+
+    document.addEventListener('click', (event) => {
+        const sortButton = event.target.closest('[data-rt-sort]');
+        if (sortButton) {
+            const key = sortButton.dataset.rtSort;
+            if (state.sortKey === key) state.sortDirection = state.sortDirection === 'asc' ? 'desc' : 'asc';
+            else { state.sortKey = key; state.sortDirection = 'asc'; }
+            localStorage.setItem('reimbursement_tracker_sort_key', state.sortKey);
+            localStorage.setItem('reimbursement_tracker_sort_direction', state.sortDirection);
+            renderRows(); return;
+        }
+        const edit = event.target.closest('[data-rt-edit]');
+        if (edit) { openForm(state.rows.find((row) => row.id === Number(edit.dataset.rtEdit))); return; }
+        const remove = event.target.closest('[data-rt-delete]');
+        if (remove) deleteRow(Number(remove.dataset.rtDelete));
+    });
+
+    byId('rt-add-button').addEventListener('click', () => openForm());
+    byId('rt-refresh-button').addEventListener('click', () => loadData().catch((error) => notify(error.message, 'danger')));
+    byId('rt-export-button').addEventListener('click', exportRegister);
+    byId('rt-form').addEventListener('submit', saveForm);
+    ['rt-reference-filter', 'rt-date-from', 'rt-date-to'].forEach((id) => byId(id).addEventListener('input', renderRows));
+    ['rt-engineer-filter', 'rt-office-filter', 'rt-paid-filter'].forEach((id) => byId(id).addEventListener('change', renderRows));
+    byId('rt-clear-filters').addEventListener('click', () => {
+        ['rt-reference-filter', 'rt-date-from', 'rt-date-to'].forEach((id) => { byId(id).value = ''; });
+        ['rt-engineer-filter', 'rt-office-filter', 'rt-paid-filter'].forEach((id) => { byId(id).value = ''; });
+        renderRows();
+    });
+    byId('rt-office').addEventListener('change', () => { populateEngineerOptions(); updateControlPreview(); });
+    byId('rt-engineer').addEventListener('change', () => updateControlPreview());
+    byId('rt-reference').addEventListener('input', updateControlPreview);
+    byId('rt-submission-date').addEventListener('change', updateControlPreview);
+
+    function initialize() {
+        byId('rt-category-grid').innerHTML = categories.map(([field, label]) => `<div class="col-6 col-md-4 col-lg-3"><label class="form-label" for="rt-${field}">${escapeHtml(label)}</label><input class="form-control rt-category-input" id="rt-${field}" type="number" min="0" step="0.01" inputmode="decimal"></div>`).join('');
+        categories.forEach(([field]) => byId(`rt-${field}`).addEventListener('input', updateFormTotal));
+        state.modal = window.bootstrap?.Modal ? window.bootstrap.Modal.getOrCreateInstance(byId('rt-modal')) : { show: () => byId('rt-modal').classList.add('show'), hide: () => byId('rt-modal').classList.remove('show') };
+        renderHeader();
+        loadData().catch((error) => notify(error.message, 'danger'));
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize, { once: true });
+    else initialize();
+})();
+</script>
+{% endblock %}

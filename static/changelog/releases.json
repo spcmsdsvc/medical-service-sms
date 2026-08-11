@@ -1783,6 +1783,24 @@
           "sort_order": 10
         }
       ]
+    },
+    {
+      "release_key": "2026-08-11-reimbursement-tracker",
+      "release_date": "2026-08-11",
+      "title": "Reimbursement Tracker",
+      "summary": "A standalone register for reimbursement batches, with control numbers assigned automatically and a one-click Excel export for Accounting.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-11-reimbursement-tracker",
+          "category": "Reimbursement Tracker",
+          "description": "Authorized staff can now record standalone reimbursement batches, calculate control numbers from Personnel initials and batch references, and export the Accounting register to Excel.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
     }
   ]
 }

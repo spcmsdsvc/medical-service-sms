@@ -1,5 +1,104 @@
 # Project Change Log
 
+claude changes - 2026-08-11 (review of the Reimbursement Tracker, and four fixes)
+
+## The implementation is sound. Verified by running it, not by reading it.
+
+* **618 tests green** on arrival (up from 605), and every load-bearing claim in Codex's journal
+  checked out independently: the gate is **one helper on the page and all five APIs** — refused as
+  plain, approver-only, po-admin-only and inactive accounts, 403 on all five each time — control
+  numbers come out `JFL-2026087-031` and `RAJ-2026087-031`, duplicates are correctly allowed,
+  forged totals are ignored, `paid_amount` is coupled, Settings reports the **stored** grant, and
+  the export carries the banners, both header rows with the deliberate typos, `iterate=True`,
+  row-8 formulas that really say row 8, a blank `V` column and **no `IFS` anywhere**.
+* Injected `<img src=x onerror=alert(1)>` into a description: rendered as literal text, zero
+  elements created. **Two things were stricter than specified** — CSRF is left enforced on the
+  mutation routes where several existing endpoints are `@csrf.exempt`, and a Personnel initials
+  correction deliberately does not rewrite a stored control number (app.py:39915).
+
+## Fixed: dark mode was white-on-white, at 1.04:1 contrast
+
+* `--app-raised-surface` **does not exist** — the token is `--app-surface-raised`, transposed. A
+  misspelled custom property is invisible: it silently takes its fallback, here a light-only
+  `#f7fafd`, while the *text* colour kept following the theme.
+* **Not mobile-only.** It hit `.rt-mobile-card` and `.rt-total-box`, and the total box is in the
+  add/edit form, so the defect was on desktop too. Measured **1.04:1** in dark mode where WCAG AA
+  needs 4.5. After the fix: **12.91:1** dark, 15.55:1 light unchanged, and the background now
+  responds to the theme.
+* **This landed exactly in the gap Codex declared.** Its journal honestly recorded that the planned
+  375 px pass was replaced by static checks; the bug was in that pass. The declaration was accurate
+  and the gap was the right one to have worried about.
+* The test asserts **the class, not the instance**: every `var(--app-*)` token the page uses must be
+  defined in `static/css/app-themes.css`. Two are deliberately exempt and named as such —
+  `--app-table-head` and `--app-focus-ring`, whose fixed fallbacks are correct in both themes
+  (measured 14.63:1). They are left alone rather than "fixed" blind.
+
+## Fixed: a constant that looked like a switch and controlled nothing
+
+* `REIMBURSEMENT_TRACKER_CONTROL_DATE_FORMAT` was referenced **nowhere**; the format was inlined in
+  the builder. It exists so the ambiguous unpadded day — Jan 12 and Nov 2 both render `2026112` — is
+  a one-line change. As shipped, editing it did nothing. **A knob that lies is worse than no knob.**
+* It is now the format string the builder formats through, and the test swaps in a padded format and
+  requires the output to follow.
+
+## Fixed: `office` was unvalidated free text on the endpoint
+
+* The workbook made this structurally impossible — its engineer dropdown was an `INDIRECT` on the
+  office cell. The page reproduces that by rebuilding the engineer list on every office change, but
+  the endpoint accepted anything: a **Davao engineer filed under Manila**, or an office of
+  `Atlantis`. Office drives the register filter and the export's Office column, so the row was
+  silently wrong rather than rejected.
+* Now the office must match the engineer's branch — **except when an existing row's stored office is
+  resubmitted unchanged**, so an engineer transferring branch cannot freeze every historical row.
+  Office stays a snapshot of where the row was filed, which is the plan's deliberate denormalisation.
+
+## Fixed: the release item sat under an unrelated headline
+
+* The entry was appended to the release titled *"Backup Center Behaves Offline"*. The coverage test
+  passed because only the **date** is checked, so What's New would have shown a Reimbursement
+  Tracker item under a backup headline. It now has its own `2026-08-11-reimbursement-tracker`
+  release.
+
+## Tests
+
+* **Five added, 618 → 623 green** with the one pre-existing skip.
+* **Four injections, all RED for the expected reason, `app.py`, the template and the manifest each
+  restored byte-identically.** The harness asserts the needle occurs an exact number of times and
+  that the file hash changed before drawing any conclusion — without that, a `\n` needle against
+  these CRLF files silently matches nothing and reads exactly like a healthy control.
+* No service worker bump: `v86-reimbursement-tracker` was already correct, and none of these fixes
+  touches an `APP_SHELL` asset beyond the template the bump already covers.
+
+codex changes - 2026-08-11 (Reimbursement Tracker execution)
+
+## Implemented the standalone tracker register and Accounting export
+
+* Added the additive `ReimbursementTrackerEntry` model, category constant, schema migration,
+  indexes, and stored audit fields in `app.py`; the ten category labels preserve the two
+  Accounting-facing workbook spellings `Trasnportation` and `Hotel Accomodation`.
+* Added the `reimbursement_tracker_access` capability through the User model, additive user
+  migration, Settings serializer/save flow, Add Personnel flow, and Records navigation. The
+  page and all tracker APIs use the same capability helper, while admins retain their existing
+  effective access without receiving a phantom stored grant.
+* Added standalone tracker CRUD/list/export routes and server-side validation. Totals are
+  recomputed from the ten categories, paid amount is forced to the total only when Paid in Full
+  is selected, control numbers use the selected Engineer table initials plus the submission date
+  and BATCH reference, and stored snapshots keep historical control numbers stable.
+* Added the responsive/dark-mode-safe tracker page with office-filtered engineer selection,
+  duplicate-initial warning, CRUD controls, filters, Excel export actions, and an accessible
+  in-page delete confirmation instead of a browser-native prompt.
+* Added the Accounting-compatible workbook export layout and row-relative iterative formulas,
+  bumped the service-worker cache version, and added the user-facing release-manifest item.
+* Browser verification completed on a non-5000 local test server: create/control-number preview,
+  edit, Paid in Full, delete confirmation, empty-state reload, dark mode, desktop no-overflow
+  measurement, and a clean warning/error console. The in-app browser did not expose a viewport
+  override, so the planned 375px pass was covered by the responsive CSS/media-query implementation
+  and static syntax checks instead.
+* Verification passed: tracker-focused tests `13/13`; full isolated suite `618 passed, 1
+  pre-existing skip`; Python compilation, tracker inline JavaScript parsing, manifest parsing,
+  `git diff --check`, and the affected capability/P.O./navigation/offline regression suites are
+  green. No commit, push, or deployment was performed.
+
 claude changes - 2026-08-11 (Reimbursement Tracker plan + a data-free workbook)
 
 ## Recorded the approved plan; deliberately did NOT build it
