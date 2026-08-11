@@ -183,8 +183,23 @@ rather than trusted.
    on bad input, caller returns 400.
 10. **Excel export.** Reproduce `Sheet` exactly: banners `A1`/`S1`/`V1`, headers on rows 2 and 6,
     `A5 'Reimbursements'`, data from **row 7**. Per row `r`: `G` `=SUM(I{r}:R{r})`, `H` empty, `S`
-    a real bool, `T`/`U` literals, `V` blank, and live formulas for `W`, `X`, `Y`, `Z`. **Every
-    formula built with an f-string on `r` — a hard-coded `7` is the most likely defect here.** Set
+    a real bool, `T`/`U` literals, `V` blank, and these four live formulas:
+
+    ```
+    W  =IF(V{r}=TRUE,G{r},"")
+    X  =IF(W{r}<>"",IF(X{r}="",TODAY(),X{r}),"")
+    Y  =IF(OR(V{r}=TRUE,W{r}<>""),W{r}-G{r},0)
+    Z  =IF(Y{r}<0,"OVER PAID",IF(Y{r}>0,"EXCESS REIMBURSEMENT BY ACCTG.",""))
+    ```
+
+    **`Z` is a nested `IF`, not the workbook's `IFS`, by the owner's decision on 2026-08-11.**
+    `IFS` requires Excel 2016+ and yields `#NAME?` in older Excel and some LibreOffice builds, and
+    this column is read by Accounting rather than by us. The nested form is exactly equivalent: `Y`
+    is always numeric (it is itself a formula ending in `0`), so the `IFS` arm `Y=0 → ""` is the
+    same as the nested `else ""`. **Do not "modernise" this back to `IFS`** — a test pins it.
+
+    **Every formula built with an f-string on `r` — a hard-coded `7` is the most likely defect
+    here.** Set
     `workbook.calculation.iterate = True` (with `iterateCount`/`iterateDelta`), because `X` is
     self-referential exactly as the workbook's `U` and `X` are and Excel otherwise computes 0 behind a
     circular-reference warning. No TOTAL row. **Done:** a real export opens in Excel with no warning
@@ -234,6 +249,12 @@ injection confirmed to have applied (files are CRLF; a `\n` needle silently matc
   typos**, `A5`, data at row 7, and with **two** records `W8/X8/Y8/Z8` carrying row-**8** formulas
   while `V7`/`V8` are `None`. This is the positive control against a hard-coded row number.
 - `test_export_enables_iterative_calculation`.
+- `test_payment_status_uses_nested_if_not_ifs` — assert `Z7` starts `=IF(` and that **no formula
+  anywhere in the sheet contains `IFS(`**, so the compatibility decision cannot be undone by a later
+  tidy-up. Assert the behaviour too, not just the spelling: build three records with `paid_in_full`
+  set and `paid_amount` above, below and equal to the total, and check each `Z` formula's arms carry
+  `OVER PAID` / `EXCESS REIMBURSEMENT BY ACCTG.` / `""` against the right comparison. Positive
+  control: substituting the `IFS` form must fail this test.
 - `test_export_route_is_network_only_in_the_service_worker` — parse `NETWORK_ONLY_DOWNLOAD_PREFIXES`
   out of the inlined worker and assert the route matches a prefix.
 - `assert_cache_version_at_least(...)` — a **floor**, never an exact pin.
@@ -261,8 +282,11 @@ ticking a `V` box makes `W`/`X`/`Y`/`Z` compute, and that no circular-reference 
    already non-unique by design, this is a **data-quality note, not a blocker**; surfaced via
    `duplicate_initials` for the owner to fix in Personnel (`String(10)`, no schema change).
 2. **`yyyymmd` is ambiguous** — Jan 12 and Nov 2 both render `2026112`. Kept by owner decision.
-3. **`=IFS` needs Excel 2016+**; older Excel or LibreOffice yields `#NAME?` in column Z. A nested
-   `IF` is the identical fallback. Worth confirming what Accounting opens these in.
+3. ~~**`=IFS` needs Excel 2016+**~~ — **RESOLVED by the owner on 2026-08-11 before implementation
+   started: use a nested `IF`.** Column `Z` is read by Accounting, not by us, so an unknown Excel
+   version there is not a risk worth carrying for no gain. See execution step 10 for the exact
+   formula and the equivalence argument. The export therefore emits **no `IFS` anywhere**, and a
+   test asserts that so it cannot creep back.
 4. **`office` is denormalised from `Engineer.branch`** — a transferring engineer keeps the office each
    historical row was filed under. Correct for an accounting log; comment it so it does not read as a bug.
 5. **The `S1` banner hard-codes one person's name.** Correct today, wrong if the capability is ever
