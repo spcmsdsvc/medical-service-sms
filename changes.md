@@ -1,5 +1,44 @@
 # Project Change Log
 
+claude changes - 2026-08-11 (documentation drift, reported by Codex)
+
+## Fixed: four documents named a state that had moved on
+
+* Codex reported three drifts; **all three were verified against the tree before anything was
+  edited**, per the standing rule that a journal is reconciled against the code and never against
+  another journal.
+* **`Handoffs/08-11-26 handoff.md` said the tip was `14eee82`; it is `98a1c3f`.** The cause is
+  structural rather than careless: `98a1c3f` is the commit that *tracked this file*, so the line was
+  true when written and false the moment the file was published. **A handoff cannot state its own
+  successor**, so the fix is a pointer to `git log --oneline -1` beside the corrected value, not just
+  a newer hash.
+* **`pending-work.md` header said `origin/main` is at `30c087c`** — stale by two commits. Corrected,
+  with the full chain (`3d66caf` → `30c087c` → `14eee82` → `98a1c3f`) and the same verify-don't-trust
+  pointer.
+* **`pending-work.md` also carried a paragraph reading "Suite green at 582 tests … worker `v83`" in
+  the present tense.** The figures were correct for 2026-08-09 and the surrounding table is a
+  historical record worth keeping, so the paragraph is **labelled historical** rather than deleted or
+  rewritten to today's numbers. Deleting it would lose the date of the run above it; updating it
+  would make a dated record lie about a different day.
+
+## The global guide pinned a service worker version from ~47 bumps ago
+
+* `~/.claude/AGENTS.md` named `…-v38-schedule-product-coverage` while the live worker reads
+  **`v85-backup-offline-fallback`** ([app.py:15234](app.py:15234)).
+* **It was not updated to v85.** That would have restarted the same clock — this project has already
+  corrected a pinned worker version three times, twice inside the very paragraph warning against
+  pinning it. The guide now carries **no version at all** and instructs the reader to read
+  `CACHE_VERSION` out of `app.py` immediately before committing, with the stale-history note as the
+  reason. **A version in a document is stale the next time anyone bumps it.**
+* The `pending-work.md` historical paragraph is annotated the same way, and its stale-count is now
+  four rather than three.
+
+## Scope
+
+* **Documentation only** — no source, template, test or `releases.json` change, so no service worker
+  bump and no changelog entry is required. `scheduler.db`, `output/`, `tmp/` and the loose 2026-07-26
+  handoff are untouched and unstaged.
+
 claude changes - 2026-08-11 (handoff documents are now tracked)
 
 ## Changed by the owner: `Handoffs/` is committed with the code

@@ -21,7 +21,8 @@ Do not treat this handoff as a replacement for those journals. It is an orientat
 ## Current Repository State
 
 - Branch: `main`.
-- `origin/main` and the local `HEAD` are at `14eee82` (backup record correction and review follow-up). The P.O. release is `3d66caf` with closeout `30c087c`; the System Backup Center is `b4b17fc`.
+- `origin/main` and the local `HEAD` are at `98a1c3f` (tracking handoff documents, plus the changelog entry `14eee82` missed), on top of `14eee82` (backup record correction and review follow-up). The P.O. release is `3d66caf` with closeout `30c087c`; the System Backup Center is `b4b17fc`.
+- **Verify the tip with `git log --oneline -1` rather than trusting this line.** It said `14eee82` until 2026-08-11, because the very commit that tracked this file — `98a1c3f` — moved the tip after the line was written. A handoff cannot state its own successor.
 - All are pushed to GitHub `origin/main`.
 - No Railway deployment was triggered by any of these actions.
 - Service worker at `v85-backup-offline-fallback`. Suite green at **605** with one pre-existing skip.
@@ -31,7 +32,7 @@ Do not treat this handoff as a replacement for those journals. It is an orientat
   - untracked `tmp/`
   - untracked `medical-service-sms-detailed-handoff-2026-07-26.md` (the older loose handoff, superseded by this one and deliberately left untracked)
 - **`Handoffs/` IS tracked**, changed by the project owner on 2026-08-11. Handoff documents are now published with the code rather than kept as local scratch. See the operating rules below.
-- The journal refresh that produced this file was committed in `14eee82` together with the corrections to it.
+- The journal refresh that produced this file was committed in `14eee82` together with the corrections to it; the file itself became tracked one commit later, in `98a1c3f`.
 
 Never use `git add .`, `git commit -a`, `git reset --hard`, or a broad cleanup command in this workspace. Stage named files only after reviewing `git status --short` and `git diff --name-only`.
 

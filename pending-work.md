@@ -11,9 +11,11 @@ Last updated: 2026-08-11, at the owner's request, after a review of the shipped 
 rework **corrected this file's own claims** — see the correction notice below.
 
 **Start here if you are picking this up cold.** Suite green at **605 tests** with one pre-existing
-skip. `origin/main` is at `30c087c`, with the P.O. implementation in `3d66caf` and the System Backup
-Center in `b4b17fc`. Service worker at **`v85-backup-offline-fallback`** — read the live value out of
-`app.py` before committing, never from this note. The working tree carries **four** local artifacts:
+skip. `origin/main` is at `98a1c3f`, with the P.O. implementation in `3d66caf`, its closeout in
+`30c087c`, the backup record correction in `14eee82` and the System Backup Center in `b4b17fc`.
+**Confirm the tip with `git log --oneline -1` rather than this line** — it read `30c087c` for two
+commits after that stopped being true. Service worker was `v85-backup-offline-fallback` when this was
+written — read the live value out of `app.py` before committing, never from this note. The working tree carries **four** local artifacts:
 `scheduler.db`, `output/`, `tmp/`, and the loose 2026-07-26 handoff file.
 
 **`Handoffs/` is now tracked**, by the owner's decision on 2026-08-11 — see section 4.
@@ -236,9 +238,11 @@ reviews that followed.
 | `45da21c` `a762b05` `d562654` (`v73`-`v75`) | Analytics upgrade: trends, themed SVG charts, P.O. reporting (Codex) |
 | `34f60b9` (`v76`) | **Review fix** — P.O. panel invisible to reports admins; a trend arrow on a metric that cannot carry one |
 
-Suite green at **582 tests** as of 2026-08-09. Service worker cache at **`v83-offline-api-status`** —
-**read the live value out of `app.py` immediately before committing**, never from a note. This line
-has now gone stale three times.
+**Historical, not current — this paragraph describes the state on 2026-08-09 and is kept only to date
+the run above it.** It read 582 tests and worker `v83-offline-api-status` then. For the current
+figures see the header at the top of this file, and for the worker **read the live value out of
+`app.py` immediately before committing**, never from a note — this line has now gone stale four
+times, the fourth being that it sat here reading as current until 2026-08-11.
 
 **Every review found something, and two were live privilege escalations.** That is the single
 most useful fact for the next reader: the implementations were competent, the suites were green,
