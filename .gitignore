@@ -40,3 +40,9 @@ ngrok.exe
 
 # Cache
 .cache/
+
+# The live reimbursement tracker workbook holds real records -- 222 rows of
+# names, amounts and payment status. This repository is PUBLIC, so the filled
+# copy stays local and only "Reimbursement tracker (template).xlsm" is tracked:
+# same sheets, headers, formulas, VBA and lookup lists, with no data rows.
+forms/Reimbursement tracker.xlsm

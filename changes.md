@@ -1,5 +1,56 @@
 # Project Change Log
 
+claude changes - 2026-08-11 (Reimbursement Tracker plan + a data-free workbook)
+
+## Recorded the approved plan; deliberately did NOT build it
+
+* `plans.md` carries the Reimbursement Tracker plan at `Approved — awaiting go-ahead`, with **Codex
+  named as the implementer** by the owner's decision. Recorded in `4f1fc14`.
+* The plan-mode tool reported the plan approved and said coding could begin. Per `AGENTS.md`
+  *"Approved Plans"*, **that is the tool's default, not the owner's instruction** — the plan was
+  recorded and work stopped. This is the first time that rule has been exercised against a tool
+  rather than a conversation, and it held.
+
+## Two measured findings overturned the obvious design
+
+* **The `NN` in the control number is the batch number, not a per-engineer daily sequence.** Across
+  the workbook's 222 rows it equals the batch number in 188 of 208 parseable rows, and **43 control
+  numbers are shared by more than one row** (`MDC-2026087-029` appears 6 times). An earlier draft
+  specified a UNIQUE index and a concurrency retry loop; both would have **rejected real usage on day
+  one**. Removed.
+* **`Engineer.initials` already holds the two values the workbook gets wrong** — `JFL` for Jim
+  Frederick Lim and `RAJ` for Rodito Aretano Jr. The sheet's `IFS` formula produces `#N/A` for the
+  first (`SEARCH("Jim",)` is missing an argument, corrupting 7 of 222 rows) and another engineer's
+  initials for the second. Reading the existing column makes both **unreachable rather than
+  corrected**, with no new schema.
+
+## The workbook is tracked as a data-free copy, because this repository is PUBLIC
+
+* The owner asked for the workbook to be tracked. `github.com/spcmsdsvc/medical-service-sms` is
+  **public**, and the file holds 222 real reimbursement records — 25 employees' full names,
+  ₱2,086,392.26, client and hospital names, and per-person payment status. **The other `forms/` files
+  are blank templates, so the precedent did not cover this one.** Raised before committing; the owner
+  chose a data-free copy.
+* `forms/Reimbursement tracker (template).xlsm` keeps all three sheets, both header rows, every
+  formula, the VBA project and the lookup lists, with **zero data rows**. The live workbook is now
+  gitignored by name and stays local.
+* **A cell-level check would have missed two things; a raw-archive byte scan caught them.** The
+  external link embedded a colleague's local path — `file:///C:\Users\kevin\Desktop\Scheduling
+  Final.xlsm` — and the document properties carried two employees' names. Both removed, along with
+  the seven vestigial defined names that resolved through that link (`[1]Lists!`, leftovers from a
+  different form). The four the tracker actually uses — `Engineers`, `Manila`, `Cebu`, `Davao` — are
+  kept.
+* Verified after rebuild: no `kevin`, `Desktop`, `externalLink`, `BATCH-`, or any amount survives
+  anywhere in the archive bytes, while `Sheet` still carries its three banner cells, both header rows
+  **including the deliberate `Trasnportation` and `Hotel Accomodation` typos**, and `Input` still
+  carries `=SUM(C13:C23)` and the control-number formula.
+
+## Scope
+
+* **Documentation and a form template only** — no source, template or test change, so no service
+  worker bump and no `releases.json` entry. `scheduler.db`, `output/`, `tmp/` and the loose
+  2026-07-26 handoff are untouched.
+
 claude changes - 2026-08-11 (documentation drift, reported by Codex)
 
 ## Fixed: four documents named a state that had moved on
