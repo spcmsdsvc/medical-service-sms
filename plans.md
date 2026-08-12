@@ -57,7 +57,16 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Reimbursement Tracker — round two
 
-**Status:** `Executed — working-tree implementation and verification complete. No commit hash: commit, push, and deploy remain separate owner decisions.`
+**Status:** `Executed — 81b4f1b` (implementation by Codex, plus two fixes from the review here, in
+the same commit). Suite green at 634 with one pre-existing skip. **Not pushed** — push and deploy
+remain separate owner decisions.
+**Reviewed:** 2026-08-12, by running it rather than reading it. **No defects.** The two fixes were a
+per-request cost — the duplicate scan re-read every engineer row on every request, 0.353 ms against
+0.039 ms for a flag-guarded sibling — and the suggestion chips having no regression guard at all.
+One of Codex's tests was also corrected: it re-called the legacy correction without clearing the
+ready flag, so it only proved the flag short-circuits rather than that the anchor protects a manual
+edit. The riskiest items all held: the export's Total is a literal (no `#REF`), the correction
+renames only `00021`, and one engineer's suggestion chips never appear for another.
 **Approved:** 2026-08-12
 **Detailed:** 2026-08-12, after mapping the email/recipient-group infrastructure, reading the
 Personnel write routes and the export builder, and checking the live database for duplicate
