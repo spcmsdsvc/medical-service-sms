@@ -1,5 +1,67 @@
 # Project Change Log
 
+claude changes - 2026-08-12 (the misspelled theme token, and a guard that now covers every page)
+
+## Fixed: a transposed token left the new equipment picker invisible in dark mode
+
+* `templates/po_details.html` used `--app-raised-surface`. The real token is
+  `--app-surface-raised`. A misspelled custom property does not error — it silently takes its
+  fallback, and the fallback is a light colour chosen to look right in light mode.
+* **The hover state on the new client/equipment dropdown measured 1.01:1 in dark mode** —
+  near-white text on a near-white background — against **14.44:1 in light mode**. The asymmetry
+  is the whole mechanism: light mode is perfect, so only a dark-mode check finds it. It is now
+  12.91:1, and light mode is unchanged at 15.55:1.
+* The same misspelling was **already on `.po-mobile-card`** from `b01c78c`, the original P.O.
+  register, at 1.04:1 below 768px. Fixed in the same pass. That is why the 2026-08-07
+  "P.O. Details in dark mode — Pass" was not wrong so much as desktop-only.
+
+## The guard that should have caught it was scoped to one page
+
+* `test_every_theme_token_the_page_uses_is_actually_defined` read
+  **`reimbursement_tracker.html` and nothing else**, while its own docstring claimed it asserted
+  "the class, not the one instance". It could not have caught either later occurrence.
+* Replaced by `test_every_theme_token_used_anywhere_is_actually_defined` in
+  `tests/test_appearance_themes.py`, which reads **every template, stylesheet and script**. The
+  page-scoped copy is removed rather than left beside it — two guards that must agree is the
+  shape that produced this. A pointer comment marks where it went, and the now-unused `re`
+  import went with it.
+* **Widening it immediately found a second live defect**, which is the argument for widening it:
+  `_request_recall_modal.html` set `background: var(--app-button-muted, #e2e8f0)` against
+  `color: var(--app-text)` — **1.13:1 in dark mode**, so the Cancel button on every recall modal
+  (cash advance, leave, LPR, reimbursement, travel) was invisible. Now `--app-surface-muted`,
+  which resolves through to the dark palette, at 12.91:1. Its sibling `--app-text-muted` was a
+  transposition of `--app-muted-text` and is fixed too.
+* Four tokens stay deliberately undefined and are named in `UNDEFINED_TOKEN_EXEMPTIONS` with the
+  reason: each is a **fixed brand colour used as a foreground**, so it renders the same in both
+  themes instead of inverting. The comment says a token used as a `background:` almost never
+  qualifies — that is exactly what `--app-button-muted` was.
+
+## Verification
+
+* **Full suite 643, one pre-existing skip** — unchanged, because one test was removed and one
+  added.
+* **Injection proved the guard, and the failure reason was read rather than the exit code.**
+  Both fixes were reverted together; the needle was asserted to occur **exactly once** per file
+  before writing and the SHA confirmed changed, since a `\n` needle against these CRLF files
+  silently matches nothing and reads exactly like a healthy control. The test went red naming
+  both files and both tokens. Files restored byte-identically — `git diff --numstat` shows 2/2
+  and 2/2, not a whole-file line-ending rewrite.
+* **No service worker bump.** `/po_details` is not an `APP_SHELL` entry, and
+  `_request_recall_modal.html` is included only by cash advance, leave, LPR, reimbursement and
+  travel — none of them `APP_SHELL` pages. No `?v=` asset changed.
+
+## Corrected the service worker label, which described the wrong feature
+
+* The Equipment tab bumped the version correctly, `v86` → `v87`, but carried the previous label
+  through: `v87-reimbursement-tracker`. The number was right and the name described work from two
+  features earlier, so anyone reading it would date v87 to the tracker.
+* Now `v87-machine-scoped-po`. **The version number is unchanged** — this renames the cache, it
+  does not bump it. That is safe here only because these commits had never been pushed, so no
+  device has ever held a `v87-reimbursement-tracker` cache. Renaming a label that has shipped
+  would orphan the old cache on every field device instead.
+* `assert_cache_version_at_least` parses `-v(\d+)-([a-z0-9-]+)`, so the new label satisfies the
+  shape check; the tests assert a floor and are unaffected.
+
 codex changes - 2026-08-12 (machine-scoped P.O. records — Part A)
 
 * Added nullable `purchase_order.product_serial` model/migration support with an indexed
@@ -39,6 +101,10 @@ codex changes - 2026-08-12 (Analytics Equipment tab — Part B)
 * Recorded the execution outcome in `plans.md` with implementation commits `081d647` and
   `fd781b1`, the full-suite and isolated-browser verification results, the v87/v78 cache bumps,
   and the explicit decision to leave push/deployment pending owner instruction.
+* Added a non-negotiable Codex app safety rule to `AGENTS.md`: testing must never close, archive,
+  navigate, finalize, or terminate the Codex app or task; in-app browser automation and browser
+  cleanup are disallowed for this project unless the owner explicitly approves an exception, and
+  only verified temporary project test-server PIDs may be stopped.
 
 claude changes - 2026-08-12 (journal refresh before a session handoff)
 

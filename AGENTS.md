@@ -26,6 +26,19 @@
   deleting them; where a plan and its outcome differed, that record is the useful part.
 - A plan that changes during execution is amended in `plans.md`, not silently outgrown.
 
+## Codex App Safety During Testing
+
+- **Never close, archive, navigate away from, finalize, or otherwise terminate the Codex app,
+  task, thread, or window while testing.** This is a non-negotiable owner instruction.
+- Do not use in-app browser automation, browser tab cleanup/finalization, or Codex app navigation
+  for this project. Prefer the Flask test client, source-level checks, local HTTP checks, and other
+  non-browser verification that leaves the Codex session untouched.
+- Never issue process commands against Codex, ChatGPT, OpenAI, or their child processes. A process
+  may be stopped only when it is an explicitly identified temporary project test server, its PID
+  and command line have been verified immediately beforehand, and the stop is required for cleanup.
+- If browser verification becomes essential, stop and ask the owner before using it. Do not infer
+  permission from an approved implementation plan or from a previous browser test.
+
 ## Mandatory Change Log
 
 - Before performing any request that will add, edit, delete, rename, move, generate, or otherwise modify project files or system behavior, read `changes.md` in full.
