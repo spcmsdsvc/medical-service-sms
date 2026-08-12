@@ -55,6 +55,446 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Machine-scoped P.O. records, and an Analytics Equipment tab
+
+**Status:** `In progress`. Execution authorized by the project owner on 2026-08-12 after the
+plan was reviewed and the separate go-ahead was given. No implementation work was present before
+this instruction.
+**Approved:** 2026-08-12
+**Started:** 2026-08-12, after the project owner explicitly instructed execution.
+**Detailed:** 2026-08-12, after reading the P.O. register end to end, the `Product`/`Client`
+relationship, the four existing type-to-search pickers, and the Analytics page and its chart
+helpers. Three claims were verified by reading the code rather than accepted from the exploration
+summaries; two of them changed the plan — see Investigation.
+
+### Context
+
+The admin clarified that **a P.O. is issued per machine, not per client.** The register records
+only a client, so it cannot answer *"which P.O. covers this machine"* — the question the document
+exists to answer. Alongside it, the Add/Edit modal's client picker is a plain `<select>` over 145
+clients, which is slow to use.
+
+This makes each P.O. name the exact machine it covers, turns the client picker into a type-to-search
+box, and scopes a second picker to the chosen client's equipment. The Analytics page gains a tab
+structure and a new Equipment tab reporting on the new data.
+
+**No existing P.O. data is deleted or rewritten.** Every current row predates machine tracking;
+those rows stay readable and exportable and are asked for a machine only when someone edits one.
+
+### Decisions taken
+
+Settled by the owner on 2026-08-12. An executor should not reopen these.
+
+| Question | Decision |
+| --- | --- |
+| Machines per P.O. | **Exactly one.** A single nullable FK column, not a link table |
+| Existing rows with no machine | **Readable, but required when edited.** Mirrors the existing legacy-Contract-missing-End-Date rule |
+| Client has no registered equipment | **Say so and point to Products.** No free-text fallback |
+| What the new Analytics tab shows | **Equipment / machine P.O. analytics** |
+
+Decisions taken here while planning, with their reasons, so they are not re-litigated either:
+
+1. **Column name `product_serial`, not `product_id`.** The stored value is literally a serial.
+   `Shift.product_id` is the *schedule* linkage that `tests/test_purchase_orders.py:259` exists to
+   keep out of this model; reusing the name blurs the line that test protects.
+2. **Nullable in the schema, required in validation.** This is exactly how contract `end_date`
+   already works — `nullable=True` at `app.py:1854`, required by validation at `app.py:39707`.
+   It is what makes the legacy rule work without a data migration.
+3. **The machine does not join duplicate detection.** The 409 is a soft advisory with a "Save
+   Anyway" override (`templates/po_details.html:692-711`). Adding the machine to the key would
+   suppress the warning in the likeliest typo case — the same number re-entered at the same client.
+   Instead, name the existing record's machine in the warning text.
+4. **Extend `/get_purchase_orders`; do not call `/get_products`.** The page makes exactly one fetch
+   on load (`templates/po_details.html:681`). A second fetch adds ordering, a second failure mode
+   and a second spinner state for no gain — and `/get_products` returns `[]` for HR-schedule-only
+   users (`app.py:21061`), which would be a silent empty picker rather than an error.
+5. **The machine is sortable, filterable and exportable.** Every on-screen filter here has a server
+   twin; breaking that pairing is how an export starts disagreeing with the screen.
+6. **The autocomplete donor is `templates/products.html:494-535`, not `timeline.html`.** The
+   products version is self-contained; the timeline version drags in `getProductCoverageStatus`,
+   `formatProductDisplay`, `bindCellClicks` and an offline-cache path this page does not need. Port
+   the products skeleton, then layer on the four timeline *behaviours* listed in Investigation.
+7. **The Equipment tab reuses the shared date filter but not the branch filter.** `PurchaseOrder`
+   has no branch dimension — branch lives on `Engineer` — and `/get_po_analytics` already
+   deliberately skips `analytics_scope_query`. Keep `scope_label: 'Company-wide'` visible so nobody
+   misreads the numbers as branch-scoped.
+8. **Extend `/get_po_analytics` rather than add an endpoint** — one capability gate, one
+   `analytics_date_bounds()`, one round trip, one entry in the existing `Promise.all` fan-out.
+
+### Investigation
+
+Verified in the code, with what changed the approach called out.
+
+**The data model needs no relationship work.** `Product` *is* the installed-equipment register
+(`app.py:2379`), its **primary key is `serial_number` String(100)** rather than an int, and it
+already carries `client_id` FK (`app.py:2388`, nullable). So *"what equipment does client X have?"*
+is `Product.query.filter_by(client_id=...)` — a query that already exists at `app.py:39271`. The new
+P.O. column is therefore a `String(100)` FK to `product.serial_number`, **not** an integer id.
+
+**The requested interaction already ships**, in the schedule form, and is the pattern to copy:
+client-scoped product filter (`templates/timeline.html:14272-14280`), disable-until-a-client-exists
+with a placeholder swap (`templates/timeline.html:12634-12647`), clear-the-machine-when-the-client-
+changes (`templates/timeline.html:14260` and `:14325`), and an equipment-specific empty state
+(`templates/timeline.html:14286-14288`).
+
+**Three things were checked directly rather than taken on trust. Two changed the plan:**
+
+1. **A product serial rename orphans P.O. rows.** `update_product` renames by **delete-and-recreate**
+   (`app.py:45587-45604`) and repoints `Shift.product_id` (`app.py:45598`) **and nothing else**.
+   Without step 5 below, a rename silently blanks the machine on every affected P.O. — a blank cell
+   is the only symptom.
+2. **`delete_product` has no reference check at all** (`app.py:45655-45665`) — it deletes
+   unconditionally, and there is no DB-level FK behind it (see the migration note in step 1). Step 5
+   adds a 409.
+3. **The Analytics resize observer only ever redraws schedule charts.** `CHART_FRAME_IDS` is
+   `['trend-chart','branch-chart','category-chart']` (`static/js/app-analytics.js:361`) and the
+   observer callback calls `renderScheduleCharts(state.schedule)` and nothing else
+   (`static/js/app-analytics.js:387`). A new chart needs **both** a `CHART_FRAME_IDS` entry and a
+   widened callback, or it never redraws.
+
+**Constraints that dictate the Analytics design rather than merely bounding it:**
+
+- `tests/test_analytics_page.py:201` asserts **no inline `<style>`** in the template, so tab CSS
+  must live in `static/css/app-analytics.css`. (`po_details.html` has no such rule — inline style
+  is fine there.)
+- `tests/test_analytics_page.py:209` asserts **no `innerHTML`** in the analytics JS.
+- `tests/test_analytics_purchase_orders.py:119-120` asserts the strings "Service activity" and
+  "Engineer workload" are **absent** from the HTML for a P.O.-only user. **Therefore the tabs must
+  be server-gated, not CSS-hidden.**
+- `chartWidth` reads `clientWidth` (`static/js/app-analytics.js:105-110`), which is `0` inside a
+  `display:none` panel and falls back to `CHART_MIN_WIDTH = 240`. Charts drawn in a hidden tab
+  render at a fixed 240 px with no error.
+
+**Two existing tests block the P.O. work and must be edited deliberately:**
+
+- `tests/test_purchase_orders.py:256-263` asserts `product_id` is **absent** from the model.
+- `tests/test_purchase_orders.py:502-547` pins the Excel export at 11 columns, `A1:K3`, and the
+  cell coordinates `D2/H2/H3/F2/H5`.
+
+**Also load-bearing:** `templates/po_details.html` defines its table header **twice** — static
+markup at `:322-330` and `renderHeader()` at `:591-603` — and `tests/test_purchase_orders.py:207-217`
+asserts literal strings from that file's inline JS (`const formatPHP = (value) =>`,
+`row.po_type === 'contract'`, `id="po-contract-total"`, `Total amount: ₱0.00`).
+
+`analytics_ranked_counts()` (`app.py:37704-37715`) already emits the exact `[{label,count,previous}]`
+shape `renderHorizontalChart` consumes, and `product_contract_status()` (`app.py:2440`) already
+supplies the coverage vocabulary the Products page uses.
+
+### Execution steps
+
+**Part A — the machine field.** Server before client, migration before model use, so the app is
+never broken between steps.
+
+1. **Migration.** Add `'product_serial': 'VARCHAR(100)'` to the `additive_columns` dict in
+   `ensure_purchase_order_schema()` (`app.py:3531-3537`), plus
+   `CREATE INDEX IF NOT EXISTS idx_purchase_order_product_serial` beside the existing index calls.
+   Comment that the `ALTER TABLE ADD COLUMN` path yields a column with **no `REFERENCES` clause**
+   while `create_all` on a fresh database yields one, and that this app never sets
+   `PRAGMA foreign_keys` — so neither path enforces the FK and integrity comes from step 3 and
+   step 5. Write that down or someone will later "fix" it with a table rebuild.
+   **Done when:** run twice against a *copy* of a real database — one `[DB MIGRATION]` line, a
+   no-op on the second run, and `SELECT COUNT(*) FROM purchase_order` unchanged.
+2. **Model** (`app.py:1846-1870`). After `amount`, add
+   `product_serial = db.Column(db.String(100), db.ForeignKey('product.serial_number'), nullable=True, index=True)`
+   and `product = db.relationship('Product', foreign_keys=[product_serial])` **with no backref and
+   no cascade** — deleting a machine must never delete a P.O.
+   **Done when:** the app imports and every P.O. test passes except the one in step 10.
+3. **Validation** (`validate_purchase_order_payload`, `app.py:39676-39723`). Resolve the serial with
+   the file's own partial-update idiom (`payload.get(k) if k in payload else getattr(existing, k, None)`,
+   as `po_number` does at `app.py:39679`). After the client lookup at `app.py:39713`: empty →
+   `'Select the equipment/machine for this P.O.'`; `db.session.get(Product, serial)` with a
+   case-insensitive fallback adopting the stored casing (`update_product` uppercases at
+   `app.py:45551` but imported rows may not have) → not found:
+   `'Equipment not found. Add it in Products first.'`; `product.client_id != client_id` →
+   `'That machine is not registered to the selected medical center.'`. Add
+   `'product_serial': product.serial_number` to the returned dict.
+   **This single step delivers the legacy rule for free** — the dict is splatted into
+   `PurchaseOrder(**values)` at `app.py:39950` and setattr-looped at `app.py:39992`, and **reads
+   never call this function**, so legacy rows list and export fine while any edit of one is refused
+   until a machine is supplied.
+   **Done when:** the three refusals return 400 with those messages, and step 10's test 2 passes.
+4. **Serialization.** `purchase_order_to_dict` (`app.py:39639-39660`) gains `product_serial`,
+   `product_name`, `product_client_id` and `machine_display` (`"SN — Name"`, else the serial, else
+   `''`). Computing the display string server-side stops the table cell, mobile card, duplicate
+   warning and analytics labels drifting apart; `product_client_id` lets the modal explain a machine
+   that was reassigned. In `/get_purchase_orders` (`app.py:39735-39756`) add
+   `joinedload(PurchaseOrder.product)` to the options at `app.py:39741` — without it this is one
+   query per row — and add a `products` array of
+   `{serial_number, name, client_id, under_contract, end_warranty}` ordered by client then serial.
+   **Done when:** every row carries the four new keys (`''` for legacy) and `products` is present.
+5. **Guard the reference from the Products side.** Both halves are verified breakage, not theory.
+   - `delete_product` (`app.py:45655-45665`): refuse with **409** when
+     `PurchaseOrder.query.filter_by(product_serial=...).count()` is non-zero.
+   - `update_product` (`app.py:45587-45604`): add
+     `PurchaseOrder.query.filter_by(product_serial=old_serial).update({'product_serial': new_serial}, synchronize_session=False)`
+     **before** the `db.session.delete(p)` at `app.py:45603`, and include the count in the
+     `log_activity` line at `app.py:45606`.
+   - Owner reassignment (`app.py:45621`): **do not block** — log the affected count and let the
+     modal explain it on next edit. Blocking would make ordinary inventory corrections impossible.
+   **Done when:** step 10's tests 6 and 7 pass.
+6. **Filter and sort.** Add `'machine'` to `PURCHASE_ORDER_SORT_KEYS` (`app.py:39595-39603`); add a
+   `machine` request arg matching serial **or** product name in `purchase_order_export_records()`
+   (`app.py:39759-39830`); extend `sort_value` and the existing `is_empty` branch so legacy blanks
+   sink to the bottom in **both** directions.
+   **Done when:** `/export_purchase_orders?machine=…&sort=machine&direction=asc|desc` filters and
+   sorts with blanks last either way.
+7. **Excel export** (`app.py:39833-39929`). Two columns inserted after *Complete Address*, giving 13
+   (A..M). Every one of these moves, and missing one leaves a file that still opens while being
+   quietly wrong:
+
+   | Thing | Line | Change |
+   | --- | --- | --- |
+   | `headers` | `app.py:39847` | insert `Machine Serial`, `Machine Name` at G, H |
+   | row build | `app.py:39862` | insert serial and `record.product.name if record.product else ''` |
+   | number formats | `app.py:39893` | `row[7]`→`row[9]` (amount), `row[8]`→`row[10]`, `row[10]`→`row[12]` |
+   | TOTAL row | `app.py:39899` | column 8 → 10 in all three places; `=SUM(J2:Jn)` |
+   | `auto_filter.ref` | `app.py:39909` | `A1:K` → `A1:M` |
+   | `widths` | `app.py:39910` | 11 entries → 13 |
+
+   **Done when:** headers read A..M, TOTAL is `=SUM(J2:Jn)`, and the amount is still
+   currency-formatted.
+8. **The modal** (`templates/po_details.html:340-393`). Replace the `<select id="po-client">` at
+   `:352` with two `position-relative` blocks: a visible text input, a **hidden field keeping the id
+   `po-client`**, and a results div — then the same trio for the machine with the input `disabled`
+   by default. Keeping the hidden field's id means `saveForm` (`:717`) and `openForm` (`:661`) each
+   change by about one line. **Use the class names `.search-results` / `.search-item`** —
+   `static/css/app-dark-pages.css:82-105` already themes them globally, and a new name means a
+   white-on-white dropdown in dark mode. Copy the dropdown rules from `templates/products.html:1161-1176`
+   into this file's existing inline `<style>`.
+   JS, inside the existing IIFE: `state` gains `products: []`; `loadData` fills it and builds the
+   ambiguous-name count map; delete `populateClients()` (`:637`) and its three call sites; add one
+   `setupPoAutocomplete(inputId, resultsId, hiddenId, kind)` serving both fields, built on the
+   products.html skeleton, matching serial **or** name, capped at 10, rows via `createElement` +
+   `textContent`. The machine branch reads `#po-client`: empty → "Select a client first."; else
+   filter `state.products` on `client_id`; zero matches → render exactly **"No equipment registered
+   for this client — add it in Products first."** and leave the hidden field empty. Because
+   `saveForm` reads only the hidden field, **a typed machine name can never reach the server** —
+   that is what enforces the no-free-text decision. Typing in the client field clears the machine
+   selection immediately. `openForm` on a legacy row leaves the machine blank and shows *"This P.O.
+   predates machine tracking. Select the machine to save your changes."*, and where
+   `product_client_id` differs from `client_id`, *"This machine now belongs to a different medical
+   center — reselect it."*
+   **Do not touch** `formatPHP` (`:421`), the `po-contract-total` markup, or the
+   `row.po_type === 'contract'` filters — `tests/test_purchase_orders.py:207-217` asserts those
+   literals.
+   **Done when:** the browser sequence in Verification passes, steps 1-5.
+9. **The register table.** Add a **Machine** column after Medical Center in **both copies of the
+   header** — static markup `templates/po_details.html:322-330` *and* `renderHeader()` `:591-603`.
+   Then the `<td>` and mobile card line in `renderRows()` (`:605`, `—` for legacy), `machine` in
+   `currentFilters()`/`filteredRows()` with blanks-last sorting, a `#po-machine-search` input in the
+   filter panel, and `machine=` in the export query string.
+   **Done when:** the header does not change shape between first paint and first re-render.
+10. **Tests** (`tests/test_purchase_orders.py`). Edit two, add eight.
+    - **`test_model_has_no_financial_or_schedule_linkage` (`:256`)** — edit deliberately, with a
+      docstring saying why: a P.O. now references an **asset**; what stays forbidden is linkage to
+      **work** (`shift_id`, `tsr_id`), and `product_id` stays forbidden because that is `Shift`'s
+      name for a serial. **Add a positive control asserting the FK target is
+      `product.serial_number`** — otherwise a future failure gets "fixed" by adding a bare string
+      column and the referential meaning is gone while the test still passes.
+    - **`test_filtered_sorted_excel_export_contains_complete_register_details` (`:502`)** — 13
+      headers, `H2`→`J2`, `H3`→`J3`, `H5`→`J5` (`=SUM(J2:J3)`), `A1:K3`→`A1:M3`. **Add `G2`/`H2`
+      assertions** so the new columns are pinned rather than merely tolerated.
+    - New: (1) new P.O. without a machine → 400; (2) **legacy row lists, edit without the key → 400,
+      edit with a valid serial → 200** — the mirror of `:470`; (3) machine belonging to another
+      client → 400; (4) `/get_purchase_orders` carries the client-scoped `products` list; (5) the
+      machine filter and sort reach the export; (6) **deleting a referenced machine → 409 and the
+      P.O. survives**; (7) **renaming a serial repoints its P.O.s**; (8) the modal renders the
+      combobox ids and the exact no-equipment sentence.
+
+**Part B — Analytics tabs and the Equipment tab.**
+
+11. **Endpoint** — extend `/get_po_analytics` (`app.py:37872-37918`) with `previous_range` and an
+    `equipment` block, reusing `analytics_date_bounds()` and `analytics_ranked_counts()`, and adding
+    `joinedload(PurchaseOrder.product)`. Existing keys stay byte-identical.
+
+    ```jsonc
+    "equipment": {
+      "linked_total": 9, "unlinked_total": 3, "linked_pct": 75,
+      "machine_total": 7, "client_total": 5,
+      "by_machine":  [{ "label": "SN-1234 · CT-500", "count": 4, "previous": 2 }],  // top 10
+      "by_model":    [{ "label": "CT-500", "count": 6, "previous": 3 }],            // top 10
+      "by_coverage": [{ "label": "Under Contract", "count": 5 }],
+      "unlinked_clients": [{ "label": "Client B", "count": 2 }]                     // backfill worklist
+    }
+    ```
+
+    **Counts only, no money** — `templates/analytics.html:98` promises it and the tests read that
+    contract. `by_coverage` reuses `product_contract_status()` (`app.py:2440`) so the wording matches
+    the Products page rather than inventing a third vocabulary. `unlinked_clients` is the operational
+    payoff: it is the backfill worklist for legacy rows. A row whose product was deleted falls into
+    `unlinked_total`, never a crash.
+    **Done when:** `linked_total + unlinked_total == total`.
+12. **Tab shell** (`templates/analytics.html`). Build the tab list from a Jinja list populated
+    **inside the existing `{% if %}` gates**, rendering the tablist only when more than one tab
+    exists. The filter card (`:23-52`) and `#analytics-error` (`:54`) stay **outside** the tab shell.
+    The existing `<main id="schedule-analytics">` and the P.O. `<section>` become panels; a new
+    Equipment `<section>` follows. `window.ANALYTICS_CAPABILITIES` needs no new key — Equipment
+    rides `purchaseOrders`.
+    **Done when:** a P.O.-only user's HTML contains neither "Service activity" nor
+    `data-analytics-panel="schedule"`.
+13. **Equipment panel.** Follow the existing panel grammar so print support comes free via the
+    `.analytics-chart-table` rule (`static/css/app-analytics.css:321`, flipped at `:363`): four
+    metrics; **Top machines** and **By model** as SVG charts each with a mirror
+    `<table class="analytics-chart-table">`; **Coverage mix** and **Missing a machine** as
+    `renderBars` + `renderSimpleTable`. Every table needs `<caption>` and `scope="col"` —
+    `tests/test_analytics_page.py:205-206` asserts both.
+14. **Tab CSS and JS.** CSS in `static/css/app-analytics.css` **only**, using `var(--app-*)` tokens:
+    `.analytics-tabs`, `.analytics-tab-btn`, `.is-active`, `:focus-visible`,
+    `.analytics-tab-panel { display: none }`. In the existing `@media print` block (`:354-367`) add
+    `.analytics-tab-panel { display: block !important }` so printing emits **every** authorized
+    section, not just the visible tab; the tablist already disappears via `.no-print`.
+    JS: `activateTab()` toggling `classList` and `aria-selected` (**no `innerHTML`**), arrow-key
+    roving focus, and a `localStorage` restore that validates the stored tab exists in the DOM — a
+    P.O.-only user must not restore a `schedule` tab that was never rendered. `updatePo` (`:411`)
+    calls a new `renderEquipment()`; `resetPoDisplay` (`:32`) must clear the new nodes or the tab
+    keeps stale numbers after a failed refresh.
+    **Two things that silently produce a wrong-looking chart, both verified:** `CHART_FRAME_IDS`
+    (`:361`) must gain the two new chart ids **and** the observer callback (`:387`) must be widened
+    beyond `renderScheduleCharts(state.schedule)`; and because `chartWidth` returns `0` for a hidden
+    panel, re-render a panel's charts when its tab is revealed and skip zero-width nodes in the
+    observer so a hidden panel cannot record a bogus `lastChartWidths` entry that then suppresses
+    the real redraw.
+15. **Tests for Part B.** `tests/test_analytics_page.py`: keep `:201` and `:209` green — that is the
+    point — and assert the tablist markup, the panel CSS, and that the print block covers
+    `.analytics-tab-panel`. `tests/test_analytics_purchase_orders.py`: keep the two absent-string
+    assertions and **add `assertNotIn('data-analytics-panel="schedule"', html)`** — that pair is
+    what proves server-gating, since a CSS-only implementation leaves both strings in the DOM — plus
+    assert the P.O.-only user *does* get the equipment panel. New: equipment counts
+    (`linked + unlinked == total`, the legacy client named in `unlinked_clients`) and counts-only
+    (no money-shaped key under `equipment`). `tests/test_analytics_chart_sizing.py`: the two new ids
+    appear in the `CHART_FRAME_IDS` declaration.
+
+### Deliberately excluded
+
+- **Multiple machines per P.O.** Decided against by the owner. A link table, a multi-select
+  checklist and a counting rule for a 3-machine P.O. in analytics is roughly double the work; the
+  clarification was "per machine", which one column expresses exactly. `templates/travel_request.html:2788-2801`
+  holds the multi-select pattern if this is ever revisited.
+- **A free-text machine fallback.** Decided against. It would unblock the 89 of 145 clients with no
+  registered equipment at the cost of the same machine being spelled three ways, which destroys the
+  per-machine analytics this change exists to enable.
+- **Backfilling the machine onto existing P.O. rows.** Nothing is auto-assigned — there is no
+  defensible way to guess which machine an old P.O. covered. The Equipment tab's "Missing a machine"
+  list is the worklist for doing it by hand.
+- **A database-level FK constraint.** SQLite `ALTER TABLE ADD COLUMN` cannot add one to an existing
+  table without a full rebuild, and this app never sets `PRAGMA foreign_keys`, so a constraint would
+  not be enforced even where it exists. Steps 3 and 5 enforce it in application code instead.
+- **Money in the Equipment analytics.** `templates/analytics.html:98` promises counts only and the
+  tests read that contract. Amounts on a per-machine basis is its own decision.
+- **Honouring the branch filter on any P.O. tab.** `PurchaseOrder` has no branch dimension. Recorded
+  as a decision here so the "Company-wide" label is not later read as a bug.
+- **Blocking a machine's reassignment to another client** when P.O.s reference it. It would make
+  ordinary inventory corrections impossible; the modal explains the mismatch on next edit instead.
+- **Rewriting the Analytics filter bar per tab.** The date range stays shared and global.
+
+### Verification
+
+**Tests, each with the control that proves it can fail.** Inject the defect, confirm the injection
+*applied* (hash the file), and read the **assertion message** rather than the exit code — an
+injection that aborts looks exactly like one that worked, which this project has now been caught by
+twice.
+
+```bash
+python -m unittest tests.test_purchase_orders tests.test_analytics_page tests.test_analytics_purchase_orders tests.test_analytics_chart_sizing -v
+```
+
+Then the full suite — `tests/test_product_contract_status.py`, `tests/test_timeline_product_coverage.py`
+and `tests/test_stock_inventory.py` all touch `Product` and are the likely collateral of step 5:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Use the project venv; the documented command fails on the system Python with a misleading import
+error. Suite is 635 with one pre-existing skip before this work — **re-measure rather than trusting
+that number.**
+
+**Migration proof.** Against a *copy* of a real database: exactly one
+`[DB MIGRATION] Added purchase_order.product_serial`, nothing on restart, and
+`SELECT COUNT(*) FROM purchase_order` identical before and after.
+
+**Browser — `/po_details`.** Screenshots are not available here; measure geometry and computed
+style, and **disable transitions before measuring anything animated** — a `.modal.fade` returns
+`clientHeight: 0` on every child in this pane and the bug reads as absent.
+
+1. Add P.O. → Medical Center is a text box; three letters gives ≤10 results; same-named clients show
+   their address.
+2. The Equipment field is **disabled** until a client is chosen.
+3. A client **with** equipment → only that client's serials appear.
+4. A client **with no** equipment → exactly *"No equipment registered for this client — add it in
+   Products first."*, nothing selectable, Save refused. **No free-text machine can be saved.**
+5. **Pick a machine, then change the client** → the machine clears and re-scopes. This is the step
+   the design is most likely to get wrong.
+6. Save → the row shows the machine; sort by Machine both ways; filter by partial serial; export and
+   confirm G/H carry serial and name and TOTAL still sums the amount column.
+7. Standing bar: dark mode legible (the reason for the `.search-results` naming), 375 px modal
+   stacks with Save reachable, dropdown does not overflow, mobile card shows the Machine line, tap
+   targets 44×44 — **both dimensions**, not whichever is convenient — console clean.
+
+**The legacy rule — the proof that matters.** Take a real pre-existing P.O.; before this ships every
+row is legacy:
+
+- It **must** list with `—` and export without error. *Reading never calls the validator.*
+- Edit it, change only the amount, Save → **rejected**, with a message naming the machine.
+- Select the machine and Save → succeeds, and never regresses.
+- Via devtools, a raw `PUT` **omitting `product_serial` entirely** must return **400** — the case
+  the UI cannot produce, and the whole reason for the `getattr(existing, ...)` fallback in step 3.
+
+**Browser — `/analytics_page`.**
+
+- Reports admin: three tabs; switching redraws each panel's charts at the correct width; resize the
+  window on the Equipment tab and confirm the bars re-lay-out.
+- **P.O.-only user: two tabs.** View source — "Service activity", "Engineer workload" and
+  `data-analytics-panel="schedule"` all absent.
+- `linked + unlinked == total`; the "Missing a machine" list names real clients and shrinks by one
+  per backfill.
+- Ctrl+P on any tab → every authorized section prints, data tables visible, tab buttons gone.
+
+### After implementation
+
+- Re-read this plan against the diff and amend this entry if the implementation differed.
+- Add a dated `changes.md` section, newest first. Do not log secrets or database contents.
+- One `static/changelog/releases.json` item dated the commit date. **Re-run
+  `tests/test_changelog_coverage.py` after committing** — it reads git for the latest commit and
+  cannot see the commit before it exists.
+- **`CACHE_VERSION` bump required for Part B**: `static/css/app-analytics.css` and
+  `static/js/app-analytics.js` are both `APP_SHELL` entries and both change. **Read the live value
+  out of `app.py` immediately before committing, never from this document** — that line has gone
+  stale four times. Part A alone would need no bump, since `/po_details` is not in `APP_SHELL`.
+- Bump the `?v=` params in `templates/analytics.html:3-4` and `:117` **in the same commit**. A fresh
+  `CACHE_VERSION` against a stale `?v=` is how a user gets new markup with old CSS.
+- Consider landing Part A and Part B as **two commits** — Part A needs no worker bump, and the two
+  halves fail in unrelated ways.
+- Stage explicitly, file by file. Never stage `scheduler.db`, `output/`, `tmp/`, or the loose
+  2026-07-26 handoff. Re-read `origin/main` **after** finishing, not only before starting.
+- Push or deploy only after a separate owner instruction.
+
+### Risks
+
+Ranked by "would ship and nobody notices" — the failure mode this project keeps meeting.
+
+1. **Charts drawn inside a hidden tab** render at a fixed 240 px and stay wrong, with no error.
+   There is no JS runner in this suite, so **only a browser can catch it.**
+2. **A serial rename orphans P.O. rows** if step 5 is missed — verified breakage, not theory
+   (`app.py:45598` repoints `Shift` only). The symptom is a blank cell.
+3. **Deleting a product** silently blanks live P.O. rows; `app.py:45655` has no guard today and
+   there is no DB-level FK behind it.
+4. **Two copies of the P.O. table header.** Change one and the header silently changes shape after
+   first render, with `data-sort` drifting out of step with the cells.
+5. **The Excel index shift.** Miss one and the file still opens — the amount just stops being
+   currency-formatted, or TOTAL sums the wrong column. This is the artifact Accounting consumes.
+6. **Literal-string tests in `po_details.html`** (`tests/test_purchase_orders.py:207-217`) — a
+   tidy-up while working nearby fails a test about a different feature.
+7. **CSS-gated instead of server-gated tabs** passes casual review, fails the P.O.-only test, and
+   would leak future schedule strings to a P.O.-only account.
+8. **Operational, not technical: 89 of 145 clients have no equipment registered**, so P.O. entry for
+   those clients is blocked until Products is backfilled. Correct behaviour, and the largest change
+   users will feel on day one. Say so plainly rather than letting it read as broken.
+
+Items 1 and 4 are exactly the shape of the last round's finding — **three of four defects were
+suite-invisible and browser-obvious.** The browser pass here is not a formality after the tests; for
+those two it is the only thing that works.
+
 ## Reimbursement Tracker — round two
 
 **Status:** `Executed — 81b4f1b` (implementation by Codex, plus two fixes from the review here, in

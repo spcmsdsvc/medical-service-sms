@@ -168,6 +168,42 @@
         background: var(--app-surface, #fff);
         color: var(--app-text, #16243a);
         border: 1px solid var(--app-border, #d6e0ec);
+        max-height: calc(100vh - 2rem);
+    }
+
+    .po-modal-content form {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .po-modal-content .modal-body {
+        overflow-y: auto;
+    }
+
+    .po-modal-content .search-results {
+        background: var(--app-surface, #fff);
+        border-color: var(--app-border, #d6e0ec);
+        box-shadow: 0 .5rem 1rem rgba(16, 38, 69, .12);
+        max-height: 13rem;
+        overflow-y: auto;
+    }
+
+    .po-modal-content .search-item {
+        border-bottom: 1px solid var(--app-border, #d6e0ec);
+        cursor: pointer;
+        padding: .65rem .75rem;
+    }
+
+    .po-modal-content .search-item:last-child {
+        border-bottom: 0;
+    }
+
+    .po-modal-content .search-item:hover,
+    .po-modal-content .search-item:focus-visible {
+        background: var(--app-raised-surface, #f0f7ff);
+        color: var(--app-text, #16243a);
+        outline: 0;
     }
 
     .po-confirm-backdrop {
@@ -277,6 +313,10 @@
                 <label for="po-number-search">P.O. Number</label>
                 <input id="po-number-search" class="form-control" type="search" placeholder="Search number">
             </div>
+            <div class="col-12 col-lg-3">
+                <label for="po-machine-search">Machine</label>
+                <input id="po-machine-search" class="form-control" type="search" placeholder="Search serial or name">
+            </div>
             <div class="col-6 col-lg-2">
                 <label for="po-type-filter">Type</label>
                 <select id="po-type-filter" class="form-select">
@@ -321,6 +361,7 @@
                 <thead id="po-table-head">
                     <tr>
                         <th><button class="po-sort-button" type="button" data-sort="client_name">Medical Center <span data-sort-indicator="client_name">&#8597;</span></button></th>
+                        <th><button class="po-sort-button" type="button" data-sort="machine">Machine <span data-sort-indicator="machine">&#8597;</span></button></th>
                         <th><button class="po-sort-button" type="button" data-sort="po_date">Start Date <span data-sort-indicator="po_date">&#8597;</span></button></th>
                         <th><button class="po-sort-button" type="button" data-sort="end_date">End Date <span data-sort-indicator="end_date">&#8597;</span></button></th>
                         <th><button class="po-sort-button" type="button" data-sort="po_number">P.O. Number <span data-sort-indicator="po_number">&#8597;</span></button></th>
@@ -338,7 +379,7 @@
 </main>
 
 <div class="modal fade" id="po-modal" tabindex="-1" aria-labelledby="po-modal-title" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content po-modal-content">
             <div class="modal-header">
                 <h2 class="modal-title h5" id="po-modal-title">Add P.O.</h2>
@@ -348,8 +389,21 @@
                 <div class="modal-body">
                     <input type="hidden" id="po-id">
                     <div class="mb-3">
-                        <label class="form-label fw-bold" for="po-client">Medical Center</label>
-                        <select class="form-select" id="po-client" required></select>
+                        <label class="form-label fw-bold" for="po-client-input">Medical Center</label>
+                        <div class="position-relative">
+                            <input class="form-control" type="search" id="po-client-input" autocomplete="off" role="combobox" aria-controls="po-client-results" aria-expanded="false" placeholder="Search medical center" required>
+                            <input type="hidden" id="po-client" required>
+                            <div class="search-results d-none" id="po-client-results" role="listbox"></div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold" for="po-machine-input">Equipment / Machine</label>
+                        <div class="position-relative">
+                            <input class="form-control" type="search" id="po-machine-input" autocomplete="off" role="combobox" aria-controls="po-machine-results" aria-expanded="false" placeholder="Select a client first" disabled required>
+                            <input type="hidden" id="po-machine" required>
+                            <div class="search-results d-none" id="po-machine-results" role="listbox"></div>
+                        </div>
+                        <div class="form-text po-muted" id="po-machine-note" aria-live="polite"></div>
                     </div>
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -411,6 +465,8 @@
     const state = {
         rows: [],
         clients: [],
+        products: [],
+        productNameCounts: new Map(),
         sortKey: localStorage.getItem('po_details_sort_key') || 'po_date',
         sortDirection: localStorage.getItem('po_details_sort_direction') || 'desc',
         editingId: null,
@@ -517,6 +573,7 @@
         return {
             client: (byId('po-client-search')?.value || '').trim().toLowerCase(),
             number: (byId('po-number-search')?.value || '').trim().toLowerCase(),
+            machine: (byId('po-machine-search')?.value || '').trim().toLowerCase(),
             type: byId('po-type-filter')?.value || '',
             from: byId('po-date-from')?.value || '',
             to: byId('po-date-to')?.value || '',
@@ -528,11 +585,15 @@
         const rows = state.rows.filter((row) => {
             const client = String(row.client_name || '').toLowerCase();
             const number = String(row.po_number || '').toLowerCase();
+            const machine = String(
+                row.machine_display || `${row.product_serial || ''} ${row.product_name || ''}`
+            ).toLowerCase();
             const startDate = row.start_date || row.po_date || '';
             const inDateRange = (!filters.from || startDate >= filters.from)
                 && (!filters.to || startDate <= filters.to);
             return (!filters.client || client.includes(filters.client))
                 && (!filters.number || number.includes(filters.number))
+                && (!filters.machine || machine.includes(filters.machine))
                 && (!filters.type || row.po_type === filters.type)
                 && inDateRange;
         });
@@ -542,6 +603,11 @@
             if (sortKey === 'amount') return row.amount === '' || row.amount == null ? null : Number(row.amount);
             if (sortKey === 'end_date') return row.end_date || null;
             if (sortKey === 'po_date') return row.start_date || row.po_date || null;
+            if (sortKey === 'machine') {
+                return String(
+                    row.machine_display || `${row.product_serial || ''} ${row.product_name || ''}`
+                ).toLowerCase() || null;
+            }
             return String(row[sortKey] ?? '').toLowerCase();
         };
         const isEmpty = (value) => value === null || value === '' || value === undefined;
@@ -588,11 +654,16 @@
             <div class="small po-muted">${escapeHtml(row.client_address || '')}</div>`;
     }
 
+    function machineFields(row) {
+        return `<div class="po-number">${escapeHtml(row.machine_display || '—')}</div>`;
+    }
+
     function renderHeader() {
         const header = document.querySelector('#po-table-head');
         if (!header) return;
         header.innerHTML = `<tr>
             <th><button class="po-sort-button" type="button" data-sort="client_name">Medical Center <span data-sort-indicator="client_name">&#8597;</span></button></th>
+            <th><button class="po-sort-button" type="button" data-sort="machine">Machine <span data-sort-indicator="machine">&#8597;</span></button></th>
             <th><button class="po-sort-button" type="button" data-sort="po_date">Start Date <span data-sort-indicator="po_date">&#8597;</span></button></th>
             <th><button class="po-sort-button" type="button" data-sort="end_date">End Date <span data-sort-indicator="end_date">&#8597;</span></button></th>
             <th><button class="po-sort-button" type="button" data-sort="po_number">P.O. Number <span data-sort-indicator="po_number">&#8597;</span></button></th>
@@ -612,6 +683,7 @@
 
         tableBody.innerHTML = rows.map((row) => `<tr>
             <td>${rowFields(row)}</td>
+            <td>${machineFields(row)}</td>
             <td>${escapeHtml(row.start_date || row.po_date || '—')}</td>
             <td>${escapeHtml(row.end_date || '—')}</td>
             <td><span class="po-number">${escapeHtml(row.po_number)}</span></td>
@@ -625,6 +697,7 @@
                 <div>${rowFields(row)}</div>
                 <span class="po-type-badge ${escapeHtml(row.po_type)}">${escapeHtml(row.po_type_label)}</span>
             </div>
+            <div class="small mt-3"><strong>Machine:</strong> ${machineFields(row)}</div>
             <div class="small mt-3"><strong>Start Date:</strong> ${escapeHtml(row.start_date || row.po_date || '—')}</div>
             <div class="small"><strong>End Date:</strong> ${escapeHtml(row.end_date || '—')}</div>
             <div class="small"><strong>P.O. number:</strong> <span class="po-number">${escapeHtml(row.po_number)}</span></div>
@@ -634,9 +707,144 @@
         updateSortIndicators();
     }
 
-    function populateClients(selectedId = '') {
-        const select = byId('po-client');
-        select.innerHTML = `<option value="">Select medical center</option>` + state.clients.map((client) => `<option value="${client.id}" ${String(client.id) === String(selectedId) ? 'selected' : ''}>${escapeHtml(client.name)}</option>`).join('');
+    function setAutocompleteExpanded(input, results, expanded) {
+        input?.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        results?.classList.toggle('d-none', !expanded);
+    }
+
+    function hideAutocomplete(resultsId) {
+        const input = byId(resultsId.replace('-results', '-input'));
+        const results = byId(resultsId);
+        setAutocompleteExpanded(input, results, false);
+    }
+
+    function setMachineNote(message = '') {
+        const note = byId('po-machine-note');
+        if (note) note.textContent = message;
+    }
+
+    function clearMachineSelection(message = '') {
+        byId('po-machine').value = '';
+        byId('po-machine-input').value = '';
+        setMachineNote(message);
+        hideAutocomplete('po-machine-results');
+    }
+
+    function updateMachineAvailability() {
+        const clientId = byId('po-client').value;
+        const input = byId('po-machine-input');
+        if (!input) return;
+        input.disabled = !clientId;
+        input.placeholder = clientId ? 'Search serial or name' : 'Select a client first';
+        if (!clientId) hideAutocomplete('po-machine-results');
+    }
+
+    function productDisplay(product) {
+        const serial = String(product?.serial_number || '').trim();
+        const name = String(product?.name || '').trim();
+        return [serial, name].filter(Boolean).join(' — ');
+    }
+
+    function appendAutocompleteMessage(results, message) {
+        const item = document.createElement('div');
+        item.className = 'search-item po-muted';
+        item.textContent = message;
+        results.appendChild(item);
+    }
+
+    function appendAutocompleteItem(results, label, secondary, onSelect) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'search-item w-100 text-start bg-transparent border-0';
+        item.setAttribute('role', 'option');
+        const title = document.createElement('div');
+        title.className = 'fw-bold';
+        title.textContent = label;
+        item.appendChild(title);
+        if (secondary) {
+            const detail = document.createElement('div');
+            detail.className = 'small po-muted';
+            detail.textContent = secondary;
+            item.appendChild(detail);
+        }
+        item.addEventListener('click', () => onSelect());
+        results.appendChild(item);
+    }
+
+    function renderAutocomplete(kind) {
+        const input = byId(kind === 'client' ? 'po-client-input' : 'po-machine-input');
+        const results = byId(kind === 'client' ? 'po-client-results' : 'po-machine-results');
+        if (!input || !results || input.disabled) return;
+        results.replaceChildren();
+
+        const query = input.value.trim().toLowerCase();
+        let matches = [];
+        if (kind === 'client') {
+            matches = state.clients.filter((client) => {
+                const haystack = `${client.name || ''} ${client.address || ''}`.toLowerCase();
+                return !query || haystack.includes(query);
+            }).slice(0, 10);
+            if (!matches.length) appendAutocompleteMessage(results, 'No medical centers found.');
+            matches.forEach((client) => appendAutocompleteItem(
+                results,
+                client.name || '',
+                client.address || '',
+                () => {
+                    byId('po-client').value = client.id;
+                    input.value = client.name || '';
+                    hideAutocomplete('po-client-results');
+                    clearMachineSelection();
+                    updateMachineAvailability();
+                },
+            ));
+        } else {
+            const clientId = Number(byId('po-client').value);
+            if (!clientId) {
+                appendAutocompleteMessage(results, 'Select a client first.');
+            } else {
+                matches = state.products.filter((product) => {
+                    if (Number(product.client_id) !== clientId) return false;
+                    const haystack = `${product.serial_number || ''} ${product.name || ''}`.toLowerCase();
+                    return !query || haystack.includes(query);
+                }).slice(0, 10);
+                if (!matches.length) {
+                    appendAutocompleteMessage(
+                        results,
+                        'No equipment registered for this client — add it in Products first.',
+                    );
+                }
+                matches.forEach((product) => appendAutocompleteItem(
+                    results,
+                    productDisplay(product),
+                    product.end_warranty ? `Warranty ends ${product.end_warranty}` : '',
+                    () => {
+                        byId('po-machine').value = product.serial_number || '';
+                        input.value = productDisplay(product);
+                        setMachineNote('');
+                        hideAutocomplete('po-machine-results');
+                    },
+                ));
+            }
+        }
+        setAutocompleteExpanded(input, results, true);
+    }
+
+    function setupPoAutocomplete(inputId, resultsId, hiddenId, kind) {
+        const input = byId(inputId);
+        const results = byId(resultsId);
+        if (!input || !results) return;
+        input.addEventListener('input', () => {
+            byId(hiddenId).value = '';
+            if (kind === 'client') {
+                clearMachineSelection();
+                updateMachineAvailability();
+            }
+            renderAutocomplete(kind);
+        });
+        input.addEventListener('focus', () => renderAutocomplete(kind));
+        input.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') hideAutocomplete(resultsId);
+        });
     }
 
     function resetForm() {
@@ -645,7 +853,10 @@
         byId('po-modal-title').textContent = 'Add P.O.';
         byId('po-save-button').innerHTML = '<i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Save P.O.';
         state.editingId = null;
-        populateClients();
+        byId('po-client').value = '';
+        byId('po-client-input').value = '';
+        clearMachineSelection();
+        updateMachineAvailability();
         updateEndDateRequirement();
     }
 
@@ -665,7 +876,18 @@
             byId('po-id').value = row.id;
             byId('po-modal-title').textContent = 'Edit P.O.';
             byId('po-save-button').innerHTML = '<i class="fa-solid fa-check me-1" aria-hidden="true"></i>Update P.O.';
-            populateClients(row.client_id);
+            byId('po-client').value = row.client_id || '';
+            byId('po-client-input').value = row.client_name || '';
+            updateMachineAvailability();
+            if (row.product_serial && row.product_client_id === row.client_id) {
+                byId('po-machine').value = row.product_serial;
+                byId('po-machine-input').value = row.machine_display || row.product_serial;
+                setMachineNote('');
+            } else if (row.product_serial && row.product_client_id !== row.client_id) {
+                clearMachineSelection('This machine now belongs to a different medical center — reselect it.');
+            } else {
+                clearMachineSelection('This P.O. predates machine tracking. Select the machine to save your changes.');
+            }
             byId('po-date').value = row.start_date || row.po_date || '';
             byId('po-end-date').value = row.end_date || '';
             byId('po-number').value = row.po_number;
@@ -675,7 +897,7 @@
             updateEndDateRequirement();
         }
         state.modal.show();
-        setTimeout(() => byId('po-client')?.focus(), 150);
+        setTimeout(() => byId('po-client-input')?.focus(), 150);
     }
 
     async function loadData() {
@@ -684,7 +906,12 @@
         if (!response.ok || !data.success) throw new Error(data.error || 'P.O. records could not be loaded.');
         state.rows = data.purchase_orders || [];
         state.clients = data.clients || [];
-        populateClients();
+        state.products = data.products || [];
+        state.productNameCounts = state.products.reduce((counts, product) => {
+            const name = String(product.name || '').trim().toLowerCase();
+            if (name) counts.set(name, (counts.get(name) || 0) + 1);
+            return counts;
+        }, new Map());
         renderKpis();
         renderRows();
     }
@@ -700,7 +927,7 @@
             const duplicate = data.duplicate;
             const customProceed = await confirmAction({
                 title: 'Possible Duplicate P.O.',
-                message: `${data.error} ${duplicate.client_name} - ${duplicate.po_number} Save another record anyway?`,
+                message: `${data.error} ${duplicate.client_name} - ${duplicate.po_number} (${duplicate.machine_display || 'no machine'}) Save another record anyway?`,
                 confirmText: 'Save Anyway',
             });
             if (customProceed) return sendRecord(url, method, { ...payload, force: true });
@@ -716,6 +943,7 @@
         button.disabled = true;
         const payload = {
             client_id: Number(byId('po-client').value),
+            product_serial: byId('po-machine').value,
             start_date: byId('po-date').value,
             end_date: byId('po-end-date').value,
             po_number: byId('po-number').value,
@@ -781,6 +1009,7 @@
     byId('po-form').addEventListener('submit', saveForm);
     byId('po-client-search').addEventListener('input', renderRows);
     byId('po-number-search').addEventListener('input', renderRows);
+    byId('po-machine-search').addEventListener('input', renderRows);
     byId('po-type-filter').addEventListener('change', renderRows);
     byId('po-date-from').addEventListener('change', renderRows);
     byId('po-date-to').addEventListener('change', renderRows);
@@ -790,6 +1019,7 @@
     byId('po-clear-filters').addEventListener('click', () => {
         byId('po-client-search').value = '';
         byId('po-number-search').value = '';
+        byId('po-machine-search').value = '';
         byId('po-type-filter').value = '';
         byId('po-date-from').value = '';
         byId('po-date-to').value = '';
@@ -835,6 +1065,8 @@
 
     async function initializePage() {
         state.modal = createModalController();
+        setupPoAutocomplete('po-client-input', 'po-client-results', 'po-client', 'client');
+        setupPoAutocomplete('po-machine-input', 'po-machine-results', 'po-machine', 'machine');
         renderHeader();
         updateEndDateRequirement();
         try { await loadData(); }

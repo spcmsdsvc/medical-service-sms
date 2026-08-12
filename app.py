@@ -1854,6 +1854,12 @@ class PurchaseOrder(db.Model):
     end_date = db.Column(db.Date, nullable=True, index=True)
     po_type = db.Column(db.String(20), nullable=False, default=PO_TYPE_SINGLE_VISIT)
     amount = db.Column(db.Numeric(14, 2), nullable=True)
+    product_serial = db.Column(
+        db.String(100),
+        db.ForeignKey('product.serial_number'),
+        nullable=True,
+        index=True,
+    )
     created_at = db.Column(db.DateTime, nullable=True, default=get_manila_time)
     created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
     updated_at = db.Column(db.DateTime, nullable=True, default=get_manila_time, onupdate=get_manila_time)
@@ -1868,6 +1874,7 @@ class PurchaseOrder(db.Model):
         foreign_keys=[client_id],
     )
     created_by_user = db.relationship('User', foreign_keys=[created_by])
+    product = db.relationship('Product', foreign_keys=[product_serial])
 
 
 REIMBURSEMENT_TRACKER_EXPENSE_FIELDS = (
@@ -3534,6 +3541,11 @@ def ensure_purchase_order_schema():
                 'updated_at': 'DATETIME',
                 'end_date': 'DATE',
                 'amount': 'NUMERIC(14, 2)',
+                # SQLite cannot add a REFERENCES clause with ALTER TABLE. Fresh
+                # create_all databases receive the model FK above, but this app
+                # does not enable PRAGMA foreign_keys, so application validation
+                # and the Products-side guards remain the integrity boundary.
+                'product_serial': 'VARCHAR(100)',
             }
             for column_name, column_type in additive_columns.items():
                 if column_name not in columns:
@@ -3553,6 +3565,10 @@ def ensure_purchase_order_schema():
             connection.exec_driver_sql(
                 "CREATE INDEX IF NOT EXISTS idx_purchase_order_date "
                 "ON purchase_order (po_date)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_purchase_order_product_serial "
+                "ON purchase_order (product_serial)"
             )
         _purchase_order_schema_ready = True
     except Exception as purchase_order_schema_error:
@@ -39594,6 +39610,7 @@ def normalize_purchase_order_type(value):
 
 PURCHASE_ORDER_SORT_KEYS = {
     'client_name',
+    'machine',
     'po_date',
     'start_date',
     'end_date',
@@ -39639,6 +39656,10 @@ def purchase_order_amount_display(value):
 def purchase_order_to_dict(purchase_order):
     po_type = normalize_purchase_order_type(purchase_order.po_type) or PO_TYPE_SINGLE_VISIT
     amount = purchase_order_amount_string(getattr(purchase_order, 'amount', None))
+    product = getattr(purchase_order, 'product', None)
+    product_serial = clean_str(getattr(purchase_order, 'product_serial', None)) or ''
+    product_name = clean_str(getattr(product, 'name', None)) or ''
+    machine_display = ' — '.join(value for value in (product_serial, product_name) if value)
     return {
         'id': purchase_order.id,
         'client_id': purchase_order.client_id,
@@ -39653,6 +39674,10 @@ def purchase_order_to_dict(purchase_order):
         'po_type_label': PO_TYPE_LABELS.get(po_type, PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT]),
         'amount': amount,
         'amount_display': purchase_order_amount_display(getattr(purchase_order, 'amount', None)),
+        'product_serial': product_serial,
+        'product_name': product_name,
+        'product_client_id': getattr(product, 'client_id', None) if product else None,
+        'machine_display': machine_display,
         'created_at': purchase_order.created_at.isoformat() if purchase_order.created_at else None,
         'created_by': purchase_order.created_by,
         'created_by_username': purchase_order.created_by_user.username if purchase_order.created_by_user else '',
@@ -39713,6 +39738,24 @@ def validate_purchase_order_payload(payload, existing=None):
     client = db.session.get(Client, client_id)
     if not client:
         return None, 'Medical center not found.'
+
+    raw_product_serial = (
+        payload.get('product_serial')
+        if 'product_serial' in payload
+        else getattr(existing, 'product_serial', None)
+    )
+    product_serial = clean_str(raw_product_serial) or ''
+    if not product_serial:
+        return None, 'Select the equipment/machine for this P.O.'
+    product = db.session.get(Product, product_serial)
+    if not product:
+        product = Product.query.filter(
+            func.lower(Product.serial_number) == product_serial.lower()
+        ).first()
+    if not product:
+        return None, 'Equipment not found. Add it in Products first.'
+    if product.client_id != client_id:
+        return None, 'That machine is not registered to the selected medical center.'
     return {
         'client_id': client_id,
         'po_number': po_number,
@@ -39720,6 +39763,7 @@ def validate_purchase_order_payload(payload, existing=None):
         'end_date': end_date,
         'po_type': po_type,
         'amount': amount,
+        'product_serial': product.serial_number,
     }, None
 
 
@@ -39741,14 +39785,29 @@ def get_purchase_orders():
     purchase_orders = PurchaseOrder.query.options(
         joinedload(PurchaseOrder.client),
         joinedload(PurchaseOrder.created_by_user),
+        joinedload(PurchaseOrder.product),
     ).order_by(
         PurchaseOrder.po_date.desc(), PurchaseOrder.id.desc()
     ).all()
     clients = Client.query.order_by(func.lower(Client.name).asc(), Client.id.asc()).all()
+    products = Product.query.order_by(
+        Product.client_id.asc(),
+        func.lower(Product.serial_number).asc(),
+    ).all()
     return jsonify({
         'success': True,
         'purchase_orders': [purchase_order_to_dict(item) for item in purchase_orders],
         'clients': [{'id': client.id, 'name': client.name or '', 'address': client.address or ''} for client in clients],
+        'products': [
+            {
+                'serial_number': product.serial_number or '',
+                'name': product.name or '',
+                'client_id': product.client_id,
+                'under_contract': bool(product.under_contract),
+                'end_warranty': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
+            }
+            for product in products
+        ],
         'po_types': [
             {'value': PO_TYPE_CONTRACT, 'label': PO_TYPE_LABELS[PO_TYPE_CONTRACT]},
             {'value': PO_TYPE_SINGLE_VISIT, 'label': PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT]},
@@ -39759,6 +39818,7 @@ def get_purchase_orders():
 def purchase_order_export_records():
     """Return P.O. records matching the register's current filters and sort."""
     client_filter = (request.args.get('client') or '').strip().casefold()
+    machine_filter = (request.args.get('machine') or '').strip().casefold()
     number_filter = (request.args.get('number') or '').strip().casefold()
     type_filter = normalize_purchase_order_type(request.args.get('type')) if request.args.get('type') else ''
     start_from_text = (request.args.get('from') or '').strip()
@@ -39783,12 +39843,20 @@ def purchase_order_export_records():
     records = PurchaseOrder.query.options(
         joinedload(PurchaseOrder.client),
         joinedload(PurchaseOrder.created_by_user),
+        joinedload(PurchaseOrder.product),
     ).all()
     filtered = []
     for record in records:
         client_name = record.client.name if record.client else ''
+        machine_serial = clean_str(getattr(record, 'product_serial', None)) or ''
+        machine_name = clean_str(getattr(record.product, 'name', None)) or ''
         po_number = record.po_number or ''
         if client_filter and client_filter not in client_name.casefold():
+            continue
+        if machine_filter and (
+            machine_filter not in machine_serial.casefold()
+            and machine_filter not in machine_name.casefold()
+        ):
             continue
         if number_filter and number_filter not in po_number.casefold():
             continue
@@ -39803,6 +39871,15 @@ def purchase_order_export_records():
     def sort_value(record):
         if sort_key == 'client_name':
             return (record.client.name if record.client else '').casefold()
+        if sort_key == 'machine':
+            return ' '.join(
+                value.casefold()
+                for value in (
+                    clean_str(getattr(record, 'product_serial', None)) or '',
+                    clean_str(getattr(record.product, 'name', None)) or '',
+                )
+                if value
+            )
         if sort_key == 'po_number':
             return (record.po_number or '').casefold()
         if sort_key == 'po_type':
@@ -39816,6 +39893,8 @@ def purchase_order_export_records():
     def is_empty(record):
         if sort_key == 'client_name':
             return not (record.client.name if record.client else '')
+        if sort_key == 'machine':
+            return not (clean_str(getattr(record, 'product_serial', None)) or '')
         if sort_key == 'po_number':
             return not (record.po_number or '')
         if sort_key == 'amount':
@@ -39854,6 +39933,8 @@ def export_purchase_orders():
         'P.O. Number',
         'Medical Center',
         'Complete Address',
+        'Machine Serial',
+        'Machine Name',
         'P.O. Type',
         'Amount (PHP)',
         'Created At',
@@ -39870,6 +39951,8 @@ def export_purchase_orders():
             record.po_number or '',
             record.client.name if record.client else '',
             record.client.address if record.client else '',
+            record.product_serial or '',
+            record.product.name if record.product else '',
             PO_TYPE_LABELS.get(
                 normalize_purchase_order_type(record.po_type) or PO_TYPE_SINGLE_VISIT,
                 PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT],
@@ -39895,22 +39978,22 @@ def export_purchase_orders():
             cell.border = border
         row[1].number_format = 'yyyy-mm-dd'
         row[2].number_format = 'yyyy-mm-dd'
-        row[7].number_format = '#,##0.00'
-        row[8].number_format = 'yyyy-mm-dd hh:mm'
+        row[9].number_format = '#,##0.00'
         row[10].number_format = 'yyyy-mm-dd hh:mm'
+        row[12].number_format = 'yyyy-mm-dd hh:mm'
 
     last_data_row = worksheet.max_row
     if purchase_orders:
         total_row = last_data_row + 2
         worksheet.cell(total_row, 1, 'TOTAL AMOUNT')
-        worksheet.cell(total_row, 8, f'=SUM(H2:H{last_data_row})')
+        worksheet.cell(total_row, 10, f'=SUM(J2:J{last_data_row})')
         worksheet.cell(total_row, 1).font = Font(bold=True)
-        worksheet.cell(total_row, 8).font = Font(bold=True)
-        worksheet.cell(total_row, 8).number_format = '#,##0.00'
+        worksheet.cell(total_row, 10).font = Font(bold=True)
+        worksheet.cell(total_row, 10).number_format = '#,##0.00'
 
     worksheet.freeze_panes = 'A2'
-    worksheet.auto_filter.ref = f'A1:K{max(1, len(purchase_orders) + 1)}'
-    widths = [10, 14, 14, 22, 34, 46, 18, 18, 22, 22, 22]
+    worksheet.auto_filter.ref = f'A1:M{max(1, len(purchase_orders) + 1)}'
+    widths = [10, 14, 14, 22, 34, 46, 22, 30, 18, 18, 22, 22, 22]
     for index, width in enumerate(widths, start=1):
         worksheet.column_dimensions[chr(64 + index)].width = width
     worksheet.row_dimensions[1].height = 24
@@ -39952,7 +40035,8 @@ def add_purchase_order():
     add_activity_log_entry(
         f"Added P.O. {values['po_number']} for client #{values['client_id']} ({values['po_type']}) "
         f"for {values['po_date'].isoformat()} to {values['end_date'].isoformat() if values['end_date'] else 'no end date'} "
-        f"at {purchase_order_amount_display(values['amount']) or 'amount not recorded'}"
+        f"at {purchase_order_amount_display(values['amount']) or 'amount not recorded'} "
+        f"for machine {values['product_serial']}"
     )
     try:
         db.session.commit()
@@ -39987,6 +40071,7 @@ def update_purchase_order(id):
         }), 409
 
     old_summary = f"{purchase_order.po_number} for client #{purchase_order.client_id}"
+    old_machine = purchase_order.product_serial or 'no machine'
     old_dates = f"{purchase_order.po_date.isoformat()} to {purchase_order.end_date.isoformat() if purchase_order.end_date else 'no end date'}"
     old_amount = purchase_order_amount_display(purchase_order.amount) or 'amount not recorded'
     for field, value in values.items():
@@ -39994,7 +40079,8 @@ def update_purchase_order(id):
     add_activity_log_entry(
         f"Updated P.O. {old_summary} to {values['po_number']} for client #{values['client_id']}; "
         f"dates {old_dates} -> {values['po_date'].isoformat()} to {values['end_date'].isoformat() if values['end_date'] else 'no end date'}; "
-        f"amount {old_amount} -> {purchase_order_amount_display(values['amount']) or 'amount not recorded'}"
+        f"amount {old_amount} -> {purchase_order_amount_display(values['amount']) or 'amount not recorded'}; "
+        f"machine {old_machine} -> {values['product_serial']}"
     )
     try:
         db.session.commit()
@@ -45543,6 +45629,7 @@ def update_product(serial_number):
         return jsonify({'message': 'Denied'}), 403
 
     ensure_product_contract_column()
+    ensure_purchase_order_schema()
     d = request.get_json() or {}
     old_serial = clean_str(serial_number)
     p = db.session.get(Product, old_serial)
@@ -45583,6 +45670,9 @@ def update_product(serial_number):
                 }), 409
 
             linked_schedule_count = Shift.query.filter_by(product_id=old_serial).count()
+            linked_purchase_order_count = PurchaseOrder.query.filter_by(
+                product_serial=old_serial
+            ).count()
 
             replacement = Product(
                 serial_number=new_serial,
@@ -45599,6 +45689,10 @@ def update_product(serial_number):
                 {'product_id': new_serial},
                 synchronize_session=False
             )
+            PurchaseOrder.query.filter_by(product_serial=old_serial).update(
+                {'product_serial': new_serial},
+                synchronize_session=False
+            )
 
             db.session.delete(p)
             db.session.commit()
@@ -45606,6 +45700,7 @@ def update_product(serial_number):
             log_activity(
                 f"Changed product serial number for {product_name} from {old_serial} to {new_serial} "
                 f"({linked_schedule_count} linked schedule(s) updated; "
+                f"{linked_purchase_order_count} linked P.O.(s) updated; "
                 f"{'Under Contract' if new_contract else 'No Contract'})"
             )
 
@@ -45614,9 +45709,13 @@ def update_product(serial_number):
                 'serial_changed': True,
                 'old_serial': old_serial,
                 'new_serial': new_serial,
-                'linked_schedule_count': linked_schedule_count
+                'linked_schedule_count': linked_schedule_count,
+                'linked_purchase_order_count': linked_purchase_order_count,
             })
 
+        linked_purchase_order_count = PurchaseOrder.query.filter_by(
+            product_serial=p.serial_number
+        ).count()
         p.name = product_name
         p.client_id = new_client_id
         p.start_warranty_date = new_start
@@ -45635,8 +45734,17 @@ def update_product(serial_number):
             changed_fields.append('contract status')
 
         field_note = f" ({', '.join(changed_fields)})" if changed_fields else ''
-        log_activity(f"Updated product details: {p.serial_number}{field_note}")
-        return jsonify({'status': 'success', 'serial_changed': False})
+        reassignment_note = ''
+        if old_client_id != new_client_id:
+            reassignment_note = (
+                f" ({linked_purchase_order_count} linked P.O.(s) retain this serial)"
+            )
+        log_activity(f"Updated product details: {p.serial_number}{field_note}{reassignment_note}")
+        return jsonify({
+            'status': 'success',
+            'serial_changed': False,
+            'linked_purchase_order_count': linked_purchase_order_count,
+        })
 
     except Exception as product_error:
         db.session.rollback()
@@ -45657,8 +45765,21 @@ def update_product(serial_number):
 def delete_product(serial_number):
     """ Restricted to Admin Levels. """
     if not is_admin_authorized(): return jsonify({'message': 'Denied'}), 403
+    ensure_purchase_order_schema()
     target = db.session.get(Product, serial_number)
     if target:
+        linked_purchase_order_count = PurchaseOrder.query.filter_by(
+            product_serial=target.serial_number
+        ).count()
+        if linked_purchase_order_count:
+            return jsonify({
+                'status': 'blocked',
+                'message': (
+                    f'Cannot delete equipment while {linked_purchase_order_count} '
+                    'P.O. record(s) reference it.'
+                ),
+                'linked_purchase_order_count': linked_purchase_order_count,
+            }), 409
         name = target.name
         db.session.delete(target); db.session.commit()
         log_activity(f"Purged product record: {name}")

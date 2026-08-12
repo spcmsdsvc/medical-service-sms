@@ -22,6 +22,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         cls.suffix = uuid.uuid4().hex[:8]
         cls.created_user_ids = []
         cls.created_client_ids = []
+        cls.created_product_serials = []
         cls.created_engineer_ids = []
 
         with cls.app.app_context():
@@ -69,6 +70,18 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             app_module.db.session.add_all([cls.client_one, cls.client_two])
             app_module.db.session.flush()
             cls.created_client_ids.extend([cls.client_one.id, cls.client_two.id])
+            cls.product_one = app_module.Product(
+                serial_number=f'PO-SN-ONE-{cls.suffix}',
+                name=f'CT One {cls.suffix}',
+                client_id=cls.client_one.id,
+                under_contract=True,
+            )
+            cls.product_two = app_module.Product(
+                serial_number=f'PO-SN-TWO-{cls.suffix}',
+                name=f'CT Two {cls.suffix}',
+                client_id=cls.client_two.id,
+            )
+            app_module.db.session.add_all([cls.product_one, cls.product_two])
             app_module.db.session.commit()
 
             cls.superadmin_id = cls.superadmin.id
@@ -77,6 +90,12 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             cls.plain_user_id = cls.plain_user.id
             cls.client_one_id = cls.client_one.id
             cls.client_two_id = cls.client_two.id
+            cls.product_one_serial = cls.product_one.serial_number
+            cls.product_two_serial = cls.product_two.serial_number
+            cls.created_product_serials.extend([
+                cls.product_one_serial,
+                cls.product_two_serial,
+            ])
 
     @classmethod
     def tearDownClass(cls):
@@ -84,6 +103,10 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             for purchase_order in app_module.PurchaseOrder.query.all():
                 if purchase_order.client_id in cls.created_client_ids:
                     app_module.db.session.delete(purchase_order)
+            for serial_number in reversed(cls.created_product_serials):
+                product = app_module.db.session.get(app_module.Product, serial_number)
+                if product:
+                    app_module.db.session.delete(product)
             for client_id in reversed(cls.created_client_ids):
                 client = app_module.db.session.get(app_module.Client, client_id)
                 if client:
@@ -157,6 +180,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
 
         created = client.post('/add_purchase_order', json={
             'client_id': self.client_one_id,
+            'product_serial': self.product_one_serial,
             'po_date': '2026-08-06',
             'end_date': '2026-12-31',
             'po_number': ' PO-001  ',
@@ -173,6 +197,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
 
         duplicate = client.post('/add_purchase_order', json={
             'client_id': self.client_one_id,
+            'product_serial': self.product_one_serial,
             'po_date': '2026-08-07',
             'po_number': 'po-001',
             'po_type': 'single_visit',
@@ -182,6 +207,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
 
         forced = client.post('/add_purchase_order', json={
             'client_id': self.client_one_id,
+            'product_serial': self.product_one_serial,
             'po_date': '2026-08-07',
             'po_number': 'po-001',
             'po_type': 'single_visit',
@@ -191,6 +217,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
 
         updated = client.put(f"/update_purchase_order/{record['id']}", json={
             'client_id': self.client_one_id,
+            'product_serial': self.product_one_serial,
             'po_date': '2026-08-08',
             'po_number': 'PO-001-UPDATED',
             'po_type': 'single_visit',
@@ -226,15 +253,24 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             app_module.db.session.add(delete_target)
             app_module.db.session.flush()
             delete_target_id = delete_target.id
+            cascade_serial = f'PO-SN-CASCADE-{self.suffix}'
+            app_module.db.session.add(app_module.Product(
+                serial_number=cascade_serial,
+                name=f'Cascade CT {self.suffix}',
+                client_id=delete_target_id,
+            ))
             app_module.db.session.commit()
+        self.created_product_serials.append(cascade_serial)
         first = client.post('/add_purchase_order', json={
             'client_id': delete_target_id,
+            'product_serial': cascade_serial,
             'po_date': '2026-08-06',
             'po_number': f'CASCADE-ONE-{self.suffix}',
             'po_type': 'single_visit',
         })
         second = client.post('/add_purchase_order', json={
             'client_id': self.client_two_id,
+            'product_serial': self.product_two_serial,
             'po_date': '2026-08-06',
             'end_date': '2026-08-20',
             'po_number': f'CASCADE-TWO-{self.suffix}',
@@ -253,14 +289,216 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             survivor = app_module.PurchaseOrder.query.filter_by(client_id=self.client_two_id).first()
             self.assertIsNotNone(survivor)
 
-    def test_model_has_no_financial_or_schedule_linkage(self):
+    def test_model_has_asset_linkage_but_no_work_linkage(self):
+        """A P.O. names one asset, but never becomes a work-record relationship.
+
+        The product_serial FK is intentional because a P.O. now covers one installed
+        machine. Shift/TSR linkage remains forbidden: those fields would turn this
+        financial register into a work-history table. product_id also stays forbidden
+        because that is Shift's name for a serial, not this register's asset key.
+        """
         columns = set(app_module.PurchaseOrder.__table__.columns.keys())
-        self.assertTrue({'amount', 'end_date'} <= columns)
+        self.assertTrue({'amount', 'end_date', 'product_serial'} <= columns)
         self.assertFalse({'shift_id', 'tsr_id', 'product_id'} & columns)
+        self.assertEqual(
+            list(app_module.PurchaseOrder.__table__.c.product_serial.foreign_keys)[0].target_fullname,
+            'product.serial_number',
+        )
         self.assertEqual(
             app_module.Client.purchase_orders.property.cascade.delete_orphan,
             True,
         )
+
+    def test_new_purchase_order_requires_a_registered_machine(self):
+        client = self._client_for(self.po_user_id)
+        response = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'po_date': '2026-08-06',
+            'po_number': f'NO-MACHINE-{self.suffix}',
+            'po_type': 'single_visit',
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json()['error'],
+            'Select the equipment/machine for this P.O.',
+        )
+
+        unknown = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'product_serial': f'NOT-REGISTERED-{self.suffix}',
+            'po_date': '2026-08-06',
+            'po_number': f'UNKNOWN-MACHINE-{self.suffix}',
+            'po_type': 'single_visit',
+        })
+        self.assertEqual(unknown.status_code, 400)
+        self.assertEqual(
+            unknown.get_json()['error'],
+            'Equipment not found. Add it in Products first.',
+        )
+
+    def test_purchase_order_rejects_a_machine_owned_by_another_client(self):
+        client = self._client_for(self.po_user_id)
+        response = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'product_serial': self.product_two_serial,
+            'po_date': '2026-08-06',
+            'po_number': f'WRONG-MACHINE-OWNER-{self.suffix}',
+            'po_type': 'single_visit',
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json()['error'],
+            'That machine is not registered to the selected medical center.',
+        )
+
+    def test_purchase_order_payload_includes_client_scoped_products(self):
+        client = self._client_for(self.po_user_id)
+        response = client.get('/get_purchase_orders')
+        self.assertEqual(response.status_code, 200)
+        products = response.get_json()['products']
+        by_serial = {product['serial_number']: product for product in products}
+        self.assertIn(self.product_one_serial, by_serial)
+        self.assertEqual(by_serial[self.product_one_serial]['client_id'], self.client_one_id)
+        self.assertTrue(by_serial[self.product_one_serial]['under_contract'])
+        self.assertIn('end_warranty', by_serial[self.product_one_serial])
+
+    def test_machine_filter_and_sort_reach_excel_export(self):
+        client = self._client_for(self.po_user_id)
+        sort_products = [
+            app_module.Product(
+                serial_number=f'PO-SORT-A-{self.suffix}',
+                name=f'Alpha Sort Machine {self.suffix}',
+                client_id=self.client_one_id,
+            ),
+            app_module.Product(
+                serial_number=f'PO-SORT-B-{self.suffix}',
+                name=f'Zulu Sort Machine {self.suffix}',
+                client_id=self.client_one_id,
+            ),
+        ]
+        sort_serials = [product.serial_number for product in sort_products]
+        with self.app.app_context():
+            app_module.db.session.add_all(sort_products)
+            app_module.db.session.commit()
+        self.created_product_serials.extend(sort_serials)
+
+        created_ids = []
+        for serial, number in (
+            (sort_serials[1], f'MACHINE-SORT-B-{self.suffix}'),
+            (sort_serials[0], f'MACHINE-SORT-A-{self.suffix}'),
+        ):
+            response = client.post('/add_purchase_order', json={
+                'client_id': self.client_one_id,
+                'product_serial': serial,
+                'po_date': '2026-08-06',
+                'po_number': number,
+                'po_type': 'single_visit',
+                'amount': '10.00',
+            })
+            self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+            created_ids.append(response.get_json()['purchase_order']['id'])
+
+        response = client.get(
+            '/export_purchase_orders'
+            f'?machine={quote("Sort Machine")}&sort=machine&direction=asc'
+        )
+        self.assertEqual(response.status_code, 200)
+        worksheet = load_workbook(BytesIO(response.data), data_only=False)['P.O. Register']
+        self.assertEqual(worksheet.max_row, 5)
+        self.assertEqual(worksheet['G2'].value, sort_serials[0])
+        self.assertEqual(worksheet['G3'].value, sort_serials[1])
+        self.assertEqual(worksheet['J5'].value, '=SUM(J2:J3)')
+
+        for record_id in created_ids:
+            self.assertEqual(client.delete(f'/delete_purchase_order/{record_id}').status_code, 200)
+
+    def test_deleting_referenced_product_is_blocked_and_preserves_the_po(self):
+        client = self._client_for(self.po_user_id)
+        serial = f'PO-DELETE-GUARD-{self.suffix}'
+        with self.app.app_context():
+            app_module.db.session.add(app_module.Product(
+                serial_number=serial,
+                name=f'Delete Guard Machine {self.suffix}',
+                client_id=self.client_one_id,
+            ))
+            app_module.db.session.commit()
+        self.created_product_serials.append(serial)
+
+        created = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'product_serial': serial,
+            'po_date': '2026-08-06',
+            'po_number': f'DELETE-GUARD-PO-{self.suffix}',
+            'po_type': 'single_visit',
+        })
+        self.assertEqual(created.status_code, 201)
+        record_id = created.get_json()['purchase_order']['id']
+
+        superadmin = self._client_for(self.superadmin_id)
+        blocked = superadmin.delete(f'/delete_product/{quote(serial, safe="")}')
+        self.assertEqual(blocked.status_code, 409)
+        self.assertIn('P.O. record', blocked.get_json()['message'])
+        with self.app.app_context():
+            survivor = app_module.db.session.get(app_module.PurchaseOrder, record_id)
+            self.assertIsNotNone(survivor)
+            self.assertEqual(survivor.product_serial, serial)
+
+        self.assertEqual(client.delete(f'/delete_purchase_order/{record_id}').status_code, 200)
+        self.assertEqual(superadmin.delete(f'/delete_product/{quote(serial, safe="")}').status_code, 200)
+
+    def test_renaming_product_repoints_purchase_orders(self):
+        client = self._client_for(self.po_user_id)
+        old_serial = f'PO-RENAME-OLD-{self.suffix}'
+        new_serial = f'PO-RENAME-NEW-{self.suffix}'.upper()
+        with self.app.app_context():
+            app_module.db.session.add(app_module.Product(
+                serial_number=old_serial,
+                name=f'Rename Machine {self.suffix}',
+                client_id=self.client_one_id,
+            ))
+            app_module.db.session.commit()
+        self.created_product_serials.extend([old_serial, new_serial])
+
+        created = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'product_serial': old_serial,
+            'po_date': '2026-08-06',
+            'po_number': f'RENAME-PO-{self.suffix}',
+            'po_type': 'single_visit',
+        })
+        self.assertEqual(created.status_code, 201)
+        record_id = created.get_json()['purchase_order']['id']
+
+        superadmin = self._client_for(self.superadmin_id)
+        renamed = superadmin.put(f'/update_product/{quote(old_serial, safe="")}', json={
+            'serial_number': new_serial,
+            'name': f'Rename Machine {self.suffix}',
+            'client_id': self.client_one_id,
+            'under_contract': False,
+        })
+        self.assertEqual(renamed.status_code, 200, renamed.get_data(as_text=True))
+        self.assertEqual(renamed.get_json()['linked_purchase_order_count'], 1)
+        with self.app.app_context():
+            repointed = app_module.db.session.get(app_module.PurchaseOrder, record_id)
+            self.assertEqual(repointed.product_serial, new_serial)
+
+        self.assertEqual(client.delete(f'/delete_purchase_order/{record_id}').status_code, 200)
+
+    def test_purchase_order_modal_has_scoped_machine_autocomplete(self):
+        client = self._client_for(self.po_user_id)
+        page = client.get('/po_details')
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        for expected in (
+            'id="po-client-input"',
+            'id="po-client"',
+            'id="po-client-results"',
+            'id="po-machine-input"',
+            'id="po-machine"',
+            'id="po-machine-results"',
+            'No equipment registered for this client — add it in Products first.',
+        ):
+            self.assertIn(expected, html)
 
     def test_settings_reports_the_stored_grant_not_the_effective_permission(self):
         """The Settings payload must carry the stored flag, not the effective permission.
@@ -320,6 +558,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         owner = self._client_for(self.po_user_id)
         seeded = owner.post('/add_purchase_order', json={
             'client_id': self.client_two_id,
+            'product_serial': self.product_two_serial,
             'po_date': '2026-08-06',
             'end_date': '2026-08-20',
             'po_number': f'GUARD-{self.suffix}',
@@ -331,6 +570,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         intruder = self._client_for(self.plain_user_id)
         self.assertEqual(intruder.post('/add_purchase_order', json={
             'client_id': self.client_two_id,
+            'product_serial': self.product_two_serial,
             'po_date': '2026-08-06',
             'end_date': '2026-08-20',
             'po_number': f'INTRUDER-{self.suffix}',
@@ -338,6 +578,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         }).status_code, 403)
         self.assertEqual(intruder.put(f'/update_purchase_order/{record_id}', json={
             'client_id': self.client_two_id,
+            'product_serial': self.product_two_serial,
             'po_date': '2026-08-06',
             'po_number': f'INTRUDER-EDIT-{self.suffix}',
             'po_type': 'contract',
@@ -354,6 +595,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         # Positive control: the same three calls succeed for the capability holder.
         self.assertEqual(owner.put(f'/update_purchase_order/{record_id}', json={
             'client_id': self.client_two_id,
+            'product_serial': self.product_two_serial,
             'po_date': '2026-08-06',
             'po_number': f'GUARD-EDITED-{self.suffix}',
             'po_type': 'single_visit',
@@ -368,6 +610,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         def add(po_type, number):
             payload = {
                 'client_id': self.client_two_id,
+                'product_serial': self.product_two_serial,
                 'po_date': '2026-08-06',
                 'po_number': number,
                 'po_type': po_type,
@@ -395,6 +638,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         def add(po_date, number):
             return client.post('/add_purchase_order', json={
                 'client_id': self.client_two_id,
+                'product_serial': self.product_two_serial,
                 'po_date': po_date,
                 'end_date': '2026-08-20',
                 'po_number': number,
@@ -446,6 +690,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
 
         single_visit = client.post('/add_purchase_order', json={
             'client_id': self.client_two_id,
+            'product_serial': self.product_two_serial,
             'start_date': '2026-08-06',
             'po_number': f'SINGLE-NO-END-{self.suffix}',
             'po_type': 'single_visit',
@@ -463,11 +708,12 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             'po_type': 'single_visit',
             'amount': '',
             'client_id': self.client_two_id,
+            'product_serial': self.product_two_serial,
         })
         self.assertEqual(cleared.status_code, 200)
         self.assertEqual(cleared.get_json()['purchase_order']['amount'], '')
 
-    def test_legacy_contract_without_end_date_remains_readable_but_edit_requires_completion(self):
+    def test_legacy_contract_remains_readable_but_edit_requires_machine(self):
         with self.app.app_context():
             legacy = app_module.PurchaseOrder(
                 client_id=self.client_two_id,
@@ -489,20 +735,40 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(legacy_payload['end_date'], '')
         self.assertEqual(legacy_payload['po_type'], 'contract')
+        self.assertEqual(legacy_payload['product_serial'], '')
 
-        edit_without_end = client.put(f'/update_purchase_order/{legacy_id}', json={
+        edit_without_machine = client.put(f'/update_purchase_order/{legacy_id}', json={
             'client_id': self.client_two_id,
             'start_date': '2026-07-01',
+            'end_date': '2026-07-31',
             'po_number': f'LEGACY-CONTRACT-EDITED-{self.suffix}',
             'po_type': 'contract',
         })
-        self.assertEqual(edit_without_end.status_code, 400)
-        self.assertIn('End Date', edit_without_end.get_json()['error'])
+        self.assertEqual(edit_without_machine.status_code, 400)
+        self.assertEqual(
+            edit_without_machine.get_json()['error'],
+            'Select the equipment/machine for this P.O.',
+        )
+
+        edit_with_machine = client.put(f'/update_purchase_order/{legacy_id}', json={
+            'client_id': self.client_two_id,
+            'product_serial': self.product_two_serial,
+            'start_date': '2026-07-01',
+            'end_date': '2026-07-31',
+            'po_number': f'LEGACY-CONTRACT-EDITED-{self.suffix}',
+            'po_type': 'contract',
+        })
+        self.assertEqual(edit_with_machine.status_code, 200)
+        self.assertEqual(
+            edit_with_machine.get_json()['purchase_order']['product_serial'],
+            self.product_two_serial,
+        )
 
     def test_filtered_sorted_excel_export_contains_complete_register_details(self):
         client = self._client_for(self.po_user_id)
         first = client.post('/add_purchase_order', json={
             'client_id': self.client_one_id,
+            'product_serial': self.product_one_serial,
             'start_date': '2026-08-01',
             'end_date': '2026-08-31',
             'po_number': f'EXPORT-A-{self.suffix}',
@@ -511,6 +777,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         })
         second = client.post('/add_purchase_order', json={
             'client_id': self.client_one_id,
+            'product_serial': self.product_one_serial,
             'start_date': '2026-08-02',
             'po_number': f'EXPORT-B-{self.suffix}',
             'po_type': 'single_visit',
@@ -531,17 +798,20 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             [cell.value for cell in worksheet[1]],
             [
                 'P.O. ID', 'Start Date', 'End Date', 'P.O. Number',
-                'Medical Center', 'Complete Address', 'P.O. Type',
-                'Amount (PHP)', 'Created At', 'Created By', 'Updated At',
+                'Medical Center', 'Complete Address', 'Machine Serial',
+                'Machine Name', 'P.O. Type', 'Amount (PHP)', 'Created At',
+                'Created By', 'Updated At',
             ],
         )
         self.assertEqual(worksheet['D2'].value, f'EXPORT-B-{self.suffix}')
-        self.assertEqual(worksheet['H2'].value, 100)
-        self.assertEqual(worksheet['H3'].value, 25)
+        self.assertEqual(worksheet['G2'].value, self.product_one_serial)
+        self.assertEqual(worksheet['H2'].value, f'CT One {self.suffix}')
+        self.assertEqual(worksheet['J2'].value, 100)
+        self.assertEqual(worksheet['J3'].value, 25)
         self.assertEqual(worksheet['F2'].value, 'Test address one')
-        self.assertEqual(worksheet['H5'].value, '=SUM(H2:H3)')
+        self.assertEqual(worksheet['J5'].value, '=SUM(J2:J3)')
         self.assertEqual(worksheet.freeze_panes, 'A2')
-        self.assertEqual(worksheet.auto_filter.ref, 'A1:K3')
+        self.assertEqual(worksheet.auto_filter.ref, 'A1:M3')
 
         unauthorized = self._client_for(self.plain_user_id)
         self.assertEqual(unauthorized.get('/export_purchase_orders').status_code, 403)
@@ -551,6 +821,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         client = self._client_for(self.po_user_id)
         created = client.post('/add_purchase_order', json={
             'client_id': self.client_two_id,
+            'product_serial': self.product_two_serial,
             'po_date': '2026-08-06',
             'po_number': f'GONE-{self.suffix}',
             'po_type': 'single_visit',

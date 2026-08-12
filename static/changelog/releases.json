@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-12",
+      "release_date": "2026-08-12",
+      "title": "Machine-scoped Purchase Orders",
+      "summary": "Purchase orders now identify the installed equipment they cover, with safer Products-side reference handling.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-12-po-machine-tracking",
+          "category": "P.O. Details",
+          "description": "P.O. records can now be assigned to client equipment, searched and sorted by machine, and exported with machine serial and name details.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-07-08",
       "release_date": "2026-07-08",
       "title": "TSR Reliability and Records Improvements",

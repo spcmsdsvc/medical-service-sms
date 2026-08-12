@@ -1,5 +1,24 @@
 # Project Change Log
 
+codex changes - 2026-08-12 (machine-scoped P.O. records — Part A)
+
+* Added nullable `purchase_order.product_serial` model/migration support with an indexed
+  machine reference and a documented application-level integrity boundary for existing SQLite
+  databases; legacy P.O. rows remain readable without being backfilled.
+* New and edited P.O. records now resolve a real Product serial, reject missing/unknown or
+  wrong-client equipment, serialize machine details, return client-scoped Products, and support
+  machine filtering/sorting in the register and Excel export. The export now has 13 columns with
+  Machine Serial/Name and keeps the amount total in column J.
+* Added the P.O. modal's client and equipment type-to-search controls, client-scoped equipment
+  empty state, legacy edit guidance, machine register column/filter, and responsive modal body
+  scrolling. Duplicate warnings and audit records now identify the referenced machine.
+* Product serial renames now repoint linked P.O. records, owner reassignment logs affected P.O.s,
+  and deleting referenced equipment returns HTTP 409 without deleting the machine or P.O.s.
+* Updated the P.O. behavioural suite with explicit Product fixtures, the asset-FK positive
+  control, 13-column export assertions, legacy/machine validation coverage, and rename/delete
+  safeguards. Focused verification: `python -m unittest tests.test_purchase_orders -v` — 21 tests
+  passed; `python -m py_compile app.py` and `git diff --check` passed.
+
 claude changes - 2026-08-12 (journal refresh before a session handoff)
 
 ## `pending-work.md` refreshed at the owner's request
