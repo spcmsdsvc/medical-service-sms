@@ -66,6 +66,11 @@ claude changes - 2026-08-12 (review of round two, and two fixes)
   it and the runner exited non-zero. Checking the failure *reason* rather than the exit code is what
   caught it. Re-run against the real class it fails properly on `{'D09': [3, 4]} != {}`, with a
   passing control. **An injection that aborts looks exactly like an injection that worked.**
+* Added readable `Total amount: ₱…` labels to the Contracts and Single Visits summary cards on
+  the P.O. Details page. The totals aggregate the same loaded P.O. rows as the existing count
+  cards, ignore blank optional amounts, and are covered by a focused page/template regression test.
+  Added the dated release-manifest item; no service-worker bump was needed because `/po_details`
+  is not part of the app-shell cache.
 
 codex changes - 2026-08-12 (Reimbursement Tracker round two implementation)
 

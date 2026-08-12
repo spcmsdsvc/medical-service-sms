@@ -1837,6 +1837,24 @@
           "sort_order": 30
         }
       ]
+    },
+    {
+      "release_key": "2026-08-12-purchase-order-details",
+      "release_date": "2026-08-12",
+      "title": "P.O. Details Summary",
+      "summary": "Purchase Order summary cards now show the total amount for Contracts and Single Visits.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-12-po-type-totals",
+          "category": "P.O. Details",
+          "description": "The Contracts and Single Visits summary cards now show their respective total amounts alongside the record counts.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
     }
   ]
 }

@@ -204,6 +204,18 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
 
         self.assertEqual(client.delete(f"/delete_purchase_order/{record['id']}").status_code, 200)
 
+    def test_summary_cards_include_contract_and_single_visit_amount_totals(self):
+        client = self._client_for(self.po_user_id)
+        response = client.get('/po_details')
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn('id="po-contract-total"', page)
+        self.assertIn('id="po-single-total"', page)
+        self.assertIn('Total amount: ₱0.00', page)
+        self.assertIn("const formatPHP = (value) =>", page)
+        self.assertIn("row.po_type === 'contract'", page)
+        self.assertIn("row.po_type === 'single_visit'", page)
+
     def test_client_delete_cascades_purchase_orders_without_touching_other_client(self):
         client = self._client_for(self.po_user_id)
         with self.app.app_context():

@@ -47,6 +47,15 @@
         font-weight: 900;
     }
 
+    .po-kpi-total {
+        color: var(--app-muted-text, #60738d);
+        font-size: clamp(.86rem, 1.2vw, .96rem);
+        font-variant-numeric: tabular-nums;
+        font-weight: 750;
+        line-height: 1.35;
+        margin-top: .2rem;
+    }
+
     .po-filter-panel {
         padding: 1rem;
     }
@@ -253,8 +262,8 @@
 
     <section class="row g-3 mb-3" aria-label="Purchase order summary">
         <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Total P.O.s</div><div class="po-kpi-value" id="po-total-count">0</div></div></div>
-        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Contracts</div><div class="po-kpi-value" id="po-contract-count">0</div></div></div>
-        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Single Visits</div><div class="po-kpi-value" id="po-single-count">0</div></div></div>
+        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Contracts</div><div class="po-kpi-value" id="po-contract-count">0</div><div class="po-kpi-total" id="po-contract-total">Total amount: ₱0.00</div></div></div>
+        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Single Visits</div><div class="po-kpi-value" id="po-single-count">0</div><div class="po-kpi-total" id="po-single-total">Total amount: ₱0.00</div></div></div>
         <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Medical Centers</div><div class="po-kpi-value" id="po-client-count">0</div></div></div>
     </section>
 
@@ -411,6 +420,14 @@
     const byId = (id) => document.getElementById(id);
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
     const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const formatPHP = (value) => `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    function totalAmount(rows) {
+        return rows.reduce((total, row) => {
+            const amount = Number.parseFloat(row.amount);
+            return total + (Number.isFinite(amount) ? amount : 0);
+        }, 0);
+    }
 
     function notify(message, kind = 'info') {
         const alert = byId('po-alert');
@@ -549,9 +566,13 @@
     }
 
     function renderKpis() {
+        const contractRows = state.rows.filter((row) => row.po_type === 'contract');
+        const singleVisitRows = state.rows.filter((row) => row.po_type === 'single_visit');
         byId('po-total-count').textContent = state.rows.length;
-        byId('po-contract-count').textContent = state.rows.filter((row) => row.po_type === 'contract').length;
-        byId('po-single-count').textContent = state.rows.filter((row) => row.po_type === 'single_visit').length;
+        byId('po-contract-count').textContent = contractRows.length;
+        byId('po-contract-total').textContent = `Total amount: ${formatPHP(totalAmount(contractRows))}`;
+        byId('po-single-count').textContent = singleVisitRows.length;
+        byId('po-single-total').textContent = `Total amount: ${formatPHP(totalAmount(singleVisitRows))}`;
         byId('po-client-count').textContent = new Set(state.rows.map((row) => row.client_id)).size;
     }
 
