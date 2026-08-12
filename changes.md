@@ -19,6 +19,23 @@ codex changes - 2026-08-12 (machine-scoped P.O. records — Part A)
   safeguards. Focused verification: `python -m unittest tests.test_purchase_orders -v` — 21 tests
   passed; `python -m py_compile app.py` and `git diff --check` passed.
 
+codex changes - 2026-08-12 (Analytics Equipment tab — Part B)
+
+* Extended `/get_po_analytics` with the immediately preceding date range and machine-scoped
+  counts: linked and unlinked P.O.s, coverage percentage, distinct machines and clients, top
+  machines/models, Product coverage status, and the client worklist for missing equipment. The
+  response remains counts-only and eager-loads Product records for the analytics query.
+* Added server-gated Analytics tabs and a responsive Equipment panel with four metrics, accessible
+  SVG charts with print-only mirror tables, coverage mix, and the legacy backfill worklist. P.O.-only
+  users receive Purchase orders and Equipment panels without schedule markup.
+* Added token-based tab styling, roving keyboard focus, validated local tab restore, redraw-on-reveal
+  behavior for hidden charts, zero-width resize guards, and service-worker/cache-busting updates for
+  the changed analytics assets.
+* Added endpoint, server-gating, counts-only, tab-shell, and Equipment chart-resize regression
+  assertions. Focused verification: `python -m unittest tests.test_analytics_page
+  tests.test_analytics_purchase_orders tests.test_analytics_chart_sizing -v` — 24 tests passed;
+  Python compilation, Node JavaScript syntax checking, and `git diff --check` passed.
+
 claude changes - 2026-08-12 (journal refresh before a session handoff)
 
 ## `pending-work.md` refreshed at the owner's request

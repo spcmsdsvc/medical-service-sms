@@ -2,7 +2,7 @@
     'use strict';
 
     const config = window.ANALYTICS_CAPABILITIES || {};
-    const state = { schedule: null, purchaseOrders: null, loading: false };
+    const state = { schedule: null, purchaseOrders: null, equipment: null, loading: false };
 
     function byId(id) { return document.getElementById(id); }
 
@@ -30,6 +30,9 @@
     }
 
     function resetPoDisplay() {
+        state.equipment = null;
+        ['equipment-machine-chart', 'equipment-model-chart', 'equipment-coverage-bars', 'equipment-unlinked-bars', 'equipment-machine-table-body', 'equipment-model-table-body', 'equipment-coverage-table-body', 'equipment-unlinked-table-body'].forEach((id) => clearNode(byId(id)));
+        document.querySelectorAll('[data-equipment-value]').forEach((node) => { node.textContent = '\u2014'; });
         document.querySelectorAll('[data-po-value]').forEach((node) => { node.textContent = '—'; });
         ['po-type-bars', 'po-client-bars', 'po-month-bars', 'po-type-table-body', 'po-client-table-body', 'po-month-table-body'].forEach((id) => clearNode(byId(id)));
     }
@@ -358,7 +361,7 @@
         });
     }
 
-    const CHART_FRAME_IDS = ['trend-chart', 'branch-chart', 'category-chart'];
+    const CHART_FRAME_IDS = ['trend-chart', 'branch-chart', 'category-chart', 'equipment-machine-chart', 'equipment-model-chart'];
     const lastChartWidths = {};
 
     function renderScheduleCharts(data) {
@@ -366,7 +369,21 @@
         renderTrend(data.trend);
         renderHorizontalChart('branch-chart', 'branch-table', data.branches, 'Branch concentration', 'Scoped schedule assignments by engineer branch.');
         renderHorizontalChart('category-chart', 'category-table', data.categories, 'Service mix', 'Schedule categories in the selected period.');
-        CHART_FRAME_IDS.forEach((id) => { lastChartWidths[id] = chartWidth(byId(id)); });
+        CHART_FRAME_IDS.slice(0, 3).forEach((id) => {
+            const node = byId(id);
+            if (node && node.clientWidth > 0) lastChartWidths[id] = chartWidth(node);
+        });
+    }
+
+    function renderEquipmentCharts(data) {
+        const equipment = data && data.equipment;
+        if (!equipment) return;
+        renderHorizontalChart('equipment-machine-chart', 'equipment-machine-table', equipment.by_machine, 'Top machines', 'Machine-linked purchase order counts by serial and model.');
+        renderHorizontalChart('equipment-model-chart', 'equipment-model-table', equipment.by_model, 'Equipment models', 'Machine-linked purchase order counts by model.');
+        CHART_FRAME_IDS.slice(3).forEach((id) => {
+            const node = byId(id);
+            if (node && node.clientWidth > 0) lastChartWidths[id] = chartWidth(node);
+        });
     }
 
     // Charts are sized from their container, so a resize has to redraw them. Two guards, both
@@ -380,11 +397,15 @@
         const observer = new ResizeObserver(() => {
             const changed = CHART_FRAME_IDS.some((id) => {
                 const node = byId(id);
-                return node && lastChartWidths[id] !== chartWidth(node);
+                if (!node || node.clientWidth === 0) return false;
+                return lastChartWidths[id] !== chartWidth(node);
             });
             if (!changed) return;
             window.clearTimeout(resizeTimer);
-            resizeTimer = window.setTimeout(() => renderScheduleCharts(state.schedule), 100);
+            resizeTimer = window.setTimeout(() => {
+                if (state.schedule) renderScheduleCharts(state.schedule);
+                if (state.purchaseOrders) renderEquipmentCharts(state.purchaseOrders);
+            }, 100);
         });
         CHART_FRAME_IDS.forEach((id) => {
             const node = byId(id);
@@ -412,6 +433,7 @@
 
     function updatePo(data) {
         state.purchaseOrders = data;
+        state.equipment = data.equipment || null;
         setText('po-total', data.total);
         const note = byId('po-scope-line');
         if (note) note.textContent = `${data.scope_label || 'Company-wide'} · ${data.range.start_date} to ${data.range.end_date} · counts only; no money values are shown.`;
@@ -421,12 +443,73 @@
         renderSimpleTable('po-type-table-body', data.by_type);
         renderSimpleTable('po-client-table-body', data.by_client);
         renderSimpleTable('po-month-table-body', data.by_month);
+        renderEquipment(data);
+    }
+
+    function renderEquipment(data) {
+        const equipment = data && data.equipment ? data.equipment : {};
+        setText('equipment-linked-total', equipment.linked_total);
+        setText('equipment-unlinked-total', equipment.unlinked_total);
+        setText('equipment-linked-pct', equipment.linked_pct == null ? null : `${equipment.linked_pct}%`);
+        setText('equipment-machine-total', equipment.machine_total);
+        const scope = byId('equipment-scope-line');
+        if (scope && data && data.range) scope.textContent = `${data.scope_label || 'Company-wide'} \u00b7 ${data.range.start_date} to ${data.range.end_date} \u00b7 counts only; no money values are shown.`;
+        renderBars('equipment-coverage-bars', equipment.by_coverage);
+        renderBars('equipment-unlinked-bars', equipment.unlinked_clients);
+        renderSimpleTable('equipment-coverage-table-body', equipment.by_coverage);
+        renderSimpleTable('equipment-unlinked-table-body', equipment.unlinked_clients);
+        renderEquipmentCharts(data);
     }
 
     function renderSimpleTable(tbodyId, rows) {
         const body = byId(tbodyId);
         clearNode(body);
         (rows || []).forEach((row) => addTableRow(body, [row.label, row.count]));
+    }
+
+    function activateTab(tabId, moveFocus) {
+        const buttons = Array.from(document.querySelectorAll('[data-analytics-tab]'));
+        if (!buttons.length) return;
+        const activeButton = buttons.find((button) => button.dataset.analyticsTab === tabId) || buttons[0];
+        const activeId = activeButton.dataset.analyticsTab;
+        buttons.forEach((button) => {
+            const isActive = button === activeButton;
+            button.classList.toggle('is-active', isActive);
+            button.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            button.setAttribute('tabindex', isActive ? '0' : '-1');
+        });
+        document.querySelectorAll('[data-analytics-panel]').forEach((panel) => {
+            const isActive = panel.dataset.analyticsPanel === activeId;
+            panel.classList.toggle('is-active', isActive);
+            panel.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+        });
+        try { window.localStorage.setItem('medical-service-analytics-tab', activeId); } catch (error) { /* storage may be unavailable */ }
+        if (activeId === 'schedule' && state.schedule) renderScheduleCharts(state.schedule);
+        if (activeId === 'equipment' && state.purchaseOrders) renderEquipmentCharts(state.purchaseOrders);
+        if (moveFocus) activeButton.focus();
+    }
+
+    function initAnalyticsTabs() {
+        const buttons = Array.from(document.querySelectorAll('[data-analytics-tab]'));
+        if (!buttons.length) return;
+        buttons.forEach((button, index) => {
+            button.addEventListener('click', () => activateTab(button.dataset.analyticsTab, false));
+            button.addEventListener('keydown', (event) => {
+                let nextIndex = null;
+                if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % buttons.length;
+                if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + buttons.length) % buttons.length;
+                if (event.key === 'Home') nextIndex = 0;
+                if (event.key === 'End') nextIndex = buttons.length - 1;
+                if (nextIndex == null) return;
+                event.preventDefault();
+                activateTab(buttons[nextIndex].dataset.analyticsTab, true);
+            });
+        });
+        let storedTab = '';
+        try { storedTab = window.localStorage.getItem('medical-service-analytics-tab') || ''; } catch (error) { /* storage may be unavailable */ }
+        const validStoredTab = buttons.some((button) => button.dataset.analyticsTab === storedTab);
+        const serverTab = buttons.find((button) => button.getAttribute('aria-selected') === 'true');
+        activateTab(validStoredTab ? storedTab : (serverTab ? serverTab.dataset.analyticsTab : buttons[0].dataset.analyticsTab), false);
     }
 
     function queryString() {
@@ -506,6 +589,7 @@
         const form = byId('analytics-filter-form');
         if (form) form.addEventListener('submit', (event) => { event.preventDefault(); window.loadAnalytics(); });
         document.querySelectorAll('[data-analytics-preset]').forEach((button) => button.addEventListener('click', () => setRangePreset(button.dataset.analyticsPreset)));
+        initAnalyticsTabs();
         observeChartResize();
         setRangePreset('month');
     });

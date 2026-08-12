@@ -17,6 +17,7 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
         cls.suffix = uuid.uuid4().hex[:10]
         cls.created_user_ids = []
         cls.created_client_ids = []
+        cls.created_product_serials = []
         cls.created_po_ids = []
 
         with cls.app.app_context():
@@ -53,6 +54,16 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
             app_module.db.session.flush()
             cls.created_client_ids.extend([cls.client_one.id, cls.client_two.id])
 
+            cls.product = app_module.Product(
+                serial_number=f'AN-SN-{cls.suffix}',
+                name='AN CT-500',
+                client_id=cls.client_one.id,
+                under_contract=True,
+            )
+            app_module.db.session.add(cls.product)
+            app_module.db.session.flush()
+            cls.created_product_serials.append(cls.product.serial_number)
+
             records = [
                 app_module.PurchaseOrder(
                     client_id=cls.client_one.id,
@@ -60,6 +71,7 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
                     po_date=date(2026, 8, 6),
                     end_date=date(2026, 12, 31),
                     po_type=app_module.PO_TYPE_CONTRACT,
+                    product_serial=cls.product.serial_number,
                 ),
                 app_module.PurchaseOrder(
                     client_id=cls.client_one.id,
@@ -83,6 +95,9 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
             cls.po_user_id = cls.po_user.id
             cls.plain_user_id = cls.plain_user.id
             cls.reports_user_id = cls.reports_user.id
+            cls.product_serial = cls.product.serial_number
+            cls.product_name = cls.product.name
+            cls.client_one_name = cls.client_one.name
 
     @classmethod
     def tearDownClass(cls):
@@ -91,6 +106,10 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
                 record = app_module.db.session.get(app_module.PurchaseOrder, po_id)
                 if record:
                     app_module.db.session.delete(record)
+            for serial_number in cls.created_product_serials:
+                product = app_module.db.session.get(app_module.Product, serial_number)
+                if product:
+                    app_module.db.session.delete(product)
             for client_id in cls.created_client_ids:
                 client = app_module.db.session.get(app_module.Client, client_id)
                 if client:
@@ -116,8 +135,11 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         html = page.get_data(as_text=True)
         self.assertIn('Purchase order reporting', html)
+        self.assertIn('Equipment', html)
+        self.assertIn('data-analytics-panel="equipment"', html)
         self.assertNotIn('Service activity', html)
         self.assertNotIn('Engineer workload', html)
+        self.assertNotIn('data-analytics-panel="schedule"', html)
 
         po_response = client.get('/get_po_analytics?start_date=2026-08-01&end_date=2026-08-31')
         self.assertEqual(po_response.status_code, 200)
@@ -128,6 +150,18 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
             {row['label']: row['count'] for row in payload['by_type']},
             {'Contract': 1, 'Single Visit': 1},
         )
+        equipment = payload['equipment']
+        self.assertEqual(equipment['linked_total'] + equipment['unlinked_total'], payload['total'])
+        self.assertEqual(equipment['linked_total'], 1)
+        self.assertEqual(equipment['unlinked_total'], 1)
+        self.assertEqual(equipment['linked_pct'], 50)
+        self.assertEqual(equipment['machine_total'], 1)
+        self.assertEqual(equipment['client_total'], 1)
+        self.assertIn(self.product_serial, equipment['by_machine'][0]['label'])
+        self.assertEqual(equipment['by_model'][0]['label'], self.product_name)
+        self.assertEqual(equipment['by_coverage'][0]['count'], 1)
+        self.assertEqual(equipment['unlinked_clients'][0]['label'], self.client_one_name)
+        self.assertFalse({'amount', 'total_amount', 'currency'} & set(equipment))
         self.assertNotIn('personnel', payload)
 
         self.assertEqual(client.get('/get_analytics_summary').status_code, 403)

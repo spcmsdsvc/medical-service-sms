@@ -15592,7 +15592,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v86-reimbursement-tracker';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v87-reimbursement-tracker';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -37885,6 +37885,89 @@ def get_analytics_summary():
     })
 
 
+def analytics_equipment_counts(orders, previous_orders=None):
+    """Return machine-scoped P.O. counts for the Analytics Equipment tab."""
+    previous_orders = previous_orders or []
+
+    def linked_records(records):
+        return [order for order in records if getattr(order, 'product', None)]
+
+    current_linked = linked_records(orders)
+    previous_linked = linked_records(previous_orders)
+    linked_total = len(current_linked)
+    total = len(orders)
+
+    current_by_machine = {}
+    previous_by_machine = {}
+    current_by_model = {}
+    previous_by_model = {}
+    current_by_coverage = {}
+    unlinked_clients = {}
+    machine_serials = set()
+    client_ids = set()
+
+    def machine_label(order):
+        product = order.product
+        serial = clean_str(getattr(product, 'serial_number', None)) or clean_str(
+            getattr(order, 'product_serial', None)
+        ) or ''
+        name = clean_str(getattr(product, 'name', None)) or ''
+        return ' · '.join(value for value in (serial, name) if value) or 'Unlabelled machine'
+
+    def model_label(order):
+        return clean_str(getattr(order.product, 'name', None)) or 'Unknown model'
+
+    for order in current_linked:
+        machine_serial = clean_str(getattr(order.product, 'serial_number', None))
+        if machine_serial:
+            machine_serials.add(machine_serial)
+        if getattr(order, 'client_id', None):
+            client_ids.add(order.client_id)
+        machine = machine_label(order)
+        model = model_label(order)
+        coverage = product_contract_status(order.product)
+        current_by_machine[machine] = current_by_machine.get(machine, 0) + 1
+        current_by_model[model] = current_by_model.get(model, 0) + 1
+        current_by_coverage[coverage] = current_by_coverage.get(coverage, 0) + 1
+
+    for order in previous_linked:
+        machine = machine_label(order)
+        model = model_label(order)
+        previous_by_machine[machine] = previous_by_machine.get(machine, 0) + 1
+        previous_by_model[model] = previous_by_model.get(model, 0) + 1
+
+    for order in orders:
+        if getattr(order, 'product', None):
+            continue
+        client_label = order.client.name if order.client else 'Unassigned client'
+        unlinked_clients[client_label] = unlinked_clients.get(client_label, 0) + 1
+
+    unlinked_total = total - linked_total
+    return {
+        'linked_total': linked_total,
+        'unlinked_total': unlinked_total,
+        'linked_pct': round((linked_total * 100) / total) if total else 0,
+        'machine_total': len(machine_serials),
+        'client_total': len(client_ids),
+        'by_machine': analytics_ranked_counts(current_by_machine, previous_by_machine)[:10],
+        'by_model': analytics_ranked_counts(current_by_model, previous_by_model)[:10],
+        'by_coverage': [
+            {'label': label, 'count': count}
+            for label, count in sorted(
+                current_by_coverage.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
+        ],
+        'unlinked_clients': [
+            {'label': label, 'count': count}
+            for label, count in sorted(
+                unlinked_clients.items(),
+                key=lambda item: (-item[1], item[0]),
+            )[:10]
+        ],
+    }
+
+
 @app.route('/get_po_analytics')
 @login_required
 def get_po_analytics():
@@ -37894,10 +37977,19 @@ def get_po_analytics():
 
     ensure_purchase_order_schema()
     start_date, end_date = analytics_date_bounds()
-    orders = PurchaseOrder.query.options(joinedload(PurchaseOrder.client)).filter(
-        PurchaseOrder.po_date >= start_date,
-        PurchaseOrder.po_date <= end_date,
-    ).order_by(PurchaseOrder.po_date.desc(), PurchaseOrder.id.desc()).all()
+    previous_start, previous_end = analytics_previous_bounds(start_date, end_date)
+
+    def orders_for_range(range_start, range_end):
+        return PurchaseOrder.query.options(
+            joinedload(PurchaseOrder.client),
+            joinedload(PurchaseOrder.product),
+        ).filter(
+            PurchaseOrder.po_date >= range_start,
+            PurchaseOrder.po_date <= range_end,
+        ).order_by(PurchaseOrder.po_date.desc(), PurchaseOrder.id.desc()).all()
+
+    orders = orders_for_range(start_date, end_date)
+    previous_orders = orders_for_range(previous_start, previous_end)
 
     by_type = {}
     by_client = {}
@@ -37917,8 +38009,13 @@ def get_po_analytics():
             'start_date': start_date.isoformat(),
             'end_date': end_date.isoformat(),
         },
+        'previous_range': {
+            'start_date': previous_start.isoformat(),
+            'end_date': previous_end.isoformat(),
+        },
         'scope_label': 'Company-wide',
         'total': len(orders),
+        'equipment': analytics_equipment_counts(orders, previous_orders),
         'by_type': [
             {'label': label, 'count': count}
             for label, count in sorted(by_type.items(), key=lambda item: (-item[1], item[0]))

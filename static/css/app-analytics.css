@@ -83,6 +83,47 @@
     min-height: 44px;
 }
 
+.analytics-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin: 0.85rem 0 0;
+    border-bottom: 1px solid var(--app-border);
+}
+
+.analytics-tab-btn {
+    appearance: none;
+    min-height: 44px;
+    padding: 0.6rem 0.85rem;
+    border: 1px solid transparent;
+    border-bottom: 3px solid transparent;
+    border-radius: 0.6rem 0.6rem 0 0;
+    background: transparent;
+    color: var(--app-muted);
+    font-weight: 850;
+    cursor: pointer;
+}
+
+.analytics-tab-btn:hover {
+    background: var(--app-surface-raised);
+    color: var(--app-text);
+}
+
+.analytics-tab-btn.is-active {
+    border-color: var(--app-border);
+    border-bottom-color: var(--app-primary);
+    background: var(--app-surface);
+    color: var(--app-text);
+}
+
+.analytics-tab-btn:focus-visible {
+    outline: 3px solid var(--app-focus-ring, var(--app-primary));
+    outline-offset: 2px;
+}
+
+.analytics-tab-panel { display: none; }
+.analytics-tab-panel.is-active { display: block; }
+
 .analytics-scope-line,
 .analytics-error {
     border-radius: var(--analytics-radius);
@@ -357,6 +398,8 @@
     .analytics-filter-card,
     .analytics-chart-frame,
     .analytics-legend { display: none !important; }
+    .analytics-tabs { display: none !important; }
+    .analytics-tab-panel { display: block !important; }
     .analytics-panel,
     .analytics-metric,
     .analytics-notice { box-shadow: none !important; border-color: #777 !important; background: #fff !important; color: #000 !important; break-inside: avoid; }

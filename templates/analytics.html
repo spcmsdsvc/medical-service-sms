@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block page_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=74">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-analytics.css') }}?v=77">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-analytics.css') }}?v=78">
 {% endblock %}
 
 {% block content %}
@@ -10,7 +10,7 @@
         <div>
             <div class="analytics-eyebrow">Management Intelligence</div>
             <h1><i class="fa-solid fa-chart-line me-2" aria-hidden="true"></i>Analytics</h1>
-            <p class="analytics-subtitle">How is service activity changing over this period, and where is it concentrated?</p>
+            <p class="analytics-subtitle">{% if can_view_schedule_analytics %}How is service activity changing over this period, and where is it concentrated?{% else %}Which equipment is covered by purchase orders, and what still needs backfilling?{% endif %}</p>
         </div>
         <div class="d-flex flex-wrap gap-2 no-print">
             {% if can_view_schedule_analytics %}
@@ -53,8 +53,26 @@
 
     <div id="analytics-error" class="analytics-error" role="alert" hidden></div>
 
+    {% set tab_state = namespace(items=[], default='') %}
     {% if can_view_schedule_analytics %}
-    <main id="schedule-analytics" aria-labelledby="schedule-analytics-heading">
+    {% set tab_state.items = tab_state.items + [{'id': 'schedule', 'label': 'Service activity'}] %}
+    {% set tab_state.default = 'schedule' %}
+    {% endif %}
+    {% if can_view_po_analytics %}
+    {% set tab_state.items = tab_state.items + [{'id': 'purchase-orders', 'label': 'Purchase orders'}, {'id': 'equipment', 'label': 'Equipment'}] %}
+    {% if not tab_state.default %}{% set tab_state.default = 'purchase-orders' %}{% endif %}
+    {% endif %}
+
+    {% if tab_state.items|length > 1 %}
+    <nav class="analytics-tabs no-print" role="tablist" aria-label="Analytics views">
+        {% for tab in tab_state.items %}
+        <button type="button" id="{{ tab.id }}-tab" class="analytics-tab-btn{% if tab.id == tab_state.default %} is-active{% endif %}" role="tab" aria-controls="{{ 'schedule-analytics' if tab.id == 'schedule' else 'analytics-panel-' ~ tab.id }}" aria-selected="{{ 'true' if tab.id == tab_state.default else 'false' }}" tabindex="{{ '0' if tab.id == tab_state.default else '-1' }}" data-analytics-tab="{{ tab.id }}">{{ tab.label }}</button>
+        {% endfor %}
+    </nav>
+    {% endif %}
+
+    {% if can_view_schedule_analytics %}
+    <main id="schedule-analytics" class="analytics-tab-panel{% if tab_state.default == 'schedule' %} is-active{% endif %}" data-analytics-panel="schedule" role="tabpanel" aria-labelledby="schedule-tab" aria-hidden="{{ 'false' if tab_state.default == 'schedule' else 'true' }}">
         <div class="analytics-section-heading">
             <div>
                 <h2 id="schedule-analytics-heading">Service activity</h2>
@@ -94,13 +112,33 @@
     {% endif %}
 
     {% if can_view_po_analytics %}
-    <section class="analytics-panel mt-3" aria-labelledby="po-heading">
+    <section id="analytics-panel-purchase-orders" class="analytics-tab-panel analytics-panel mt-3{% if tab_state.default == 'purchase-orders' %} is-active{% endif %}" data-analytics-panel="purchase-orders" role="tabpanel" aria-labelledby="purchase-orders-tab" aria-hidden="{{ 'false' if tab_state.default == 'purchase-orders' else 'true' }}">
         <div class="analytics-panel-header"><div><h2 id="po-heading" class="h3 mb-0">Purchase order reporting</h2><p id="po-scope-line">Company-wide · counts only; no money values are shown.</p></div><span class="analytics-badge">P.O. register</span></div>
         <div class="analytics-po-kpi"><strong id="po-total" data-po-value>—</strong><span>Purchase orders in the selected monitoring period</span></div>
         <div class="analytics-grid-3">
-            <section><h3 class="h6 fw-bold">By type</h3><div id="po-type-bars" class="analytics-bars"></div><table id="po-type-table" class="analytics-chart-table"><caption>Purchase orders by type</caption><thead><tr><th>Type</th><th>Count</th></tr></thead><tbody id="po-type-table-body"></tbody></table></section>
-            <section><h3 class="h6 fw-bold">Top clients</h3><div id="po-client-bars" class="analytics-bars"></div><table id="po-client-table" class="analytics-chart-table"><caption>Purchase orders by client</caption><thead><tr><th>Client</th><th>Count</th></tr></thead><tbody id="po-client-table-body"></tbody></table></section>
-            <section><h3 class="h6 fw-bold">By month</h3><div id="po-month-bars" class="analytics-bars"></div><table id="po-month-table" class="analytics-chart-table"><caption>Purchase orders by month</caption><thead><tr><th>Month</th><th>Count</th></tr></thead><tbody id="po-month-table-body"></tbody></table></section>
+            <section><h3 class="h6 fw-bold">By type</h3><div id="po-type-bars" class="analytics-bars"></div><table id="po-type-table" class="analytics-chart-table"><caption>Purchase orders by type</caption><thead><tr><th scope="col">Type</th><th scope="col">Count</th></tr></thead><tbody id="po-type-table-body"></tbody></table></section>
+            <section><h3 class="h6 fw-bold">Top clients</h3><div id="po-client-bars" class="analytics-bars"></div><table id="po-client-table" class="analytics-chart-table"><caption>Purchase orders by client</caption><thead><tr><th scope="col">Client</th><th scope="col">Count</th></tr></thead><tbody id="po-client-table-body"></tbody></table></section>
+            <section><h3 class="h6 fw-bold">By month</h3><div id="po-month-bars" class="analytics-bars"></div><table id="po-month-table" class="analytics-chart-table"><caption>Purchase orders by month</caption><thead><tr><th scope="col">Month</th><th scope="col">Count</th></tr></thead><tbody id="po-month-table-body"></tbody></table></section>
+        </div>
+    </section>
+
+    <section id="analytics-panel-equipment" class="analytics-tab-panel analytics-panel mt-3{% if tab_state.default == 'equipment' %} is-active{% endif %}" data-analytics-panel="equipment" role="tabpanel" aria-labelledby="equipment-tab" aria-hidden="{{ 'false' if tab_state.default == 'equipment' else 'true' }}">
+        <div class="analytics-panel-header"><div><h2 id="equipment-heading" class="h3 mb-0">Equipment</h2><p id="equipment-scope-line">Machine-linked purchase order counts and the remaining backfill worklist.</p></div><span class="analytics-badge">Counts only</span></div>
+        <div class="analytics-metric-grid equipment-metric-grid mb-3" aria-label="Equipment purchase order metrics">
+            <article class="analytics-metric"><div class="analytics-metric-label">Linked P.O.s</div><strong id="equipment-linked-total" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">With a registered machine</div></article>
+            <article class="analytics-metric"><div class="analytics-metric-label">Missing a machine</div><strong id="equipment-unlinked-total" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">Legacy rows needing backfill</div></article>
+            <article class="analytics-metric"><div class="analytics-metric-label">Machine coverage</div><strong id="equipment-linked-pct" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">Of P.O.s in this period</div></article>
+            <article class="analytics-metric"><div class="analytics-metric-label">Machines covered</div><strong id="equipment-machine-total" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">Distinct registered serials</div></article>
+        </div>
+
+        <div class="analytics-grid-2">
+            <section aria-labelledby="equipment-machine-heading"><div class="analytics-panel-header"><div><h3 id="equipment-machine-heading">Top machines</h3><p>Purchase order counts by serial and model.</p></div></div><div id="equipment-machine-chart" class="analytics-chart-frame"></div><table id="equipment-machine-table" class="analytics-chart-table"><caption>Top machines by purchase order count</caption><thead><tr><th scope="col">Machine</th><th scope="col">Count</th><th scope="col">Previous period</th></tr></thead><tbody id="equipment-machine-table-body"></tbody></table></section>
+            <section aria-labelledby="equipment-model-heading"><div class="analytics-panel-header"><div><h3 id="equipment-model-heading">By model</h3><p>Models represented by machine-linked P.O.s.</p></div></div><div id="equipment-model-chart" class="analytics-chart-frame"></div><table id="equipment-model-table" class="analytics-chart-table"><caption>Models by purchase order count</caption><thead><tr><th scope="col">Model</th><th scope="col">Count</th><th scope="col">Previous period</th></tr></thead><tbody id="equipment-model-table-body"></tbody></table></section>
+        </div>
+
+        <div class="analytics-grid-2">
+            <section aria-labelledby="equipment-coverage-heading"><div class="analytics-panel-header"><div><h3 id="equipment-coverage-heading">Coverage mix</h3><p>Current coverage status from Products.</p></div></div><div id="equipment-coverage-bars" class="analytics-bars"></div><table id="equipment-coverage-table" class="analytics-chart-table"><caption>Equipment coverage mix</caption><thead><tr><th scope="col">Coverage</th><th scope="col">Count</th></tr></thead><tbody id="equipment-coverage-table-body"></tbody></table></section>
+            <section aria-labelledby="equipment-unlinked-heading"><div class="analytics-panel-header"><div><h3 id="equipment-unlinked-heading">Missing a machine</h3><p>Clients with legacy P.O. rows that need a Products backfill.</p></div></div><div id="equipment-unlinked-bars" class="analytics-bars"></div><table id="equipment-unlinked-table" class="analytics-chart-table"><caption>Clients missing a machine on purchase orders</caption><thead><tr><th scope="col">Client</th><th scope="col">Count</th></tr></thead><tbody id="equipment-unlinked-table-body"></tbody></table></section>
         </div>
     </section>
     {% endif %}
@@ -114,5 +152,5 @@ window.ANALYTICS_CAPABILITIES = {
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='js/app-analytics.js') }}?v=77"></script>
+<script src="{{ url_for('static', filename='js/app-analytics.js') }}?v=78"></script>
 {% endblock %}

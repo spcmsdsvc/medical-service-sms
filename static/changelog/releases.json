@@ -3,8 +3,8 @@
     {
       "release_key": "2026-08-12",
       "release_date": "2026-08-12",
-      "title": "Machine-scoped Purchase Orders",
-      "summary": "Purchase orders now identify the installed equipment they cover, with safer Products-side reference handling.",
+      "title": "Machine-scoped Purchase Orders and Equipment Analytics",
+      "summary": "Purchase orders now identify the installed equipment they cover, with safer Products-side reference handling and machine coverage analytics.",
       "is_published": true,
       "items": [
         {
@@ -15,6 +15,15 @@
             "admins"
           ],
           "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-12-analytics-equipment-tab",
+          "category": "Analytics",
+          "description": "Analytics now shows machine-linked purchase order coverage, top machines and models, and the client worklist for P.O.s still missing equipment.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
         }
       ]
     },

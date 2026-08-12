@@ -116,6 +116,12 @@ class AnalyticsChartSizingTests(unittest.TestCase):
         self.assertIn('ResizeObserver', self.js)
         self.assertIn('observeChartResize()', self.js)
 
+    def test_equipment_charts_join_the_resize_observer(self):
+        """Hidden-tab charts must be redrawn after their panel becomes visible."""
+        declaration = self.js.split('const CHART_FRAME_IDS =', 1)[1].split(';', 1)[0]
+        self.assertIn('equipment-machine-chart', declaration)
+        self.assertIn('equipment-model-chart', declaration)
+
     def test_the_resize_guard_compares_integer_widths(self):
         """The loop the plan's risk table named.
 
