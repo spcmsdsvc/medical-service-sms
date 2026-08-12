@@ -1,5 +1,45 @@
 # Project Change Log
 
+claude changes - 2026-08-12 (journal refresh before a session handoff)
+
+## `pending-work.md` refreshed at the owner's request
+
+* Header re-verified **against the tree, not from memory**: 635 tests, tip `7cc7fe7`, worker
+  `v86-reimbursement-tracker`, four local artifacts.
+* **Four items now wait on the owner rather than on code**, and they lead the file because none
+  resolve themselves: the `reimbursement_tracker_paid_cc` group has **zero recipients** (verified in
+  the live database, so paid notifications reach the engineer with nobody copied); **four engineers
+  have no email address**; **Jocel Prudente still reads `JP` locally** because the correction applies
+  on the first served request; and the tracker holds **0 rows**, so chips and export are empty until
+  Diary files batches.
+* Section 2 gained the tracker's deliberate leftovers — chiefly that **a failed paid-notification is
+  invisible outside the Railway log**, so "no warning" means "we tried", not "it arrived".
+* Section 3 gained three genuinely unverified items. The sharpest: **no paid email has ever gone
+  through Brevo to a real inbox** — every test replaced the provider with a capture.
+* Section 6 gained five patterns from this feature, led by the one worth carrying: **three of the
+  four defects found across both reviews were suite-invisible and browser-obvious.**
+
+## The tip line went stale inside the same session, for the third time
+
+* The header was written saying `aaeb579` / 634 tests, and `7cc7fe7` landed before the session
+  ended. Corrected, and the paragraph now says so plainly: **a commit hash in a document is a
+  timestamp, not a fact** — verify with `git log --oneline -1`.
+
+changes - 2026-08-12 (P.O. type amount totals) — `7cc7fe7`
+
+* Added readable `Total amount: ₱…` labels to the Contracts and Single Visits summary cards on
+  the P.O. Details page. The totals aggregate the same loaded P.O. rows as the existing count
+  cards, ignore blank optional amounts, and are covered by a focused page/template regression test.
+  Added the dated release-manifest item; no service-worker bump was needed because `/po_details`
+  is not part of the app-shell cache.
+
+> **Relocated, not rewritten, on 2026-08-12.** These five lines arrived appended to the **Tests**
+> section of the "review of round two" entry below, where they read as a test note about the
+> Reimbursement Tracker. They describe `7cc7fe7`, which is unrelated P.O. work. The text is moved
+> verbatim and given its own dated heading; nothing was reworded or removed. **Newest entry at the
+> top is what makes this file readable** — an entry appended into the middle of an older one is
+> invisible to anyone scanning for the latest change, and misattributes the work while it sits there.
+
 claude changes - 2026-08-12 (review of round two, and two fixes)
 
 ## The implementation is sound. Verified by running it, not by reading it.
@@ -66,11 +106,6 @@ claude changes - 2026-08-12 (review of round two, and two fixes)
   it and the runner exited non-zero. Checking the failure *reason* rather than the exit code is what
   caught it. Re-run against the real class it fails properly on `{'D09': [3, 4]} != {}`, with a
   passing control. **An injection that aborts looks exactly like an injection that worked.**
-* Added readable `Total amount: ₱…` labels to the Contracts and Single Visits summary cards on
-  the P.O. Details page. The totals aggregate the same loaded P.O. rows as the existing count
-  cards, ignore blank optional amounts, and are covered by a focused page/template regression test.
-  Added the dated release-manifest item; no service-worker bump was needed because `/po_details`
-  is not part of the app-shell cache.
 
 codex changes - 2026-08-12 (Reimbursement Tracker round two implementation)
 

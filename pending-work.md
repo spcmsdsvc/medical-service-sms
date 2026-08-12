@@ -7,20 +7,49 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last updated: 2026-08-11, at the owner's request, after a review of the shipped System Backup
-rework **corrected this file's own claims** — see the correction notice below.
+Last updated: 2026-08-12, at the owner's request, after the Reimbursement Tracker shipped and went
+through two rounds of review.
 
-**Start here if you are picking this up cold.** Suite green at **605 tests** with one pre-existing
-skip. `origin/main` is at `98a1c3f`, with the P.O. implementation in `3d66caf`, its closeout in
-`30c087c`, the backup record correction in `14eee82` and the System Backup Center in `b4b17fc`.
-**Confirm the tip with `git log --oneline -1` rather than this line** — it read `30c087c` for two
-commits after that stopped being true. Service worker was `v85-backup-offline-fallback` when this was
-written — read the live value out of `app.py` before committing, never from this note. The working tree carries **four** local artifacts:
-`scheduler.db`, `output/`, `tmp/`, and the loose 2026-07-26 handoff file.
+**Start here if you are picking this up cold.** Suite green at **635 tests** with one pre-existing
+skip. `origin/main` was at `7cc7fe7` when this was written — **confirm the tip with
+`git log --oneline -1` rather than this line.** It has now gone stale three times, and the third was
+inside an hour: this paragraph said `aaeb579` and `634 tests` before `7cc7fe7` landed while the same
+session was still open. **A commit hash in a document is a timestamp, not a fact.** Service worker
+read `v86-reimbursement-tracker`; **read the live value out of `app.py` before committing, never from
+this note.** The working tree carries **four** local artifacts: `scheduler.db`, `output/`, `tmp/`,
+and the loose 2026-07-26 handoff file.
 
-**`Handoffs/` is now tracked**, by the owner's decision on 2026-08-11 — see section 4.
+**`Handoffs/` is tracked**, by the owner's decision on 2026-08-11 — see section 4.
 
-**There is no open defect.** Section 1 is empty.
+**There is no open defect.** Section 1 is empty. But **four things are waiting on the owner rather
+than on code** — they are listed first because none of them will resolve themselves:
+
+| Waiting on | Why it matters |
+| --- | --- |
+| **The `reimbursement_tracker_paid_cc` group has zero recipients** | Verified in the live database. The Paid in Full notification therefore reaches the engineer with **nobody copied**. Add recipients in Settings → Email Recipients. The feature works; it is just uncopied |
+| **Four engineers have no email address** — Kevin Garoche, Mark Felongco, Jocel Prudente, John Erick Wong | Marking their rows paid saves fine and shows Diary a warning, but nobody is notified. Fix in Personnel |
+| **Jocel Prudente still reads `JP` in the local database** | The `JP → JOP` correction runs on the first request after deploy, so it will not show here until the app is actually served. **Confirm it applied in production** rather than assuming |
+| **The tracker holds 0 rows** | So the amount-suggestion chips show nothing yet, and the export is empty. Both fill in as Diary files batches — expected, not a fault |
+
+### The Reimbursement Tracker, in four commits
+
+Built by Codex from a plan in `plans.md`, reviewed here after each round. **Both reviews found
+something; neither found a defect in the second round.**
+
+| Commit | What |
+| --- | --- |
+| `018cfd0` | The tracker: register page, capability flag, Excel export — plus four fixes from review, of which the real one was **dark mode at 1.04:1 contrast** from a transposed CSS token |
+| `c426cba` | Modal could not be scrolled, so Save was unreachable; batch numbering continued at 032 instead of restarting at 001 |
+| `c5e1b64` | The server suggested `BATCH-032` and **the form ignored it** — a test asserted the endpoint and not the field |
+| `81b4f1b` / `aaeb579` | Round two: unique engineer initials, export cut to seven columns, Paid in Full email with a CC group, amount-suggestion chips — plus two fixes from review |
+
+`7cc7fe7` landed after that and is **unrelated** — P.O. Details summary cards now show a
+`Total amount: ₱…` label. Noted here only so the tip above is not mistaken for tracker work.
+
+**The most useful thing to know before touching any of it:** three of the four defects found across
+both reviews were **invisible to the test suite and visible in a browser in seconds** — white-on-white
+text, an unscrollable modal, and a form ignoring a value the API returned correctly. The suite was
+green for all three.
 
 > ### ⚠️ Correction, 2026-08-11: this file said the backup was broken. It was fixed two days earlier.
 >
@@ -586,6 +615,28 @@ are all fixed and pushed.
 
 ## 2. Queued work
 
+### Reimbursement Tracker — small things left deliberately, raised 2026-08-12
+
+None of these blocks anything. They are recorded so they are decisions rather than oversights.
+
+- **A failed paid-notification is invisible.** `send_email_with_attachments()` returns
+  `(False, reason)` and never raises, and the send runs on a daemon thread, so a dead Brevo key or
+  an unreachable provider shows up **only in the Railway log** under
+  `[EMAIL] Reimbursement Tracker paid notification`. Diary's on-screen warning covers *"this
+  engineer has no address on file"* and nothing else. **"No warning" means "we had an address and
+  tried", not "it arrived"** — do not let anyone read it as delivery confirmation. Making delivery
+  visible means a status column and a synchronous send, which is its own task.
+- **The paid email omits the Office and the reimbursement description.** It carries engineer,
+  reference, control number, total and transfer date. The description — *"Toll and parking"* — is
+  the most human-readable identifier and is the obvious thing to add if an engineer asks "which
+  one?".
+- **The suggestion chips measure 4.55:1 in light mode**, against the 4.5 AA floor for 11.5 px bold
+  text. Passing, with 0.05 to spare. Dark mode is 6.72:1. Worth a nudge if anyone reports squinting.
+- **Re-ticking Paid in Full re-sends the email**, by the owner's decision on 2026-08-12: a
+  correction is real news because the amount may have changed. An accidental untick-retick therefore
+  duplicates the mail. The alternative — notify once ever — needs a `paid_notified_at` column and
+  leaves an engineer uninformed when a corrected amount is re-marked paid.
+
 ### Analytics needs a real print button, and a print layout worth printing — raised 2026-08-09
 
 **The owner previewed it and it failed:** *"print preview looks bad. we should add a proper print
@@ -1019,6 +1070,9 @@ too.
 | **The provisional-leave supersede notice, in a browser** | `b5dd637` names both leave types on the **approval** path, which the 2026-08-06 pass did not reach — see section 1b |
 | **The new TSR draft 403 message, on screen** | `2e3c2d1` separates a permanent 403 from an expired 401 from a real connection failure. The wording is asserted by test and was never *seen*. Reaching it now needs an approver-only account, since every other shape is permitted — which also means this is a low-frequency path worth checking once rather than watching |
 | **Analytics keyboard pass** | the filter is a real `<form>` with `Apply` as `type="submit"`, headings run `h1`→`h2`→`h3`, and the scope/error regions are `role="status"` / `role="alert"`. Structure was verified; a full tab-through with visible focus was not |
+| **A Paid in Full email actually arriving** — added 2026-08-12 | The whole chain is proven *except* the last hop. Verified by running: the transition fires once, the engineer is on `To`, the CC group is on `cc`, and the body carries the right fields — with the provider **replaced by a capture**. No message has been through Brevo to a real inbox. Send one to yourself first: add your address to `reimbursement_tracker_paid_cc`, tick a row, and check the log line |
+| **The `JP → JOP` correction applying in production** — added 2026-08-12 | Proven in tests and against a seeded copy, both anchored on `employee_id 00021`. It runs on the first request after deploy. **The live database still reads `JP` here**, so nobody has yet seen it apply for real. One glance at Personnel after the deploy closes this |
+| **The Accounting export opened in Excel, not openpyxl** — added 2026-08-12 | The layout is asserted by test and by a read-back: one header row, seven columns, and a Total that is a number rather than a formula. **Diary has not opened one.** She is the only consumer, and the reason for the rewrite was that the old one carried too much — worth one look before she relies on it |
 
 **Closed by the owner's 2026-08-09 pass**, listed so nobody re-opens them from an old copy of this
 file:
@@ -1487,6 +1541,40 @@ disable transitions first** — the properties most likely to be transitioned ar
 theme-driven ones.
 
 ## 6. Patterns worth knowing before the next feature
+
+### The five from the Reimbursement Tracker, 2026-08-11 to 08-12
+
+**1. Three of the four defects found across both reviews were suite-invisible and browser-obvious.**
+White-on-white text at 1.04:1 contrast, a modal that could not be scrolled so Save was unreachable,
+and a form ignoring a value its own API returned correctly. **The suite was green for all three**,
+and each took seconds to see in a browser. When a change touches a page, the browser pass is not a
+formality after the tests — for this class of defect it is the only thing that works.
+
+**2. Asserting the endpoint is not asserting the feature.** The server correctly returned
+`BATCH-032`; the form cleared the field and showed a hard-coded `BATCH-001` placeholder. A test
+asserted the API response and **passed the entire time the page ignored it**. This is the
+page-gate/endpoint-gate defect this file records five times, in data rather than access: two places
+had to agree and only one was checked. **When a value crosses from server to screen, assert the
+consumer.**
+
+**3. A misspelled CSS custom property is invisible — it silently takes its fallback.**
+`--app-raised-surface` does not exist; the token is `--app-surface-raised`. Nothing errors, nothing
+logs, and the element keeps a light background while its text follows the theme. The durable fix was
+**a test asserting the class, not the instance**: every `var(--app-*)` the page uses must be defined
+in `static/css/app-themes.css`, with deliberate exemptions named. A test pinning the one misspelling
+would have caught one bug; this catches the next one too.
+
+**4. An injection that aborts looks exactly like an injection that worked.** A defect injection here
+reported RED while the test had never run — the class name was wrong, `unittest` failed to *load*
+it, and the runner exited non-zero. **The exit code cannot tell those apart; the failure message
+can.** This file has warned about the CRLF version of this trap for weeks and it still caught a
+careful attempt in a new form. Read the assertion text, and keep a passing control.
+
+**5. `.modal.fade` measures zero on every child in the Browser pane.** The pane never advances
+transitions, so an unopened-looking modal returns `clientHeight: 0` everywhere and the bug reads as
+absent. **Disable transitions before measuring anything animated** — the same trap already recorded
+for dark mode, now confirmed for Bootstrap modals. Two measurement attempts came back all-zeros and
+looked like "no bug".
 
 ### The four from 2026-08-08
 
