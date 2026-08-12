@@ -55,6 +55,14 @@
     .rt-mobile-list { display: none; }
     .rt-mobile-card { background: var(--app-surface-raised, #f7fafd); border: 1px solid var(--app-border, #d6e0ec); border-radius: .8rem; padding: 1rem; }
     .rt-modal-content { background: var(--app-surface, #fff); border: 1px solid var(--app-border, #d6e0ec); color: var(--app-text, #16243a); }
+    /* Bootstrap's .modal-dialog-scrollable expects .modal-body to be a direct flex child of
+       .modal-content, which caps its height and lets it scroll. This modal wraps the header,
+       body and footer in a <form>, so .modal-content had a single non-flex child: the body
+       grew to its full content height, .modal-content clipped it with overflow:hidden, and
+       everything past Others/Misc -- including Save -- became unreachable. Making the form
+       carry the flex column restores the intended behaviour. */
+    .rt-modal-content > form { display: flex; flex-direction: column; max-height: 100%; min-height: 0; }
+    .rt-modal-content > form > .modal-body { min-height: 0; overflow-y: auto; }
     .rt-category-grid .form-label { color: var(--app-muted-text, #60738d); font-size: .75rem; font-weight: 800; }
     .rt-total-box { background: var(--app-surface-raised, #f7fafd); border: 1px solid var(--app-border, #d6e0ec); border-radius: .7rem; padding: .75rem 1rem; }
     .rt-total-value { color: var(--app-text, #16243a); font-size: 1.35rem; font-weight: 900; }

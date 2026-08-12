@@ -1,5 +1,46 @@
 # Project Change Log
 
+claude changes - 2026-08-12 (tracker modal scroll, and the batch number continues from the workbook)
+
+## Fixed: the Add/Edit modal could not be scrolled, so Save was unreachable
+
+* Reported by the owner from the running app: the form is cut off below **Others/Misc** with no way
+  to reach the paid fields, Remarks or **Save**.
+* **Cause: `.modal-dialog-scrollable` only works when `.modal-body` is a direct flex child of
+  `.modal-content`.** This modal wraps the header, body and footer in a `<form>`, so `.modal-content`
+  had a single non-flex child. The body grew to its full content height, `.modal-content` clipped it
+  with `overflow: hidden`, and nothing scrolled. Making the form carry the flex column restores it.
+* **Measured live, both ways, at 1100x700.** Without the fix: body height 952 px, unscrollable,
+  **Save at 1099 px in a 700 px viewport** — off-screen, exactly as reported. With it: body capped at
+  508 px, scrolls the full 444 px, Save at 655 px. At 375 px: 1549 px of content scrolling in a
+  640 px box, Save reachable, no page overflow.
+* **The pane never advances transitions**, so a `.modal.fade` measures zero on every child and reads
+  as "no bug". Disabling transitions first is what made the modal measurable at all — the same trap
+  this journal recorded for dark mode.
+
+## Changed: the batch number continues at 032 rather than restarting at 001
+
+* History was deliberately not imported, but **Accounting reads these numbers as one continuous
+  sequence** and the workbook's last batch was BATCH-031. An empty register suggested `BATCH-001`,
+  which would have restarted a live sequence and produced duplicate batch numbers on their side.
+* `REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER = 32`, applied as a **floor via `max()`** rather than an
+  "if the register is empty" branch — so a first row typed as an older batch cannot drag the next
+  suggestion back below where the workbook left off. Once real data exists the stored rows drive it
+  and the constant stops mattering.
+
+## Tests
+
+* **Two added, 623 → 625 green** with the one pre-existing skip. Both injections RED for the expected
+  reason, `app.py` and the template restored byte-identically.
+* The batch test asserts all three states — empty suggests 032, `BATCH-040` then suggests 041, and a
+  lone `BATCH-005` still suggests 032 — so the floor is pinned in the direction that could regress.
+* The modal test is a source assertion, which this journal normally treats as an anti-pattern. It is
+  the documented exception: there is no CSS runner here. **The behavioural proof is the measured
+  before/after above**, not the test.
+* **No service worker bump.** `templates/reimbursement_tracker.html` is not an `APP_SHELL` entry, and
+  the page is reached through `fieldNavigationFirst()`, which is network-first — so an online user
+  gets the corrected page on the next load. `v86-reimbursement-tracker` stands.
+
 claude changes - 2026-08-11 (review of the Reimbursement Tracker, and four fixes)
 
 ## The implementation is sound. Verified by running it, not by reading it.

@@ -1886,6 +1886,13 @@ REIMBURSEMENT_TRACKER_EXPENSE_FIELDS = (
 # takes to pad the day. Do not inline the format anywhere, or this stops being a knob.
 REIMBURSEMENT_TRACKER_CONTROL_DATE_FORMAT = '{d.year}{d.month:02d}{d.day}'
 
+# The register starts empty by decision -- the workbook's 222 historical rows were not
+# imported -- but the batch numbering does NOT start over: the workbook's last batch was
+# BATCH-031, and Accounting reads these numbers as one continuous sequence. So the first
+# batch recorded here is 032. This is a floor on the *suggestion* only; once a row exists,
+# the suggestion is driven by the stored data and this constant stops mattering.
+REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER = 32
+
 
 class ReimbursementTrackerEntry(db.Model):
     """Standalone reimbursement register row, separate from app reimbursements."""
@@ -40282,7 +40289,10 @@ def get_reimbursement_tracker_entries():
             initials_map.setdefault(initials, []).append(engineer)
     duplicate_initials = sorted(initials for initials, matches in initials_map.items() if len(matches) > 1)
     highest_batch = db.session.query(func.max(ReimbursementTrackerEntry.batch_sequence)).scalar() or 0
-    suggested_batch = min(int(highest_batch) + 1, 999)
+    # max() with the floor rather than "if empty", so a first row typed as an older batch
+    # cannot drag the next suggestion back below where the workbook left off.
+    suggested_batch = max(int(highest_batch) + 1, REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER)
+    suggested_batch = min(suggested_batch, 999)
     return jsonify({
         'success': True,
         'entries': [reimbursement_tracker_entry_to_dict(entry) for entry in entries],

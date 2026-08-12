@@ -403,6 +403,60 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         undefined = sorted(used - defined - deliberate)
         self.assertEqual(undefined, [], f'undefined theme tokens fall back silently: {undefined}')
 
+    def test_batch_suggestion_continues_from_the_workbook_not_from_one(self):
+        """History was not imported, but Accounting reads the batch numbers as one sequence.
+
+        The workbook's last batch was BATCH-031, so an empty register must suggest 032 --
+        it suggested BATCH-001, which would have restarted a live numbering sequence.
+        """
+        client = self._client_for(self.tracker_user_id)
+        with self.app.app_context():
+            for entry in app_module.ReimbursementTrackerEntry.query.all():
+                app_module.db.session.delete(entry)
+            app_module.db.session.commit()
+
+        empty = client.get('/get_reimbursement_tracker_entries').get_json()
+        self.assertEqual(empty['entries'], [])
+        self.assertEqual(empty['suggested_reference'], 'BATCH-032')
+
+        # Once real data exists the stored rows drive it, and the floor stops mattering.
+        self._add(client, reference='BATCH-040', engineer_id=self.jfl_id, office='Manila')
+        self.assertEqual(
+            client.get('/get_reimbursement_tracker_entries').get_json()['suggested_reference'],
+            'BATCH-041',
+        )
+
+        # A row filed under an older batch must not drag the suggestion back below the floor.
+        with self.app.app_context():
+            for entry in app_module.ReimbursementTrackerEntry.query.all():
+                app_module.db.session.delete(entry)
+            app_module.db.session.commit()
+        self._add(client, reference='BATCH-005', engineer_id=self.jfl_id, office='Manila')
+        self.assertEqual(
+            client.get('/get_reimbursement_tracker_entries').get_json()['suggested_reference'],
+            'BATCH-032',
+        )
+
+    def test_modal_body_can_scroll_independently_of_the_form_wrapper(self):
+        """The form sits between .modal-content and .modal-body, which broke Bootstrap.
+
+        .modal-dialog-scrollable caps .modal-body only when it is a direct flex child of
+        .modal-content. With the <form> in between, the body grew to full height, the
+        content clipped it, and everything past Others/Misc -- including Save -- was
+        unreachable with no way to scroll to it.
+        """
+        template = (ROOT / 'templates' / 'reimbursement_tracker.html').read_text(encoding='utf-8')
+        self.assertIn('modal-dialog-scrollable', template)
+        # The form must carry the flex column that .modal-content would otherwise provide.
+        self.assertRegex(
+            template,
+            r'\.rt-modal-content\s*>\s*form\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column',
+        )
+        self.assertRegex(
+            template,
+            r'\.rt-modal-content\s*>\s*form\s*>\s*\.modal-body\s*\{[^}]*overflow-y:\s*auto',
+        )
+
     def test_control_date_format_constant_actually_drives_the_control_number(self):
         """The constant shipped unreferenced, so editing it changed nothing.
 
