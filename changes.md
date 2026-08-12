@@ -1,5 +1,103 @@
 # Project Change Log
 
+claude changes - 2026-08-12 (review of round two, and two fixes)
+
+## The implementation is sound. Verified by running it, not by reading it.
+
+* **632 tests green on arrival, and the full suite re-run here after the "final logging-only
+  adjustment" Codex's own journal declares** — so the green is post-adjustment rather than the
+  number it quoted. An independent probe of all four changes passed **26/26**.
+* **Initials**: duplicates refused case-insensitively on add *and* edit, naming the holder;
+  re-saving a row's **own** initials in a different case still succeeds, which is the subtle one —
+  a value-comparison implementation fails it, so self-exclusion really is by id. A payload missing
+  `name`/`initials` now returns 400 instead of the previous 500.
+* **The correction is properly anchored**: it renamed only `00021`, left Jonamar's `18-185`
+  untouched, and re-running after a manual edit to `JX` left `JX` alone. Wired into both startup
+  paths, so production self-corrects.
+* **Export**: seven columns, one header row, and **`G2` came back as the float `150.25`** — the
+  `#REF` risk is closed. No formulas anywhere, banners gone, `freeze_panes A2`, `A1:G3`, iterate off.
+* **Email**: fires only false→true; create-already-paid and re-saving a paid row send nothing;
+  untick-retick sends again as decided. End to end the **To** is the engineer and the **CC** is the
+  group, with the control number in the subject.
+* **Suggestion chips, browser-verified**, including the failure that would have mattered most:
+  Alpha saw their own 333/111/444/22 and **Beta saw only their own 999 — no leak**. Recency order
+  correct, zero-value fields silent, tap fills and updates the total and replaces rather than
+  appends, and editing a row excludes its own value. Dark mode 6.72:1; Save still reachable at 375 px.
+
+## Fixed: the duplicate scan re-read every engineer on every request
+
+* `ensure_unique_engineer_initials()` is called from `@app.before_request`. Its *correction* half was
+  flag-guarded but the **duplicate scan was not**, so every non-static request did a full `Engineer`
+  table load. Measured **0.353 ms per call against 0.039 ms** for a flag-guarded sibling — every
+  other `ensure_*` in that hook early-returns; this was the exception.
+* It now returns a cached result once the pass has succeeded: **0.0001 ms warm**, cheaper than its
+  siblings. The flag is set only after a *complete* pass, so a failed correction still retries
+  instead of caching the failure.
+* **The dead `_engineer_initials_duplicate_signature` global is gone** rather than left behind — it
+  existed only to suppress repeat logging from the per-request scan that no longer happens. This
+  journal already records what an unused constant costs the next reader.
+* Pinned **behaviourally, not by timing**: seed a duplicate without clearing the flag and the cached
+  answer must come back unchanged, which is only possible if no query ran — plus a deliberate reset
+  must still see the new duplicate, so the cache cannot hide a real signal.
+
+## Fixed: the suggestion chips shipped with no regression guard
+
+* Their behaviour was proved in a browser and is correct, but **nothing stopped a later edit removing
+  one of the three properties that make them safe**. There is no JS runner here, so this is the
+  documented inline-template exception, and each assertion targets an outcome a user would feel:
+  `type="button"` (a bare button inside a form submits it, so tapping a suggestion would save the
+  row), the editing row's exclusion (or a row offers its own amount back as a "recent" value), and
+  the zero filter (or all ten fields grow a row of PHP 0.00 chips).
+
+## Corrected one of Codex's tests
+
+* `test_guarded_legacy_correction_changes_only_the_anchored_record` called the correction a second
+  time **without clearing the ready flag**, so it only ever proved the flag short-circuits — not
+  that the `JP` half of the anchor is what protects a manual edit. It now resets first and genuinely
+  re-runs the match.
+
+## Tests
+
+* **Two added, 632 → 634 green** with the one pre-existing skip.
+* **Four injections, all RED for the expected reason, every file restored byte-identically.**
+* **One of those injections was a false red and is worth recording.** The harness reported RED on
+  the caching test while the test never ran at all — the class name was guessed wrong
+  (`EngineerInitialsUniquenessTests`; it is `EngineerInitialsTests`), so unittest failed to *load*
+  it and the runner exited non-zero. Checking the failure *reason* rather than the exit code is what
+  caught it. Re-run against the real class it fails properly on `{'D09': [3, 4]} != {}`, with a
+  passing control. **An injection that aborts looks exactly like an injection that worked.**
+
+codex changes - 2026-08-12 (Reimbursement Tracker round two implementation)
+
+* Added case-insensitive duplicate-initial validation to Personnel engineer creation and
+  editing, including self-exclusion by engineer ID and a 400 response that names the current
+  holder. Missing edit fields now return a validation response instead of a server error.
+* Added a guarded, one-time legacy initials correction anchored to the known employee record,
+  wired into both startup paths, with remaining duplicate initials reported for operations.
+  No database unique index was added because existing legacy duplicates make a migration-time
+  index failure non-enforcing and misleading.
+* Rebuilt the Reimbursement Tracker export as a static seven-column workbook: one header row,
+  data from row 2, literal numeric totals, A2 freeze, A1:G filter, and no banners, formulas,
+  merged cells, or iterative-calculation settings.
+* Added the Settings-managed 'reimbursement_tracker_paid_cc' recipient group and mirrored it
+  in the Settings fallback/usage lists.
+* Added current engineer email resolution, pure paid-email formatting, and asynchronous paid
+  notification dispatch with Settings-managed CC recipients. Existing-row false-to-true
+  transitions notify after commit; creation does not notify, re-toggling resends, and rows
+  without an engineer address return a synchronous warning without a CC-only send.
+* Added native per-category suggestion chips based on the three most recent tracker rows for
+  the selected engineer. Chips are opt-in, exclude the row being edited, update the total, and
+  keep the existing scrollable modal/mobile Save path.
+* Added the 2026-08-12 release-manifest item and focused regression coverage for initials,
+  export geometry/formulas, paid transitions, no-address warnings, CC resolution, and
+  provider-independent email dispatch. No service-worker cache bump, commit, push, or deploy
+  was performed in this execution.
+* Verification completed: the focused suite passed 27 tests, the full suite passed 632 tests
+  before a final logging-only adjustment, and the corrected pre-fix archive went red with 7
+  failures plus 6 missing-behavior errors using byte-identical injected tests. Browser checks
+  confirmed engineer-specific chips, tap-to-fill total updates, 375px modal Save reachability,
+  and the export success toast; the in-app download-event hook did not capture the file event.
+
 claude changes - 2026-08-12 (the batch suggestion reaches the form, and a changelog entry I owed)
 
 ## Fixed: the server said BATCH-032 and the form ignored it

@@ -8,7 +8,9 @@ import tempfile
 import unittest
 import uuid
 from datetime import date
+from decimal import Decimal
 from io import BytesIO
+from unittest.mock import patch
 
 os.environ.setdefault(
     'MEDICAL_SERVICE_TEST_DB',
@@ -292,6 +294,140 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         self.assertEqual(updated.status_code, 200)
         self.assertEqual(updated.get_json()['entry']['paid_amount'], '')
 
+    def test_paid_transition_notifies_only_existing_rows_and_retoggle_resends(self):
+        client = self._client_for(self.tracker_user_id)
+        paid_email = f'tracker-paid-{self.suffix}@example.test'
+        with self.app.app_context():
+            engineer = app_module.db.session.get(app_module.Engineer, self.jfl_id)
+            original_email = engineer.email
+            engineer.email = paid_email
+            app_module.db.session.commit()
+
+        try:
+            with patch.object(app_module, 'send_reimbursement_tracker_paid_email_async') as sender:
+                already_paid = self._add(
+                    client,
+                    engineer_id=self.jfl_id,
+                    office='Manila',
+                    paid_in_full=True,
+                    paid_transfer_date='2026-08-12',
+                )
+                sender.assert_not_called()
+
+                pending = self._add(client, engineer_id=self.jfl_id, office='Manila')
+                first_paid = client.put(
+                    f"/update_reimbursement_tracker_entry/{pending['id']}",
+                    json={'paid_in_full': True, 'paid_transfer_date': '2026-08-12'},
+                )
+                self.assertEqual(first_paid.status_code, 200, first_paid.get_data(as_text=True))
+                sender.assert_called_once_with(self.app, pending['id'])
+
+                still_paid = client.put(
+                    f"/update_reimbursement_tracker_entry/{pending['id']}",
+                    json={'remarks': 'Receipt rechecked'},
+                )
+                self.assertEqual(still_paid.status_code, 200, still_paid.get_data(as_text=True))
+                self.assertEqual(sender.call_count, 1)
+
+                unticked = client.put(
+                    f"/update_reimbursement_tracker_entry/{pending['id']}",
+                    json={'paid_in_full': False},
+                )
+                self.assertEqual(unticked.status_code, 200, unticked.get_data(as_text=True))
+
+                retoggled = client.put(
+                    f"/update_reimbursement_tracker_entry/{pending['id']}",
+                    json={'paid_in_full': True, 'paid_transfer_date': '2026-08-13'},
+                )
+                self.assertEqual(retoggled.status_code, 200, retoggled.get_data(as_text=True))
+                self.assertEqual(sender.call_count, 2)
+                self.assertEqual(already_paid['paid_in_full'], True)
+        finally:
+            with self.app.app_context():
+                engineer = app_module.db.session.get(app_module.Engineer, self.jfl_id)
+                engineer.email = original_email
+                app_module.db.session.commit()
+
+    def test_paid_transition_warns_without_engineer_address_and_does_not_cc_only(self):
+        client = self._client_for(self.tracker_user_id)
+        with self.app.app_context():
+            engineer = app_module.db.session.get(app_module.Engineer, self.jfl_id)
+            original_email = engineer.email
+            engineer.email = ''
+            app_module.db.session.commit()
+
+        try:
+            with patch.object(app_module, 'send_reimbursement_tracker_paid_email_async') as sender:
+                row = self._add(client, engineer_id=self.jfl_id, office='Manila')
+                response = client.put(
+                    f"/update_reimbursement_tracker_entry/{row['id']}",
+                    json={'paid_in_full': True, 'paid_transfer_date': '2026-08-12'},
+                )
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                self.assertIn('no email address', response.get_json().get('warning', '').lower())
+                sender.assert_not_called()
+        finally:
+            with self.app.app_context():
+                engineer = app_module.db.session.get(app_module.Engineer, self.jfl_id)
+                engineer.email = original_email
+                app_module.db.session.commit()
+
+    def test_paid_email_formatter_and_cc_group_are_provider_independent(self):
+        client = self._client_for(self.tracker_user_id)
+        engineer_email = f'tracker-engineer-{self.suffix}@example.test'
+        cc_email = f'tracker-cc-{self.suffix}@example.test'
+        with self.app.app_context():
+            engineer = app_module.db.session.get(app_module.Engineer, self.jfl_id)
+            original_email = engineer.email
+            engineer.email = engineer_email
+            app_module.ensure_email_recipient_setting_table()
+            app_module.db.session.add(app_module.EmailRecipientSetting(
+                group_key='reimbursement_tracker_paid_cc',
+                email=cc_email,
+                display_name='Tracker CC Test',
+                is_active=True,
+                sort_order=1,
+            ))
+            app_module.db.session.commit()
+
+        try:
+            row = self._add(
+                client,
+                engineer_id=self.jfl_id,
+                office='Manila',
+                representation='10.25',
+            )
+            with self.app.app_context():
+                entry = app_module.db.session.get(app_module.ReimbursementTrackerEntry, row['id'])
+                subject, text_body, html_body = app_module.format_reimbursement_tracker_paid_email(entry)
+                self.assertIn(row['control_number'], subject)
+                self.assertIn(row['reference'], text_body)
+                self.assertIn(row['control_number'], html_body)
+                self.assertIn('PHP 10.25', text_body)
+                self.assertEqual(
+                    app_module.get_active_email_recipients_by_group('reimbursement_tracker_paid_cc'),
+                    [cc_email],
+                )
+
+            with patch.object(app_module, 'send_email_with_attachments', return_value=(True, 'test send')) as dispatcher:
+                with patch.object(app_module.threading, 'Thread') as thread_class:
+                    queued = app_module.send_reimbursement_tracker_paid_email_async(self.app, row['id'])
+                    self.assertTrue(queued)
+                    thread_class.assert_called_once()
+                    thread_class.call_args.kwargs['target']()
+                dispatcher.assert_called_once()
+                send_args, send_kwargs = dispatcher.call_args
+                self.assertEqual(send_args[0], [engineer_email])
+                self.assertEqual(send_kwargs['cc_emails'], [cc_email])
+        finally:
+            with self.app.app_context():
+                engineer = app_module.db.session.get(app_module.Engineer, self.jfl_id)
+                engineer.email = original_email
+                recipient = app_module.EmailRecipientSetting.query.filter_by(email=cc_email).first()
+                if recipient:
+                    app_module.db.session.delete(recipient)
+                app_module.db.session.commit()
+
     def test_list_returns_offices_engineers_suggestion_and_duplicate_initial_warning(self):
         client = self._client_for(self.tracker_user_id)
         response = client.get('/get_reimbursement_tracker_entries')
@@ -304,48 +440,44 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
 
     def test_export_reproduces_the_workbook_layout(self):
         client = self._client_for(self.tracker_user_id)
-        self._add(client, reference='BATCH-031', engineer_id=self.jfl_id, office='Manila')
+        self._add(client, reference='BATCH-031', engineer_id=self.jfl_id, office='Manila', representation='12.50')
         self._add(client, reference='BATCH-031', engineer_id=self.raj_id, office='Cebu')
         response = client.get('/export_reimbursement_tracker?sort=submission_date&direction=asc')
         self.assertEqual(response.status_code, 200, response.status)
         workbook = load_workbook(BytesIO(response.data), data_only=False)
         worksheet = workbook['Sheet']
-        self.assertEqual(worksheet['A1'].value, 'Current Input')
-        self.assertEqual(worksheet['S1'].value, 'by: Diary Dizon')
-        self.assertEqual(worksheet['V1'].value, 'Accounting')
-        self.assertEqual(worksheet['A5'].value, 'Reimbursements')
-        self.assertEqual(worksheet['A2'].value, 'Reference')
-        self.assertEqual(worksheet['M2'].value, 'Trasnportation')
-        self.assertEqual(worksheet['Q2'].value, 'Hotel Accomodation')
-        self.assertEqual(worksheet['A6'].value, 'Reference')
-        self.assertEqual(worksheet['M6'].value, 'Trasnportation')
-        self.assertEqual(worksheet['Q6'].value, 'Hotel Accomodation')
-        self.assertTrue(str(worksheet['G7'].value).startswith('=SUM(I7:R7)'))
-        self.assertTrue(str(worksheet['W8'].value).startswith('=IF(V8=TRUE,G8'))
-        self.assertTrue(str(worksheet['X8'].value).startswith('=IF(W8<>"",IF(X8="",TODAY(),X8)'))
-        self.assertTrue(str(worksheet['Y8'].value).startswith('=IF(OR(V8=TRUE,W8<>""),W8-G8,0)'))
-        self.assertTrue(str(worksheet['Z8'].value).startswith('=IF(Y8<0'))
-        self.assertIsNone(worksheet['V7'].value)
-        self.assertIsNone(worksheet['V8'].value)
-        self.assertNotIn('TOTAL', '\n'.join(str(cell.value) for row in worksheet.iter_rows() for cell in row if cell.value))
-
-    def test_export_enables_iterative_calculation_and_uses_nested_if(self):
-        client = self._client_for(self.tracker_user_id)
-        self._add(client, reference='BATCH-041')
-        response = client.get('/export_reimbursement_tracker')
-        workbook = load_workbook(BytesIO(response.data), data_only=False)
-        self.assertTrue(workbook.calculation.iterate)
-        self.assertGreaterEqual(workbook.calculation.iterateCount, 1)
-        worksheet = workbook['Sheet']
+        self.assertEqual(
+            [worksheet.cell(1, column).value for column in range(1, 8)],
+            ['Reference', 'Submission Date', 'Control #', 'Reimbursement', 'Engineer', 'Office', 'Total'],
+        )
+        self.assertEqual(worksheet.freeze_panes, 'A2')
+        self.assertRegex(worksheet.auto_filter.ref, r'^A1:G\d+$')
+        self.assertEqual(worksheet.max_column, 7)
+        self.assertIsNone(worksheet['H1'].value)
+        self.assertIsInstance(worksheet['G2'].value, (int, float, Decimal))
+        self.assertFalse(worksheet.merged_cells.ranges)
+        self.assertFalse(workbook.calculation.iterate)
         formulas = [
-            cell.value for row in worksheet.iter_rows(min_row=7, max_col=26)
+            cell.value for row in worksheet.iter_rows()
             for cell in row if isinstance(cell.value, str) and cell.value.startswith('=')
         ]
-        self.assertTrue(formulas)
-        self.assertTrue(str(worksheet['Z7'].value).startswith('=IF('))
-        self.assertFalse(any('IFS(' in formula.upper() for formula in formulas))
-        self.assertIn('OVER PAID', worksheet['Z7'].value)
-        self.assertIn('EXCESS REIMBURSEMENT BY ACCTG.', worksheet['Z7'].value)
+        self.assertEqual(formulas, [])
+        exported_text = '\n'.join(
+            str(cell.value) for row in worksheet.iter_rows() for cell in row if cell.value is not None
+        )
+        for removed_text in (
+            'Current Input', 'by: Diary Dizon', 'Accounting', 'Reimbursements',
+            'Summary', 'Trasnportation', 'Payment Status to Engineers',
+        ):
+            self.assertNotIn(removed_text, exported_text)
+
+    def test_tracker_labels_keep_the_register_spelling_outside_the_export(self):
+        template = (ROOT / 'templates' / 'reimbursement_tracker.html').read_text(encoding='utf-8')
+        labels = [label for _field, label in app_module.REIMBURSEMENT_TRACKER_EXPENSE_FIELDS]
+        self.assertIn('Trasnportation', labels)
+        self.assertIn('Hotel Accomodation', labels)
+        self.assertIn('Trasnportation', template)
+        self.assertIn('Hotel Accomodation', template)
 
     def test_export_route_is_network_only_and_cache_version_is_bumped(self):
         client = self._client_for(self.tracker_user_id)
@@ -476,6 +608,40 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         self.assertRegex(
             template,
             r'\.rt-modal-content\s*>\s*form\s*>\s*\.modal-body\s*\{[^}]*overflow-y:\s*auto',
+        )
+
+    def test_amount_suggestion_chips_keep_their_three_load_bearing_guards(self):
+        """The chips shipped with no regression guard at all.
+
+        Their behaviour was proved in a browser, but nothing stops a later edit removing
+        one of the three properties that make them safe. There is no JS runner here, so
+        this is the documented inline-template exception -- each assertion targets an
+        outcome a user would feel, not a formatting choice:
+
+        1. type="button" -- a bare <button> inside <form> submits it, so tapping a
+           suggestion would save the row instead of filling a field.
+        2. the editing row is excluded -- otherwise editing a row offers its own amount
+           back as a "recent" value, which reads as corroboration of a figure being changed.
+        3. zero and negative values are dropped -- most categories are 0 in any given row,
+           so without the filter all ten fields grow a row of PHP 0.00 chips.
+        """
+        template = (ROOT / 'templates' / 'reimbursement_tracker.html').read_text(encoding='utf-8')
+
+        chip_markup = [line for line in template.splitlines() if 'rt-suggest-chip' in line and '<button' in line]
+        self.assertTrue(chip_markup, 'no suggestion chip markup found')
+        for line in chip_markup:
+            self.assertIn('type="button"', line,
+                          'a suggestion chip without type="button" submits the form')
+
+        self.assertRegex(
+            template,
+            r'recentRowsForEngineer\(\s*engineerId\s*,\s*state\.editingId\s*\)',
+            'the renderer must exclude the row being edited',
+        )
+        self.assertRegex(
+            template,
+            r'if\s*\(\s*!numeric\s*\|\|\s*numeric\s*<=\s*0\s*\)',
+            'zero and negative amounts must not become chips',
         )
 
     def test_control_date_format_constant_actually_drives_the_control_number(self):

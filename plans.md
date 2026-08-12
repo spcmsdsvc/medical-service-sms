@@ -55,6 +55,221 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Reimbursement Tracker — round two
+
+**Status:** `Executed — working-tree implementation and verification complete. No commit hash: commit, push, and deploy remain separate owner decisions.`
+**Approved:** 2026-08-12
+**Detailed:** 2026-08-12, after mapping the email/recipient-group infrastructure, reading the
+Personnel write routes and the export builder, and checking the live database for duplicate
+initials, engineer email coverage and tracker row counts.
+
+**Execution outcome (2026-08-12):** Steps 1–20 were completed in the working tree. The
+intentional scope is `app.py` (initial validation/correction, export, and paid email), the two
+affected templates, focused regression tests, `changes.md`, and `static/changelog/releases.json`.
+No service-worker bump, database/runtime artifact, output/tmp/handoff artifact, commit, push, or
+deploy was included. The focused suite passed 27 tests after the final logging-only adjustment;
+the full suite passed 632 tests before that adjustment. The corrected pre-fix archive used the
+same injected tests and went red with 7 failures plus 6 missing-behavior errors. Browser checks
+confirmed the per-engineer chips, tap-to-fill total, 375px modal Save reachability, and export
+success toast; the in-app browser's download-event hook did not capture the file event. The
+release manifest parses and contains the new item. `tests/test_changelog_coverage.py` remains a
+post-commit check because it evaluates the latest git commit, and no commit exists yet.
+
+### Context
+
+Four follow-ups the owner asked for on 2026-08-12 after using the register shipped in `018cfd0`.
+**Changes 1-3 touch `app.py`; change 4 is frontend-only.**
+
+1. **Duplicate engineer initials.** The register warns *"Duplicate engineer initials detected: JP"*.
+   `JP` is held by **Jocel Prudente** (id 25, Davao, employee_id `00021`) and **Jonamar Paunil**
+   (id 3, Manila, employee_id `18-185`). Initials feed the control number `INITIALS-<date>-NNN`, so
+   a duplicate makes two people's control numbers indistinguishable. Nothing prevents it today.
+2. **The export carries far more than Accounting needs** — *"remove the above header, she only needs
+   the 2nd header, and the column should be cut to Total only."*
+3. **No notification on payment.** Marking a row Paid in Full tells the engineer nothing.
+4. **Re-typing the same amounts** every batch, with no suggestion from what that engineer claimed
+   before.
+
+### Decisions taken
+
+Settled by the owner on 2026-08-12. An executor should not reopen any of these.
+
+| Decision | Value |
+| --- | --- |
+| Jocel Prudente's initials | **`JOP`** |
+| Export columns | **A-G only**, stopping at Total |
+| Production data fix | **One-time automatic correction**, so the live site self-corrects on deploy |
+| Email trigger | **Only the false→true transition** of `paid_in_full`, on an existing row |
+| Re-toggle | **Re-sends** — a correction is real news, the amount may have changed |
+| Amount suggestions | **Tappable chips** under each field; nothing fills without a tap |
+| Suggestion source | **Tracker rows only**, not the older reimbursement feature |
+
+### Investigation
+
+- **`employee_id` uniqueness is the precedent to copy**: `app.py:45051-45052` (add) and
+  `app.py:45178-45179` (update). Initials are assigned unvalidated at **`app.py:45182`**.
+- **`00021` is a safe anchor for the correction.** `bootstrap_static_accounts()` (`app.py:45917`)
+  seeds `Jonamar Paunil / JP / 18-185`, so a name-only or initials-only guard could rename the
+  wrong person. Anchoring on employee_id **and** the stale value `JP` cannot.
+- **The tracker table is empty in the live database (0 rows)**, so no `engineer_initials_snapshot`
+  holds a stale `JP` and no existing control number becomes ambiguous. **Re-check before running** —
+  this stops being true the moment Diary files a row.
+- **23 of 27 engineers have an email.** The four without are **Jocel Prudente, John Erick Wong,
+  Kevin Garoche, Mark Felongco** — so the notification silently no-ops for them unless the route
+  says so.
+- **Recipient groups are fully generic**: `EmailRecipientSetting` (`app.py:1715`), registry
+  `EMAIL_RECIPIENT_GROUPS` (`app.py:362-407`), order (`app.py:409-421`), read helper
+  `get_active_email_recipients_by_group()` (`app.py:3107`). A new group is a registry entry, an
+  order entry and two `templates/settings.html` lists. **No migration, no new table.**
+- **`send_email_with_attachments()` (`app.py:9054`) is the only dispatcher with `cc_emails`** —
+  `send_email_notification()` (`app.py:9123`) has none.
+- **`update_reimbursement_tracker_entry()` (`app.py:40361`) blindly `setattr`s every validated
+  field**, so it cannot see a transition; it must be captured before the loop.
+- **Column G is `=SUM(I{r}:R{r})`.** Cutting I-R without changing G leaves every Total a `#REF` —
+  the highest-consequence detail here.
+- **The suggestions need no server change at all.** `reimbursement_tracker_entry_to_dict()` already
+  returns all ten category amounts (`app.py:40047-40048`) with `engineer_id` and `submission_date`,
+  and `loadData()` puts every row in `state.rows`.
+
+### Execution steps
+
+1. **`engineer_with_initials(initials, exclude_id=None)`** above `add_engineer` (~`app.py:45005`),
+   comparing `func.lower(Engineer.initials)` — case-insensitive, because every consumer upper-cases
+   before building an identifier. **Done:** returns the holder, or `None`.
+2. **`add_engineer()`** — refuse a duplicate after the employee_id check (`app.py:45051`), guarded on
+   `staff_type == 'engineer'` exactly as that check is. 400 naming the current holder.
+3. **`update_engineer()`** — read `name`/`initials` with `.get` and validate *before* assigning at
+   `app.py:45182`. **Self-exclusion by `id`, not by value**, so re-saving a row's own initials in a
+   different case is not a self-collision. The `.get` also fixes a latent 500 on a missing key.
+4. **`ensure_unique_engineer_initials()`** beside `ensure_reimbursement_tracker_schema()`
+   (~`app.py:3554`) with a `_engineer_initials_correction_ready` flag. Matches on **employee_id
+   `00021` AND name `jocel prudente` AND initials `JP`** → sets `JOP`, commits, logs. All three must
+   match, so it is a no-op once corrected and **cannot fight a later manual edit**. Then always
+   recompute remaining duplicates and log them — an honest ops signal, not a silent claim.
+5. **Wire it into both startup paths** after `ensure_reimbursement_tracker_schema()`:
+   `initialize_database()` (~`app.py:45991`) and the `before_request` hook (~`app.py:45768`).
+6. **No DB unique index, deliberately.** `CREATE UNIQUE INDEX` fails while a duplicate exists and
+   every `ensure_*` swallows it in `try/except` — that ships a *silently absent* constraint that
+   reads as enforced. **Record the reason in the docstring** or the next reader will add it.
+7. **Ship all of step 1 in one commit**, validation before correction, so nothing can recreate `JP`
+   in between.
+8. **Export**: delete the row-1 banners, both `merge_cells`, and `A5 'Reimbursements'`.
+9. **One header row at row 1** — Reference, Submission Date, Control #, Reimbursement, Engineer,
+   Office, Total. Drop the `for row_number in (2, 6)` loop and the label splat.
+10. **Data from row 2**, and **column G becomes the literal `record.total`**, not a formula. Delete
+    `category_values` and the four formula writes at columns 23-26.
+11. **Geometry shifts**: header fill on row 1; `freeze_panes='A2'`; `auto_filter.ref=f'A1:G{last}'`;
+    widths `[18,16,20,34,28,14,15]`; number formats only on cols 2 and 7.
+12. **Delete every `workbook.calculation.*` line** — dead once no formula remains. The nested-`IF`
+    payment-status string goes with them; **that decision is not reversed, the column just ends.**
+13. **Rewrite the `REIMBURSEMENT_TRACKER_EXPENSE_FIELDS` comment** (`app.py:1868`). Its claim to
+    preserve "the workbook's Accounting-facing spellings" stops being true once nothing writes them
+    to a workbook. Say they are the register form's labels, mirrored by hand in
+    `templates/reimbursement_tracker.html:258-263`, and must not be corrected on one side only.
+14. **New recipient group** `reimbursement_tracker_paid_cc` in `EMAIL_RECIPIENT_GROUPS` and
+    `EMAIL_RECIPIENT_GROUP_ORDER`, mirrored in the two `templates/settings.html` lists.
+15. **`reimbursement_tracker_engineer_email(entry)`**: `entry.engineer.email` →
+    `get_user_email_for_notification()` on the linked User → `''`. **Never the name snapshot.**
+16. **`format_reimbursement_tracker_paid_email(entry)`** → `(subject, text, html)`, pure and
+    side-effect free so it is testable without threads.
+17. **`send_reimbursement_tracker_paid_email_async(app_obj, entry_id)`** shaped like
+    `send_reimbursement_notification_email_async` (`app.py:7387`) — id normalised outside the
+    thread, worker re-fetches by id, CC from the group, sent via `send_email_with_attachments`.
+    **No engineer address → log and return; do not fall back to CC-only.**
+18. **Route**: capture `was_paid_in_full` before the setattr loop; fire **after** a successful
+    commit so a rollback never mails. Comment `add_reimbursement_tracker_entry` to say creation
+    deliberately never mails.
+19. **Warn Diary synchronously** when the engineer has no address — `warning` in the JSON, surfaced
+    by `notify(data.warning, 'warning')` in `saveForm` (~`:533`).
+20. **Suggestions**: `SUGGESTION_LOOKBACK = 3`; `recentRowsForEngineer(engineerId, excludeId)`
+    sorted by date then id descending; `renderCategorySuggestions()` dropping zero/blank values and
+    deduping, rendering `<button type="button" class="rt-suggest-chip">` into a per-field container.
+    Click fills the input and calls `updateFormTotal()`. Trigger from the existing engineer `change`
+    listener (`:594`) and on modal open; clear in `resetForm()`. **Verify the theme token names
+    against `static/css/app-themes.css`** — a transposed custom property is invisible.
+
+### Deliberately excluded
+
+- **A `paid_notified_at` column** — the owner chose re-send per transition.
+- **Emailing on create**, and **rewriting `engineer_initials_snapshot`** on existing rows.
+- **A unique index on `initials`** — see step 6.
+- **Changing `REIMBURSEMENT_TRACKER_EXPENSE_FIELDS` values**, including the two typos.
+- **Seeding suggestions from the older reimbursement feature** — lossy category mapping, and it
+  would undo the standalone decision.
+- **Prefilling amounts automatically** — prefilled figures that are never reviewed get saved
+  unchanged. Every suggested amount needs a deliberate tap.
+
+### Verification
+
+Tests in `tests/test_reimbursement_tracker.py` plus a new `tests/test_engineer_initials.py`.
+Behaviour by building an account and calling the route; source assertions only for inline
+template/CSS, and then only on an outcome. **Every new test proven to fail without its fix, with the
+injection confirmed applied** — CRLF files, so a `\n` needle silently matches nothing.
+
+- Duplicate initials refused on add (`ZZQ` then `zzq` → 400 naming the holder) and on edit; a row
+  re-saving **its own** initials in a different case still succeeds (a value-comparison
+  implementation fails this).
+- `PUT /update_engineer/<id>` with only `employee_id` → 400, not 500.
+- **The correction renames only `00021`**, leaves `18-185` untouched, and re-running after a manual
+  edit to `JX` leaves `JX` alone.
+- **Total is a number, not `#REF`**: `G1 == 'Total'`, `H1 is None`, `G2` numeric, and **no cell
+  anywhere holds a string starting `=`**.
+- Geometry: `freeze_panes == 'A2'`, `auto_filter.ref == 'A1:G<n>'`, `max_column == 7`, and none of
+  `Current Input` / `by: Diary Dizon` / `Accounting` / `Reimbursements` / `Summary` /
+  `Trasnportation` / `Payment Status to Engineers` survives anywhere.
+- `assertFalse(workbook.calculation.iterate)`.
+- **The two typos keep an anchor**: assert the constant holds both spellings *and* that
+  `GET /reimbursement_tracker` renders both. The export used to pin this; do not skip it.
+- Email fires exactly on transition: create-already-paid → none; unpaid→paid → one; re-save → still
+  one; untick then retick → two. Patch `app_module.send_reimbursement_tracker_paid_email_async`
+  (module-attribute rebinding per `tests/test_changelog_workflow.py:409-462`) to avoid the thread.
+- No-address engineer → wrapper not called, 200, `warning` contains "no email address".
+- CC group seeded via `_seed_group()` and read back; formatter carries control number, reference,
+  total and transfer date. **No provider is ever contacted.**
+- **Suggestions are browser-verified, not suite-verified** — there is no JS runner. Two engineers
+  with different amounts: the chips must match only the selected engineer. Confirm a chip fills the
+  field and updates the total without submitting, that a row being edited does not suggest from
+  itself, and that **Save is still reachable at 375 px** now that ten fields gained a chip row.
+
+**Canary:** `test_list_returns_offices_engineers_suggestion_and_duplicate_initial_warning` (`:294`)
+asserts `'JP' in duplicate_initials` and is safe only because its fixture uses `RT-<suffix>-N`
+employee ids. **If it fails, the correction's guard is too loose** — treat it as the canary, not as
+a test to update.
+
+Then the focused run, the full suite against the **626 green + 1 skip** baseline, and a browser pass
+including a real exported `.xlsx`.
+
+### After implementation
+
+- Re-read this plan against the diff and amend the entry if the implementation differed.
+- Add a dated `changes.md` section, newest first; do not log secrets or database contents.
+- One `static/changelog/releases.json` item dated the commit date. **Re-run
+  `tests/test_changelog_coverage.py` after committing** — that guard reads git for the latest commit
+  and cannot see the commit before it exists.
+- **No `CACHE_VERSION` bump**: `templates/timeline.html` and `layout.html` are untouched.
+- Stage only intentional source/template/test/journal/manifest files. Never stage `scheduler.db`,
+  `output/`, `tmp/`, or handoff artifacts.
+- Push or deploy only after a separate owner instruction.
+
+### Risks
+
+1. **`#REF` on every Total** if step 10 is missed — the one change that would corrupt the artifact
+   Accounting actually consumes.
+2. **Jocel's future Online TSR numbers restart.** `online_tsr_next_number_for_date()`
+   (`app.py:11084`) builds `YYYYMMDD-NN-<INITIALS>`, so the `JOP` daily sequence starts at `01`.
+   Historical values are stored strings and are unaffected — a visible discontinuity, not corruption.
+3. **A threaded send that fails is invisible.** `send_email_with_attachments` returns
+   `(False, reason)` and never raises, so a dead key shows only in stdout. The synchronous warning
+   covers *no address on file*, **not delivery failure** — "no warning" must not be read as "sent".
+4. **Re-toggling re-sends**, by decision; an accidental untick-retick duplicates the mail.
+5. **Personnel writes gain a refusal path** that did not exist, so a save that used to succeed can
+   now 400. Correct, but it is the change existing users will feel.
+6. **Suggestions look empty on day one** — the tracker has no rows. Expected, not a defect, but say
+   so or it reads as broken.
+7. **Suggestions are a convenience, never a source of truth** — they reflect what was *claimed*
+   before. Do not later "improve" tap-to-fill into automatic prefill; that is how a stale figure
+   gets paid.
+
 ## Reimbursement Tracker
 
 **Status:** `Executed — 018cfd0` (implementation by Codex, plus four fixes from the review here, in

@@ -64,6 +64,24 @@
     .rt-modal-content > form { display: flex; flex-direction: column; max-height: 100%; min-height: 0; }
     .rt-modal-content > form > .modal-body { min-height: 0; overflow-y: auto; }
     .rt-category-grid .form-label { color: var(--app-muted-text, #60738d); font-size: .75rem; font-weight: 800; }
+    .rt-suggestions { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; }
+    .rt-suggest-chip {
+        background: var(--app-surface-raised, #f7fafd);
+        border: 1px solid var(--app-border, #d6e0ec);
+        border-radius: 999px;
+        color: var(--app-muted-text, #60738d);
+        cursor: pointer;
+        font-size: .72rem;
+        font-weight: 800;
+        line-height: 1.2;
+        padding: .28rem .55rem;
+    }
+    .rt-suggest-chip:hover, .rt-suggest-chip:focus-visible {
+        background: var(--app-surface, #fff);
+        border-color: #5aa7ff;
+        color: var(--app-text, #16243a);
+    }
+    .rt-suggest-chip:focus-visible { outline: 2px solid #5aa7ff; outline-offset: 2px; }
     .rt-total-box { background: var(--app-surface-raised, #f7fafd); border: 1px solid var(--app-border, #d6e0ec); border-radius: .7rem; padding: .75rem 1rem; }
     .rt-total-value { color: var(--app-text, #16243a); font-size: 1.35rem; font-weight: 900; }
     .rt-confirm-backdrop { align-items: center; background: rgba(6, 17, 32, .68); display: none; inset: 0; justify-content: center; padding: 1rem; position: fixed; z-index: 2060; }
@@ -261,6 +279,7 @@
         ['car_repair', 'Car Repair'], ['service_materials', 'Service Materials'],
         ['hotel_accommodation', 'Hotel Accomodation'], ['others_misc', 'Others/Misc']
     ];
+    const SUGGESTION_LOOKBACK = 3;
     const byId = (id) => document.getElementById(id);
     const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
     const csrf = () => document.querySelector('meta[name="csrf-token"]')?.content || '';
@@ -396,6 +415,41 @@
         if (selected && candidates.some((engineer) => String(engineer.id) === String(selected))) select.value = selected;
     }
 
+    function recentRowsForEngineer(engineerId, excludeId = null) {
+        return state.rows
+            .filter((row) => String(row.engineer_id) === String(engineerId)
+                && (excludeId === null || String(row.id) !== String(excludeId)))
+            .sort((left, right) => {
+                const dateOrder = String(right.submission_date || '').localeCompare(String(left.submission_date || ''));
+                return dateOrder || Number(right.id || 0) - Number(left.id || 0);
+            });
+    }
+
+    function renderCategorySuggestions() {
+        const engineerId = byId('rt-engineer')?.value || '';
+        const recentRows = engineerId ? recentRowsForEngineer(engineerId, state.editingId).slice(0, SUGGESTION_LOOKBACK) : [];
+
+        categories.forEach(([field]) => {
+            const container = byId('rt-suggestions-' + field);
+            if (!container) return;
+
+            const seen = new Set();
+            const suggestions = recentRows.reduce((items, row) => {
+                const numeric = moneyNumber(row[field]);
+                if (!numeric || numeric <= 0) return items;
+                const value = numeric.toFixed(2);
+                if (seen.has(value)) return items;
+                seen.add(value);
+                items.push(value);
+                return items;
+            }, []);
+
+            container.innerHTML = suggestions.map((value) => (
+                '<button type="button" class="rt-suggest-chip" data-rt-suggest-field="' + field + '" data-rt-suggest-value="' + value + '">PHP ' + escapeHtml(formatMoney(value)) + '</button>'
+            )).join('');
+        });
+    }
+
     function resetForm() {
         byId('rt-form').reset();
         byId('rt-id').value = '';
@@ -411,6 +465,7 @@
         byId('rt-control-preview').textContent = '—';
         categories.forEach(([field]) => { byId(`rt-${field}`).value = ''; });
         byId('rt-form-total').textContent = 'PHP 0.00';
+        renderCategorySuggestions();
     }
 
     function openForm(row = null) {
@@ -430,6 +485,7 @@
             byId('rt-paid-transfer-date').value = row.paid_transfer_date || '';
             byId('rt-remarks').value = row.remarks || '';
         }
+        renderCategorySuggestions();
         updateControlPreview();
         updateFormTotal();
         state.modal.show();
@@ -531,7 +587,11 @@
             if (!response.ok || !data.success) throw new Error(data.error || 'The reimbursement row could not be saved.');
             state.modal.hide();
             await loadData();
-            notify(editingId ? 'Reimbursement row updated.' : 'Reimbursement row added.', 'success');
+            if (data.warning) {
+                notify(data.warning, 'warning');
+            } else {
+                notify(editingId ? 'Reimbursement row updated.' : 'Reimbursement row added.', 'success');
+            }
         } catch (error) { notify(error.message, 'danger'); }
         finally { button.disabled = false; }
     }
@@ -590,15 +650,25 @@
         ['rt-engineer-filter', 'rt-office-filter', 'rt-paid-filter'].forEach((id) => { byId(id).value = ''; });
         renderRows();
     });
-    byId('rt-office').addEventListener('change', () => { populateEngineerOptions(); updateControlPreview(); });
-    byId('rt-engineer').addEventListener('change', () => updateControlPreview());
+    byId('rt-office').addEventListener('change', () => { populateEngineerOptions(); updateControlPreview(); renderCategorySuggestions(); });
+    byId('rt-engineer').addEventListener('change', () => { updateControlPreview(); renderCategorySuggestions(); });
     byId('rt-reference').addEventListener('input', updateControlPreview);
     byId('rt-submission-date').addEventListener('change', updateControlPreview);
 
     function initialize() {
-        byId('rt-category-grid').innerHTML = categories.map(([field, label]) => `<div class="col-6 col-md-4 col-lg-3"><label class="form-label" for="rt-${field}">${escapeHtml(label)}</label><input class="form-control rt-category-input" id="rt-${field}" type="number" min="0" step="0.01" inputmode="decimal"></div>`).join('');
+        byId('rt-category-grid').innerHTML = categories.map(([field, label]) => `<div class="col-6 col-md-4 col-lg-3"><label class="form-label" for="rt-${field}">${escapeHtml(label)}</label><input class="form-control rt-category-input" id="rt-${field}" type="number" min="0" step="0.01" inputmode="decimal"><div class="rt-suggestions" id="rt-suggestions-${field}" aria-live="polite"></div></div>`).join('');
         categories.forEach(([field]) => byId(`rt-${field}`).addEventListener('input', updateFormTotal));
         state.modal = window.bootstrap?.Modal ? window.bootstrap.Modal.getOrCreateInstance(byId('rt-modal')) : { show: () => byId('rt-modal').classList.add('show'), hide: () => byId('rt-modal').classList.remove('show') };
+        byId('rt-category-grid').addEventListener('click', (event) => {
+            const chip = event.target.closest('.rt-suggest-chip');
+            if (!chip) return;
+            const field = chip.dataset.rtSuggestField;
+            const input = byId('rt-' + field);
+            if (!input) return;
+            input.value = chip.dataset.rtSuggestValue || '';
+            updateFormTotal();
+            input.focus();
+        });
         renderHeader();
         loadData().catch((error) => notify(error.message, 'danger'));
     }

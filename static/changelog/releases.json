@@ -1826,6 +1826,15 @@
             "admins"
           ],
           "sort_order": 20
+        },
+        {
+          "item_key": "2026-08-12-tracker-round-two",
+          "category": "Reimbursement Tracker",
+          "description": "Reimbursement Tracker exports now contain only the seven Accounting columns, paid rows can notify the engineer with configured CC copies, duplicate initials are guarded, and recent amounts can be chosen from per-engineer suggestion chips.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 30
         }
       ]
     }

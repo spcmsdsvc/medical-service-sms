@@ -384,6 +384,10 @@ EMAIL_RECIPIENT_GROUPS = {
         'label': 'Reimbursement Accounting',
         'description': 'Future accounting recipients for reimbursement handoff.'
     },
+    'reimbursement_tracker_paid_cc': {
+        'label': 'Reimbursement Tracker Paid CC',
+        'description': 'Additional recipients copied when a Reimbursement Tracker row is marked Paid in Full.'
+    },
     'lpr_procurement': {
         'label': 'LPR Procurement',
         'description': 'Recipients for approved Local Purchase Requisition procurement handoff.'
@@ -413,6 +417,7 @@ EMAIL_RECIPIENT_GROUP_ORDER = [
     'cash_advance_accounting',
     'cash_advance_release',
     'reimbursement_accounting',
+    'reimbursement_tracker_paid_cc',
     'lpr_procurement',
     'leave_request_hr',
     'leave_request_cc',
@@ -1866,7 +1871,9 @@ class PurchaseOrder(db.Model):
 
 
 REIMBURSEMENT_TRACKER_EXPENSE_FIELDS = (
-    # These labels intentionally preserve the workbook's Accounting-facing spellings.
+    # These are the register form's labels, mirrored by hand in
+    # templates/reimbursement_tracker.html. Keep both sides aligned; they are no longer
+    # written into the trimmed Accounting export.
     ('representation', 'Representation'),
     ('per_diem', 'Per Diem'),
     ('parking', 'Parking'),
@@ -2680,6 +2687,10 @@ _hr_schedule_view_column_ready = False
 _user_admin_capability_columns_ready = False
 _purchase_order_schema_ready = False
 _reimbursement_tracker_schema_ready = False
+_engineer_initials_correction_ready = False
+# Cached so the per-request hook can return the last scan instead of re-reading every
+# engineer row. Reset the _ready flag above to force a fresh pass.
+_engineer_initials_duplicates = {}
 _reimbursement_accounting_columns_ready = False
 _reimbursement_payment_columns_ready = False
 _shift_travel_block_columns_ready = False
@@ -3551,8 +3562,76 @@ def ensure_purchase_order_schema():
         )
 
 
+def ensure_unique_engineer_initials():
+    """Apply the one known-safe legacy correction and report duplicate initials.
+
+    Initials intentionally do not have a database unique index. Existing live rows can
+    already share a value, and the app's additive migration helpers are deliberately
+    tolerant of index failures; a failed unique-index attempt would therefore look like
+    a constraint while silently doing nothing. Route-level validation is the real guard.
+    """
+    global _engineer_initials_correction_ready, _engineer_initials_duplicates
+
+    # This is called from @app.before_request, so it must do its work once and then get out
+    # of the way -- every sibling in that hook early-returns on a _ready flag. Re-scanning
+    # the whole engineer table per request cost ~0.35 ms against ~0.04 ms for a guarded
+    # sibling, and it scans for a value that only changes when Personnel is edited, which
+    # now refuses duplicates outright. The scan is a startup/ops signal, not per-request work.
+    if _engineer_initials_correction_ready:
+        return _engineer_initials_duplicates
+
+    try:
+        legacy_engineer = Engineer.query.filter_by(employee_id='00021').first()
+        if (
+            legacy_engineer and
+            (clean_str(legacy_engineer.name) or '').casefold() == 'jocel prudente' and
+            (clean_str(legacy_engineer.initials) or '').upper() == 'JP'
+        ):
+            legacy_engineer.initials = 'JOP'
+            db.session.add(ActivityLog(
+                user='System',
+                action='Corrected the anchored legacy engineer initials from JP to JOP.'
+            ))
+            db.session.commit()
+            print('[Engineer Initials] Applied the anchored legacy JP -> JOP correction.', flush=True)
+    except Exception as initials_correction_error:
+        db.session.rollback()
+        print(
+            f'[Engineer Initials] Legacy correction skipped: {initials_correction_error}',
+            flush=True,
+        )
+        # Leave the flag unset so the next request retries rather than caching a failure.
+        return _engineer_initials_duplicates
+
+    initials_map = {}
+    for engineer in Engineer.query.order_by(Engineer.id.asc()).all():
+        initials = (clean_str(engineer.initials) or '').upper()
+        if initials:
+            initials_map.setdefault(initials, []).append(engineer.id)
+
+    duplicate_initials = {
+        initials: engineer_ids
+        for initials, engineer_ids in initials_map.items()
+        if len(engineer_ids) > 1
+    }
+    if duplicate_initials:
+        print(
+            '[Engineer Initials] Duplicate initials remain: ' +
+            ', '.join(sorted(duplicate_initials)),
+            flush=True,
+        )
+    _engineer_initials_duplicates = duplicate_initials
+    _engineer_initials_correction_ready = True
+    return duplicate_initials
+
+
 def ensure_reimbursement_tracker_schema():
-    """Create the standalone reimbursement tracker table without replacing live data."""
+    """Create the standalone tracker table without replacing live data.
+
+    No unique index is added for engineer initials here: legacy duplicates exist and
+    migration index failures are intentionally non-fatal, so enforcement belongs in the
+    personnel write routes where the current holder can be named to the user.
+    """
     global _reimbursement_tracker_schema_ready
 
     if _reimbursement_tracker_schema_ready:
@@ -7420,6 +7499,113 @@ def send_reimbursement_notification_email_async(app_obj, recipient_user_ids, rei
     email_thread = threading.Thread(target=worker, daemon=True)
     email_thread.start()
     print(f"[EMAIL] Reimbursement notification background email queued: {action_label}", flush=True)
+
+
+def reimbursement_tracker_engineer_email(entry):
+    """Return the current engineer address for a tracker row, if configured."""
+    engineer = getattr(entry, 'engineer', None) if entry else None
+    direct_email = normalize_single_email_address(getattr(engineer, 'email', None))
+    if direct_email:
+        return direct_email
+
+    linked_user = getattr(engineer, 'user_account', None) if engineer else None
+    return normalize_single_email_address(get_user_email_for_notification(linked_user))
+
+
+def format_reimbursement_tracker_paid_email(entry):
+    """Return the paid-state tracker email without side effects."""
+    engineer = getattr(entry, 'engineer', None) if entry else None
+    engineer_name = clean_str(getattr(engineer, 'name', None)) or 'Engineer'
+    reference = clean_str(getattr(entry, 'reference', None)) or 'Unreferenced batch'
+    control_number = clean_str(getattr(entry, 'control_number', None)) or 'Not assigned'
+    total_value = Decimal(str(getattr(entry, 'total', None) or 0)).quantize(Decimal('0.01'))
+    total_label = f'PHP {total_value:,.2f}'
+    transfer_date = getattr(entry, 'paid_transfer_date', None)
+    transfer_date_label = transfer_date.isoformat() if transfer_date else 'Not specified'
+
+    subject = f'Reimbursement Paid - {control_number}'
+    text_body = "\n".join([
+        'Reimbursement Paid',
+        '',
+        f'Engineer: {engineer_name}',
+        f'Reference: {reference}',
+        f'Control Number: {control_number}',
+        f'Total: {total_label}',
+        f'Transfer Date: {transfer_date_label}',
+        '',
+        'Please open the Medical Service system for full details.',
+    ])
+
+    rows = [
+        ('Engineer', engineer_name),
+        ('Reference', reference),
+        ('Control Number', control_number),
+        ('Total', total_label),
+        ('Transfer Date', transfer_date_label),
+    ]
+    detail_rows = ''.join(
+        f"<tr><td style='padding:7px 10px;font-weight:700;border-bottom:1px solid #e5e7eb;color:#334155;'>{html.escape(label)}</td>"
+        f"<td style='padding:7px 10px;border-bottom:1px solid #e5e7eb;color:#0f172a;'>{html.escape(str(value or ''))}</td></tr>"
+        for label, value in rows
+    )
+    html_body = f"""
+    <div style="font-family:Arial,sans-serif;color:#111827;line-height:1.5;">
+        <h2 style="margin:0 0 12px;color:#0f172a;">Reimbursement Paid</h2>
+        <table style="border-collapse:collapse;border:1px solid #e5e7eb;min-width:420px;">
+            {detail_rows}
+        </table>
+        <p style="margin-top:16px;color:#374151;">Please open the Medical Service system for full details.</p>
+    </div>
+    """
+    return subject, text_body, html_body
+
+
+def send_reimbursement_tracker_paid_email_async(app_obj, entry_id):
+    """Notify the current engineer after an existing tracker row becomes paid."""
+    normalized_entry_id = clean_int(entry_id)
+    if not normalized_entry_id:
+        return False
+
+    def worker():
+        with app_obj.app_context():
+            try:
+                entry = db.session.get(ReimbursementTrackerEntry, normalized_entry_id)
+                if not entry:
+                    print(
+                        f'[EMAIL] Reimbursement Tracker paid notification skipped: row #{normalized_entry_id} not found.',
+                        flush=True,
+                    )
+                    return
+
+                engineer_email = reimbursement_tracker_engineer_email(entry)
+                if not engineer_email:
+                    print(
+                        f'[EMAIL] Reimbursement Tracker paid notification skipped: row #{normalized_entry_id} has no engineer email address.',
+                        flush=True,
+                    )
+                    return
+
+                cc_emails = get_active_email_recipients_by_group('reimbursement_tracker_paid_cc')
+                subject, text_body, html_body = format_reimbursement_tracker_paid_email(entry)
+                sent, message = send_email_with_attachments(
+                    [engineer_email],
+                    subject,
+                    text_body,
+                    html_body,
+                    cc_emails=cc_emails,
+                )
+                print(
+                    f'[EMAIL] Reimbursement Tracker paid notification row #{normalized_entry_id}: sent={sent} | {message}',
+                    flush=True,
+                )
+            except Exception as email_error:
+                print(f'[EMAIL] Reimbursement Tracker paid notification worker failed: {email_error}', flush=True)
+
+    email_thread = threading.Thread(target=worker, daemon=True)
+    email_thread.start()
+    print('[EMAIL] Reimbursement Tracker paid notification background email queued.', flush=True)
+    return True
+
 
 def get_reimbursement_accounting_recipient_emails():
     """Return Settings-managed Accounting recipients for approved Reimbursements."""
@@ -40147,32 +40333,12 @@ def build_reimbursement_tracker_workbook(records):
     worksheet = workbook.active
     worksheet.title = 'Sheet'
     worksheet.sheet_view.showGridLines = False
-    worksheet['A1'] = 'Current Input'
-    worksheet['S1'] = 'by: Diary Dizon'
-    worksheet['V1'] = 'Accounting'
-    worksheet.merge_cells('S1:U1')
-    worksheet.merge_cells('V1:X1')
-    worksheet['A5'] = 'Reimbursements'
-
-    headers = [
-        'Reference', 'Submission Date', 'Control #', 'Reimbursement', 'Engineer', 'Office',
-        'Total', 'Summary',
-        *[label for _field, label in REIMBURSEMENT_TRACKER_EXPENSE_FIELDS],
-        'Paid in Full', 'Paid Amount', 'Transfer Date\n(Auto Fill)',
-        'Reimbursed in Full', 'Reimbursed Amount', 'Transfer Date\n(Auto Fill)',
-        'Difference\nPaid to Engr Vs. Reimbursed by Acctg.',
-        'Payment Status to Engineers', 'Remarks',
-    ]
-    for row_number in (2, 6):
-        for column_number, header in enumerate(headers, start=1):
-            worksheet.cell(row_number, column_number, header)
+    headers = ['Reference', 'Submission Date', 'Control #', 'Reimbursement', 'Engineer', 'Office', 'Total']
+    for column_number, header in enumerate(headers, start=1):
+        worksheet.cell(1, column_number, header)
 
     for offset, record in enumerate(records):
-        row_number = 7 + offset
-        category_values = [
-            Decimal(str(getattr(record, field) or 0)).quantize(Decimal('0.01'))
-            for field, _label in REIMBURSEMENT_TRACKER_EXPENSE_FIELDS
-        ]
+        row_number = 2 + offset
         engineer_name = record.engineer_name_snapshot or (record.engineer.name if record.engineer else '')
         values = [
             record.reference or '',
@@ -40181,74 +40347,34 @@ def build_reimbursement_tracker_workbook(records):
             record.description or '',
             engineer_name,
             record.office or '',
-            None,
-            None,
-            *category_values,
-            bool(record.paid_in_full),
-            Decimal(str(record.paid_amount)).quantize(Decimal('0.01')) if record.paid_amount is not None else None,
-            record.paid_transfer_date,
-            None,
-            None,
-            None,
-            None,
-            None,
-            record.remarks or '',
+            Decimal(str(record.total or 0)).quantize(Decimal('0.01')),
         ]
         for column_number, value in enumerate(values, start=1):
             worksheet.cell(row_number, column_number, value)
-        worksheet.cell(row_number, 7, f'=SUM(I{row_number}:R{row_number})')
-        worksheet.cell(row_number, 23, f'=IF(V{row_number}=TRUE,G{row_number},"")')
-        worksheet.cell(row_number, 24, f'=IF(W{row_number}<>"",IF(X{row_number}="",TODAY(),X{row_number}),"")')
-        worksheet.cell(row_number, 25, f'=IF(OR(V{row_number}=TRUE,W{row_number}<>""),W{row_number}-G{row_number},0)')
-        worksheet.cell(
-            row_number,
-            26,
-            f'=IF(Y{row_number}<0,"OVER PAID",IF(Y{row_number}>0,"EXCESS REIMBURSEMENT BY ACCTG.",""))',
-        )
 
     dark_fill = PatternFill('solid', fgColor='16243A')
-    banner_fill = PatternFill('solid', fgColor='244D8F')
     header_font = Font(color='FFFFFF', bold=True)
-    banner_font = Font(color='FFFFFF', bold=True)
     border = Border(bottom=Side(style='thin', color='D6E0EC'))
     for cell in worksheet[1]:
-        if cell.value:
-            cell.fill = banner_fill
-            cell.font = banner_font
-            cell.alignment = Alignment(horizontal='center', vertical='center')
-    for row_number in (2, 6):
-        for cell in worksheet[row_number]:
-            cell.fill = dark_fill
-            cell.font = header_font
-            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-            cell.border = border
-    last_row = max(6, 6 + len(records))
-    for row_number in range(7, last_row + 1):
+        cell.fill = dark_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell.border = border
+
+    last_row = 1 + len(records)
+    for row_number in range(2, last_row + 1):
         for cell in worksheet[row_number]:
             cell.alignment = Alignment(vertical='top', wrap_text=True)
             cell.border = border
         worksheet.cell(row_number, 2).number_format = 'yyyy-mm-dd'
-        worksheet.cell(row_number, 21).number_format = 'yyyy-mm-dd'
-        worksheet.cell(row_number, 24).number_format = 'yyyy-mm-dd'
-        for column_number in [7, *range(9, 19), 20, 23, 25]:
-            worksheet.cell(row_number, column_number).number_format = '#,##0.00'
+        worksheet.cell(row_number, 7).number_format = '#,##0.00'
 
-    worksheet.freeze_panes = 'A7'
-    worksheet.auto_filter.ref = f'A6:AA{last_row}'
-    widths = [18, 16, 20, 34, 28, 14, 15, 16, 14, 14, 14, 14, 18, 14, 14, 18, 20, 16, 16, 15, 18, 18, 18, 18, 22, 30, 32]
+    worksheet.freeze_panes = 'A2'
+    worksheet.auto_filter.ref = f'A1:G{last_row}'
+    widths = [18, 16, 20, 34, 28, 14, 15]
     for column_number, width in enumerate(widths, start=1):
         worksheet.column_dimensions[get_column_letter(column_number)].width = width
-    worksheet.row_dimensions[1].height = 24
-    worksheet.row_dimensions[2].height = 38
-    worksheet.row_dimensions[6].height = 38
-
-    # Column X intentionally carries the workbook's self-reference. Iterative
-    # calculation makes Excel resolve it without a circular-reference warning.
-    workbook.calculation.iterate = True
-    workbook.calculation.iterateCount = 100
-    workbook.calculation.iterateDelta = 0.001
-    workbook.calculation.fullCalcOnLoad = True
-    workbook.calculation.forceFullCalc = True
+    worksheet.row_dimensions[1].height = 38
     return workbook
 
 
@@ -40347,6 +40473,7 @@ def add_reimbursement_tracker_entry():
         updated_by=current_user.id,
     )
     db.session.add(entry)
+    # Creation deliberately never sends a paid notification, even if the row starts paid.
     add_activity_log_entry(
         f"Added Reimbursement Tracker row {values['control_number']} ({values['reference']})"
     )
@@ -40372,6 +40499,7 @@ def update_reimbursement_tracker_entry(id):
     if validation_error:
         return jsonify({'success': False, 'error': validation_error}), 400
 
+    was_paid_in_full = bool(entry.paid_in_full)
     old_control_number = entry.control_number
     for field, value in values.items():
         setattr(entry, field, value)
@@ -40385,7 +40513,18 @@ def update_reimbursement_tracker_entry(id):
     except IntegrityError:
         db.session.rollback()
         return jsonify({'success': False, 'error': 'The reimbursement row could not be updated.'}), 409
-    return jsonify({'success': True, 'entry': reimbursement_tracker_entry_to_dict(entry)})
+
+    warning = ''
+    if not was_paid_in_full and bool(entry.paid_in_full):
+        if reimbursement_tracker_engineer_email(entry):
+            send_reimbursement_tracker_paid_email_async(app, entry.id)
+        else:
+            warning = 'Paid status saved, but the engineer has no email address on file.'
+
+    response_payload = {'success': True, 'entry': reimbursement_tracker_entry_to_dict(entry)}
+    if warning:
+        response_payload['warning'] = warning
+    return jsonify(response_payload)
 
 
 @app.route('/delete_reimbursement_tracker_entry/<int:id>', methods=['DELETE', 'POST'])
@@ -45002,6 +45141,19 @@ def batch_delete_shifts():
 
 # --- PERSONNEL HR ACTIONS ---
 
+def engineer_with_initials(initials, exclude_id=None):
+    """Return the existing Engineer that holds these initials, if any."""
+    initials_key = (clean_str(initials) or '').casefold()
+    if not initials_key:
+        return None
+
+    query = Engineer.query.filter(func.lower(Engineer.initials) == initials_key)
+    excluded_engineer_id = clean_int(exclude_id)
+    if excluded_engineer_id:
+        query = query.filter(Engineer.id != excluded_engineer_id)
+    return query.order_by(Engineer.id.asc()).first()
+
+
 @app.route('/add_engineer', methods=['POST'])
 @login_required
 def add_engineer():
@@ -45050,6 +45202,16 @@ def add_engineer():
 
     if staff_type == 'engineer' and Engineer.query.filter_by(employee_id=emp_id).first():
         return jsonify({'message': f'Error: Employee ID {emp_id} is already taken.'}), 400
+
+    if staff_type == 'engineer':
+        initials_holder = engineer_with_initials(initials)
+        if initials_holder:
+            return jsonify({
+                'message': (
+                    f'Initials {initials} are already assigned to {initials_holder.name}. '
+                    'Choose unique initials.'
+                )
+            }), 400
 
     first_name = name_val.split()[0].lower()
     if User.query.filter_by(username=first_name).first():
@@ -45178,8 +45340,24 @@ def update_engineer(id):
     if new_eid != eng.employee_id and Engineer.query.filter_by(employee_id=new_eid).first():
         return jsonify({'message': 'Employee ID already taken.'}), 400
 
+    name_val = clean_str(p.get('name'))
+    initials = clean_str(p.get('initials'))
+    if not new_eid or not name_val or not initials:
+        return jsonify({
+            'message': 'Required fields missing: Employee ID, Name, and Initials are mandatory for engineers.'
+        }), 400
+
+    initials_holder = engineer_with_initials(initials, exclude_id=eng.id)
+    if initials_holder:
+        return jsonify({
+            'message': (
+                f'Initials {initials} are already assigned to {initials_holder.name}. '
+                'Choose unique initials.'
+            )
+        }), 400
+
     eng.employee_id = new_eid
-    eng.name, eng.initials = clean_str(p['name']), clean_str(p['initials'])
+    eng.name, eng.initials = name_val, initials
     eng.phone, eng.email, eng.branch = clean_str(p.get('phone')), clean_str(p.get('email')), clean_str(p.get('branch'))
 
     db.session.commit()
@@ -45766,6 +45944,7 @@ def ensure_runtime_sqlite_migrations_before_request():
     ensure_user_admin_capability_columns()
     ensure_purchase_order_schema()
     ensure_reimbursement_tracker_schema()
+    ensure_unique_engineer_initials()
 
     # Fresh Railway volume emergency login bootstrap.
     ensure_emergency_superadmin_from_env()
@@ -45989,6 +46168,7 @@ def initialize_database():
         ensure_user_admin_capability_columns()
         ensure_purchase_order_schema()
         ensure_reimbursement_tracker_schema()
+        ensure_unique_engineer_initials()
         ensure_engineer_signature_column()
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()
