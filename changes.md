@@ -36,6 +36,10 @@ codex changes - 2026-08-12 (Analytics Equipment tab — Part B)
   tests.test_analytics_purchase_orders tests.test_analytics_chart_sizing -v` — 24 tests passed;
   Python compilation, Node JavaScript syntax checking, and `git diff --check` passed.
 
+* Recorded the execution outcome in `plans.md` with implementation commits `081d647` and
+  `fd781b1`, the full-suite and isolated-browser verification results, the v87/v78 cache bumps,
+  and the explicit decision to leave push/deployment pending owner instruction.
+
 claude changes - 2026-08-12 (journal refresh before a session handoff)
 
 ## `pending-work.md` refreshed at the owner's request

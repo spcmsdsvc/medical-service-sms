@@ -57,11 +57,12 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Machine-scoped P.O. records, and an Analytics Equipment tab
 
-**Status:** `In progress`. Execution authorized by the project owner on 2026-08-12 after the
-plan was reviewed and the separate go-ahead was given. No implementation work was present before
-this instruction.
+**Status:** `Executed — 081d647 + fd781b1`. Execution was authorized by the project owner on
+2026-08-12 after the plan was reviewed and the separate go-ahead was given.
 **Approved:** 2026-08-12
 **Started:** 2026-08-12, after the project owner explicitly instructed execution.
+**Finished:** 2026-08-12 in Part A commit `081d647` and Part B commit `fd781b1`; the documentation
+status was recorded in a follow-up journal commit after the implementation hash existed.
 **Detailed:** 2026-08-12, after reading the P.O. register end to end, the `Product`/`Client`
 relationship, the four existing type-to-search pickers, and the Analytics page and its chart
 helpers. Three claims were verified by reading the code rather than accepted from the exploration
@@ -451,6 +452,31 @@ row is legacy:
 - Ctrl+P on any tab → every authorized section prints, data tables visible, tab buttons gone.
 
 ### After implementation
+
+### Outcome — 2026-08-12
+
+Self-review completed against the endpoint, tab template, analytics CSS/JavaScript, focused tests,
+change journal, and release manifest. The implementation matched the approved decisions: one
+nullable machine serial per P.O.; legacy rows remain readable but require a machine on edit; the
+Equipment analytics are counts-only, company-wide, and server-gated alongside the existing
+capabilities; and no legacy P.O. or equipment row was backfilled, deleted, or rewritten.
+
+- Part A is committed as `081d647` and Part B as `fd781b1`; the two implementation halves remain
+  independently reviewable. The Part B service-worker cache moved from live `v86` to `v87`, and
+  both analytics asset query strings moved from `v77` to `v78`.
+- `changes.md` and the dated `2026-08-12` release entry were updated. The release entry now covers
+  both machine-scoped P.O. records and the Equipment analytics tab.
+- Focused analytics verification passed 24 tests; the full regression suite passed 643 tests with
+  no failures or skips. `python -m py_compile app.py`, `node --check static/js/app-analytics.js`,
+  JSON parsing, and `git diff --check` also passed.
+- Browser verification used a fresh isolated database on port 5058. Reports access showed three
+  tabs; Equipment charts redrew after reveal and at 375px with no horizontal overflow; keyboard
+  arrow navigation moved focus and panels; P.O.-only access showed exactly Purchase orders and
+  Equipment with no schedule markup; linked/unlinked counts rendered; and browser console
+  warnings/errors were empty. Print behavior was covered by the print CSS and source assertions;
+  the in-app browser run did not invoke the native print dialog.
+- The database, generated output, temporary QA files, loose handoff artifact, and deployment state
+  were deliberately excluded. Push and deployment remain pending a separate owner instruction.
 
 - Re-read this plan against the diff and amend this entry if the implementation differed.
 - Add a dated `changes.md` section, newest first. Do not log secrets or database contents.
