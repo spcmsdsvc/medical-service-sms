@@ -3,7 +3,6 @@
 import json
 import os
 import pathlib
-import re
 import tempfile
 import unittest
 import uuid
@@ -513,27 +512,11 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         self.assertIn('Reimbursement Tracker', release['title'])
         self.assertNotIn('Backup', release['title'])
 
-    def test_every_theme_token_the_page_uses_is_actually_defined(self):
-        """A misspelled custom property is invisible: it silently takes its fallback.
-
-        The page shipped with `--app-raised-surface` -- the real token is
-        `--app-surface-raised`, transposed -- so the mobile cards and the form's total
-        box kept a light background in dark mode while their text went light, leaving
-        white on white at 1.04:1 contrast. Asserting the class, not the one instance.
-        """
-        template = (ROOT / 'templates' / 'reimbursement_tracker.html').read_text(encoding='utf-8')
-        themes = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
-        defined = set(re.findall(r'(--app-[a-z0-9-]+)\s*:', themes))
-        self.assertIn('--app-surface-raised', defined, 'token source file looks wrong')
-
-        used = set(re.findall(r'var\(\s*(--app-[a-z0-9-]+)', template))
-        self.assertTrue(used, 'expected the page to use theme tokens')
-        # Two tokens are deliberately undefined: their fallbacks are fixed colours that
-        # are correct in both themes (a navy table header matching the Excel export, and
-        # a blue focus ring). Everything else must resolve, or dark mode silently breaks.
-        deliberate = {'--app-table-head', '--app-focus-ring'}
-        undefined = sorted(used - defined - deliberate)
-        self.assertEqual(undefined, [], f'undefined theme tokens fall back silently: {undefined}')
+    # The theme-token guard that used to live here was scoped to this one template while
+    # its docstring claimed it asserted the class. It therefore could not catch the same
+    # misspelling when it reappeared on P.O. Details. It is now repo-wide, covering this
+    # page along with every other, in tests/test_appearance_themes.py:
+    # AppearanceThemeSourceTests.test_every_theme_token_used_anywhere_is_actually_defined.
 
     def test_batch_suggestion_continues_from_the_workbook_not_from_one(self):
         """History was not imported, but Accounting reads the batch numbers as one sequence.

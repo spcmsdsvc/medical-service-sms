@@ -1,4 +1,5 @@
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -7,8 +8,76 @@ from tests.sw_cache_version import assert_cache_version_at_least
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Tokens deliberately left undefined in app-themes.css. Every entry is a fixed brand
+# colour whose fallback renders the same in both themes rather than inverting:
+#   --app-table-head   navy table header matching the Excel export
+#   --app-focus-ring   blue focus ring
+#   --app-accent       brand blue, used for text and outlines only
+#   --app-danger       brand red, only ever paired with a hardcoded #fff foreground
+#   --app-danger-text  brand red used as text
+# Add to this set only when the fallback is safe in BOTH themes, and say why. A token
+# used as a `background:` almost never qualifies -- see the test's docstring.
+UNDEFINED_TOKEN_EXEMPTIONS = {
+    '--app-table-head',
+    '--app-focus-ring',
+    '--app-accent',
+    '--app-danger',
+    '--app-danger-text',
+}
+
 
 class AppearanceThemeSourceTests(unittest.TestCase):
+    def test_every_theme_token_used_anywhere_is_actually_defined(self):
+        """A misspelled custom property is invisible: it silently takes its fallback.
+
+        This has now shipped three times, each time as a transposition of a real token:
+        `--app-raised-surface` for `--app-surface-raised` on the Reimbursement Tracker,
+        the same misspelling again on P.O. Details (mobile cards, and later the equipment
+        picker's hover state at 1.01:1 in dark mode), and `--app-text-muted` for
+        `--app-muted-text` in the request-recall modal.
+
+        The mechanism is always the same and always one-directional. The fallback is a
+        light colour chosen to look right in light mode, so light mode is perfect and only
+        dark mode breaks -- a light `background:` under `var(--app-text)`, which in dark
+        mode is near-white. Nothing errors and nothing logs.
+
+        The previous guard asserted this for `reimbursement_tracker.html` alone while its
+        own docstring claimed it asserted the class. It could not have caught either later
+        occurrence. This one reads every template and every stylesheet, so a new page
+        inherits the guard instead of having to remember it.
+        """
+        themes = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
+        defined = set(re.findall(r'(--app-[a-z0-9-]+)\s*:', themes))
+        self.assertIn('--app-surface-raised', defined, 'token source file looks wrong')
+        self.assertIn('--app-muted-text', defined, 'token source file looks wrong')
+
+        sources = sorted(
+            list((ROOT / 'templates').rglob('*.html'))
+            + list((ROOT / 'static' / 'css').rglob('*.css'))
+            + list((ROOT / 'static' / 'js').rglob('*.js'))
+        )
+        self.assertGreater(len(sources), 20, 'expected to scan the whole front end')
+
+        offenders = {}
+        seen_any_token = False
+        for path in sources:
+            used = set(re.findall(
+                r'var\(\s*(--app-[a-z0-9-]+)',
+                path.read_text(encoding='utf-8', errors='ignore'),
+            ))
+            seen_any_token = seen_any_token or bool(used)
+            undefined = sorted(used - defined - UNDEFINED_TOKEN_EXEMPTIONS)
+            if undefined:
+                offenders[path.relative_to(ROOT).as_posix()] = undefined
+
+        self.assertTrue(seen_any_token, 'scan found no theme tokens at all -- check the glob')
+        self.assertEqual(
+            offenders,
+            {},
+            'undefined theme tokens fall back silently and break dark mode: '
+            f'{offenders}',
+        )
+
     def test_shared_theme_assets_and_controls_are_present(self):
         layout = (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8')
         settings = (ROOT / 'templates' / 'settings.html').read_text(encoding='utf-8')

@@ -24,6 +24,15 @@
             "admins"
           ],
           "sort_order": 20
+        },
+        {
+          "item_key": "2026-08-12-dark-mode-contrast-fixes",
+          "category": "Appearance",
+          "description": "Dark mode fixes: the equipment picker's highlighted row on P.O. Details, the P.O. cards on phones, and the Cancel button on every request recall dialog are readable again instead of appearing blank.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 30
         }
       ]
     },
