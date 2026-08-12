@@ -7,29 +7,73 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last updated: 2026-08-12, at the owner's request, after the Reimbursement Tracker shipped and went
-through two rounds of review.
+Last updated: 2026-08-12 (second refresh that day), at the owner's request, after machine-scoped
+P.O. records and the Analytics Equipment tab shipped, were reviewed here, and were pushed.
 
-**Start here if you are picking this up cold.** Suite green at **635 tests** with one pre-existing
-skip. `origin/main` was at `7cc7fe7` when this was written — **confirm the tip with
-`git log --oneline -1` rather than this line.** It has now gone stale three times, and the third was
-inside an hour: this paragraph said `aaeb579` and `634 tests` before `7cc7fe7` landed while the same
-session was still open. **A commit hash in a document is a timestamp, not a fact.** Service worker
-read `v86-reimbursement-tracker`; **read the live value out of `app.py` before committing, never from
-this note.** The working tree carries **four** local artifacts: `scheduler.db`, `output/`, `tmp/`,
-and the loose 2026-07-26 handoff file.
+**Start here if you are picking this up cold.** Suite green at **643 tests** with one pre-existing
+skip. `origin/main` was at `fd8625c` when this was written and **the local branch was in sync with
+it — nothing unpushed for the first time in several sessions.** **Confirm both with
+`git log --oneline -1` and `git rev-list --left-right --count origin/main...HEAD` rather than this
+line.** It has now gone stale four times, once inside an hour. **A commit hash in a document is a
+timestamp, not a fact.** Service worker read `v87-machine-scoped-po`; **read the live value out of
+`app.py` before committing, never from this note.** The working tree carries **four** local
+artifacts: `scheduler.db`, `output/`, `tmp/`, and the loose 2026-07-26 handoff file.
 
 **`Handoffs/` is tracked**, by the owner's decision on 2026-08-11 — see section 4.
 
-**There is no open defect.** Section 1 is empty. But **four things are waiting on the owner rather
+> ### ⚠️ Read before planning any verification: browser automation is no longer available here.
+>
+> The owner added a **non-negotiable** rule to `AGENTS.md` ("Codex App Safety During Testing") on
+> 2026-08-12 and confirmed it directly: **never close, archive, navigate away from, finalize or
+> terminate the agent app or task while testing, and do not use in-app browser automation for this
+> project.** Browser automation had been terminating the owner's own session, losing their in-flight
+> work. Verify with the Flask test client, source-level checks and local HTTP checks instead. If
+> browser verification seems essential, **stop and ask** — an approved plan is not permission.
+>
+> **This is a real loss, and pretending otherwise would be the mistake.** This file records over and
+> over that the dominant defect class here is *suite-invisible and browser-obvious*. The answer is
+> not to skip that coverage but to convert it into source-level guards that assert the **class** —
+> see the theme-token guard in section 6, which now catches in CI what a dark-mode browser check
+> used to catch by eye. Where that is genuinely impossible, say so plainly and hand the step to the
+> owner, exactly as the `ResizeObserver` item was handed over on 2026-08-09.
+
+**There is no open defect.** Section 1 is empty. But **five things are waiting on the owner rather
 than on code** — they are listed first because none of them will resolve themselves:
 
 | Waiting on | Why it matters |
 | --- | --- |
+| **89 of 145 clients have no equipment registered in Products** — added 2026-08-12 | A P.O. now requires a machine, and the picker deliberately offers **no free-text fallback**, so **P.O. entry is blocked for those clients until Products is backfilled**. This is the change users will feel first and it will read as breakage unless someone tells them it is deliberate. **Measured on the tracked local `scheduler.db`, not production** — 145 clients, 99 products, all assigned, across 56 distinct clients. Re-measure against the live database before acting on it |
 | **The `reimbursement_tracker_paid_cc` group has zero recipients** | Verified in the live database. The Paid in Full notification therefore reaches the engineer with **nobody copied**. Add recipients in Settings → Email Recipients. The feature works; it is just uncopied |
 | **Four engineers have no email address** — Kevin Garoche, Mark Felongco, Jocel Prudente, John Erick Wong | Marking their rows paid saves fine and shows Diary a warning, but nobody is notified. Fix in Personnel |
-| **Jocel Prudente still reads `JP` in the local database** | The `JP → JOP` correction runs on the first request after deploy, so it will not show here until the app is actually served. **Confirm it applied in production** rather than assuming |
+| **Jocel Prudente still reads `JP` in the local database** | The `JP → JOP` correction runs on the first request after deploy. **The code has now been pushed**, so unlike the previous refresh this is finally *confirmable* — one glance at Personnel in production closes it. Confirm rather than assume |
 | **The tracker holds 0 rows** | So the amount-suggestion chips show nothing yet, and the export is empty. Both fill in as Diary files batches — expected, not a fault |
+
+### Machine-scoped P.O. records and the Equipment tab, in five commits
+
+Built by Codex from the plan in `plans.md`, reviewed here afterwards. **The review found one real
+defect, and it was the same defect this file had already recorded from the previous feature.**
+
+| Commit | What |
+| --- | --- |
+| `081d647` | Part A — `purchase_order.product_serial`, type-to-search client picker, client-scoped equipment picker, machine column/filter/sort, 13-column export, and the two Products-side guards |
+| `fd781b1` | Part B — the Analytics page's first tab structure, plus the Equipment tab |
+| `66a2723` | Codex's execution outcome recorded in `plans.md` |
+| `73b4467` | **Review fix** — the transposed theme token, plus the guard widened repo-wide, plus the service worker label corrected |
+| `fd8625c` | The `AGENTS.md` browser rule and the journals |
+
+**What the review found, and why it matters more than the fix:** `templates/po_details.html` used
+`--app-raised-surface`; the token is `--app-surface-raised`. The new equipment picker's hover state
+measured **1.01:1 in dark mode** against 14.44:1 in light. That is *the same transposition, of the
+same token*, that produced the Reimbursement Tracker's 1.04:1 defect — and this one was slightly
+worse. Full mechanism and the durable fix are in section 6.
+
+**Two things Codex got right that this file had flagged as the riskiest parts**, worth recording
+because they are the cases where the plan's warnings did their job: the Excel column shift is
+arithmetically correct throughout (amount at `row[9]`/column J, `A1:M`, TOTAL `=SUM(J2:Jn)`), and
+both Products-side guards were built — `delete_product` now returns 409 on a referenced machine,
+and a serial rename repoints P.O. rows before the delete-and-recreate. **Both of those were latent
+bugs discovered while planning, not while coding**: `update_product` repointed `Shift.product_id`
+and nothing else, and `delete_product` had no reference check at all.
 
 ### The Reimbursement Tracker, in four commits
 
@@ -76,9 +120,16 @@ green for all three.
 > journal.** This file already carried the warning in a different form: *"re-measure before acting on
 > a number in here."*
 
-**Current release state:** the P.O. Dates, Amount and Complete Excel Export plan and the System
-Backup rework are both Executed and pushed. No approved plan is waiting to be built. **Edge remains
-the main browser-verification gap**; Brave is covered by the owner's daily use.
+**Current release state:** every plan in `plans.md` reads `Executed`, and as of 2026-08-12
+everything is **pushed and in sync with `origin/main`** — including the machine-scoped P.O. work,
+which deploys on push. No approved plan is waiting to be built.
+
+**The browser-verification picture changed on 2026-08-12 and the old line here is superseded.** It
+used to read *"Edge remains the main browser-verification gap; Brave is covered by the owner's daily
+use."* Both halves are still true, but they are no longer the point: **browser verification is now
+unavailable from this side entirely**, by the owner's rule at the top of this file. Every browser
+row in section 3 is therefore an owner task, not a deferred one. Do not plan work that depends on
+being able to look at it.
 
 ## The 2026-08-09 owner verification pass
 
@@ -1074,6 +1125,19 @@ too.
 | **The `JP → JOP` correction applying in production** — added 2026-08-12 | Proven in tests and against a seeded copy, both anchored on `employee_id 00021`. It runs on the first request after deploy. **The live database still reads `JP` here**, so nobody has yet seen it apply for real. One glance at Personnel after the deploy closes this |
 | **The Accounting export opened in Excel, not openpyxl** — added 2026-08-12 | The layout is asserted by test and by a read-back: one header row, seven columns, and a Total that is a number rather than a formula. **Diary has not opened one.** She is the only consumer, and the reason for the rewrite was that the old one carried too much — worth one look before she relies on it |
 
+**Everything below was added on 2026-08-12 with the machine-scoped P.O. work. All five are now
+owner tasks rather than deferred ones**, because browser verification is no longer available here —
+see the rule at the top of this file.
+
+| Item | Applies to |
+| --- | --- |
+| **The P.O. Add/Edit modal has never been opened in a browser** | The single largest gap in this feature. Part B got a browser pass; **Part A did not** — its journal records only `unittest`, `py_compile` and `git diff --check`. Every behaviour is proven by the test client. What that cannot prove is the interaction itself: that the client box searches, that the equipment box stays **disabled** until a client is chosen, and above all **that picking a machine and then changing the client clears and re-scopes the machine**. That last one is where a design like this usually breaks |
+| **The dark-mode fix is proven by arithmetic, not by eye** | The token now resolves and the contrast computes to 12.91:1, and a repo-wide test stops it regressing. **Nobody has looked at the dropdown in dark mode.** The arithmetic is strong evidence — stronger than a screenshot for contrast specifically — but it says nothing about whether the hover state looks right |
+| **The equipment picker at 375 px** | The modal gained `modal-dialog-scrollable` and a `max-height` in the same change. Section 6 records that a `.modal.fade` measures zero on every child in the pane, so this was never measurable from here even before the browser rule |
+| **`[DB MIGRATION] Added purchase_order.product_serial` in the production log** | It runs on the first request after deploy and was pushed on 2026-08-12. Confirm it appears **exactly once**, that nothing appears on restart, and that the P.O. row count is unchanged either side |
+| **The Equipment tab against real data** | Verified against fixtures with `linked + unlinked == total`. **The tracked local `scheduler.db` holds 0 purchase orders**, so from here the tab reads 0/0 and proves nothing. Check what the production register actually holds — see the row below, which turns on the same question |
+| **Whether any legacy P.O. rows exist at all** | The whole legacy-row design — readable without a machine, required on edit — assumes rows predating the change. **Locally there are none: 0 P.O. rows, and the `product_serial` column has not even been created yet** because the migration runs on first request. If production is also near-empty, that machinery is correct but unexercised, and the "Missing a machine" worklist will simply be empty. Worth one query before anyone treats an empty list as a bug |
+
 **Closed by the owner's 2026-08-09 pass**, listed so nobody re-opens them from an old copy of this
 file:
 
@@ -1251,9 +1315,21 @@ regex metacharacter comes back as a false negative. A clobber check written that
 48 of 49 lines of a pushed commit missing when none were. For literal whole-file checks use
 `[System.IO.File]::ReadAllText($path).Contains($line)`.
 
+> **SUPERSEDED 2026-08-12 — do not follow the paragraph below.** The owner's `AGENTS.md` rule
+> ("Codex App Safety During Testing") forbids in-app browser automation on this project, so
+> `preview_start` and the Browser pane are **not** to be used here at all. The database and port
+> hygiene below still applies to a plain local server; the browser half does not. **Ask the owner
+> before any browser verification** — an approved plan is not permission. See the notice at the top
+> of this file for why, and section 6 for what to build instead.
+
 **Running the app for verification:** explicit `MEDICAL_SERVICE_TEST_DB`, never port 5000,
 never `preview_start` name-mode, and stop every server afterwards. The Browser pane blocks
 origins it has not registered, so open the app with `preview_start` passing the URL.
+
+**Process hygiene, added 2026-08-12 with the same rule:** never issue process commands against the
+agent app, ChatGPT/OpenAI or their children. A process may be stopped **only** when it is an
+explicitly identified temporary project test server, its PID and command line were verified
+immediately beforehand, and stopping it is required for cleanup.
 
 **Confirm a defect injection actually applied before trusting what the test says.** Proving a
 new test fails without its fix is the standard here, and the check itself can lie: a
@@ -1296,6 +1372,34 @@ shift seeded in one module can land inside another's week-over-week window. Keep
 ---
 
 ## 5. Decided against — do not re-raise
+
+**The four machine-scoped P.O. decisions, settled with the owner on 2026-08-12.** All four were
+asked and answered before any code; the full reasoning is in the plan in `plans.md`.
+
+- **More than one machine per P.O.** A P.O. is issued *per machine*, so it is one nullable FK
+  column, not a link table. A contract covering three machines is three P.O. rows. If this is ever
+  revisited, `templates/travel_request.html:2788-2801` already holds the multi-select equipment
+  checklist pattern.
+- **A free-text machine fallback** when a client has no registered equipment. Refused deliberately,
+  and it is enforced *structurally* rather than by validation: `saveForm` reads only the hidden
+  field, so a typed value **cannot** reach the server. The cost is real and is the first row of the
+  waiting-on-owner table — but the same machine spelled three ways destroys the per-machine
+  reporting the change exists to enable.
+- **Backfilling a machine onto existing P.O. rows.** Nothing is auto-assigned; there is no
+  defensible way to guess which machine an old P.O. covered. Legacy rows stay readable and are asked
+  for a machine only on edit — the same shape as a legacy Contract missing its End Date.
+- **A database-level FK constraint.** SQLite cannot add one via `ALTER TABLE` without a full
+  rebuild, and this app never sets `PRAGMA foreign_keys`, so it would not be enforced even where it
+  exists. Integrity lives in `validate_purchase_order_payload` plus the two Products-side guards.
+  **Do not "fix" this with a table rebuild** — the migration says so in a comment for that reason.
+
+**Honouring the branch filter on the P.O. or Equipment analytics tabs.** `PurchaseOrder` has no
+branch dimension — branch lives on `Engineer` — and `/get_po_analytics` deliberately skips
+`analytics_scope_query`. Both tabs are labelled `Company-wide` so the numbers are not misread.
+
+**Blocking a machine's reassignment to another client** while P.O.s reference it. It would make
+ordinary inventory corrections impossible. The count is logged, and the modal explains the mismatch
+on the next edit via `product_client_id` rather than failing with a bare 400.
 
 **Streaming the system backup ZIP.** Queued in section 2 for two sessions as "the durable fix", and
 rejected on 2026-08-08 **after prototyping it rather than after arguing about it**. The prototype
@@ -1541,6 +1645,40 @@ disable transitions first** — the properties most likely to be transitioned ar
 theme-driven ones.
 
 ## 6. Patterns worth knowing before the next feature
+
+### The four from machine-scoped P.O. records, 2026-08-12
+
+**1. The same defect shipped twice, and the guard written to prevent it was scoped to one page.**
+`--app-raised-surface` for `--app-surface-raised` — a transposition — reached `main` on the
+Reimbursement Tracker, was fixed, and then reached `main` again on P.O. Details at **1.01:1**. The
+test written after the first occurrence, `test_every_theme_token_the_page_uses_is_actually_defined`,
+read **`reimbursement_tracker.html` and nothing else**, while its own docstring claimed it asserted
+*"the class, not the one instance"*. **A guard's docstring is not its scope. Read what it globs.**
+It is now repo-wide over every template, stylesheet and script, and the page-scoped copy was
+**deleted** rather than left beside it — two guards that must agree is the shape that caused this.
+
+**2. Widening a guard is worth doing for what it finds today, not only for what it prevents.**
+Making it repo-wide immediately exposed a **second live defect nobody had reported**: the recall
+modal's Cancel button set a light `background` under `var(--app-text)` — **1.13:1 in dark mode**, on
+all five request pages. If the widening had been deferred as "cleanup", that would still be
+shipping. A guard that finds nothing on the day you widen it is the exception, not the rule.
+
+**3. This defect class is one-directional, and that is why it survives review.** The fallback is
+always a light colour chosen to look right in light mode, so **light mode is perfect and only dark
+mode breaks** — 14.44:1 against 1.01:1 for the same rule. A browser pass in light mode reports
+"pass" with complete honesty. Nothing errors, nothing logs, and `getComputedStyle` in the pane lies
+about it separately (see the transition trap below). **The only reliable detector is the token
+spelling, which is why the fix is a test and not a look.** Corollary worth carrying: **a token used
+as a `background:` almost never qualifies for the undefined-token exemption list**, because an
+unresolved background inverts against themed text; a foreground-only fixed brand colour does.
+
+**4. The plan's riskiest-items list did its job, and that is repeatable.** Two of the flagged risks
+were latent bugs found *while planning* rather than while coding — `update_product` repointed
+`Shift.product_id` and nothing else, and `delete_product` had no reference check at all — and both
+were built correctly because they were named up front. The Excel column shift, flagged as "still
+opens while being quietly wrong", came through arithmetically correct. **Ranking risks by "would
+ship and nobody notices" before writing code is what made those three land.** The one that got
+through was the one nobody thought to rank, because the guard against it was believed to exist.
 
 ### The five from the Reimbursement Tracker, 2026-08-11 to 08-12
 
