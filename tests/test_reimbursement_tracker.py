@@ -437,6 +437,27 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
             'BATCH-032',
         )
 
+    def test_the_form_actually_consumes_the_batch_suggestion(self):
+        """The endpoint returning BATCH-032 is worth nothing if the form ignores it.
+
+        It did: the Add form cleared the field and showed a hard-coded
+        placeholder="BATCH-001", so the register still invited a restart at 001 while
+        the API was already correct. The endpoint test passed the whole time -- assert
+        the consumer, not just the producer.
+        """
+        template = (ROOT / 'templates' / 'reimbursement_tracker.html').read_text(encoding='utf-8')
+        self.assertIn('data.suggested_reference', template,
+                      'the page never reads the suggestion off the payload')
+        self.assertRegex(
+            template,
+            r"byId\('rt-reference'\)\.value\s*=\s*state\.suggestedReference",
+            'the Add form must prefill the reference from the suggestion',
+        )
+        self.assertNotRegex(
+            template, r'placeholder="BATCH-001"',
+            'a hard-coded BATCH-001 placeholder contradicts the continued sequence',
+        )
+
     def test_modal_body_can_scroll_independently_of_the_form_wrapper(self):
         """The form sits between .modal-content and .modal-body, which broke Bootstrap.
 

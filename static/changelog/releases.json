@@ -1801,6 +1801,33 @@
           "sort_order": 10
         }
       ]
+    },
+    {
+      "release_key": "2026-08-12-reimbursement-tracker-fixes",
+      "release_date": "2026-08-12",
+      "title": "Reimbursement Tracker Fixes",
+      "summary": "The Add and Edit form now scrolls, and the batch number continues from where the tracking workbook left off.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-12-tracker-modal-scroll",
+          "category": "Reimbursement Tracker",
+          "description": "The Add and Edit reimbursement form can now be scrolled, so the expense categories, paid fields, remarks, and the Save button are reachable on any screen size.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-12-tracker-batch-continues",
+          "category": "Reimbursement Tracker",
+          "description": "New rows are suggested starting at BATCH-032, continuing the tracking workbook's sequence instead of restarting at BATCH-001, and the reference is filled in for you rather than left blank.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
+        }
+      ]
     }
   ]
 }

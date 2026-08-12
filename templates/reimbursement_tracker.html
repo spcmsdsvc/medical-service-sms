@@ -184,7 +184,7 @@
                     <div class="row g-3">
                         <div class="col-12 col-md-4">
                             <label class="form-label" for="rt-reference">Reference</label>
-                            <input class="form-control" id="rt-reference" required maxlength="100" placeholder="BATCH-001">
+                            <input class="form-control" id="rt-reference" required maxlength="100" placeholder="BATCH-000">
                             <div class="form-text">The batch number becomes the final control-number sequence.</div>
                         </div>
                         <div class="col-12 col-md-4">
@@ -251,7 +251,7 @@
 (() => {
     'use strict';
     const state = {
-        rows: [], engineers: [], offices: [], editingId: null, modal: null,
+        rows: [], engineers: [], offices: [], editingId: null, modal: null, suggestedReference: '',
         sortKey: localStorage.getItem('reimbursement_tracker_sort_key') || 'submission_date',
         sortDirection: localStorage.getItem('reimbursement_tracker_sort_direction') || 'desc'
     };
@@ -402,7 +402,9 @@
         byId('rt-modal-title').textContent = 'Add reimbursement';
         byId('rt-save-button').innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Save row';
         state.editingId = null;
-        byId('rt-reference').value = '';
+        // Prefilled, not blank: the batch number continues Accounting's running sequence,
+        // so an empty field invites someone to restart it. Still editable.
+        byId('rt-reference').value = state.suggestedReference || '';
         byId('rt-submission-date').value = new Date().toISOString().slice(0, 10);
         populateOfficeOptions('');
         populateEngineerOptions('');
@@ -489,6 +491,10 @@
         state.rows = data.entries || [];
         state.engineers = data.engineers || [];
         state.offices = data.offices || [];
+        // The server continues the workbook's batch sequence; the form must actually use
+        // it. Reloading after every save is what keeps the next Add one ahead.
+        state.suggestedReference = data.suggested_reference || '';
+        byId('rt-reference').placeholder = state.suggestedReference || 'BATCH-000';
         populateFilters();
         renderKpis();
         renderRows();

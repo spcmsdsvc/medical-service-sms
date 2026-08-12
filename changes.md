@@ -1,5 +1,42 @@
 # Project Change Log
 
+claude changes - 2026-08-12 (the batch suggestion reaches the form, and a changelog entry I owed)
+
+## Fixed: the server said BATCH-032 and the form ignored it
+
+* The owner reported the field still reading `BATCH-001` after the previous fix. **They were right
+  and my verification was wrong.** `suggested_reference` was returned by `/get_reimbursement_tracker_entries`
+  and **read by nothing** — `resetForm()` cleared the field and the input carried a hard-coded
+  `placeholder="BATCH-001"`. What the screenshot showed was that placeholder behind an empty required
+  field, which is also why it had a red invalid border.
+* **I verified the endpoint and not the field.** The previous commit's test asserted the API returned
+  `BATCH-032` and passed the entire time the form was ignoring it. That is the same shape as the
+  page-gate/endpoint-gate defect this journal records five times, in data rather than access: **two
+  places have to agree, and only one was asserted.**
+* The page now stores the suggestion on load, prefills the reference for a new row, and sets the
+  placeholder from it rather than from a literal. `loadData()` already runs after every save, so the
+  next Add is one ahead on its own.
+* **Verified end to end in a browser, which is what should have happened last time:** the Add form
+  opens with a *value* of `BATCH-032` (not a placeholder) and is no longer empty-and-invalid; saving
+  it produces control number **`AM-20260812-032`**; reopening Add then offers **`BATCH-033`**.
+* The new test asserts the **consumer**, not the producer: the page must read `data.suggested_reference`,
+  the Add path must assign it to the field, and no hard-coded `BATCH-001` placeholder may remain.
+
+## Corrected: the previous commit owed a changelog entry and claimed it did not
+
+* `c426cba` said *"no `releases.json` entry"*. **Wrong** — it changed `app.py` and a template in ways
+  a user sees, and `test_changelog_coverage` failed on exactly that once the commit existed.
+* **The trap worth recording: running the full suite *before* committing cannot see the commit it is
+  about to create.** The suite was green when I ran it, because HEAD was still the previous day's
+  commit, which did have an entry. This check only bites afterwards. **Re-run it after committing,
+  or the guard silently does not apply to the change that needs it.**
+* A `2026-08-12` release now covers both the modal scroll fix and the batch-number change.
+
+## Tests
+
+* **One added, 625 → 626 green** with the one pre-existing skip. Injection RED for the expected
+  reason, the template restored byte-identically.
+
 claude changes - 2026-08-12 (tracker modal scroll, and the batch number continues from the workbook)
 
 ## Fixed: the Add/Edit modal could not be scrolled, so Save was unreachable
