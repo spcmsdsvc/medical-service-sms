@@ -7,17 +7,17 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last updated: 2026-08-12 (second refresh that day), at the owner's request, after machine-scoped
-P.O. records and the Analytics Equipment tab shipped, were reviewed here, and were pushed.
+Last updated: 2026-08-13, at the owner's request, after a P.O. may now cover **several** machines —
+built, reviewed here, and pushed one day after the one-machine version shipped.
 
-**Start here if you are picking this up cold.** Suite green at **643 tests** with one pre-existing
-skip. `origin/main` was at `fd8625c` when this was written and **the local branch was in sync with
-it — nothing unpushed for the first time in several sessions.** **Confirm both with
-`git log --oneline -1` and `git rev-list --left-right --count origin/main...HEAD` rather than this
-line.** It has now gone stale four times, once inside an hour. **A commit hash in a document is a
-timestamp, not a fact.** Service worker read `v87-machine-scoped-po`; **read the live value out of
-`app.py` before committing, never from this note.** The working tree carries **four** local
-artifacts: `scheduler.db`, `output/`, `tmp/`, and the loose 2026-07-26 handoff file.
+**Start here if you are picking this up cold.** Suite green at **653 tests** with one pre-existing
+skip. `origin/main` was at `d8507e2` when this was written, with the local branch in sync.
+**Confirm both with `git log --oneline -1` and
+`git rev-list --left-right --count origin/main...HEAD` rather than this line.** It has now gone
+stale five times, once inside an hour. **A commit hash in a document is a timestamp, not a fact.**
+Service worker read `v88-multi-machine-po`; **read the live value out of `app.py` before committing,
+never from this note.** The working tree carries **four** local artifacts: `scheduler.db`,
+`output/`, `tmp/`, and the loose 2026-07-26 handoff file.
 
 **`Handoffs/` is tracked**, by the owner's decision on 2026-08-11 — see section 4.
 
@@ -47,6 +47,38 @@ than on code** — they are listed first because none of them will resolve thems
 | **Four engineers have no email address** — Kevin Garoche, Mark Felongco, Jocel Prudente, John Erick Wong | Marking their rows paid saves fine and shows Diary a warning, but nobody is notified. Fix in Personnel |
 | **Jocel Prudente still reads `JP` in the local database** | The `JP → JOP` correction runs on the first request after deploy. **The code has now been pushed**, so unlike the previous refresh this is finally *confirmable* — one glance at Personnel in production closes it. Confirm rather than assume |
 | **The tracker holds 0 rows** | So the amount-suggestion chips show nothing yet, and the export is empty. Both fill in as Diary files batches — expected, not a fault |
+
+### One P.O., many machines — in four commits, one day after the opposite shipped
+
+The owner revised the requirement on 2026-08-13: **a P.O. covers several machines, not one.** Built
+by Codex from the plan in `plans.md`, reviewed here. **The review found no defect** — the first time
+that has happened in this file's history.
+
+| Commit | What |
+| --- | --- |
+| `5d7372e` | `PurchaseOrderMachine` association table with a unique pair constraint, an idempotent backfill, chips in the modal, "+N more" in the register, any-machine filtering |
+| `f307253` | Analytics split into P.O. units and machine-link units, plus release plumbing |
+| `e4c8a40` | Execution outcome in `plans.md` |
+| `d8507e2` | **Review fix** — two coverage gaps closed; no behaviour changed |
+
+**Read this before assuming the old shape.** `purchase_order.product_serial` still exists but is a
+**write-only mirror**: one writer (`apply_purchase_order_machines`), **zero readers**, kept only so a
+rollback to the one-machine release still shows the primary machine. The real data lives in
+`purchase_order_machine`. A corruption test pins this — it sets the column to garbage and asserts the
+register, export and analytics never surface it. **Do not start reading that column again.**
+
+**Codex caught a hazard the plan missed, and it is worth knowing before touching the write path.**
+`apply_purchase_order_machines()` clears the collection and flushes *before* reassigning, because
+SQLAlchemy would otherwise INSERT a replacement before deleting the orphan holding the same
+`(P.O., serial)` unique key — so an edit from `[A,B]` to `[B]` would 409. Confirmed load-bearing by
+removing it. **The unique constraint the plan insisted on is what creates that hazard**; the two
+belong together.
+
+**The analytics numbers deliberately no longer add up, and someone will file it as a bug.** Three
+units now coexist: **orders** (`total`, `linked_total`, `unlinked_total`, `linked_pct`), **links**
+(`by_machine`, `by_model`, `by_coverage`, `machine_link_total`), and **entities** (`machine_total`).
+`sum(by_coverage)` equals `machine_link_total`, **not** `linked_total`. That is correct. Do not
+"fix" it by de-duplicating per P.O. — that would destroy the per-machine analysis the tab exists for.
 
 ### Machine-scoped P.O. records and the Equipment tab, in five commits
 
@@ -1138,6 +1170,17 @@ see the rule at the top of this file.
 | **The Equipment tab against real data** | Verified against fixtures with `linked + unlinked == total`. **The tracked local `scheduler.db` holds 0 purchase orders**, so from here the tab reads 0/0 and proves nothing. Check what the production register actually holds — see the row below, which turns on the same question |
 | **Whether any legacy P.O. rows exist at all** | The whole legacy-row design — readable without a machine, required on edit — assumes rows predating the change. **Locally there are none: 0 P.O. rows, and the `product_serial` column has not even been created yet** because the migration runs on first request. If production is also near-empty, that machinery is correct but unexercised, and the "Missing a machine" worklist will simply be empty. Worth one query before anyone treats an empty list as a bug |
 
+**Added 2026-08-13 with the multi-machine change.** The modal row above got **larger**, not smaller:
+it now carries a chip list as well as the combobox, and still nobody has opened it.
+
+| Item | Applies to |
+| --- | --- |
+| **The machine chips inside the scrollable modal** | The one risk the plan accepted knowingly. The modal is `modal-dialog-scrollable` with `overflow-y: auto`, and an absolutely-positioned dropdown inside a scrolling body can clip at the edge. The existing `.search-results` was chosen **because** it is already proven in that container rather than porting the travel checklist, which has never run inside one — but "already proven" was reasoning, not a look. Check six or more chips wrapping, and that the suggestion list is not cut off |
+| **The "+N more" cell at real column width** | The register shows the first machine plus a count, with the full list in a `title` tooltip, specifically to keep row height stable. Whether `SN-1234 — CT-500 +2 more` actually fits the column on a laptop is unmeasured |
+| **The export opened in real Excel** | Machines are joined with `'\n'` inside the existing Machine Serial / Machine Name cells, relying on `wrap_text=True` to stack them and on rows auto-heighting. `openpyxl` round-trips prove the string; only Excel proves the rendering. **Diary is the consumer** |
+| **The Equipment tab with five metric tiles** | A fifth tile (`machine_link_total`) joined a grid built for four. Whether it wraps cleanly at desktop and 375 px is unchecked |
+| **`[DB MIGRATION]` for `purchase_order_machine` in production** — the one that matters most | The new table and its **backfill** run on the first request after deploy. Verified locally: three consecutive `ensure_purchase_order_schema()` runs seed exactly one link from a legacy row, and `PRAGMA index_list` shows the unique pair index physically. **In production, confirm the row counts either side**: P.O.s with a non-blank `product_serial` before must equal `purchase_order_machine` rows after, and a `LEFT JOIN` on both id and serial must return zero unmatched rows |
+
 **Closed by the owner's 2026-08-09 pass**, listed so nobody re-opens them from an old copy of this
 file:
 
@@ -1315,6 +1358,16 @@ regex metacharacter comes back as a false negative. A clobber check written that
 48 of 49 lines of a pushed commit missing when none were. For literal whole-file checks use
 `[System.IO.File]::ReadAllText($path).Contains($line)`.
 
+**Python's `read_text()` / `write_text(newline='')` round trip silently converts CRLF to LF**, and a
+SHA check will not catch it. `pathlib.read_text()` applies universal newlines, so the CRLFs become
+LFs in memory; writing back with `newline=''` writes those literally. Comparing the re-read against
+the same in-memory string passes, because both sides were converted. On 2026-08-13 an injection
+harness restored `app.py` this way, reported a matching hash, and left the whole file LF-only. **Git
+normalised it on read so nothing reached the commit** — `git diff` was empty — but `git status`
+showed the file modified, and it needed `git checkout -- app.py`. Use `read_bytes`/`write_bytes` for
+a byte-exact round trip, and **check `git status` after any scripted edit rather than trusting the
+hash**. This is the third tool recorded here that rewrites a file while reporting success.
+
 > **SUPERSEDED 2026-08-12 — do not follow the paragraph below.** The owner's `AGENTS.md` rule
 > ("Codex App Safety During Testing") forbids in-app browser automation on this project, so
 > `preview_start` and the Browser pane are **not** to be used here at all. The database and port
@@ -1376,10 +1429,20 @@ shift seeded in one module can land inside another's week-over-week window. Keep
 **The four machine-scoped P.O. decisions, settled with the owner on 2026-08-12.** All four were
 asked and answered before any code; the full reasoning is in the plan in `plans.md`.
 
-- **More than one machine per P.O.** A P.O. is issued *per machine*, so it is one nullable FK
+> **One of these four was REVERSED on 2026-08-13, the day after it shipped** — the first entry below.
+> The other three still stand and are still current. **Read the strikethrough before quoting any of
+> this.**
+
+- ~~**More than one machine per P.O.** A P.O. is issued *per machine*, so it is one nullable FK
   column, not a link table. A contract covering three machines is three P.O. rows. If this is ever
   revisited, `templates/travel_request.html:2788-2801` already holds the multi-select equipment
-  checklist pattern.
+  checklist pattern.~~ — **REVERSED 2026-08-13.** The owner revised the requirement: one P.O. now
+  covers several machines, via the `purchase_order_machine` association table. **The decision was
+  not wrong when it was taken** — the multi-machine option was costed and declined on the day, and
+  what changed was the requirement, not the reasoning. The useful part is the last sentence: it named
+  the pattern to use *"if this is ever revisited"*, and that is exactly the pattern the replacement
+  plan evaluated. **A deliberate exclusion that carries its own way back is worth writing that way**
+  — it turned a reversal into an afternoon instead of a re-investigation.
 - **A free-text machine fallback** when a client has no registered equipment. Refused deliberately,
   and it is enforced *structurally* rather than by validation: `saveForm` reads only the hidden
   field, so a typed value **cannot** reach the server. The cost is real and is the first row of the
@@ -1645,6 +1708,45 @@ disable transitions first** — the properties most likely to be transitioned ar
 theme-driven ones.
 
 ## 6. Patterns worth knowing before the next feature
+
+### The four from the multi-machine migration, 2026-08-13
+
+**1. A hazard belongs to a construction, not to a feature — and this file caused the error it is now
+recording.** The plan ranked "a `joinedload` on the machines collection makes a 3-machine P.O. count
+as three purchase orders" as the single nastiest available bug, citing this file's own
+`analytics_scope_query` entry. **Measured, it is not reachable**: `len(orders)` is `1` under both
+`selectinload` and `joinedload`, because the repo uses the legacy `Model.query…all()` API, which
+de-duplicates parent entities. Swapping them breaks no test. The multiplication hazard is real for a
+**SQL-level count over a join** — which is why `analytics_scope_query` uses a correlated `EXISTS` and
+`analytics_branch_counts` uses `count(distinct …)` — and it was transferred to `len()` over ORM
+entities, where it does not apply. `selectinload` is still correct here, but as a *performance*
+choice. **When quoting a recorded hazard, check the new code is the same construction, not merely the
+same subject.** This file's warnings are load-bearing precisely because they are specific.
+
+**2. A fixture where two quantities coincide cannot tell them apart.** The multi-machine analytics
+test produced three P.O.s **and** three machine links, so asserting the headline `total` there would
+have passed whether it counted orders or links. Pinning it required a fixture where the two must
+differ — three machines on **one** P.O. This is the same shape as the 2026-08-06 lesson below ("two
+fixtures that agree cannot test the thing that separates them"), now in arithmetic rather than
+permissions. **Before asserting a number, check the fixture makes the wrong answer a different
+number.**
+
+**3. A constraint you add can create the hazard the next person has to handle.** The plan insisted on
+a `UniqueConstraint` on `(purchase_order_id, product_serial)` — correctly, citing `ShiftEngineer`.
+That constraint is exactly what makes replacing a collection dangerous: SQLAlchemy will INSERT the
+replacement before deleting the orphan holding the same key, so an edit from `[A,B]` to `[B]` 409s.
+Codex caught it and clears-and-flushes first; the plan did not. **When you add uniqueness to a set
+that is replaced wholesale, the replace becomes ordering-sensitive.** The two decisions belong in the
+same paragraph, not in different sections.
+
+**4. A SHA comparison only proves what you compared.** The injection harness restored `app.py`,
+verified the hash matched, and had still converted the whole file from CRLF to LF —
+`pathlib.read_text()` applies universal newlines, so writing back with `newline=''` writes the
+converted content, and both sides of the comparison were converted identically. Git normalises on
+read so nothing reached the commit, but `git status` showed the file dirty. This is the **third**
+tool in this file to silently rewrite a file while reporting success, after `Set-Content -Encoding
+utf8` (BOM) and `[regex]::Escape` with `-SimpleMatch`. **For a byte-exact round trip use
+`read_bytes`/`write_bytes`, and check `git status` rather than trusting the hash.**
 
 ### The four from machine-scoped P.O. records, 2026-08-12
 
