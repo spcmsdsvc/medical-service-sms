@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Reimbursement Tracker — selectable historical batch views
 
-**Status:** `In progress`
+**Status:** `Executed — 47ebd96`
 **Approved:** 2026-08-13
 **Detailed:** 2026-08-13, after reviewing the current-only list response and the existing
 current/all export selector. The owner requested a page-level batch view selector so historical

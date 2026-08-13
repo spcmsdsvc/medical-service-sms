@@ -115,8 +115,8 @@ claude changes - 2026-08-13 (review of multi-machine P.O.s: two coverage gaps cl
   Added malformed/unavailable-view, available-batch, and UI wiring coverage.
 * Verification passed with 28 focused tracker tests and 658 repository tests with one pre-existing
   skip, plus Python compilation, inline JavaScript syntax, release-manifest parsing, and
-  `git diff --check`. This follow-up remains uncommitted and unpublished pending owner instruction;
-  local database and generated artifacts remain outside the change set.
+  `git diff --check`. Functional implementation is committed as `47ebd96`; local database and
+  generated artifacts remain outside the change set.
 
 codex changes - 2026-08-13 (multi-machine purchase orders)
 
