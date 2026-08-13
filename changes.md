@@ -68,6 +68,12 @@ claude changes - 2026-08-13 (review of multi-machine P.O.s: two coverage gaps cl
   `-SimpleMatch` entry as the third tool that silently rewrites a file while reporting success.
   **A SHA comparison only proves what you compared.** For a byte-exact round trip use
   `read_bytes()`/`write_bytes()`, or check `git status` afterwards rather than trusting the hash.
+* Analytics now defaults to the canonical 2026-05-18 system-start date through today instead of
+  the current month. The server date bounds, page-provided configuration, and “Since system start”
+  preset are aligned; week/month presets remain available.
+* Bumped the analytics JavaScript query version to v80 and the service-worker cache to v89 because
+  the Analytics APP_SHELL renderer now uses the system-start default. Added the 2026-08-13
+  release-manifest item and verified the focused analytics tests/syntax checks.
 
 codex changes - 2026-08-13 (multi-machine purchase orders)
 

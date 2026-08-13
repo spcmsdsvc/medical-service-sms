@@ -15667,7 +15667,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v88-multi-machine-po';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v89-analytics-system-start';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -17229,6 +17229,7 @@ def analytics_page():
         # the endpoint still served them. Superadmins pass either way, so the gap only
         # showed for a granted account.
         can_view_po_analytics=can_view_admin_reports() or can_manage_purchase_orders(),
+        analytics_system_start_date=ANALYTICS_SYSTEM_START_DATE.isoformat(),
     )
 
 
@@ -37581,15 +37582,18 @@ def get_shift_details(shift_id):
 
 # --- ANALYTICS MODULE ---
 
+ANALYTICS_SYSTEM_START_DATE = date(2026, 5, 18)
+
+
 def analytics_date_bounds():
-    """Resolve analytics date range from query string or default to current month."""
+    """Resolve analytics date range from query string or default to system start."""
     today = get_manila_time().date()
 
     start_date = parse_date(request.args.get('start_date'))
     end_date = parse_date(request.args.get('end_date'))
 
     if not start_date or not end_date:
-        start_date = today.replace(day=1)
+        start_date = ANALYTICS_SYSTEM_START_DATE
         end_date = today
 
     if end_date < start_date:

@@ -45,6 +45,7 @@
             {% endif %}
             <div class="analytics-filter-actions">
                 <button type="submit" class="btn btn-primary"><i class="fa-solid fa-rotate me-1" aria-hidden="true"></i>Apply filters</button>
+                <button type="button" class="btn btn-outline-secondary" data-analytics-preset="all">Since system start</button>
                 <button type="button" class="btn btn-outline-secondary" data-analytics-preset="week">This week</button>
                 <button type="button" class="btn btn-outline-secondary" data-analytics-preset="month">This month</button>
             </div>
@@ -149,9 +150,12 @@ window.ANALYTICS_CAPABILITIES = {
     schedule: {{ can_view_schedule_analytics|tojson }},
     purchaseOrders: {{ can_view_po_analytics|tojson }}
 };
+window.ANALYTICS_CONFIG = {
+    systemStartDate: {{ analytics_system_start_date|tojson }}
+};
 </script>
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='js/app-analytics.js') }}?v=79"></script>
+<script src="{{ url_for('static', filename='js/app-analytics.js') }}?v=80"></script>
 {% endblock %}

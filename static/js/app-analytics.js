@@ -2,6 +2,8 @@
     'use strict';
 
     const config = window.ANALYTICS_CAPABILITIES || {};
+    const analyticsConfig = window.ANALYTICS_CONFIG || {};
+    const systemStartDate = analyticsConfig.systemStartDate || '2026-05-18';
     const state = { schedule: null, purchaseOrders: null, equipment: null, loading: false };
 
     function byId(id) { return document.getElementById(id); }
@@ -572,7 +574,14 @@
         const now = new Date();
         const start = new Date(now);
         const end = new Date(now);
-        if (mode === 'week') {
+        if (mode === 'all') {
+            const systemStart = new Date(`${systemStartDate}T00:00:00`);
+            if (!Number.isNaN(systemStart.getTime())) {
+                start.setTime(systemStart.getTime());
+            } else {
+                start.setDate(1);
+            }
+        } else if (mode === 'week') {
             const mondayOffset = (now.getDay() + 6) % 7;
             start.setDate(now.getDate() - mondayOffset);
             end.setTime(start.getTime());
@@ -592,6 +601,6 @@
         document.querySelectorAll('[data-analytics-preset]').forEach((button) => button.addEventListener('click', () => setRangePreset(button.dataset.analyticsPreset)));
         initAnalyticsTabs();
         observeChartResize();
-        setRangePreset('month');
+        setRangePreset('all');
     });
 }());

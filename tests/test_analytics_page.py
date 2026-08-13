@@ -209,7 +209,12 @@ class AnalyticsPageTests(unittest.TestCase):
         self.assertIn('data-analytics-panel', self.template)
         self.assertIn('id="equipment-machine-link-total"', self.template)
         self.assertIn('machine_link_total', self.js)
-        self.assertIn('?v=79', self.template)
+        self.assertIn('?v=80', self.template)
+        self.assertIn('analytics_system_start_date=ANALYTICS_SYSTEM_START_DATE.isoformat()', self.source)
+        self.assertIn('systemStartDate', self.template)
+        self.assertIn('data-analytics-preset="all"', self.template)
+        self.assertIn("setRangePreset('all')", self.js)
+        self.assertIn("mode === 'all'", self.js)
         self.assertIn('createElementNS', self.js)
         self.assertIn('textContent', self.js)
         self.assertNotIn('innerHTML', self.js)
@@ -222,6 +227,13 @@ class AnalyticsPageTests(unittest.TestCase):
         assert_cache_version_at_least(self, 73, self.source)
         self.assertIn("'/static/css/app-analytics.css',", self.source)
         self.assertIn("'/static/js/app-analytics.js',", self.source)
+
+    def test_analytics_without_dates_defaults_to_the_system_start(self):
+        with self.app.test_request_context('/get_analytics_summary'):
+            start_date, end_date = app_module.analytics_date_bounds()
+
+        self.assertEqual(start_date, app_module.ANALYTICS_SYSTEM_START_DATE)
+        self.assertEqual(end_date, app_module.get_manila_time().date())
 
     def test_schedule_analytics_deduplicates_and_exposes_period_contract(self):
         client = self._client_for(self.reports_user_id)

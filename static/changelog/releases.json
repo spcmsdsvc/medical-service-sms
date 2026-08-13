@@ -33,6 +33,15 @@
             "admins"
           ],
           "sort_order": 30
+        },
+        {
+          "item_key": "2026-08-13-analytics-system-start-range",
+          "category": "Analytics",
+          "description": "Analytics now opens from the system start date through today, so historical service and purchase-order activity is visible immediately; week and month presets remain available.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 40
         }
       ]
     },
