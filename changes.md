@@ -1,6 +1,14 @@
 # Project Change Log
 
 > **Relocated, not rewritten, on 2026-08-13.** The four entries below arrived appended as bullets inside the `claude changes - 2026-08-13` review entry further down, with no dated headings of their own. The text is moved verbatim and split by commit; nothing was reworded or removed.
+
+codex changes - 2026-08-13 (Reimbursement Register filters, exports, and fixed confirmations — local implementation; commit pending)
+
+* Updated `app.py` so Reimbursement Tracker exports can target the viewed batch, filter engineers by exact `engineer_id`, preserve legacy name-filter compatibility, and generate batch/date-specific filenames. Added a literal Decimal TOTAL row in column F/G outside the Excel autofilter range, preserving the seven-column Accounting layout and avoiding formulas.
+* Updated `templates/reimbursement_tracker.html` so Rows, Paid, Unpaid, and Total PHP KPIs recalculate from filtered rows, the KPI scope is explicit, empty batches are distinguished from filtered-empty results, invalid date ranges disable export, filter/file sorting stays aligned, and a saved row warns when active filters hide it.
+* Replaced scroll-to-top register notifications in both `templates/reimbursement_tracker.html` and `templates/po_details.html` with fixed-position, theme-token toasts. Retained each page's visually-hidden live region for screen-reader announcements, avoided wholesale `className` replacement so `no-print` and layout state remain intact, and prevented confirmation alerts from appearing in printouts.
+* Added focused coverage for viewed-batch export selection, exact engineer filtering, dated filenames, TOTAL-row arithmetic and filter boundaries, KPI/export wiring, and parity of the accessible toast pattern across both register pages. Added a separate published 2026-08-13 release entry in `static/changelog/releases.json`.
+* Verification passed locally with 30 focused Reimbursement Tracker tests, 12 appearance/theme tests, and 660 repository tests with one pre-existing skip. Python and inline JavaScript syntax, release-manifest parsing, and `git diff --check` remain part of closeout; no service-worker bump was needed because only inline page scripts/templates changed.
 >
 > **This is the second time.** The same misfiling was corrected on 2026-08-12 with the reason spelled out — an entry appended into the middle of an older one is invisible to anyone scanning for the latest change, and misattributes the work while it sits there. Four features were credited to a review of unrelated work. **Newest entry at the top, with its own dated heading, is the whole convention.**
 >

@@ -55,6 +55,237 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Reimbursement Register: fix the filter and the export, and stop both registers jumping to the top
+
+**Status:** `In progress`. The project owner gave the separate go-ahead on 2026-08-13; implementation
+and local verification are complete. Commit/push await the owner's separate publication instruction.
+**Approved:** 2026-08-13
+**Detailed:** 2026-08-13, after mapping every filter, KPI, export path and notification on both
+register pages. Four claims were checked by reading the code rather than accepted from the
+exploration summaries; one of them reversed a design decision — see Investigation.
+
+### Context
+
+Two owner reports, one day after the shared-batch work shipped:
+
+1. **Reimbursement Tracker** — *"the filter is messed up, the export is kind of confusing."*
+2. **P.O. Details** — every save scrolls the page back to the top.
+
+Both turned out to be concrete defects. **The most serious is one nobody has reported: filtering by
+engineer and pressing Export silently produces a workbook with no rows in it.**
+
+### Decisions taken
+
+Owner, 2026-08-13:
+
+| Question | Decision |
+| --- | --- |
+| Totals when filtered | **Follow the filters** |
+| Export scope | **The batch on screen**, plus an explicit All-history option |
+| Export file | **Name it by batch and date**, and **add a TOTAL row**. Columns stay at **seven** — the trim for Accounting was a deliberate earlier decision |
+| Scope | **Fix the defects and polish.** Out: per-batch saved filters, mobile sort access, a search-everything box |
+
+Taken here while planning, with reasons:
+
+1. **Fix the broken export filter by matching `engineer_id` server-side**, and stop the page sending
+   `engineer=`. The "pair the filters" convention from the P.O. register is *text on both sides*
+   because that page's inputs are text; the tracker's client filter already compares **ids**
+   (`templates/reimbursement_tracker.html:359`), so pairing honestly means pairing on id. Sending the
+   name instead would fix the empty file and introduce a subtler bug — "Jose Cruz" and "Jose Cruz
+   Jr.": the screen shows one, a name-substring export returns both, and the file looks plausible.
+2. **The TOTAL row is a literal `Decimal`, never `=SUM()`.**
+   `tests/test_reimbursement_tracker.py:562-566` asserts **no formulas anywhere** and that
+   `calculation.iterate` is off — that test exists because a `#REF` on the Total is the one thing
+   that corrupts the artifact Accounting consumes. openpyxl writes formulas as strings and never
+   evaluates them, so any reader using `data_only=True` sees `None`. **The P.O. register's
+   `=SUM(J2:Jn)` is not a precedent here — it is exactly what this test was written to keep out.**
+3. **The TOTAL label goes in column F, not A.** `tests/test_reimbursement_tracker.py:521-527`
+   collects column-1 values and asserts the exported batch references; a `TOTAL` in column A would
+   inject a phantom reference and break a test about something else entirely.
+4. **`batch_scope` keeps `{current, all}`; `current` gains an optional `batch_sequence` companion**,
+   mirroring `/get_reimbursement_tracker_entries` (`app.py:40953`). A third enum value would fork the
+   wire vocabulary from the endpoint the same page already calls. Backward compatibility is total —
+   the pinned scope matrix sends no `batch_sequence`. **The honesty problem is fixed in the label,
+   not the wire.**
+5. **The filename is derived on the server and read from `Content-Disposition`.** Building it in JS
+   would put the naming rule in two places, which is the same drift that caused the scope desync.
+6. **The toast uses real theme tokens, and this overrides the obvious "copy the existing one".**
+   See Investigation — the timeline toast is hardcoded light.
+7. **The toast helper is duplicated locally in both templates, not extracted to `static/js/`.**
+   Neither page is an `APP_SHELL` entry (`app.py:15759-15784`) and every existing file in
+   `static/js/` *is* a shell asset, so extracting one forces a caching decision and a
+   `CACHE_VERSION` bump for a cosmetic fix. Two ~35-line copies, contained by a parity test.
+8. **Keep the filters after a save and warn when they hide the new row.** Clearing them on every add
+   discards the user's working set on a routine action — a new defect, not a fix. (`switchBatchView`
+   clearing them is different and correct: the rows underneath genuinely changed.)
+
+### Investigation
+
+**The nine verified defects** — each confirmed by reading the cited code, not inferred:
+
+| | Defect | Consequence |
+| --- | --- | --- |
+| **D1** | The engineer `<select>` carries `value="{engineer.id}"` (`reimbursement_tracker.html:439`) and sends that raw id as `engineer=` (`:325`); the server matches it as a **substring of the engineer's name** (`app.py:40835`) | **A headers-only workbook, with no error.** Screen shows N rows, file has none |
+| **D2** | `renderKpis()` sums `state.rows` (`:382-387`) and is called only from `loadData` and `switchBatchView` — **never** from the filter handlers (`:783-784`) | Filtered rows sit above the whole batch's money, while `rt-result-count` *is* filter-aware, so the page contradicts itself. **Almost certainly the report** |
+| **D3** | `switchBatchView` defaults `resetExportScope=false` (`:634`) and `current` always means the *server's* active batch (`app.py:40824`) | Viewing BATCH-032 shows a control reading "Current batch (BATCH-033)" and exports 033. **No way to export a historical batch at all** |
+| **D4** | The client hardcodes `link.download = 'reimbursement_tracker.xlsx'` (`:751`), discarding the server's dated name (`app.py:41114`) | Two batches become "file" and "file (1)" |
+| **D5** | No TOTAL row (`app.py:40914`) | The page shows a total; the file Accounting receives does not |
+| **D6** | One fixed empty-state string (`:201`) | A genuinely empty batch blames a filter — fires right after "Start new batch" |
+| **D7** | Filters survive a save (`:701`) | A just-added row can be invisible while "row added" fires; reads as a lost save |
+| **D8** | Office filter exact+case-sensitive client-side vs substring server-side; server 400s on `from > to` while the page silently shows zero; server pushes blanks last in sort, client does not | Export contents and order can differ from the screen |
+| **D9** | A byte-identical scroll-to-top `notify()` in `po_details.html:535` and `reimbursement_tracker.html:314` | The reported P.O. complaint, live on both pages |
+
+**Four things checked directly. One reversed a design decision:**
+
+1. **The existing toast is not theme-aware.** `templates/timeline.html:7427-7461` hardcodes
+   `background: #ffffff; color: #0f172a`. Copying it verbatim — the obvious move — would ship a white
+   toast on a dark page, **precisely the defect class this project has now shipped twice**. The
+   repo-wide guard in `tests/test_appearance_themes.py` does not forbid tokens, it forbids
+   *undefined* ones, so real tokens are both safer and theme-aware. Hence decision 6: surface and text
+   from `--app-surface-raised` / `--app-text` / `--app-border`, with **tone carried by a coloured left
+   border and icon, never a tinted background** — a tinted background is the "token used as a
+   `background:`" trap already recorded in `pending-work.md`.
+2. **`renderKpis()` really is unwired from the filters** — confirmed at `:382`, `:625`, `:637` against
+   the handlers at `:783-784`.
+3. **The no-formulas assertion is real** and also pins `calculation.iterate` off — confirmed at
+   `tests/test_reimbursement_tracker.py:556-566`.
+4. **`test_tracker_item_sits_under_its_own_release_not_the_backup_one` exists**
+   (`tests/test_reimbursement_tracker.py:601`), so the changelog entry must be its own dated release
+   rather than items appended to an existing one.
+
+**Also load-bearing:** the alert element is the **first child** of the main container on both pages
+(`po_details.html:332`, `reimbursement_tracker.html:106`), so the scroll is what makes a success
+message readable at all — deleting it without replacing the channel would make every success message
+invisible. And `notify()` assigns `className` wholesale, stripping `d-none` (permanently revealing a
+zero-height element at the top and reflowing the page on the *first* message) and `no-print` (so the
+alert then prints). Nothing restores either.
+
+### Execution steps
+
+Server first, then client; the app is runnable after every step.
+
+1. **`reimbursement_tracker_export_records`** (`app.py:40787-40873`) — accept `batch_sequence`
+   (`clean_int`, 1–999, must be in `reimbursement_tracker_available_batches()` (`app.py:40572`), else
+   `ValueError` → the existing 400 at `app.py:41105`; ignored when scope is `all`) and `engineer_id`
+   (exact match on `record.engineer_id`; **elif** the legacy name-substring at `app.py:40835`, kept
+   for bookmarked URLs). Return a `(records, resolved_sequence)` tuple — one caller
+   (`app.py:41103`), so no duplicated parsing.
+   **Done when:** `?batch_scope=current&batch_sequence=32` returns only BATCH-032, `?engineer_id=<id>`
+   returns that engineer's rows, and no-argument behaviour is byte-identical to today.
+2. **`build_reimbursement_tracker_workbook`** (`app.py:40877-40928`) — rename `last_row` →
+   `last_data_row`; write `TOTAL` in **F** and the quantised sum in **G** at `last_data_row + 1`;
+   bold both, thin top border across A:G, `#,##0.00` on G, **no merges**. Leave
+   `auto_filter.ref = f'A1:G{last_data_row}'` so the total sits **outside** the filter range —
+   otherwise sorting in Excel drags the grand total into the data where it reads as a row. Empty
+   result gives `A1:G1`, which still satisfies the pinned `^A1:G\d+$`.
+   **Done when:** two rows give `F4 == 'TOTAL'`, `G4 == G2 + G3`, `A4 is None`,
+   `auto_filter.ref == 'A1:G3'`, `max_column == 7`, no formulas, no merges.
+3. **`export_reimbursement_tracker`** (`app.py:41090-41120`) — `all` →
+   `reimbursement_tracker_all-batches_{YYYYMMDD}.xlsx`; otherwise
+   `reimbursement_tracker_{BATCH-0NN}_{YYYYMMDD}.xlsx` via `reimbursement_tracker_batch_reference()`
+   (`app.py:40548`). Name the scope in the activity-log line.
+4. **Totals follow the filters (D2).** `renderKpis(rows)` takes the filtered rows and is called from
+   inside `renderRows()`; drop the standalone calls at `:625` and `:637` (both are followed by
+   `renderRows`). **Add a `#rt-kpi-scope` caption** — *"Showing all of BATCH-032"* versus *"Showing 3
+   filtered row(s) of BATCH-032"*. **Not optional; see risk 1.**
+5. **The engineer filter reaches the export (D1).** Leave `currentFilters()` and `filteredRows()`
+   alone — the id-based client filter is correct. In `exportRegister()` (`:737-746`) stop spreading
+   `currentFilters()` wholesale; send `engineer_id` and **never** `engineer`. Omit empties.
+   **Done when:** filter to one engineer, export, and the workbook row count equals the screen count.
+6. **Export scope tracks the viewed batch (D3).** Drive the `current` option's label from
+   `state.viewBatch`, not `state.currentBatch` (`:554-556`): *"This batch (BATCH-032)"*, plus
+   *" — active"* when they coincide. Send `batch_sequence: state.viewBatch?.sequence`. The literal
+   `byId('rt-export-scope').value = 'current'` in `clearRegisterFilters()` stays, so the pinned
+   template assertion holds untouched.
+7. **Filename from the response (D4).** Read `Content-Disposition` before consuming the blob;
+   sanitise (strip `/`, `\`, leading dots; require `.xlsx`); client-built fallback if parsing fails.
+8. **Empty batch versus filtered-empty (D6).** Branch the `#rt-empty-state` text on
+   `state.rows.length === 0`, with an inline **Clear filters** action on the filtered branch. Keep the
+   element id and position.
+9. **Warn when filters hide the saved row (D7).** After `loadData()` in `saveForm()`, check whether
+   the saved row survives `filteredRows()`; if not, notify with a `warning`. Preserve the existing
+   server-`warning` branch with priority. Change `openAddForm()`'s notice to admit it cleared the
+   filters, since it already does so silently.
+10. **The screen/file divergences (D8).** Office filter → substring + lowercase, matching the server.
+    `from > to` → render zero rows with an explaining message and disable Export, rather than letting
+    the server 400 unexplained. Sort → mirror the server's blanks-last pass. *(The sort item is the
+    one to drop first if this grows.)*
+11. **The toast, in `templates/reimbursement_tracker.html`.** Mount
+    `<div id="rt-toast-stack" class="page-toast-stack no-print">`; add the CSS block using **real
+    theme tokens** per decision 6; rewrite `notify()` to set `alert.textContent` only — **never**
+    `className` — call `pageToast(message, kind)`, and not scroll. Switch the alert from
+    `alert d-none no-print` to `visually-hidden no-print`: this also fixes a latent a11y bug, since
+    `d-none` is `display: none`, which removes the element from the accessibility tree, so the live
+    region announced **nothing** once hidden. Ids, `role="status"` and `aria-live="polite"` all stay.
+12. **The same helper in `templates/po_details.html`** — byte-identical CSS and `pageToast` body,
+    `#po-toast-stack`, the same `notify()` rewrite, the same alert class change. Call sites unchanged.
+
+### Deliberately excluded
+
+- **Per-batch saved filters, mobile sort access, a search-everything box** — the owner scoped this to
+  fixing what is broken. Sorting *is* unreachable below 768px today; recorded, not fixed.
+- **Payment columns in the export.** The seven-column trim was a deliberate decision for Accounting.
+- **Extracting the toast to `static/js/`** — decision 7.
+- **Focus preservation across `innerHTML` rebuilds.** `renderRows()` rebuilds both lists, so focus
+  inside the subtree is still lost after a save. Real, but a separate ticket.
+- **Dark-theme tone *tints*** for the toast — border and icon carry tone instead, which is what makes
+  it theme-safe by construction.
+- **Adopting `leave_request.html:89` / `cash_advance.html:1072`'s scroll-into-view** — the same defect
+  wearing different clothes.
+
+### Verification
+
+No browser automation, per `AGENTS.md` "Codex App Safety During Testing".
+
+- Full suite (658 today) — **all of it**, because part 2 touches two templates and the theme-token
+  guard is repo-wide. Then `tests.test_appearance_themes` explicitly, and `tests.test_changelog_coverage`
+  last, since it reads the newest commit.
+- Every workbook claim through the Flask test client + `openpyxl`. **Load once with `data_only=True`
+  and assert the total is still a number** — the concrete proof of decision 2 that a formula fails.
+- A script that computes the expected filtered set in Python and compares it to the exported rows
+  across filter permutations (engineer, office, paid, date range, and combinations). This is the
+  "screen and file agree" check, done without a browser.
+- Each new test proved by injection: confirm the injection applied by **needle count and
+  `git status`**, not by a hash — see the CRLF/LF trap recorded in `changes.md` — and read the
+  assertion message rather than the exit code.
+- **Hand to the owner:** the toast legible in light **and** dark; it must not cover the modal's Save
+  button on a phone; the saved row stays put on a long register; and Excel opens the TOTAL row
+  looking like a total.
+
+### After implementation
+
+- Re-read this plan against the diff and amend this entry if the implementation differed.
+- Dated `changes.md` section, newest first, **with its own heading** — that has now been got wrong
+  twice and corrected twice.
+- **A new dated `releases.json` release, not items appended to an existing one** —
+  `tests/test_reimbursement_tracker.py:601` exists because that mistake was made before.
+- **No `CACHE_VERSION` bump** (`app.py:15755`): no new static asset, no `APP_SHELL` file touched, and
+  neither page is a shell entry. Stated so nobody bumps it reflexively — but **read the live value
+  before committing** regardless.
+- Stage explicitly, file by file. Never `scheduler.db`, `output/`, `tmp/`, or the handoff artifact.
+- Push or deploy only after a separate owner instruction.
+
+### Risks
+
+Ranked by "would ship and nobody notices".
+
+1. **A filtered total mistaken for a batch total.** The most dangerous outcome of *fixing* D2: a
+   number that is now correct-but-scoped, looking exactly like the number that used to be batch-wide.
+   Someone copies ₱41,200 believing it is BATCH-032's total. **The scope caption is the entire
+   mitigation, which is why step 4 marks it non-optional.**
+2. **The TOTAL row sorted into the data.** If `auto_filter.ref` swallows it, an Excel user sorts by
+   Total and the grand total lands mid-table reading as a row. Silent, permanent, found downstream.
+3. **The legacy `engineer=` substring path staying live.** Kept for bookmarks, it means a hand-built
+   URL still produces a wrong file with no error — D1 dormant rather than dead. Log when the name
+   path fires with an all-digit value, and assert the page never sends it.
+4. **`Content-Disposition` parsing failing silently** — the fallback name is plausible, so nobody
+   notices the header path is dead until the server's rule changes. Assert the header directly.
+5. **The two toast copies drifting.** One page gets a fix, the other does not, invisible until
+   someone compares. The parity test is the containment.
+6. **A white toast on a dark page** if decision 6 is not followed. This project has shipped that
+   defect twice; the repo-wide token guard catches undefined tokens but **cannot** catch a hardcoded
+   light literal — so this one is on the reviewer, not the suite.
+
 ## Reimbursement Tracker — selectable historical batch views
 
 **Status:** `Executed — 47ebd96`

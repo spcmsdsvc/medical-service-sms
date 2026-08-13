@@ -1,6 +1,33 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-13-reimbursement-register-fixes",
+      "release_date": "2026-08-13",
+      "title": "Reimbursement Register Fixes",
+      "summary": "Reimbursement and P.O. register confirmations stay visible without moving the page, while filtered tracker totals and Excel exports stay aligned with the rows on screen.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-13-reimbursement-register-filters-and-export",
+          "category": "Reimbursement Tracker",
+          "description": "Reimbursement Tracker filters now drive the visible KPIs and Excel export, including exact engineer filtering, viewed-batch scope, dated filenames, and a literal TOTAL row for Accounting.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-13-register-fixed-confirmations",
+          "category": "P.O. Details",
+          "description": "P.O. Details and Reimbursement Tracker now show accessible fixed-position confirmations without scrolling to the top or leaking alerts into printouts.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-13",
       "release_date": "2026-08-13",
       "title": "Multi-machine Purchase Orders",

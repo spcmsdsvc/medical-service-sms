@@ -40790,8 +40790,35 @@ def reimbursement_tracker_export_records(batch_scope=None):
     if batch_scope not in {'current', 'all'}:
         raise ValueError('The export batch scope is invalid. Choose current or all.')
 
+    resolved_sequence = None
+    if batch_scope == 'current':
+        current_sequence = int(reimbursement_tracker_current_batch_state().current_batch_sequence)
+        available_sequences = {
+            batch['sequence']
+            for batch in reimbursement_tracker_available_batches(current_sequence)
+        }
+        requested_batch_text = (request.args.get('batch_sequence') or '').strip()
+        if requested_batch_text:
+            resolved_sequence = clean_int(requested_batch_text)
+            if not resolved_sequence or not 1 <= resolved_sequence <= 999:
+                raise ValueError('The requested reimbursement batch is invalid.')
+            if resolved_sequence not in available_sequences:
+                raise ValueError('The requested reimbursement batch is not available.')
+        else:
+            resolved_sequence = current_sequence
+
     reference_filter = (request.args.get('reference') or '').strip().casefold()
+    engineer_id_text = (request.args.get('engineer_id') or '').strip()
+    engineer_id = clean_int(engineer_id_text) if engineer_id_text else None
+    if engineer_id_text and (not engineer_id or engineer_id < 1):
+        raise ValueError('The engineer filter is invalid.')
     engineer_filter = (request.args.get('engineer') or '').strip().casefold()
+    if engineer_filter and engineer_filter.isdigit() and engineer_id is None:
+        print(
+            '[Reimbursement Tracker] Legacy engineer filter received an all-digit value; '
+            'retaining name matching for compatibility.',
+            flush=True,
+        )
     office_filter = (request.args.get('office') or '').strip().casefold()
     from_text = (request.args.get('from') or '').strip()
     to_text = (request.args.get('to') or '').strip()
@@ -40821,10 +40848,9 @@ def reimbursement_tracker_export_records(batch_scope=None):
     records_query = ReimbursementTrackerEntry.query.options(
         joinedload(ReimbursementTrackerEntry.engineer),
     )
-    if batch_scope == 'current':
-        current_sequence = int(reimbursement_tracker_current_batch_state().current_batch_sequence)
+    if resolved_sequence is not None:
         records_query = records_query.filter(
-            ReimbursementTrackerEntry.batch_sequence == current_sequence,
+            ReimbursementTrackerEntry.batch_sequence == resolved_sequence,
         )
     records = records_query.all()
     filtered = []
@@ -40832,7 +40858,9 @@ def reimbursement_tracker_export_records(batch_scope=None):
         engineer_name = record.engineer_name_snapshot or (record.engineer.name if record.engineer else '')
         if reference_filter and reference_filter not in (record.reference or '').casefold():
             continue
-        if engineer_filter and engineer_filter not in engineer_name.casefold():
+        if engineer_id is not None and record.engineer_id != engineer_id:
+            continue
+        if engineer_id is None and engineer_filter and engineer_filter not in engineer_name.casefold():
             continue
         if office_filter and office_filter not in (record.office or '').casefold():
             continue
@@ -40871,7 +40899,7 @@ def reimbursement_tracker_export_records(batch_scope=None):
 
     filtered.sort(key=sort_value, reverse=descending)
     filtered.sort(key=lambda record: 1 if is_empty(record) else 0)
-    return filtered
+    return filtered, resolved_sequence
 
 
 def build_reimbursement_tracker_workbook(records):
@@ -40911,16 +40939,30 @@ def build_reimbursement_tracker_workbook(records):
         cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
         cell.border = border
 
-    last_row = 1 + len(records)
-    for row_number in range(2, last_row + 1):
+    last_data_row = 1 + len(records)
+    for row_number in range(2, last_data_row + 1):
         for cell in worksheet[row_number]:
             cell.alignment = Alignment(vertical='top', wrap_text=True)
             cell.border = border
         worksheet.cell(row_number, 2).number_format = 'yyyy-mm-dd'
         worksheet.cell(row_number, 7).number_format = '#,##0.00'
 
+    total_row = last_data_row + 1
+    total_amount = sum(
+        (Decimal(str(record.total or 0)).quantize(Decimal('0.01')) for record in records),
+        Decimal('0.00'),
+    ).quantize(Decimal('0.01'))
+    total_border = Border(top=Side(style='thin', color='D6E0EC'))
+    total_label = worksheet.cell(total_row, 6, 'TOTAL')
+    total_value = worksheet.cell(total_row, 7, total_amount)
+    for column_number in range(1, 8):
+        worksheet.cell(total_row, column_number).border = total_border
+    total_label.font = Font(bold=True)
+    total_value.font = Font(bold=True)
+    total_value.number_format = '#,##0.00'
+
     worksheet.freeze_panes = 'A2'
-    worksheet.auto_filter.ref = f'A1:G{last_row}'
+    worksheet.auto_filter.ref = f'A1:G{last_data_row}'
     widths = [18, 16, 20, 34, 28, 14, 15]
     for column_number, width in enumerate(widths, start=1):
         worksheet.column_dimensions[get_column_letter(column_number)].width = width
@@ -41100,7 +41142,7 @@ def export_reimbursement_tracker():
             'error': 'The export batch scope is invalid. Choose current or all.',
         }), 400
     try:
-        records = reimbursement_tracker_export_records(batch_scope=batch_scope)
+        records, resolved_sequence = reimbursement_tracker_export_records(batch_scope=batch_scope)
     except RuntimeError as export_state_error:
         return jsonify({'success': False, 'error': str(export_state_error)}), 503
     except ValueError as export_error:
@@ -41110,8 +41152,16 @@ def export_reimbursement_tracker():
     output = io.BytesIO()
     workbook.save(output)
     output.seek(0)
-    add_activity_log_entry(f'Exported Reimbursement Tracker ({len(records)} record(s))')
-    filename = f'reimbursement_tracker_{get_manila_time().strftime("%Y%m%d")}.xlsx'
+    if batch_scope == 'all':
+        scope_label = 'all batches'
+        filename_stem = 'reimbursement_tracker_all-batches'
+    else:
+        scope_label = reimbursement_tracker_batch_reference(resolved_sequence)
+        filename_stem = f'reimbursement_tracker_{scope_label}'
+    add_activity_log_entry(
+        f'Exported Reimbursement Tracker ({len(records)} record(s), {scope_label})'
+    )
+    filename = f'{filename_stem}_{get_manila_time().strftime("%Y%m%d")}.xlsx'
     return send_file(
         output,
         as_attachment=True,

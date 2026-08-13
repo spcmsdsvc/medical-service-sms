@@ -536,6 +536,11 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         self.assertEqual(set(all_export), {'BATCH-032', 'BATCH-033'})
         self.assertEqual(len(all_export), 2)
 
+        historical_export = exported_references(
+            client.get('/export_reimbursement_tracker?batch_scope=current&batch_sequence=32')
+        )
+        self.assertEqual(historical_export, ['BATCH-032'])
+
         invalid_scope = client.get('/export_reimbursement_tracker?batch_scope=history')
         self.assertEqual(invalid_scope.status_code, 400)
         self.assertIn('scope', invalid_scope.get_json()['error'].lower())
@@ -554,9 +559,14 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(worksheet.freeze_panes, 'A2')
         self.assertRegex(worksheet.auto_filter.ref, r'^A1:G\d+$')
+        self.assertEqual(worksheet.auto_filter.ref, 'A1:G3')
         self.assertEqual(worksheet.max_column, 7)
         self.assertIsNone(worksheet['H1'].value)
         self.assertIsInstance(worksheet['G2'].value, (int, float, Decimal))
+        self.assertEqual(worksheet['F4'].value, 'TOTAL')
+        self.assertEqual(worksheet['G4'].value, worksheet['G2'].value + worksheet['G3'].value)
+        self.assertIsInstance(worksheet['G4'].value, (int, float, Decimal))
+        self.assertIsNone(worksheet['A4'].value)
         self.assertFalse(worksheet.merged_cells.ranges)
         self.assertFalse(workbook.calculation.iterate)
         formulas = [
@@ -572,6 +582,22 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
             'Summary', 'Trasnportation', 'Payment Status to Engineers',
         ):
             self.assertNotIn(removed_text, exported_text)
+
+    def test_export_matches_exact_engineer_filter_and_uses_batch_filename(self):
+        client = self._client_for(self.tracker_user_id)
+        jfl = self._add(client, engineer_id=self.jfl_id, office='Manila', representation='12.50')
+        self._add(client, engineer_id=self.raj_id, office='Cebu', representation='8.75')
+
+        response = client.get(
+            f'/export_reimbursement_tracker?engineer_id={self.jfl_id}&batch_scope=current'
+        )
+        self.assertEqual(response.status_code, 200, response.status)
+        self.assertIn('filename=reimbursement_tracker_BATCH-032_', response.headers.get('Content-Disposition', ''))
+        worksheet = load_workbook(BytesIO(response.data), data_only=True)['Sheet']
+        self.assertEqual(worksheet['A2'].value, jfl['reference'])
+        self.assertEqual(worksheet['A3'].value, None)
+        self.assertEqual(worksheet['F3'].value, 'TOTAL')
+        self.assertEqual(worksheet['G3'].value, worksheet['G2'].value)
 
     def test_tracker_labels_keep_the_register_spelling_outside_the_export(self):
         template = (ROOT / 'templates' / 'reimbursement_tracker.html').read_text(encoding='utf-8')
@@ -782,16 +808,51 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         self.assertIn('async function openAddForm()', template)
         self.assertIn('id="rt-export-scope"', template)
         self.assertIn('batch_scope:', template)
+        self.assertIn("params.set('batch_sequence'", template)
+        self.assertIn("params.set('engineer_id'", template)
+        self.assertNotIn('engineer: filters.engineer', template)
+        self.assertIn('responseFilename', template)
         self.assertIn("byId('rt-export-scope').value = 'current'", template)
         self.assertIn('state.rows = viewSequenceValue', template)
         self.assertIn('state.rows = [];', template)
-        self.assertIn("byId('rt-total-amount').textContent = formatMoney(state.rows.reduce", template)
+        self.assertIn('function renderKpis(rows)', template)
+        self.assertIn("byId('rt-total-amount').textContent = formatMoney(rows.reduce", template)
+        self.assertIn('id="rt-kpi-scope"', template)
+        self.assertIn('data-rt-clear-empty', template)
+        self.assertIn('Row saved, but the current filters hide it', template)
         self.assertIn('clearRegisterFilters()', template)
+        self.assertIn('page-toast-stack', template)
+        self.assertIn('class="visually-hidden no-print"', template)
+        self.assertNotIn('window.scrollTo', template)
+        self.assertNotIn('alert.className = `alert alert-${kind}`', template)
         self.assertIn('readonly', template)
         self.assertNotRegex(
             template, r'placeholder="BATCH-001"',
             'a hard-coded BATCH-001 placeholder would invite a restart at the wrong batch',
         )
+
+    def test_register_notifications_are_fixed_accessible_and_theme_safe_on_both_pages(self):
+        templates = {
+            'reimbursement_tracker.html': (ROOT / 'templates' / 'reimbursement_tracker.html').read_text(encoding='utf-8'),
+            'po_details.html': (ROOT / 'templates' / 'po_details.html').read_text(encoding='utf-8'),
+        }
+        for name, template in templates.items():
+            self.assertIn('page-toast-stack', template, name)
+            self.assertIn('function pageToast(message, kind = \'info\')', template, name)
+            self.assertIn('class="visually-hidden no-print"', template, name)
+            self.assertNotIn('window.scrollTo', template, name)
+            self.assertNotIn('alert.className = `alert alert-${kind}`', template, name)
+            self.assertIn('var(--app-surface-raised', template, name)
+            self.assertIn('var(--app-border', template, name)
+            self.assertIn('var(--app-text', template, name)
+
+        tracker = templates['reimbursement_tracker.html']
+        po_details = templates['po_details.html']
+        def normalized_toast_css(template):
+            css = template.split('    .page-toast {', 1)[1].split('[data-app-theme', 1)[0]
+            return ' '.join(css.split())
+
+        self.assertEqual(normalized_toast_css(tracker), normalized_toast_css(po_details))
 
     def test_modal_body_can_scroll_independently_of_the_form_wrapper(self):
         """The form sits between .modal-content and .modal-body, which broke Bootstrap.

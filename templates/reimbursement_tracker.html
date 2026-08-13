@@ -87,6 +87,15 @@
     .rt-confirm-backdrop { align-items: center; background: rgba(6, 17, 32, .68); display: none; inset: 0; justify-content: center; padding: 1rem; position: fixed; z-index: 2060; }
     .rt-confirm-backdrop.show { display: flex; }
     .rt-confirm-card { background: var(--app-surface, #fff); border: 1px solid var(--app-border, #d6e0ec); border-radius: .85rem; box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, .24); color: var(--app-text, #16243a); max-width: 30rem; padding: 1.25rem; width: 100%; }
+    .page-toast-stack { display: grid; gap: .75rem; max-width: min(26rem, calc(100vw - 2rem)); pointer-events: none; position: fixed; right: 1rem; top: 1rem; width: 100%; z-index: 2080; }
+    .page-toast { align-items: flex-start; background: var(--app-surface-raised, #f8fafc); border: 1px solid var(--app-border, #dbe3ea); border-left: .35rem solid var(--app-primary, #0d6efd); border-radius: .75rem; box-shadow: 0 .8rem 2rem rgba(15, 23, 42, .2); color: var(--app-text, #172033); display: flex; gap: .65rem; padding: .8rem 1rem; pointer-events: auto; }
+    .page-toast.success { border-left-color: #198754; }
+    .page-toast.warning { border-left-color: #fd7e14; }
+    .page-toast.danger { border-left-color: #dc3545; }
+    .page-toast-icon { color: var(--app-primary, #0d6efd); flex: 0 0 auto; line-height: 1.4; }
+    .page-toast.success .page-toast-icon { color: #198754; }
+    .page-toast.warning .page-toast-icon { color: #fd7e14; }
+    .page-toast.danger .page-toast-icon { color: #dc3545; }
     [data-app-theme="dark"] .rt-hero { background: linear-gradient(135deg, #101b2c, #1c3f7e); }
     [data-app-theme="dark"] .rt-status.paid { background: #103e2a; color: #9af1c1; }
     [data-app-theme="dark"] .rt-status.unpaid { background: #4a3514; color: #ffd68a; }
@@ -103,7 +112,8 @@
 
 {% block content %}
 <main class="container-fluid py-3 rt-page" id="reimbursement-tracker-page">
-    <div id="rt-alert" class="alert d-none no-print" role="status" aria-live="polite"></div>
+    <div id="rt-alert" class="visually-hidden no-print" role="status" aria-live="polite"></div>
+    <div id="rt-toast-stack" class="page-toast-stack no-print" aria-hidden="true"></div>
 
     <section class="rt-hero mb-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
         <div>
@@ -132,7 +142,7 @@
         <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Rows</div><div class="rt-kpi-value" id="rt-total-count">0</div></div></div>
         <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Paid in full</div><div class="rt-kpi-value" id="rt-paid-count">0</div></div></div>
         <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Unpaid</div><div class="rt-kpi-value" id="rt-unpaid-count">0</div></div></div>
-        <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Total PHP</div><div class="rt-kpi-value" id="rt-total-amount">0.00</div></div></div>
+        <div class="col-6 col-lg-3"><div class="rt-kpi"><div class="rt-kpi-label">Total PHP</div><div class="rt-kpi-value" id="rt-total-amount">0.00</div><div class="small rt-muted mt-1" id="rt-kpi-scope">Showing all of the current batch</div></div></div>
     </section>
 
     <section class="rt-filter-panel mb-3 no-print" aria-label="Reimbursement tracker filters">
@@ -180,7 +190,7 @@
                     <div>
                         <label class="visually-hidden" for="rt-export-scope">Export scope</label>
                         <select class="form-select form-select-sm" id="rt-export-scope" aria-label="Export scope">
-                            <option value="current" selected>Current batch</option>
+                            <option value="current" selected>This batch</option>
                             <option value="all">All batches</option>
                         </select>
                     </div>
@@ -198,7 +208,7 @@
             </table>
         </div>
         <div class="rt-mobile-list" id="rt-mobile-list"></div>
-        <div id="rt-empty-state" class="p-4 text-center rt-muted">No reimbursement rows match the current filters.</div>
+        <div id="rt-empty-state" class="p-4 text-center rt-muted">No reimbursement rows are saved in this batch.</div>
     </section>
 </main>
 
@@ -311,12 +321,27 @@
     const moneyNumber = (value) => Number.parseFloat(String(value ?? '').replace(/,/g, '')) || 0;
     const formatMoney = (value) => moneyNumber(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+    function pageToast(message, kind = 'info') {
+        const stack = byId('rt-toast-stack');
+        if (!stack) return;
+        const tone = ['success', 'warning', 'danger', 'info'].includes(kind) ? kind : 'info';
+        const toast = document.createElement('div');
+        toast.className = `page-toast ${tone}`;
+        const icon = document.createElement('i');
+        icon.className = `page-toast-icon fa-solid ${tone === 'success' ? 'fa-circle-check' : tone === 'warning' ? 'fa-triangle-exclamation' : tone === 'danger' ? 'fa-circle-xmark' : 'fa-circle-info'}`;
+        icon.setAttribute('aria-hidden', 'true');
+        const text = document.createElement('span');
+        text.textContent = message;
+        toast.append(icon, text);
+        stack.append(toast);
+        window.setTimeout(() => toast.remove(), 6000);
+    }
+
     function notify(message, kind = 'info') {
         const alert = byId('rt-alert');
         if (!alert) return;
-        alert.className = `alert alert-${kind}`;
         alert.textContent = message;
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        pageToast(message, kind);
     }
 
     function currentFilters() {
@@ -354,7 +379,7 @@
             const inDates = (!filters.from || row.submission_date >= filters.from) && (!filters.to || row.submission_date <= filters.to);
             return (!filters.reference || String(row.reference).toLowerCase().includes(filters.reference))
                 && (!filters.engineer || String(row.engineer_id) === String(filters.engineer))
-                && (!filters.office || row.office === filters.office)
+                && (!filters.office || String(row.office || '').toLowerCase().includes(String(filters.office).toLowerCase()))
                 && (!filters.paid || (filters.paid === 'paid' ? row.paid_in_full : !row.paid_in_full))
                 && inDates;
         });
@@ -364,7 +389,16 @@
             if (key === 'paid_in_full') return row.paid_in_full ? 1 : 0;
             return String(row[key] ?? '').toLowerCase();
         };
+        const isEmpty = (row) => {
+            if (key === 'engineer_name') return !String(row.engineer_name || '').trim();
+            if (['office', 'reference', 'control_number', 'description'].includes(key)) return !String(row[key] || '').trim();
+            if (['paid_amount', 'paid_transfer_date'].includes(key)) return !row[key];
+            return false;
+        };
         rows.sort((a, b) => {
+            const leftEmpty = isEmpty(a);
+            const rightEmpty = isEmpty(b);
+            if (leftEmpty !== rightEmpty) return leftEmpty ? 1 : -1;
             const left = value(a), right = value(b);
             const result = typeof left === 'number' ? left - right : String(left).localeCompare(String(right), undefined, { numeric: true });
             return state.sortDirection === 'asc' ? result : -result;
@@ -379,11 +413,15 @@
         });
     }
 
-    function renderKpis() {
-        byId('rt-total-count').textContent = state.rows.length;
-        byId('rt-paid-count').textContent = state.rows.filter((row) => row.paid_in_full).length;
-        byId('rt-unpaid-count').textContent = state.rows.filter((row) => !row.paid_in_full).length;
-        byId('rt-total-amount').textContent = formatMoney(state.rows.reduce((sum, row) => sum + moneyNumber(row.total), 0));
+    function renderKpis(rows) {
+        byId('rt-total-count').textContent = rows.length;
+        byId('rt-paid-count').textContent = rows.filter((row) => row.paid_in_full).length;
+        byId('rt-unpaid-count').textContent = rows.filter((row) => !row.paid_in_full).length;
+        byId('rt-total-amount').textContent = formatMoney(rows.reduce((sum, row) => sum + moneyNumber(row.total), 0));
+        const reference = state.viewBatch?.reference || state.currentBatch?.reference || 'the current batch';
+        byId('rt-kpi-scope').textContent = rows.length === state.rows.length
+            ? `Showing all of ${reference}`
+            : `Showing ${rows.length} filtered row(s) of ${reference}`;
     }
 
     function actionHtml(row) {
@@ -409,8 +447,23 @@
 
     function renderRows() {
         const rows = filteredRows();
+        const filters = currentFilters();
+        const invalidDateRange = Boolean(filters.from && filters.to && filters.from > filters.to);
+        const batchReference = state.viewBatch?.reference || state.currentBatch?.reference || 'this batch';
+        renderKpis(rows);
         byId('rt-result-count').textContent = `${rows.length} of ${state.rows.length} row(s) shown`;
-        byId('rt-empty-state').classList.toggle('d-none', rows.length > 0);
+        const emptyState = byId('rt-empty-state');
+        emptyState.classList.toggle('d-none', rows.length > 0);
+        if (!rows.length) {
+            if (invalidDateRange) {
+                emptyState.textContent = 'The From date cannot be later than the To date.';
+            } else if (!state.rows.length) {
+                emptyState.textContent = `No reimbursement rows are saved in ${batchReference}.`;
+            } else {
+                emptyState.innerHTML = 'No reimbursement rows match the current filters. <button type="button" class="btn btn-link p-0 align-baseline" data-rt-clear-empty>Clear filters</button>.';
+            }
+        }
+        byId('rt-export-button').disabled = invalidDateRange;
         byId('rt-table-body').innerHTML = rows.map((row) => `<tr>
             <td><span class="rt-control">${escapeHtml(row.reference)}</span></td>
             <td>${escapeHtml(row.submission_date || '—')}</td>
@@ -549,11 +602,15 @@
 
     function renderCurrentBatch() {
         const batch = state.currentBatch;
+        const viewedBatch = state.viewBatch || batch;
         const label = byId('rt-current-batch-reference');
         const button = byId('rt-start-batch-button');
         const currentExportOption = byId('rt-export-scope')?.querySelector('option[value="current"]');
         if (label) label.textContent = batch?.reference || 'Unavailable';
-        if (currentExportOption) currentExportOption.textContent = batch?.reference ? `Current batch (${batch.reference})` : 'Current batch';
+        if (currentExportOption) {
+            const activeSuffix = viewedBatch && batch && viewedBatch.sequence === batch.sequence ? ' — active' : '';
+            currentExportOption.textContent = viewedBatch?.reference ? `This batch (${viewedBatch.reference})${activeSuffix}` : 'This batch';
+        }
         if (!button) return;
         if (!batch) {
             button.disabled = true;
@@ -622,7 +679,6 @@
         renderBatchOptions();
         byId('rt-reference').placeholder = state.suggestedReference || 'BATCH-000';
         populateFilters();
-        renderKpis();
         renderRows();
         const warning = byId('rt-duplicate-warning');
         if (data.duplicate_initials?.length) {
@@ -634,7 +690,6 @@
     async function switchBatchView(viewSequence, message = '', resetExportScope = false) {
         clearRegisterFilters(resetExportScope);
         state.rows = [];
-        renderKpis();
         renderRows();
         await loadData(viewSequence);
         if (message && state.viewBatch) notify(`${message} ${state.viewBatch.reference}.`, 'info');
@@ -699,8 +754,11 @@
             if (!response.ok || !data.success) throw new Error(data.error || 'The reimbursement row could not be saved.');
             state.modal.hide();
             await loadData(state.viewBatch?.sequence);
+            const savedRowVisible = data.entry && filteredRows().some((row) => String(row.id) === String(data.entry.id));
             if (data.warning) {
                 notify(data.warning, 'warning');
+            } else if (!savedRowVisible) {
+                notify('Row saved, but the current filters hide it. Clear filters to view the saved row.', 'warning');
             } else {
                 notify(editingId ? 'Reimbursement row updated.' : 'Reimbursement row added.', 'success');
             }
@@ -725,7 +783,7 @@
         const viewSequence = Number(state.viewBatch?.sequence || 0);
         if (currentSequence && viewSequence && currentSequence !== viewSequence) {
             try {
-                await switchBatchView(currentSequence, 'Switched to the active batch');
+                await switchBatchView(currentSequence, 'Switched to the active batch and cleared the register filters');
             } catch (error) {
                 notify(error.message, 'danger');
                 return;
@@ -734,21 +792,33 @@
         openForm();
     }
 
+    function responseFilename(response) {
+        const header = response.headers.get('Content-Disposition') || '';
+        const match = header.match(/filename\*?=(?:UTF-8'')?([^;]+)/i);
+        if (!match) return 'reimbursement_tracker.xlsx';
+        let filename = match[1].trim().replace(/^['"]|['"]$/g, '');
+        try { filename = decodeURIComponent(filename); } catch (error) { /* use raw header value */ }
+        filename = filename.replace(/[\\/]/g, '').replace(/^\.+/, '');
+        return /\.xlsx$/i.test(filename) ? filename : 'reimbursement_tracker.xlsx';
+    }
+
     async function exportRegister() {
         const button = byId('rt-export-button');
         button.disabled = true;
         try {
-            const params = new URLSearchParams({
-                ...currentFilters(),
-                batch_scope: byId('rt-export-scope')?.value || 'current',
-                sort: state.sortKey,
-                direction: state.sortDirection,
+            const filters = currentFilters();
+            const scope = byId('rt-export-scope')?.value || 'current';
+            const params = new URLSearchParams({ batch_scope: scope, sort: state.sortKey, direction: state.sortDirection });
+            ['reference', 'office', 'from', 'to', 'paid'].forEach((key) => {
+                if (filters[key]) params.set(key, filters[key]);
             });
+            if (filters.engineer) params.set('engineer_id', filters.engineer);
+            if (scope === 'current' && state.viewBatch?.sequence) params.set('batch_sequence', state.viewBatch.sequence);
             const response = await fetch(`/export_reimbursement_tracker?${params.toString()}`, { headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } });
             if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || 'The tracker could not be exported.'); }
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
-            const link = document.createElement('a'); link.href = url; link.download = 'reimbursement_tracker.xlsx'; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+            const link = document.createElement('a'); link.href = url; link.download = responseFilename(response); document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
             notify('Reimbursement tracker exported.', 'success');
         } catch (error) { notify(error.message, 'danger'); }
         finally { button.disabled = false; }
@@ -768,6 +838,11 @@
         if (edit) { openForm(state.rows.find((row) => row.id === Number(edit.dataset.rtEdit))); return; }
         const remove = event.target.closest('[data-rt-delete]');
         if (remove) deleteRow(Number(remove.dataset.rtDelete));
+        const clearEmpty = event.target.closest('[data-rt-clear-empty]');
+        if (clearEmpty) {
+            clearRegisterFilters();
+            renderRows();
+        }
     });
 
     byId('rt-add-button').addEventListener('click', openAddForm);
