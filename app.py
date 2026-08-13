@@ -1874,6 +1874,47 @@ class PurchaseOrder(db.Model):
         foreign_keys=[client_id],
     )
     created_by_user = db.relationship('User', foreign_keys=[created_by])
+    machines = db.relationship(
+        'PurchaseOrderMachine',
+        back_populates='purchase_order',
+        order_by='PurchaseOrderMachine.position, PurchaseOrderMachine.id',
+        cascade='all, delete-orphan',
+        lazy='selectin',
+    )
+
+
+class PurchaseOrderMachine(db.Model):
+    """One machine covered by a purchase order, in the order selected."""
+    __tablename__ = 'purchase_order_machine'
+
+    id = db.Column(db.Integer, primary_key=True)
+    purchase_order_id = db.Column(
+        db.Integer,
+        db.ForeignKey('purchase_order.id'),
+        nullable=False,
+    )
+    product_serial = db.Column(
+        db.String(100),
+        db.ForeignKey('product.serial_number'),
+        nullable=False,
+    )
+    position = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, nullable=True, default=get_manila_time)
+
+    # ShiftEngineer historically omitted the pair constraint and needed a repair pass.
+    # P.O.-machine pairs are financial register identity, so enforce them at the database
+    # boundary as well as in the normalizer.
+    __table_args__ = (
+        db.UniqueConstraint(
+            'purchase_order_id',
+            'product_serial',
+            name='uq_purchase_order_machine_pair',
+        ),
+        db.Index('idx_purchase_order_machine_purchase_order', 'purchase_order_id'),
+        db.Index('idx_purchase_order_machine_product_serial', 'product_serial'),
+    )
+
+    purchase_order = db.relationship('PurchaseOrder', back_populates='machines')
     product = db.relationship('Product', foreign_keys=[product_serial])
 
 
@@ -3529,6 +3570,7 @@ def ensure_purchase_order_schema():
     try:
         with db.engine.begin() as connection:
             PurchaseOrder.__table__.create(bind=connection, checkfirst=True)
+            PurchaseOrderMachine.__table__.create(bind=connection, checkfirst=True)
             columns = {
                 row[1]
                 for row in connection.exec_driver_sql(
@@ -3569,6 +3611,39 @@ def ensure_purchase_order_schema():
             connection.exec_driver_sql(
                 "CREATE INDEX IF NOT EXISTS idx_purchase_order_product_serial "
                 "ON purchase_order (product_serial)"
+            )
+            connection.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_purchase_order_machine_pair "
+                "ON purchase_order_machine (purchase_order_id, product_serial)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_purchase_order_machine_purchase_order "
+                "ON purchase_order_machine (purchase_order_id)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_purchase_order_machine_product_serial "
+                "ON purchase_order_machine (product_serial)"
+            )
+            # Key only on the P.O. id: a machine deliberately removed from an existing
+            # association must not be resurrected on the next request. Do not use
+            # INSERT OR IGNORE, because a real uniqueness violation must roll back the
+            # transaction and leave this once-per-process guard retryable. Also do not
+            # join Product here; foreign keys are not enforced by this app, and a deleted
+            # Product row must not make a legacy link disappear during backfill.
+            connection.exec_driver_sql(
+                """
+                INSERT INTO purchase_order_machine
+                    (purchase_order_id, product_serial, position, created_at)
+                SELECT po.id, po.product_serial, 0, CURRENT_TIMESTAMP
+                FROM purchase_order AS po
+                WHERE po.product_serial IS NOT NULL
+                  AND TRIM(po.product_serial) <> ''
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM purchase_order_machine AS machine_link
+                      WHERE machine_link.purchase_order_id = po.id
+                  )
+                """
             )
         _purchase_order_schema_ready = True
     except Exception as purchase_order_schema_error:
@@ -37890,11 +37965,14 @@ def analytics_equipment_counts(orders, previous_orders=None):
     previous_orders = previous_orders or []
 
     def linked_records(records):
-        return [order for order in records if getattr(order, 'product', None)]
+        return [order for order in records if purchase_order_machine_rows(order)]
 
     current_linked = linked_records(orders)
     previous_linked = linked_records(previous_orders)
     linked_total = len(current_linked)
+    machine_link_total = sum(
+        len(purchase_order_machine_rows(order)) for order in current_linked
+    )
     total = len(orders)
 
     current_by_machine = {}
@@ -37906,38 +37984,40 @@ def analytics_equipment_counts(orders, previous_orders=None):
     machine_serials = set()
     client_ids = set()
 
-    def machine_label(order):
-        product = order.product
-        serial = clean_str(getattr(product, 'serial_number', None)) or clean_str(
-            getattr(order, 'product_serial', None)
-        ) or ''
+    def machine_label(machine_link):
+        serial = clean_str(getattr(machine_link, 'product_serial', None)) or ''
+        product = getattr(machine_link, 'product', None)
         name = clean_str(getattr(product, 'name', None)) or ''
         return ' · '.join(value for value in (serial, name) if value) or 'Unlabelled machine'
 
-    def model_label(order):
-        return clean_str(getattr(order.product, 'name', None)) or 'Unknown model'
+    def model_label(machine_link):
+        product = getattr(machine_link, 'product', None)
+        return clean_str(getattr(product, 'name', None)) or 'Unknown model'
 
     for order in current_linked:
-        machine_serial = clean_str(getattr(order.product, 'serial_number', None))
-        if machine_serial:
-            machine_serials.add(machine_serial)
         if getattr(order, 'client_id', None):
             client_ids.add(order.client_id)
-        machine = machine_label(order)
-        model = model_label(order)
-        coverage = product_contract_status(order.product)
-        current_by_machine[machine] = current_by_machine.get(machine, 0) + 1
-        current_by_model[model] = current_by_model.get(model, 0) + 1
-        current_by_coverage[coverage] = current_by_coverage.get(coverage, 0) + 1
+        for machine_link in purchase_order_machine_rows(order):
+            machine_serial = clean_str(getattr(machine_link, 'product_serial', None))
+            if machine_serial:
+                machine_serials.add(machine_serial)
+            machine = machine_label(machine_link)
+            model = model_label(machine_link)
+            product = getattr(machine_link, 'product', None)
+            coverage = product_contract_status(product) if product else 'Product missing'
+            current_by_machine[machine] = current_by_machine.get(machine, 0) + 1
+            current_by_model[model] = current_by_model.get(model, 0) + 1
+            current_by_coverage[coverage] = current_by_coverage.get(coverage, 0) + 1
 
     for order in previous_linked:
-        machine = machine_label(order)
-        model = model_label(order)
-        previous_by_machine[machine] = previous_by_machine.get(machine, 0) + 1
-        previous_by_model[model] = previous_by_model.get(model, 0) + 1
+        for machine_link in purchase_order_machine_rows(order):
+            machine = machine_label(machine_link)
+            model = model_label(machine_link)
+            previous_by_machine[machine] = previous_by_machine.get(machine, 0) + 1
+            previous_by_model[model] = previous_by_model.get(model, 0) + 1
 
     for order in orders:
-        if getattr(order, 'product', None):
+        if purchase_order_machine_rows(order):
             continue
         client_label = order.client.name if order.client else 'Unassigned client'
         unlinked_clients[client_label] = unlinked_clients.get(client_label, 0) + 1
@@ -37947,6 +38027,7 @@ def analytics_equipment_counts(orders, previous_orders=None):
         'linked_total': linked_total,
         'unlinked_total': unlinked_total,
         'linked_pct': round((linked_total * 100) / total) if total else 0,
+        'machine_link_total': machine_link_total,
         'machine_total': len(machine_serials),
         'client_total': len(client_ids),
         'by_machine': analytics_ranked_counts(current_by_machine, previous_by_machine)[:10],
@@ -37982,7 +38063,7 @@ def get_po_analytics():
     def orders_for_range(range_start, range_end):
         return PurchaseOrder.query.options(
             joinedload(PurchaseOrder.client),
-            joinedload(PurchaseOrder.product),
+            selectinload(PurchaseOrder.machines).joinedload(PurchaseOrderMachine.product),
         ).filter(
             PurchaseOrder.po_date >= range_start,
             PurchaseOrder.po_date <= range_end,
@@ -39750,13 +39831,71 @@ def purchase_order_amount_display(value):
     return f'\u20b1{Decimal(amount):,.2f}' if amount else ''
 
 
+def purchase_order_machine_rows(purchase_order):
+    """Return the association rows without consulting the legacy mirror column."""
+    return list(getattr(purchase_order, 'machines', None) or [])
+
+
+def purchase_order_machine_label(machine_link):
+    serial = clean_str(getattr(machine_link, 'product_serial', None)) or ''
+    product = getattr(machine_link, 'product', None)
+    name = clean_str(getattr(product, 'name', None)) or ''
+    return ' — '.join(value for value in (serial, name) if value)
+
+
+def purchase_order_machine_log_label(machine_serials):
+    labels = [clean_str(serial) for serial in machine_serials if clean_str(serial)]
+    if not labels:
+        return 'no machine'
+    visible = labels[:5]
+    if len(labels) > len(visible):
+        visible.append(f'+{len(labels) - len(visible)} more')
+    return ', '.join(visible)
+
+
+def apply_purchase_order_machines(purchase_order, machine_serials):
+    """Replace the association collection and keep the shipped mirror rollback-safe."""
+    if purchase_order.machines:
+        # SQLAlchemy can otherwise INSERT a replacement before deleting an orphaned
+        # association with the same (P.O., serial) unique key. Clearing through the
+        # relationship keeps orphan/delete semantics intact; the flush only establishes
+        # the safe ordering and never performs a bulk SQL delete.
+        purchase_order.machines = []
+        db.session.flush()
+    purchase_order.machines = [
+        PurchaseOrderMachine(product_serial=serial, position=position)
+        for position, serial in enumerate(machine_serials)
+    ]
+    # The legacy column is intentionally written here, but never read by application
+    # consumers. A rollback to the one-machine release can still show the primary link.
+    purchase_order.product_serial = machine_serials[0] if machine_serials else None
+
+
 def purchase_order_to_dict(purchase_order):
     po_type = normalize_purchase_order_type(purchase_order.po_type) or PO_TYPE_SINGLE_VISIT
     amount = purchase_order_amount_string(getattr(purchase_order, 'amount', None))
-    product = getattr(purchase_order, 'product', None)
-    product_serial = clean_str(getattr(purchase_order, 'product_serial', None)) or ''
-    product_name = clean_str(getattr(product, 'name', None)) or ''
-    machine_display = ' — '.join(value for value in (product_serial, product_name) if value)
+    machine_links = purchase_order_machine_rows(purchase_order)
+    machines = []
+    machine_labels = []
+    for machine_link in machine_links:
+        product = getattr(machine_link, 'product', None)
+        serial = clean_str(getattr(machine_link, 'product_serial', None)) or ''
+        name = clean_str(getattr(product, 'name', None)) or ''
+        display = ' — '.join(value for value in (serial, name) if value)
+        machine_labels.append(display or serial)
+        machines.append({
+            'serial_number': serial,
+            'name': name,
+            'client_id': getattr(product, 'client_id', None) if product else None,
+            'display': display or serial,
+        })
+    machine_serials = [machine['serial_number'] for machine in machines if machine['serial_number']]
+    machine_display = machine_labels[0] if machine_labels else ''
+    machine_display_all = ' · '.join(label for label in machine_labels if label)
+    machine_summary = machine_display
+    if len(machine_labels) > 1:
+        machine_summary = f'{machine_display} +{len(machine_labels) - 1} more'
+    first_machine = machines[0] if machines else None
     return {
         'id': purchase_order.id,
         'client_id': purchase_order.client_id,
@@ -39771,9 +39910,18 @@ def purchase_order_to_dict(purchase_order):
         'po_type_label': PO_TYPE_LABELS.get(po_type, PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT]),
         'amount': amount,
         'amount_display': purchase_order_amount_display(getattr(purchase_order, 'amount', None)),
-        'product_serial': product_serial,
-        'product_name': product_name,
-        'product_client_id': getattr(product, 'client_id', None) if product else None,
+        'machines': machines,
+        'machine_count': len(machine_serials),
+        'machine_serials': machine_serials,
+        'machine_summary': machine_summary,
+        'machine_display_all': machine_display_all,
+        'machine_search': ' '.join(
+            value for machine in machines for value in (machine['serial_number'], machine['name']) if value
+        ),
+        # These legacy keys are derived from the first association, never from the mirror.
+        'product_serial': first_machine['serial_number'] if first_machine else '',
+        'product_name': first_machine['name'] if first_machine else '',
+        'product_client_id': first_machine['client_id'] if first_machine else None,
         'machine_display': machine_display,
         'created_at': purchase_order.created_at.isoformat() if purchase_order.created_at else None,
         'created_by': purchase_order.created_by,
@@ -39793,6 +39941,68 @@ def find_purchase_order_duplicate(client_id, po_number, exclude_id=None):
         if normalize_purchase_order_number(purchase_order.po_number).casefold() == normalized_number:
             return purchase_order
     return None
+
+
+def normalize_purchase_order_machines(payload, client_id, existing=None):
+    """Resolve one-or-many machine payloads to canonical Product serial numbers."""
+    if 'product_serials' in payload:
+        raw_serials = payload.get('product_serials')
+    elif 'product_serial' in payload:
+        # Keep the shipped string form as an API compatibility path.
+        raw_serials = payload.get('product_serial')
+    elif existing is not None:
+        raw_serials = [
+            machine_link.product_serial
+            for machine_link in purchase_order_machine_rows(existing)
+        ]
+    else:
+        raw_serials = None
+
+    if isinstance(raw_serials, (list, tuple)):
+        raw_items = list(raw_serials)
+    elif raw_serials is None:
+        raw_items = []
+    else:
+        raw_items = [raw_serials]
+
+    requested_serials = []
+    seen = set()
+    for raw_item in raw_items:
+        parts = raw_item.split(',') if isinstance(raw_item, str) else [raw_item]
+        for part in parts:
+            serial = clean_str(part) or ''
+            key = serial.casefold()
+            if not serial or key in seen:
+                continue
+            seen.add(key)
+            requested_serials.append(serial)
+
+    if len(requested_serials) > 50:
+        return None, 'A P.O. may reference no more than 50 machines.'
+    if not requested_serials:
+        return None, 'Select the equipment/machine for this P.O.'
+
+    machine_serials = []
+    canonical_seen = set()
+    for requested_serial in requested_serials:
+        product = db.session.get(Product, requested_serial)
+        if not product:
+            product = Product.query.filter(
+                func.lower(Product.serial_number) == requested_serial.lower()
+            ).first()
+        if not product:
+            return None, f'Equipment not found. Add it in Products first: {requested_serial}.'
+        if product.client_id != client_id:
+            return None, (
+                'That machine is not registered to the selected medical center: '
+                f'{requested_serial}.'
+            )
+        canonical_serial = clean_str(product.serial_number) or requested_serial
+        if canonical_serial.casefold() in canonical_seen:
+            continue
+        canonical_seen.add(canonical_serial.casefold())
+        machine_serials.append(canonical_serial)
+    return machine_serials, None
 
 
 def validate_purchase_order_payload(payload, existing=None):
@@ -39819,40 +40029,30 @@ def validate_purchase_order_payload(payload, existing=None):
         raw_amount = raw_amount.replace('\\u20b1', '')
     amount, amount_error = normalize_purchase_order_amount(raw_amount)
     if not client_id:
-        return None, 'Select a medical center.'
+        return None, None, 'Select a medical center.'
     if not po_number:
-        return None, 'Enter a P.O. number.'
+        return None, None, 'Enter a P.O. number.'
     if not po_date:
-        return None, 'Select a Start Date.'
+        return None, None, 'Select a Start Date.'
     if not po_type:
-        return None, 'Select Contract or Single Visit.'
+        return None, None, 'Select Contract or Single Visit.'
     if po_type == PO_TYPE_CONTRACT and not end_date:
-        return None, 'Select an End Date for a Contract P.O.'
+        return None, None, 'Select an End Date for a Contract P.O.'
     if end_date and end_date < po_date:
-        return None, 'End Date cannot be earlier than Start Date.'
+        return None, None, 'End Date cannot be earlier than Start Date.'
     if amount_error:
-        return None, amount_error
+        return None, None, amount_error
     client = db.session.get(Client, client_id)
     if not client:
-        return None, 'Medical center not found.'
+        return None, None, 'Medical center not found.'
 
-    raw_product_serial = (
-        payload.get('product_serial')
-        if 'product_serial' in payload
-        else getattr(existing, 'product_serial', None)
+    machine_serials, machine_error = normalize_purchase_order_machines(
+        payload,
+        client_id,
+        existing=existing,
     )
-    product_serial = clean_str(raw_product_serial) or ''
-    if not product_serial:
-        return None, 'Select the equipment/machine for this P.O.'
-    product = db.session.get(Product, product_serial)
-    if not product:
-        product = Product.query.filter(
-            func.lower(Product.serial_number) == product_serial.lower()
-        ).first()
-    if not product:
-        return None, 'Equipment not found. Add it in Products first.'
-    if product.client_id != client_id:
-        return None, 'That machine is not registered to the selected medical center.'
+    if machine_error:
+        return None, None, machine_error
     return {
         'client_id': client_id,
         'po_number': po_number,
@@ -39860,8 +40060,7 @@ def validate_purchase_order_payload(payload, existing=None):
         'end_date': end_date,
         'po_type': po_type,
         'amount': amount,
-        'product_serial': product.serial_number,
-    }, None
+    }, machine_serials, None
 
 
 @app.route('/po_details')
@@ -39882,7 +40081,7 @@ def get_purchase_orders():
     purchase_orders = PurchaseOrder.query.options(
         joinedload(PurchaseOrder.client),
         joinedload(PurchaseOrder.created_by_user),
-        joinedload(PurchaseOrder.product),
+        selectinload(PurchaseOrder.machines).joinedload(PurchaseOrderMachine.product),
     ).order_by(
         PurchaseOrder.po_date.desc(), PurchaseOrder.id.desc()
     ).all()
@@ -39940,20 +40139,25 @@ def purchase_order_export_records():
     records = PurchaseOrder.query.options(
         joinedload(PurchaseOrder.client),
         joinedload(PurchaseOrder.created_by_user),
-        joinedload(PurchaseOrder.product),
+        selectinload(PurchaseOrder.machines).joinedload(PurchaseOrderMachine.product),
     ).all()
     filtered = []
     for record in records:
         client_name = record.client.name if record.client else ''
-        machine_serial = clean_str(getattr(record, 'product_serial', None)) or ''
-        machine_name = clean_str(getattr(record.product, 'name', None)) or ''
+        machine_links = purchase_order_machine_rows(record)
+        machine_values = [
+            value.casefold()
+            for machine_link in machine_links
+            for value in (
+                clean_str(getattr(machine_link, 'product_serial', None)) or '',
+                clean_str(getattr(getattr(machine_link, 'product', None), 'name', None)) or '',
+            )
+            if value
+        ]
         po_number = record.po_number or ''
         if client_filter and client_filter not in client_name.casefold():
             continue
-        if machine_filter and (
-            machine_filter not in machine_serial.casefold()
-            and machine_filter not in machine_name.casefold()
-        ):
+        if machine_filter and not any(machine_filter in value for value in machine_values):
             continue
         if number_filter and number_filter not in po_number.casefold():
             continue
@@ -39969,11 +40173,13 @@ def purchase_order_export_records():
         if sort_key == 'client_name':
             return (record.client.name if record.client else '').casefold()
         if sort_key == 'machine':
+            first_machine = purchase_order_machine_rows(record)[:1]
             return ' '.join(
                 value.casefold()
+                for machine_link in first_machine
                 for value in (
-                    clean_str(getattr(record, 'product_serial', None)) or '',
-                    clean_str(getattr(record.product, 'name', None)) or '',
+                    clean_str(getattr(machine_link, 'product_serial', None)) or '',
+                    clean_str(getattr(getattr(machine_link, 'product', None), 'name', None)) or '',
                 )
                 if value
             )
@@ -39991,7 +40197,7 @@ def purchase_order_export_records():
         if sort_key == 'client_name':
             return not (record.client.name if record.client else '')
         if sort_key == 'machine':
-            return not (clean_str(getattr(record, 'product_serial', None)) or '')
+            return not purchase_order_machine_rows(record)
         if sort_key == 'po_number':
             return not (record.po_number or '')
         if sort_key == 'amount':
@@ -40041,6 +40247,15 @@ def export_purchase_orders():
     worksheet.append(headers)
 
     for record in purchase_orders:
+        machine_links = purchase_order_machine_rows(record)
+        machine_serials = [
+            clean_str(getattr(machine_link, 'product_serial', None)) or ''
+            for machine_link in machine_links
+        ]
+        machine_names = [
+            clean_str(getattr(getattr(machine_link, 'product', None), 'name', None)) or ''
+            for machine_link in machine_links
+        ]
         worksheet.append([
             record.id,
             record.po_date,
@@ -40048,8 +40263,8 @@ def export_purchase_orders():
             record.po_number or '',
             record.client.name if record.client else '',
             record.client.address if record.client else '',
-            record.product_serial or '',
-            record.product.name if record.product else '',
+            '\n'.join(machine_serials),
+            '\n'.join(machine_names),
             PO_TYPE_LABELS.get(
                 normalize_purchase_order_type(record.po_type) or PO_TYPE_SINGLE_VISIT,
                 PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT],
@@ -40115,7 +40330,7 @@ def add_purchase_order():
         return denied('You do not have access to P.O. Details.')
     ensure_purchase_order_schema()
     payload = request.get_json(silent=True) or {}
-    values, validation_error = validate_purchase_order_payload(payload)
+    values, machine_serials, validation_error = validate_purchase_order_payload(payload)
     if validation_error:
         return jsonify({'success': False, 'error': validation_error}), 400
 
@@ -40128,14 +40343,16 @@ def add_purchase_order():
         }), 409
 
     purchase_order = PurchaseOrder(**values, created_by=current_user.id)
-    db.session.add(purchase_order)
-    add_activity_log_entry(
-        f"Added P.O. {values['po_number']} for client #{values['client_id']} ({values['po_type']}) "
-        f"for {values['po_date'].isoformat()} to {values['end_date'].isoformat() if values['end_date'] else 'no end date'} "
-        f"at {purchase_order_amount_display(values['amount']) or 'amount not recorded'} "
-        f"for machine {values['product_serial']}"
-    )
     try:
+        db.session.add(purchase_order)
+        db.session.flush()
+        apply_purchase_order_machines(purchase_order, machine_serials)
+        add_activity_log_entry(
+            f"Added P.O. {values['po_number']} for client #{values['client_id']} ({values['po_type']}) "
+            f"for {values['po_date'].isoformat()} to {values['end_date'].isoformat() if values['end_date'] else 'no end date'} "
+            f"at {purchase_order_amount_display(values['amount']) or 'amount not recorded'} "
+            f"for machines {purchase_order_machine_log_label(machine_serials)}"
+        )
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
@@ -40153,7 +40370,7 @@ def update_purchase_order(id):
     if not purchase_order:
         return jsonify({'success': False, 'error': 'P.O. record not found.'}), 404
     payload = request.get_json(silent=True) or {}
-    values, validation_error = validate_purchase_order_payload(payload, existing=purchase_order)
+    values, machine_serials, validation_error = validate_purchase_order_payload(payload, existing=purchase_order)
     if validation_error:
         return jsonify({'success': False, 'error': validation_error}), 400
 
@@ -40168,18 +40385,21 @@ def update_purchase_order(id):
         }), 409
 
     old_summary = f"{purchase_order.po_number} for client #{purchase_order.client_id}"
-    old_machine = purchase_order.product_serial or 'no machine'
+    old_machine = purchase_order_machine_log_label([
+        machine_link.product_serial for machine_link in purchase_order_machine_rows(purchase_order)
+    ])
     old_dates = f"{purchase_order.po_date.isoformat()} to {purchase_order.end_date.isoformat() if purchase_order.end_date else 'no end date'}"
     old_amount = purchase_order_amount_display(purchase_order.amount) or 'amount not recorded'
-    for field, value in values.items():
-        setattr(purchase_order, field, value)
-    add_activity_log_entry(
-        f"Updated P.O. {old_summary} to {values['po_number']} for client #{values['client_id']}; "
-        f"dates {old_dates} -> {values['po_date'].isoformat()} to {values['end_date'].isoformat() if values['end_date'] else 'no end date'}; "
-        f"amount {old_amount} -> {purchase_order_amount_display(values['amount']) or 'amount not recorded'}; "
-        f"machine {old_machine} -> {values['product_serial']}"
-    )
     try:
+        for field, value in values.items():
+            setattr(purchase_order, field, value)
+        apply_purchase_order_machines(purchase_order, machine_serials)
+        add_activity_log_entry(
+            f"Updated P.O. {old_summary} to {values['po_number']} for client #{values['client_id']}; "
+            f"dates {old_dates} -> {values['po_date'].isoformat()} to {values['end_date'].isoformat() if values['end_date'] else 'no end date'}; "
+            f"amount {old_amount} -> {purchase_order_amount_display(values['amount']) or 'amount not recorded'}; "
+            f"machines {old_machine} -> {purchase_order_machine_log_label(machine_serials)}"
+        )
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
@@ -45713,6 +45933,15 @@ def add_product():
     return jsonify({'status': 'success'})
 
 
+def purchase_order_count_for_machine(serial_number):
+    """Count distinct P.O. rows linked through the association table."""
+    return db.session.query(
+        func.count(func.distinct(PurchaseOrderMachine.purchase_order_id))
+    ).filter(
+        PurchaseOrderMachine.product_serial == serial_number
+    ).scalar() or 0
+
+
 @app.route('/update_product/<serial_number>', methods=['PUT'])
 @login_required
 def update_product(serial_number):
@@ -45767,9 +45996,7 @@ def update_product(serial_number):
                 }), 409
 
             linked_schedule_count = Shift.query.filter_by(product_id=old_serial).count()
-            linked_purchase_order_count = PurchaseOrder.query.filter_by(
-                product_serial=old_serial
-            ).count()
+            linked_purchase_order_count = purchase_order_count_for_machine(old_serial)
 
             replacement = Product(
                 serial_number=new_serial,
@@ -45786,7 +46013,13 @@ def update_product(serial_number):
                 {'product_id': new_serial},
                 synchronize_session=False
             )
-            PurchaseOrder.query.filter_by(product_serial=old_serial).update(
+            PurchaseOrderMachine.query.filter_by(product_serial=old_serial).update(
+                {'product_serial': new_serial},
+                synchronize_session=False
+            )
+            # Keep the shipped one-machine mirror aligned for rollback, while all
+            # application reads now come from PurchaseOrderMachine.
+            PurchaseOrder.query.filter(PurchaseOrder.product_serial == old_serial).update(
                 {'product_serial': new_serial},
                 synchronize_session=False
             )
@@ -45810,9 +46043,7 @@ def update_product(serial_number):
                 'linked_purchase_order_count': linked_purchase_order_count,
             })
 
-        linked_purchase_order_count = PurchaseOrder.query.filter_by(
-            product_serial=p.serial_number
-        ).count()
+        linked_purchase_order_count = purchase_order_count_for_machine(p.serial_number)
         p.name = product_name
         p.client_id = new_client_id
         p.start_warranty_date = new_start
@@ -45834,7 +46065,7 @@ def update_product(serial_number):
         reassignment_note = ''
         if old_client_id != new_client_id:
             reassignment_note = (
-                f" ({linked_purchase_order_count} linked P.O.(s) retain this serial)"
+                f" ({linked_purchase_order_count} linked P.O.(s) require a machine-owner review)"
             )
         log_activity(f"Updated product details: {p.serial_number}{field_note}{reassignment_note}")
         return jsonify({
@@ -45865,9 +46096,7 @@ def delete_product(serial_number):
     ensure_purchase_order_schema()
     target = db.session.get(Product, serial_number)
     if target:
-        linked_purchase_order_count = PurchaseOrder.query.filter_by(
-            product_serial=target.serial_number
-        ).count()
+        linked_purchase_order_count = purchase_order_count_for_machine(target.serial_number)
         if linked_purchase_order_count:
             return jsonify({
                 'status': 'blocked',

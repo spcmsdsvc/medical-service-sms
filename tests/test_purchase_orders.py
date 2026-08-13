@@ -8,6 +8,8 @@ from urllib.parse import quote
 
 import app as app_module  # noqa: E402
 from openpyxl import load_workbook
+from sqlalchemy import event
+from sqlalchemy.exc import IntegrityError
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -289,13 +291,12 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             survivor = app_module.PurchaseOrder.query.filter_by(client_id=self.client_two_id).first()
             self.assertIsNotNone(survivor)
 
-    def test_model_has_asset_linkage_but_no_work_linkage(self):
-        """A P.O. names one asset, but never becomes a work-record relationship.
+    def test_model_has_machine_association_but_no_work_linkage(self):
+        """A P.O. covers ordered machines, but never becomes a work-record relationship.
 
-        The product_serial FK is intentional because a P.O. now covers one installed
-        machine. Shift/TSR linkage remains forbidden: those fields would turn this
-        financial register into a work-history table. product_id also stays forbidden
-        because that is Shift's name for a serial, not this register's asset key.
+        The legacy product_serial column remains a write-only rollback mirror. The
+        association table is the application read path and keeps Shift/TSR linkage
+        forbidden: those fields would turn this financial register into work history.
         """
         columns = set(app_module.PurchaseOrder.__table__.columns.keys())
         self.assertTrue({'amount', 'end_date', 'product_serial'} <= columns)
@@ -308,6 +309,22 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             app_module.Client.purchase_orders.property.cascade.delete_orphan,
             True,
         )
+        machine_columns = set(app_module.PurchaseOrderMachine.__table__.columns.keys())
+        self.assertTrue({'purchase_order_id', 'product_serial', 'position'} <= machine_columns)
+        self.assertFalse({'shift_id', 'tsr_id', 'product_id'} & machine_columns)
+        self.assertEqual(
+            list(app_module.PurchaseOrderMachine.__table__.c.purchase_order_id.foreign_keys)[0].target_fullname,
+            'purchase_order.id',
+        )
+        self.assertEqual(
+            list(app_module.PurchaseOrderMachine.__table__.c.product_serial.foreign_keys)[0].target_fullname,
+            'product.serial_number',
+        )
+        self.assertTrue(app_module.PurchaseOrder.machines.property.cascade.delete_orphan)
+        self.assertTrue(any(
+            constraint.name == 'uq_purchase_order_machine_pair'
+            for constraint in app_module.PurchaseOrderMachine.__table__.constraints
+        ))
 
     def test_new_purchase_order_requires_a_registered_machine(self):
         client = self._client_for(self.po_user_id)
@@ -333,7 +350,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         self.assertEqual(unknown.status_code, 400)
         self.assertEqual(
             unknown.get_json()['error'],
-            'Equipment not found. Add it in Products first.',
+            f'Equipment not found. Add it in Products first: NOT-REGISTERED-{self.suffix}.',
         )
 
     def test_purchase_order_rejects_a_machine_owned_by_another_client(self):
@@ -348,7 +365,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.get_json()['error'],
-            'That machine is not registered to the selected medical center.',
+            f'That machine is not registered to the selected medical center: {self.product_two_serial}.',
         )
 
     def test_purchase_order_payload_includes_client_scoped_products(self):
@@ -442,6 +459,10 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             survivor = app_module.db.session.get(app_module.PurchaseOrder, record_id)
             self.assertIsNotNone(survivor)
             self.assertEqual(survivor.product_serial, serial)
+            self.assertEqual(
+                [machine.product_serial for machine in survivor.machines],
+                [serial],
+            )
 
         self.assertEqual(client.delete(f'/delete_purchase_order/{record_id}').status_code, 200)
         self.assertEqual(superadmin.delete(f'/delete_product/{quote(serial, safe="")}').status_code, 200)
@@ -481,6 +502,10 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         with self.app.app_context():
             repointed = app_module.db.session.get(app_module.PurchaseOrder, record_id)
             self.assertEqual(repointed.product_serial, new_serial)
+            self.assertEqual(
+                [machine.product_serial for machine in repointed.machines],
+                [new_serial],
+            )
 
         self.assertEqual(client.delete(f'/delete_purchase_order/{record_id}').status_code, 200)
 
@@ -496,9 +521,263 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             'id="po-machine-input"',
             'id="po-machine"',
             'id="po-machine-results"',
+            'id="po-machine-chips"',
             'No equipment registered for this client — add it in Products first.',
         ):
             self.assertIn(expected, html)
+
+    def test_multi_machine_add_edit_replaces_links_and_returns_full_response(self):
+        client = self._client_for(self.po_user_id)
+        second_serial = f'PO-MULTI-SECOND-{self.suffix}'
+        with self.app.app_context():
+            app_module.db.session.add(app_module.Product(
+                serial_number=second_serial,
+                name=f'Multi Machine Two {self.suffix}',
+                client_id=self.client_one_id,
+            ))
+            app_module.db.session.commit()
+        self.created_product_serials.append(second_serial)
+
+        created = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'product_serials': [self.product_one_serial, second_serial.lower(), self.product_one_serial],
+            'start_date': '2026-08-10',
+            'po_number': f'MULTI-ADD-{self.suffix}',
+            'po_type': 'single_visit',
+        })
+        self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+        record = created.get_json()['purchase_order']
+        record_id = record['id']
+        self.assertEqual(record['machine_serials'], [self.product_one_serial, second_serial])
+        self.assertEqual(record['machine_count'], 2)
+        self.assertEqual([machine['serial_number'] for machine in record['machines']], record['machine_serials'])
+        self.assertEqual(record['product_serial'], self.product_one_serial)
+
+        updated = client.put(f'/update_purchase_order/{record_id}', json={
+            'client_id': self.client_one_id,
+            'product_serials': [second_serial],
+            'start_date': '2026-08-10',
+            'po_number': f'MULTI-REPLACED-{self.suffix}',
+            'po_type': 'single_visit',
+        })
+        self.assertEqual(updated.status_code, 200, updated.get_data(as_text=True))
+        updated_record = updated.get_json()['purchase_order']
+        self.assertEqual(updated_record['machine_serials'], [second_serial])
+        with self.app.app_context():
+            saved = app_module.db.session.get(app_module.PurchaseOrder, record_id)
+            self.assertEqual([machine.product_serial for machine in saved.machines], [second_serial])
+            self.assertEqual(saved.product_serial, second_serial)
+
+        self.assertEqual(client.delete(f'/delete_purchase_order/{record_id}').status_code, 200)
+
+    def test_duplicate_machine_link_is_rejected_by_database_constraint(self):
+        client = self._client_for(self.po_user_id)
+        created = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'product_serials': [self.product_one_serial],
+            'start_date': '2026-08-10',
+            'po_number': f'MULTI-DUPLICATE-{self.suffix}',
+            'po_type': 'single_visit',
+        })
+        self.assertEqual(created.status_code, 201)
+        record_id = created.get_json()['purchase_order']['id']
+
+        with self.app.app_context():
+            app_module.db.session.add(app_module.PurchaseOrderMachine(
+                purchase_order_id=record_id,
+                product_serial=self.product_one_serial,
+                position=1,
+            ))
+            with self.assertRaises(IntegrityError):
+                app_module.db.session.commit()
+            app_module.db.session.rollback()
+            self.assertEqual(
+                app_module.PurchaseOrderMachine.query.filter_by(purchase_order_id=record_id).count(),
+                1,
+            )
+
+        self.assertEqual(client.delete(f'/delete_purchase_order/{record_id}').status_code, 200)
+
+    def test_legacy_backfill_is_additive_and_does_not_resurrect_removed_links(self):
+        second_serial = f'PO-BACKFILL-SECOND-{self.suffix}'
+        missing_serial = f'PO-BACKFILL-MISSING-{self.suffix}'
+        with self.app.app_context():
+            app_module.db.session.add(app_module.Product(
+                serial_number=second_serial,
+                name=f'Backfill Second {self.suffix}',
+                client_id=self.client_one_id,
+            ))
+            legacy = app_module.PurchaseOrder(
+                client_id=self.client_one_id,
+                po_number=f'BACKFILL-LEGACY-{self.suffix}',
+                po_date=app_module.date(2026, 8, 10),
+                po_type=app_module.PO_TYPE_SINGLE_VISIT,
+                product_serial=self.product_one_serial,
+            )
+            missing = app_module.PurchaseOrder(
+                client_id=self.client_one_id,
+                po_number=f'BACKFILL-MISSING-{self.suffix}',
+                po_date=app_module.date(2026, 8, 10),
+                po_type=app_module.PO_TYPE_SINGLE_VISIT,
+                product_serial=missing_serial,
+            )
+            multi = app_module.PurchaseOrder(
+                client_id=self.client_one_id,
+                po_number=f'BACKFILL-MULTI-{self.suffix}',
+                po_date=app_module.date(2026, 8, 10),
+                po_type=app_module.PO_TYPE_SINGLE_VISIT,
+                product_serial=self.product_one_serial,
+            )
+            app_module.db.session.add_all([legacy, missing, multi])
+            app_module.db.session.flush()
+            app_module.apply_purchase_order_machines(
+                multi,
+                [self.product_one_serial, second_serial],
+            )
+            app_module.db.session.commit()
+            self.created_product_serials.append(second_serial)
+            previous_ready = app_module._purchase_order_schema_ready
+            try:
+                app_module._purchase_order_schema_ready = False
+                app_module.ensure_purchase_order_schema()
+                self.assertEqual(
+                    [machine.product_serial for machine in app_module.db.session.get(app_module.PurchaseOrder, legacy.id).machines],
+                    [self.product_one_serial],
+                )
+                self.assertEqual(
+                    [machine.product_serial for machine in app_module.db.session.get(app_module.PurchaseOrder, missing.id).machines],
+                    [missing_serial],
+                )
+                app_module.ensure_purchase_order_schema()
+                self.assertEqual(
+                    app_module.PurchaseOrderMachine.query.filter_by(purchase_order_id=legacy.id).count(),
+                    1,
+                )
+
+                multi_saved = app_module.db.session.get(app_module.PurchaseOrder, multi.id)
+                app_module.db.session.delete(multi_saved.machines[0])
+                multi_saved.product_serial = second_serial
+                app_module.db.session.commit()
+                app_module._purchase_order_schema_ready = False
+                app_module.ensure_purchase_order_schema()
+                refreshed = app_module.db.session.get(app_module.PurchaseOrder, multi.id)
+                self.assertEqual(
+                    [machine.product_serial for machine in refreshed.machines],
+                    [second_serial],
+                )
+            finally:
+                app_module._purchase_order_schema_ready = previous_ready
+
+    def test_purchase_order_reads_ignore_a_corrupted_legacy_mirror(self):
+        client = self._client_for(self.po_user_id)
+        second_serial = f'PO-MIRROR-SECOND-{self.suffix}'
+        with self.app.app_context():
+            app_module.db.session.add(app_module.Product(
+                serial_number=second_serial,
+                name=f'Mirror Second {self.suffix}',
+                client_id=self.client_one_id,
+            ))
+            app_module.db.session.commit()
+        self.created_product_serials.append(second_serial)
+        created = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'product_serials': [self.product_one_serial, second_serial],
+            'start_date': '2026-08-10',
+            'po_number': f'MIRROR-CORRUPT-{self.suffix}',
+            'po_type': 'single_visit',
+        })
+        self.assertEqual(created.status_code, 201)
+        record_id = created.get_json()['purchase_order']['id']
+        with self.app.app_context():
+            saved = app_module.db.session.get(app_module.PurchaseOrder, record_id)
+            saved.product_serial = 'CORRUPTED-MIRROR'
+            app_module.db.session.commit()
+
+        listing = client.get('/get_purchase_orders')
+        self.assertEqual(listing.status_code, 200)
+        record = next(item for item in listing.get_json()['purchase_orders'] if item['id'] == record_id)
+        self.assertEqual(record['machine_serials'], [self.product_one_serial, second_serial])
+        self.assertEqual(record['product_serial'], self.product_one_serial)
+        self.assertNotIn('CORRUPTED-MIRROR', record['machine_search'])
+        self.assertEqual(client.delete(f'/delete_purchase_order/{record_id}').status_code, 200)
+
+    def test_machine_filter_matches_any_link_and_export_keeps_one_po_row(self):
+        client = self._client_for(self.po_user_id)
+        second_serial = f'PO-EXPORT-SECOND-{self.suffix}'
+        second_name = f'Export Second {self.suffix}'
+        with self.app.app_context():
+            app_module.db.session.add(app_module.Product(
+                serial_number=second_serial,
+                name=second_name,
+                client_id=self.client_one_id,
+            ))
+            app_module.db.session.commit()
+        self.created_product_serials.append(second_serial)
+        created = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'product_serials': [self.product_one_serial, second_serial],
+            'start_date': '2026-08-10',
+            'po_number': f'EXPORT-MULTI-{self.suffix}',
+            'po_type': 'single_visit',
+            'amount': '42.00',
+        })
+        self.assertEqual(created.status_code, 201)
+        record_id = created.get_json()['purchase_order']['id']
+        response = client.get(f'/export_purchase_orders?machine={quote(second_name)}')
+        self.assertEqual(response.status_code, 200)
+        worksheet = load_workbook(BytesIO(response.data), data_only=False)['P.O. Register']
+        self.assertEqual(worksheet['D2'].value, f'EXPORT-MULTI-{self.suffix}')
+        self.assertEqual(worksheet['G2'].value, f'{self.product_one_serial}\n{second_serial}')
+        self.assertEqual(worksheet['H2'].value, f'CT One {self.suffix}\n{second_name}')
+        self.assertIsNone(worksheet['D3'].value)
+        self.assertEqual(worksheet['J4'].value, '=SUM(J2:J2)')
+        self.assertEqual(client.delete(f'/delete_purchase_order/{record_id}').status_code, 200)
+
+    def test_purchase_order_listing_uses_one_association_query(self):
+        statements = []
+
+        def capture(_connection, _cursor, statement, _parameters, _context, _executemany):
+            statements.append(statement.lower())
+
+        with self.app.app_context():
+            event.listen(app_module.db.engine, 'before_cursor_execute', capture)
+            try:
+                records = app_module.PurchaseOrder.query.options(
+                    app_module.joinedload(app_module.PurchaseOrder.client),
+                    app_module.joinedload(app_module.PurchaseOrder.created_by_user),
+                    app_module.selectinload(app_module.PurchaseOrder.machines).joinedload(
+                        app_module.PurchaseOrderMachine.product
+                    ),
+                ).all()
+                [app_module.purchase_order_to_dict(record) for record in records]
+            finally:
+                event.remove(app_module.db.engine, 'before_cursor_execute', capture)
+        association_queries = [
+            statement for statement in statements
+            if statement.lstrip().startswith('select') and 'purchase_order_machine' in statement
+        ]
+        self.assertEqual(len(association_queries), 1)
+        self.assertLessEqual(len(statements), 4)
+
+    def test_machine_normalizer_accepts_legacy_strings_dedupes_and_caps(self):
+        with self.app.app_context():
+            serials, error = app_module.normalize_purchase_order_machines({
+                'product_serials': [self.product_one_serial, self.product_one_serial.lower()],
+            }, self.client_one_id)
+            self.assertIsNone(error)
+            self.assertEqual(serials, [self.product_one_serial])
+
+            serials, error = app_module.normalize_purchase_order_machines({
+                'product_serial': f'{self.product_one_serial},{self.product_one_serial}',
+            }, self.client_one_id)
+            self.assertIsNone(error)
+            self.assertEqual(serials, [self.product_one_serial])
+
+            serials, error = app_module.normalize_purchase_order_machines({
+                'product_serials': [f'NOT-REGISTERED-{index}' for index in range(51)],
+            }, self.client_one_id)
+            self.assertIsNone(serials)
+            self.assertEqual(error, 'A P.O. may reference no more than 50 machines.')
 
     def test_settings_reports_the_stored_grant_not_the_effective_permission(self):
         """The Settings payload must carry the stored flag, not the effective permission.

@@ -206,6 +206,52 @@
         outline: 0;
     }
 
+    .po-chip-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .5rem;
+        margin-top: .65rem;
+    }
+
+    .po-chip {
+        align-items: center;
+        background: var(--app-surface-raised, #f0f7ff);
+        border: 1px solid var(--app-border, #d6e0ec);
+        border-radius: 999px;
+        color: var(--app-text, #16243a);
+        display: inline-flex;
+        font-size: .84rem;
+        font-weight: 750;
+        gap: .45rem;
+        line-height: 1.25;
+        max-width: 100%;
+        padding: .45rem .55rem .45rem .7rem;
+    }
+
+    .po-chip-label {
+        overflow-wrap: anywhere;
+    }
+
+    .po-chip-remove {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        border-radius: 50%;
+        color: var(--app-muted-text, #60738d);
+        display: inline-flex;
+        height: 1.45rem;
+        justify-content: center;
+        padding: 0;
+        width: 1.45rem;
+    }
+
+    .po-chip-remove:hover,
+    .po-chip-remove:focus-visible {
+        background: var(--app-border, #d6e0ec);
+        color: var(--app-text, #16243a);
+        outline: 0;
+    }
+
     .po-confirm-backdrop {
         align-items: center;
         background: rgba(6, 17, 32, .68);
@@ -399,11 +445,12 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold" for="po-machine-input">Equipment / Machine</label>
                         <div class="position-relative">
-                            <input class="form-control" type="search" id="po-machine-input" autocomplete="off" role="combobox" aria-controls="po-machine-results" aria-expanded="false" placeholder="Select a client first" disabled required>
+                            <input class="form-control" type="search" id="po-machine-input" autocomplete="off" role="combobox" aria-controls="po-machine-results" aria-expanded="false" placeholder="Select a client first" disabled>
                             <input type="hidden" id="po-machine" required>
                             <div class="search-results d-none" id="po-machine-results" role="listbox"></div>
                         </div>
                         <div class="form-text po-muted" id="po-machine-note" aria-live="polite"></div>
+                        <div class="po-chip-list" id="po-machine-chips" aria-label="Selected machines"></div>
                     </div>
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -466,7 +513,7 @@
         rows: [],
         clients: [],
         products: [],
-        productNameCounts: new Map(),
+        selectedMachines: [],
         sortKey: localStorage.getItem('po_details_sort_key') || 'po_date',
         sortDirection: localStorage.getItem('po_details_sort_direction') || 'desc',
         editingId: null,
@@ -586,7 +633,7 @@
             const client = String(row.client_name || '').toLowerCase();
             const number = String(row.po_number || '').toLowerCase();
             const machine = String(
-                row.machine_display || `${row.product_serial || ''} ${row.product_name || ''}`
+                row.machine_search || row.machine_display_all || row.machine_display || `${row.product_serial || ''} ${row.product_name || ''}`
             ).toLowerCase();
             const startDate = row.start_date || row.po_date || '';
             const inDateRange = (!filters.from || startDate >= filters.from)
@@ -605,7 +652,7 @@
             if (sortKey === 'po_date') return row.start_date || row.po_date || null;
             if (sortKey === 'machine') {
                 return String(
-                    row.machine_display || `${row.product_serial || ''} ${row.product_name || ''}`
+                    row.machine_summary || row.machine_display || `${row.product_serial || ''} ${row.product_name || ''}`
                 ).toLowerCase() || null;
             }
             return String(row[sortKey] ?? '').toLowerCase();
@@ -655,7 +702,9 @@
     }
 
     function machineFields(row) {
-        return `<div class="po-number">${escapeHtml(row.machine_display || '—')}</div>`;
+        const summary = row.machine_summary || row.machine_display || '—';
+        const fullDisplay = row.machine_display_all || row.machine_display || summary;
+        return `<div class="po-number" title="${escapeHtml(fullDisplay)}">${escapeHtml(summary)}</div>`;
     }
 
     function renderHeader() {
@@ -723,9 +772,75 @@
         if (note) note.textContent = message;
     }
 
+    function selectedMachineSerials() {
+        return state.selectedMachines
+            .map((machine) => String(machine?.serial_number || '').trim())
+            .filter(Boolean);
+    }
+
+    function renderSelectedMachineChips() {
+        const container = byId('po-machine-chips');
+        if (!container) return;
+        container.replaceChildren();
+        state.selectedMachines.forEach((machine) => {
+            const chip = document.createElement('span');
+            chip.className = 'po-chip';
+            const label = document.createElement('span');
+            label.className = 'po-chip-label';
+            label.textContent = productDisplay(machine);
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'po-chip-remove';
+            remove.setAttribute('aria-label', `Remove ${productDisplay(machine)}`);
+            const icon = document.createElement('i');
+            icon.className = 'fa-solid fa-xmark';
+            icon.setAttribute('aria-hidden', 'true');
+            remove.appendChild(icon);
+            remove.addEventListener('click', () => removeMachineSelection(machine.serial_number));
+            chip.append(label, remove);
+            container.appendChild(chip);
+        });
+    }
+
+    function syncMachineSelection(message = null) {
+        const serials = selectedMachineSerials();
+        byId('po-machine').value = serials[0] || '';
+        renderSelectedMachineChips();
+        if (message !== null) setMachineNote(message);
+    }
+
+    function setSelectedMachines(machines) {
+        const selected = [];
+        const seen = new Set();
+        (Array.isArray(machines) ? machines : []).forEach((machine) => {
+            const serial = String(machine?.serial_number || '').trim();
+            if (!serial || seen.has(serial.toLowerCase())) return;
+            seen.add(serial.toLowerCase());
+            selected.push({ ...machine, serial_number: serial });
+        });
+        state.selectedMachines = selected;
+        syncMachineSelection();
+    }
+
+    function addMachineSelection(product) {
+        setSelectedMachines([...state.selectedMachines, product]);
+        setMachineNote(`${state.selectedMachines.length} machine${state.selectedMachines.length === 1 ? '' : 's'} selected.`);
+    }
+
+    function removeMachineSelection(serial) {
+        const key = String(serial || '').trim().toLowerCase();
+        setSelectedMachines(state.selectedMachines.filter(
+            (machine) => String(machine?.serial_number || '').trim().toLowerCase() !== key
+        ));
+        setMachineNote(state.selectedMachines.length
+            ? `${state.selectedMachines.length} machine${state.selectedMachines.length === 1 ? '' : 's'} selected.`
+            : 'Select at least one registered machine.');
+    }
+
     function clearMachineSelection(message = '') {
-        byId('po-machine').value = '';
+        state.selectedMachines = [];
         byId('po-machine-input').value = '';
+        syncMachineSelection();
         setMachineNote(message);
         hideAutocomplete('po-machine-results');
     }
@@ -818,9 +933,8 @@
                     productDisplay(product),
                     product.end_warranty ? `Warranty ends ${product.end_warranty}` : '',
                     () => {
-                        byId('po-machine').value = product.serial_number || '';
-                        input.value = productDisplay(product);
-                        setMachineNote('');
+                        addMachineSelection(product);
+                        input.value = '';
                         hideAutocomplete('po-machine-results');
                     },
                 ));
@@ -834,8 +948,8 @@
         const results = byId(resultsId);
         if (!input || !results) return;
         input.addEventListener('input', () => {
-            byId(hiddenId).value = '';
             if (kind === 'client') {
+                byId(hiddenId).value = '';
                 clearMachineSelection();
                 updateMachineAvailability();
             }
@@ -879,12 +993,15 @@
             byId('po-client').value = row.client_id || '';
             byId('po-client-input').value = row.client_name || '';
             updateMachineAvailability();
-            if (row.product_serial && row.product_client_id === row.client_id) {
-                byId('po-machine').value = row.product_serial;
-                byId('po-machine-input').value = row.machine_display || row.product_serial;
-                setMachineNote('');
-            } else if (row.product_serial && row.product_client_id !== row.client_id) {
-                clearMachineSelection('This machine now belongs to a different medical center — reselect it.');
+            const machines = Array.isArray(row.machines) ? row.machines : [];
+            const ownerMismatch = machines.some(
+                (machine) => machine.client_id != null && Number(machine.client_id) !== Number(row.client_id)
+            );
+            if (machines.length && !ownerMismatch) {
+                setSelectedMachines(machines);
+                setMachineNote(`${machines.length} machine${machines.length === 1 ? '' : 's'} selected.`);
+            } else if (ownerMismatch) {
+                clearMachineSelection('One or more machines now belong to a different medical center — reselect them.');
             } else {
                 clearMachineSelection('This P.O. predates machine tracking. Select the machine to save your changes.');
             }
@@ -907,11 +1024,6 @@
         state.rows = data.purchase_orders || [];
         state.clients = data.clients || [];
         state.products = data.products || [];
-        state.productNameCounts = state.products.reduce((counts, product) => {
-            const name = String(product.name || '').trim().toLowerCase();
-            if (name) counts.set(name, (counts.get(name) || 0) + 1);
-            return counts;
-        }, new Map());
         renderKpis();
         renderRows();
     }
@@ -927,7 +1039,7 @@
             const duplicate = data.duplicate;
             const customProceed = await confirmAction({
                 title: 'Possible Duplicate P.O.',
-                message: `${data.error} ${duplicate.client_name} - ${duplicate.po_number} (${duplicate.machine_display || 'no machine'}) Save another record anyway?`,
+                message: `${data.error} ${duplicate.client_name} - ${duplicate.po_number} (${duplicate.machine_summary || duplicate.machine_display || 'no machine'}) Save another record anyway?`,
                 confirmText: 'Save Anyway',
             });
             if (customProceed) return sendRecord(url, method, { ...payload, force: true });
@@ -943,7 +1055,7 @@
         button.disabled = true;
         const payload = {
             client_id: Number(byId('po-client').value),
-            product_serial: byId('po-machine').value,
+            product_serials: selectedMachineSerials(),
             start_date: byId('po-date').value,
             end_date: byId('po-end-date').value,
             po_number: byId('po-number').value,

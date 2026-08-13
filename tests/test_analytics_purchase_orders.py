@@ -89,6 +89,7 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
             ]
             app_module.db.session.add_all(records)
             app_module.db.session.flush()
+            app_module.apply_purchase_order_machines(records[0], [cls.product.serial_number])
             cls.created_po_ids.extend(record.id for record in records)
             app_module.db.session.commit()
 
@@ -155,16 +156,64 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
         self.assertEqual(equipment['linked_total'], 1)
         self.assertEqual(equipment['unlinked_total'], 1)
         self.assertEqual(equipment['linked_pct'], 50)
+        self.assertEqual(equipment['machine_link_total'], 1)
         self.assertEqual(equipment['machine_total'], 1)
         self.assertEqual(equipment['client_total'], 1)
         self.assertIn(self.product_serial, equipment['by_machine'][0]['label'])
         self.assertEqual(equipment['by_model'][0]['label'], self.product_name)
         self.assertEqual(equipment['by_coverage'][0]['count'], 1)
+        self.assertEqual(sum(row['count'] for row in equipment['by_coverage']), equipment['machine_link_total'])
         self.assertEqual(equipment['unlinked_clients'][0]['label'], self.client_one_name)
         self.assertFalse({'amount', 'total_amount', 'currency'} & set(equipment))
         self.assertNotIn('personnel', payload)
 
         self.assertEqual(client.get('/get_analytics_summary').status_code, 403)
+
+    def test_equipment_analytics_separates_po_and_machine_link_units(self):
+        second_serial = f'AN-SN-SECOND-{self.suffix}'
+        with self.app.app_context():
+            second = app_module.Product(
+                serial_number=second_serial,
+                name='AN CT-700',
+                client_id=self.client_one.id,
+            )
+            record = app_module.PurchaseOrder(
+                client_id=self.client_one.id,
+                po_number=f'AN-PO-MULTI-{self.suffix}',
+                po_date=date(2026, 8, 8),
+                po_type=app_module.PO_TYPE_SINGLE_VISIT,
+                product_serial=self.product.serial_number,
+            )
+            app_module.db.session.add_all([second, record])
+            app_module.db.session.flush()
+            app_module.apply_purchase_order_machines(
+                record,
+                [self.product.serial_number, second_serial],
+            )
+            app_module.db.session.commit()
+            self.created_product_serials.append(second_serial)
+            self.created_po_ids.append(record.id)
+
+        client = self._client_for(self.po_user_id)
+        response = client.get('/get_po_analytics?start_date=2026-08-01&end_date=2026-08-31')
+        self.assertEqual(response.status_code, 200)
+        equipment = response.get_json()['equipment']
+        self.assertEqual(equipment['linked_total'], 2)
+        self.assertEqual(equipment['unlinked_total'], 1)
+        self.assertEqual(equipment['machine_link_total'], 3)
+        self.assertEqual(equipment['linked_total'] + equipment['unlinked_total'], 3)
+        self.assertEqual(sum(row['count'] for row in equipment['by_coverage']), 3)
+        machine_counts = {row['label']: row['count'] for row in equipment['by_machine']}
+        self.assertEqual(machine_counts[self.product_serial + ' · ' + self.product_name], 2)
+        self.assertEqual(machine_counts[second_serial + ' · AN CT-700'], 1)
+        with self.app.app_context():
+            created_record = app_module.db.session.get(app_module.PurchaseOrder, record.id)
+            if created_record:
+                app_module.db.session.delete(created_record)
+            created_product = app_module.db.session.get(app_module.Product, second_serial)
+            if created_product:
+                app_module.db.session.delete(created_product)
+            app_module.db.session.commit()
 
     def test_plain_user_is_denied_but_reports_user_keeps_schedule_surface(self):
         plain = self._client_for(self.plain_user_id)
