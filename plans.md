@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## One P.O., many machines — migrating a shipped one-to-one into a many
 
-**Status:** `In progress`. The project owner explicitly authorized execution on 2026-08-13.
+**Status:** `Executed — Part A 5d7372e; Part B f307253`.
 **Approved:** 2026-08-13
 **Detailed:** 2026-08-13, after mapping every use of the shipped `product_serial`, the association-table
 and multi-select precedents, and the analytics counting paths. Four assumptions were checked by
@@ -324,6 +324,30 @@ Ranked by "would ship and nobody notices".
    P.O. and quietly destroys the per-machine analysis.
 8. **Chip dropdown clipping in the scrollable modal** — the only genuinely un-assertable risk, which
    is exactly why step 7 chose the container behaviour already proven there.
+
+### Execution outcome — 2026-08-13
+
+The plan was executed in two functional commits:
+
+- `5d7372e` — Part A: association model and additive backfill, list-aware P.O. validation and
+  writes, association-based reads/serialization/export, Product rename/delete safeguards, and the
+  multi-machine P.O. selector with regression coverage.
+- `f307253` — Part B: link-granularity Equipment analytics, the Machine links metric, analytics
+  asset query bumps, service-worker cache `v88-multi-machine-po`, the dated release manifest item,
+  and release-focused tests.
+
+One implementation detail was amended during execution: replacing an existing association set first
+clears the ORM collection and flushes orphan deletes before assigning the new collection. This keeps
+the required ORM collection semantics while avoiding a transient unique-key collision when an edit
+retains a serial. It is not a bulk SQL delete.
+
+Verification completed without browser automation: 651 tests passed with one existing skip in the
+full suite; 53 focused P.O./analytics tests, 84 offline/cache/regression tests, Python and JavaScript
+syntax checks, a bounded association-query check, and deliberate runtime injection controls all
+passed. The release-manifest coverage test was rerun after the Part B commit. Browser/Excel visual
+checks and a copy-of-production-database inspection remain owner handoff items because the project
+rules prohibit Codex browser automation and prohibit opening the local `scheduler.db`; no push or
+deployment was performed.
 
 ## Machine-scoped P.O. records, and an Analytics Equipment tab
 

@@ -32,6 +32,10 @@ codex changes - 2026-08-13 (multi-machine purchase orders)
   JavaScript syntax checks passed.
 * Added the 2026-08-13 user-facing release entry to `static/changelog/releases.json`, describing
   multi-machine selection, aligned export/filter behavior, and the link-granularity analytics metric.
+* Functional commits are `5d7372e` (Part A) and `f307253` (Part B). The full repository suite then
+  passed at 651 tests with one existing skip; deliberate runtime injection controls detected both
+  missing association reads. No push, deployment, browser automation, Excel visual inspection, or
+  local `scheduler.db` inspection was performed under the project safety rules.
 
 claude changes - 2026-08-12 (the misspelled theme token, and a guard that now covers every page)
 
