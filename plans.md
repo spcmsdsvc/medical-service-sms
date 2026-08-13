@@ -55,6 +55,276 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## One P.O., many machines — migrating a shipped one-to-one into a many
+
+**Status:** `In progress`. The project owner explicitly authorized execution on 2026-08-13.
+**Approved:** 2026-08-13
+**Detailed:** 2026-08-13, after mapping every use of the shipped `product_serial`, the association-table
+and multi-select precedents, and the analytics counting paths. Four assumptions were checked by
+reading the code rather than accepted from the exploration summaries — see Investigation.
+
+### Context
+
+The machine-scoped P.O. work shipped on 2026-08-12 (`081d647`, `73b4467`, pushed) on the decision
+that a P.O. covers **exactly one** machine. **The owner has revised that on 2026-08-13: one P.O. can
+cover several machines.** The previous plan's "Deliberately excluded — more than one machine per P.O."
+entry is therefore reversed; see the note under that plan below.
+
+**This is a migration of live data, not a fresh build.** The single-machine version is deployed, so
+`purchase_order.product_serial` may hold real values in production. Nothing may be lost, and the
+change must survive a rollback.
+
+### Decisions taken
+
+Owner, 2026-08-13:
+
+| Question | Decision |
+| --- | --- |
+| Minimum machines | **At least one**, unchanged. Legacy rows with none stay readable, and are asked for machines only on edit |
+| Excel export | **One row per P.O.**, machines joined inside the existing cells |
+| Register column | **First machine + "+N more"**, so row height stays stable |
+
+Taken here while planning, with reasons:
+
+1. **An explicit association model `PurchaseOrderMachine`, not JSON columns.** The travel module's
+   JSON approach (`app.py:2240-2244`) is a real in-repo precedent, but it has no equivalent of
+   `update_product`'s **bulk** repoint (`app.py:45789-45792`) — with JSON that becomes a
+   read-modify-write loop over every P.O. row, inside a request already doing a delete-and-recreate
+   of a `Product`. The `delete_product` 409 guard (`app.py:45868`) has the same problem. Both must
+   query by serial.
+2. **A real `UniqueConstraint` on (purchase_order_id, product_serial).** `ShiftEngineer`
+   (`app.py:2551`) omitted one and this repo consequently needs `repair_shift_engineer_links()`
+   (`app.py:41221`) to clean duplicates in application code. It also makes the backfill's
+   multi-worker race safe — see Investigation.
+3. **`lazy='selectin'`, never `joinedload`, on the collection.** Joining a one-to-many multiplies
+   parent rows, which is the hazard `analytics_scope_query()` (`app.py:37613-37627`) exists to avoid.
+   This is risk 1.
+4. **`product_serial` stays as a write-only mirror** — one writer, zero readers.
+5. **Chips on the existing autocomplete, not the travel checklist** — see step 7.
+
+### Investigation
+
+**Four assumptions checked directly, two of which shaped the plan:**
+
+1. **`notify()` uses `textContent`** (`templates/po_details.html:492`), so naming the offending serial
+   in a validation error is XSS-safe. This mattered: with several machines an unnamed "not registered
+   to this client" error is unactionable, but echoing user data needed proof first.
+2. **`static/js/app-analytics.js` IS an `APP_SHELL` entry** (`app.py:15615`), so this change **does**
+   require a `CACHE_VERSION` bump. `/po_details` alone would not have forced one — the analytics
+   metric tile does.
+3. `selectinload` is already imported (`app.py:87`); no new import.
+4. `ReimbursementTrackerEntry` (`app.py:3658`) is the precedent for creating a second table inside
+   `ensure_purchase_order_schema()`'s transaction.
+
+**The hardest constraint:** `PurchaseOrder(**values, created_by=...)` (`app.py:40130`) and the
+`setattr` loop (`app.py:40174-40175`) both consume `validate_purchase_order_payload`'s dict directly,
+so a list of serials cannot ride inside it.
+
+**The backfill race.** `ensure_purchase_order_schema()` is guarded by a **module-global** flag
+(`app.py:3524`), so it runs once *per process*. Two workers can both see "no links yet". The unique
+constraint is what makes that safe: the second insert raises, the whole `with db.engine.begin()`
+block (`app.py:3530`) rolls back atomically, the `except` at `app.py:3574` leaves the flag False, and
+the next request retries into a no-op.
+
+**`ShiftEngineer` is the association precedent** (definition `app.py:2551-2554`, replace idiom
+`app.py:21737-21741`, fuller parent+child version `apply_travel_request_routes` `app.py:28011-28047`),
+and the normalizer/applier split to copy is `normalize_travel_request_participants_payload`
+(`app.py:28116`) with its `seen`-set dedupe (`app.py:28129`).
+
+**There is no `secondary=` many-to-many anywhere in this codebase** — every "many" is a hand-written
+association model. Do not introduce the first one.
+
+### Execution steps
+
+Ordered so the app is never broken between steps: schema and backfill first (nothing reads the new
+table yet), then writes, then reads, then UI, then analytics, then the last reader is removed.
+
+1. **Model, schema, backfill.** New `PurchaseOrderMachine` after `app.py:1877` — `id`,
+   `purchase_order_id` (FK, NOT NULL, indexed), `product_serial` (String(100), FK
+   `product.serial_number`, NOT NULL, indexed), `position`, `created_at`; `__table_args__` carrying
+   `uq_purchase_order_machine_pair` plus both indexes, commented with the `ShiftEngineer` lesson. On
+   `PurchaseOrder`, a `machines` relationship ordered by `position, id`, `cascade='all, delete-orphan'`,
+   `lazy='selectin'` — the cascade is what lets `Client` → `purchase_orders` reach the link rows and
+   makes `delete_purchase_order` correct with no code change. In `ensure_purchase_order_schema()`:
+   create the table after `app.py:3531`, leave `additive_columns` untouched, add the three
+   `CREATE ... IF NOT EXISTS` indexes defensively, then the backfill
+   `INSERT INTO purchase_order_machine ... SELECT ... WHERE product_serial IS NOT NULL AND TRIM(...) <> ''
+   AND NOT EXISTS (SELECT 1 FROM purchase_order_machine m WHERE m.purchase_order_id = po.id)`.
+   Three properties to comment: **`NOT EXISTS` keys on `purchase_order_id` alone** (keyed on the pair,
+   a machine a user deliberately removed would be **resurrected** on the next restart); **no
+   `INSERT OR IGNORE`** (a violation must surface so the retry happens); **no join to `product`**
+   (`PRAGMA foreign_keys` is off, so a serial may name a deleted product and joining would silently
+   drop the row — data loss).
+   **Done when:** the table is populated, re-running is a no-op, and the app behaves identically.
+2. **`purchase_order_to_dict()`** (`app.py:39753-39782`) walks `machines`. Adds `machines`,
+   `machine_count`, `machine_serials`, `machine_summary`, `machine_display_all`, `machine_search`.
+   **`machine_display` / `product_serial` / `product_name` / `product_client_id` keep their exact
+   current meaning but are derived from `machines[0]`, never from the DB column** — the API contract
+   is unchanged and `tests/test_purchase_orders.py:738` keeps passing. The `' — '` join is U+2014 and
+   must stay byte-identical to `productDisplay()` (`templates/po_details.html:742-746`).
+   **Done when:** every existing key still resolves and no consumer has changed.
+3. **The mirror column.** Keep `product_serial` physically present; write from exactly one function;
+   read from zero. Not dropped (SQLite DROP COLUMN needs a table rebuild; this codebase is
+   additive-only). Not left stale (destroys rollback). Not read — that is the `pending-work.md` §6
+   lesson, **but note that lesson is about two *readers* disagreeing**; one writer and zero readers
+   cannot diverge observably. Written, because on a rollback the old code then shows the primary
+   machine for every row rather than nothing. Enforced by: deleting the `PurchaseOrder.product`
+   relationship in step 9; a **corruption test** (set the column to garbage via raw SQL, assert
+   register/export/analytics never surface it — proves zero readers in a way grep cannot); and a
+   mirror test.
+4. **Write path.** New pure `normalize_purchase_order_machines(payload, client_id, existing=None)`:
+   accepts a list, a single string, or comma-joined; dedupes case-insensitively preserving order;
+   caps at 50 and **rejects rather than truncates** (silently dropping machines from a financial
+   register is the worst available failure); empty gives the **byte-identical** existing message so
+   current tests pass; per-serial resolution reuses `app.py:39849-39853` including the
+   case-insensitive fallback. The not-found and wrong-client messages **gain the serial name**
+   (XSS-safe, verified). `validate_purchase_order_payload` returns a **3-tuple**
+   `(values, machine_serials, error)` — the list never enters the dict, so `PurchaseOrder(**values)`
+   and the `setattr` loop keep working with no `pop` for a future field to slip through. **The machine
+   block stays at its current position**, after amount/date/type/client validation, because
+   `tests/test_purchase_orders.py:658` deliberately omits the serial in cases expecting those errors
+   first. The applier uses **ORM collection assignment**, not the bulk-delete idiom: that idiom leaves
+   the parent's in-session collection stale, and both routes re-serialize the parent in their own
+   response (`app.py:40144`, `40187`), so it would need an `expire()` call that a reviewer would later
+   delete as "unnecessary" and ship a response showing the old machine list. `add_purchase_order`
+   needs a `flush()` before children. Both activity logs become list-aware via a bounded label helper.
+   **Done when:** create, edit-replaces, and the legacy-edit refusal all behave, and step 10's tests 5
+   and 6 pass.
+5. **Products-side guards** (`app.py:45717-45883`). All three counts move to the link table via one
+   helper counting **distinct P.O.s**. The rename repoint becomes **two** bulk updates — link rows and
+   the mirror. Comment why a rename cannot collide with the unique constraint (`update_product`
+   already 409s when the new serial exists as a Product, and a link can only exist for a real
+   product). The owner-reassignment note is reworded: a multi-machine P.O. can now be partly valid.
+6. **Filters, sort, export.** `purchase_order_export_records()` eager-loads via `selectinload`; the
+   machine filter matches **any** machine; `sort_value` uses the **first** machine only (sorting by a
+   concatenation of an arbitrary-length list is unstable, and the column shows the primary, so the
+   sort must agree with the eye); `is_empty` becomes `not record.machines`. `export_purchase_orders()`
+   keeps **all 13 headers byte-identical** and joins machines with `'\n'` inside G and H —
+   `wrap_text=True` is already set (`app.py:40074`), so Excel stacks them and rows auto-height. **The
+   `''` placeholder for a missing product name is mandatory**: filtering empties desyncs line *k* of G
+   from line *k* of H and silently attributes the wrong model to a serial. Everything else stays put
+   and must be re-verified — the number_format indices, the TOTAL block, `freeze_panes`,
+   `auto_filter.ref` ending `M`, the 13 widths — all still correct **because rows were not
+   multiplied**. Record the `chr(64 + index)` 13-column ceiling (`app.py:40095`) in `changes.md`
+   rather than fixing it here.
+7. **`templates/po_details.html` — chips, not the travel checklist.** The modal is
+   `.modal-dialog-scrollable` with `overflow-y: auto`; the existing `.search-results` is already
+   proven in production inside that scroll container, while the travel dropdown is a separate CSS
+   system that has never run inside one and would clip at the body edge — **and it cannot be verified
+   visually here**, so the proven container behaviour is the only defensible call. The three
+   strengths (client scoping, disable-until-client, the pinned empty-state string) all live in the
+   branch being kept, and the common case stays a one-machine P.O. Add `selectedMachines` to `state`
+   and **delete the dead `productNameCounts`**. Keep all four existing machine ids so the markup test
+   passes with one added assertion. `machineFields()` renders `machine_summary` with a `title` of the
+   full list and serves **both** the desktop cell and the mobile line — one function, no divergence.
+   **The two table header copies need no change**, since label and sort key are unchanged. New
+   `.po-chip` CSS must use tokens that exist in `app-themes.css`; the repo-wide guard in
+   `tests/test_appearance_themes.py` fails the build otherwise.
+8. **Analytics** (`app.py:37888-37968`). Three units now coexist and must stay distinct: **order**
+   (`total`, `linked_total`, `unlinked_total`, `linked_pct`, `client_total`, `unlinked_clients`),
+   **link** (`by_machine`, `by_model`, `by_coverage`, new `machine_link_total`), and **entity**
+   (`machine_total`). A 3-machine P.O. counts once as an order and three times across links. Comment
+   that an empty `InstrumentedList` is falsy, so legacy rows stay unlinked by a truthiness
+   coincidence. `orders_for_range` swaps to `selectinload` **with a comment**, because a `joinedload`
+   would multiply the rows that `app.py:38017` counts with `len(orders)`.
+   **Invariants:** `sum(by_coverage) == linked_total` **breaks**; `sum(by_machine) == linked_total`
+   **never held** (`[:10]` truncated) and must not be "restored"; `linked_total + unlinked_total ==
+   total` **still holds**; and the **new exact invariant** `sum(by_coverage) == machine_link_total`
+   must be asserted. That is why `machine_link_total` is worth adding — it gives the per-link numbers
+   a name, so "coverage adds to 27 but there are 12 P.O.s" has a checkable answer instead of looking
+   like a defect. Add a fifth metric tile and reword the Coverage-mix subtitle.
+9. **Remove the last reader.** Only after 2, 5, 6, 7, 8 land: delete the `PurchaseOrder.product`
+   relationship, then grep to confirm zero `.product` reads and zero `joinedload(PurchaseOrder.product)`.
+   This makes step 3 structural rather than aspirational.
+10. **Tests.** Rewrite two, add ten. **`test_model_has_asset_linkage_but_no_work_linkage`** — second
+    deliberate rewrite, docstring must say why; keep the forbidden-set assertion verbatim **and carry
+    it to the new table** so the rule follows the asset link to its new home; add both FK targets,
+    `delete_orphan` on `machines`, and a walk of `__table__.constraints` asserting the
+    `UniqueConstraint` — **that assertion is what prevents the ShiftEngineer repeat** and is the
+    reason a second rewrite is acceptable. **The export test** keeps its 13 headers, `D2`, `F2`,
+    `J2`, `J3`, `J5` and `auto_filter.ref == 'A1:M3'` unchanged — that stability is the point of the
+    one-row design — changing only `G2`/`H2` and adding a multi-machine case with the
+    `len(G2.split('\n')) == len(H2.split('\n'))` alignment guard. New: backfill seeds exactly once;
+    **backfill never resurrects a removed machine**; backfill keeps links whose product row is gone;
+    duplicate links rejected by the database; edit **replaces** rather than appends; the **PUT
+    response body** shows the new set; reads never consult the legacy column; the mirror tracks
+    `machines[0]`; the filter matches any covered machine; a many-machine P.O. is one export row.
+    Keep the existing string-form `product_serial` payloads — they are now the back-compat regression
+    test and must not be converted to arrays.
+11. **Release.** Bump `CACHE_VERSION` (`app.py:15595`) — **required**, because `app-analytics.js` is
+    an `APP_SHELL` entry and step 8 changes it. **Read the live value immediately before committing,
+    never from this document.** Bump the analytics `?v=` params in the same commit. Dated
+    `releases.json` item. `changes.md` entry.
+
+### Deliberately excluded
+
+- **One row per machine in the export.** Would over-count the amount in TOTAL and break
+  `auto_filter.ref`; every export in this codebase is one-row-per-parent.
+- **A merged single "Machines" column.** Changes the column count, moving `auto_filter` off `M`,
+  invalidating the 13 widths, shifting every `number_format` index and moving the `=SUM(J…)` column —
+  for no analytical gain.
+- **Dropping `product_serial`.** A table rebuild on a live deploy to save 100 bytes a row.
+- **Porting the travel checklist.** Unverifiable containment risk under the browser rule — step 7.
+- **Fixing the `chr(64 + index)` 26-column ceiling.** Real, but unrelated; mixing it in muddies the diff.
+- **Relaxing the at-least-one-machine rule.** Asked and declined; the 89-client backfill stands.
+
+### Verification
+
+No browser automation, per `AGENTS.md` "Codex App Safety During Testing".
+
+- **Suite:** `python -m unittest discover -s tests` on the project venv. Each new test needs the
+  injection that proves it can fail — confirm the injection **applied** (needle count and SHA) and
+  read the **assertion message**, not the exit code.
+- **Test client round trip:** POST `product_serials: [A,B,C]` → 201; register → `machine_count == 3`
+  and `machine_summary` ending `" +2 more"`; PUT `[C]` → the **PUT response body** shows `[C]`;
+  export → **one** row with three lines in G.
+- **Direct DB checks against a copy of the production file**, before and after: count P.O.s with a
+  non-blank `product_serial` (`N`); assert `purchase_order_machine` holds exactly `N`; a `LEFT JOIN`
+  on both id and serial `WHERE m.id IS NULL` must return **zero rows**; `PRAGMA
+  index_list('purchase_order_machine')` must show the unique index **physically** (model-level
+  assertions can pass while the table lacks it); zero orphan links after a client delete.
+- **Query-count check** — a `before_cursor_execute` listener over the register with ~30 P.O.s,
+  asserting a bounded statement count. This is the N+1 guard, and a browser would never have caught it.
+- **Source-level:** zero `PurchaseOrder.product` reads after step 9; `widths` still 13;
+  `auto_filter.ref` still ends `M`; every new `var(--app-*)` token resolves.
+- **Hand to the owner:** the "+N more" cell at laptop width and its tooltip; six-plus chips inside the
+  scrollable modal without clipping the dropdown (**the specific risk step 7 accepted**); dark mode on
+  the chips; **the `.xlsx` opened in real Excel** — do the stacked cells render and auto-height, and is
+  TOTAL still correct; the Equipment tab with five tiles at desktop and mobile.
+
+### After implementation
+
+- Re-read this plan against the diff and amend this entry if the implementation differed.
+- Dated `changes.md` section, newest first. Record the 13-column export ceiling and the analytics
+  unit change (order vs link) with the invariants that intentionally no longer sum.
+- One dated `releases.json` item; re-run `tests/test_changelog_coverage.py` **after** committing.
+- **Take a file-level database backup before deploying.** The backfill is one transaction and cannot
+  half-apply, but a backup is what makes rollback unconditional.
+- Stage explicitly, file by file. Never `scheduler.db`, `output/`, `tmp/`, or the handoff artifact.
+- Re-read `origin/main` after finishing, not only before starting.
+- Push or deploy only after a separate owner instruction.
+
+### Risks
+
+Ranked by "would ship and nobody notices".
+
+1. **`joinedload` on the machines collection in analytics.** `len(orders)` is the headline "Total
+   P.O.s"; a joined collection makes a 3-machine P.O. count as **three purchase orders** in a
+   financial dashboard — plausible, moving the right way, unaudited.
+2. **A stale collection in the update response** if the bulk-delete idiom is used: the PUT returns the
+   *old* machine list, the user refreshes, sees the new one, and concludes the page is "slow".
+3. **G/H line misalignment in the export** if empty names are filtered instead of placeheld. The file
+   looks perfectly normal and attributes the wrong model to the wrong serial.
+4. **A backfill re-run resurrecting a dropped machine** — audit-trail corruption in a financial
+   register, visible only after an edit plus a restart.
+5. **N+1 across the register** — 200 P.O.s, 201 queries; invisible on SQLite in dev.
+6. **The partial-validity reassignment case** — a 5-machine P.O. refusing to save without saying which
+   machine is wrong.
+7. **`by_coverage` no longer summing to `linked_total`** — someone "fixes" it by de-duplicating per
+   P.O. and quietly destroys the per-machine analysis.
+8. **Chip dropdown clipping in the scrollable modal** — the only genuinely un-assertable risk, which
+   is exactly why step 7 chose the container behaviour already proven there.
+
 ## Machine-scoped P.O. records, and an Analytics Equipment tab
 
 **Status:** `Executed — 081d647 + fd781b1`. Execution was authorized by the project owner on
@@ -67,6 +337,24 @@ status was recorded in a follow-up journal commit after the implementation hash 
 relationship, the four existing type-to-search pickers, and the Analytics page and its chart
 helpers. Three claims were verified by reading the code rather than accepted from the exploration
 summaries; two of them changed the plan — see Investigation.
+
+> **PARTLY SUPERSEDED 2026-08-13 — read this before treating any decision below as current.** The
+> owner reversed the "**exactly one machine per P.O.**" decision one day after this shipped. One P.O.
+> can now cover several machines, and the replacement plan is **"One P.O., many machines"** at the
+> top of this file. Everything else here still stands: the at-least-one-machine rule, the no-free-text
+> rule, the legacy-rows-readable rule, the Products-side guards, the Equipment tab, and the tab
+> structure are all unchanged and still describe the system.
+>
+> **Specifically reversed:** the "Deliberately excluded → More than one machine per P.O." entry below,
+> and with it the single `product_serial` column, which becomes a write-only mirror behind a
+> `PurchaseOrderMachine` association table.
+>
+> **The record is worth keeping rather than editing.** The one-machine decision was taken explicitly,
+> with the multi-machine option costed and declined on the day — it was not an oversight. What changed
+> was the requirement, not the reasoning. Note also that the excluded entry already named
+> `templates/travel_request.html:2788-2801` as the pattern to use "if this is ever revisited", and
+> that is exactly the pattern the replacement plan evaluates — a deliberate exclusion that carried its
+> own way back is what made the reversal cheap to plan.
 
 ### Context
 

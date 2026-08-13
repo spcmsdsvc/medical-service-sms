@@ -1,5 +1,38 @@
 # Project Change Log
 
+codex changes - 2026-08-13 (multi-machine purchase orders)
+
+* Added the additive `purchase_order_machine` association model and live-schema migration in
+  `app.py`, including ordered links, a `(purchase_order_id, product_serial)` uniqueness boundary,
+  indexes, and an id-keyed transactional backfill from the shipped `purchase_order.product_serial`
+  mirror. The backfill keeps links whose Product row is gone and does not resurrect a removed link
+  when another association remains for the P.O.
+* Reworked P.O. validation, serialization, add, and update flows to accept ordered machine lists,
+  preserve legacy string/comma payloads, deduplicate case-insensitively, cap the list at 50, return
+  serial-aware errors, replace association collections safely, and write the first selected serial
+  to the rollback mirror without reading that mirror in application consumers.
+* Updated `/get_purchase_orders`, `/export_purchase_orders`, filters, sorting, and the Excel register
+  to eager-load association rows, match any linked machine, sort by the first machine, and export one
+  P.O. row with newline-aligned serial/name cells while preserving the 13-column layout and total.
+* Updated Product rename/delete behavior to count distinct P.O. rows through the association table,
+  repoint association rows plus the legacy mirror during serial replacement, block deletion with a
+  409 when a machine is linked, and report owner reassignment as a review requirement.
+* Added a chip-based multi-machine selector to `templates/po_details.html` while retaining the
+  existing autocomplete IDs and client-scoped Product choices; table/mobile rows now show a concise
+  first-machine summary with the complete linked-machine list available as a title/search value.
+* Changed P.O. analytics to distinguish P.O. totals from machine-link totals and distinct machine
+  totals, count coverage/top-machine/model rows at link granularity, and expose the new Machine links
+  metric in the Equipment panel. Bumped analytics asset query parameters to `v=79` and the live
+  service-worker cache label to `v88-multi-machine-po`.
+* Rewrote the affected model/export assertions and added tests for backfill idempotence, missing
+  Product serial preservation, link replacement, duplicate rejection, mirror corruption immunity,
+  any-link filtering/export, normalizer compatibility/cap, Product repointing/guards, analytics
+  link-unit invariants, UI identifiers, eager-load query count, and cache invalidation. Non-browser
+  verification completed: 53 affected tests and 84 offline/cache/regression tests passed; Python and
+  JavaScript syntax checks passed.
+* Added the 2026-08-13 user-facing release entry to `static/changelog/releases.json`, describing
+  multi-machine selection, aligned export/filter behavior, and the link-granularity analytics metric.
+
 claude changes - 2026-08-12 (the misspelled theme token, and a guard that now covers every page)
 
 ## Fixed: a transposed token left the new equipment picker invisible in dark mode

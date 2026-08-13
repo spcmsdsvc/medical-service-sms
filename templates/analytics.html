@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block page_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/app-dashboard.css') }}?v=74">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/app-analytics.css') }}?v=78">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-analytics.css') }}?v=79">
 {% endblock %}
 
 {% block content %}
@@ -129,15 +129,16 @@
             <article class="analytics-metric"><div class="analytics-metric-label">Missing a machine</div><strong id="equipment-unlinked-total" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">Legacy rows needing backfill</div></article>
             <article class="analytics-metric"><div class="analytics-metric-label">Machine coverage</div><strong id="equipment-linked-pct" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">Of P.O.s in this period</div></article>
             <article class="analytics-metric"><div class="analytics-metric-label">Machines covered</div><strong id="equipment-machine-total" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">Distinct registered serials</div></article>
+            <article class="analytics-metric"><div class="analytics-metric-label">Machine links</div><strong id="equipment-machine-link-total" class="analytics-metric-value" data-equipment-value>&mdash;</strong><div class="analytics-metric-note">P.O. to machine associations</div></article>
         </div>
 
         <div class="analytics-grid-2">
-            <section aria-labelledby="equipment-machine-heading"><div class="analytics-panel-header"><div><h3 id="equipment-machine-heading">Top machines</h3><p>Purchase order counts by serial and model.</p></div></div><div id="equipment-machine-chart" class="analytics-chart-frame"></div><table id="equipment-machine-table" class="analytics-chart-table"><caption>Top machines by purchase order count</caption><thead><tr><th scope="col">Machine</th><th scope="col">Count</th><th scope="col">Previous period</th></tr></thead><tbody id="equipment-machine-table-body"></tbody></table></section>
-            <section aria-labelledby="equipment-model-heading"><div class="analytics-panel-header"><div><h3 id="equipment-model-heading">By model</h3><p>Models represented by machine-linked P.O.s.</p></div></div><div id="equipment-model-chart" class="analytics-chart-frame"></div><table id="equipment-model-table" class="analytics-chart-table"><caption>Models by purchase order count</caption><thead><tr><th scope="col">Model</th><th scope="col">Count</th><th scope="col">Previous period</th></tr></thead><tbody id="equipment-model-table-body"></tbody></table></section>
+            <section aria-labelledby="equipment-machine-heading"><div class="analytics-panel-header"><div><h3 id="equipment-machine-heading">Top machines</h3><p>Machine-link counts by serial and model.</p></div></div><div id="equipment-machine-chart" class="analytics-chart-frame"></div><table id="equipment-machine-table" class="analytics-chart-table"><caption>Top machines by purchase order link count</caption><thead><tr><th scope="col">Machine</th><th scope="col">Count</th><th scope="col">Previous period</th></tr></thead><tbody id="equipment-machine-table-body"></tbody></table></section>
+            <section aria-labelledby="equipment-model-heading"><div class="analytics-panel-header"><div><h3 id="equipment-model-heading">By model</h3><p>Models represented by machine links.</p></div></div><div id="equipment-model-chart" class="analytics-chart-frame"></div><table id="equipment-model-table" class="analytics-chart-table"><caption>Models by purchase order link count</caption><thead><tr><th scope="col">Model</th><th scope="col">Count</th><th scope="col">Previous period</th></tr></thead><tbody id="equipment-model-table-body"></tbody></table></section>
         </div>
 
         <div class="analytics-grid-2">
-            <section aria-labelledby="equipment-coverage-heading"><div class="analytics-panel-header"><div><h3 id="equipment-coverage-heading">Coverage mix</h3><p>Current coverage status from Products.</p></div></div><div id="equipment-coverage-bars" class="analytics-bars"></div><table id="equipment-coverage-table" class="analytics-chart-table"><caption>Equipment coverage mix</caption><thead><tr><th scope="col">Coverage</th><th scope="col">Count</th></tr></thead><tbody id="equipment-coverage-table-body"></tbody></table></section>
+            <section aria-labelledby="equipment-coverage-heading"><div class="analytics-panel-header"><div><h3 id="equipment-coverage-heading">Coverage mix</h3><p>Machine links by current Product coverage status.</p></div></div><div id="equipment-coverage-bars" class="analytics-bars"></div><table id="equipment-coverage-table" class="analytics-chart-table"><caption>Equipment coverage mix</caption><thead><tr><th scope="col">Coverage</th><th scope="col">Count</th></tr></thead><tbody id="equipment-coverage-table-body"></tbody></table></section>
             <section aria-labelledby="equipment-unlinked-heading"><div class="analytics-panel-header"><div><h3 id="equipment-unlinked-heading">Missing a machine</h3><p>Clients with legacy P.O. rows that need a Products backfill.</p></div></div><div id="equipment-unlinked-bars" class="analytics-bars"></div><table id="equipment-unlinked-table" class="analytics-chart-table"><caption>Clients missing a machine on purchase orders</caption><thead><tr><th scope="col">Client</th><th scope="col">Count</th></tr></thead><tbody id="equipment-unlinked-table-body"></tbody></table></section>
         </div>
     </section>
@@ -152,5 +153,5 @@ window.ANALYTICS_CAPABILITIES = {
 {% endblock %}
 
 {% block page_scripts %}
-<script src="{{ url_for('static', filename='js/app-analytics.js') }}?v=78"></script>
+<script src="{{ url_for('static', filename='js/app-analytics.js') }}?v=79"></script>
 {% endblock %}

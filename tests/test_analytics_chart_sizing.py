@@ -145,7 +145,9 @@ class AnalyticsChartSizingTests(unittest.TestCase):
         self.assertNotIn('.width =', render)
 
     def test_the_service_worker_was_bumped_for_the_new_assets(self):
-        assert_cache_version_at_least(self, 77)
+        # Multi-machine analytics adds a live metric renderer, so the APP_SHELL JS
+        # must not remain behind an installed worker's cached copy.
+        assert_cache_version_at_least(self, 88)
 
 
 if __name__ == '__main__':

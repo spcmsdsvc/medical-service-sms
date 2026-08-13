@@ -452,6 +452,7 @@
         setText('equipment-unlinked-total', equipment.unlinked_total);
         setText('equipment-linked-pct', equipment.linked_pct == null ? null : `${equipment.linked_pct}%`);
         setText('equipment-machine-total', equipment.machine_total);
+        setText('equipment-machine-link-total', equipment.machine_link_total);
         const scope = byId('equipment-scope-line');
         if (scope && data && data.range) scope.textContent = `${data.scope_label || 'Company-wide'} \u00b7 ${data.range.start_date} to ${data.range.end_date} \u00b7 counts only; no money values are shown.`;
         renderBars('equipment-coverage-bars', equipment.by_coverage);

@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-13",
+      "release_date": "2026-08-13",
+      "title": "Multi-machine Purchase Orders",
+      "summary": "A single P.O. can now cover several registered machines, while exports, Products safeguards, and Equipment analytics stay aligned.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-13-po-multiple-machines",
+          "category": "P.O. Details",
+          "description": "P.O. Details now lets you select multiple machines for one P.O., review them as removable chips, and edit the set without creating duplicate machine links.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-13-po-multi-machine-export",
+          "category": "P.O. Details",
+          "description": "The P.O. register still exports one row per P.O.; when several machines are covered, their serials and names remain aligned in the Machine columns and filters match any covered machine.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-08-13-equipment-link-analytics",
+          "category": "Analytics",
+          "description": "Equipment analytics now distinguishes purchase orders from machine links and shows link totals, so coverage and top-machine counts remain meaningful when one P.O. covers several machines.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 30
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-12",
       "release_date": "2026-08-12",
       "title": "Machine-scoped Purchase Orders and Equipment Analytics",
