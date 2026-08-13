@@ -458,6 +458,69 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         self.assertEqual(body['current_batch'], {'sequence': 32, 'reference': 'BATCH-032'})
         self.assertTrue(body['suggested_reference'].startswith('BATCH-'))
 
+    def test_list_is_current_batch_only_and_exports_support_explicit_history(self):
+        client = self._client_for(self.tracker_user_id)
+        old_row = self._add(
+            client,
+            engineer_id=self.jfl_id,
+            office='Manila',
+            representation='12.50',
+        )
+        started = client.post(
+            '/start_reimbursement_tracker_batch',
+            json={'expected_batch_sequence': 32},
+        )
+        self.assertEqual(started.status_code, 200, started.get_data(as_text=True))
+
+        empty_current = client.get('/get_reimbursement_tracker_entries')
+        self.assertEqual(empty_current.status_code, 200)
+        self.assertEqual(empty_current.get_json()['current_batch']['reference'], 'BATCH-033')
+        self.assertEqual(empty_current.get_json()['entries'], [])
+
+        new_row = self._add(
+            client,
+            reference='BATCH-033',
+            expected_batch_sequence=33,
+            engineer_id=self.raj_id,
+            office='Cebu',
+            representation='8.75',
+        )
+        current_list = client.get('/get_reimbursement_tracker_entries')
+        self.assertEqual(current_list.status_code, 200)
+        current_body = current_list.get_json()
+        self.assertEqual([row['id'] for row in current_body['entries']], [new_row['id']])
+        self.assertEqual(current_body['entries'][0]['reference'], 'BATCH-033')
+
+        with self.app.app_context():
+            stored_ids = [
+                row.id for row in app_module.ReimbursementTrackerEntry.query.order_by(
+                    app_module.ReimbursementTrackerEntry.id
+                ).all()
+            ]
+        self.assertEqual(stored_ids, [old_row['id'], new_row['id']])
+
+        def exported_references(response):
+            self.assertEqual(response.status_code, 200, response.status)
+            workbook = load_workbook(BytesIO(response.data), data_only=False)
+            worksheet = workbook['Sheet']
+            return [
+                worksheet.cell(row_number, 1).value
+                for row_number in range(2, worksheet.max_row + 1)
+                if worksheet.cell(row_number, 1).value is not None
+            ]
+
+        default_export = exported_references(client.get('/export_reimbursement_tracker'))
+        current_export = exported_references(client.get('/export_reimbursement_tracker?batch_scope=current'))
+        all_export = exported_references(client.get('/export_reimbursement_tracker?batch_scope=all'))
+        self.assertEqual(default_export, ['BATCH-033'])
+        self.assertEqual(current_export, ['BATCH-033'])
+        self.assertEqual(set(all_export), {'BATCH-032', 'BATCH-033'})
+        self.assertEqual(len(all_export), 2)
+
+        invalid_scope = client.get('/export_reimbursement_tracker?batch_scope=history')
+        self.assertEqual(invalid_scope.status_code, 400)
+        self.assertIn('scope', invalid_scope.get_json()['error'].lower())
+
     def test_export_reproduces_the_workbook_layout(self):
         client = self._client_for(self.tracker_user_id)
         self._add(client, engineer_id=self.jfl_id, office='Manila', representation='12.50')
@@ -514,6 +577,7 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
         items = [item for release in manifest['releases'] for item in release.get('items', [])]
         self.assertTrue(any(item['item_key'] == '2026-08-11-reimbursement-tracker' for item in items))
+        self.assertTrue(any(item['item_key'] == '2026-08-13-reimbursement-current-batch-view' for item in items))
 
     def test_tracker_item_sits_under_its_own_release_not_the_backup_one(self):
         """The item first shipped inside the release titled 'Backup Center Behaves Offline'.
@@ -638,7 +702,7 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
             json=self._payload(reference='BATCH-032', expected_batch_sequence=32),
         )
         self.assertEqual(stale_add.status_code, 409)
-        self.assertEqual(client.get('/get_reimbursement_tracker_entries').get_json()['entries'].__len__(), 2)
+        self.assertEqual(client.get('/get_reimbursement_tracker_entries').get_json()['entries'], [])
 
         third = self._add(
             client,
@@ -692,6 +756,13 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         )
         self.assertIn('id="rt-start-batch-button"', template)
         self.assertIn("/start_reimbursement_tracker_batch", template)
+        self.assertIn('id="rt-export-scope"', template)
+        self.assertIn('batch_scope:', template)
+        self.assertIn("byId('rt-export-scope').value = 'current'", template)
+        self.assertIn('state.rows = currentSequence', template)
+        self.assertIn('state.rows = [];', template)
+        self.assertIn("byId('rt-total-amount').textContent = formatMoney(state.rows.reduce", template)
+        self.assertIn('clearRegisterFilters()', template)
         self.assertIn('readonly', template)
         self.assertNotRegex(
             template, r'placeholder="BATCH-001"',

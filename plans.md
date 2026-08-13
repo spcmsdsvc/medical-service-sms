@@ -55,6 +55,126 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Reimbursement Tracker — current-batch view and totals reset
+
+**Status:** `In progress`
+**Approved:** 2026-08-13
+**Detailed:** 2026-08-13, after inspecting the shared batch state, tracker list endpoint, export
+route, page KPI calculation, transition handler, and existing focused tests. The owner separately
+requested implementation on the same date.
+
+### Context
+
+The shared-batch workflow correctly advances one server-owned batch for all engineers, but the
+tracker page still loads every stored row into `state.rows`. Its Rows, Paid in full, Unpaid, and
+Total PHP KPIs therefore include historical batches. Starting a new batch refreshes the same
+all-history payload, so the old rows remain visible and the Total PHP figure does not reset for
+the new batch.
+
+The page should be an active-batch register: previous rows remain durable and exportable, but the
+visible register and its KPIs are scoped to the server's current batch. Historical Excel export
+must remain available through an explicit scope choice.
+
+### Decisions taken
+
+- The register page always displays the current batch only; there is no history toggle in the
+  table.
+- `Total PHP`, Rows, Paid in full, and Unpaid are calculated only from current-batch rows and
+  show zero when the new batch has no rows.
+- Excel export defaults to the current batch. An explicit All batches option exports history.
+- A successful batch transition clears reference, engineer, office, date, payment, and export
+  scope filters so the new batch is immediately visible.
+- Previous rows are never deleted or rewritten by this feature.
+- No schema migration or service-worker bump is required. The existing singleton batch-state
+  table and inline tracker JavaScript are sufficient.
+- `pending-work.md` remains untouched because it is owner-maintained only.
+
+### Investigation
+
+- `app.py:40911` currently returns every `ReimbursementTrackerEntry`; the response already
+  includes the authoritative `current_batch` payload.
+- `app.py:40766` currently builds export records from every tracker row and applies only the
+  visible filters; it has no batch scope.
+- `app.py:41035` routes export requests to that helper without a scope parameter.
+- `templates/reimbursement_tracker.html:349` calculates all four KPIs from `state.rows`, and
+  `:569` loads the endpoint response directly into that array.
+- `templates/reimbursement_tracker.html:590` starts a batch and reloads data, but does not clear
+  filters or change the returned row scope.
+- `tests/test_reimbursement_tracker.py` already covers shared transitions, stale requests,
+  historical edits, and export layout, so the new coverage can extend the existing fixture
+  without changing the database contract.
+
+### Execution steps
+
+1. Update `app.py` list and export behavior. Read the current singleton state before the list
+   query and return only rows whose `batch_sequence` equals the active sequence. Add a validated
+   `batch_scope=current|all` export argument, default it to `current`, filter current exports by
+   the server state, and leave `all` unfiltered. Return `400` for an invalid scope while keeping
+   authorization and existing export sorting/filtering intact.
+
+2. Update `templates/reimbursement_tracker.html`. Add a current-batch-aware export selector,
+   pass its value to the export request, clear the selected register/export filters after a
+   successful transition, refresh current-batch state on stale transition responses, and retain
+   KPI calculations over the freshly loaded current-batch `state.rows`.
+
+3. Extend `tests/test_reimbursement_tracker.py`. Prove an old row remains in storage but is absent
+   from the list response after advancing, an empty new batch returns zero rows, current and
+   all-history exports contain the correct rows, the default is current, invalid scope is rejected,
+   and the template contains the scope selector, KPI calculation, filter reset, and conflict
+   refresh behavior. Existing authorization, migration, transition, stale-save, 999-limit, and
+   historical-edit tests remain green.
+
+4. Update `changes.md` in the existing 2026-08-13 section and append a user-facing
+   `static/changelog/releases.json` item under the existing 2026-08-13 release. Record that the
+   register is current-batch-only, historical export is explicit, and no service-worker bump was
+   needed. Do not add secrets, personal data, or database contents.
+
+5. Self-review the diff for accidental changes to historical data, authorization, export columns,
+   filter semantics, and batch transitions. Run focused tests, the full suite, Python compilation,
+   inline JavaScript syntax validation, release-manifest parsing, and `git diff --check`. Keep
+   verification non-browser so the Codex app remains open and untouched.
+
+### Deliberately excluded
+
+- No deletion, migration, or rewriting of prior tracker rows.
+- No history table toggle; All batches is exposed only through the export scope choice.
+- No changes to control-number generation, batch transitions, paid notifications, or historical
+  edit locking.
+- No service-worker/cache version change, because the affected script is inline.
+- No `pending-work.md` refresh.
+
+### Verification
+
+- Seed rows in BATCH-032, advance to BATCH-033, and verify the database still contains the old
+  row while the list response contains only BATCH-033 rows.
+- Verify an empty BATCH-033 response produces zero rows and the page's Total PHP source uses the
+  refreshed current-batch array.
+- Seed rows in two batches and verify omitted/default and explicit `current` exports contain only
+  the active batch, while `all` contains both; invalid scope returns `400`.
+- Verify successful transition code clears all selected register filters and export scope, and
+  stale transition responses refresh the active batch before reporting the conflict.
+- Run `python -m unittest tests.test_reimbursement_tracker -v`, the full repository suite,
+  `python -m py_compile app.py`, Node inline-template JavaScript parsing, release JSON parsing,
+  and `git diff --check`. No browser automation is permitted for this project.
+
+### After implementation
+
+- Update this plan's status to `Executed — <commit hash>` after the implementation commit.
+- Record the final verification result and commit hash in `changes.md`.
+- Stage only intended project files; leave `scheduler.db`, `output/`, `tmp/`, and the handoff
+  artifact untouched.
+- Commit and push only when the owner explicitly requests publication.
+
+### Risks
+
+- A current-only list response can make historical rows unavailable to table actions; this is an
+  intentional product decision, with All batches export preserving historical accounting access.
+- A transition concurrent with a refresh could briefly return stale rows; the transition handler
+  must reload after success and refresh on conflicts, while the server remains authoritative for
+  export scope.
+- Changing export's no-argument default could surprise callers; the UI labels the scope clearly,
+  tests pin the default, and All batches remains one explicit choice away.
+
 ## Reimbursement Tracker — shared current batch workflow
 
 **Status:** `Executed — 7847100`

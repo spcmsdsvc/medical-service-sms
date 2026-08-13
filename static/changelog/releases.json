@@ -51,6 +51,15 @@
             "admins"
           ],
           "sort_order": 50
+        },
+        {
+          "item_key": "2026-08-13-reimbursement-current-batch-view",
+          "category": "Reimbursement Tracker",
+          "description": "The Reimbursement Tracker now shows current-batch rows and totals by default, resets the register when a new batch starts, and offers an explicit all-batches export for history.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 60
         }
       ]
     },

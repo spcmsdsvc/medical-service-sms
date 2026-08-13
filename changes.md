@@ -91,6 +91,21 @@ claude changes - 2026-08-13 (review of multi-machine P.O.s: two coverage gaps cl
   and `git diff --check`. No browser automation or Codex app navigation was used.
 * Functional implementation committed as `7847100`; the pre-existing `scheduler.db`, generated
   `output/` and `tmp/` directories, and handoff artifact were intentionally left uncommitted.
+* Recorded the approved Reimbursement Tracker current-batch view and totals-reset plan in
+  `plans.md`; execution is now in progress under the owner's explicit go-ahead.
+* Scoped the Reimbursement Tracker list API and visible KPIs to the server-owned current batch;
+  prior rows remain stored while the page hides them after a batch transition.
+* Added `batch_scope=current|all` export behavior, defaulting to current-batch rows with an
+  explicit all-history option, including invalid-scope validation without changing the workbook
+  column layout.
+* Updated the tracker page to reset rows, totals, filters, and export scope after a successful
+  transition, refresh stale-transition state, and label the export scope with the active batch.
+  Added focused coverage for empty new batches, historical preservation, export scope contents,
+  invalid scope, and template wiring; no service-worker bump was required.
+* Final verification passed: 28 focused tracker tests, 658 repository tests with one pre-existing
+  skip, Python compilation, inline JavaScript syntax, release-manifest parsing, and `git diff
+  --check`. The implementation remains uncommitted and unpublished pending owner instruction;
+  `scheduler.db`, `output/`, `tmp/`, and the handoff artifact remain outside the change set.
 
 codex changes - 2026-08-13 (multi-machine purchase orders)
 

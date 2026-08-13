@@ -170,6 +170,13 @@
                 <div class="d-flex flex-wrap gap-2">
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="rt-clear-filters"><i class="fa-solid fa-filter-circle-xmark me-1"></i>Clear</button>
                     <button type="button" class="btn btn-outline-primary btn-sm" id="rt-refresh-button"><i class="fa-solid fa-rotate me-1"></i>Refresh</button>
+                    <div>
+                        <label class="visually-hidden" for="rt-export-scope">Export scope</label>
+                        <select class="form-select form-select-sm" id="rt-export-scope" aria-label="Export scope">
+                            <option value="current" selected>Current batch</option>
+                            <option value="all">All batches</option>
+                        </select>
+                    </div>
                     <button type="button" class="btn btn-primary btn-sm" id="rt-export-button"><i class="fa-solid fa-file-excel me-1"></i>Export Excel</button>
                 </div>
             </div>
@@ -313,6 +320,12 @@
             to: byId('rt-date-to')?.value || '',
             paid: byId('rt-paid-filter')?.value || ''
         };
+    }
+
+    function clearRegisterFilters() {
+        ['rt-reference-filter', 'rt-date-from', 'rt-date-to'].forEach((id) => { byId(id).value = ''; });
+        ['rt-engineer-filter', 'rt-office-filter', 'rt-paid-filter'].forEach((id) => { byId(id).value = ''; });
+        byId('rt-export-scope').value = 'current';
     }
 
     function filteredRows() {
@@ -518,7 +531,9 @@
         const batch = state.currentBatch;
         const label = byId('rt-current-batch-reference');
         const button = byId('rt-start-batch-button');
+        const currentExportOption = byId('rt-export-scope')?.querySelector('option[value="current"]');
         if (label) label.textContent = batch?.reference || 'Unavailable';
+        if (currentExportOption) currentExportOption.textContent = batch?.reference ? `Current batch (${batch.reference})` : 'Current batch';
         if (!button) return;
         if (!batch) {
             button.disabled = true;
@@ -570,10 +585,13 @@
         const response = await fetch('/get_reimbursement_tracker_entries', { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.error || 'Reimbursement tracker could not be loaded.');
-        state.rows = data.entries || [];
         state.engineers = data.engineers || [];
         state.offices = data.offices || [];
         state.currentBatch = data.current_batch || null;
+        const currentSequence = Number(state.currentBatch?.sequence || 0);
+        state.rows = currentSequence
+            ? (data.entries || []).filter((row) => Number(row.batch_sequence) === currentSequence)
+            : [];
         state.suggestedReference = state.currentBatch?.reference || data.suggested_reference || '';
         renderCurrentBatch();
         byId('rt-reference').placeholder = state.suggestedReference || 'BATCH-000';
@@ -602,10 +620,19 @@
             });
             const data = await response.json().catch(() => ({}));
             if (!response.ok || !data.success) {
-                if (data.current_batch) state.currentBatch = data.current_batch;
+                if (data.current_batch) {
+                    state.currentBatch = data.current_batch;
+                    clearRegisterFilters();
+                    await loadData();
+                }
                 throw new Error(data.error || 'The new reimbursement batch could not be started.');
             }
             state.currentBatch = data.current_batch;
+            clearRegisterFilters();
+            state.rows = [];
+            renderCurrentBatch();
+            renderKpis();
+            renderRows();
             await loadData();
             notify(`Started ${data.current_batch.reference}. New rows will use this batch.`, 'success');
         } catch (error) {
@@ -668,7 +695,12 @@
         const button = byId('rt-export-button');
         button.disabled = true;
         try {
-            const params = new URLSearchParams({ ...currentFilters(), sort: state.sortKey, direction: state.sortDirection });
+            const params = new URLSearchParams({
+                ...currentFilters(),
+                batch_scope: byId('rt-export-scope')?.value || 'current',
+                sort: state.sortKey,
+                direction: state.sortDirection,
+            });
             const response = await fetch(`/export_reimbursement_tracker?${params.toString()}`, { headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } });
             if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || 'The tracker could not be exported.'); }
             const blob = await response.blob();
@@ -703,8 +735,7 @@
     ['rt-reference-filter', 'rt-date-from', 'rt-date-to'].forEach((id) => byId(id).addEventListener('input', renderRows));
     ['rt-engineer-filter', 'rt-office-filter', 'rt-paid-filter'].forEach((id) => byId(id).addEventListener('change', renderRows));
     byId('rt-clear-filters').addEventListener('click', () => {
-        ['rt-reference-filter', 'rt-date-from', 'rt-date-to'].forEach((id) => { byId(id).value = ''; });
-        ['rt-engineer-filter', 'rt-office-filter', 'rt-paid-filter'].forEach((id) => { byId(id).value = ''; });
+        clearRegisterFilters();
         renderRows();
     });
     byId('rt-office').addEventListener('change', () => { populateEngineerOptions(); updateControlPreview(); renderCategorySuggestions(); });

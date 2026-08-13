@@ -40763,8 +40763,12 @@ def reimbursement_tracker_engineer_payload(engineer):
     }
 
 
-def reimbursement_tracker_export_records():
-    """Return tracker rows matching the register's current filters and sort."""
+def reimbursement_tracker_export_records(batch_scope=None):
+    """Return tracker rows matching filters, scope, and sort."""
+    batch_scope = (clean_str(batch_scope) or clean_str(request.args.get('batch_scope')) or 'current').strip().lower()
+    if batch_scope not in {'current', 'all'}:
+        raise ValueError('The export batch scope is invalid. Choose current or all.')
+
     reference_filter = (request.args.get('reference') or '').strip().casefold()
     engineer_filter = (request.args.get('engineer') or '').strip().casefold()
     office_filter = (request.args.get('office') or '').strip().casefold()
@@ -40793,9 +40797,15 @@ def reimbursement_tracker_export_records():
         sort_key = 'submission_date'
     descending = (request.args.get('direction') or 'desc').strip().lower() != 'asc'
 
-    records = ReimbursementTrackerEntry.query.options(
+    records_query = ReimbursementTrackerEntry.query.options(
         joinedload(ReimbursementTrackerEntry.engineer),
-    ).all()
+    )
+    if batch_scope == 'current':
+        current_sequence = int(reimbursement_tracker_current_batch_state().current_batch_sequence)
+        records_query = records_query.filter(
+            ReimbursementTrackerEntry.batch_sequence == current_sequence,
+        )
+    records = records_query.all()
     filtered = []
     for record in records:
         engineer_name = record.engineer_name_snapshot or (record.engineer.name if record.engineer else '')
@@ -40912,8 +40922,15 @@ def get_reimbursement_tracker_entries():
     if not can_manage_reimbursement_tracker():
         return denied('You do not have access to the Reimbursement Tracker.')
     ensure_reimbursement_tracker_schema()
+    try:
+        current_batch = reimbursement_tracker_batch_payload(reimbursement_tracker_current_batch_state())
+    except RuntimeError as batch_state_error:
+        return jsonify({'success': False, 'error': str(batch_state_error)}), 503
+    current_sequence = current_batch['sequence']
     entries = ReimbursementTrackerEntry.query.options(
         joinedload(ReimbursementTrackerEntry.engineer),
+    ).filter(
+        ReimbursementTrackerEntry.batch_sequence == current_sequence,
     ).order_by(
         ReimbursementTrackerEntry.submission_date.desc(),
         ReimbursementTrackerEntry.id.desc(),
@@ -40933,10 +40950,6 @@ def get_reimbursement_tracker_entries():
         if initials:
             initials_map.setdefault(initials, []).append(engineer)
     duplicate_initials = sorted(initials for initials, matches in initials_map.items() if len(matches) > 1)
-    try:
-        current_batch = reimbursement_tracker_batch_payload(reimbursement_tracker_current_batch_state())
-    except RuntimeError as batch_state_error:
-        return jsonify({'success': False, 'error': str(batch_state_error)}), 503
     return jsonify({
         'success': True,
         'entries': [reimbursement_tracker_entry_to_dict(entry) for entry in entries],
@@ -41036,8 +41049,16 @@ def export_reimbursement_tracker():
     if not can_manage_reimbursement_tracker():
         return denied('You do not have access to the Reimbursement Tracker.')
     ensure_reimbursement_tracker_schema()
+    batch_scope = (clean_str(request.args.get('batch_scope')) or 'current').strip().lower()
+    if batch_scope not in {'current', 'all'}:
+        return jsonify({
+            'success': False,
+            'error': 'The export batch scope is invalid. Choose current or all.',
+        }), 400
     try:
-        records = reimbursement_tracker_export_records()
+        records = reimbursement_tracker_export_records(batch_scope=batch_scope)
+    except RuntimeError as export_state_error:
+        return jsonify({'success': False, 'error': str(export_state_error)}), 503
     except ValueError as export_error:
         return jsonify({'success': False, 'error': str(export_error)}), 400
 
