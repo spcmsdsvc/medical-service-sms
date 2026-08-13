@@ -138,6 +138,13 @@
     <section class="rt-filter-panel mb-3 no-print" aria-label="Reimbursement tracker filters">
         <div class="row g-2 align-items-end">
             <div class="col-12 col-md-4 col-lg-2">
+                <label for="rt-batch-view">View batch</label>
+                <select class="form-select" id="rt-batch-view" aria-describedby="rt-batch-view-help">
+                    <option value="">Loading batchesâ€¦</option>
+                </select>
+                <div class="form-text" id="rt-batch-view-help">Choose the active or a previous batch to review.</div>
+            </div>
+            <div class="col-12 col-md-4 col-lg-2">
                 <label for="rt-reference-filter">Reference</label>
                 <input class="form-control" id="rt-reference-filter" type="search" placeholder="Search batch reference">
             </div>
@@ -286,7 +293,8 @@
 (() => {
     'use strict';
     const state = {
-        rows: [], engineers: [], offices: [], editingId: null, modal: null, currentBatch: null, suggestedReference: '',
+        rows: [], engineers: [], offices: [], editingId: null, modal: null, currentBatch: null, viewBatch: null,
+        availableBatches: [], suggestedReference: '',
         sortKey: localStorage.getItem('reimbursement_tracker_sort_key') || 'submission_date',
         sortDirection: localStorage.getItem('reimbursement_tracker_sort_direction') || 'desc'
     };
@@ -322,10 +330,22 @@
         };
     }
 
-    function clearRegisterFilters() {
+    function clearRegisterFilters(resetExportScope = true) {
         ['rt-reference-filter', 'rt-date-from', 'rt-date-to'].forEach((id) => { byId(id).value = ''; });
         ['rt-engineer-filter', 'rt-office-filter', 'rt-paid-filter'].forEach((id) => { byId(id).value = ''; });
-        byId('rt-export-scope').value = 'current';
+        if (resetExportScope) byId('rt-export-scope').value = 'current';
+    }
+
+    function renderBatchOptions() {
+        const select = byId('rt-batch-view');
+        if (!select) return;
+        const currentSequence = Number(state.currentBatch?.sequence || 0);
+        const selectedSequence = Number(state.viewBatch?.sequence || currentSequence);
+        select.innerHTML = state.availableBatches.map((batch) => {
+            const currentLabel = Number(batch.sequence) === currentSequence ? ' (Current)' : '';
+            return `<option value="${Number(batch.sequence)}">${escapeHtml(batch.reference)}${currentLabel}</option>`;
+        }).join('');
+        select.value = String(selectedSequence);
     }
 
     function filteredRows() {
@@ -581,19 +601,25 @@
         });
     }
 
-    async function loadData() {
-        const response = await fetch('/get_reimbursement_tracker_entries', { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+    async function loadData(viewSequence = null) {
+        const params = new URLSearchParams();
+        if (viewSequence !== null && viewSequence !== undefined) params.set('batch_sequence', viewSequence);
+        const query = params.toString();
+        const response = await fetch(`/get_reimbursement_tracker_entries${query ? `?${query}` : ''}`, { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.error || 'Reimbursement tracker could not be loaded.');
         state.engineers = data.engineers || [];
         state.offices = data.offices || [];
         state.currentBatch = data.current_batch || null;
-        const currentSequence = Number(state.currentBatch?.sequence || 0);
-        state.rows = currentSequence
-            ? (data.entries || []).filter((row) => Number(row.batch_sequence) === currentSequence)
+        state.viewBatch = data.view_batch || state.currentBatch;
+        state.availableBatches = data.available_batches || (state.currentBatch ? [state.currentBatch] : []);
+        const viewSequenceValue = Number(state.viewBatch?.sequence || 0);
+        state.rows = viewSequenceValue
+            ? (data.entries || []).filter((row) => Number(row.batch_sequence) === viewSequenceValue)
             : [];
         state.suggestedReference = state.currentBatch?.reference || data.suggested_reference || '';
         renderCurrentBatch();
+        renderBatchOptions();
         byId('rt-reference').placeholder = state.suggestedReference || 'BATCH-000';
         populateFilters();
         renderKpis();
@@ -603,6 +629,15 @@
             warning.textContent = `Duplicate engineer initials detected: ${data.duplicate_initials.join(', ')}. Control numbers may match until Personnel is corrected.`;
             warning.classList.remove('d-none');
         } else warning.classList.add('d-none');
+    }
+
+    async function switchBatchView(viewSequence, message = '', resetExportScope = false) {
+        clearRegisterFilters(resetExportScope);
+        state.rows = [];
+        renderKpis();
+        renderRows();
+        await loadData(viewSequence);
+        if (message && state.viewBatch) notify(`${message} ${state.viewBatch.reference}.`, 'info');
     }
 
     async function startNewBatch() {
@@ -622,18 +657,12 @@
             if (!response.ok || !data.success) {
                 if (data.current_batch) {
                     state.currentBatch = data.current_batch;
-                    clearRegisterFilters();
-                    await loadData();
+                    await switchBatchView(data.current_batch.sequence, '', true);
                 }
                 throw new Error(data.error || 'The new reimbursement batch could not be started.');
             }
             state.currentBatch = data.current_batch;
-            clearRegisterFilters();
-            state.rows = [];
-            renderCurrentBatch();
-            renderKpis();
-            renderRows();
-            await loadData();
+            await switchBatchView(data.current_batch.sequence, '', true);
             notify(`Started ${data.current_batch.reference}. New rows will use this batch.`, 'success');
         } catch (error) {
             renderCurrentBatch();
@@ -669,7 +698,7 @@
             const data = await response.json().catch(() => ({}));
             if (!response.ok || !data.success) throw new Error(data.error || 'The reimbursement row could not be saved.');
             state.modal.hide();
-            await loadData();
+            await loadData(state.viewBatch?.sequence);
             if (data.warning) {
                 notify(data.warning, 'warning');
             } else {
@@ -686,9 +715,23 @@
             const response = await fetch(`/delete_reimbursement_tracker_entry/${id}`, { method: 'DELETE', headers: { 'X-CSRFToken': csrf(), 'Accept': 'application/json' } });
             const data = await response.json();
             if (!response.ok || !data.success) throw new Error(data.error || 'The reimbursement row could not be deleted.');
-            await loadData();
+            await loadData(state.viewBatch?.sequence);
             notify('Reimbursement row deleted.', 'success');
         } catch (error) { notify(error.message, 'danger'); }
+    }
+
+    async function openAddForm() {
+        const currentSequence = Number(state.currentBatch?.sequence || 0);
+        const viewSequence = Number(state.viewBatch?.sequence || 0);
+        if (currentSequence && viewSequence && currentSequence !== viewSequence) {
+            try {
+                await switchBatchView(currentSequence, 'Switched to the active batch');
+            } catch (error) {
+                notify(error.message, 'danger');
+                return;
+            }
+        }
+        openForm();
     }
 
     async function exportRegister() {
@@ -727,9 +770,14 @@
         if (remove) deleteRow(Number(remove.dataset.rtDelete));
     });
 
-    byId('rt-add-button').addEventListener('click', () => openForm());
+    byId('rt-add-button').addEventListener('click', openAddForm);
     byId('rt-start-batch-button').addEventListener('click', startNewBatch);
-    byId('rt-refresh-button').addEventListener('click', () => loadData().catch((error) => notify(error.message, 'danger')));
+    byId('rt-batch-view').addEventListener('change', () => {
+        const sequence = Number(byId('rt-batch-view').value || 0);
+        if (!sequence) return;
+        switchBatchView(sequence, 'Viewing').catch((error) => notify(error.message, 'danger'));
+    });
+    byId('rt-refresh-button').addEventListener('click', () => loadData(state.viewBatch?.sequence).catch((error) => notify(error.message, 'danger')));
     byId('rt-export-button').addEventListener('click', exportRegister);
     byId('rt-form').addEventListener('submit', saveForm);
     ['rt-reference-filter', 'rt-date-from', 'rt-date-to'].forEach((id) => byId(id).addEventListener('input', renderRows));

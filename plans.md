@@ -55,6 +55,96 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Reimbursement Tracker — selectable historical batch views
+
+**Status:** `In progress`
+**Approved:** 2026-08-13
+**Detailed:** 2026-08-13, after reviewing the current-only list response and the existing
+current/all export selector. The owner requested a page-level batch view selector so historical
+batches can be reviewed without exporting.
+
+### Context
+
+The tracker register now correctly defaults to the active batch and keeps historical rows out of
+the page. Historical rows are available only through the All batches Excel option, which forces a
+user who wants to inspect an older batch to leave the page.
+
+### Decisions taken
+
+- Add a View batch dropdown with the current batch selected by default and one option for each
+  stored batch sequence; the active batch remains available even when it has no rows.
+- Selecting a previous batch changes the visible rows, KPI totals, filters, and result count to
+  that batch without changing any stored data or the global active batch.
+- The Add reimbursement action always returns to the active batch before opening the form. Edit
+  and Delete remain available for rows in the selected historical view.
+- Starting a new batch always switches the view to the newly active batch and clears filters.
+- Excel export keeps its existing explicit Current batch / All batches scope; the new dropdown is
+  for on-page viewing and does not silently alter export scope.
+- No schema migration, service-worker bump, browser automation, or `pending-work.md` update is
+  required.
+
+### Investigation
+
+- `app.py:40911` currently filters the list endpoint to the current sequence and has no view query
+  parameter or batch-option payload.
+- `templates/reimbursement_tracker.html:569` loads the response as the current page rows, while
+  `:349` calculates all KPIs from those rows and `:590` refreshes after transitions.
+- The existing batch-state singleton and `batch_sequence` column already provide the authoritative
+  view key; no data migration is necessary.
+
+### Execution steps
+
+1. Extend `app.py` with an optional validated `batch_sequence` query parameter for the list
+   endpoint. Return `view_batch` and a distinct `available_batches` list, always include the
+   active batch, reject malformed sequences with `400`, reject unavailable batches with `404`,
+   and query only the selected sequence.
+
+2. Update `templates/reimbursement_tracker.html` with a native accessible View batch select.
+   Populate it from `available_batches`, reload the selected sequence, clear row filters when the
+   view changes, keep the active-batch transition control authoritative, and switch to the active
+   batch before opening Add reimbursement.
+
+3. Extend `tests/test_reimbursement_tracker.py` to prove current defaulting, previous-batch
+   selection, available-batch metadata, malformed/unavailable sequence handling, empty active
+   batches, historical row preservation, and the UI wiring for view switching and safe Add behavior.
+
+4. Append the user-visible change to the existing 2026-08-13 release entry and update `changes.md`
+   with the behavior and verification. Keep export columns, authorization, control numbers,
+   historical edit locking, and all existing batch-transition tests intact.
+
+5. Run focused/full tests, Python compilation, inline JavaScript syntax validation, release JSON
+   parsing, and `git diff --check`; do not use browser automation or navigate the Codex app.
+
+### Deliberately excluded
+
+- No deletion or rewriting of historical rows.
+- No separate history page or new database table.
+- No automatic change from the selected view to the export scope.
+- No change to the server-owned active batch or to new-row validation.
+
+### Verification
+
+- Seed BATCH-032 and BATCH-033, verify the default response shows BATCH-033, selecting
+  `batch_sequence=32` returns only BATCH-032, and both references appear in `available_batches`.
+- Verify malformed and unavailable sequence requests return `400` and `404`, respectively.
+- Verify selecting an empty active batch returns zero rows and preserves prior rows in storage.
+- Verify source wiring for the dropdown, query parameter, filter reset, and Add-to-active-batch
+  guard, plus the focused tracker suite and full repository suite.
+
+### After implementation
+
+- Set this plan to `Executed — <commit hash>` after the implementation commit.
+- Record final test counts and the commit state in `changes.md`.
+- Stage only intended source, test, journal, and release files; never stage local databases or
+  generated artifacts.
+
+### Risks
+
+- A user may edit historical rows while viewing them; the existing server-side immutable batch
+  identity rule remains the safety boundary.
+- A refresh can race with a global transition; the active batch response remains authoritative,
+  and successful transitions explicitly reload the new active view.
+
 ## Reimbursement Tracker — current-batch view and totals reset
 
 **Status:** `Executed — 6722481`

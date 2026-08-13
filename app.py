@@ -40569,6 +40569,27 @@ def reimbursement_tracker_batch_payload(state):
     }
 
 
+def reimbursement_tracker_available_batches(current_sequence):
+    """Return stored batch choices, always including the active empty batch."""
+    sequences = {int(current_sequence)}
+    stored_sequences = db.session.query(
+        ReimbursementTrackerEntry.batch_sequence,
+    ).filter(
+        ReimbursementTrackerEntry.batch_sequence >= 1,
+        ReimbursementTrackerEntry.batch_sequence <= 999,
+    ).distinct().all()
+    for (sequence,) in stored_sequences:
+        if sequence is not None:
+            sequences.add(int(sequence))
+    return [
+        {
+            'sequence': sequence,
+            'reference': reimbursement_tracker_batch_reference(sequence),
+        }
+        for sequence in sorted(sequences, reverse=True)
+    ]
+
+
 def reimbursement_tracker_batch_sequence(reference):
     """Extract the workbook's batch number from a BATCH-### reference."""
     match = re.search(r'\bbatch[-\s#]*0*(\d{1,3})\b', reference or '', re.IGNORECASE)
@@ -40927,10 +40948,31 @@ def get_reimbursement_tracker_entries():
     except RuntimeError as batch_state_error:
         return jsonify({'success': False, 'error': str(batch_state_error)}), 503
     current_sequence = current_batch['sequence']
+    available_batches = reimbursement_tracker_available_batches(current_sequence)
+    available_sequences = {batch['sequence'] for batch in available_batches}
+    requested_batch_text = (request.args.get('batch_sequence') or '').strip()
+    if requested_batch_text:
+        view_sequence = clean_int(requested_batch_text)
+        if not view_sequence or not 1 <= view_sequence <= 999:
+            return jsonify({
+                'success': False,
+                'error': 'The requested reimbursement batch is invalid.',
+            }), 400
+        if view_sequence not in available_sequences:
+            return jsonify({
+                'success': False,
+                'error': 'The requested reimbursement batch is not available.',
+            }), 404
+    else:
+        view_sequence = current_sequence
+    view_batch = {
+        'sequence': view_sequence,
+        'reference': reimbursement_tracker_batch_reference(view_sequence),
+    }
     entries = ReimbursementTrackerEntry.query.options(
         joinedload(ReimbursementTrackerEntry.engineer),
     ).filter(
-        ReimbursementTrackerEntry.batch_sequence == current_sequence,
+        ReimbursementTrackerEntry.batch_sequence == view_sequence,
     ).order_by(
         ReimbursementTrackerEntry.submission_date.desc(),
         ReimbursementTrackerEntry.id.desc(),
@@ -40956,6 +40998,8 @@ def get_reimbursement_tracker_entries():
         'engineers': [reimbursement_tracker_engineer_payload(engineer) for engineer in engineers],
         'offices': sorted(offices, key=lambda value: value.casefold()),
         'current_batch': current_batch,
+        'view_batch': view_batch,
+        'available_batches': available_batches,
         # Keep the old key as a compatibility alias for callers that only need the
         # reference string. It now represents the current batch, never the next one.
         'suggested_reference': current_batch['reference'],

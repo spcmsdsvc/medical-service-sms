@@ -490,6 +490,25 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         current_body = current_list.get_json()
         self.assertEqual([row['id'] for row in current_body['entries']], [new_row['id']])
         self.assertEqual(current_body['entries'][0]['reference'], 'BATCH-033')
+        self.assertEqual(current_body['view_batch'], {'sequence': 33, 'reference': 'BATCH-033'})
+        self.assertEqual(
+            current_body['available_batches'],
+            [
+                {'sequence': 33, 'reference': 'BATCH-033'},
+                {'sequence': 32, 'reference': 'BATCH-032'},
+            ],
+        )
+
+        previous_view = client.get('/get_reimbursement_tracker_entries?batch_sequence=32')
+        self.assertEqual(previous_view.status_code, 200)
+        previous_body = previous_view.get_json()
+        self.assertEqual(previous_body['view_batch'], {'sequence': 32, 'reference': 'BATCH-032'})
+        self.assertEqual([row['id'] for row in previous_body['entries']], [old_row['id']])
+
+        malformed_view = client.get('/get_reimbursement_tracker_entries?batch_sequence=not-a-batch')
+        self.assertEqual(malformed_view.status_code, 400)
+        unavailable_view = client.get('/get_reimbursement_tracker_entries?batch_sequence=31')
+        self.assertEqual(unavailable_view.status_code, 404)
 
         with self.app.app_context():
             stored_ids = [
@@ -756,10 +775,15 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         )
         self.assertIn('id="rt-start-batch-button"', template)
         self.assertIn("/start_reimbursement_tracker_batch", template)
+        self.assertIn('id="rt-batch-view"', template)
+        self.assertIn('available_batches', template)
+        self.assertIn('batch_sequence', template)
+        self.assertIn('switchBatchView', template)
+        self.assertIn('async function openAddForm()', template)
         self.assertIn('id="rt-export-scope"', template)
         self.assertIn('batch_scope:', template)
         self.assertIn("byId('rt-export-scope').value = 'current'", template)
-        self.assertIn('state.rows = currentSequence', template)
+        self.assertIn('state.rows = viewSequenceValue', template)
         self.assertIn('state.rows = [];', template)
         self.assertIn("byId('rt-total-amount').textContent = formatMoney(state.rows.reduce", template)
         self.assertIn('clearRegisterFilters()', template)

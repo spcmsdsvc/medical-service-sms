@@ -106,6 +106,17 @@ claude changes - 2026-08-13 (review of multi-machine P.O.s: two coverage gaps cl
   skip, Python compilation, inline JavaScript syntax, release-manifest parsing, and `git diff
   --check`. Functional implementation is committed as `6722481`; `scheduler.db`, `output/`,
   `tmp/`, and the handoff artifact remain outside the change set.
+* Recorded the owner's follow-up request for selectable historical batch views in `plans.md`;
+  implementation and verification are now complete locally. The current-batch default, export
+  behavior, and stored-row boundary remain unchanged.
+* Added selectable batch views to the Reimbursement Tracker list API and page. The active batch
+  remains the default, previous stored batches can be reviewed with their own rows and totals,
+  and Add reimbursement returns to the active batch before opening; export scope remains separate.
+  Added malformed/unavailable-view, available-batch, and UI wiring coverage.
+* Verification passed with 28 focused tracker tests and 658 repository tests with one pre-existing
+  skip, plus Python compilation, inline JavaScript syntax, release-manifest parsing, and
+  `git diff --check`. This follow-up remains uncommitted and unpublished pending owner instruction;
+  local database and generated artifacts remain outside the change set.
 
 codex changes - 2026-08-13 (multi-machine purchase orders)
 

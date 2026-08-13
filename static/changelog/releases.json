@@ -60,6 +60,15 @@
             "admins"
           ],
           "sort_order": 60
+        },
+        {
+          "item_key": "2026-08-13-reimbursement-batch-view-selector",
+          "category": "Reimbursement Tracker",
+          "description": "The Reimbursement Tracker now lets users switch the on-page register between the active batch and previously stored batches without exporting.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 70
         }
       ]
     },
