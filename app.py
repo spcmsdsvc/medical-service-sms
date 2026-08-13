@@ -1941,11 +1941,9 @@ REIMBURSEMENT_TRACKER_EXPENSE_FIELDS = (
 # takes to pad the day. Do not inline the format anywhere, or this stops being a knob.
 REIMBURSEMENT_TRACKER_CONTROL_DATE_FORMAT = '{d.year}{d.month:02d}{d.day}'
 
-# The register starts empty by decision -- the workbook's 222 historical rows were not
-# imported -- but the batch numbering does NOT start over: the workbook's last batch was
-# BATCH-031, and Accounting reads these numbers as one continuous sequence. So the first
-# batch recorded here is 032. This is a floor on the *suggestion* only; once a row exists,
-# the suggestion is driven by the stored data and this constant stops mattering.
+# The workbook's last batch was BATCH-031, so the tracker starts its shared batch state at
+# 032. The state is advanced only by the explicit Start new batch action; it is never derived
+# from the number of rows or from the engineer currently being entered.
 REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER = 32
 
 
@@ -1988,6 +1986,21 @@ class ReimbursementTrackerEntry(db.Model):
     updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
 
     engineer = db.relationship('Engineer', foreign_keys=[engineer_id])
+    created_by_user = db.relationship('User', foreign_keys=[created_by])
+    updated_by_user = db.relationship('User', foreign_keys=[updated_by])
+
+
+class ReimbursementTrackerBatchState(db.Model):
+    """The one shared current batch for the standalone reimbursement register."""
+    __tablename__ = 'reimbursement_tracker_batch_state'
+
+    id = db.Column(db.Integer, primary_key=True)
+    current_batch_sequence = db.Column(db.Integer, nullable=False, default=REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER)
+    created_at = db.Column(db.DateTime, nullable=True, default=get_manila_time)
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    updated_at = db.Column(db.DateTime, nullable=True, default=get_manila_time, onupdate=get_manila_time)
+    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+
     created_by_user = db.relationship('User', foreign_keys=[created_by])
     updated_by_user = db.relationship('User', foreign_keys=[updated_by])
 
@@ -3717,11 +3730,14 @@ def ensure_unique_engineer_initials():
 
 
 def ensure_reimbursement_tracker_schema():
-    """Create the standalone tracker table without replacing live data.
+    """Create the tracker tables and normalize the first shared batch atomically.
 
     No unique index is added for engineer initials here: legacy duplicates exist and
     migration index failures are intentionally non-fatal, so enforcement belongs in the
-    personnel write routes where the current holder can be named to the user.
+    personnel write routes where the current holder can be named to the user. The batch
+    state row is also the one-time marker for the live BATCH-032 normalization; it is
+    inserted in the same transaction as the row updates so a failed migration retries
+    without a partial marker.
     """
     global _reimbursement_tracker_schema_ready
 
@@ -3731,6 +3747,7 @@ def ensure_reimbursement_tracker_schema():
     try:
         with db.engine.begin() as connection:
             ReimbursementTrackerEntry.__table__.create(bind=connection, checkfirst=True)
+            ReimbursementTrackerBatchState.__table__.create(bind=connection, checkfirst=True)
             columns = {
                 row[1]
                 for row in connection.exec_driver_sql(
@@ -3787,6 +3804,74 @@ def ensure_reimbursement_tracker_schema():
                 "CREATE INDEX IF NOT EXISTS idx_reimbursement_tracker_office "
                 "ON reimbursement_tracker_entry (office)"
             )
+
+            state_row = connection.exec_driver_sql(
+                "SELECT id, current_batch_sequence "
+                "FROM reimbursement_tracker_batch_state WHERE id = 1"
+            ).fetchone()
+            if state_row is None:
+                tracker_rows = connection.exec_driver_sql(
+                    "SELECT id, submission_date, engineer_initials_snapshot "
+                    "FROM reimbursement_tracker_entry ORDER BY id"
+                ).fetchall()
+                migration_updates = []
+                invalid_row_ids = []
+                batch_reference = f'BATCH-{REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER:03d}'
+                for row_id, raw_submission_date, raw_initials in tracker_rows:
+                    if isinstance(raw_submission_date, datetime):
+                        submission_date = raw_submission_date.date()
+                    elif isinstance(raw_submission_date, date):
+                        submission_date = raw_submission_date
+                    else:
+                        submission_date = parse_date(raw_submission_date)
+                    initials = clean_str(raw_initials) or ''
+                    if not submission_date or not initials:
+                        invalid_row_ids.append(row_id)
+                        continue
+                    migration_updates.append((
+                        batch_reference,
+                        REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER,
+                        reimbursement_tracker_control_number(
+                            initials,
+                            submission_date,
+                            REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER,
+                        ),
+                        row_id,
+                    ))
+
+                if invalid_row_ids:
+                    raise RuntimeError(
+                        'BATCH-032 normalization requires submission date and engineer initials '
+                        f'for tracker row id(s): {", ".join(str(row_id) for row_id in invalid_row_ids)}'
+                    )
+
+                for reference, batch_sequence, control_number, row_id in migration_updates:
+                    connection.exec_driver_sql(
+                        "UPDATE reimbursement_tracker_entry "
+                        "SET reference = ?, batch_sequence = ?, control_number = ? "
+                        "WHERE id = ?",
+                        (reference, batch_sequence, control_number, row_id),
+                    )
+
+                connection.exec_driver_sql(
+                    "INSERT INTO reimbursement_tracker_batch_state "
+                    "(id, current_batch_sequence, created_at, updated_at) "
+                    "VALUES (1, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    (REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER,),
+                )
+                print(
+                    '[DB MIGRATION] Initialized shared reimbursement batch state and normalized '
+                    f'{len(migration_updates)} tracker row(s) to {batch_reference}.',
+                    flush=True,
+                )
+            elif not 1 <= int(state_row[1]) <= 999:
+                raise RuntimeError(
+                    f'Current reimbursement tracker batch sequence is invalid: {state_row[1]}'
+                )
+        # The migration uses a separate engine transaction so it can update raw legacy
+        # rows atomically. Drop any ORM identities loaded by a test or an earlier startup
+        # hook before the next request reads the normalized values.
+        db.session.expire_all()
         _reimbursement_tracker_schema_ready = True
     except Exception as reimbursement_tracker_schema_error:
         print(
@@ -40460,6 +40545,30 @@ def reimbursement_tracker_bool(value):
     return str(value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
+def reimbursement_tracker_batch_reference(batch_sequence):
+    """Return the canonical display reference for a tracker batch sequence."""
+    return f'BATCH-{int(batch_sequence):03d}'
+
+
+def reimbursement_tracker_current_batch_state():
+    """Return the initialized global batch state or raise a clear server error."""
+    state = db.session.get(ReimbursementTrackerBatchState, 1)
+    if not state:
+        raise RuntimeError('The reimbursement tracker batch state is not initialized.')
+    sequence = int(state.current_batch_sequence or 0)
+    if not 1 <= sequence <= 999:
+        raise RuntimeError(f'Current reimbursement tracker batch sequence is invalid: {sequence}')
+    return state
+
+
+def reimbursement_tracker_batch_payload(state):
+    sequence = int(state.current_batch_sequence)
+    return {
+        'sequence': sequence,
+        'reference': reimbursement_tracker_batch_reference(sequence),
+    }
+
+
 def reimbursement_tracker_batch_sequence(reference):
     """Extract the workbook's batch number from a BATCH-### reference."""
     match = re.search(r'\bbatch[-\s#]*0*(\d{1,3})\b', reference or '', re.IGNORECASE)
@@ -40490,7 +40599,10 @@ def _reimbursement_tracker_payload_value(payload, key, existing=None, default=No
 
 def validate_reimbursement_tracker_payload(payload, existing=None):
     payload = payload or {}
-    reference_raw = _reimbursement_tracker_payload_value(payload, 'reference', existing)
+    # A historical row's batch identity is immutable. The client still sends the visible
+    # field during edits, but the server deliberately reads the stored reference instead
+    # of allowing an edit to move the row into the active batch.
+    reference_raw = existing.reference if existing is not None else payload.get('reference')
     reference = clean_str(reference_raw)
     if not reference:
         return None, 'Enter a batch reference such as BATCH-001.'
@@ -40821,18 +40933,100 @@ def get_reimbursement_tracker_entries():
         if initials:
             initials_map.setdefault(initials, []).append(engineer)
     duplicate_initials = sorted(initials for initials, matches in initials_map.items() if len(matches) > 1)
-    highest_batch = db.session.query(func.max(ReimbursementTrackerEntry.batch_sequence)).scalar() or 0
-    # max() with the floor rather than "if empty", so a first row typed as an older batch
-    # cannot drag the next suggestion back below where the workbook left off.
-    suggested_batch = max(int(highest_batch) + 1, REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER)
-    suggested_batch = min(suggested_batch, 999)
+    try:
+        current_batch = reimbursement_tracker_batch_payload(reimbursement_tracker_current_batch_state())
+    except RuntimeError as batch_state_error:
+        return jsonify({'success': False, 'error': str(batch_state_error)}), 503
     return jsonify({
         'success': True,
         'entries': [reimbursement_tracker_entry_to_dict(entry) for entry in entries],
         'engineers': [reimbursement_tracker_engineer_payload(engineer) for engineer in engineers],
         'offices': sorted(offices, key=lambda value: value.casefold()),
-        'suggested_reference': f'BATCH-{suggested_batch:03d}',
+        'current_batch': current_batch,
+        # Keep the old key as a compatibility alias for callers that only need the
+        # reference string. It now represents the current batch, never the next one.
+        'suggested_reference': current_batch['reference'],
         'duplicate_initials': duplicate_initials,
+    })
+
+
+@app.route('/start_reimbursement_tracker_batch', methods=['POST'])
+@login_required
+def start_reimbursement_tracker_batch():
+    if not can_manage_reimbursement_tracker():
+        return denied('You do not have access to the Reimbursement Tracker.')
+    ensure_reimbursement_tracker_schema()
+    payload = request.get_json(silent=True) or {}
+    expected_sequence = clean_int(payload.get('expected_batch_sequence'))
+    if not expected_sequence:
+        return jsonify({'success': False, 'error': 'The current batch sequence is required.'}), 400
+
+    try:
+        state = reimbursement_tracker_current_batch_state()
+    except RuntimeError as batch_state_error:
+        return jsonify({'success': False, 'error': str(batch_state_error)}), 503
+
+    current_sequence = int(state.current_batch_sequence)
+    current_batch = reimbursement_tracker_batch_payload(state)
+    if expected_sequence != current_sequence:
+        return jsonify({
+            'success': False,
+            'error': f'The active batch is now {current_batch["reference"]}. Refresh before starting another batch.',
+            'current_batch': current_batch,
+        }), 409
+    if current_sequence >= 999:
+        return jsonify({
+            'success': False,
+            'error': 'BATCH-999 is the highest supported reimbursement batch.',
+            'current_batch': current_batch,
+        }), 409
+
+    next_sequence = current_sequence + 1
+    try:
+        result = db.session.execute(
+            db.text(
+                "UPDATE reimbursement_tracker_batch_state "
+                "SET current_batch_sequence = :next_sequence, updated_at = :updated_at, updated_by = :updated_by "
+                "WHERE id = 1 AND current_batch_sequence = :expected_sequence"
+            ),
+            {
+                'next_sequence': next_sequence,
+                'updated_at': get_manila_time(),
+                'updated_by': current_user.id,
+                'expected_sequence': expected_sequence,
+            },
+        )
+        if result.rowcount != 1:
+            db.session.rollback()
+            db.session.expire_all()
+            latest_state = reimbursement_tracker_current_batch_state()
+            latest_batch = reimbursement_tracker_batch_payload(latest_state)
+            return jsonify({
+                'success': False,
+                'error': f'The active batch is now {latest_batch["reference"]}. Refresh before starting another batch.',
+                'current_batch': latest_batch,
+            }), 409
+
+        add_activity_log_entry(
+            f'Started Reimbursement Tracker batch {reimbursement_tracker_batch_reference(next_sequence)}'
+        )
+        db.session.commit()
+    except Exception as batch_transition_error:
+        db.session.rollback()
+        print(f'[Reimbursement Tracker] Batch transition failed: {batch_transition_error}', flush=True)
+        return jsonify({
+            'success': False,
+            'error': 'The new batch could not be started. Please refresh and try again.',
+        }), 409
+
+    next_batch = {
+        'sequence': next_sequence,
+        'reference': reimbursement_tracker_batch_reference(next_sequence),
+    }
+    return jsonify({
+        'success': True,
+        'previous_batch': current_batch,
+        'current_batch': next_batch,
     })
 
 
@@ -40872,19 +41066,70 @@ def add_reimbursement_tracker_entry():
     if validation_error:
         return jsonify({'success': False, 'error': validation_error}), 400
 
-    entry = ReimbursementTrackerEntry(
-        **values,
-        created_at=get_manila_time(),
-        created_by=current_user.id,
-        updated_at=get_manila_time(),
-        updated_by=current_user.id,
-    )
-    db.session.add(entry)
-    # Creation deliberately never sends a paid notification, even if the row starts paid.
-    add_activity_log_entry(
-        f"Added Reimbursement Tracker row {values['control_number']} ({values['reference']})"
-    )
     try:
+        state = reimbursement_tracker_current_batch_state()
+    except RuntimeError as batch_state_error:
+        return jsonify({'success': False, 'error': str(batch_state_error)}), 503
+    current_sequence = int(state.current_batch_sequence)
+    current_batch = reimbursement_tracker_batch_payload(state)
+    expected_sequence = clean_int(payload.get('expected_batch_sequence'))
+    if expected_sequence is not None and expected_sequence != current_sequence:
+        return jsonify({
+            'success': False,
+            'error': f'The active batch is now {current_batch["reference"]}. Refresh the tracker before saving this row.',
+            'current_batch': current_batch,
+        }), 409
+    if values['batch_sequence'] != current_sequence:
+        return jsonify({
+            'success': False,
+            'error': f'The active batch is now {current_batch["reference"]}. Refresh the tracker before saving this row.',
+            'current_batch': current_batch,
+        }), 409
+
+    # Store the canonical shared reference even if an older API client sent an equivalent
+    # free-form value such as "Batch 32". The sequence is the authority; the display string
+    # should never drift between rows in one batch.
+    values['reference'] = current_batch['reference']
+    values['batch_sequence'] = current_sequence
+    values['control_number'] = reimbursement_tracker_control_number(
+        values['engineer_initials_snapshot'], values['submission_date'], current_sequence
+    )
+
+    try:
+        # This compare-and-touch acquires the state row's write boundary before the entry
+        # insert. A transition that wins the race first makes rowcount zero, so a stale form
+        # cannot create a row in the previous batch.
+        state_lock = db.session.execute(
+            db.text(
+                "UPDATE reimbursement_tracker_batch_state "
+                "SET current_batch_sequence = current_batch_sequence "
+                "WHERE id = 1 AND current_batch_sequence = :expected_sequence"
+            ),
+            {'expected_sequence': current_sequence},
+        )
+        if state_lock.rowcount != 1:
+            db.session.rollback()
+            db.session.expire_all()
+            latest_state = reimbursement_tracker_current_batch_state()
+            latest_batch = reimbursement_tracker_batch_payload(latest_state)
+            return jsonify({
+                'success': False,
+                'error': f'The active batch is now {latest_batch["reference"]}. Refresh the tracker before saving this row.',
+                'current_batch': latest_batch,
+            }), 409
+
+        entry = ReimbursementTrackerEntry(
+            **values,
+            created_at=get_manila_time(),
+            created_by=current_user.id,
+            updated_at=get_manila_time(),
+            updated_by=current_user.id,
+        )
+        db.session.add(entry)
+        # Creation deliberately never sends a paid notification, even if the row starts paid.
+        add_activity_log_entry(
+            f"Added Reimbursement Tracker row {values['control_number']} ({values['reference']})"
+        )
         db.session.commit()
     except IntegrityError:
         db.session.rollback()

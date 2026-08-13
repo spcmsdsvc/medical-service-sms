@@ -74,6 +74,21 @@ claude changes - 2026-08-13 (review of multi-machine P.O.s: two coverage gaps cl
 * Bumped the analytics JavaScript query version to v80 and the service-worker cache to v89 because
   the Analytics APP_SHELL renderer now uses the system-start default. Added the 2026-08-13
   release-manifest item and verified the focused analytics tests/syntax checks.
+* Recorded and implemented the approved Reimbursement Tracker shared-batch plan in `plans.md`.
+  Added the singleton `reimbursement_tracker_batch_state` table and an atomic first-run migration
+  that normalizes existing live tracker rows to `BATCH-032`, sequence 32, and rebuilt control
+  numbers while preserving every other stored field; the state row is the idempotence marker.
+* Replaced the tracker’s max-plus-one suggestion with a server-owned global current batch. New
+  rows reuse the current batch, `POST /start_reimbursement_tracker_batch` advances it only after
+  an expected-sequence compare succeeds, stale transitions/adds return 409 without creating rows,
+  and edits cannot move a historical row to another batch.
+* Updated the Reimbursement Tracker header/modal to show the current batch, provide a confirmed
+  Start new batch action, submit the expected sequence, and keep the reference read-only. Added
+  migration, repeated-engineer, transition, stale-request, 999-limit, historical-edit, and UI
+  regression coverage; no service-worker bump was needed because the tracker JavaScript is inline.
+* Verification completed with 27 focused Reimbursement Tracker tests and the full repository suite
+  at 657 tests, plus `py_compile`, inline-template JavaScript parsing, release-manifest parsing,
+  and `git diff --check`. No browser automation or Codex app navigation was used.
 
 codex changes - 2026-08-13 (multi-machine purchase orders)
 

@@ -110,10 +110,20 @@
             <div class="small text-uppercase fw-bold opacity-75">Accounting Register</div>
             <h1><i class="fa-solid fa-receipt me-2" aria-hidden="true"></i>Reimbursement Tracker</h1>
             <p class="mb-0 mt-2 opacity-75">Record standalone reimbursement batches and export the Accounting register.</p>
+            <div class="mt-3 d-flex flex-wrap align-items-center gap-2" aria-live="polite">
+                <span class="small text-uppercase fw-bold opacity-75">Current batch</span>
+                <strong id="rt-current-batch-reference">Loadingâ€¦</strong>
+                <span class="small opacity-75">New rows stay here until you start another batch.</span>
+            </div>
         </div>
-        <button type="button" class="btn btn-light fw-bold" id="rt-add-button">
-            <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>Add reimbursement
-        </button>
+        <div class="d-flex flex-wrap justify-content-end gap-2">
+            <button type="button" class="btn btn-outline-light fw-bold" id="rt-start-batch-button" disabled>
+                <i class="fa-solid fa-forward-step me-1" aria-hidden="true"></i>Start new batch
+            </button>
+            <button type="button" class="btn btn-light fw-bold" id="rt-add-button">
+                <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>Add reimbursement
+            </button>
+        </div>
     </section>
 
     <div id="rt-duplicate-warning" class="alert alert-warning d-none mb-3" role="alert"></div>
@@ -202,8 +212,8 @@
                     <div class="row g-3">
                         <div class="col-12 col-md-4">
                             <label class="form-label" for="rt-reference">Reference</label>
-                            <input class="form-control" id="rt-reference" required maxlength="100" placeholder="BATCH-000">
-                            <div class="form-text">The batch number becomes the final control-number sequence.</div>
+                            <input class="form-control" id="rt-reference" required maxlength="100" placeholder="BATCH-000" readonly>
+                            <div class="form-text">New rows use the shared current batch. Start a new batch from the page header when the batch changes.</div>
                         </div>
                         <div class="col-12 col-md-4">
                             <label class="form-label" for="rt-submission-date">Submission date</label>
@@ -269,7 +279,7 @@
 (() => {
     'use strict';
     const state = {
-        rows: [], engineers: [], offices: [], editingId: null, modal: null, suggestedReference: '',
+        rows: [], engineers: [], offices: [], editingId: null, modal: null, currentBatch: null, suggestedReference: '',
         sortKey: localStorage.getItem('reimbursement_tracker_sort_key') || 'submission_date',
         sortDirection: localStorage.getItem('reimbursement_tracker_sort_direction') || 'desc'
     };
@@ -456,9 +466,9 @@
         byId('rt-modal-title').textContent = 'Add reimbursement';
         byId('rt-save-button').innerHTML = '<i class="fa-solid fa-floppy-disk me-1"></i>Save row';
         state.editingId = null;
-        // Prefilled, not blank: the batch number continues Accounting's running sequence,
-        // so an empty field invites someone to restart it. Still editable.
-        byId('rt-reference').value = state.suggestedReference || '';
+        // The reference is server-owned. Every new engineer row stays in the shared current
+        // batch until the user explicitly starts another one from the page header.
+        byId('rt-reference').value = state.currentBatch?.reference || state.suggestedReference || '';
         byId('rt-submission-date').value = new Date().toISOString().slice(0, 10);
         populateOfficeOptions('');
         populateEngineerOptions('');
@@ -504,6 +514,22 @@
         byId('rt-control-preview').textContent = `${engineer.initials}-${parts[0]}${String(parts[1]).padStart(2, '0')}${parts[2]}-${String(sequence).padStart(3, '0')}`;
     }
 
+    function renderCurrentBatch() {
+        const batch = state.currentBatch;
+        const label = byId('rt-current-batch-reference');
+        const button = byId('rt-start-batch-button');
+        if (label) label.textContent = batch?.reference || 'Unavailable';
+        if (!button) return;
+        if (!batch) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fa-solid fa-forward-step me-1" aria-hidden="true"></i>Start new batch';
+            return;
+        }
+        const nextReference = batch.sequence < 999 ? `BATCH-${String(batch.sequence + 1).padStart(3, '0')}` : 'Batch limit reached';
+        button.disabled = batch.sequence >= 999;
+        button.innerHTML = `<i class="fa-solid fa-forward-step me-1" aria-hidden="true"></i>Start ${escapeHtml(nextReference)}`;
+    }
+
     function updateFormTotal() {
         const total = categories.reduce((sum, [field]) => sum + moneyNumber(byId(`rt-${field}`)?.value), 0);
         byId('rt-form-total').textContent = `PHP ${formatMoney(total)}`;
@@ -547,9 +573,9 @@
         state.rows = data.entries || [];
         state.engineers = data.engineers || [];
         state.offices = data.offices || [];
-        // The server continues the workbook's batch sequence; the form must actually use
-        // it. Reloading after every save is what keeps the next Add one ahead.
-        state.suggestedReference = data.suggested_reference || '';
+        state.currentBatch = data.current_batch || null;
+        state.suggestedReference = state.currentBatch?.reference || data.suggested_reference || '';
+        renderCurrentBatch();
         byId('rt-reference').placeholder = state.suggestedReference || 'BATCH-000';
         populateFilters();
         renderKpis();
@@ -561,12 +587,42 @@
         } else warning.classList.add('d-none');
     }
 
+    async function startNewBatch() {
+        const button = byId('rt-start-batch-button');
+        const currentBatch = state.currentBatch;
+        if (!button || !currentBatch || currentBatch.sequence >= 999) return;
+        const nextReference = `BATCH-${String(currentBatch.sequence + 1).padStart(3, '0')}`;
+        if (!window.confirm(`Start ${nextReference}? New reimbursement rows will use it, while existing rows remain in ${currentBatch.reference}.`)) return;
+        button.disabled = true;
+        try {
+            const response = await fetch('/start_reimbursement_tracker_batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf(), 'Accept': 'application/json' },
+                body: JSON.stringify({ expected_batch_sequence: currentBatch.sequence })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) {
+                if (data.current_batch) state.currentBatch = data.current_batch;
+                throw new Error(data.error || 'The new reimbursement batch could not be started.');
+            }
+            state.currentBatch = data.current_batch;
+            await loadData();
+            notify(`Started ${data.current_batch.reference}. New rows will use this batch.`, 'success');
+        } catch (error) {
+            renderCurrentBatch();
+            notify(error.message, 'warning');
+        } finally {
+            renderCurrentBatch();
+        }
+    }
+
     async function saveForm(event) {
         event.preventDefault();
         const button = byId('rt-save-button');
         button.disabled = true;
         const payload = {
             reference: byId('rt-reference').value,
+            expected_batch_sequence: state.currentBatch?.sequence,
             submission_date: byId('rt-submission-date').value,
             engineer_id: Number(byId('rt-engineer').value),
             office: byId('rt-office').value,
@@ -640,6 +696,7 @@
     });
 
     byId('rt-add-button').addEventListener('click', () => openForm());
+    byId('rt-start-batch-button').addEventListener('click', startNewBatch);
     byId('rt-refresh-button').addEventListener('click', () => loadData().catch((error) => notify(error.message, 'danger')));
     byId('rt-export-button').addEventListener('click', exportRegister);
     byId('rt-form').addEventListener('submit', saveForm);

@@ -55,6 +55,150 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Reimbursement Tracker — shared current batch workflow
+
+**Status:** `In progress`
+**Approved:** 2026-08-13
+**Detailed:** 2026-08-13, after tracing the current tracker suggestion endpoint, modal consumer,
+stored control-number derivation, schema migration guard, and the live-table boundary. The owner
+confirmed one global batch, an explicit transition action, and a full current-table conversion to
+`BATCH-032`; execution was separately requested on the same date.
+
+### Context
+
+The Reimbursement Tracker currently calculates the next suggested reference as the highest stored
+`batch_sequence` plus one (`/get_reimbursement_tracker_entries` in
+`D:/Shimadzu/Projects/SHIMADZU/medical-service-sms-railway/app.py`). The Add modal consumes that
+suggestion every time it reloads, so entering one engineer's row advances the next engineer to a
+different batch. Batch numbers are shared by a group of engineer rows, not allocated per input.
+
+The deployed tracker data must be normalized before the new workflow begins: every existing row in
+`reimbursement_tracker_entry` becomes `BATCH-032`, with its stored sequence and control-number
+suffix aligned to 032. All other row data remains unchanged. The local workspace database was
+empty for this table during planning, so the migration is designed for the deployed/live database,
+not inferred from the local fixture.
+
+### Decisions taken
+
+Owner, 2026-08-13:
+
+1. The active batch is **global and server-backed** across authorized users and devices.
+2. New rows reuse the active batch until the user explicitly confirms **Start new batch**.
+3. The transition is sequential: after the migration, the active batch is `BATCH-032`, and the
+   first explicit transition produces `BATCH-033`.
+4. Existing rows are rewritten to `BATCH-032`, `batch_sequence = 32`, and control numbers are
+   recomputed with the stored engineer initials snapshot and submission date plus suffix `032`.
+5. The original XLSM source workbook is not rewritten; the migration targets only live
+   `reimbursement_tracker_entry` rows.
+6. Existing rows retain their batch identity when edited. The UI and server cannot move a
+   historical row into the active batch through an edit.
+7. No service-worker bump is required because the tracker page uses inline JavaScript and is not
+   an app-shell asset.
+
+### Investigation
+
+1. `ReimbursementTrackerEntry` already stores `reference`, `batch_sequence`, `control_number`,
+   engineer identity snapshots, and `submission_date`; the control number is derived by
+   `reimbursement_tracker_control_number()` from the stored submission date and sequence.
+2. `ensure_reimbursement_tracker_schema()` is the guarded additive-migration boundary and runs
+   from both the WSGI `before_request` path and `initialize_database()`. The new singleton state
+   table and first-run data rewrite must therefore be atomic and idempotent inside that boundary.
+3. The current client-side `resetForm()` assigns `state.suggestedReference`, while the API
+   computes that value from `max(batch_sequence) + 1`. This is the direct cause of the per-engineer
+   increment and will be replaced with the current-batch response.
+4. The local `scheduler.db` contains zero tracker rows; no local data will be treated as the
+   deployed data set. A verified database backup is required before the live migration.
+
+### Execution steps
+
+1. **Add server-backed batch state and migration** — edit
+   `D:/Shimadzu/Projects/SHIMADZU/medical-service-sms-railway/app.py` beside
+   `ReimbursementTrackerEntry` and inside `ensure_reimbursement_tracker_schema()`.
+   Create a singleton state table holding the current sequence and audit timestamps/user. On the
+   first state initialization, rewrite every existing tracker row to `BATCH-032`, sequence 32,
+   and a rebuilt control number, preserving every other column. Validate that each row has enough
+   stored date/initials data; if not, roll back the entire migration and report the affected row
+   IDs. Insert state `32` only after the rewrite succeeds, so a failed run can retry safely.
+
+2. **Make API writes use the active batch** — edit the tracker helpers and routes in
+   `app.py`. Add one formatter/current-state helper, return `current_batch` from the list endpoint,
+   and retain `suggested_reference` only as a compatibility alias if existing consumers still
+   require it. Add `POST /start_reimbursement_tracker_batch`, gated by the existing tracker
+   capability, with an expected-sequence compare-and-increment so stale users get `409` rather
+   than skipping or overwriting a transition. Reject sequence 999. Require new rows to match the
+   current sequence at save time, returning `409` without inserting when a form is stale. Preserve
+   an existing row's reference and sequence during edits. Log the migration count and each batch
+   transition without exposing personal or amount data.
+
+3. **Update the tracker UI** — edit
+   `D:/Shimadzu/Projects/SHIMADZU/medical-service-sms-railway/templates/reimbursement_tracker.html`.
+   Show the current shared batch in the hero, add a confirmed Start new batch action, populate
+   the modal from the server's current batch, and make the reference read-only. Refresh state
+   after a successful transition and show a clear refresh/conflict message for stale saves. Keep
+   the existing control-number preview derived from the displayed batch, date, and engineer.
+
+4. **Add focused regression coverage** — edit
+   `D:/Shimadzu/Projects/SHIMADZU/medical-service-sms-railway/tests/test_reimbursement_tracker.py`.
+   Cover migration normalization and preservation, repeated engineer entries in one batch, the
+   explicit 032-to-033 transition, stale transition/add conflicts, immutable historical batch
+   identity on edit, authorization, the 999 ceiling, current-batch API/UI markup, and the
+   no-row/no-skip controls. Replace the old max-plus-one expectation because it asserts the bug.
+
+5. **Self-review and project records** — inspect the final diff against this plan, update the
+   existing current-date section in `changes.md`, and append a dated Reimbursement Tracker item
+   to `static/changelog/releases.json`. Do not bump the service worker. Update this plan to
+   `Executed` with the final commit hash only after all verification succeeds.
+
+### Deliberately excluded
+
+- The original `forms/Reimbursement tracker (template).xlsm` is not edited or imported.
+- The older personal reimbursement workflow (`ReimbursementHeader` / `ReimbursementRow`) is not
+  changed.
+- No per-engineer or per-browser batch state is introduced.
+- No automatic batch increment remains; only the explicit server transition changes the active
+  batch.
+- No browser automation or Codex app navigation is used for verification.
+
+### Verification
+
+- Use an isolated test database with mixed references, then assert every row becomes `BATCH-032`,
+  control suffixes become `032`, row count/totals/payment fields remain unchanged, and rerunning
+  the migration is a no-op.
+- Add two engineer rows without transitioning and assert both use `BATCH-032`; transition once
+  and assert the next row uses `BATCH-033`.
+- Submit stale expected sequences for both transition and add; assert `409`, no skipped state,
+  and no extra row.
+- Assert edits preserve the historical row's batch, unauthorized transition is denied, and 999
+  cannot advance.
+- Run the focused tracker suite and then the full suite, recording the collected test count and
+  existing skips. Also run `python -m py_compile app.py`, inline JavaScript syntax validation,
+  `releases.json` parsing, and `git diff --check`.
+- Validate API responses and rendered markup with Flask test clients/source checks only; do not
+  close, archive, navigate, or otherwise terminate the Codex app.
+
+### After implementation
+
+- Re-read this entry against the diff and amend it if implementation details differ.
+- Take a verified file-level database backup before deploying the live rewrite; compare the
+  pre/post row count and aggregate totals from the backup and live database.
+- Confirm the release-manifest item and detailed `changes.md` entry are present before commit.
+- Stage only intended files; never stage `scheduler.db`, `output/`, `tmp/`, or handoff artifacts.
+- Re-read `origin/main` after completion. Commit and push only after a separate owner instruction.
+
+### Risks
+
+1. **Live data rewrite risk:** a malformed legacy row could lose its control number. The migration
+   validates all rows, runs transactionally, and must be preceded by a verified backup.
+2. **Stale multi-user forms:** an engineer could save after another user starts a new batch. The
+   expected-sequence check returns `409` and prevents a row from landing in the wrong batch.
+3. **Double transition:** two users could click simultaneously. The atomic compare-and-increment
+   allows only the request holding the expected current sequence to advance.
+4. **Historical edit drift:** allowing reference edits would silently move old rows. The server
+   preserves reference/sequence on update, with a regression test and read-only UI field.
+5. **Migration marker drift:** a partial marker could cause repeat conversion. State creation is
+   committed in the same transaction as the rewrite; failed transactions leave no initialized
+   marker and are retryable.
+
 ## One P.O., many machines — migrating a shipped one-to-one into a many
 
 **Status:** `Executed — Part A 5d7372e; Part B f307253`.

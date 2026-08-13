@@ -42,6 +42,15 @@
             "admins"
           ],
           "sort_order": 40
+        },
+        {
+          "item_key": "2026-08-13-reimbursement-shared-batches",
+          "category": "Reimbursement Tracker",
+          "description": "Reimbursement Tracker rows now stay in one shared current batch across engineers; start a new batch explicitly when the batch changes, with existing records normalized to BATCH-032.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 50
         }
       ]
     },

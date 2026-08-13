@@ -111,6 +111,21 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
             app_module.db.session.commit()
             app_module.db.session.remove()
 
+    def setUp(self):
+        with self.app.app_context():
+            for entry in app_module.ReimbursementTrackerEntry.query.all():
+                app_module.db.session.delete(entry)
+            state = app_module.db.session.get(app_module.ReimbursementTrackerBatchState, 1)
+            if state is None:
+                state = app_module.ReimbursementTrackerBatchState(
+                    id=1,
+                    current_batch_sequence=app_module.REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER,
+                )
+                app_module.db.session.add(state)
+            else:
+                state.current_batch_sequence = app_module.REIMBURSEMENT_TRACKER_FIRST_BATCH_NUMBER
+            app_module.db.session.commit()
+
     @classmethod
     def _client_for(cls, user_id):
         client = cls.app.test_client()
@@ -120,9 +135,10 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         return client
 
     @classmethod
-    def _payload(cls, engineer_id=None, reference='BATCH-031', **overrides):
+    def _payload(cls, engineer_id=None, reference='BATCH-032', **overrides):
         payload = {
             'reference': reference,
+            'expected_batch_sequence': 32,
             'submission_date': '2026-08-11',
             'engineer_id': engineer_id or cls.jfl_id,
             'office': 'Manila',
@@ -238,6 +254,10 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
 
         intruder = self._client_for(self.plain_user_id)
         self.assertEqual(intruder.post('/add_reimbursement_tracker_entry', json=self._payload()).status_code, 403)
+        self.assertEqual(
+            intruder.post('/start_reimbursement_tracker_batch', json={'expected_batch_sequence': 32}).status_code,
+            403,
+        )
         self.assertEqual(intruder.put(f"/update_reimbursement_tracker_entry/{row['id']}", json={}).status_code, 403)
         self.assertEqual(intruder.delete(f"/delete_reimbursement_tracker_entry/{row['id']}").status_code, 403)
         with self.app.app_context():
@@ -247,8 +267,8 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         client = self._client_for(self.tracker_user_id)
         jfl = self._add(client, engineer_id=self.jfl_id, office='Manila')
         raj = self._add(client, engineer_id=self.raj_id, office='Cebu')
-        self.assertTrue(jfl['control_number'].startswith('JFL-20260811-031'))
-        self.assertTrue(raj['control_number'].startswith('RAJ-20260811-031'))
+        self.assertTrue(jfl['control_number'].startswith('JFL-20260811-032'))
+        self.assertTrue(raj['control_number'].startswith('RAJ-20260811-032'))
         self.assertNotIn('RB-', raj['control_number'])
         self.assertNotIn('#N/A', jfl['control_number'])
 
@@ -257,9 +277,9 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         first = self._add(client, engineer_id=self.jfl_id, office='Manila')
         second = self._add(client, engineer_id=self.jfl_id, office='Manila', description='Same batch again')
         third = self._add(client, engineer_id=self.raj_id, office='Cebu')
-        self.assertTrue(first['control_number'].endswith('-031'))
+        self.assertTrue(first['control_number'].endswith('-032'))
         self.assertEqual(first['control_number'], second['control_number'])
-        self.assertTrue(third['control_number'].endswith('-031'))
+        self.assertTrue(third['control_number'].endswith('-032'))
 
     def test_control_number_is_stable_after_engineer_initials_change(self):
         client = self._client_for(self.tracker_user_id)
@@ -435,12 +455,13 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
         self.assertIn('Manila', body['offices'])
         self.assertIn('Cebu', body['offices'])
         self.assertIn('JP', body['duplicate_initials'])
+        self.assertEqual(body['current_batch'], {'sequence': 32, 'reference': 'BATCH-032'})
         self.assertTrue(body['suggested_reference'].startswith('BATCH-'))
 
     def test_export_reproduces_the_workbook_layout(self):
         client = self._client_for(self.tracker_user_id)
-        self._add(client, reference='BATCH-031', engineer_id=self.jfl_id, office='Manila', representation='12.50')
-        self._add(client, reference='BATCH-031', engineer_id=self.raj_id, office='Cebu')
+        self._add(client, engineer_id=self.jfl_id, office='Manila', representation='12.50')
+        self._add(client, engineer_id=self.raj_id, office='Cebu')
         response = client.get('/export_reimbursement_tracker?sort=submission_date&direction=asc')
         self.assertEqual(response.status_code, 200, response.status)
         workbook = load_workbook(BytesIO(response.data), data_only=False)
@@ -518,59 +539,163 @@ class ReimbursementTrackerWorkflowTests(unittest.TestCase):
     # page along with every other, in tests/test_appearance_themes.py:
     # AppearanceThemeSourceTests.test_every_theme_token_used_anywhere_is_actually_defined.
 
-    def test_batch_suggestion_continues_from_the_workbook_not_from_one(self):
-        """History was not imported, but Accounting reads the batch numbers as one sequence.
+    def test_first_batch_migration_normalizes_rows_and_is_idempotent(self):
+        """The first state row is an atomic marker for the live BATCH-032 conversion."""
+        with self.app.app_context():
+            for entry in app_module.ReimbursementTrackerEntry.query.all():
+                app_module.db.session.delete(entry)
+            state = app_module.db.session.get(app_module.ReimbursementTrackerBatchState, 1)
+            if state:
+                app_module.db.session.delete(state)
+            app_module.db.session.commit()
 
-        The workbook's last batch was BATCH-031, so an empty register must suggest 032 --
-        it suggested BATCH-001, which would have restarted a live numbering sequence.
-        """
+            first = app_module.ReimbursementTrackerEntry(
+                reference='BATCH-031',
+                submission_date=date(2026, 8, 11),
+                control_number='legacy-control-1',
+                batch_sequence=31,
+                description='Keep this description',
+                engineer_id=self.jfl_id,
+                engineer_name_snapshot='Jim Frederick Lim',
+                engineer_initials_snapshot='JFL',
+                office='Manila',
+                total=Decimal('12.50'),
+                representation=Decimal('12.50'),
+                paid_in_full=True,
+                paid_amount=Decimal('12.50'),
+            )
+            second = app_module.ReimbursementTrackerEntry(
+                reference='BATCH-040',
+                submission_date=date(2026, 8, 12),
+                control_number='legacy-control-2',
+                batch_sequence=40,
+                description='Keep this second description',
+                engineer_id=self.raj_id,
+                engineer_name_snapshot='Rodito Aretano Jr.',
+                engineer_initials_snapshot='RAJ',
+                office='Cebu',
+                total=Decimal('8.75'),
+                toll=Decimal('8.75'),
+            )
+            app_module.db.session.add_all([first, second])
+            app_module.db.session.commit()
+            before = {
+                first.id: (first.description, str(first.total), bool(first.paid_in_full), str(first.paid_amount)),
+                second.id: (second.description, str(second.total), bool(second.paid_in_full), str(second.paid_amount)),
+            }
+
+            app_module._reimbursement_tracker_schema_ready = False
+            app_module.ensure_reimbursement_tracker_schema()
+            rows = app_module.ReimbursementTrackerEntry.query.order_by(app_module.ReimbursementTrackerEntry.id).all()
+            self.assertEqual(len(rows), 2)
+            self.assertEqual([row.reference for row in rows], ['BATCH-032', 'BATCH-032'])
+            self.assertEqual([row.batch_sequence for row in rows], [32, 32])
+            self.assertEqual(rows[0].control_number, 'JFL-20260811-032')
+            self.assertEqual(rows[1].control_number, 'RAJ-20260812-032')
+            self.assertEqual(
+                {row.id: (row.description, str(row.total), bool(row.paid_in_full), str(row.paid_amount)) for row in rows},
+                before,
+            )
+            self.assertEqual(
+                app_module.db.session.get(app_module.ReimbursementTrackerBatchState, 1).current_batch_sequence,
+                32,
+            )
+
+            snapshot = [(row.id, row.reference, row.control_number) for row in rows]
+            app_module._reimbursement_tracker_schema_ready = False
+            app_module.ensure_reimbursement_tracker_schema()
+            self.assertEqual(
+                [(row.id, row.reference, row.control_number)
+                 for row in app_module.ReimbursementTrackerEntry.query.order_by(app_module.ReimbursementTrackerEntry.id).all()],
+                snapshot,
+            )
+
+    def test_shared_batch_reuses_until_explicit_transition(self):
+        client = self._client_for(self.tracker_user_id)
+        first = self._add(client, engineer_id=self.jfl_id, office='Manila')
+        second = self._add(client, engineer_id=self.raj_id, office='Cebu')
+        self.assertEqual(first['reference'], 'BATCH-032')
+        self.assertEqual(second['reference'], 'BATCH-032')
+        self.assertTrue(first['control_number'].endswith('-032'))
+        self.assertTrue(second['control_number'].endswith('-032'))
+
+        stale_start = client.post(
+            '/start_reimbursement_tracker_batch',
+            json={'expected_batch_sequence': 31},
+        )
+        self.assertEqual(stale_start.status_code, 409)
+        self.assertEqual(stale_start.get_json()['current_batch']['reference'], 'BATCH-032')
+
+        started = client.post(
+            '/start_reimbursement_tracker_batch',
+            json={'expected_batch_sequence': 32},
+        )
+        self.assertEqual(started.status_code, 200, started.get_data(as_text=True))
+        self.assertEqual(started.get_json()['current_batch'], {'sequence': 33, 'reference': 'BATCH-033'})
+
+        stale_add = client.post(
+            '/add_reimbursement_tracker_entry',
+            json=self._payload(reference='BATCH-032', expected_batch_sequence=32),
+        )
+        self.assertEqual(stale_add.status_code, 409)
+        self.assertEqual(client.get('/get_reimbursement_tracker_entries').get_json()['entries'].__len__(), 2)
+
+        third = self._add(
+            client,
+            reference='BATCH-033',
+            expected_batch_sequence=33,
+            engineer_id=self.jfl_id,
+            office='Manila',
+        )
+        self.assertEqual(third['reference'], 'BATCH-033')
+        self.assertTrue(third['control_number'].endswith('-033'))
+
+    def test_existing_row_keeps_batch_when_edit_tries_to_move_it(self):
+        client = self._client_for(self.tracker_user_id)
+        row = self._add(client, engineer_id=self.jfl_id, office='Manila')
+        started = client.post('/start_reimbursement_tracker_batch', json={'expected_batch_sequence': 32})
+        self.assertEqual(started.status_code, 200)
+        edit = client.put(
+            f"/update_reimbursement_tracker_entry/{row['id']}",
+            json=self._payload(
+                reference='BATCH-033',
+                expected_batch_sequence=33,
+                description='Edited without moving the historical batch',
+            ),
+        )
+        self.assertEqual(edit.status_code, 200, edit.get_data(as_text=True))
+        self.assertEqual(edit.get_json()['entry']['reference'], 'BATCH-032')
+        self.assertEqual(edit.get_json()['entry']['batch_sequence'], 32)
+        self.assertTrue(edit.get_json()['entry']['control_number'].endswith('-032'))
+
+    def test_batch_999_cannot_advance(self):
         client = self._client_for(self.tracker_user_id)
         with self.app.app_context():
-            for entry in app_module.ReimbursementTrackerEntry.query.all():
-                app_module.db.session.delete(entry)
+            state = app_module.db.session.get(app_module.ReimbursementTrackerBatchState, 1)
+            state.current_batch_sequence = 999
             app_module.db.session.commit()
-
-        empty = client.get('/get_reimbursement_tracker_entries').get_json()
-        self.assertEqual(empty['entries'], [])
-        self.assertEqual(empty['suggested_reference'], 'BATCH-032')
-
-        # Once real data exists the stored rows drive it, and the floor stops mattering.
-        self._add(client, reference='BATCH-040', engineer_id=self.jfl_id, office='Manila')
-        self.assertEqual(
-            client.get('/get_reimbursement_tracker_entries').get_json()['suggested_reference'],
-            'BATCH-041',
-        )
-
-        # A row filed under an older batch must not drag the suggestion back below the floor.
-        with self.app.app_context():
-            for entry in app_module.ReimbursementTrackerEntry.query.all():
-                app_module.db.session.delete(entry)
-            app_module.db.session.commit()
-        self._add(client, reference='BATCH-005', engineer_id=self.jfl_id, office='Manila')
-        self.assertEqual(
-            client.get('/get_reimbursement_tracker_entries').get_json()['suggested_reference'],
-            'BATCH-032',
-        )
+        response = client.post('/start_reimbursement_tracker_batch', json={'expected_batch_sequence': 999})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('BATCH-999', response.get_json()['error'])
 
     def test_the_form_actually_consumes_the_batch_suggestion(self):
-        """The endpoint returning BATCH-032 is worth nothing if the form ignores it.
-
-        It did: the Add form cleared the field and showed a hard-coded
-        placeholder="BATCH-001", so the register still invited a restart at 001 while
-        the API was already correct. The endpoint test passed the whole time -- assert
-        the consumer, not just the producer.
-        """
+        """The Add form consumes the server-owned current batch and exposes the transition."""
         template = (ROOT / 'templates' / 'reimbursement_tracker.html').read_text(encoding='utf-8')
+        self.assertIn('current_batch', template,
+                      'the page must consume the server-owned current batch')
         self.assertIn('data.suggested_reference', template,
-                      'the page never reads the suggestion off the payload')
+                      'the compatibility alias must remain readable by the page')
         self.assertRegex(
             template,
-            r"byId\('rt-reference'\)\.value\s*=\s*state\.suggestedReference",
-            'the Add form must prefill the reference from the suggestion',
+            r"byId\('rt-reference'\)\.value\s*=\s*state\.currentBatch\?\.reference",
+            'the Add form must prefill the reference from the current batch',
         )
+        self.assertIn('id="rt-start-batch-button"', template)
+        self.assertIn("/start_reimbursement_tracker_batch", template)
+        self.assertIn('readonly', template)
         self.assertNotRegex(
             template, r'placeholder="BATCH-001"',
-            'a hard-coded BATCH-001 placeholder contradicts the continued sequence',
+            'a hard-coded BATCH-001 placeholder would invite a restart at the wrong batch',
         )
 
     def test_modal_body_can_scroll_independently_of_the_form_wrapper(self):
