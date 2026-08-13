@@ -1,5 +1,72 @@
 # Project Change Log
 
+> **Relocated, not rewritten, on 2026-08-13.** The four entries below arrived appended as bullets inside the `claude changes - 2026-08-13` review entry further down, with no dated headings of their own. The text is moved verbatim and split by commit; nothing was reworded or removed.
+>
+> **This is the second time.** The same misfiling was corrected on 2026-08-12 with the reason spelled out — an entry appended into the middle of an older one is invisible to anyone scanning for the latest change, and misattributes the work while it sits there. Four features were credited to a review of unrelated work. **Newest entry at the top, with its own dated heading, is the whole convention.**
+>
+> **A sequel to the line-ending trap recorded one entry below, and it runs the other way.** The move script used `newline=''` on both read and write — the documented fix — and still produced a mixed file, because it wrote its *new* headings with `\r\n` while **this file is stored and checked out as LF**. `app.py`, the templates and the tests are CRLF in the working tree; the Markdown journals are not. So "preserve the file's line endings" means *read what this file actually uses first*, not "use CRLF because the repo is on Windows". Caught by counting bytes after writing rather than by trusting the round trip — which is the same check the entry below recommends, and the reason it was worth writing down.
+
+codex changes - 2026-08-13 (selectable reimbursement batch views) — `47ebd96`
+
+* Recorded the owner's follow-up request for selectable historical batch views in `plans.md`;
+  implementation and verification are now complete locally. The current-batch default, export
+  behavior, and stored-row boundary remain unchanged.
+* Added selectable batch views to the Reimbursement Tracker list API and page. The active batch
+  remains the default, previous stored batches can be reviewed with their own rows and totals,
+  and Add reimbursement returns to the active batch before opening; export scope remains separate.
+  Added malformed/unavailable-view, available-batch, and UI wiring coverage.
+* Verification passed with 28 focused tracker tests and 658 repository tests with one pre-existing
+  skip, plus Python compilation, inline JavaScript syntax, release-manifest parsing, and
+  `git diff --check`. Functional implementation is committed as `47ebd96`; local database and
+  generated artifacts remain outside the change set.
+
+codex changes - 2026-08-13 (current-batch tracker view and totals reset) — `6722481`
+
+* Recorded the approved Reimbursement Tracker current-batch view and totals-reset plan in
+  `plans.md`; execution is now in progress under the owner's explicit go-ahead.
+* Scoped the Reimbursement Tracker list API and visible KPIs to the server-owned current batch;
+  prior rows remain stored while the page hides them after a batch transition.
+* Added `batch_scope=current|all` export behavior, defaulting to current-batch rows with an
+  explicit all-history option, including invalid-scope validation without changing the workbook
+  column layout.
+* Updated the tracker page to reset rows, totals, filters, and export scope after a successful
+  transition, refresh stale-transition state, and label the export scope with the active batch.
+  Added focused coverage for empty new batches, historical preservation, export scope contents,
+  invalid scope, and template wiring; no service-worker bump was required.
+* Final verification passed: 28 focused tracker tests, 658 repository tests with one pre-existing
+  skip, Python compilation, inline JavaScript syntax, release-manifest parsing, and `git diff
+  --check`. Functional implementation is committed as `6722481`; `scheduler.db`, `output/`,
+  `tmp/`, and the handoff artifact remain outside the change set.
+
+codex changes - 2026-08-13 (shared Reimbursement Tracker batches) — `7847100`
+
+* Recorded and implemented the approved Reimbursement Tracker shared-batch plan in `plans.md`.
+  Added the singleton `reimbursement_tracker_batch_state` table and an atomic first-run migration
+  that normalizes existing live tracker rows to `BATCH-032`, sequence 32, and rebuilt control
+  numbers while preserving every other stored field; the state row is the idempotence marker.
+* Replaced the tracker’s max-plus-one suggestion with a server-owned global current batch. New
+  rows reuse the current batch, `POST /start_reimbursement_tracker_batch` advances it only after
+  an expected-sequence compare succeeds, stale transitions/adds return 409 without creating rows,
+  and edits cannot move a historical row to another batch.
+* Updated the Reimbursement Tracker header/modal to show the current batch, provide a confirmed
+  Start new batch action, submit the expected sequence, and keep the reference read-only. Added
+  migration, repeated-engineer, transition, stale-request, 999-limit, historical-edit, and UI
+  regression coverage; no service-worker bump was needed because the tracker JavaScript is inline.
+* Verification completed with 27 focused Reimbursement Tracker tests and the full repository suite
+  at 657 tests, plus `py_compile`, inline-template JavaScript parsing, release-manifest parsing,
+  and `git diff --check`. No browser automation or Codex app navigation was used.
+* Functional implementation committed as `7847100`; the pre-existing `scheduler.db`, generated
+  `output/` and `tmp/` directories, and handoff artifact were intentionally left uncommitted.
+
+codex changes - 2026-08-13 (Analytics defaults to the system start date) — `06ddeab`
+
+* Analytics now defaults to the canonical 2026-05-18 system-start date through today instead of
+  the current month. The server date bounds, page-provided configuration, and “Since system start”
+  preset are aligned; week/month presets remain available.
+* Bumped the analytics JavaScript query version to v80 and the service-worker cache to v89 because
+  the Analytics APP_SHELL renderer now uses the system-start default. Added the 2026-08-13
+  release-manifest item and verified the focused analytics tests/syntax checks.
+
 claude changes - 2026-08-13 (review of multi-machine P.O.s: two coverage gaps closed, one of my own claims corrected)
 
 ## The implementation is sound. No defect found — verified by running it, not reading it.
@@ -68,55 +135,6 @@ claude changes - 2026-08-13 (review of multi-machine P.O.s: two coverage gaps cl
   `-SimpleMatch` entry as the third tool that silently rewrites a file while reporting success.
   **A SHA comparison only proves what you compared.** For a byte-exact round trip use
   `read_bytes()`/`write_bytes()`, or check `git status` afterwards rather than trusting the hash.
-* Analytics now defaults to the canonical 2026-05-18 system-start date through today instead of
-  the current month. The server date bounds, page-provided configuration, and “Since system start”
-  preset are aligned; week/month presets remain available.
-* Bumped the analytics JavaScript query version to v80 and the service-worker cache to v89 because
-  the Analytics APP_SHELL renderer now uses the system-start default. Added the 2026-08-13
-  release-manifest item and verified the focused analytics tests/syntax checks.
-* Recorded and implemented the approved Reimbursement Tracker shared-batch plan in `plans.md`.
-  Added the singleton `reimbursement_tracker_batch_state` table and an atomic first-run migration
-  that normalizes existing live tracker rows to `BATCH-032`, sequence 32, and rebuilt control
-  numbers while preserving every other stored field; the state row is the idempotence marker.
-* Replaced the tracker’s max-plus-one suggestion with a server-owned global current batch. New
-  rows reuse the current batch, `POST /start_reimbursement_tracker_batch` advances it only after
-  an expected-sequence compare succeeds, stale transitions/adds return 409 without creating rows,
-  and edits cannot move a historical row to another batch.
-* Updated the Reimbursement Tracker header/modal to show the current batch, provide a confirmed
-  Start new batch action, submit the expected sequence, and keep the reference read-only. Added
-  migration, repeated-engineer, transition, stale-request, 999-limit, historical-edit, and UI
-  regression coverage; no service-worker bump was needed because the tracker JavaScript is inline.
-* Verification completed with 27 focused Reimbursement Tracker tests and the full repository suite
-  at 657 tests, plus `py_compile`, inline-template JavaScript parsing, release-manifest parsing,
-  and `git diff --check`. No browser automation or Codex app navigation was used.
-* Functional implementation committed as `7847100`; the pre-existing `scheduler.db`, generated
-  `output/` and `tmp/` directories, and handoff artifact were intentionally left uncommitted.
-* Recorded the approved Reimbursement Tracker current-batch view and totals-reset plan in
-  `plans.md`; execution is now in progress under the owner's explicit go-ahead.
-* Scoped the Reimbursement Tracker list API and visible KPIs to the server-owned current batch;
-  prior rows remain stored while the page hides them after a batch transition.
-* Added `batch_scope=current|all` export behavior, defaulting to current-batch rows with an
-  explicit all-history option, including invalid-scope validation without changing the workbook
-  column layout.
-* Updated the tracker page to reset rows, totals, filters, and export scope after a successful
-  transition, refresh stale-transition state, and label the export scope with the active batch.
-  Added focused coverage for empty new batches, historical preservation, export scope contents,
-  invalid scope, and template wiring; no service-worker bump was required.
-* Final verification passed: 28 focused tracker tests, 658 repository tests with one pre-existing
-  skip, Python compilation, inline JavaScript syntax, release-manifest parsing, and `git diff
-  --check`. Functional implementation is committed as `6722481`; `scheduler.db`, `output/`,
-  `tmp/`, and the handoff artifact remain outside the change set.
-* Recorded the owner's follow-up request for selectable historical batch views in `plans.md`;
-  implementation and verification are now complete locally. The current-batch default, export
-  behavior, and stored-row boundary remain unchanged.
-* Added selectable batch views to the Reimbursement Tracker list API and page. The active batch
-  remains the default, previous stored batches can be reviewed with their own rows and totals,
-  and Add reimbursement returns to the active batch before opening; export scope remains separate.
-  Added malformed/unavailable-view, available-batch, and UI wiring coverage.
-* Verification passed with 28 focused tracker tests and 658 repository tests with one pre-existing
-  skip, plus Python compilation, inline JavaScript syntax, release-manifest parsing, and
-  `git diff --check`. Functional implementation is committed as `47ebd96`; local database and
-  generated artifacts remain outside the change set.
 
 codex changes - 2026-08-13 (multi-machine purchase orders)
 
