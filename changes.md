@@ -89,6 +89,8 @@ claude changes - 2026-08-13 (review of multi-machine P.O.s: two coverage gaps cl
 * Verification completed with 27 focused Reimbursement Tracker tests and the full repository suite
   at 657 tests, plus `py_compile`, inline-template JavaScript parsing, release-manifest parsing,
   and `git diff --check`. No browser automation or Codex app navigation was used.
+* Functional implementation committed as `7847100`; the pre-existing `scheduler.db`, generated
+  `output/` and `tmp/` directories, and handoff artifact were intentionally left uncommitted.
 
 codex changes - 2026-08-13 (multi-machine purchase orders)
 

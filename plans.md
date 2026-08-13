@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Reimbursement Tracker — shared current batch workflow
 
-**Status:** `In progress`
+**Status:** `Executed — 7847100`
 **Approved:** 2026-08-13
 **Detailed:** 2026-08-13, after tracing the current tracker suggestion endpoint, modal consumer,
 stored control-number derivation, schema migration guard, and the live-table boundary. The owner
