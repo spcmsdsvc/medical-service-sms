@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Reimbursement Tracker — current-batch view and totals reset
 
-**Status:** `In progress`
+**Status:** `Executed — 6722481`
 **Approved:** 2026-08-13
 **Detailed:** 2026-08-13, after inspecting the shared batch state, tracker list endpoint, export
 route, page KPI calculation, transition handler, and existing focused tests. The owner separately

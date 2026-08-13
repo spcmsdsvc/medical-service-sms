@@ -104,8 +104,8 @@ claude changes - 2026-08-13 (review of multi-machine P.O.s: two coverage gaps cl
   invalid scope, and template wiring; no service-worker bump was required.
 * Final verification passed: 28 focused tracker tests, 658 repository tests with one pre-existing
   skip, Python compilation, inline JavaScript syntax, release-manifest parsing, and `git diff
-  --check`. The implementation remains uncommitted and unpublished pending owner instruction;
-  `scheduler.db`, `output/`, `tmp/`, and the handoff artifact remain outside the change set.
+  --check`. Functional implementation is committed as `6722481`; `scheduler.db`, `output/`,
+  `tmp/`, and the handoff artifact remain outside the change set.
 
 codex changes - 2026-08-13 (multi-machine purchase orders)
 
