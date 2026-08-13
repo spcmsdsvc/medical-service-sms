@@ -526,6 +526,16 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         ):
             self.assertIn(expected, html)
 
+    def test_purchase_order_machine_picker_matches_product_contract_flag(self):
+        client = self._client_for(self.po_user_id)
+        page = client.get('/po_details')
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn("function productCoverageDisplay(product)", html)
+        self.assertIn("if (Boolean(product?.under_contract)) return 'Under Contract';", html)
+        self.assertIn("return product?.end_warranty ? `Warranty ends ${product.end_warranty}` : '';", html)
+        self.assertIn("productCoverageDisplay(product),", html)
+
     def test_multi_machine_add_edit_replaces_links_and_returns_full_response(self):
         client = self._client_for(self.po_user_id)
         second_serial = f'PO-MULTI-SECOND-{self.suffix}'

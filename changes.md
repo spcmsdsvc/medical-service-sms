@@ -1,5 +1,12 @@
 # Project Change Log
 
+codex changes - 2026-08-13 (P.O. equipment coverage display) — `a0e06bf`
+
+* Updated `templates/po_details.html` so the equipment autocomplete reads the Product record's `under_contract` flag before displaying warranty information. Contract-backed equipment now shows `Under Contract`; non-contract equipment retains its warranty-end label.
+* Added `test_purchase_order_machine_picker_matches_product_contract_flag` to `tests/test_purchase_orders.py` as a regression check for the database-backed display precedence.
+* Added the P.O. equipment coverage correction to the published 2026-08-13 release manifest in `static/changelog/releases.json`.
+* Verification passed with 34 focused purchase-order/product-contract tests and 661 repository tests with one pre-existing skip, plus Python compilation, inline JavaScript syntax validation, release-manifest parsing, and `git diff --check`. No browser automation or Codex app navigation was used.
+
 > **Relocated, not rewritten, on 2026-08-13.** The four entries below arrived appended as bullets inside the `claude changes - 2026-08-13` review entry further down, with no dated headings of their own. The text is moved verbatim and split by commit; nothing was reworded or removed.
 
 codex changes - 2026-08-13 (Reimbursement Register filters, exports, and fixed confirmations) — `723333b`

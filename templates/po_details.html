@@ -910,6 +910,11 @@
         return [serial, name].filter(Boolean).join(' — ');
     }
 
+    function productCoverageDisplay(product) {
+        if (Boolean(product?.under_contract)) return 'Under Contract';
+        return product?.end_warranty ? `Warranty ends ${product.end_warranty}` : '';
+    }
+
     function appendAutocompleteMessage(results, message) {
         const item = document.createElement('div');
         item.className = 'search-item po-muted';
@@ -981,7 +986,7 @@
                 matches.forEach((product) => appendAutocompleteItem(
                     results,
                     productDisplay(product),
-                    product.end_warranty ? `Warranty ends ${product.end_warranty}` : '',
+                    productCoverageDisplay(product),
                     () => {
                         addMachineSelection(product);
                         input.value = '';

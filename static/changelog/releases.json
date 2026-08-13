@@ -96,6 +96,15 @@
             "admins"
           ],
           "sort_order": 70
+        },
+        {
+          "item_key": "2026-08-13-po-equipment-coverage-display",
+          "category": "P.O. Details",
+          "description": "Equipment selection now shows Under Contract when the Products record marks the machine as contract-backed, instead of incorrectly presenting its warranty end date.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 80
         }
       ]
     },
