@@ -57,8 +57,8 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Reimbursement Register: fix the filter and the export, and stop both registers jumping to the top
 
-**Status:** `In progress`. The project owner gave the separate go-ahead on 2026-08-13; implementation
-and local verification are complete. Commit/push await the owner's separate publication instruction.
+**Status:** `Executed — 723333b`. Implementation and local verification completed; the implementation
+commit is pushed with a journal closeout commit.
 **Approved:** 2026-08-13
 **Detailed:** 2026-08-13, after mapping every filter, KPI, export path and notification on both
 register pages. Four claims were checked by reading the code rather than accepted from the
