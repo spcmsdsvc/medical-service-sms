@@ -1,5 +1,74 @@
 # Project Change Log
 
+claude changes - 2026-08-13 (review of multi-machine P.O.s: two coverage gaps closed, one of my own claims corrected)
+
+## The implementation is sound. No defect found — verified by running it, not reading it.
+
+* **651 green on arrival, re-run here.** Every one of the eight risks ranked in the plan was checked
+  individually: `selectinload` in all three call sites, ORM collection assignment with the PUT
+  response asserted, `''` placeholders keeping the export columns aligned, a backfill keyed on
+  `purchase_order_id` alone, `lazy='selectin'` plus a real query-count test, serials named in
+  validation errors, `machine_link_total` with its `sum(by_coverage)` invariant, and chip CSS tokens
+  that all resolve.
+* **The repo-wide theme-token guard added on 2026-08-12 passed on the very next feature.** That is
+  the first evidence it does the job the page-scoped version could not.
+* **Verified physically, not just in model metadata:** `PRAGMA index_list('purchase_order_machine')`
+  shows the unique pair index, and three consecutive `ensure_purchase_order_schema()` runs against a
+  legacy row seed exactly one link.
+
+## Codex caught a hazard the plan missed
+
+* `apply_purchase_order_machines()` clears the collection and flushes **before** reassigning, because
+  SQLAlchemy would otherwise INSERT a replacement before deleting the orphan holding the same
+  `(P.O., serial)` unique key. The plan did not anticipate this, and the `UniqueConstraint` the plan
+  insisted on is exactly what creates the hazard.
+* **Confirmed load-bearing rather than defensive**, by removing it: the `[A,B] → [B]` edit then
+  returns **409** from an IntegrityError, with a passing control.
+
+## Corrected: I ranked a risk that turns out not to be reachable
+
+* The plan called a `joinedload` on the machines collection "the single nastiest available bug" —
+  a 3-machine P.O. counting as three purchase orders in the headline total. **Measured: it does not.**
+  With one P.O. covering three machines, `len(orders)` is `1` under both `selectinload` and
+  `joinedload`, and swapping them breaks no test.
+* The reason is that this repo uses the legacy `Model.query…all()` API, which de-duplicates parent
+  entities. `selectinload` remains correct — `joinedload` on a collection drags a cartesian product
+  over the wire — but here it is a **performance** choice, not a correctness guard.
+* The multiplication hazard this journal records is real for the *SQL-level count over a join*
+  (`analytics_branch_counts` using `count(distinct)`, which is why `analytics_scope_query` uses a
+  correlated EXISTS). Transferring it to `len()` over ORM entities was the error. **A hazard is
+  attached to a construction, not to a feature.**
+
+## Two coverage gaps closed, both proved by injection
+
+* **The export alignment guard was unproven.** The row builder emits `''` for a link whose Product
+  row is gone, keeping Machine Serial line *k* aligned with Machine Name line *k* — but the test
+  asserted both cells with both names present, so "tidying" the comprehension into a filter would
+  have kept it green while the spreadsheet silently attributed the wrong model to a serial. The new
+  test deletes the product through the session (the route 409s by design, but the backfill
+  deliberately keeps such a link) and asserts one name line per serial line.
+* **The multi-machine analytics test never asserted `payload['total']`.** The only `total` assertions
+  lived in a single-machine test. Note the sibling multi-machine fixture produces three P.O.s **and**
+  three links, so asserting `total` there could not have told the two units apart — the new test uses
+  three machines on one P.O. so the numbers must differ, and asserts that they do.
+* Both injections went red for the expected reason — `1 != 2` on the line counts, `4 != 3` on
+  links-versus-orders — each with a passing control, and `app.py` restored byte-identically.
+* **653 green**, one pre-existing skip. Tests only; no runtime code changed, so no service-worker
+  bump and no release-manifest item.
+
+## A tooling trap worth recording: the Python version of the line-ending rewrite
+
+* The injection harness restored `app.py` byte-for-byte by its own SHA check and still **converted
+  the whole file from CRLF to LF**. `pathlib.read_text()` applies universal newlines, so the CRLFs
+  become LFs *in memory*; writing back with `newline=''` then writes those LFs literally. Comparing
+  the re-read against the same in-memory string passes, because both sides were converted.
+* Nothing reached the commit — git normalises on read, so `git diff` was empty — but `git status`
+  showed `app.py` modified, and the file was restored with `git checkout --`.
+* This joins the `Set-Content -Encoding utf8` BOM entry and the `[regex]::Escape` +
+  `-SimpleMatch` entry as the third tool that silently rewrites a file while reporting success.
+  **A SHA comparison only proves what you compared.** For a byte-exact round trip use
+  `read_bytes()`/`write_bytes()`, or check `git status` afterwards rather than trusting the hash.
+
 codex changes - 2026-08-13 (multi-machine purchase orders)
 
 * Added the additive `purchase_order_machine` association model and live-schema migration in

@@ -215,6 +215,67 @@ class AnalyticsPurchaseOrderTests(unittest.TestCase):
                 app_module.db.session.delete(created_product)
             app_module.db.session.commit()
 
+    def test_headline_total_counts_purchase_orders_not_machine_links(self):
+        """A P.O. covering three machines is still one purchase order.
+
+        The equipment block counts links on purpose, so `machine_link_total` exceeds the
+        P.O. count. The headline `total` must not follow it -- that number is what a
+        manager reads as "how many P.O.s this period", and an inflated one would move in
+        a plausible direction and never be audited.
+
+        The fixture keeps the two units deliberately unequal. The sibling multi-machine
+        test happens to produce three P.O.s and three links, so asserting `total` there
+        could not tell the two apart; three machines on one P.O. can.
+        """
+        extra_serials = [f'AN-SN-TRIPLE-{index}-{self.suffix}' for index in range(3)]
+        with self.app.app_context():
+            products = [
+                app_module.Product(
+                    serial_number=serial,
+                    name=f'AN Triple {index}',
+                    client_id=self.client_one.id,
+                )
+                for index, serial in enumerate(extra_serials)
+            ]
+            record = app_module.PurchaseOrder(
+                client_id=self.client_one.id,
+                po_number=f'AN-PO-TRIPLE-{self.suffix}',
+                po_date=date(2026, 8, 9),
+                po_type=app_module.PO_TYPE_SINGLE_VISIT,
+            )
+            app_module.db.session.add_all(products + [record])
+            app_module.db.session.flush()
+            app_module.apply_purchase_order_machines(record, extra_serials)
+            app_module.db.session.commit()
+            record_id = record.id
+            expected_orders = app_module.PurchaseOrder.query.filter(
+                app_module.PurchaseOrder.po_date >= date(2026, 8, 1),
+                app_module.PurchaseOrder.po_date <= date(2026, 8, 31),
+            ).count()
+
+        client = self._client_for(self.po_user_id)
+        payload = client.get(
+            '/get_po_analytics?start_date=2026-08-01&end_date=2026-08-31'
+        ).get_json()
+        equipment = payload['equipment']
+
+        self.assertEqual(payload['total'], expected_orders)
+        self.assertEqual(
+            equipment['linked_total'] + equipment['unlinked_total'], payload['total']
+        )
+        # Without this the assertion above cannot fail: the two units must differ here.
+        self.assertGreater(equipment['machine_link_total'], payload['total'])
+
+        with self.app.app_context():
+            created_record = app_module.db.session.get(app_module.PurchaseOrder, record_id)
+            if created_record:
+                app_module.db.session.delete(created_record)
+            for serial in extra_serials:
+                created_product = app_module.db.session.get(app_module.Product, serial)
+                if created_product:
+                    app_module.db.session.delete(created_product)
+            app_module.db.session.commit()
+
     def test_plain_user_is_denied_but_reports_user_keeps_schedule_surface(self):
         plain = self._client_for(self.plain_user_id)
         self.assertEqual(plain.get('/analytics_page').status_code, 302)

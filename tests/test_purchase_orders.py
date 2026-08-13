@@ -733,6 +733,60 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         self.assertEqual(worksheet['J4'].value, '=SUM(J2:J2)')
         self.assertEqual(client.delete(f'/delete_purchase_order/{record_id}').status_code, 200)
 
+    def test_export_machine_columns_stay_aligned_when_a_product_row_is_missing(self):
+        """Line k of Machine Serial must always describe line k of Machine Name.
+
+        A link whose Product row is gone contributes an empty name. The row builder emits
+        '' for it deliberately; if that is ever "tidied" into a filter that drops empties,
+        the two columns slip out of step and the spreadsheet attributes the wrong model to
+        a serial. It still opens, still looks entirely normal, and the amount total is
+        still right -- which is why only an explicit alignment assertion catches it.
+
+        The product is deleted through the session rather than /delete_product because
+        that route refuses with 409 precisely so this state cannot be reached by hand. It
+        is still reachable: the backfill deliberately keeps a legacy link whose product
+        row was purged before the link existed, rather than dropping the row.
+        """
+        client = self._client_for(self.po_user_id)
+        orphan_serial = f'PO-ORPHAN-{self.suffix}'
+        with self.app.app_context():
+            app_module.db.session.add(app_module.Product(
+                serial_number=orphan_serial,
+                name=f'Orphan Model {self.suffix}',
+                client_id=self.client_one_id,
+            ))
+            app_module.db.session.commit()
+        self.created_product_serials.append(orphan_serial)
+
+        created = client.post('/add_purchase_order', json={
+            'client_id': self.client_one_id,
+            'product_serials': [self.product_one_serial, orphan_serial],
+            'start_date': '2026-08-10',
+            'po_number': f'ORPHAN-{self.suffix}',
+            'po_type': 'single_visit',
+        })
+        self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+        record_id = created.get_json()['purchase_order']['id']
+
+        with self.app.app_context():
+            orphan = app_module.db.session.get(app_module.Product, orphan_serial)
+            app_module.db.session.delete(orphan)
+            app_module.db.session.commit()
+
+        response = client.get(f'/export_purchase_orders?number=ORPHAN-{self.suffix}')
+        self.assertEqual(response.status_code, 200)
+        worksheet = load_workbook(BytesIO(response.data), data_only=False)['P.O. Register']
+        serial_lines = (worksheet['G2'].value or '').split('\n')
+        name_lines = (worksheet['H2'].value or '').split('\n')
+        self.assertEqual(serial_lines, [self.product_one_serial, orphan_serial])
+        # The alignment guard: one name line per serial line, empty rather than absent.
+        self.assertEqual(len(name_lines), len(serial_lines))
+        self.assertEqual(name_lines[0], f'CT One {self.suffix}')
+        self.assertEqual(name_lines[1], '')
+        self.assertIsNone(worksheet['D3'].value)
+
+        self.assertEqual(client.delete(f'/delete_purchase_order/{record_id}').status_code, 200)
+
     def test_purchase_order_listing_uses_one_association_query(self):
         statements = []
 
