@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-14-lpr-feature-switch",
+      "release_date": "2026-08-14",
+      "title": "Reversible LPR Availability",
+      "summary": "Local Purchase Requisitions can be paused through deployment configuration while existing requests finish safely and parent workflows keep their linked documents.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-14-lpr-feature-switch-controls",
+          "category": "LPR",
+          "description": "LPR now supports normal, drain, and hard-off operation: new requests can be refused without stranding in-flight approvals, linked Travel Request/Cash Advance/Reimbursement documents, or their PDF handoffs.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-14-leave-one-and-half-day",
       "release_date": "2026-08-14",
       "title": "1.5-Day Leave Requests",

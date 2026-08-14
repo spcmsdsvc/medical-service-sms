@@ -122,6 +122,7 @@ import mimetypes
 import types
 import shutil
 import sqlite3
+from functools import wraps
 from email.message import EmailMessage
 from email.utils import formataddr
 
@@ -217,6 +218,8 @@ def env_flag_enabled(name, default=False):
 
 
 app.config['NEW_WORKFLOWS_ENABLED'] = env_flag_enabled('NEW_WORKFLOWS_ENABLED', default=False)
+app.config['LPR_ENABLED'] = env_flag_enabled('LPR_ENABLED', default=True)
+app.config['LPR_ACCEPTING_NEW'] = env_flag_enabled('LPR_ACCEPTING_NEW', default=True)
 
 NEW_WORKFLOW_BLOCKED_EXACT_PATHS = {
     '/accounting_center',
@@ -315,6 +318,9 @@ NEW_WORKFLOW_BLOCKED_PREFIXES = (
     '/update_travel_liquidation_'
 )
 
+# Exemption list for the legacy NEW_WORKFLOWS gate, not the LPR feature switch.
+# LPR routes enforce their own normal/drain/off policy below, because drain mode
+# must distinguish edits and approvals from new-request creation.
 LPR_BLOCKED_EXACT_PATHS = {'/lpr'}
 LPR_BLOCKED_PREFIXES = (
     '/get_lpr',
@@ -327,9 +333,16 @@ LPR_BLOCKED_PREFIXES = (
     '/download_lpr',
     '/delete_lpr_',
     '/delete_all_lpr_',
-    '/mark_lpr_',
     '/resend_lpr_',
-    '/get_lpr_approval_'
+    '/get_lpr_approval_',
+    '/get_parent_lprs',
+    '/prepare_reimbursement_lpr',
+    '/save_embedded_lpr',
+    '/delete_embedded_lpr',
+    '/delete_all_embedded_lpr_',
+    '/upload_embedded_lpr_',
+    '/preview_embedded_lpr',
+    '/download_embedded_lpr'
 )
 
 
@@ -338,12 +351,21 @@ def new_workflows_enabled():
 
 
 def lpr_enabled():
-    return True
+    return bool(app.config.get('LPR_ENABLED', True))
 
 
 def embedded_lpr_enabled():
-    """Embedded LPR attachments are part of the released LPR workflow."""
-    return True
+    """Embedded LPR rendering follows the master LPR feature switch."""
+    return lpr_enabled()
+
+
+def lpr_accepting_new():
+    """Return whether new LPR records may be created.
+
+    Keeping this derived from the master switch makes the invalid state
+    ``LPR_ENABLED=False`` plus accepting-new true unreachable to call sites.
+    """
+    return lpr_enabled() and bool(app.config.get('LPR_ACCEPTING_NEW', True))
 
 
 def is_lpr_path(path):
@@ -1268,6 +1290,7 @@ def inject_feature_flags():
     return {
         'new_workflows_enabled': new_workflows_enabled(),
         'lpr_enabled': lpr_enabled(),
+        'lpr_accepting_new': lpr_accepting_new(),
         'embedded_lpr_enabled': embedded_lpr_enabled(),
         'stock_inventory_superadmin': is_superadmin_user(),
         'stock_inventory_access': can_manage_stock_inventory(),
@@ -15753,7 +15776,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v89-analytics-system-start';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v90-lpr-feature-switch';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -17428,6 +17451,8 @@ def approvals_page():
     """
     if not is_approval_center_user():
         return redirect(url_for('dashboard_page'))
+    if (request.args.get('module') or '').strip().lower() == 'lpr' and not lpr_enabled():
+        return lpr_unavailable_page()
 
     return render_template(
         'approvals.html',
@@ -17435,6 +17460,9 @@ def approvals_page():
         approval_center_is_configured_approver=is_configured_approver_user(),
         approval_center_is_legacy_manager=is_legacy_reimbursement_approval_user(),
         approval_center_requester_ids=get_requester_user_ids_for_approver(current_user, 'all'),
+        # Kept for API/template compatibility. The current approvals template
+        # does not consume this list; its visible LPR tile/script are gated by
+        # the injected lpr_enabled flag instead.
         approval_modules=[
             {'key': 'travel_request', 'label': 'Travel Request', 'status': 'active'},
             {'key': 'reimbursement', 'label': 'Reimbursement', 'status': 'active'},
@@ -36978,7 +37006,11 @@ def submit_reimbursement():
 
         office_field_sources = reimbursement_lpr_sources(header)
         linked_lprs = linked_lpr_records('reimbursement', header.id)
-        if office_field_sources:
+        if office_field_sources and (lpr_accepting_new() or linked_lprs):
+            # When LPR intake is draining or hard-off, an already-linked LPR
+            # is still validated. A reimbursement with no linked LPR may pass
+            # because new LPR creation is unavailable; this preserves the
+            # parent workflow without weakening an existing link's integrity.
             if len(linked_lprs) != 1:
                 return jsonify({
                     'success': False,
@@ -36989,7 +37021,9 @@ def submit_reimbursement():
                 validate_reimbursement_linked_lpr(header, linked_lprs[0], require_header=True)
             except ValueError as exc:
                 return jsonify({'success': False, 'lpr_required': True, 'error': str(exc)}), 409
-        elif linked_lprs:
+        elif not office_field_sources and linked_lprs:
+            # Keep this deletion branch positive and explicit. It must never
+            # become the fallback for a drain-mode Office/Field submission.
             delete_linked_lprs_for_parent('reimbursement', header.id)
 
         row_count, excluded_zero_rows = reimbursement_prune_zero_rows_for_submit(header, saved_rows)
@@ -54183,12 +54217,57 @@ def prepare_deferred_workflow_schemas():
 EMBEDDED_LPR_PARENT_MODULES = {'cash_advance', 'travel_request', 'reimbursement'}
 
 
-def embedded_lpr_disabled_response():
+def lpr_disabled_response(message='Local Purchase Requisition is currently unavailable.'):
     return jsonify({
         'success': False,
         'status': 'disabled',
-        'message': 'Embedded LPR attachments are not available yet.'
+        'message': message
     }), 403
+
+
+def embedded_lpr_disabled_response():
+    """Compatibility response kept for existing embedded-LPR call sites."""
+    return lpr_disabled_response('Embedded LPR attachments are not available yet.')
+
+
+def lpr_unavailable_page():
+    """Explain a hard-off LPR deep link instead of silently redirecting it."""
+    return render_template(
+        'access_denied.html',
+        denied_title='Local Purchase Requisition unavailable',
+        denied_message=(
+            'Local Purchase Requisition is currently turned off. Existing requests are retained '
+            'and can be restored when the workflow is enabled again.'
+        ),
+        denied_action_url=url_for('dashboard_page'),
+        denied_action_label='Return to Dashboard'
+    ), 403
+
+
+def require_lpr_enabled(*, as_json=True):
+    """Decorate an LPR endpoint with the master feature switch."""
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not lpr_enabled():
+                return lpr_disabled_response() if as_json else lpr_unavailable_page()
+            return view(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
+def require_lpr_accepting_new(*, as_json=True):
+    """Decorate a wholly-creation endpoint when it has no edit branch."""
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not lpr_accepting_new():
+                return lpr_disabled_response(
+                    'New Local Purchase Requisitions are temporarily unavailable.'
+                ) if as_json else lpr_unavailable_page()
+            return view(*args, **kwargs)
+        return wrapped
+    return decorator
 
 
 def normalize_embedded_lpr_parent_module(value):
@@ -54270,8 +54349,9 @@ def linked_lpr_query(parent_module, parent_id):
 
 
 def linked_lpr_records(parent_module, parent_id):
-    if not embedded_lpr_enabled():
-        return []
+    # Existing linked rows remain readable while LPR is off. Travel Request,
+    # Cash Advance, Reimbursement, and their PDF/accounting packages depend on
+    # this lookup to finish work already in flight.
     return linked_lpr_query(parent_module, parent_id).order_by(
         LPRHeader.created_at.asc(), LPRHeader.id.asc()
     ).all()
@@ -54445,7 +54525,7 @@ def sync_embedded_lpr_parent_signatures(parent_module, parent, phase, actor_user
     Draft editing never stamps a signature.  The parent submit/approval
     transitions are the only moments that finalize the linked LPR document.
     """
-    if not embedded_lpr_enabled() or not parent:
+    if not parent:
         return 0
     records = linked_lpr_records(parent_module, parent.id)
     if not records:
@@ -54484,8 +54564,6 @@ def sync_embedded_lpr_parent_signatures(parent_module, parent, phase, actor_user
 
 
 def delete_linked_lprs_for_parent(parent_module, parent_id):
-    if not embedded_lpr_enabled():
-        return 0, 0
     records = linked_lpr_records(parent_module, parent_id)
     removed_files = 0
     for header in records:
@@ -55222,6 +55300,8 @@ def lpr_authorized_attachment(attachment_id):
 @app.route('/lpr')
 @login_required
 def lpr_page():
+    if not lpr_enabled():
+        return lpr_unavailable_page()
     if is_approver_only_user():
         return redirect(url_for('dashboard_page'))
     return render_template('lpr.html')
@@ -55229,6 +55309,7 @@ def lpr_page():
 
 @app.route('/get_lpr_list')
 @login_required
+@require_lpr_enabled(as_json=True)
 def get_lpr_list():
     try:
         ensure_lpr_tables()
@@ -55252,6 +55333,7 @@ def get_lpr_list():
 
 @app.route('/get_lpr/<int:lpr_id>')
 @login_required
+@require_lpr_enabled(as_json=True)
 def get_lpr(lpr_id):
     ensure_lpr_tables()
     header = db.session.get(LPRHeader, lpr_id)
@@ -55313,6 +55395,10 @@ def prepare_reimbursement_lpr(reimbursement_id):
     if not sources:
         return jsonify({'success': False, 'error': 'No Office/Field Items amounts require an LPR.'}), 400
     existing = linked_lpr_records('reimbursement', header.id)
+    if not existing and not lpr_accepting_new():
+        return lpr_disabled_response(
+            'New embedded LPRs are temporarily unavailable. Existing linked LPRs remain available.'
+        )
     item = prepared_reimbursement_lpr_payload(header, existing[0] if existing else None)
     return jsonify({
         'success': True,
@@ -55327,6 +55413,7 @@ def prepare_reimbursement_lpr(reimbursement_id):
 @app.route('/save_embedded_lpr', methods=['POST'])
 @csrf.exempt
 @login_required
+@require_lpr_enabled(as_json=True)
 def save_embedded_lpr():
     if not embedded_lpr_enabled():
         return embedded_lpr_disabled_response()
@@ -55351,6 +55438,10 @@ def save_embedded_lpr():
         if linked_module != module_name or linked_parent_id != clean_int(parent.id) or not lpr_can_manage(header) or not lpr_is_editable(header):
             return jsonify({'success': False, 'error': 'This linked LPR is no longer editable or belongs to another request.'}), 409
     else:
+        if not lpr_accepting_new():
+            return lpr_disabled_response(
+                'New embedded LPRs are temporarily unavailable. Existing linked LPRs remain available.'
+            )
         now = get_manila_time()
         header = LPRHeader(
             user_id=current_user.id,
@@ -55433,6 +55524,7 @@ def delete_embedded_lpr(lpr_id):
 @app.route('/save_lpr', methods=['POST'])
 @csrf.exempt
 @login_required
+@require_lpr_enabled(as_json=True)
 def save_lpr():
     ensure_lpr_tables()
     payload = request.get_json(silent=True) or {}
@@ -55473,6 +55565,13 @@ def save_lpr():
                     return jsonify({'success': False, 'error': 'This LPR is no longer editable.'}), 409
                 idempotent_replay = True
         if not header:
+            # This guard deliberately sits after the replay lookup. A retry of
+            # a successful create must recover its existing draft in drain
+            # mode instead of being mistaken for a new request.
+            if not lpr_accepting_new():
+                return lpr_disabled_response(
+                    'New Local Purchase Requisitions are temporarily unavailable.'
+                )
             creation_token = creation_token or f'lpr-{secrets.token_hex(16)}'
             header = LPRHeader(
                 user_id=current_user.id,
@@ -55539,6 +55638,7 @@ def save_lpr():
 @app.route('/submit_lpr/<int:lpr_id>', methods=['POST'])
 @csrf.exempt
 @login_required
+@require_lpr_enabled(as_json=True)
 def submit_lpr(lpr_id):
     ensure_lpr_tables()
     header = db.session.get(LPRHeader, lpr_id)
@@ -55574,6 +55674,7 @@ def submit_lpr(lpr_id):
 
 @app.route('/preview_lpr/<int:lpr_id>')
 @login_required
+@require_lpr_enabled(as_json=True)
 def preview_lpr(lpr_id):
     ensure_lpr_tables(); header = db.session.get(LPRHeader, lpr_id)
     if not header or (not lpr_can_manage(header) and not can_user_approve_lpr(current_user, header)):
@@ -55583,6 +55684,7 @@ def preview_lpr(lpr_id):
 
 @app.route('/download_lpr/<int:lpr_id>')
 @login_required
+@require_lpr_enabled(as_json=True)
 def download_lpr(lpr_id):
     ensure_lpr_tables(); header = db.session.get(LPRHeader, lpr_id)
     if not header or (not lpr_can_manage(header) and not can_user_approve_lpr(current_user, header)):
@@ -55592,6 +55694,7 @@ def download_lpr(lpr_id):
 
 @app.route('/get_lpr_approval_items')
 @login_required
+@require_lpr_enabled(as_json=True)
 def get_lpr_approval_items():
     denied = require_approval_center_user()
     if denied: return denied
@@ -55603,6 +55706,7 @@ def get_lpr_approval_items():
 
 @app.route('/get_lpr_approval_detail/<int:lpr_id>')
 @login_required
+@require_lpr_enabled(as_json=True)
 def get_lpr_approval_detail(lpr_id):
     denied = require_approval_center_user()
     if denied: return denied
@@ -55615,6 +55719,7 @@ def get_lpr_approval_detail(lpr_id):
 @app.route('/approve_lpr/<int:lpr_id>', methods=['POST'])
 @csrf.exempt
 @login_required
+@require_lpr_enabled(as_json=True)
 def approve_lpr(lpr_id):
     denied = require_approval_center_user()
     if denied: return denied
@@ -55646,6 +55751,7 @@ def approve_lpr(lpr_id):
 @app.route('/reject_lpr/<int:lpr_id>', methods=['POST'])
 @csrf.exempt
 @login_required
+@require_lpr_enabled(as_json=True)
 def reject_lpr(lpr_id):
     denied = require_approval_center_user()
     if denied: return denied
@@ -55672,6 +55778,7 @@ def reject_lpr(lpr_id):
 @app.route('/upload_lpr_attachments/<int:lpr_id>', methods=['POST'])
 @csrf.exempt
 @login_required
+@require_lpr_enabled(as_json=True)
 def upload_lpr_attachments(lpr_id):
     ensure_lpr_tables(); header = db.session.get(LPRHeader, lpr_id)
     if not header or not lpr_can_manage(header) or not lpr_is_editable(header): return jsonify({'success': False, 'error': 'Attachments can only be changed while the LPR is Draft, Rejected, or Returned.'}), 409
@@ -55703,6 +55810,7 @@ def upload_lpr_attachments(lpr_id):
 
 @app.route('/preview_lpr_attachment/<int:attachment_id>')
 @login_required
+@require_lpr_enabled(as_json=True)
 def preview_lpr_attachment(attachment_id):
     attachment, _, error = lpr_authorized_attachment(attachment_id)
     if error: return error
@@ -55713,6 +55821,7 @@ def preview_lpr_attachment(attachment_id):
 
 @app.route('/download_lpr_attachment/<int:attachment_id>')
 @login_required
+@require_lpr_enabled(as_json=True)
 def download_lpr_attachment(attachment_id):
     attachment, _, error = lpr_authorized_attachment(attachment_id)
     if error: return error
@@ -55724,6 +55833,7 @@ def download_lpr_attachment(attachment_id):
 @app.route('/delete_lpr_attachment/<int:attachment_id>', methods=['POST'])
 @csrf.exempt
 @login_required
+@require_lpr_enabled(as_json=True)
 def delete_lpr_attachment(attachment_id):
     ensure_lpr_tables(); attachment = db.session.get(LPRAttachment, clean_int(attachment_id)); header = db.session.get(LPRHeader, clean_int(getattr(attachment, 'lpr_id', None))) if attachment else None
     if not attachment or not header or not lpr_can_manage(header) or not lpr_is_editable(header): return jsonify({'success': False, 'error': 'Attachment not found or LPR is no longer editable.'}), 409
@@ -55742,6 +55852,7 @@ def delete_lpr_attachment(attachment_id):
 @app.route('/delete_all_lpr_attachments/<int:lpr_id>', methods=['POST'])
 @csrf.exempt
 @login_required
+@require_lpr_enabled(as_json=True)
 def delete_all_lpr_attachments(lpr_id):
     ensure_lpr_tables(); header = db.session.get(LPRHeader, lpr_id)
     if not header or not lpr_can_manage(header) or not lpr_is_editable(header): return jsonify({'success': False, 'error': 'Attachments can only be changed while the LPR is Draft, Rejected, or Returned.'}), 409
@@ -55761,6 +55872,7 @@ def delete_all_lpr_attachments(lpr_id):
 @app.route('/resend_lpr_procurement_email/<int:lpr_id>', methods=['POST'])
 @csrf.exempt
 @login_required
+@require_lpr_enabled(as_json=True)
 def resend_lpr_procurement_email(lpr_id):
     denied = require_approval_center_user()
     if denied: return denied
@@ -56661,6 +56773,8 @@ def restore_leave_calendar_after_recall(header, destination):
 def recall_submitted_request(module, record_id):
     """Allow the requester to withdraw their own Submitted request once."""
     module = (clean_str(module) or '').lower()
+    if module == 'lpr' and not lpr_enabled():
+        return lpr_disabled_response()
     entry = RECALL_REQUEST_REGISTRY.get(module)
     if not entry:
         return jsonify({'success': False, 'error': 'This request type cannot be withdrawn.'}), 404

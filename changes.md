@@ -1,5 +1,13 @@
 # Project Change Log
 
+codex changes - 2026-08-14 (reversible LPR availability controls)
+
+* Added default-on `LPR_ENABLED` and `LPR_ACCEPTING_NEW` environment-backed flags, derived accessors, explicit JSON/page denial responses, and route-level hard-off protection for all 28 LPR-shaped routes. Existing LPR tables, stored rows, notification deep links, and PDF builders remain available to parent workflows when the feature is hard-off only where the route policy permits them.
+* Implemented drain behavior so standalone and embedded LPR edits, submitted approvals, returns, procurement-email retries, and requester recall remain usable while new creation is refused. The standalone save guard remains below idempotent replay lookup, and reimbursement submit now validates any existing linked LPR while deleting only stale links when no Office/Field source remains.
+* Preserved Travel Request, Cash Advance, and Reimbursement linked-LPR reads, signature syncing, approval packages, and PDFs while hard-off; the approvals deep link renders an explaining 403 page, while ordinary approvals remain unaffected. Added the `lpr_accepting_new` template flag to prevent the reimbursement page from opening an uncompletable new-LPR modal during drain.
+* Added focused `tests/test_lpr_feature_switch.py` coverage for route census, replay ordering, drain validation/cleanup, off-mode entry points and recall, and Travel/Cash Advance approval plus linked-PDF regressions. Updated the released LPR assertion, bumped the service worker cache to v90, and added the dated release manifest item. Production row census was attempted through authenticated Railway SSH but timed out; both Railway flags remain unchanged/default-on and no `pending-work.md`, database, handoff, output, or temporary artifact is included.
+* Completed local verification with 47 focused LPR tests and 679 full-suite tests passing with one existing skip; Python compilation, authenticated rendered-template inline JavaScript parsing, Jinja template compilation, release-manifest parsing, and `git diff --check` also passed. The execution plan records the census timeout and the eight explicit embedded route-family prefixes covered by the legacy workflow exemption list. No commit, push, deploy, Railway variable change, or protected-artifact staging was performed.
+
 codex changes - 2026-08-14 (Leave Request 1.5-day duration)
 
 * Added the additive `partial_day_position` field to `leave_request`, preserving existing Full Day and Half Day rows while allowing a new `one_and_half_day` duration with `first` or `last` weekday placement and AM/PM validation.

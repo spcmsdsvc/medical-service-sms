@@ -55,6 +55,266 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Turn LPR off reversibly, without stranding what is already in flight
+
+**Status:** `In progress`. **Started:** 2026-08-14, on the owner's explicit "go and execute" instruction.
+The production census remains an operational prerequisite for any later Railway flag change; code
+execution proceeds with both flags defaulting on and no environment change.
+**Approved:** 2026-08-14
+**Detailed:** 2026-08-14, after an exhaustive inventory of all 28 LPR routes, four models, every
+template and nav entry, the approvals and recall integrations, the PDF paths and the eight affected
+test modules. Four claims were checked by reading the code rather than accepted from the exploration
+summaries; one was **false** and is corrected in Investigation.
+
+### Context
+
+Management has stopped accepting digital LPRs and may accept them again later. The feature needs an
+off switch that can be flipped back on without a code change.
+
+**The scaffold already exists.** `lpr_enabled()` (`app.py:340`) and `embedded_lpr_enabled()`
+(`app.py:344`) both hardcode `return True`, both are already injected into every template by
+`inject_feature_flags()` (`app.py:1265`), and roughly 60% of the surfaces already respect them — the
+sidebar link, the approvals tile and its whole script block, the approval scope list, the module
+catalog, the pending badge, the embedded modal, and all three parent pages. **This is finishing
+wiring, not building a kill switch.**
+
+**But hiding LPR naively breaks other modules.** Reimbursement *requires* a linked LPR when
+Office/Field Items has a claimed amount (`app.py:36978-36991`), so with LPR off those reimbursements
+stop being submittable. Travel Request and Cash Advance approval packages embed LPR PDFs for
+already-linked LPRs, so gating the PDF builder makes approving them 500.
+
+### Decisions taken
+
+Owner, 2026-08-14:
+
+| Question | Decision |
+| --- | --- |
+| In-flight LPRs | **Drain, don't strand.** Block new; let submitted ones be approved, returned or withdrawn, and approved ones retry their procurement email |
+| Where the switch lives | **A Railway environment variable**, matching the existing flag precedent. No DB column, no Settings toggle |
+| Reimbursement's LPR requirement | **Dropped while LPR is off**, returning automatically when it is back on |
+| Old LPR links | **An explaining page**, not a silent redirect |
+
+Taken here while planning, with reasons:
+
+1. **Two env booleans, three accessors.** `LPR_ENABLED` and `LPR_ACCEPTING_NEW`, read through the
+   existing `env_flag_enabled()` (`app.py:211`) into `app.config` — this project's testing seam,
+   never `os.environ`. **Both default to `True`, so the repo default is today's behaviour and the
+   suite stays green throughout.** No call site reads the second flag directly; `lpr_accepting_new()`
+   returns `lpr_enabled() and config[...]`. That conjunction is the argument against a three-valued
+   `LPR_MODE`: the only real risk of two booleans is setting one and forgetting the other, and the
+   derived accessor makes that state **structurally unreachable**. A mode string would need a parser,
+   a normalisation table and a rule for unrecognised values — three new failure modes for one saved
+   variable.
+2. **Enforcement is per-route, not the existing path blocklist.** `is_lpr_path()` /
+   `LPR_BLOCKED_PREFIXES` (`app.py:318-333`) cannot express drain mode, because drain splits a
+   *single path* by request content: `POST /save_lpr` **with** an id must succeed and **without** one
+   must refuse. A path blocklist answers per-path only, so using it would block editing of returned
+   LPRs — stranding exactly the population we promised to drain.
+3. **`embedded_lpr_enabled()` follows `LPR_ENABLED`, not accepting-new.** It is a *rendering* flag
+   wrapping the whole embedded modal and the reimbursement "Attached LPR" panel. In drain mode a
+   reimbursement carrying a linked LPR must still be reviewable and correctable, so the panel must
+   still render; creation is blocked inside the write routes instead.
+4. **`ensure_lpr_tables()` keeps running unconditionally** (`app.py:54170`). Gating it causes the
+   exact breakage being avoided: `linked_lpr_records()` is called from Travel Request approval, Cash
+   Advance approval and the accounting ZIP, so with the tables absent those raise `no such table`.
+   Same for `lpr_fill_pdf_bytes()` and `forms/LPR FORM.pdf` — **never gate, never remove.**
+5. **`/lpr` stays open in drain mode.** The nav link is hidden, but `lpr_notification_url()`
+   (`app.py:55207`) has already written `/lpr?lpr_id=N` into notification rows that exist in
+   production. In drain those must land on a working page — it is where a requester withdraws a
+   submitted LPR or fixes a returned one. In off mode it renders the explaining page.
+
+### Investigation
+
+**Four things checked directly. One was false:**
+
+1. **`/save_lpr`'s create branch sits *below* an idempotent replay lookup.** The `else:` branch first
+   queries by `creation_token` and sets `idempotent_replay`, and only then falls into `if not header:`
+   to create (`app.py:55466-55474`). **The guard must go inside `if not header:`.** One level up, a
+   client retrying a save that already succeeded gets a 403 that reads as correct policy while its
+   draft is orphaned. This is risk 2.
+2. **The reimbursement submit has an `elif` that DELETES linked LPRs** (`app.py:36990`). Threading the
+   flag through `office_field_sources` rather than around the whole condition would route every
+   drain-mode submit into that delete. This is risk 1.
+3. **`access_denied.html` takes `denied_title`, `denied_message`, `denied_action_url`,
+   `denied_action_label`**, all defaulted, and `app.py:20318` is the render-with-403 precedent.
+4. **FALSE, and worth recording so it is not repeated:** an exploration pass reported that
+   `/approvals` renders an ungated LPR **tab** from `approval_modules` (`app.py:17437-17444`), and
+   listed it as a must-fix. **It does not.** `approval_modules` is passed to the template and **never
+   consumed by any template** — grep across `templates/` returns nothing. It is dead context. The
+   real tile (`templates/approvals.html:2053`) and the whole LPR script block (`:5678-5924`) are
+   already correctly gated.
+
+**The three in-flight populations** that make "drain" a real requirement rather than a nicety:
+standalone `Submitted` rows sitting in an approver's queue; approved rows with
+`procurement_status='Email Failed'` that a human is expected to retry via
+`/resend_lpr_procurement_email`; and embedded rows attached to live parents, which are excluded from
+the approval queries (`.filter(LPRHeader.parent_module.is_(None))`) because they are approved as part
+of the parent. **Local `scheduler.db` has all four LPR tables with 0 rows**, so none of this could be
+sized here.
+
+### Route behaviour
+
+Drain = `LPR_ENABLED` true, `LPR_ACCEPTING_NEW` false. Off = `LPR_ENABLED` false.
+
+| Surface | Drain | Off |
+| --- | --- | --- |
+| `/lpr` page | serve | **explaining page, 403** |
+| `/approvals?module=lpr&id=N` | serve | **explaining page, 403** |
+| `/save_lpr` — **create branch only** | update ok, **create 403** | 403 |
+| `/save_embedded_lpr` — **create branch only** | update ok, **create 403** | 403 |
+| `/prepare_reimbursement_lpr` — when nothing linked yet | review existing ok, **prepare-new 403** | 403 |
+| `/submit_lpr`, `/approve_lpr`, `/reject_lpr`, `/resend_lpr_procurement_email` | **allow** | 403 |
+| recall | **allow** — withdrawal is a drain action | 403 |
+| reads, previews, downloads, attachments | serve | 403 |
+
+`/submit_lpr` is allowed in drain deliberately: a **Returned** LPR is one an approver explicitly
+asked to be corrected and resubmitted, and it shares a route and an editable-status set with plain
+Drafts. Separating them would mean status-sniffing inside the route. Drafts nobody submits die when
+the switch goes to off.
+
+**Railway operating table** — re-enabling is deleting both variables.
+
+| Intent | `LPR_ENABLED` | `LPR_ACCEPTING_NEW` |
+| --- | --- | --- |
+| Normal (today, and after re-enabling) | unset | unset |
+| Drain — stop intake, finish the queue | unset | `false` |
+| Hard off | `false` | irrelevant |
+
+### Execution steps
+
+Shippable and green after every step.
+
+1. **Production census — read-only, and a prerequisite.** Count `LPRHeader` grouped by `status`,
+   `parent_module IS NULL` and `procurement_status`. **Cannot be answered locally — 0 rows.** It
+   decides whether drain lasts a week or a quarter, and it is what "the queue has emptied" is
+   measured against. On 2026-08-14, the authenticated Railway CLI link was established for the
+   production `web` service, but the read-only `railway ssh` census could not connect to
+   `ssh.railway.com:22` before timing out. No production rows were read and no Railway variable
+   was changed; the owner-operated census remains a prerequisite for a later flag flip.
+2. **Config, accessors, decorators — no behaviour change.** Two `env_flag_enabled(..., default=True)`
+   config lines beside `app.py:219`; replace the hardcoded returns; add `lpr_accepting_new()` with the
+   conjunction and a comment on why it lives there. Generalise `embedded_lpr_disabled_response()`
+   (`app.py:54185`) into `lpr_disabled_response(message)` keeping the old name as a wrapper — its
+   `{'status': 'disabled'}, 403` shape is the project's wire convention for "feature off" as distinct
+   from "not allowed", and 11 call sites plus source tests depend on it. Add
+   `require_lpr_enabled` / `require_lpr_accepting_new` taking an explicit `as_json` rather than
+   sniffing `Accept` (the heuristic at `app.py:1256` exists only because a `before_request` hook has
+   no per-route knowledge), and `lpr_unavailable_page()`.
+   **Done when:** the suite passes unchanged, and forcing `LPR_ENABLED=False` makes
+   `lpr_accepting_new()` False.
+3. **Gate the standalone routes.** `@require_lpr_enabled` on the 15 read/act routes; in `lpr_page()`
+   the check goes **before** the approver-only redirect. **The `save_lpr` guard goes inside
+   `if not header:`, after the replay lookup** — see Investigation 1.
+   **Done when:** off mode 403s every route and `/lpr` returns a 403 **page**, not a 302.
+4. **Embedded creation guards.** `save_embedded_lpr()` — the `else:` create branch only.
+   `prepare_reimbursement_lpr()` — refuse only when nothing is linked yet. Updates stay open in both.
+5. **Relax the reimbursement requirement without enabling the delete.** Restructure `app.py:36977-36991`
+   so the deletion condition is stated **positively** — `elif not office_field_sources and linked_lprs:`
+   — rather than being "whatever the previous branch didn't catch". Add a middle branch for
+   drain/off-with-an-LPR-attached that still validates and still 409s on mismatch. Client side, wrap
+   `templates/reimbursement.html:3813-3820` (which opens the review modal before the server is ever
+   consulted) in a newly injected `lpr_accepting_new` flag.
+   **Done when:** defaults on → the 409 still fires and all 7 integration tests pass; drain +
+   office/field + no LPR → submit succeeds; drain + **no** office/field + a stale LPR → it is still
+   deleted; drain + office/field + one LPR → validation still enforced.
+6. **The explaining page on both entry points** — `lpr_page()` and `approvals_page()` (the latter only
+   when `?module=lpr`, so a plain `/approvals` visit is unaffected). Guard server-side: with the flag
+   off the LPR script block is not rendered, so a client-side check would silently do nothing. While
+   there, comment `approval_modules` as verified-dead context (Investigation 4).
+7. **Recall** — guard the LPR branch on `lpr_enabled`, **not** accepting-new. Leave
+   `RECALL_REQUEST_REGISTRY` structurally intact; `tests/test_request_recall.py:29-37` asserts on its
+   source text.
+8. **Template cosmetics, deliberately minimal.** Only `templates/settings.html:1754` plus step 5's
+   block. **Leave the other ungated LPR references alone** — `approvals.html:2203`/`:2849` are inert
+   copy maps that tests assert on by source text, and `:5359-5362` renders receipt links for an LPR
+   attached to a **reimbursement still in the approval queue**, which is the drain population.
+9. **Blocklist hygiene** — add the embedded route-family prefixes, drop the dead `/mark_lpr_`, and
+   comment that the tuple is an **exemption list for a different flag**, not the LPR switch. During
+   execution the route census identified eight explicit embedded route families rather than five
+   individually named prefixes, so all eight are covered (`get_parent_lprs`,
+   `prepare_reimbursement_lpr`, `save/delete_embedded_lpr`, `delete_all_embedded_lpr_`,
+   `upload_embedded_lpr_`, `preview_embedded_lpr`, and `download_embedded_lpr`). Its incompleteness
+   is latent, not live.
+10. **Tests.** Rewrite `tests/test_lpr_workflow.py:73`, which asserts `lpr_enabled()` is True and is
+    conceptually wrong once the value varies — re-pin it on the *property*. Everything else survives
+    because defaults are `True` and no source is deleted. New `tests/test_lpr_feature_switch.py`,
+    with four that earn their keep: **idempotent replay in drain returns 200 not 403** (the only
+    guard for risk 2); **the anti-deletion pair**; **cross-module regression with `LPR_ENABLED=False`**
+    — approving a Travel Request and a Cash Advance that each carry a linked LPR, and the accounting
+    ZIP still containing the LPR PDF; and **a route census** walking `app.url_map` for every
+    LPR-shaped rule against an explicit allow/deny table, which is what catches the 28th route being
+    added later without a flag.
+11. **Release.** Bump `CACHE_VERSION` — `/lpr` is not in `APP_SHELL`, but `templates/layout.html` is
+    embedded in `/timeline` and `/login`, which **are** precached, so an offline device could still
+    show the LPR nav link. Narrow but real. **Read the live value before committing.** One dated
+    `releases.json` item describing the user-visible reality, not the flag.
+
+### Deliberately excluded
+
+- **Deleting or archiving LPR data.** Every table, attachment, `forms/LPR FORM.pdf` and
+  `STORAGE_PREFIX_LPR` stays — the feature must be resumable, and parent modules read this data.
+- **Gating `ensure_lpr_tables()` or the PDF builder** — decision 4.
+- **A Settings-page toggle** — the owner chose an env var.
+- **Removing `templates/lpr.html`** — `tests/test_appearance_themes.py` requires it, and off mode
+  never renders it.
+- **Purging or rewriting existing LPR notification rows** — they are history; the explaining page is
+  what handles the clicks.
+- **Gating the reimbursement approval detail's LPR receipt links** — step 8.
+
+### Verification
+
+No browser automation, per `AGENTS.md` "Codex App Safety During Testing".
+
+- Full suite with defaults on, then again with the new module. Every new test proved by injection —
+  confirm it applied by needle count **and `git status`**, not by a hash, and read the assertion
+  message rather than the exit code.
+- **Prove step 5 specifically** by reverting its restructure and confirming the two anti-deletion
+  tests fail **for different reasons**.
+- **Hand to the owner:** on a staging deploy in drain mode, that the New LPR refusal produces a
+  sensible message rather than a silent no-op; in off mode, that a real notification link from the
+  database lands on the explaining page and reads correctly on a phone; and that a reimbursement with
+  a linked LPR still shows its receipt links in the approval queue.
+
+**Execution verification completed locally on 2026-08-14:** the focused LPR suites ran 47 tests
+successfully; the full repository suite ran 679 tests with one existing skip. `app.py` and the new
+feature-switch test compiled, the authenticated rendered `reimbursement.html` and `settings.html`
+inline JavaScript parsed with Node, all touched templates compiled through Jinja, the release
+manifest parsed, and `git diff --check` passed. No browser automation, Codex app navigation, commit,
+push, deployment, Railway variable change, intentional project database/schema change,
+`pending-work.md` edit, or protected local-artifact staging was performed. The existing
+test-generated `scheduler.db` worktree modification remains unstaged and excluded. The plan remains
+`In progress` until the owner separately requests publication and a commit hash is available.
+
+### After implementation
+
+- Re-read this plan against the diff and amend this entry if the implementation differed.
+- Dated `changes.md` section, newest first, **with its own heading**.
+- One dated `releases.json` item; re-run `tests/test_changelog_coverage.py` **after** committing.
+- Stage explicitly, file by file. Never `scheduler.db`, `output/`, `tmp/`, or the handoff artifact.
+- Push or deploy only after a separate owner instruction — and note the flag flip itself is a
+  **Railway variable change**, a second, separate decision after the code ships.
+
+### Risks
+
+Ranked by "would ship and nobody notices".
+
+1. **The `elif` deletion in the reimbursement submit.** Silent, permanent, and the victim — a linked
+   LPR row plus its attachments — is invisible to the person submitting. Step 5 and its two tests
+   exist entirely for this.
+2. **The `/save_lpr` guard placed above the replay lookup.** A retrying client 403s on a row it
+   already created; the user reads "disabled" as correct policy while a real draft is orphaned.
+   Invisible to any single-request test.
+3. **A parent approval 500 from a gated PDF path.** If anyone later "cleans up" `ensure_lpr_tables()`
+   or gates the PDF builder, approving a Travel Request or Cash Advance breaks — but only for those
+   that *have* a linked LPR, so it reads as a random 500 rather than a flag consequence.
+4. **Drain-mode reimbursement blocked client-side.** The server would allow the submit; the browser
+   opens an uncompletable modal. The user reports "I can't submit my reimbursement" and nobody
+   connects it to LPR.
+5. **The `/approvals?module=lpr` deep link doing nothing** in off mode — an approver clicks an old
+   email, the page loads, nothing happens, they assume the request vanished.
+6. **A stale offline shell showing the LPR nav.** Offline-only and self-healing on the next online
+   load; the cache bump covers it.
+
 ## Leave Request — support 1.5-day leave
 
 **Status:** `Executed — dbc32d2`

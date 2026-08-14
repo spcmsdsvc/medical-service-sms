@@ -73,8 +73,17 @@ class LPRWorkflowTests(unittest.TestCase):
     def test_lpr_is_enabled_in_the_released_workflow(self):
         self.assertIn("def lpr_enabled()", self.app_source)
         self.assertIsNotNone(app_module)
-        self.assertTrue(app_module.lpr_enabled())
-        self.assertTrue(app_module.embedded_lpr_enabled())
+        self.assertEqual(
+            app_module.lpr_enabled(),
+            bool(app_module.app.config.get('LPR_ENABLED')),
+        )
+        self.assertEqual(
+            app_module.embedded_lpr_enabled(),
+            app_module.lpr_enabled(),
+        )
+        self.assertIn("app.config['LPR_ENABLED'] = env_flag_enabled('LPR_ENABLED', default=True)", self.app_source)
+        self.assertIn("app.config['LPR_ACCEPTING_NEW'] = env_flag_enabled('LPR_ACCEPTING_NEW', default=True)", self.app_source)
+        self.assertIn('def lpr_accepting_new():', self.app_source)
         self.assertIn("{% if lpr_enabled %}", (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8'))
         self.assertIn("{% if lpr_enabled %}", (ROOT / 'templates' / 'approvals.html').read_text(encoding='utf-8'))
 

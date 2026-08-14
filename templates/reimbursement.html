@@ -3811,6 +3811,7 @@ async function saveReimbursementDraft(silent) {
             return;
         }
 
+        {% if lpr_accepting_new %}
         if (reimbursementOfficeFieldTotal(rowsForSubmit) > 0.005) {
             setReimbursementSubmitNotice('Review and confirm the LPR for Office/Field Items.', 'warn');
             const lprConfirmed = await openReimbursementLprForReview(true);
@@ -3819,6 +3820,7 @@ async function saveReimbursementDraft(silent) {
                 return;
             }
         }
+        {% endif %}
 
         const signatureReady = await ensureReimbursementSignatureBeforeSubmit();
         if (!signatureReady) {

@@ -1751,7 +1751,7 @@
         const map = {
             all: 'All Requests',
             reimbursement: 'Reimbursement',
-            lpr: 'LPR',
+            {% if lpr_enabled %}lpr: 'LPR',{% endif %}
             leave_request: 'Leave Request',
             travel_request: 'Travel Request',
             cash_advance: 'Cash Advance',
