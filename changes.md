@@ -8,6 +8,7 @@ codex changes - 2026-08-14 (Leave Request 1.5-day duration)
 * Added focused source and Flask workflow coverage for both partial-day positions and periods, weekend-spanning ranges, invalid ranges on the draft and provisional APIs, interval-specific conflicts, Calendar rows, approval/history responses, and PDF delivery. Added the published 2026-08-14 release entry. No `pending-work.md` or service-worker change is included.
 * Verification passed with 38 focused Leave/recall tests and 670 repository tests, plus Python compilation, inline JavaScript syntax validation, release-manifest parsing, and `git diff --check`. No browser automation or Codex app navigation was used.
 * The approved plan is recorded as executed in `plans.md` under commit `dbc32d2`, pushed on `agent/leave-request-1-5-day`.
+* Promoted the verified Leave Request 1.5-day implementation to the production `main` branch for Railway's GitHub deployment trigger; local `scheduler.db`, the handoff artifact, `output/`, and `tmp/` remain excluded from the promotion.
 
 codex changes - 2026-08-14 (P.O. equipment picker loads all client equipment) — `912681e`
 
