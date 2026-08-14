@@ -108,10 +108,16 @@ class LeaveRequestSourceTests(unittest.TestCase):
         for marker in (
             "duration_type = db.Column(db.String(20), default='full_day', nullable=False)",
             "half_day_period = db.Column(db.String(2), nullable=True)",
+            "partial_day_position = db.Column(db.String(10), nullable=True)",
             "ALTER TABLE leave_request ADD COLUMN duration_type",
             "ALTER TABLE leave_request ADD COLUMN half_day_period",
+            "ALTER TABLE leave_request ADD COLUMN partial_day_position",
             "Half-day leave must use the same From and To date.",
-            "Select AM or PM for a half-day leave.",
+            "Select AM or PM for the half-day portion.",
+            "LEAVE_DURATION_TYPES = {'full_day', 'half_day', 'one_and_half_day'}",
+            "LEAVE_PARTIAL_DAY_POSITIONS = {'first', 'last'}",
+            "1.5-day leave must contain exactly two weekdays.",
+            "Choose whether the half-day is on the first or last weekday.",
         ):
             self.assertIn(marker, self.feature_source)
 
@@ -120,7 +126,9 @@ class LeaveRequestSourceTests(unittest.TestCase):
             "datetime.strptime('08:00', '%H:%M').time(), datetime.strptime('12:00', '%H:%M').time()",
             "datetime.strptime('13:00', '%H:%M').time(), datetime.strptime('17:00', '%H:%M').time()",
             "shift.start_time < request_end and shift.end_time > request_start",
-            "request_start_time < row_end_time and request_end_time > row_start_time",
+            "intervals_overlap(requested_intervals[date], row_intervals[date])",
+            "start_time, end_time, is_partial = interval",
+            "partial_date = leave_dates[0] if position == 'first' else leave_dates[-1]",
             "Half Day - {period}",
         ):
             self.assertIn(marker, self.feature_source)
@@ -128,24 +136,38 @@ class LeaveRequestSourceTests(unittest.TestCase):
     def test_half_day_pdf_email_and_ui_output(self):
         for marker in (
             '0.5 Day (',
-            "'weekday_count': effective_day_count(header)",
+            "1.5 Days ({period} - {position.title()})",
             "'duration_label': duration_label(header)",
+            "'weekday_count': effective_day_count(header)",
+            "f'({duration_label(header)}) is attached.'",
         ):
             self.assertIn(marker, self.feature_source)
         for marker in (
             'leaveDurationHalf',
+            'leaveDurationOneAndHalf',
+            'leavePartialDayField',
+            'leavePartialFirst',
+            'leavePartialLast',
             'leavePeriodAM',
             'leavePeriodPM',
             '0.5 day',
+            '1.5 days',
+            'Choose a range containing exactly 2 weekdays',
             'duration_label',
         ):
             self.assertIn(marker, self.page_source)
         self.assertIn('duration_label', self.approval_source)
+        self.assertIn('duration_label', self.app_source)
 
     def test_release_manifest_contains_half_day_leave(self):
         manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
         release = next(item for item in manifest['releases'] if item['release_key'] == '2026-07-28')
         self.assertTrue(any(item['item_key'] == '2026-07-28-half-day-leave' for item in release['items']))
+
+    def test_release_manifest_contains_one_and_half_day_leave(self):
+        manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
+        release = next(item for item in manifest['releases'] if item['release_key'] == '2026-08-14-leave-one-and-half-day')
+        self.assertTrue(any(item['item_key'] == '2026-08-14-leave-one-and-half-day' for item in release['items']))
 
 
 if __name__ == '__main__':

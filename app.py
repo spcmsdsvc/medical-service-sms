@@ -574,7 +574,7 @@ EMAIL_TEMPLATE_DEFAULTS = {
         'label': 'Leave Request HR Subject',
         'description': 'Subject used when an approved Leave Request is emailed to HR.',
         'template_type': 'subject',
-        'default_template': '[LEAVE REQUEST] {request_no} | {requester} | {leave_type} | {date_range}'
+        'default_template': '[LEAVE REQUEST] {request_no} | {requester} | {leave_type} | {date_range} | {duration_label}'
     }
 }
 
@@ -670,6 +670,7 @@ EMAIL_TEMPLATE_ALLOWED_PLACEHOLDERS = {
         'leave_type',
         'date_range',
         'weekday_count',
+        'duration_label',
         'approved_by'
     ]
 }

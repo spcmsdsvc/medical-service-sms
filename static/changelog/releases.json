@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-14-leave-one-and-half-day",
+      "release_date": "2026-08-14",
+      "title": "1.5-Day Leave Requests",
+      "summary": "Leave Request now supports two-weekday requests with one full day and one selected AM or PM half-day.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-14-leave-one-and-half-day",
+          "category": "Leave Request",
+          "description": "Employees can request 1.5 days across exactly two weekdays, choose whether the first or last weekday is partial, and see the same duration in Calendar, approvals, history, HR handoff, and the PDF form.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-14-po-equipment-picker",
       "release_date": "2026-08-14",
       "title": "P.O. Equipment Picker",

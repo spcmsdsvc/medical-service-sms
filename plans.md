@@ -55,6 +55,122 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Leave Request — support 1.5-day leave
+
+**Status:** `In progress`
+**Approved / started:** 2026-08-14, through the owner's explicit `PLEASE IMPLEMENT THIS PLAN` instruction.
+**Detailed:** 2026-08-14, after tracing the existing full-day/half-day model, UI, Calendar writer,
+conflict checker, PDF field, and Leave Request API.
+
+### Context
+
+Leave Request currently supports Full Day and Half Day only. Half-day records use one AM/PM value
+and the existing Calendar/conflict code applies that one interval to every weekday in the range.
+The owner wants a request that totals 1.5 weekdays while preserving accurate Calendar blocks,
+conflict checks, approvals, PDF output, and history displays.
+
+### Decisions taken
+
+- A 1.5-day request contains exactly two weekdays; weekend gaps are allowed because the existing
+  `weekdays()` helper excludes weekends.
+- One weekday is full day, 08:00–17:00. The other is half day, either 08:00–12:00 or 13:00–17:00.
+- The requester chooses whether the half-day is on the first or last leave weekday and chooses AM
+  or PM. The wire values are `partial_day_position=first|last` and the existing
+  `half_day_period=AM|PM`.
+- Existing Full Day and Half Day records and their stored fields remain compatible. The new schema
+  field is additive and defaults to `NULL` for historical rows.
+- Calendar and conflict logic use split per-date intervals. The unused half of a partial date is
+  not treated as a conflict.
+- The Leave Request page is the user-facing scope. The provisional API accepts the same duration
+  model; the existing Timeline provisional payload remains full-day-only in this change.
+- `pending-work.md` is owner-maintained and will not be edited. No service-worker bump is needed
+  because the page JavaScript is inline and no app-shell asset changes.
+
+### Investigation
+
+- `leave_feature.py:23-24` currently allows only `full_day` and `half_day`; `:72-85` stores the
+  duration and AM/PM but has no field for which date is partial.
+- `leave_feature.py:194-233` counts weekdays, forces half-day requests to one weekday, and applies
+  one `leave_time_range()` to the whole request.
+- `leave_feature.py:359-429` compares conflicts against one interval for every requested date;
+  `:437-487` writes one same-time Calendar row per weekday.
+- `leave_feature.py:499-516`, `:826-868`, and `:899-918` validate self-service save, provisional
+  creation, and conflict checks separately and all need the same 1.5-day rules.
+- `leave_feature.py:322-326`, `:522-631` serialize duration data and fill the official PDF; the
+  existing history, approvals, Accounting, and HR paths already consume the shared payload.
+- `templates/leave_request.html:49-105` has two duration choices, one AM/PM selector, and client
+  logic that locks the end date for half-day requests.
+- `tests/test_leave_request_workflow.py:107-148` currently guards additive half-day schema,
+  Calendar/conflict markers, PDF/API labels, and UI markers; functional API coverage lives in
+  `tests/test_provisional_leave.py`.
+
+### Execution steps
+
+1. **Schema and duration primitives — `leave_feature.py`.** Add the additive
+   `partial_day_position` column and migration, add the `one_and_half_day` duration and
+   `first|last` position validation, and update effective counts/labels/API serialization. Done
+   when legacy full/half payloads normalize exactly as before and 1.5-day payloads return `1.5`
+   with an unambiguous label.
+2. **Per-date intervals — `leave_feature.py`.** Add one shared helper that maps each weekday to
+   its full or half-day time range. Use it in `conflicts()` and `update_calendar()` so schedule
+   conflicts, Leave Request overlaps, provisional supersession, and Calendar rows all follow the
+   same date-specific intervals. Done when a 1.5-day request creates one full block and one
+   correct half block without duplicates.
+3. **All request paths and documents — `leave_feature.py` and `app.py`.** Apply the shared validation
+   to draft save, conflict preview, submission recheck, approval recheck, and provisional creation.
+   Update the PDF Inclusive field and HR/API duration values while retaining old full/half output;
+   add the duration label to the allowed/default HR subject placeholders and handoff body.
+4. **Page controls — `templates/leave_request.html`.** Add the 1.5 Days option, first/last weekday
+   selector, and shared AM/PM selector; keep both dates editable for 1.5 days, show a clear
+   exactly-two-weekdays hint, and update load/reset/payload behavior for existing and new records.
+5. **Regression coverage — `tests/test_leave_request_workflow.py` and functional Leave Request
+   tests.** Cover both partial positions and AM/PM choices, invalid weekday counts and missing
+   metadata, API round trips, split Calendar rows, precise conflict behavior, PDF/history labels,
+   provisional handling, and unchanged Full Day/Half Day behavior.
+6. **Closeout.** Update `changes.md` and the dated release manifest, self-review the diff, run the
+   focused and full suites, Python compilation, inline JavaScript syntax validation, release
+   manifest parsing, and `git diff --check`. Do not use browser automation or Codex app navigation.
+
+### Deliberately excluded
+
+- No balance/accrual calculation or payroll deduction logic is added; the existing effective
+  duration value is extended to `1.5` for downstream displays.
+- No Timeline UI redesign is added for administrators; its existing provisional payload remains
+  full-day-only, though the shared provisional API validator supports 1.5-day data.
+- No historical row rewrite is performed; existing records retain their current duration metadata.
+- No changes to `pending-work.md`, `scheduler.db`, or service-worker assets.
+
+### Verification
+
+- Save and reload 1.5-day requests for first/last weekday and AM/PM combinations; assert
+  `duration_type`, `partial_day_position`, `half_day_period`, effective `weekday_count=1.5`,
+  `calendar_weekday_count=2`, and the duration label.
+- Reject ranges with fewer or more than two weekdays and reject missing/invalid partial-day data.
+- Assert Calendar rows use 08:00–17:00 for the full weekday and 08:00–12:00 or 13:00–17:00 for the
+  partial weekday, including weekend-spanning ranges.
+- Assert conflicts on the full interval and selected half interval block, while the unused half
+  remains available; retain existing Full Day/Half Day conflict controls.
+- Assert submission, approval, rejection, provisional behavior, PDF Inclusive output, HR/API
+  payloads, history, and approval displays preserve 1.5 days.
+- Run focused Leave Request tests, the full repository suite, `python -m py_compile app.py`, inline
+  JavaScript syntax validation, release-manifest parsing, and `git diff --check` locally only.
+
+### After implementation
+
+- Re-read this plan against the diff and amend it if implementation details differ.
+- Add a newest dated `changes.md` entry and a separate dated release item for the user-visible
+  duration option. Record the final commit hash only after the final commit exists.
+- Leave the repository ready for the owner's separate commit/push instruction.
+
+### Risks
+
+- A single interval applied across all weekdays would create false conflicts or wrong Calendar
+  blocks; the shared per-date interval helper and exact row assertions guard this risk.
+- A new duration accepted by save but lost by edit/approval/PDF would create inconsistent records;
+  round-trip tests cover every downstream serializer and lifecycle path.
+- An additive column must not invalidate existing rows; the migration and legacy full/half tests
+  keep the historical schema contract intact.
+
 ## Reimbursement Register: fix the filter and the export, and stop both registers jumping to the top
 
 **Status:** `Executed — 723333b`. Implementation and local verification completed; the implementation

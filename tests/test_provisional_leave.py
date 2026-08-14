@@ -3,7 +3,7 @@ import os
 import pathlib
 import tempfile
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 os.environ.setdefault(
     'MEDICAL_SERVICE_TEST_DB',
@@ -32,6 +32,7 @@ class ProvisionalLeaveWorkflowTests(unittest.TestCase):
         cls.created_user_ids = []
         cls.created_engineer_ids = []
         cls.created_leave_ids = []
+        cls.created_shift_ids = []
 
         with cls.app.app_context():
             app_module.db.create_all()
@@ -154,6 +155,13 @@ class ProvisionalLeaveWorkflowTests(unittest.TestCase):
     def tearDownClass(cls):
         with cls.app.app_context():
             db = app_module.db
+            for shift_id in cls.created_shift_ids:
+                app_module.ShiftEngineer.query.filter_by(shift_id=shift_id).delete(
+                    synchronize_session=False
+                )
+                shift = db.session.get(app_module.Shift, shift_id)
+                if shift:
+                    db.session.delete(shift)
             for leave_id in cls.created_leave_ids:
                 header = db.session.get(app_module.LeaveRequest, leave_id)
                 if header:
@@ -204,6 +212,240 @@ class ProvisionalLeaveWorkflowTests(unittest.TestCase):
             'half_day_period': None,
             'verbal_approval_notes': 'Approved in team chat for testing.',
         }
+
+    @staticmethod
+    def _one_and_half_range(offset=0):
+        """Return two weekdays with a Friday-to-Monday weekend gap."""
+        start = date(2199, 1, 1) + timedelta(weeks=offset)
+        while start.weekday() != 4:
+            start += timedelta(days=1)
+        return start.isoformat(), (start + timedelta(days=3)).isoformat()
+
+    def _direct_shift(self, start_at, end_at, title='Existing schedule'):
+        with self.app.app_context():
+            row = app_module.Shift(
+                title=title,
+                start_time=start_at,
+                end_time=end_at,
+                engineer_id=self.target_engineer_id,
+                status='Scheduled',
+                schedule_type='service',
+            )
+            app_module.db.session.add(row)
+            app_module.db.session.commit()
+            shift_id = row.id
+        self.created_shift_ids.append(shift_id)
+        return shift_id
+
+    def test_one_and_half_day_draft_preserves_both_positions_and_periods(self):
+        client = self._client_as(self.target_user_id)
+        cases = (
+            (0, 'first', 'AM', '1.5 days (AM on first weekday)'),
+            (1, 'last', 'PM', '1.5 days (PM on last weekday)'),
+        )
+        for offset, position, period, expected_label in cases:
+            start, end = self._one_and_half_range(offset)
+            response = client.post('/api/leave-requests/save', json={
+                'leave_type': 'Vacation Leave',
+                'start_date': start,
+                'end_date': end,
+                'duration_type': 'one_and_half_day',
+                'half_day_period': period,
+                'partial_day_position': position,
+                'reason': 'Two-weekday 1.5-day workflow test.',
+            })
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            item = response.get_json()['leave_request']
+            self.created_leave_ids.append(item['id'])
+            self.assertEqual(item['duration_type'], 'one_and_half_day')
+            self.assertEqual(item['half_day_period'], period)
+            self.assertEqual(item['partial_day_position'], position)
+            self.assertEqual(item['weekday_count'], 1.5)
+            self.assertEqual(item['calendar_weekday_count'], 2)
+            self.assertEqual(item['duration_label'], expected_label)
+
+            with self.app.app_context():
+                header = app_module.db.session.get(app_module.LeaveRequest, item['id'])
+                self.assertEqual(header.duration_type, 'one_and_half_day')
+                self.assertEqual(header.half_day_period, period)
+                self.assertEqual(header.partial_day_position, position)
+
+    def test_one_and_half_day_provisional_calendar_has_one_full_and_one_partial_block(self):
+        start, end = self._one_and_half_range(10)
+        payload = self._provisional_payload(start, end)
+        payload.update({
+            'duration_type': 'one_and_half_day',
+            'half_day_period': 'PM',
+            'partial_day_position': 'last',
+        })
+        response = self._client_as(self.superuser_id).post(
+            '/api/leave-requests/provisional', json=payload
+        )
+        self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+        item = response.get_json()['leave_request']
+        self.created_leave_ids.append(item['id'])
+        self.assertEqual(item['duration_label'], '1.5 days (PM on last weekday)')
+
+        with self.app.app_context():
+            rows = sorted(
+                app_module.Shift.query.filter_by(leave_request_id=item['id']).all(),
+                key=lambda row: row.start_time,
+            )
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(rows[0].start_time.time().strftime('%H:%M'), '08:00')
+            self.assertEqual(rows[0].end_time.time().strftime('%H:%M'), '17:00')
+            self.assertEqual(rows[0].title, 'Vacation Leave')
+            self.assertEqual(rows[1].start_time.time().strftime('%H:%M'), '13:00')
+            self.assertEqual(rows[1].end_time.time().strftime('%H:%M'), '17:00')
+            self.assertEqual(rows[1].title, 'Vacation Leave (Half Day - PM)')
+
+    def test_existing_half_day_provisional_calendar_remains_single_interval(self):
+        for offset, period, expected_start, expected_end in (
+            (60, 'AM', '08:00', '12:00'),
+            (61, 'PM', '13:00', '17:00'),
+        ):
+            start, _end = self._one_and_half_range(offset)
+            payload = self._provisional_payload(start, start)
+            payload.update({
+                'duration_type': 'half_day',
+                'half_day_period': period,
+            })
+            response = self._client_as(self.superuser_id).post(
+                '/api/leave-requests/provisional', json=payload
+            )
+            self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+            item = response.get_json()['leave_request']
+            self.created_leave_ids.append(item['id'])
+            self.assertEqual(item['duration_label'], f'0.5 day ({period})')
+            with self.app.app_context():
+                rows = app_module.Shift.query.filter_by(leave_request_id=item['id']).all()
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(rows[0].start_time.strftime('%H:%M'), expected_start)
+                self.assertEqual(rows[0].end_time.strftime('%H:%M'), expected_end)
+
+    def test_one_and_half_day_rejects_invalid_weekday_ranges_on_both_apis(self):
+        single_start, _single_end = self._one_and_half_range(20)
+        more_start = date(2199, 3, 1)
+        while more_start.weekday() != 0:
+            more_start += timedelta(days=1)
+        more_end = more_start + timedelta(days=2)
+        invalid_ranges = (
+            (single_start, single_start),
+            (more_start.isoformat(), more_end.isoformat()),
+        )
+        target_client = self._client_as(self.target_user_id)
+        super_client = self._client_as(self.superuser_id)
+        for start, end in invalid_ranges:
+            draft = target_client.post('/api/leave-requests/save', json={
+                'leave_type': 'Vacation Leave',
+                'start_date': start,
+                'end_date': end,
+                'duration_type': 'one_and_half_day',
+                'half_day_period': 'AM',
+                'partial_day_position': 'first',
+                'reason': 'Invalid range should be rejected.',
+            })
+            self.assertEqual(draft.status_code, 400, draft.get_data(as_text=True))
+            self.assertIn('exactly two weekdays', draft.get_json()['error'])
+
+            provisional = self._provisional_payload(start, end)
+            provisional.update({
+                'duration_type': 'one_and_half_day',
+                'half_day_period': 'AM',
+                'partial_day_position': 'first',
+            })
+            plotted = super_client.post('/api/leave-requests/provisional', json=provisional)
+            self.assertEqual(plotted.status_code, 400, plotted.get_data(as_text=True))
+            self.assertIn('exactly two weekdays', plotted.get_json()['error'])
+
+        missing_position = self._provisional_payload(*self._one_and_half_range(21))
+        missing_position.update({
+            'duration_type': 'one_and_half_day',
+            'half_day_period': 'AM',
+            'partial_day_position': 'middle',
+        })
+        response = super_client.post('/api/leave-requests/provisional', json=missing_position)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('first or last weekday', response.get_json()['error'])
+
+    def test_one_and_half_day_conflicts_are_limited_to_the_requested_intervals(self):
+        start, end = self._one_and_half_range(30)
+        first_date = date.fromisoformat(start)
+        last_date = date.fromisoformat(end)
+        client = self._client_as(self.target_user_id)
+        payload = {
+            'start_date': start,
+            'end_date': end,
+            'duration_type': 'one_and_half_day',
+            'half_day_period': 'PM',
+            'partial_day_position': 'first',
+        }
+
+        # The first weekday's unused AM remains available for a PM partial leave.
+        self._direct_shift(
+            datetime.combine(first_date, datetime.min.time()) + timedelta(hours=8),
+            datetime.combine(first_date, datetime.min.time()) + timedelta(hours=12),
+            title='Morning-only schedule',
+        )
+        available = client.post('/api/leave-requests/check-conflicts', json=payload)
+        self.assertEqual(available.status_code, 200, available.get_data(as_text=True))
+        self.assertFalse(available.get_json()['has_conflicts'])
+
+        # The full-day weekday blocks any overlap on that date.
+        self._direct_shift(
+            datetime.combine(last_date, datetime.min.time()) + timedelta(hours=8),
+            datetime.combine(last_date, datetime.min.time()) + timedelta(hours=9),
+            title='Full-day conflict',
+        )
+        full_conflict = client.post('/api/leave-requests/check-conflicts', json=payload)
+        self.assertEqual(full_conflict.status_code, 200)
+        self.assertTrue(full_conflict.get_json()['has_conflicts'])
+
+        # The selected PM interval on the first weekday still blocks the request.
+        self._direct_shift(
+            datetime.combine(first_date, datetime.min.time()) + timedelta(hours=13),
+            datetime.combine(first_date, datetime.min.time()) + timedelta(hours=14),
+            title='Afternoon conflict',
+        )
+        partial_conflict = client.post('/api/leave-requests/check-conflicts', json=payload)
+        self.assertEqual(partial_conflict.status_code, 200)
+        self.assertTrue(partial_conflict.get_json()['has_conflicts'])
+
+    def test_one_and_half_day_submit_approval_pdf_and_history_keep_duration_label(self):
+        start, end = self._one_and_half_range(40)
+        target_client = self._client_as(self.target_user_id)
+        saved = target_client.post('/api/leave-requests/save', json={
+            'leave_type': 'Sick Leave',
+            'start_date': start,
+            'end_date': end,
+            'duration_type': 'one_and_half_day',
+            'half_day_period': 'AM',
+            'partial_day_position': 'first',
+            'reason': 'Approved 1.5-day duration test.',
+        })
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        leave_id = saved.get_json()['leave_request']['id']
+        self.created_leave_ids.append(leave_id)
+
+        submitted = target_client.post(f'/api/leave-requests/{leave_id}/submit')
+        self.assertEqual(submitted.status_code, 200, submitted.get_data(as_text=True))
+        approved = self._client_as(self.superuser_id).post(
+            f'/api/leave-requests/{leave_id}/approve', json={'remarks': 'Approved 1.5-day test.'}
+        )
+        self.assertEqual(approved.status_code, 200, approved.get_data(as_text=True))
+        approved_item = approved.get_json()['leave_request']
+        self.assertEqual(approved_item['status'], 'Approved')
+        self.assertEqual(approved_item['duration_label'], '1.5 days (AM on first weekday)')
+
+        history = target_client.get('/api/leave-requests')
+        self.assertEqual(history.status_code, 200)
+        history_item = next(item for item in history.get_json()['items'] if item['id'] == leave_id)
+        self.assertEqual(history_item['duration_label'], '1.5 days (AM on first weekday)')
+
+        pdf = target_client.get(f'/download_leave_request/{leave_id}')
+        self.assertEqual(pdf.status_code, 200)
+        self.assertEqual(pdf.mimetype, 'application/pdf')
+        self.assertTrue(pdf.data.startswith(b'%PDF'))
 
     def test_same_record_moves_from_provisional_to_approved_without_duplicates(self):
         start, end = self._range(0)
