@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Turn LPR off reversibly, without stranding what is already in flight
 
-**Status:** `Executed — ae9bf99`. **Started:** 2026-08-14, on the owner's explicit "go and execute" instruction.
+**Status:** `Executed — 8543ba5`. **Started:** 2026-08-14, on the owner's explicit "go and execute" instruction.
 The production census remains an operational prerequisite for any later Railway flag change; code
 execution proceeds with both flags defaulting on and no environment change.
 **Approved:** 2026-08-14
@@ -283,8 +283,10 @@ manifest parsed, and `git diff --check` passed. No browser automation, Codex app
 push, deployment, Railway variable change, intentional project database/schema change,
 `pending-work.md` edit, or protected local-artifact staging was performed. The existing
 test-generated `scheduler.db` worktree modification remains unstaged and excluded. The implementation
-was committed as `ae9bf99`; the branch push is the publication step, while Railway variables and
-deployment remain unchanged.
+was committed as `ae9bf99`, the reviewed hard-off correction as `325e26f`, and the complete verified
+chain was promoted to `origin/main` at `8543ba5` after the owner's later publishing instruction.
+Railway accepted that main commit and completed it successfully with a running instance; Railway
+variables remain unchanged.
 
 **Amended after review, 2026-08-14 — step 5 had drifted from the decision it implements.** The
 shipped condition was `office_field_sources and (lpr_accepting_new() or linked_lprs)`, which keeps
