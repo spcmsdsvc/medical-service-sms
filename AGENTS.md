@@ -26,6 +26,21 @@
   deleting them; where a plan and its outcome differed, that record is the useful part.
 - A plan that changes during execution is amended in `plans.md`, not silently outgrown.
 
+## Git and Railway Publishing
+
+- When the owner says **"commit and push"** (or an equivalent direct instruction), treat it as
+  permission to publish the intended change to the Railway production branch `main`. Pushing an
+  `agent/*` branch alone is not completion. If work was prepared on another branch, commit only
+  the intended files, promote that commit to local `main` with a non-destructive fast-forward,
+  merge, or cherry-pick as appropriate, and push `origin/main`.
+- After publishing, verify both `git ls-remote origin refs/heads/main` and Railway's deployment
+  metadata. Report the production commit and whether Railway has accepted, is building, or has
+  successfully deployed it. Do not change Railway variables or perform a manual redeploy unless
+  the owner explicitly asks for that separate action.
+- Preserve the protected-artifact rule while promoting: never stage or push `scheduler.db`, the
+  handoff artifact, `output/`, `tmp/`, or unrelated worktree changes. If the branch cannot be
+  promoted safely without rewriting or discarding unrelated work, stop and report the blocker.
+
 ## Codex App Safety During Testing
 
 - **Never close, archive, navigate away from, finalize, or otherwise terminate the Codex app,
