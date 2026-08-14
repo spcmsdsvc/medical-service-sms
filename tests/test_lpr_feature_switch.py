@@ -60,7 +60,10 @@ class LPRFeatureSwitchSourceTests(unittest.TestCase):
         submit_start = self.app_source.index('def submit_reimbursement():')
         submit_end = self.app_source.index("@app.route('/download_reimbursement_form", submit_start)
         submit_source = self.app_source[submit_start:submit_end]
-        self.assertIn('if office_field_sources and (lpr_accepting_new() or linked_lprs):', submit_source)
+        self.assertIn(
+            'if office_field_sources and (lpr_accepting_new() or (lpr_enabled() and linked_lprs)):',
+            submit_source,
+        )
         self.assertIn('elif not office_field_sources and linked_lprs:', submit_source)
         self.assertNotIn('elif linked_lprs:', submit_source)
 
@@ -386,6 +389,47 @@ class LPRFeatureSwitchWorkflowTests(unittest.TestCase):
         self.assertEqual(stale_response.status_code, 200, stale_response.get_data(as_text=True))
         with self.app.app_context():
             self.assertIsNone(app_module.db.session.get(app_module.LPRHeader, stale_lpr.id))
+
+    def test_hard_off_drops_the_lpr_requirement_because_every_repair_route_is_shut(self):
+        """Hard-off must not 409 a reimbursement the user can no longer fix.
+
+        Drain keeps the requirement because the Attached LPR panel, the prepare
+        endpoint and the draft-save reconcile are all still reachable.  Hard-off
+        closes each of them, so a mismatched link would strand the reimbursement
+        permanently.  The second half of this test is the part that matters: it
+        proves the repair routes really are shut, so that if any of them is ever
+        reopened this assertion is the place the decision gets revisited.
+        """
+        header, lpr = self._make_reimbursement(office_amount=500, attach_lpr=True, lpr_total=400)
+        self.app.config['LPR_ENABLED'] = False
+
+        response = self._submit_reimbursement(header)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['status'], 'Submitted')
+
+        client = self._client(self.requester_id)
+        for label, probe in (
+            ('prepare', client.get(f'/prepare_reimbursement_lpr/{header.id}')),
+            ('read', client.get(f'/get_parent_lprs/reimbursement/{header.id}')),
+            ('edit', client.post('/save_embedded_lpr', json={
+                'id': lpr.id, 'parent_module': 'reimbursement', 'parent_id': header.id,
+            })),
+            ('delete', client.post(f'/delete_embedded_lpr/{lpr.id}')),
+        ):
+            self.assertEqual(probe.status_code, 403, f'{label} route is reachable while LPR is hard-off')
+
+        with self.app.app_context():
+            self.assertIsNotNone(
+                app_module.db.session.get(app_module.LPRHeader, lpr.id),
+                'the linked LPR must survive a hard-off submit',
+            )
+
+    def test_drain_keeps_the_requirement_and_leaves_the_repair_route_open(self):
+        header, _ = self._make_reimbursement(office_amount=500, attach_lpr=True, lpr_total=400)
+        self.app.config['LPR_ACCEPTING_NEW'] = False
+        prepare = self._client(self.requester_id).get(f'/prepare_reimbursement_lpr/{header.id}')
+        self.assertEqual(prepare.status_code, 200, prepare.get_data(as_text=True))
+        self.assertTrue(prepare.get_json()['item'].get('id'))
 
     def test_travel_and_cash_advance_approval_keep_linked_lpr_pdfs_when_off(self):
         with self.app.app_context():

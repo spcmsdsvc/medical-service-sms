@@ -1,5 +1,85 @@
 # Project Change Log
 
+claude changes - 2026-08-14 (review of the LPR feature switch: one hard-off trap closed)
+
+## The implementation is sound. Both ranked silent-failure risks are correctly handled.
+
+* **679 tests green on arrival, re-run here; 681 after this review.** The two placements the plan
+  called dangerous were checked by running them, not by reading them. The `/save_lpr` drain guard
+  really does sit **below** the `creation_token` replay lookup, so a retried create recovers its
+  draft with a 200 instead of 403-ing onto an orphan. And the reimbursement deletion branch really
+  is stated positively — `elif not office_field_sources and linked_lprs` — so a drain-mode
+  Office/Field submit cannot fall into it.
+* The route census is the right shape: it walks `app.url_map` and asserts the **set** of LPR-shaped
+  rules, so route 29 cannot be added later without a flag. All 28 deny in hard-off — the nine
+  embedded routes via their pre-existing `embedded_lpr_enabled()` checks, which now follow the
+  master switch.
+* **`linked_lpr_records()` losing its gate is the load-bearing change**, and it is right. Travel
+  Request and Cash Advance approvals, their supporting-attachment PDFs and the accounting ZIP all
+  read through it; returning `[]` while off would have silently dropped LPR pages out of approved
+  packages rather than erroring. The cross-module test approves one of each with `LPR_ENABLED=False`
+  and reads the LPR number back out of the generated PDF, which is the proof that matters.
+
+## Fixed: hard-off trapped a reimbursement with a mismatched linked LPR
+
+* The submit guard was `office_field_sources and (lpr_accepting_new() or linked_lprs)` — so whenever
+  a link existed the LPR total was still validated, **in hard-off as well as drain**. Verified by
+  running it: `LPR_ENABLED=False` with a ₱500 Office/Field row against a ₱400 linked LPR returns
+  **409 "LPR items ... must total PHP 500.00"**, and then `/prepare_reimbursement_lpr`,
+  `/get_parent_lprs`, `/save_embedded_lpr` **and `/delete_embedded_lpr` all return 403**. Every route
+  that could fix or remove the offending link is shut. The reimbursement cannot be submitted, edited
+  past the error, or unlinked — a permanent dead end, and the user has no way to connect it to LPR.
+* **Drain is not affected and the distinction is the whole point.** With `LPR_ENABLED` still true the
+  Attached LPR panel renders, `/prepare_reimbursement_lpr` serves the existing link (confirmed: 200),
+  and `reconcile_reimbursement_linked_lpr_drafts()` re-aligns the LPR on every draft save. So in
+  drain the check is a real integrity guard on a repairable object. Hard-off closes all three doors
+  at once, which is what turns the same check into a trap.
+* Now `office_field_sources and (lpr_accepting_new() or (lpr_enabled() and linked_lprs))`. Hard-off
+  drops the requirement, which is **what the owner actually approved** — "Reimbursement's LPR
+  requirement is dropped while LPR is off". The linked row is still not deleted: the cleanup branch
+  requires `not office_field_sources`, so the LPR survives untouched and the requirement returns by
+  itself when the flag comes back.
+* Two tests added to `tests/test_lpr_feature_switch.py`. The hard-off one asserts the 200 **and**
+  probes all four repair routes for 403, so if any of them is ever reopened the assertion is where
+  the decision gets revisited rather than quietly rotting. The drain one pins `/prepare` at 200 with
+  an existing link, which is the door that justifies keeping the check there. Proved by reverting
+  the fix in place: the behavioural test fails `409 != 200` quoting the trapped message, against a
+  passing control. Restored with `read_bytes`/`write_bytes` and confirmed by needle count and
+  `git status`, per the trap recorded below.
+
+## Fixed: the new test module was committed LF while every sibling is CRLF
+
+* `tests/test_lpr_feature_switch.py` went in with 477 LF-only lines. `core.autocrlf` is `true` and
+  there is no `.gitattributes`, so `git diff --check` warned that **LF will be replaced by CRLF the
+  next time git touches the file** — the next checkout would have produced a phantom whole-file diff.
+  `tests/test_lpr_workflow.py` beside it is CRLF. Normalized to CRLF; the warning is gone.
+* **This is the third variant of the line-ending trap in these journals, and it is the inverse of the
+  2026-08-13 one.** That entry's lesson was "read what the file actually uses" — for the Markdown
+  journals, LF. The missing half is that *a new file has no existing endings to read*, so the rule
+  becomes **match the siblings in that directory**: `.py` and `.html` here are CRLF, the `.md`
+  journals are LF.
+
+## Noted, not changed: `require_lpr_accepting_new` is never used
+
+* The plan specified both decorators, but no route could take the second one — every creation route
+  (`/save_lpr`, `/save_embedded_lpr`, `/prepare_reimbursement_lpr`) also has an edit branch that must
+  stay open in drain, so all three guards ended up inline. `require_lpr_enabled` is used 18 times;
+  its partner is used **zero**, and a source test asserts it exists, which pins the scaffolding in
+  place. Harmless, and arguably useful if a create-only LPR route is ever added — flagged so the
+  choice to keep or drop it is deliberate.
+
+## Also checked, and correct
+
+* **The drain refusal is visible, not silent.** `api()` in `templates/lpr.html` falls back to
+  `data.message`, which is where `lpr_disabled_response()` puts its text — so "New Local Purchase
+  Requisitions are temporarily unavailable." reaches the toast. That was ranked risk 4.
+* **The `{% if lpr_accepting_new %}` wrapper cannot strand a reimbursement**, because the panel it
+  would have opened only renders when a link already exists. Drain with no LPR: no modal, and the
+  server now agrees.
+* **`is_lpr_path()` / `LPR_BLOCKED_PREFIXES` is dead either way.** Checked every prefix against
+  `NEW_WORKFLOW_BLOCKED_PREFIXES` — **none overlap**, so the exemption list has never exempted
+  anything. The eight added prefixes are correct and equally inert, as the plan says.
+
 codex changes - 2026-08-14 (reversible LPR availability controls)
 
 * Added default-on `LPR_ENABLED` and `LPR_ACCEPTING_NEW` environment-backed flags, derived accessors, explicit JSON/page denial responses, and route-level hard-off protection for all 28 LPR-shaped routes. Existing LPR tables, stored rows, notification deep links, and PDF builders remain available to parent workflows when the feature is hard-off only where the route policy permits them.

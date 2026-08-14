@@ -37006,11 +37006,13 @@ def submit_reimbursement():
 
         office_field_sources = reimbursement_lpr_sources(header)
         linked_lprs = linked_lpr_records('reimbursement', header.id)
-        if office_field_sources and (lpr_accepting_new() or linked_lprs):
-            # When LPR intake is draining or hard-off, an already-linked LPR
-            # is still validated. A reimbursement with no linked LPR may pass
-            # because new LPR creation is unavailable; this preserves the
-            # parent workflow without weakening an existing link's integrity.
+        if office_field_sources and (lpr_accepting_new() or (lpr_enabled() and linked_lprs)):
+            # In drain mode an already-linked LPR is still validated, because
+            # every repair route stays open: the Attached LPR panel renders,
+            # /prepare_reimbursement_lpr serves an existing link, and the draft
+            # save reconciles it. Hard-off closes all of those, so validating
+            # there would 409 a reimbursement with no way left to fix it --
+            # the requirement is dropped instead, exactly as approved.
             if len(linked_lprs) != 1:
                 return jsonify({
                     'success': False,

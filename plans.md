@@ -286,6 +286,19 @@ test-generated `scheduler.db` worktree modification remains unstaged and exclude
 was committed as `ae9bf99`; the branch push is the publication step, while Railway variables and
 deployment remain unchanged.
 
+**Amended after review, 2026-08-14 — step 5 had drifted from the decision it implements.** The
+shipped condition was `office_field_sources and (lpr_accepting_new() or linked_lprs)`, which keeps
+validating the linked LPR **in hard-off as well as drain**. The Decisions table says the requirement
+is *dropped while LPR is off*, and the drift is not cosmetic: in hard-off, `/prepare_reimbursement_lpr`,
+`/get_parent_lprs`, `/save_embedded_lpr` and `/delete_embedded_lpr` all 403, and
+`reconcile_reimbursement_linked_lpr_drafts()` is gated too, so a mismatched link produces a 409 with
+**no route left to repair or remove it**. Drain is genuinely different — every one of those doors is
+open there — which is why the check is kept in drain and dropped in off:
+`office_field_sources and (lpr_accepting_new() or (lpr_enabled() and linked_lprs))`. The linked row is
+still never deleted, because the cleanup branch requires `not office_field_sources`. Two tests added
+to `tests/test_lpr_feature_switch.py`; suite now 681. **This belongs on the risk list as risk 1b** —
+same branch, same silence, one flag further on.
+
 ### After implementation
 
 - Re-read this plan against the diff and amend this entry if the implementation differed.
