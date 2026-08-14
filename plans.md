@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Leave Request — support 1.5-day leave
 
-**Status:** `In progress`
+**Status:** `Executed — dbc32d2`
 **Approved / started:** 2026-08-14, through the owner's explicit `PLEASE IMPLEMENT THIS PLAN` instruction.
 **Detailed:** 2026-08-14, after tracing the existing full-day/half-day model, UI, Calendar writer,
 conflict checker, PDF field, and Leave Request API.

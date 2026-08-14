@@ -7,6 +7,7 @@ codex changes - 2026-08-14 (Leave Request 1.5-day duration)
 * Updated the HR subject placeholder set and handoff body so the duration label identifies 1.5-day requests, and updated `templates/leave_request.html` with the 1.5 Days option, first/last weekday selector, shared AM/PM controls, editable two-date range, and an exact-two-weekday validation hint.
 * Added focused source and Flask workflow coverage for both partial-day positions and periods, weekend-spanning ranges, invalid ranges on the draft and provisional APIs, interval-specific conflicts, Calendar rows, approval/history responses, and PDF delivery. Added the published 2026-08-14 release entry. No `pending-work.md` or service-worker change is included.
 * Verification passed with 38 focused Leave/recall tests and 670 repository tests, plus Python compilation, inline JavaScript syntax validation, release-manifest parsing, and `git diff --check`. No browser automation or Codex app navigation was used.
+* The approved plan is recorded as executed in `plans.md` under commit `dbc32d2`, pushed on `agent/leave-request-1-5-day`.
 
 codex changes - 2026-08-14 (P.O. equipment picker loads all client equipment) — `912681e`
 
