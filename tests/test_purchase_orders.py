@@ -536,6 +536,19 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         self.assertIn("return product?.end_warranty ? `Warranty ends ${product.end_warranty}` : '';", html)
         self.assertIn("productCoverageDisplay(product),", html)
 
+    def test_purchase_order_machine_picker_loads_all_client_equipment(self):
+        client = self._client_for(self.po_user_id)
+        page = client.get('/po_details')
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        machine_matches = html.split(
+            "matches = state.products.filter((product) => {",
+            1,
+        )[1].split("if (!matches.length)", 1)[0]
+        self.assertNotIn('.slice(0, 10)', machine_matches)
+        self.assertIn('max-height: 13rem;', html)
+        self.assertIn('overflow-y: auto;', html)
+
     def test_multi_machine_add_edit_replaces_links_and_returns_full_response(self):
         client = self._client_for(self.po_user_id)
         second_serial = f'PO-MULTI-SECOND-{self.suffix}'

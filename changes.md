@@ -1,5 +1,13 @@
 # Project Change Log
 
+codex changes - 2026-08-14 (P.O. equipment picker loads all client equipment) — `912681e`
+
+* Updated `templates/po_details.html` so the selected client's equipment autocomplete renders every matching Product record instead of truncating the equipment branch at ten results. The existing scrollable result container remains the native way to review long lists, while the separate client-search cap remains unchanged.
+* Added `test_purchase_order_machine_picker_loads_all_client_equipment` to `tests/test_purchase_orders.py`, guarding the removal of the equipment-only cap and the result-list scroll behavior.
+* Added the all-equipment picker correction to the published 2026-08-14 release manifest in `static/changelog/releases.json`. No service-worker bump is needed because the behavior is in the inline P.O. Details template script.
+
+* Verification passed with 35 focused purchase-order/product-contract tests and 663 repository tests with one environment-dependent skip, plus Python compilation, inline JavaScript syntax validation, release-manifest parsing, and `git diff --check`. No browser automation or Codex app navigation was used.
+
 claude changes - 2026-08-14 (review of the register fixes: one contrast floor, three journal corrections)
 
 ## The implementation is sound. No code defect found.

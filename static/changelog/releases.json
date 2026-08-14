@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-14-po-equipment-picker",
+      "release_date": "2026-08-14",
+      "title": "P.O. Equipment Picker",
+      "summary": "P.O. Details now loads every equipment record registered to the selected client instead of stopping after the first ten.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-14-po-equipment-picker-all-results",
+          "category": "P.O. Details",
+          "description": "The equipment picker now shows all equipment registered to the selected client; the scrollable result list no longer truncates the client at ten machines.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-14-register-toast-contrast",
       "release_date": "2026-08-14",
       "title": "Register Confirmation Contrast",

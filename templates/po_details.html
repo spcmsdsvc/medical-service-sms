@@ -976,7 +976,7 @@
                     if (Number(product.client_id) !== clientId) return false;
                     const haystack = `${product.serial_number || ''} ${product.name || ''}`.toLowerCase();
                     return !query || haystack.includes(query);
-                }).slice(0, 10);
+                });
                 if (!matches.length) {
                     appendAutocompleteMessage(
                         results,
