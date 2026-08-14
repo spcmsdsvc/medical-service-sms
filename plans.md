@@ -57,9 +57,14 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Turn LPR off reversibly, without stranding what is already in flight
 
-**Status:** `Executed — 8543ba5`. **Started:** 2026-08-14, on the owner's explicit "go and execute" instruction.
+**Status:** `Executed — ae9bf99`, reviewed in `325e26f`; promoted to `origin/main` and deployed at
+`6e375f6`. **Started:** 2026-08-14, on the owner's explicit "go and execute" instruction.
 The production census remains an operational prerequisite for any later Railway flag change; code
 execution proceeds with both flags defaulting on and no environment change.
+**Corrected 2026-08-14:** this line read `Executed — 8543ba5`, which is the *AGENTS.md publishing
+rule* commit that happened to be the branch head when the promotion ran — not this plan's
+implementation. Same shape as the `a0e06bf` mis-credit corrected in `changes.md` hours earlier:
+**the head at publish time is not the commit that did the work.**
 **Approved:** 2026-08-14
 **Detailed:** 2026-08-14, after an exhaustive inventory of all 28 LPR routes, four models, every
 template and nav entry, the approvals and recall integrations, the PDF paths and the eight affected
