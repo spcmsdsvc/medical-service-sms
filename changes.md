@@ -1,13 +1,71 @@
 # Project Change Log
 
-codex changes - 2026-08-13 (P.O. equipment coverage display) — `a0e06bf`
+claude changes - 2026-08-13 (review of the register fixes: one contrast floor, three journal corrections)
+
+## The implementation is sound. No code defect found.
+
+* **661 tests green, re-run here.** Every ranked risk from the plan was verified individually: the
+  KPI scope caption exists, the TOTAL row is a literal `Decimal` in F/G **outside** `auto_filter.ref`,
+  the server takes `engineer_id` with validation while the legacy name path keeps its all-digit
+  warning log, and both templates carry zero `window.scrollTo` and no wholesale `className` write.
+* **The toast honours the design decision it was given** — surface and text from
+  `--app-surface-raised` / `--app-text` / `--app-border`, tone on a border and icon rather than a
+  tinted background. Body contrast measures **12.91:1 in dark**. There is even a test asserting
+  those tokens are present, so the decision is guarded rather than merely implemented.
+* The D1 regression test reads the workbook with **`data_only=True`**, which is the exact proof that
+  a formula would have failed — the reason the literal total was specified over `=SUM()`.
+
+## Fixed: the warning toast missed the non-text contrast floor in light mode
+
+* A fixed colour on a themed surface has **two** contrast ratios, not one. `#fd7e14` measured
+  **5.50:1 on the dark surface and 2.46:1 on the light one**, below the WCAG 1.4.11 floor of 3:1 for
+  a border and an icon. Now `#bf6b0f` — **3.58:1 dark, 3.77:1 light**.
+* **Correcting the review that raised this:** it implied success and danger were also short. They are
+  not — `#198754` and `#dc3545` both measure 3.12:1 dark and 4.33:1 light, so they pass. **Only the
+  warning tone failed.** The margin on the other two is 0.12, which is why the new guard covers all
+  three rather than the one that was wrong.
+* `test_toast_tone_colours_clear_the_non_text_contrast_floor_in_both_themes` parses
+  `--app-surface-raised` from **both** theme blocks and every `.page-toast.<tone>` colour from both
+  templates, so it fails if a tone changes **or** if the surface token is retuned underneath colours
+  that pass today. Proved by injection: restoring `#fd7e14` fails with
+  `2.46 not greater than or equal to 3.0`, naming the colour and the surface, against a passing
+  control. Restored with `read_bytes`/`write_bytes` and confirmed against `git status`, per the trap
+  recorded below.
+* **No existing guard could have caught this.** The repo-wide token test only sees *undefined*
+  tokens, and a hardcoded literal is by definition defined.
+
+## Fixed: changes.md credited a commit that is not on main
+
+* The P.O. equipment entry cited `a0e06bf`, which is **orphaned**. The shipped commit is `7c87be3`,
+  and the *only* difference between the two is the line adding that hash.
+* **A commit cannot record its own hash** — writing the hash changes the hash. The pattern that works
+  is already in this file nine seconds earlier: `723333b` was committed reading *"commit pending"*
+  and the follow-up `c4aa37b` filled in the real hash. Use that, or cite nothing.
+
+## Fixed: the relocation note had been split in half
+
+* A new dated entry was inserted **inside** the 2026-08-13 relocation blockquote, leaving its first
+  paragraph above the entry and its remaining two below. The note is now whole again and sits
+  directly above the four entries it describes. Nothing was reworded.
+* Worth noting the convention itself held: both new features got their own dated headings. Only the
+  blockquote was interrupted.
+
+## Corrected: "one pre-existing skip" is not a property of this suite
+
+* Several entries — **including mine** — quote the suite as "N tests, one pre-existing skip" as
+  though the skip were fixed. It is not. It is
+  `test_latest_user_facing_commit_has_a_changelog_entry`, which **skips when the newest commit
+  touches only `tests/` or `.md`** and **runs** when it touches user-facing paths.
+* So the count moves with what was committed last, not with the health of the suite. Right now HEAD
+  touches `templates/`, the test runs and passes, and the suite reports **661 with no skip at all**.
+* Quote the test count; treat the skip as a statement about the last commit, not the suite.
+
+codex changes - 2026-08-13 (P.O. equipment coverage display) — `7c87be3`
 
 * Updated `templates/po_details.html` so the equipment autocomplete reads the Product record's `under_contract` flag before displaying warranty information. Contract-backed equipment now shows `Under Contract`; non-contract equipment retains its warranty-end label.
 * Added `test_purchase_order_machine_picker_matches_product_contract_flag` to `tests/test_purchase_orders.py` as a regression check for the database-backed display precedence.
 * Added the P.O. equipment coverage correction to the published 2026-08-13 release manifest in `static/changelog/releases.json`.
 * Verification passed with 34 focused purchase-order/product-contract tests and 661 repository tests with one pre-existing skip, plus Python compilation, inline JavaScript syntax validation, release-manifest parsing, and `git diff --check`. No browser automation or Codex app navigation was used.
-
-> **Relocated, not rewritten, on 2026-08-13.** The four entries below arrived appended as bullets inside the `claude changes - 2026-08-13` review entry further down, with no dated headings of their own. The text is moved verbatim and split by commit; nothing was reworded or removed.
 
 codex changes - 2026-08-13 (Reimbursement Register filters, exports, and fixed confirmations) — `723333b`
 
@@ -16,6 +74,8 @@ codex changes - 2026-08-13 (Reimbursement Register filters, exports, and fixed c
 * Replaced scroll-to-top register notifications in both `templates/reimbursement_tracker.html` and `templates/po_details.html` with fixed-position, theme-token toasts. Retained each page's visually-hidden live region for screen-reader announcements, avoided wholesale `className` replacement so `no-print` and layout state remain intact, and prevented confirmation alerts from appearing in printouts.
 * Added focused coverage for viewed-batch export selection, exact engineer filtering, dated filenames, TOTAL-row arithmetic and filter boundaries, KPI/export wiring, and parity of the accessible toast pattern across both register pages. Added a separate published 2026-08-13 release entry in `static/changelog/releases.json`.
 * Verification passed locally with 30 focused Reimbursement Tracker tests, 12 appearance/theme tests, and 660 repository tests with one pre-existing skip. Python and inline JavaScript syntax, release-manifest parsing, and `git diff --check` also passed; no service-worker bump was needed because only inline page scripts/templates changed.
+
+> **Relocated, not rewritten, on 2026-08-13.** The four entries below arrived appended as bullets inside the `claude changes - 2026-08-13` review entry further down, with no dated headings of their own. The text is moved verbatim and split by commit; nothing was reworded or removed.
 >
 > **This is the second time.** The same misfiling was corrected on 2026-08-12 with the reason spelled out — an entry appended into the middle of an older one is invisible to anyone scanning for the latest change, and misattributes the work while it sits there. Four features were credited to a review of unrelated work. **Newest entry at the top, with its own dated heading, is the whole convention.**
 >

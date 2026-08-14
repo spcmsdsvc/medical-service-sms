@@ -10,8 +10,15 @@ maintained automatically the way `changes.md` is.
 Last updated: 2026-08-13, at the owner's request, after a P.O. may now cover **several** machines —
 built, reviewed here, and pushed one day after the one-machine version shipped.
 
-**Start here if you are picking this up cold.** Suite green at **653 tests** with one pre-existing
-skip. `origin/main` was at `d8507e2` when this was written, with the local branch in sync.
+**Start here if you are picking this up cold.** Suite green at **661 tests**. **Do not quote "one
+pre-existing skip" — that is not a property of this suite**, and several entries in these journals
+have repeated it as though it were. The skip is
+`test_latest_user_facing_commit_has_a_changelog_entry`, which **skips when the newest commit touches
+only `tests/` or `.md`** and **runs when it touches user-facing paths**. So the number moves with
+what was committed last, not with the health of the suite; as written, `HEAD` touched `templates/`
+and the suite reported 661 with **no** skip. Quote the test count and treat the skip as a statement
+about the last commit. `origin/main` was at `7c87be3` when this was written, with the local branch in
+sync.
 **Confirm both with `git log --oneline -1` and
 `git rev-list --left-right --count origin/main...HEAD` rather than this line.** It has now gone
 stale five times, once inside an hour. **A commit hash in a document is a timestamp, not a fact.**

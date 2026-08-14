@@ -78,6 +78,66 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             f'{offenders}',
         )
 
+    def test_toast_tone_colours_clear_the_non_text_contrast_floor_in_both_themes(self):
+        """A fixed colour on a themed surface has two contrast ratios, not one.
+
+        The register toasts carry their tone on a left border and an icon rather than a
+        tinted background -- deliberately, because an unresolved or fixed-light background
+        inverts under themed text, which is the defect class this repo has shipped twice.
+        But a fixed tone colour still sits on a surface that changes, so it must clear the
+        WCAG 1.4.11 non-text floor of 3:1 against BOTH `--app-surface-raised` values.
+
+        It did not. The warning tone shipped as `#fd7e14`: 5.50:1 on the dark surface and
+        **2.46:1 on the light one**. Nothing was unreadable -- the message text is
+        `--app-text` at 12.91:1 -- so the eye passes over it, and no existing guard could
+        catch it: the repo-wide token test only sees undefined tokens, and a hardcoded
+        literal is by definition defined.
+
+        This asserts the class rather than the three current values, so it also fails if
+        someone later retunes `--app-surface-raised` underneath colours that pass today.
+        Success and danger clear the floor by only ~0.12 on the dark surface, so that is
+        not a hypothetical.
+        """
+        themes = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
+        surfaces = re.findall(r'--app-surface-raised:\s*(#[0-9a-fA-F]{6})', themes)
+        self.assertEqual(
+            len(surfaces), 2,
+            f'expected one light and one dark --app-surface-raised, found {surfaces}',
+        )
+
+        def relative_luminance(value):
+            channels = [int(value.lstrip('#')[index:index + 2], 16) / 255 for index in (0, 2, 4)]
+            linear = [
+                channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4
+                for channel in channels
+            ]
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+        def contrast(first, second):
+            lighter, darker = sorted(
+                (relative_luminance(first), relative_luminance(second)), reverse=True
+            )
+            return (lighter + 0.05) / (darker + 0.05)
+
+        for name in ('reimbursement_tracker.html', 'po_details.html'):
+            template = (ROOT / 'templates' / name).read_text(encoding='utf-8')
+            tones = dict(re.findall(
+                r'\.page-toast\.([a-z]+)\s*\{\s*border-left-color:\s*(#[0-9a-fA-F]{6})',
+                template,
+            ))
+            self.assertEqual(
+                set(tones), {'success', 'warning', 'danger'},
+                f'{name}: expected three toast tones, found {sorted(tones)}',
+            )
+            for tone, colour in sorted(tones.items()):
+                for surface in surfaces:
+                    ratio = contrast(colour, surface)
+                    self.assertGreaterEqual(
+                        round(ratio, 2), 3.0,
+                        f'{name}: the {tone} toast tone {colour} measures {ratio:.2f}:1 on '
+                        f'{surface}, below the 3:1 floor for a border and icon',
+                    )
+
     def test_shared_theme_assets_and_controls_are_present(self):
         layout = (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8')
         settings = (ROOT / 'templates' / 'settings.html').read_text(encoding='utf-8')
