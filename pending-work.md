@@ -7,25 +7,37 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last updated: 2026-08-14, at the owner's request, after the Reimbursement Tracker moved to shared
-server-owned batches and its filters and export were repaired.
+Last updated: 2026-08-14, at the owner's request, after LPR gained a reversible off switch and the
+review of it closed a hard-off trap.
 
-**Start here if you are picking this up cold.** Suite green at **662 tests**. **Do not quote "one
+**Start here if you are picking this up cold.** Suite green at **681 tests**. **Do not quote "one
 pre-existing skip" — that is not a property of this suite**, and several entries in these journals
 have repeated it as though it were. The skip is
 `test_latest_user_facing_commit_has_a_changelog_entry`, which **skips when the newest commit touches
 only `tests/` or `.md`** and **runs when it touches user-facing paths**. So the number moves with
 what was committed last, not with the health of the suite. Quote the test count and treat the skip as
-a statement about the last commit. `origin/main` was at `a5f6d3f` when this was written, with the
-local branch in sync; the service worker read `v89-analytics-system-start`.
+a statement about the last commit. `origin/main` was at `6e375f6` when this was written, with the
+local `agent/leave-request-1-5-day` branch identical to it; the service worker read
+`v90-lpr-feature-switch`.
 **Confirm all three with `git log --oneline -1`,
 `git rev-list --left-right --count origin/main...HEAD`, and by reading `CACHE_VERSION` out of
-`app.py` — never from this note.** The tip line has now gone stale six times, once inside an hour.
+`app.py` — never from this note.** The tip line has now gone stale seven times, once inside an hour.
 **A commit hash in a document is a timestamp, not a fact** — and note that a commit *cannot* record
 its own hash, because writing it changes it; see section 6. The working tree carries **four** local
 artifacts: `scheduler.db`, `output/`, `tmp/`, and the loose 2026-07-26 handoff file.
 
 **`Handoffs/` is tracked**, by the owner's decision on 2026-08-11 — see section 4.
+
+> ### "Commit and push" now means publish to `origin/main` — added to `AGENTS.md` on 2026-08-14
+>
+> New section **"Git and Railway Publishing"** (`8543ba5`). `main` is Railway's production branch, so
+> a direct "commit and push" is permission to get the intended change **onto `origin/main`** —
+> pushing an `agent/*` branch alone is **not completion**. Promote non-destructively (fast-forward,
+> merge or cherry-pick), then verify **both** `git ls-remote origin refs/heads/main` and Railway's
+> deployment metadata, and report the production commit plus whether Railway accepted, is building,
+> or deployed. Changing a Railway **variable** and triggering a manual redeploy stay separate actions
+> that need their own instruction. The protected-artifact rule survives promotion unchanged: if the
+> branch cannot be promoted without rewriting or discarding unrelated work, **stop and report**.
 
 > ### ⚠️ Read before planning any verification: browser automation is no longer available here.
 >
@@ -43,17 +55,81 @@ artifacts: `scheduler.db`, `output/`, `tmp/`, and the loose 2026-07-26 handoff f
 > used to catch by eye. Where that is genuinely impossible, say so plainly and hand the step to the
 > owner, exactly as the `ResizeObserver` item was handed over on 2026-08-09.
 
-**There is no open defect.** Section 1 is empty. But **six things are waiting on the owner rather
+**There is no open defect.** Section 1 is empty. But **eight things are waiting on the owner rather
 than on code** — they are listed first because none of them will resolve themselves:
 
 | Waiting on | Why it matters |
 | --- | --- |
+| **The LPR production census has never run** — added 2026-08-14 | It is step 1 of the LPR plan and an explicit **prerequisite for flipping either flag**: count `LPRHeader` grouped by `status`, by `parent_module IS NULL`, and by `procurement_status`. It decides whether drain lasts a week or a quarter, and it is the only thing "the queue has emptied" can be measured against. **It cannot be answered here — the local database has 0 LPR rows in all four tables.** Codex authenticated the Railway CLI on 2026-08-14 but `railway ssh` timed out against `ssh.railway.com:22`, so no production row was ever read |
+| **The LPR switch is built and shipped but has never been flipped** — added 2026-08-14 | `LPR_ENABLED` and `LPR_ACCEPTING_NEW` both **default to on**, and neither Railway variable has been set, so production behaviour today is exactly what it was before. Re-enabling later is **deleting both variables**; drain is `LPR_ACCEPTING_NEW=false` alone; hard-off is `LPR_ENABLED=false`. **A Railway variable change is a separate decision from shipping the code** and needs its own instruction. Do the census first |
 | **The tracker migration REWRITES every existing reimbursement row** — added 2026-08-14 | On the first request after deploy, `ensure_reimbursement_tracker_schema()` (`app.py:3732`) forces **every** `reimbursement_tracker_entry` to `BATCH-032`, `batch_sequence = 32`, **and a rebuilt control number**. That was approved in the plan and is ranked as its own risk 1 — but it is the only migration in this project that *rewrites* rows rather than adding to them, and control numbers are what Accounting identifies a reimbursement by. **If Diary has already printed, filed or emailed anything carrying an old control number, it will no longer match.** The local database holds **0 tracker rows**, so this could not be exercised here at all. **Count the rows before and after the deploy, and tell Diary before she notices** |
 | **89 of 145 clients have no equipment registered in Products** — added 2026-08-12 | A P.O. now requires a machine, and the picker deliberately offers **no free-text fallback**, so **P.O. entry is blocked for those clients until Products is backfilled**. This is the change users will feel first and it will read as breakage unless someone tells them it is deliberate. **Measured on the tracked local `scheduler.db`, not production** — 145 clients, 99 products, all assigned, across 56 distinct clients. Re-measure against the live database before acting on it |
 | **The `reimbursement_tracker_paid_cc` group has zero recipients** | Verified in the live database. The Paid in Full notification therefore reaches the engineer with **nobody copied**. Add recipients in Settings → Email Recipients. The feature works; it is just uncopied |
 | **Four engineers have no email address** — Kevin Garoche, Mark Felongco, Jocel Prudente, John Erick Wong | Marking their rows paid saves fine and shows Diary a warning, but nobody is notified. Fix in Personnel |
 | **Jocel Prudente still reads `JP` in the local database** | The `JP → JOP` correction runs on the first request after deploy. **The code has now been pushed**, so unlike the previous refresh this is finally *confirmable* — one glance at Personnel in production closes it. Confirm rather than assume |
 | **The tracker holds 0 rows** | So the amount-suggestion chips show nothing yet, and the export is empty. Both fill in as Diary files batches — expected, not a fault |
+
+### LPR got a reversible off switch — three commits, 2026-08-14
+
+Management stopped accepting digital LPRs and may accept them again, so the feature needed a switch
+that flips back without a code change. Built by Codex from the plan in `plans.md`, reviewed here.
+
+| Commit | What |
+| --- | --- |
+| `ae9bf99` | The two flags, the three accessors, the two decorators, 28 gated routes, the explaining page |
+| `325e26f` | **Review fix** — hard-off trapped a reimbursement whose linked LPR no longer matched |
+| `8543ba5`, `6e375f6` | The `AGENTS.md` publishing rule, and the promotion record |
+
+**Five things to know before touching any of it:**
+
+1. **There are three states, not two, and the third is the whole design.** *Normal* (both flags
+   unset), *drain* (`LPR_ACCEPTING_NEW=false` — refuse new requests, let everything in flight
+   finish), *hard-off* (`LPR_ENABLED=false`). `lpr_accepting_new()` is **derived** —
+   `lpr_enabled() and config[...]` — which makes "off but still accepting new" structurally
+   unreachable rather than merely discouraged. **Do not add a third variable or turn this into a
+   mode string.**
+2. **`linked_lpr_records()` is deliberately ungated, and that is load-bearing.** Travel Request
+   approval, Cash Advance approval, both supporting-attachment PDF builders and the accounting ZIP
+   all read through it. It used to return `[]` when the feature was off, which would have silently
+   dropped LPR pages out of approved packages rather than erroring. **Never gate it, never gate
+   `ensure_lpr_tables()`, and never gate `lpr_fill_pdf_bytes()` or `forms/LPR FORM.pdf`** — the
+   consequence is a random-looking 500 when approving a parent that happens to carry a linked LPR.
+3. **The `/save_lpr` drain guard sits *below* the `creation_token` replay lookup, on purpose.** One
+   level up and a client retrying a save that already succeeded gets a 403 reading as correct policy
+   while its real draft is orphaned. Invisible to any single-request test; there is a replay test
+   guarding it specifically.
+4. **The reimbursement submit's cleanup branch is stated positively** —
+   `elif not office_field_sources and linked_lprs:` — so a drain-mode Office/Field submit can never
+   fall into it and silently delete a linked LPR plus its attachments. **Do not restate it as
+   "whatever the previous branch didn't catch".**
+5. **`is_lpr_path()` / `LPR_BLOCKED_PREFIXES` has nothing to do with this switch.** It is an
+   *exemption* list for the legacy `NEW_WORKFLOWS_ENABLED` gate. Checked every prefix on 2026-08-14:
+   **none of them overlaps `NEW_WORKFLOW_BLOCKED_PREFIXES`, so the list has never exempted anything.**
+   The eight embedded prefixes added by `ae9bf99` are correct and equally inert. There is a comment
+   on the tuple saying so; leave it.
+
+**The defect the review found:** the submit guard validated a linked LPR whenever one existed —
+**in hard-off as well as drain**. In hard-off, `/prepare_reimbursement_lpr`, `/get_parent_lprs`,
+`/save_embedded_lpr` **and `/delete_embedded_lpr` all 403**, and the draft-save reconcile is gated
+too, so a mismatched link produced a 409 with **no route left to fix or remove it** — a permanent
+dead end the user could not connect to LPR. Drain is genuinely different because every one of those
+doors is open there, which is why the check is kept in drain and dropped in hard-off, matching what
+the owner approved. **The linked row is still never deleted**, because cleanup requires
+`not office_field_sources`.
+
+**Two things were handed to the owner rather than verified here**, since browser automation is not
+available: that a drain-mode New LPR refusal reads sensibly on screen, and that a real notification
+link from the production database lands on the explaining page and reads correctly on a phone. The
+first is *partly* covered at source — `api()` in `templates/lpr.html` falls back to `data.message`,
+which is where `lpr_disabled_response()` puts its text, so the refusal reaches the toast rather than
+failing silently.
+
+**One piece of dead scaffolding, left deliberately.** `require_lpr_accepting_new` is defined and used
+**zero** times — every creation route (`/save_lpr`, `/save_embedded_lpr`,
+`/prepare_reimbursement_lpr`) also has an edit branch that has to stay open in drain, so all three
+guards ended up inline. Its partner `require_lpr_enabled` is used 18 times. A source test asserts the
+unused one exists, which pins it in place. Harmless, and useful if a create-only LPR route is ever
+added — recorded so keeping it stays a choice rather than an oversight.
 
 ### The Reimbursement Tracker became a shared batch register — six commits, 2026-08-13/14
 
@@ -1361,10 +1437,22 @@ Still not exercised:
 
 Work happens in this repository directly, so every commit is one step from deployment.
 
+**"Commit and push" means `origin/main`, per `AGENTS.md` § "Git and Railway Publishing" added
+2026-08-14.** `main` is Railway's production branch. Pushing an `agent/*` branch alone is **not
+completion** — promote the intended commit to local `main` non-destructively (fast-forward, merge or
+cherry-pick), push `origin/main`, then verify **both** `git ls-remote origin refs/heads/main` and
+Railway's deployment metadata, and report the production commit plus whether Railway accepted, is
+building, or deployed. A Railway **variable** change or a manual redeploy is a separate action that
+needs its own instruction. If the branch cannot be promoted without rewriting or discarding unrelated
+work, **stop and report the blocker** rather than forcing it.
+
 Standing checklist for any commit here:
 
 - [ ] `git fetch origin`, then `git rev-list --left-right --count origin/main...HEAD` to
       confirm no divergence before anything reaches origin
+- [ ] **Re-check the log even mid-task.** On 2026-08-14 two commits landed from outside between
+      one commit here and the next message — including a new `AGENTS.md` rule that changed what
+      "push" means. `git log --oneline -5` before assuming your commit is still the tip
 - [ ] `git status --short`, then inspect the diff
 - [ ] Stage **explicitly, file by file** — never `git add -A`
 - [ ] `git diff --cached --check` for whitespace, and `--numstat` to confirm no accidental
@@ -1781,6 +1869,50 @@ disable transitions first** — the properties most likely to be transitioned ar
 theme-driven ones.
 
 ## 6. Patterns worth knowing before the next feature
+
+### The three from the LPR feature switch, 2026-08-14
+
+**1. A validation is only safe while the route that repairs it is open — so a feature switch has to
+be reviewed against the *set* of things it closes, not route by route.** Every individual decision in
+the LPR switch was defensible: keep validating a linked LPR so an existing link's integrity is not
+weakened; 403 the embedded read, edit, prepare and delete routes when the feature is off; gate the
+draft-save reconcile on the master flag. **Each is correct alone. Together they produce a
+reimbursement that 409s with no route left to fix or remove the thing it is complaining about.** The
+same check is a genuine integrity guard in drain — where the Attached LPR panel renders, `/prepare`
+serves the existing link, and the draft save reconciles — and a trap one flag further on. **The
+question to ask of any guard added behind a switch is not "is this check right?" but "in this mode,
+what can the user still do about it?"** Nothing in the plan's risk list could have caught it, because
+the risks were ranked per-decision and this one only exists in the combination.
+
+**2. A test that asserts a refusal should also assert what is still reachable.** Asserting "hard-off
+returns 403" for 28 routes proves the switch works and says nothing about whether the user is
+stranded. The regression test written for the above asserts the successful submit **and** probes all
+four repair routes for 403 — so the day someone reopens one of them, the assertion is where the
+decision gets revisited rather than quietly rotting into a comment. **Pin the escape hatch, not only
+the door.**
+
+**3. A new file has no line endings to read, so the rule becomes "match the siblings".** The
+2026-08-13 entry below taught *read what the file actually uses* — LF for the Markdown journals, CRLF
+for code. `tests/test_lpr_feature_switch.py` was created with 477 LF-only lines while every sibling
+test module is CRLF; `core.autocrlf` is `true` and there is no `.gitattributes`, so `git diff
+--check` warned that **LF will be replaced by CRLF the next time git touches the file** — the next
+checkout would have produced a phantom whole-file diff. **This is the fourth line-ending variant in
+this file.** The generalisation that finally covers all four: `.py`, `.html` and `.js` here are CRLF;
+`AGENTS.md`, `changes.md`, `plans.md` and this file are LF. **Check `git diff --check` after creating
+a file, not only after editing one.**
+
+**And then it happened again, in this very entry, which is the part worth keeping.** Writing the
+paragraph above converted **this file** from 2138 LF lines to entirely CRLF. `git diff --stat` showed
+a clean **+133** because `core.autocrlf=true` normalises on read, so the diff and any commit would
+have been correct — **the damage is worktree-only and completely invisible to the check most people
+run.** It was caught by measuring bytes against the HEAD blob
+(`git show HEAD:pending-work.md`), not by `git diff`, not by `git status`, and not by
+`git diff --check`, whose warning fires identically for a file that is *correctly* LF. **The
+detector that actually works is `git diff --numstat`** — a whole-file rewrite shows as thousands of
+lines changed instead of the dozens you wrote — which is why it is on the section 4 checklist. Run
+it, and if the number is wrong, compare bytes against `git show HEAD:<path>`. **Five variants now,
+and the editing tool changes but the failure does not: a file is rewritten wholesale while every
+routine check reports success.**
 
 ### The three from the register fixes, 2026-08-14
 
