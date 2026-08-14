@@ -1,5 +1,37 @@
 # Project Change Log
 
+claude changes - 2026-08-14 (LPR moved to drain in production — a Railway variable change, no code)
+
+* Set `LPR_ACCEPTING_NEW=false` on the Railway `web` service, `production` environment, at the
+  owner's explicit instruction. **`LPR_ENABLED` was deliberately not set**, so it keeps its `True`
+  default and LPR remains readable and actionable. This is a configuration change only — no commit,
+  no code change, and the deployed commit is still `fa8844f`. Railway restarted the service and the
+  redeploy completed with status SUCCESS and the instance RUNNING; the restart is required because
+  `app.config` is populated at import time, so a variable change has no effect until a fresh process
+  starts.
+* **Production behaviour is now drain.** New standalone LPRs and new embedded LPRs are refused with
+  "New Local Purchase Requisitions are temporarily unavailable." Everything already in flight stays
+  usable: editing and saving existing LPRs, submitting a Draft or a Returned one, approve/reject/
+  return, procurement-email retries, requester recall, and linked LPRs on Travel Request, Cash
+  Advance and Reimbursement including their PDFs and approval packages. Reimbursements carrying
+  Office/Field amounts no longer require a new LPR; an existing linked LPR is still validated,
+  which is safe precisely because every repair route stays open while `LPR_ENABLED` is true.
+* **`/lpr` still loads, and that is correct rather than a leftover.** Drain deliberately keeps the
+  page open: it is where a requester withdraws a submitted LPR or corrects a returned one, and
+  `lpr_notification_url()` has already written `/lpr?lpr_id=N` into notification rows that exist in
+  production. The nav entry and the approvals tile also remain, because they are gated on
+  `LPR_ENABLED`, not on accepting-new.
+* **Reversing this is deleting the variable** —
+  `railway variable delete LPR_ACCEPTING_NEW --service web --environment production` — which
+  restores normal operation without a code change or a new build. Moving to hard-off is a separate
+  second decision, `LPR_ENABLED=false`, and should follow the queue emptying.
+* **The production LPR census still has not run** and remains the open prerequisite for that second
+  decision. Drain is safe without it because nothing is stranded, but the in-flight count is what
+  "the queue has emptied" is measured against. No database, row data, credential or variable value
+  other than the flag name and its `false` setting is recorded here.
+* Recorded in `pending-work.md` in the same task: the waiting-on-owner row that read "the switch has
+  never been flipped" is replaced by the live drain state and what closes it.
+
 claude changes - 2026-08-14 (review of the LPR feature switch: one hard-off trap closed)
 
 ## The implementation is sound. Both ranked silent-failure risks are correctly handled.

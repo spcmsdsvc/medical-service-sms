@@ -7,8 +7,8 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last updated: 2026-08-14, at the owner's request, after LPR gained a reversible off switch and the
-review of it closed a hard-off trap.
+Last updated: 2026-08-14, at the owner's request, after LPR gained a reversible off switch, the
+review of it closed a hard-off trap, and **the switch was flipped to drain in production**.
 
 **Start here if you are picking this up cold.** Suite green at **681 tests**. **Do not quote "one
 pre-existing skip" — that is not a property of this suite**, and several entries in these journals
@@ -60,8 +60,8 @@ than on code** — they are listed first because none of them will resolve thems
 
 | Waiting on | Why it matters |
 | --- | --- |
-| **The LPR production census has never run** — added 2026-08-14 | It is step 1 of the LPR plan and an explicit **prerequisite for flipping either flag**: count `LPRHeader` grouped by `status`, by `parent_module IS NULL`, and by `procurement_status`. It decides whether drain lasts a week or a quarter, and it is the only thing "the queue has emptied" can be measured against. **It cannot be answered here — the local database has 0 LPR rows in all four tables.** Codex authenticated the Railway CLI on 2026-08-14 but `railway ssh` timed out against `ssh.railway.com:22`, so no production row was ever read |
-| **The LPR switch is built and shipped but has never been flipped** — added 2026-08-14 | `LPR_ENABLED` and `LPR_ACCEPTING_NEW` both **default to on**, and neither Railway variable has been set, so production behaviour today is exactly what it was before. Re-enabling later is **deleting both variables**; drain is `LPR_ACCEPTING_NEW=false` alone; hard-off is `LPR_ENABLED=false`. **A Railway variable change is a separate decision from shipping the code** and needs its own instruction. Do the census first |
+| **LPR is in drain in production, and nothing yet says when it ends** — added 2026-08-14 | `LPR_ACCEPTING_NEW=false` is **set on the Railway `web` service**; `LPR_ENABLED` is deliberately unset. New LPRs are refused, everything in flight still works. **Drain is not a resting state** — it ends either by deleting the variable (back to normal) or by also setting `LPR_ENABLED=false` (hard off), and the second should follow the queue emptying. **Nobody is watching the queue drain**, so this will sit in drain indefinitely unless someone checks. Confirm the live values with `railway variables` rather than trusting this row |
+| **The LPR production census has still never run** — added 2026-08-14 | Step 1 of the LPR plan: count `LPRHeader` grouped by `status`, by `parent_module IS NULL`, and by `procurement_status`. **It was a prerequisite for flipping, and the flip happened without it** — defensibly, because drain strands nothing, but it means **the in-flight population is still unknown** and it is exactly what "the queue has emptied" must be measured against before hard-off. **It cannot be answered here — the local database has 0 LPR rows in all four tables.** Codex authenticated the Railway CLI on 2026-08-14 but `railway ssh` timed out against `ssh.railway.com:22`. The Approvals page shows the pending count directly and is the cheaper route |
 | **The tracker migration REWRITES every existing reimbursement row** — added 2026-08-14 | On the first request after deploy, `ensure_reimbursement_tracker_schema()` (`app.py:3732`) forces **every** `reimbursement_tracker_entry` to `BATCH-032`, `batch_sequence = 32`, **and a rebuilt control number**. That was approved in the plan and is ranked as its own risk 1 — but it is the only migration in this project that *rewrites* rows rather than adding to them, and control numbers are what Accounting identifies a reimbursement by. **If Diary has already printed, filed or emailed anything carrying an old control number, it will no longer match.** The local database holds **0 tracker rows**, so this could not be exercised here at all. **Count the rows before and after the deploy, and tell Diary before she notices** |
 | **89 of 145 clients have no equipment registered in Products** — added 2026-08-12 | A P.O. now requires a machine, and the picker deliberately offers **no free-text fallback**, so **P.O. entry is blocked for those clients until Products is backfilled**. This is the change users will feel first and it will read as breakage unless someone tells them it is deliberate. **Measured on the tracked local `scheduler.db`, not production** — 145 clients, 99 products, all assigned, across 56 distinct clients. Re-measure against the live database before acting on it |
 | **The `reimbursement_tracker_paid_cc` group has zero recipients** | Verified in the live database. The Paid in Full notification therefore reaches the engineer with **nobody copied**. Add recipients in Settings → Email Recipients. The feature works; it is just uncopied |
@@ -79,6 +79,26 @@ that flips back without a code change. Built by Codex from the plan in `plans.md
 | `ae9bf99` | The two flags, the three accessors, the two decorators, 28 gated routes, the explaining page |
 | `325e26f` | **Review fix** — hard-off trapped a reimbursement whose linked LPR no longer matched |
 | `8543ba5`, `6e375f6` | The `AGENTS.md` publishing rule, and the promotion record |
+| *(no commit)* | **The flip to drain, 2026-08-14** — a Railway variable, not a code change |
+
+> **LPR is in drain in production as of 2026-08-14.** `LPR_ACCEPTING_NEW=false` on the `web` service;
+> `LPR_ENABLED` deliberately unset. **`/lpr` still loads and that is correct** — drain keeps the page
+> open so a requester can withdraw a submitted LPR or fix a returned one, and production notification
+> rows already point at `/lpr?lpr_id=N`. The nav entry and approvals tile also remain, because they
+> are gated on `LPR_ENABLED`, not on accepting-new. **If someone reports "we turned LPR off but I can
+> still open it", this is the answer, not a bug.** Back to normal =
+> `railway variable delete LPR_ACCEPTING_NEW`; hard off = additionally `LPR_ENABLED=false`.
+> **Read the live values with `railway variables` — this note is a timestamp, not a fact.**
+
+**A shipped switch is not a flipped switch, and the gap read as a defect.** The code landed with both
+flags defaulting **on**, deliberately: the repo default stays current behaviour so the suite is green
+throughout, and re-enabling later is deleting variables rather than editing code. But the release was
+reported as *"reversible LPR availability controls"*, and the owner reasonably read that as LPR being
+off — then found the page still working. The detail was present in `changes.md` (*"both Railway flags
+remain unchanged/default-on"*) and buried at the end of a long entry. **When a change ships dormant,
+say so in the first line, in the words a reader will use** — "built, not enabled" — because the
+headline is what sets the expectation and a default-on feature switch is invisible until someone
+looks for its effect.
 
 **Five things to know before touching any of it:**
 
