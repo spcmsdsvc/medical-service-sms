@@ -7,24 +7,23 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last updated: 2026-08-14, at the owner's request, after a P.O. may now cover **several** machines —
-built, reviewed here, and pushed one day after the one-machine version shipped.
+Last updated: 2026-08-14, at the owner's request, after the Reimbursement Tracker moved to shared
+server-owned batches and its filters and export were repaired.
 
-**Start here if you are picking this up cold.** Suite green at **661 tests**. **Do not quote "one
+**Start here if you are picking this up cold.** Suite green at **662 tests**. **Do not quote "one
 pre-existing skip" — that is not a property of this suite**, and several entries in these journals
 have repeated it as though it were. The skip is
 `test_latest_user_facing_commit_has_a_changelog_entry`, which **skips when the newest commit touches
 only `tests/` or `.md`** and **runs when it touches user-facing paths**. So the number moves with
-what was committed last, not with the health of the suite; as written, `HEAD` touched `templates/`
-and the suite reported 661 with **no** skip. Quote the test count and treat the skip as a statement
-about the last commit. `origin/main` was at `7c87be3` when this was written, with the local branch in
-sync.
-**Confirm both with `git log --oneline -1` and
-`git rev-list --left-right --count origin/main...HEAD` rather than this line.** It has now gone
-stale five times, once inside an hour. **A commit hash in a document is a timestamp, not a fact.**
-Service worker read `v88-multi-machine-po`; **read the live value out of `app.py` before committing,
-never from this note.** The working tree carries **four** local artifacts: `scheduler.db`,
-`output/`, `tmp/`, and the loose 2026-07-26 handoff file.
+what was committed last, not with the health of the suite. Quote the test count and treat the skip as
+a statement about the last commit. `origin/main` was at `a5f6d3f` when this was written, with the
+local branch in sync; the service worker read `v89-analytics-system-start`.
+**Confirm all three with `git log --oneline -1`,
+`git rev-list --left-right --count origin/main...HEAD`, and by reading `CACHE_VERSION` out of
+`app.py` — never from this note.** The tip line has now gone stale six times, once inside an hour.
+**A commit hash in a document is a timestamp, not a fact** — and note that a commit *cannot* record
+its own hash, because writing it changes it; see section 6. The working tree carries **four** local
+artifacts: `scheduler.db`, `output/`, `tmp/`, and the loose 2026-07-26 handoff file.
 
 **`Handoffs/` is tracked**, by the owner's decision on 2026-08-11 — see section 4.
 
@@ -44,16 +43,72 @@ never from this note.** The working tree carries **four** local artifacts: `sche
 > used to catch by eye. Where that is genuinely impossible, say so plainly and hand the step to the
 > owner, exactly as the `ResizeObserver` item was handed over on 2026-08-09.
 
-**There is no open defect.** Section 1 is empty. But **five things are waiting on the owner rather
+**There is no open defect.** Section 1 is empty. But **six things are waiting on the owner rather
 than on code** — they are listed first because none of them will resolve themselves:
 
 | Waiting on | Why it matters |
 | --- | --- |
+| **The tracker migration REWRITES every existing reimbursement row** — added 2026-08-14 | On the first request after deploy, `ensure_reimbursement_tracker_schema()` (`app.py:3732`) forces **every** `reimbursement_tracker_entry` to `BATCH-032`, `batch_sequence = 32`, **and a rebuilt control number**. That was approved in the plan and is ranked as its own risk 1 — but it is the only migration in this project that *rewrites* rows rather than adding to them, and control numbers are what Accounting identifies a reimbursement by. **If Diary has already printed, filed or emailed anything carrying an old control number, it will no longer match.** The local database holds **0 tracker rows**, so this could not be exercised here at all. **Count the rows before and after the deploy, and tell Diary before she notices** |
 | **89 of 145 clients have no equipment registered in Products** — added 2026-08-12 | A P.O. now requires a machine, and the picker deliberately offers **no free-text fallback**, so **P.O. entry is blocked for those clients until Products is backfilled**. This is the change users will feel first and it will read as breakage unless someone tells them it is deliberate. **Measured on the tracked local `scheduler.db`, not production** — 145 clients, 99 products, all assigned, across 56 distinct clients. Re-measure against the live database before acting on it |
 | **The `reimbursement_tracker_paid_cc` group has zero recipients** | Verified in the live database. The Paid in Full notification therefore reaches the engineer with **nobody copied**. Add recipients in Settings → Email Recipients. The feature works; it is just uncopied |
 | **Four engineers have no email address** — Kevin Garoche, Mark Felongco, Jocel Prudente, John Erick Wong | Marking their rows paid saves fine and shows Diary a warning, but nobody is notified. Fix in Personnel |
 | **Jocel Prudente still reads `JP` in the local database** | The `JP → JOP` correction runs on the first request after deploy. **The code has now been pushed**, so unlike the previous refresh this is finally *confirmable* — one glance at Personnel in production closes it. Confirm rather than assume |
 | **The tracker holds 0 rows** | So the amount-suggestion chips show nothing yet, and the export is empty. Both fill in as Diary files batches — expected, not a fault |
+
+### The Reimbursement Tracker became a shared batch register — six commits, 2026-08-13/14
+
+The largest behavioural change since the tracker shipped, built by Codex from four plans in
+`plans.md` and reviewed here. **No code defect was found in either review.**
+
+| Commit | What |
+| --- | --- |
+| `7847100` | The singleton `reimbursement_tracker_batch_state` table, the one-time BATCH-032 normalization, and a server-owned current batch replacing the old max-plus-one suggestion |
+| `6722481` | The page scoped to the current batch, with `batch_scope=current\|all` on the export |
+| `47ebd96` | Selectable historical batch views |
+| `06ddeab` | Unrelated: Analytics now defaults to the system-start date (2026-05-18) rather than the current month |
+| `723333b` | The register fixes — filters, export, and non-scrolling confirmations |
+| `7c87be3`, `355cbec`, `a5f6d3f` | The equipment coverage label, and the review fixes |
+
+**Four things to know before touching any of it:**
+
+1. **The batch state is a singleton row and everything fails closed without it.**
+   `reimbursement_tracker_current_batch_state()` (`app.py:40553`) raises when row 1 is missing, and
+   **all six consumers turn that into a 503 with a clear message** — verified by forcing it. The
+   migration also refuses rather than corrupting: any row lacking a submission date or engineer
+   initials aborts the whole transaction, so no partial marker is written and the next request
+   retries. The error reaches **stdout only**, so a stuck migration is visible in the Railway log and
+   as a 503 on the page, nowhere else.
+2. **Batch transitions are a compare-and-swap**, `UPDATE … WHERE current_batch_sequence = :expected`
+   checking `rowcount` (`app.py:41043`). Two people pressing "Start new batch" cannot both win. Stale
+   transitions, stale adds and the BATCH-999 cap are all asserted.
+3. **The total cards now follow the filters, and the scope caption underneath them is load-bearing.**
+   `#rt-kpi-scope` reads *"Showing all of BATCH-032"* or *"Showing 3 filtered row(s) of BATCH-032"*.
+   Without it a filtered ₱ total looks exactly like a batch total — someone copies it and is wrong.
+   **Do not remove the caption while keeping the filtered totals.**
+4. **The export's `current` scope now means the batch you are viewing**, via an optional
+   `batch_sequence` companion. The wire values are still `{current, all}` — the honesty fix is in the
+   label, which reads *"This batch (BATCH-032)"*. Exporting a historical batch on its own was
+   previously impossible.
+
+**The defect the review found, and it had shipped:** filtering by engineer and pressing Export
+produced a **headers-only workbook**. The page sent the engineer's numeric id as `engineer=`, and the
+server matched it as a substring of the engineer's *name*. No error; the screen showed N rows and the
+file had none. Fixed by matching `engineer_id` exactly, with the legacy name path kept for bookmarks
+**and a log line when it receives an all-digit value** so the old shape cannot rot silently.
+
+**The export workbook now carries a literal TOTAL row** in columns F/G, deliberately **not** a
+`=SUM()` — openpyxl writes formulas as strings and never evaluates them, so a `data_only=True`
+reader would see `None`, and a `#REF` is the one thing that corrupts what Accounting consumes. A test
+pins that there are no formulas anywhere; **do not "improve" the total into a formula.** The row sits
+**outside** `auto_filter.ref` so sorting in Excel cannot drag the grand total into the data.
+
+**Both registers stopped scrolling to the top on save.** `notify()` no longer calls
+`window.scrollTo` and no longer overwrites `className` — the latter had been stripping `d-none` and
+`no-print`, permanently reflowing the page on the first message and putting the alert into printouts.
+Confirmations are now fixed-position toasts built on real theme tokens, with each page's alert kept
+as a `visually-hidden` live region. That last part also fixed a latent a11y bug: `d-none` is
+`display: none`, which removes an element from the accessibility tree, so the live region had been
+announcing nothing.
 
 ### One P.O., many machines — in four commits, one day after the opposite shipped
 
@@ -1188,6 +1243,17 @@ it now carries a chip list as well as the combobox, and still nobody has opened 
 | **The Equipment tab with five metric tiles** | A fifth tile (`machine_link_total`) joined a grid built for four. Whether it wraps cleanly at desktop and 375 px is unchecked |
 | **`[DB MIGRATION]` for `purchase_order_machine` in production** — the one that matters most | The new table and its **backfill** run on the first request after deploy. Verified locally: three consecutive `ensure_purchase_order_schema()` runs seed exactly one link from a legacy row, and `PRAGMA index_list` shows the unique pair index physically. **In production, confirm the row counts either side**: P.O.s with a non-blank `product_serial` before must equal `purchase_order_machine` rows after, and a `LEFT JOIN` on both id and serial must return zero unmatched rows |
 
+**Added 2026-08-14 with the tracker batch work and the register fixes.** The first row is the one
+that touches real money.
+
+| Item | Applies to |
+| --- | --- |
+| **The BATCH-032 normalization against real tracker rows** — the highest-stakes unverified item in this file | It rewrites `reference`, `batch_sequence` **and `control_number`** on every existing row, on the first request after deploy. Locally the tracker holds **0 rows**, so the rewrite has never run against real data — only the refusal path was exercised (a row lacking initials aborts the whole transaction and writes no marker). **Count rows before and after, confirm the `[DB MIGRATION] Initialized shared reimbursement batch state and normalized N tracker row(s)` line appears exactly once, and nothing on restart.** See the first row of the waiting-on-owner table |
+| **The toasts, in a browser** | Fixed-position confirmations replaced the scroll-to-top on both registers. Contrast is proven by arithmetic — body 12.91:1 in dark, every tone bar and icon ≥3:1 in both themes, all pinned by a test — but **nobody has looked at one**. Specifically unchecked: that a toast does not cover the modal's Save button on a phone, and that several stacked toasts behave |
+| **The register export opened in real Excel** | The seven-column file now ends with a literal TOTAL row in F/G, outside the autofilter range. `openpyxl` proves the values and the range; only Excel proves it *looks* like a total and that sorting cannot drag it into the data. **Diary is the consumer** |
+| **The whole batch workflow used by Diary once** | Start a batch, file rows into it, switch to a historical batch, export each. Every piece is covered by the test client, but the workflow has never been driven end to end by the person whose job it is. The first real transition is also the first time "Start new batch" is pressed against live data |
+| **The Analytics default range change** | Analytics now opens on 2026-05-18 → today instead of month-to-date. The Reports page still opens on month-to-date and has its own client-side default, so **the two pages now disagree about what "default" means**. Nothing is broken — neither UI reaches the server default — but a manager comparing them will see different numbers for what looks like the same view. Worth a decision rather than a discovery |
+
 **Closed by the owner's 2026-08-09 pass**, listed so nobody re-opens them from an old copy of this
 file:
 
@@ -1715,6 +1781,43 @@ disable transitions first** — the properties most likely to be transitioned ar
 theme-driven ones.
 
 ## 6. Patterns worth knowing before the next feature
+
+### The three from the register fixes, 2026-08-14
+
+**1. A fixed colour on a themed surface has two contrast ratios, and no existing guard catches it.**
+The register toasts carry tone on a left border and an icon rather than a tinted background —
+deliberately, because a fixed-light background inverts under themed text, which is the defect this
+file records shipping twice. That decision was right, and it still was not enough: the *warning*
+colour `#fd7e14` measured **5.50:1 on the dark surface and 2.46:1 on the light one**, under the 3:1
+floor WCAG 1.4.11 sets for a border or an icon. **The repo-wide token guard could never have caught
+it — that test only sees *undefined* tokens, and a hardcoded literal is by definition defined.**
+The durable answer is the same shape as the token guard: a test that reads `--app-surface-raised`
+from **both** theme blocks and every declared tone, and computes the ratio — so it also fails if the
+surface token is retuned underneath colours that pass today. Two of the three tones clear the floor
+by 0.12, so that is not hypothetical.
+
+**Corollary about reviewing, learned the same day:** the review that raised this said three colours
+were short. **Only one was.** Success and danger measure 3.12:1 and pass; the reviewer eyeballed
+"3.12 is close to 3" as a failure without computing the threshold. **Compute before characterising
+severity** — an overstated finding costs the same credibility as a missed one.
+
+**2. A commit cannot record its own hash.** Writing the hash into the file changes the hash, so the
+recorded value names a commit that is no longer on the branch. `changes.md` credited a P.O. fix to
+`a0e06bf`; the shipped commit is `7c87be3`, and the **only** difference between the two objects is
+the line adding that hash. The pattern that works is already in this repository and was used nine
+seconds earlier: commit the entry reading *"commit pending"*, then let the follow-up journal commit
+fill in the real hash — which is exactly what the `Record … execution` commits are for. **Either use
+that, or cite nothing.**
+
+**3. A number repeated across journals can describe something other than what it claims.** Every
+entry for weeks — including several written here — reported the suite as *"N tests, one pre-existing
+skip"*, as though the skip were a standing property. It is not. It is
+`test_latest_user_facing_commit_has_a_changelog_entry`, which **skips when the newest commit touches
+only `tests/` or `.md`** and runs otherwise. The count tracks *what was committed last*. It even
+demonstrated itself: a code commit reported 662 with no skip, and the `.md`-only follow-up minutes
+later reported `OK (skipped=1)`. **When a figure appears in every entry unchanged, that is a reason
+to re-derive it, not evidence that it is stable.** This file already says re-measure before acting
+on a number in here; this is the version where the number was not even measuring what it named.
 
 ### The four from the multi-machine migration, 2026-08-13
 
