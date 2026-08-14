@@ -7,7 +7,7 @@ Companion to `changes.md`, which records what **was** done. This file records wh
 **Update rule:** only touch this file when the project owner explicitly asks. It is not
 maintained automatically the way `changes.md` is.
 
-Last updated: 2026-08-13, at the owner's request, after a P.O. may now cover **several** machines —
+Last updated: 2026-08-14, at the owner's request, after a P.O. may now cover **several** machines —
 built, reviewed here, and pushed one day after the one-machine version shipped.
 
 **Start here if you are picking this up cold.** Suite green at **661 tests**. **Do not quote "one

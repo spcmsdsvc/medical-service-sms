@@ -1,6 +1,6 @@
 # Project Change Log
 
-claude changes - 2026-08-13 (review of the register fixes: one contrast floor, three journal corrections)
+claude changes - 2026-08-14 (review of the register fixes: one contrast floor, three journal corrections)
 
 ## The implementation is sound. No code defect found.
 

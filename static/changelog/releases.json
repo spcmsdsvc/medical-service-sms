@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-14-register-toast-contrast",
+      "release_date": "2026-08-14",
+      "title": "Register Confirmation Contrast",
+      "summary": "The warning confirmation on the P.O. and Reimbursement registers is now clearly visible in light mode as well as dark.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-14-register-warning-toast-contrast",
+          "category": "Appearance",
+          "description": "The warning confirmation on the registers uses a deeper amber so its bar and icon stay clearly visible in light mode as well as dark.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-13-reimbursement-register-fixes",
       "release_date": "2026-08-13",
       "title": "Reimbursement Register Fixes",
@@ -24,15 +42,6 @@
             "admins"
           ],
           "sort_order": 20
-        },
-        {
-          "item_key": "2026-08-13-register-warning-toast-contrast",
-          "category": "Appearance",
-          "description": "The warning confirmation on the registers uses a deeper amber so its bar and icon stay clearly visible in light mode as well as dark.",
-          "audiences": [
-            "everyone"
-          ],
-          "sort_order": 30
         }
       ]
     },
