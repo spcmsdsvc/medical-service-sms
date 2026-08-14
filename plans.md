@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Turn LPR off reversibly, without stranding what is already in flight
 
-**Status:** `In progress`. **Started:** 2026-08-14, on the owner's explicit "go and execute" instruction.
+**Status:** `Executed — ae9bf99`. **Started:** 2026-08-14, on the owner's explicit "go and execute" instruction.
 The production census remains an operational prerequisite for any later Railway flag change; code
 execution proceeds with both flags defaulting on and no environment change.
 **Approved:** 2026-08-14
@@ -282,8 +282,9 @@ inline JavaScript parsed with Node, all touched templates compiled through Jinja
 manifest parsed, and `git diff --check` passed. No browser automation, Codex app navigation, commit,
 push, deployment, Railway variable change, intentional project database/schema change,
 `pending-work.md` edit, or protected local-artifact staging was performed. The existing
-test-generated `scheduler.db` worktree modification remains unstaged and excluded. The plan remains
-`In progress` until the owner separately requests publication and a commit hash is available.
+test-generated `scheduler.db` worktree modification remains unstaged and excluded. The implementation
+was committed as `ae9bf99`; the branch push is the publication step, while Railway variables and
+deployment remain unchanged.
 
 ### After implementation
 
