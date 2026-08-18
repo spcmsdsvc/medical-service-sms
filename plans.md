@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Fix Approval Center notification 500s caused by missing event metadata
 
-**Status:** `In progress`
+**Status:** `Executed — 3462e63`
 **Status-format note:** The owner explicitly required the ASCII-hyphen spelling for the approval
 status on 2026-08-18; this records that historical approval form while the lifecycle status below
 remains authoritative.
@@ -71,9 +71,9 @@ beyond the normal push trigger and production access remain unauthorized.
 **Environment gate:** Satisfied on 2026-08-18 by the separately authorized project-local Python
 3.11.9 environment bootstrap.
 **Implementation verification note (2026-08-18):** The approved correction is implemented and
-verified with focused and full isolated tests. The plan remains `In progress` until the authorized
-commit and push are completed; deployment operations beyond the normal push trigger and production
-work remain separate actions.
+verified with focused and full isolated tests, and is committed as `3462e63`. The owner-authorized
+push remains subject to the repository's explicit-path and remote verification checks; deployment
+operations beyond the normal push trigger and production work remain separate actions.
 
 ### Context
 
