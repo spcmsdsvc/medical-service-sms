@@ -10271,9 +10271,9 @@ def approval_notification_is_active_for_current_user(notification):
         return False
 
     metadata = notification_metadata_dict(notification)
-    module_key = clean_str(getattr(notification, 'module', None)).lower()
+    module_key = (clean_str(getattr(notification, 'module', None)) or '').lower()
     record_id = clean_int(getattr(notification, 'record_id', None))
-    event_key = clean_str(metadata.get('event')).lower()
+    event_key = (clean_str(metadata.get('event')) or '').lower()
 
     if module_key == 'travel_request':
         request_rec = db.session.get(TravelRequest, record_id) if record_id else None

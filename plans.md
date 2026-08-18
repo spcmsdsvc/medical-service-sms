@@ -55,6 +55,329 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Fix Approval Center notification 500s caused by missing event metadata
+
+**Status:** `In progress`
+**Status-format note:** The owner explicitly required the ASCII-hyphen spelling for the approval
+status on 2026-08-18; this records that historical approval form while the lifecycle status below
+remains authoritative.
+**Approved:** 2026-08-18
+**Amended and re-approved:** 2026-08-18, after Builder pre-execution validation confirmed the
+source assumptions but found test-environment, line-ending, status, isolation, and dirty-worktree
+requirements that needed to be made accurate before execution.
+**Execution authorization:** Granted separately by the owner on 2026-08-18 for correction
+implementation, isolated verification, commit, and push to `origin/main`. Deployment operations
+beyond the normal push trigger and production access remain unauthorized.
+**Environment gate:** Satisfied on 2026-08-18 by the separately authorized project-local Python
+3.11.9 environment bootstrap.
+**Implementation verification note (2026-08-18):** The approved correction is implemented and
+verified with focused and full isolated tests. The plan remains `In progress` until the authorized
+commit and push are completed; deployment operations beyond the normal push trigger and production
+work remain separate actions.
+
+### Context
+
+The supplied Approval Center screenshot shows the page itself loading while the **Approval
+Notifications** panel renders the beginning of Flask's HTML `500 Internal Server Error` response.
+An authorized approver's notification request must remain a valid JSON response when an unread
+notification has missing, blank, null-like, or legacy metadata. An unusable notification must be
+ignored by the approval-scope matcher instead of failing the entire panel.
+
+Valid approval notifications for currently supported modules must continue to appear only when
+their backing request is Submitted and the signed-in user may approve it. Authentication, routing,
+workflow statuses, stored notification rows, and unrelated page behavior remain unchanged.
+
+### Decisions taken
+
+Owner approval and re-approval on 2026-08-18 settle the following:
+
+1. Use the approved **shortened workflow B**: Builder implementation, focused/full testing, and a
+   Builder report. A later Planner review is optional unless separately requested.
+2. Correct the server-side exception inside
+   `approval_notification_is_active_for_current_user()` rather than masking this failure in the
+   frontend.
+3. Normalize missing or blank `module` and `metadata.event` values to empty comparison keys before
+   calling `.lower()`.
+4. Treat incomplete notifications as non-matches without deleting, repairing, backfilling, marking
+   read, or otherwise mutating them.
+5. Preserve all existing predicates and event values for Travel Request, Reimbursement, Cash
+   Advance, Travel Liquidation, and Cash Advance Liquidation.
+6. Do not add Leave Request or LPR matcher branches. Their Approval Notifications completeness gap
+   needs separate workflow-specific authorization and compatibility analysis.
+7. Do not change the shared frontend JSON parser. The displayed HTML is a symptom of the server
+   exception.
+8. Cover both consumers of the matcher: notification loading and scoped mark-all-read.
+9. Require focused and full isolated tests; do not lower the test bar because the environment is
+   currently unavailable.
+10. Do not bump `CACHE_VERSION`; no cached template, static asset, app shell, or worker behavior
+    changes.
+11. Do not install Python, download packages, or modify a shared/system runtime without separate
+    environment-bootstrap authorization.
+
+### Revalidated investigation
+
+1. `clean_str()` returns `None` for `None`, blank strings, and null-like strings
+   (`app.py:5004-5010`).
+2. `approval_notification_is_active_for_current_user()` currently performs unsafe
+   `clean_str(...).lower()` calls for the module and `metadata.event`
+   (`app.py:10269-10276`). Missing event metadata deterministically raises
+   `AttributeError: 'NoneType' object has no attribute 'lower'`.
+3. `/get_my_approval_notifications` loads unread candidates with no module restriction and filters
+   each through this matcher (`app.py:10348-10355`, `app.py:10366-10377`). One incomplete row can
+   fail the complete response.
+4. `/mark_scoped_notifications_read` uses the same matcher before applying read state
+   (`app.py:10420-10450`), so Mark All Read can fail for the same reason.
+5. Current Leave Request and LPR awaiting-approval producers omit event metadata
+   (`leave_feature.py:1079`, `app.py:55668`).
+6. The matcher has branches only for Travel Request, Reimbursement, Cash Advance, Travel
+   Liquidation, and Cash Advance Liquidation (`app.py:10278-10323`). The correction stops the
+   exception but does not make Leave Request or LPR appear in this panel.
+7. `parseApprovalJsonResponse()` carries non-JSON response text into an error
+   (`templates/approvals.html:2492-2509`), and the notification loader escapes and renders it
+   (`templates/approvals.html:5548-5561`). That explains the visible HTML but is not the originating
+   defect.
+8. `tests/test_approval_notifications.py` does not exist. Existing safe login, approver, and
+   positive-control patterns are available in `tests/test_dashboard_manager.py`.
+9. The repository has no `venv/`, `.venv/`, `env/`, or project `pyvenv.cfg`. System `python` is an
+   unavailable Microsoft Store alias. The Codex bundled Python is 3.12.13 and lacks Flask and its
+   extensions. `runtime.txt` declares Python 3.11.9.
+10. The cited `tests/test_dashboard_manager.py`, `tests/__init__.py`, and
+    `tests/test_approval_center_wording.py` are UTF-8 without BOM and LF-only. Across the current
+    test suite, 55 Python files are LF-only, seven CRLF-only, and two mixed. The original plan's
+    CRLF requirement was factually wrong.
+11. `tests/__init__.py:32-58` registers a broad stale-test-file cleanup only when
+    `MEDICAL_SERVICE_TEST_DB` is absent. Setting an explicit unique test path before Python starts
+    bypasses that cleanup and permits exact current-run deletion under the current project rule.
+12. `app.py` is CRLF/no BOM. `static/changelog/releases.json`, `plans.md`, and `changes.md` are
+    LF/no BOM. Each must retain its existing convention.
+13. `core.autocrlf=true` emits expected LF-to-CRLF conversion notices for the mandated LF journals
+    even when `git diff --check` exits 0. Verification must distinguish conversion notices from
+    whitespace errors and confirm bytes directly.
+14. Current dirty baseline at re-approval:
+    - branch `agent/leave-request-1-5-day`, ahead of its upstream by one commit;
+    - modified `changes.md`, `plans.md`, and protected `scheduler.db`;
+    - untracked `.claude/`, the loose root handoff, `output/`, and `tmp/`;
+    - no staged files and no relevant application/test source diff.
+    These artifacts must be preserved and must not be broadly staged.
+15. No production logs, database rows, Railway state, or real business data were inspected. The
+    current source contains a deterministic failure consistent with the screenshot, but the plan
+    does not claim which production row triggered it.
+
+### Affected files and artifacts
+
+| Path | Approved execution change |
+| --- | --- |
+| `app.py` | Null-safe normalization of two comparison keys inside `approval_notification_is_active_for_current_user()` only. Preserve CRLF/no BOM. |
+| `tests/test_approval_notifications.py` | New behavioral regression module. Use UTF-8 without BOM and LF to match the cited sibling and prevailing test convention. |
+| `static/changelog/releases.json` | Add the required approver-facing release item during authorized execution. Preserve LF/no BOM. |
+| `changes.md` | Record implementation, exact validation, exclusions, environment setup if any, and release relevance. Preserve LF/no BOM. |
+| `plans.md` | Maintain this plan's permitted status lifecycle and record the eventual commit only when separately authorized. Preserve LF/no BOM. |
+| `venv/` | Conditional ignored local environment only if its creation and dependency installation are separately authorized. |
+
+No template, schema, migration, database, upload, storage, dependency declaration, service-worker,
+Railway configuration, or production file is approved for modification.
+
+### Preconditions
+
+1. The owner must provide a future explicit `ROLE: BUILDER` and an execution instruction such as
+   `execute`, `do it`, `go ahead`, or `start`.
+2. A project-local Python 3.11.9 environment must be available.
+3. If no environment is provided, the owner must separately authorize:
+   - obtaining or installing a compatible Python 3.11.9 interpreter;
+   - creating ignored `venv/`; and
+   - installing only `requirements.txt` into that environment.
+4. Do not install packages into the Codex bundled runtime or a shared/global Python installation.
+5. Verify that the project venv can import Flask and all declared Flask extensions before any
+   application edit.
+6. If environment provisioning is not authorized or fails, stop without changing application or
+   test code.
+
+### Execution steps
+
+1. [x] **Builder preflight**
+   - Re-read `AGENTS.md`, this amended plan, and `changes.md` in full.
+   - Recheck source, branch, status, staged diff, and the dirty baseline.
+   - Confirm no relevant source changed after this amendment. If an assumption changed materially,
+     stop and report the conflict instead of adapting silently.
+   - Preserve every protected or unrelated artifact.
+   - Set the plan to `In progress` only after both correction execution and any necessary
+     environment-bootstrap authority exist.
+
+2. [x] **Validate or conditionally provision the test environment**
+   - Use `venv\Scripts\python.exe` backed by Python 3.11.9.
+   - If separately authorized to bootstrap it, create only ignored `venv/` and install
+     `requirements.txt` without editing dependency files.
+   - Confirm the interpreter version and required imports; record the validation.
+   - Do not start Flask, bind port 5000, or access an external service.
+
+3. [x] **Establish isolated test runs**
+   - Before each Python process starts, set `MEDICAL_SERVICE_TEST_DB` to a unique verified path
+     under the system temporary directory.
+   - Use different paths for the focused and full-suite processes.
+   - Set the variable externally before importing the `tests` package or `app.py`. This prevents
+     `tests/__init__.py` from registering its broad stale-file sweep.
+   - After each process ends, verify the exact database path and remove only that database and its
+     exact `-wal`/`-shm` sidecars after confirming no writer remains.
+   - Never point the variable at `scheduler.db`, `/data`, a backup, a shared fixture, or a persistent
+     owner file.
+
+4. [x] **Add the focused regression test first**
+   - Create LF/no-BOM `tests/test_approval_notifications.py` using the existing Flask login and
+     fixture patterns.
+   - Seed an active legacy approval manager, an ordinary requester, a minimal Submitted
+     `ReimbursementHeader`, and a valid unread reimbursement notification whose `metadata_json`
+     contains `{"event": "submitted"}`. This valid row is the required positive control.
+   - Seed an unread notification for the same approver with no event metadata, using a current shape
+     such as `module='leave_request'`, plus any unrelated row required to prove scoped read behavior.
+   - Before editing `app.py`, run the focused test and record the expected 500 or propagated
+     `AttributeError`. An import/setup failure is not a valid red test.
+   - Clean up only rows created by this module and restore altered configuration. Do not broadly
+     delete rows or assume the suite database is disposable.
+
+5. [x] **Apply the surgical server correction**
+   - In `approval_notification_is_active_for_current_user()` only, change module normalization to
+     the equivalent of `(clean_str(getattr(notification, 'module', None)) or '').lower()`.
+   - Change event normalization to the equivalent of
+     `(clean_str(metadata.get('event')) or '').lower()`.
+   - Preserve CRLF/no BOM for `app.py`.
+   - Do not alter supported-module branches, accepted event sets, database lookups, Submitted-state
+     checks, authorization helpers, callers, serialization, query limits, or read mutations.
+   - Done means missing/blank/null-like module or event values fall through to `False`; valid
+     `submitted` and `liquidation_submitted` comparisons behave exactly as before.
+
+6. [x] **Run focused behavioral verification**
+   - GET `/get_my_approval_notifications` as the approver and assert HTTP 200, JSON
+     `success: true`, inclusion of the valid reimbursement notification, exclusion of the
+     missing-event notification, and counts consistent with active included rows.
+   - POST `/mark_scoped_notifications_read` with `{"scope":"approval"}` and assert HTTP 200,
+     the valid active row is counted and marked read, and missing-event/unrelated rows remain
+     unread.
+   - Verify that an active non-approver receives HTTP 403 from both endpoints. Keep an approver
+     success assertion in the same fixture so denial cannot pass because setup or login is broken.
+   - Rerun the complete focused module after the fix.
+
+7. [x] **Run proportional verification**
+   - Run `venv\Scripts\python.exe -m py_compile app.py`.
+   - Run the focused module through `unittest` with its explicit isolated database.
+   - Run `unittest discover -s tests` through the project venv with a second explicit isolated
+     database.
+   - A failure involving the corrected behavior blocks completion. Any unrelated full-suite failure
+     must be reported exactly and requires owner acceptance; it may not be described as passing.
+
+8. [x] **Record release and journal work during execution**
+   - Append to the current Manila-date `changes.md` section, or create a new newest-date section if
+     execution occurs later. Record files, behavior, test environment, exact tests/results,
+     schema/storage/auth/cache impact, exclusions, and uncommitted/unpublished state.
+   - Add one correctly dated approver-facing item to `static/changelog/releases.json` following
+     `static/changelog/README.md`.
+   - Validate JSON, required keys, key uniqueness, audience, and the reserved `app-` namespace.
+   - Reconcile the release date before any later authorized publication if execution and release
+     dates differ.
+   - Do not edit `pending-work.md`, any handoff, dependency declarations, or cache version.
+
+9. [x] **Final diff and status audit**
+   - Inspect exact unstaged and staged file lists; nothing may be staged without commit authority.
+   - Run `git diff --check` and require exit code 0 with no whitespace errors.
+   - Treat `core.autocrlf` conversion notices separately; do not normalize mandated LF files merely
+     to suppress them.
+   - Byte-check: `app.py` remains CRLF/no BOM; the new test is LF/no BOM; and
+     `releases.json`, `plans.md`, and `changes.md` remain LF/no BOM.
+   - Check `git diff --numstat` and the actual diff for whole-file churn.
+   - Confirm `scheduler.db` and all existing untracked/protected artifacts remain untouched and
+     unstaged.
+
+10. [x] **Report and stop**
+    - Provide the Builder report with every test run, passed, failed, skipped, or omitted;
+      environment details; manual checks; deviations; and remaining concerns.
+    - If implementation is verified but no commit is authorized, keep status `In progress` and
+      append a dated note that implementation is verified but awaiting commit authorization.
+    - Change status to `Executed — <commit>` only after a separately authorized commit exists.
+    - Stop before commit, push, deployment, production access, Railway changes, or browser
+      verification.
+
+### Deliberately excluded
+
+- Leave Request or LPR active-notification matcher branches.
+- General null-safety changes to other `clean_str(...).lower()` call sites, including missing-scope
+  handling.
+- Frontend parser, template, toast/modal, or error-display changes.
+- Notification producer changes or notification-row backfill, repair, deletion, or cleanup.
+- Approval routing, permissions, roles, status transitions, request state, email, audit, or queue
+  changes.
+- Schema or migration work.
+- Default/local/production database inspection or mutation.
+- Storage, Railway, service-worker, cache, dependency-file, or architecture changes.
+- Browser automation.
+- `pending-work.md`, handoffs, and unrelated dirty artifacts.
+- Installing Python or dependencies unless separately authorized.
+
+### Verification requirements
+
+1. A valid pre-fix regression failure, not an environment/import failure.
+2. Focused endpoint, persisted read-state, positive-control, and authorization tests pass after the
+   correction.
+3. The full isolated suite passes, or unrelated failures are precisely reported and accepted.
+4. `app.py` compiles through the project venv.
+5. Release JSON parses and uses unique, compliant keys.
+6. `git diff --check` exits 0 with no whitespace errors; expected `core.autocrlf` conversion notices
+   are documented rather than suppressed through line-ending changes.
+7. Required encodings and per-file line endings are preserved.
+8. The final diff contains only approved files and no whole-file churn.
+9. No protected database, secret, output, handoff, or unrelated artifact is staged or modified.
+
+No browser verification is required or authorized for this server-only correction. If the owner
+later separately authorizes browser verification, use a non-5000 port, an explicit isolated
+`MEDICAL_SERVICE_TEST_DB`, and synthetic fixtures; confirm the panel loads without raw HTML and
+Mark All Read remains functional; then stop only the verified test server. Browser authorization
+does not authorize production access.
+
+### Completion criteria
+
+- Missing or null-like notification metadata cannot raise from either approval-scoped endpoint.
+- A valid active Submitted reimbursement notification remains visible and markable for an eligible
+  approver.
+- Incomplete and unrelated notifications are not returned or marked read.
+- Non-approvers remain denied.
+- Tests use externally pinned, unique disposable databases and exact cleanup.
+- Required focused/full validation and documentation are truthfully complete.
+- No excluded or separately authorized action occurred.
+
+### After implementation
+
+The approved shortened workflow ends with the Builder's verified report unless the owner requests
+a Planner review. The Builder must still stop before every separately controlled action.
+
+Still separately authorized:
+
+- **Environment bootstrap:** obtaining/installing Python, creating `venv/`, or downloading packages.
+- **Execution:** a future explicit `ROLE: BUILDER` and owner go-ahead.
+- **Commit:** a separate explicit commit instruction and exact-path staging review.
+- **Push/publication:** separate push authorization; pushing `origin/main` is production-affecting.
+- **Deployment operations:** manual redeploy, rollback, Railway variables/settings, domains,
+  volumes, scaling, and cache controls.
+- **Data/production work:** production logs or database reads, migrations, repairs, cleanup,
+  backups, restores, and storage changes.
+- **Browser verification:** separate authorization under the project safety rule.
+
+### Risks and controls
+
+| Risk | Control |
+| --- | --- |
+| Null fallback hides valid notifications. | Restrict the code change to two expressions and require a real Submitted reimbursement positive control. |
+| GET works but mark-all-read still fails. | Exercise both endpoints and inspect persisted read state. |
+| Leave/LPR scope expands accidentally. | Explicitly exclude new matcher branches. |
+| Test run touches owner data. | Externally set a unique temporary `MEDICAL_SERVICE_TEST_DB` before Python starts. |
+| Existing broad stale cleanup deletes another run. | Bypass its registration with the externally set test DB; delete only exact current-run files. |
+| Wrong Python/dependency environment produces meaningless failures. | Require a Python 3.11.9 project venv and verified imports before source edits. |
+| Line-ending instructions cause churn. | Preserve `app.py` CRLF and use LF for the new test and journals; byte-check every affected file. |
+| Dirty artifacts are staged. | Preserve the recorded baseline and use exact-path staging only after commit authorization. |
+| Plan is marked executed without a commit. | Keep `In progress` until an authorized commit hash exists. |
+
+The residual known limitation is explicit: after this correction, valid Leave Request and LPR
+awaiting-approval notifications without supported matcher branches will be skipped rather than
+shown in this particular panel. Their authoritative workflow queues remain unchanged. Resolving
+that product-completeness gap requires a separately approved plan.
+
 ## Turn LPR off reversibly, without stranding what is already in flight
 
 **Status:** `Executed — ae9bf99`, reviewed in `325e26f`; promoted to `origin/main` and deployed at
