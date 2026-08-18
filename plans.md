@@ -72,7 +72,8 @@ beyond the normal push trigger and production access remain unauthorized.
 3.11.9 environment bootstrap.
 **Implementation verification note (2026-08-18):** The approved correction is implemented and
 verified with focused and full isolated tests, and is committed as `12682f2`. The owner-authorized
-push remains subject to the repository's explicit-path and remote verification checks; deployment
+push to `origin/main` completed with remote-ref verification. Railway deployment metadata could not
+be independently verified because the Railway CLI is unavailable in this environment; deployment
 operations beyond the normal push trigger and production work remain separate actions.
 
 ### Context
