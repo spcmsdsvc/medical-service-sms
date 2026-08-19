@@ -46,6 +46,8 @@ class StockInventorySourceTests(unittest.TestCase):
             "'DAVAO': 'BC03'",
             'if stock_inventory_read_only_user(target):',
             'stock_inventory_branch_from_engineer_profile(profile)',
+            'stock_inventory_managed_branch_codes',
+            'STOCK_INVENTORY_ASSIGNMENT_VIEW_BRANCHES',
             'stock_read_only',
             'readOnly:',
         ):
@@ -59,7 +61,8 @@ class StockInventorySourceTests(unittest.TestCase):
         self.assertIn('renderStockBorrowed()', self.page_source)
 
     def test_read_only_ui_has_no_mutation_controls(self):
-        self.assertIn('{% if not stock_read_only %}', self.page_source)
+        self.assertIn('id="stockAddItemButton"', self.page_source)
+        self.assertIn('addButton.hidden=stockState.readOnly', self.page_source)
         self.assertIn('if(stockState.readOnly) return', self.page_source)
         self.assertIn('No item was found for that barcode in your branch.', self.page_source)
 
@@ -97,6 +100,7 @@ class StockInventorySourceTests(unittest.TestCase):
         self.assertIn("'BC02': 'Cebu'", self.app_source)
         self.assertIn("'BC03': 'Davao'", self.app_source)
         self.assertIn('stock_inventory_request_branch(payload)', self.app_source)
+        self.assertIn('stock_inventory_request_branch(payload, require_write=True)', self.app_source)
         self.assertIn('StockInventoryItem.current_quantity >= quantity', self.app_source)
         self.assertIn("'This movement has already been reversed.'", self.app_source)
 
@@ -107,7 +111,8 @@ class StockInventorySourceTests(unittest.TestCase):
         self.assertIn('Stock Inventory-only view', self.settings_source)
         self.assertIn('Assigned Inventory Branch', self.settings_source)
         self.assertIn('value="BC02_BC03"', self.settings_source)
-        self.assertIn('BC02 + BC03 - Cebu + Davao', self.settings_source)
+        self.assertIn('Cebu + Davao', self.settings_source)
+        self.assertIn('Cebu + Davao', self.engineers_source)
         self.assertIn('value="BC02_BC03"', self.engineers_source)
         self.assertIn('Inventory Dashboard', self.dashboard_source)
 
@@ -176,7 +181,7 @@ class StockInventoryBranchResolutionTests(unittest.TestCase):
             ('BC02', 'BC03'),
         )
 
-    def test_combined_manager_can_select_either_branch_but_not_manila(self):
+    def test_combined_manager_can_view_manila_but_manages_only_cebu_and_davao(self):
         manager = SimpleNamespace(
             is_authenticated=True,
             is_active=True,
@@ -188,7 +193,11 @@ class StockInventoryBranchResolutionTests(unittest.TestCase):
         with app_module.app.test_request_context('/'):
             self.assertEqual(
                 app_module.stock_inventory_allowed_branch_codes(manager),
-                ('BC02', 'BC03'),
+                ('BC01', 'BC02', 'BC03'),
+            )
+            self.assertEqual(
+                tuple(app_module.stock_inventory_branch_options_for_user(manager).keys()),
+                ('BC01', 'BC02', 'BC03'),
             )
             self.assertEqual(
                 app_module.stock_inventory_branch_for_user(manager, 'BC02'),
@@ -200,7 +209,18 @@ class StockInventoryBranchResolutionTests(unittest.TestCase):
             )
             self.assertEqual(
                 app_module.stock_inventory_branch_for_user(manager, 'BC01'),
+                'BC01',
+            )
+            self.assertEqual(
+                app_module.stock_inventory_branch_for_user(manager),
                 'BC02',
+            )
+            self.assertFalse(app_module.stock_inventory_can_manage_branch('BC01', manager))
+            self.assertTrue(app_module.stock_inventory_can_manage_branch('BC02', manager))
+            self.assertTrue(app_module.stock_inventory_can_manage_branch('BC03', manager))
+            self.assertEqual(
+                app_module.stock_inventory_branch_for_write(manager, 'BC01'),
+                '',
             )
             self.assertEqual(
                 app_module.changelog_user_branch_codes(manager),

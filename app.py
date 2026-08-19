@@ -5510,6 +5510,15 @@ STOCK_INVENTORY_BRANCH_ASSIGNMENTS = {
     'BC02_BC03': ('BC02', 'BC03'),
 }
 
+# The combined Cebu/Davao assignment may inspect Manila without gaining
+# inventory-management rights there. Mutation access remains assignment-scoped.
+STOCK_INVENTORY_ASSIGNMENT_VIEW_BRANCHES = {
+    'BC01': ('BC01',),
+    'BC02': ('BC02',),
+    'BC03': ('BC03',),
+    'BC02_BC03': ('BC01', 'BC02', 'BC03'),
+}
+
 
 STOCK_INVENTORY_BRANCH_ALIASES = {
     'MANILA': 'BC01',
@@ -5550,6 +5559,16 @@ def stock_inventory_assignment_branch_codes(value):
     """Expand a stored inventory assignment into its allowed physical branches."""
     assignment = normalize_stock_inventory_branch(value)
     return STOCK_INVENTORY_BRANCH_ASSIGNMENTS.get(assignment, ())
+
+
+def stock_inventory_managed_branch_codes(user=None):
+    """Return the physical branches an account may mutate."""
+    target = user or current_user
+    if is_superadmin_user(target):
+        return tuple(STOCK_INVENTORY_BRANCHES.keys())
+    return stock_inventory_assignment_branch_codes(
+        getattr(target, 'stock_inventory_branch_code', None)
+    )
 
 
 def stock_inventory_branch_from_engineer_profile(profile):
@@ -5663,20 +5682,63 @@ def is_hr_schedule_engineer_profile(engineer=None):
     return bool(linked_user and is_hr_schedule_viewer(linked_user))
 
 
-def stock_inventory_branch_for_user(user=None, requested_branch=None):
+def stock_inventory_allowed_branch_codes(user=None):
+    """Return the physical inventory branches an account may access."""
     target = user or current_user
     if is_superadmin_user(target):
-        return normalize_stock_inventory_branch(requested_branch) or 'BC01'
+        return tuple(STOCK_INVENTORY_BRANCHES.keys())
     # Engineer viewers are restricted by the Engineer profile.  Do this
     # before the inventory assignment field so an old/stale manager setting
     # cannot move a read-only engineer into another branch.
     if stock_inventory_read_only_user(target):
         profile = getattr(target, 'engineer_profile', None)
-        return stock_inventory_branch_from_engineer_profile(profile)
-    assigned_branch = normalize_stock_inventory_branch(getattr(target, 'stock_inventory_branch_code', None))
-    if assigned_branch:
-        return assigned_branch
-    return ''
+        profile_branch = stock_inventory_branch_from_engineer_profile(profile)
+        return (profile_branch,) if profile_branch else ()
+    assignment = normalize_stock_inventory_branch(
+        getattr(target, 'stock_inventory_branch_code', None)
+    )
+    return STOCK_INVENTORY_ASSIGNMENT_VIEW_BRANCHES.get(assignment, ())
+
+
+def stock_inventory_branch_options_for_user(user=None):
+    """Return physical branch labels available to the account's inventory page."""
+    return {
+        branch_code: STOCK_INVENTORY_BRANCHES[branch_code]
+        for branch_code in stock_inventory_allowed_branch_codes(user)
+        if branch_code in STOCK_INVENTORY_BRANCHES
+    }
+
+
+def stock_inventory_branch_for_user(user=None, requested_branch=None):
+    """Resolve a requested physical branch within the account's assignment."""
+    target = user or current_user
+    allowed_branches = stock_inventory_allowed_branch_codes(target)
+    if not allowed_branches:
+        return ''
+    requested_code = normalize_stock_inventory_physical_branch(requested_branch)
+    if requested_code in allowed_branches:
+        return requested_code
+    managed_branches = stock_inventory_managed_branch_codes(target)
+    return managed_branches[0] if managed_branches else allowed_branches[0]
+
+
+def stock_inventory_branch_for_write(user=None, requested_branch=None):
+    """Resolve a requested physical branch within the account's mutation scope."""
+    target = user or current_user
+    managed_branches = stock_inventory_managed_branch_codes(target)
+    if not managed_branches:
+        return ''
+    requested_value = (clean_str(requested_branch) or '').strip()
+    if requested_value:
+        requested_code = normalize_stock_inventory_physical_branch(requested_value)
+        return requested_code if requested_code in managed_branches else ''
+    return managed_branches[0]
+
+
+def stock_inventory_can_manage_branch(branch_code, user=None):
+    """Return whether an account may mutate the selected physical branch."""
+    normalized = normalize_stock_inventory_physical_branch(branch_code)
+    return bool(normalized and normalized in stock_inventory_managed_branch_codes(user))
 
 
 def stock_inventory_can_administer(user=None):
@@ -17545,13 +17607,15 @@ def stock_inventory_page():
     branch_code = stock_inventory_branch_for_user(requested_branch=request.args.get('branch'))
     if not branch_code:
         return Response('Inventory branch assignment is required.', status=403, mimetype='text/plain')
+    branch_options = stock_inventory_branch_options_for_user()
     return render_template(
         'stock_inventory.html',
-        stock_branches=STOCK_INVENTORY_BRANCHES,
+        stock_branches=branch_options,
         stock_branch_code=branch_code,
         stock_branch_name=STOCK_INVENTORY_BRANCHES.get(branch_code, branch_code),
-        stock_can_switch_branch=is_superadmin_user(),
-        stock_read_only=stock_inventory_read_only_user(),
+        stock_can_switch_branch=len(branch_options) > 1,
+        stock_read_only=not stock_inventory_can_manage_branch(branch_code),
+        stock_manage_branches=stock_inventory_managed_branch_codes(),
         stock_can_administer=stock_inventory_can_administer(),
     )
 
@@ -56059,11 +56123,17 @@ def stock_inventory_api_guard():
     return None
 
 
-def stock_inventory_request_branch(payload=None):
+def stock_inventory_request_branch(payload=None, require_write=False):
     payload = payload or {}
     requested = request.args.get('branch') or payload.get('branch_code') or payload.get('branch')
-    branch_code = stock_inventory_branch_for_user(current_user, requested)
+    branch_code = (
+        stock_inventory_branch_for_write(current_user, requested)
+        if require_write else
+        stock_inventory_branch_for_user(current_user, requested)
+    )
     if not branch_code:
+        if require_write:
+            raise PermissionError('Stock Inventory management is not enabled for the selected branch.')
         raise PermissionError('A Stock Inventory branch must be assigned to this account.')
     return branch_code
 
@@ -56382,7 +56452,7 @@ def create_stock_inventory_item():
         return denied
     payload = request.get_json(silent=True) or {}
     try:
-        branch_code = stock_inventory_request_branch(payload)
+        branch_code = stock_inventory_request_branch(payload, require_write=True)
     except PermissionError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 403
     barcode = str(payload.get('barcode') or '').strip()
@@ -56447,7 +56517,7 @@ def update_stock_inventory_item(item_id):
         return jsonify({'success': False, 'error': 'Stock item not found.'}), 404
     payload = request.get_json(silent=True) or {}
     try:
-        branch_code = stock_inventory_request_branch(payload)
+        branch_code = stock_inventory_request_branch(payload, require_write=True)
     except PermissionError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 403
     if item.branch_code != branch_code:
@@ -56569,7 +56639,7 @@ def create_stock_inventory_movement():
         return denied
     payload = request.get_json(silent=True) or {}
     try:
-        branch_code = stock_inventory_request_branch(payload)
+        branch_code = stock_inventory_request_branch(payload, require_write=True)
     except PermissionError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 403
     item_id = clean_int(payload.get('item_id'))

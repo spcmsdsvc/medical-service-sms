@@ -136,7 +136,7 @@
             <div>
                 <h2 id="stockBorrowedTitle" class="stock-borrowed-title"><i class="fa-solid fa-person-circle-check me-1"></i> Currently Borrowed Items</h2>
                 <p class="stock-borrowed-subtitle">See who currently has an item, when it was borrowed, and what it is being used for.</p>
-                {% if stock_read_only %}<p class="stock-read-only-note"><i class="fa-solid fa-eye me-1"></i> View-only access for {{ stock_branch_code }} - {{ stock_branch_name }}.</p>{% endif %}
+                <p id="stockReadOnlyNote" class="stock-read-only-note" {% if not stock_read_only %}hidden{% endif %}><i class="fa-solid fa-eye me-1"></i> View-only access for <span id="stockReadOnlyBranchLabel">{{ stock_branch_code }} - {{ stock_branch_name }}</span>.</p>
             </div>
             <span id="stockBorrowedCount" class="stock-badge">0 items</span>
         </div>
@@ -157,7 +157,7 @@
             <p class="stock-hint">USB barcode scanners work here like a keyboard. Scan and press Enter.</p>
         </div>
         <button id="stockLookupButton" class="stock-btn stock-btn-primary" type="button" onclick="lookupScannedBarcode()"><i class="fa-solid fa-magnifying-glass"></i> Look Up</button>
-        {% if not stock_read_only %}<button class="stock-btn stock-btn-neutral" type="button" onclick="openRegisterModal('')"><i class="fa-solid fa-plus"></i> Add Item</button>{% endif %}
+        <button id="stockAddItemButton" class="stock-btn stock-btn-neutral" type="button" {% if stock_read_only %}hidden{% endif %} onclick="openRegisterModal('')"><i class="fa-solid fa-plus"></i> Add Item</button>
     </section>
 
     <section class="stock-kpis" aria-label="Stock summary">
@@ -273,14 +273,21 @@
 </div>
 
 <script>
-const stockState = { items: [], movements: [], borrowed: [], activeTab: 'items', sort: 'name', direction: 'asc', currentItem: null, editItem: null, reverseMovement: null, scanBusy: false, lastScan: '', lastScanAt: 0, branch: {{ stock_branch_code|tojson }}, readOnly: {{ stock_read_only|tojson }}, canAdminister: {{ stock_can_administer|tojson }}, engineers: [] };
+const stockState = { items: [], movements: [], borrowed: [], activeTab: 'items', sort: 'name', direction: 'asc', currentItem: null, editItem: null, reverseMovement: null, scanBusy: false, lastScan: '', lastScanAt: 0, branch: {{ stock_branch_code|tojson }}, readOnly: {{ stock_read_only|tojson }}, manageBranches: {{ stock_manage_branches|tojson }}, canAdminister: {{ stock_can_administer|tojson }}, engineers: [] };
 const stockModals = {};
 
 function stockEscape(value){ const node=document.createElement('div'); node.textContent=String(value ?? ''); return node.innerHTML; }
 function stockHeaders(){ return {'Content-Type':'application/json','X-CSRFToken':getCSRFToken(),'Accept':'application/json'}; }
 function stockBranchParams(extra={}){ return new URLSearchParams({branch:stockState.branch,...extra}); }
 function stockPayload(extra={}){ return {branch_code:stockState.branch,...extra}; }
-function changeStockBranch(branch){ stockState.branch=branch; const url=new URL(location.href); url.searchParams.set('branch',branch); history.replaceState({},'',url); document.querySelectorAll('.stock-branch-label').forEach(el=>el.textContent=branch); refreshStockInventory(); }
+function updateStockBranchMode(){
+    stockState.readOnly=!stockState.manageBranches.includes(stockState.branch);
+    const note=document.getElementById('stockReadOnlyNote'), label=document.getElementById('stockReadOnlyBranchLabel'), addButton=document.getElementById('stockAddItemButton'), select=document.getElementById('stockBranchSelect');
+    if(label){ const option=select?.selectedOptions?.[0]; label.textContent=option?option.textContent.trim():stockState.branch; }
+    if(note)note.hidden=!stockState.readOnly;
+    if(addButton)addButton.hidden=stockState.readOnly;
+}
+function changeStockBranch(branch){ stockState.branch=branch; updateStockBranchMode(); const url=new URL(location.href); url.searchParams.set('branch',branch); history.replaceState({},'',url); document.querySelectorAll('.stock-branch-label').forEach(el=>el.textContent=branch); refreshStockInventory(); }
 async function stockJson(url, options={}){
     const response=await fetch(url,{credentials:'same-origin',cache:'no-store',...options});
     let data={}; try{ data=await response.json(); }catch(_){ data={error:`Request failed (${response.status}).`}; }
