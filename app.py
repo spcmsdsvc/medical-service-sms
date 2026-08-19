@@ -5501,6 +5501,15 @@ STOCK_INVENTORY_BRANCHES = {
     'BC03': 'Davao',
 }
 
+# Permission assignments may cover one physical branch or the combined Cebu/Davao
+# scope. Inventory records themselves always remain stored against a physical branch.
+STOCK_INVENTORY_BRANCH_ASSIGNMENTS = {
+    'BC01': ('BC01',),
+    'BC02': ('BC02',),
+    'BC03': ('BC03',),
+    'BC02_BC03': ('BC02', 'BC03'),
+}
+
 
 STOCK_INVENTORY_BRANCH_ALIASES = {
     'MANILA': 'BC01',
@@ -5517,17 +5526,30 @@ STOCK_INVENTORY_BRANCH_ALIASES = {
 
 
 def normalize_stock_inventory_branch(value):
-    """Strict: only a real branch code counts as a branch code.
+    """Strictly normalize a stored single- or multi-branch assignment.
 
     This guards the *assigned* field, `User.stock_inventory_branch_code`, which is written
     by the Settings form and read to decide which branch an account may see. Accepting free
     text here would turn a stale or mistyped value into working access to a branch, so an
-    unrecognised value stays empty and the caller denies. Free-text branch names belong to
-    the Engineer profile and are resolved by
-    `stock_inventory_branch_from_engineer_profile` instead.
+    unrecognised value stays empty and the caller denies. The combined Cebu/Davao assignment
+    is accepted as a permission value, but is expanded to physical branch codes by
+    `stock_inventory_assignment_branch_codes`. Free-text branch names belong to the Engineer
+    profile and are resolved by `stock_inventory_branch_from_engineer_profile` instead.
     """
     branch_code = (clean_str(value) or '').strip().upper()
+    return branch_code if branch_code in STOCK_INVENTORY_BRANCH_ASSIGNMENTS else ''
+
+
+def normalize_stock_inventory_physical_branch(value):
+    """Normalize a branch selector to one physical inventory branch."""
+    branch_code = (clean_str(value) or '').strip().upper()
     return branch_code if branch_code in STOCK_INVENTORY_BRANCHES else ''
+
+
+def stock_inventory_assignment_branch_codes(value):
+    """Expand a stored inventory assignment into its allowed physical branches."""
+    assignment = normalize_stock_inventory_branch(value)
+    return STOCK_INVENTORY_BRANCH_ASSIGNMENTS.get(assignment, ())
 
 
 def stock_inventory_branch_from_engineer_profile(profile):
@@ -16293,18 +16315,26 @@ def changelog_item_audiences(item):
     return normalize_changelog_audiences(parsed)
 
 
-def changelog_user_branch(user=None):
-    """Return the branch code an account belongs to, or '' when it is not branch-scoped."""
+def changelog_user_branch_codes(user=None):
+    """Return all physical branch codes an account belongs to."""
     target = user or current_user
-    code = (clean_str(getattr(target, 'stock_inventory_branch_code', None)) or '').strip().upper()
-    if code:
-        return code
+    assigned = normalize_stock_inventory_branch(
+        getattr(target, 'stock_inventory_branch_code', None)
+    )
+    if assigned:
+        return set(stock_inventory_assignment_branch_codes(assigned))
     profile = getattr(target, 'engineer_profile', None)
     branch_name = (clean_str(getattr(profile, 'branch', None)) or '').strip().lower()
     for branch_code, label in STOCK_INVENTORY_BRANCHES.items():
         if branch_name and branch_name in (label or '').strip().lower():
-            return branch_code
-    return ''
+            return {branch_code}
+    return set()
+
+
+def changelog_user_branch(user=None):
+    """Return one branch code, or '' when the account is unscoped or multi-branch."""
+    branch_codes = changelog_user_branch_codes(user)
+    return next(iter(branch_codes), '') if len(branch_codes) == 1 else ''
 
 
 def changelog_visible_items(release, user=None, include_unpublished=False,
@@ -16315,7 +16345,11 @@ def changelog_visible_items(release, user=None, include_unpublished=False,
     given role or branch will get, rather than the admin view's "everything".
     """
     user_audiences = set(audiences) if audiences else changelog_user_audiences(user)
-    viewer_branch = branch_code if branch_code is not None else changelog_user_branch(user)
+    explicit_branch = (clean_str(branch_code) or '').strip().upper()
+    if branch_code is not None:
+        viewer_branches = {explicit_branch} if explicit_branch else set()
+    else:
+        viewer_branches = changelog_user_branch_codes(user)
 
     items = sorted(release.items or [], key=lambda item: (item.sort_order or 100, item.id or 0))
 
@@ -16327,7 +16361,7 @@ def changelog_visible_items(release, user=None, include_unpublished=False,
             continue
         item_branches = changelog_item_branches(item)
         # Empty branch list means every branch. A viewer with no branch sees everything.
-        if item_branches and viewer_branch and viewer_branch not in item_branches:
+        if item_branches and viewer_branches and not viewer_branches.intersection(item_branches):
             continue
         visible.append(item)
     return visible
@@ -17050,8 +17084,8 @@ def resolve_changelog_audience_recipients(audience='everyone', branch_code=''):
         # An account with no branch receives everything, matching how an item with no
         # branch list reaches every branch.
         if branch_code:
-            user_branch = (changelog_user_branch(user) or '').strip().upper()
-            if user_branch and user_branch != branch_code:
+            user_branches = changelog_user_branch_codes(user)
+            if user_branches and branch_code not in user_branches:
                 continue
 
         address = normalize_single_email_address(get_user_email_for_notification(user))

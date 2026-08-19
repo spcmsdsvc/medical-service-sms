@@ -21,6 +21,7 @@ class StockInventorySourceTests(unittest.TestCase):
         cls.page_source = (ROOT / 'templates' / 'stock_inventory.html').read_text(encoding='utf-8')
         cls.dashboard_source = (ROOT / 'templates' / 'stock_inventory_dashboard.html').read_text(encoding='utf-8')
         cls.settings_source = (ROOT / 'templates' / 'settings.html').read_text(encoding='utf-8')
+        cls.engineers_source = (ROOT / 'templates' / 'engineers.html').read_text(encoding='utf-8')
 
     def test_branch_inventory_module_and_additive_tables_exist(self):
         self.assertIn("@app.route('/stock_inventory')", self.app_source)
@@ -44,7 +45,7 @@ class StockInventorySourceTests(unittest.TestCase):
             "'CEBU': 'BC02'",
             "'DAVAO': 'BC03'",
             'if stock_inventory_read_only_user(target):',
-            "return stock_inventory_branch_from_engineer_profile(profile)",
+            'stock_inventory_branch_from_engineer_profile(profile)',
             'stock_read_only',
             'readOnly:',
         ):
@@ -105,6 +106,9 @@ class StockInventorySourceTests(unittest.TestCase):
         self.assertIn('restrict_stock_inventory_only_accounts', self.app_source)
         self.assertIn('Stock Inventory-only view', self.settings_source)
         self.assertIn('Assigned Inventory Branch', self.settings_source)
+        self.assertIn('value="BC02_BC03"', self.settings_source)
+        self.assertIn('BC02 + BC03 - Cebu + Davao', self.settings_source)
+        self.assertIn('value="BC02_BC03"', self.engineers_source)
         self.assertIn('Inventory Dashboard', self.dashboard_source)
 
     def test_disabling_inventory_access_clears_inventory_only_mode(self):
@@ -144,7 +148,8 @@ class StockInventoryBranchResolutionTests(unittest.TestCase):
     'Manila', 'Cebu', 'Davao' -- onto BC01/BC02/BC03. That tolerance was briefly added to
     `normalize_stock_inventory_branch`, which also guards the assigned
     `User.stock_inventory_branch_code`, so a stale or mistyped value there would have become
-    working access to a branch instead of being refused.
+    working access to a branch instead of being refused. The one explicit multi-branch
+    assignment is represented by its exact code and expanded only when resolving access.
     """
 
     def test_the_assigned_branch_field_accepts_codes_only(self):
@@ -159,6 +164,49 @@ class StockInventoryBranchResolutionTests(unittest.TestCase):
         for code in ('BC01', 'BC02', 'BC03'):
             self.assertEqual(app_module.normalize_stock_inventory_branch(code), code)
             self.assertEqual(app_module.normalize_stock_inventory_branch(code.lower()), code)
+
+    def test_cebu_davao_is_one_assignment_with_two_physical_branches(self):
+        self.assertEqual(app_module.normalize_stock_inventory_branch('BC02_BC03'), 'BC02_BC03')
+        self.assertEqual(
+            app_module.stock_inventory_assignment_branch_codes('BC02_BC03'),
+            ('BC02', 'BC03'),
+        )
+        self.assertEqual(
+            app_module.stock_inventory_assignment_branch_codes('BC02_BC03'.lower()),
+            ('BC02', 'BC03'),
+        )
+
+    def test_combined_manager_can_select_either_branch_but_not_manila(self):
+        manager = SimpleNamespace(
+            is_authenticated=True,
+            is_active=True,
+            username='combined_inventory_manager',
+            role='staff',
+            can_manage_stock_inventory=True,
+            stock_inventory_branch_code='BC02_BC03',
+        )
+        with app_module.app.test_request_context('/'):
+            self.assertEqual(
+                app_module.stock_inventory_allowed_branch_codes(manager),
+                ('BC02', 'BC03'),
+            )
+            self.assertEqual(
+                app_module.stock_inventory_branch_for_user(manager, 'BC02'),
+                'BC02',
+            )
+            self.assertEqual(
+                app_module.stock_inventory_branch_for_user(manager, 'BC03'),
+                'BC03',
+            )
+            self.assertEqual(
+                app_module.stock_inventory_branch_for_user(manager, 'BC01'),
+                'BC02',
+            )
+            self.assertEqual(
+                app_module.changelog_user_branch_codes(manager),
+                {'BC02', 'BC03'},
+            )
+            self.assertEqual(app_module.changelog_user_branch(manager), '')
 
     def test_engineer_profile_branches_resolve(self):
         cases = {'Manila': 'BC01', 'Cebu': 'BC02', 'Davao': 'BC03', 'BC02': 'BC02'}

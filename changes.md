@@ -1,5 +1,9 @@
 # Project Change Log
 
+- Added one combined `BC02_BC03` Stock Inventory assignment option labelled `BC02 + BC03 - Cebu + Davao` to Approval Routing and superadmin personnel creation. The stored permission expands only at access time to the physical Cebu (`BC02`) and Davao (`BC03`) inventories, allowing the assigned manager to switch between those two branches while keeping Manila excluded; single-branch assignments and engineer read-only branch isolation remain unchanged.
+- Updated the stock-inventory branch resolver/page controls and multi-branch What's New branch filtering in `app.py`, with focused coverage in `tests/test_stock_inventory.py`. No database schema or migration change, service-worker cache bump, release-manifest entry, deployment, production access, commit, or push was performed for this change.
+- Verification passed with `python -m py_compile app.py`, 24 focused Stock Inventory tests, 60 adjacent staff/admin/changelog tests, 65 combined Stock Inventory/changelog tests after the final branch-filter adjustment, and the full repository suite: 700 tests passed with 1 existing skip. No browser automation or Codex app navigation was used.
+
 codex changes - 2026-08-18 (approved Approval Center notification correction plan)
 
 - Recorded the complete owner-approved correction plan in `plans.md` with status `Approved - awaiting go-ahead`. The plan identifies the deterministic missing-`metadata.event` null-normalization failure behind the Approval Notifications 500, limits the future Builder change to the shared server matcher, and requires isolated positive-control coverage for notification load and scoped mark-all-read.
