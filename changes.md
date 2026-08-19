@@ -1,8 +1,9 @@
 # Project Change Log
 
 - Added one combined `BC02_BC03` Stock Inventory assignment option labelled `BC02 + BC03 - Cebu + Davao` to Approval Routing and superadmin personnel creation. The stored permission expands only at access time to the physical Cebu (`BC02`) and Davao (`BC03`) inventories, allowing the assigned manager to switch between those two branches while keeping Manila excluded; single-branch assignments and engineer read-only branch isolation remain unchanged.
-- Updated the stock-inventory branch resolver/page controls and multi-branch What's New branch filtering in `app.py`, with focused coverage in `tests/test_stock_inventory.py`. No database schema or migration change, service-worker cache bump, release-manifest entry, deployment, production access, commit, or push was performed for this change.
+- Updated the stock-inventory branch resolver/page controls and multi-branch What's New branch filtering in `app.py`, with focused coverage in `tests/test_stock_inventory.py`. No database schema or migration change, service-worker cache bump, release-manifest entry, deployment, or production access was performed for this change; the owner separately authorized the commit and push after verification.
 - Verification passed with `python -m py_compile app.py`, 24 focused Stock Inventory tests, 60 adjacent staff/admin/changelog tests, 65 combined Stock Inventory/changelog tests after the final branch-filter adjustment, and the full repository suite: 700 tests passed with 1 existing skip. No browser automation or Codex app navigation was used.
+- Committed as `5cc323b` and pushed to `origin/main`; no manual Railway redeploy or production setting change was performed. Railway deployment metadata could not be queried because the Railway CLI is unavailable in this environment.
 
 codex changes - 2026-08-18 (approved Approval Center notification correction plan)
 
