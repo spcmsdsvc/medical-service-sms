@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-24-shared-pdf-upload-conversion",
+      "release_date": "2026-08-24",
+      "title": "Shared PDF Upload Conversion",
+      "summary": "Receipt PDF uploads now stay within the stored size limit when a readable conversion is possible, with clear guidance when a document must be split.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-24-shared-pdf-upload-conversion",
+          "category": "PDF Uploads",
+          "description": "Receipt PDFs are checked for readability, compressed from the original source while preserving pages and orientation, and rejected with an instruction to split the document when no readable version can fit the 2MB stored limit.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-18-approval-notification-safety",
       "release_date": "2026-08-18",
       "title": "Approval Notifications Stay Available",

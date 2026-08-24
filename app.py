@@ -25357,6 +25357,19 @@ REIMBURSEMENT_RECEIPT_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
 REIMBURSEMENT_RECEIPT_MAX_BYTES = 2 * 1024 * 1024
 REIMBURSEMENT_RECEIPT_INTAKE_MAX_BYTES = 35 * 1024 * 1024
 REIMBURSEMENT_RECEIPT_ALLOWED_LABEL = 'PDF, JPG, JPEG, or PNG up to 35MB'
+REIMBURSEMENT_PDF_READABILITY_FAILURE_MESSAGE = (
+    'PDF could not be reduced below 2MB while keeping it readable. '
+    'Please split it into smaller PDFs and upload them separately.'
+)
+REIMBURSEMENT_PDF_NATIVE_PROFILES = (
+    (150, 75, 'native-color-150dpi-q75'),
+    (120, 65, 'native-color-120dpi-q65'),
+    (96, 55, 'native-color-96dpi-q55'),
+)
+REIMBURSEMENT_PDF_RASTER_PROFILES = (
+    (96, 50, False, 'raster-color-96dpi-q50'),
+    (72, 45, True, 'raster-grayscale-72dpi-q45'),
+)
 
 
 def reimbursement_receipt_upload_root():
@@ -25449,120 +25462,450 @@ def reimbursement_optimize_image_receipt_bytes(file_bytes, target_bytes=REIMBURS
     return file_bytes, None, None
 
 
-def reimbursement_rasterize_pdf_receipt_bytes(pdf_bytes, target_bytes=REIMBURSEMENT_RECEIPT_MAX_BYTES):
-    """Last-resort compression for scanned receipt PDFs uploaded by engineers."""
-    if not pdf_bytes or len(pdf_bytes) <= target_bytes:
-        return pdf_bytes
+def _reimbursement_pdf_conversion_log(input_size, selected_stage='', profile='', output_size=None, failure_category=''):
+    """Log bounded PDF conversion facts without filenames or document contents."""
+    fields = [f'input_bytes={int(input_size or 0)}']
+    if selected_stage:
+        fields.append(f'selected_stage={selected_stage}')
+    if profile:
+        fields.append(f'profile={profile}')
+    if output_size is not None:
+        fields.append(f'output_bytes={int(output_size)}')
+    if failure_category:
+        fields.append(f'failure_category={failure_category}')
+    print(f"[PDF conversion] {' '.join(fields)}", flush=True)
 
+
+def _reimbursement_pdf_open_source(pdf_bytes):
+    """Open one PDF source and return it with its page topology."""
+    try:
+        import fitz
+
+        document = fitz.open(stream=pdf_bytes, filetype='pdf')
+    except Exception as open_error:
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            failure_category='malformed',
+        )
+        raise ValueError(
+            'PDF is malformed or could not be read. Please export a valid PDF and upload it again.'
+        ) from open_error
+
+    if document.needs_pass:
+        document.close()
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            failure_category='password_protected',
+        )
+        raise ValueError(
+            'PDF is password-protected. Remove the password and upload the PDF again.'
+        )
+
+    try:
+        if len(document) <= 0:
+            raise ValueError('PDF has no readable pages.')
+        topology = []
+        for page in document:
+            media_box = page.mediabox
+            rotation = int(page.rotation or 0)
+            if rotation not in {0, 90, 180, 270}:
+                raise ValueError('PDF has unsupported page rotation.')
+            topology.append((
+                round(float(media_box.width), 3),
+                round(float(media_box.height), 3),
+                rotation,
+            ))
+        return document, topology
+    except Exception as topology_error:
+        document.close()
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            failure_category='malformed',
+        )
+        raise ValueError(
+            'PDF is malformed or could not be read. Please export a valid PDF and upload it again.'
+        ) from topology_error
+
+
+def _reimbursement_validate_pdf_candidate(candidate_bytes, source_topology, input_size, stage, profile):
+    """Reopen and validate one candidate before it can be selected or returned."""
+    candidate_document = None
+    try:
+        import fitz
+        from pypdf import PdfReader
+
+        candidate_document = fitz.open(stream=candidate_bytes, filetype='pdf')
+        if candidate_document.needs_pass or len(candidate_document) != len(source_topology):
+            raise ValueError('candidate topology')
+        for page, expected in zip(candidate_document, source_topology):
+            media_box = page.mediabox
+            actual = (
+                round(float(media_box.width), 3),
+                round(float(media_box.height), 3),
+                int(page.rotation or 0),
+            )
+            if (
+                abs(actual[0] - expected[0]) > 0.1 or
+                abs(actual[1] - expected[1]) > 0.1 or
+                actual[2] != expected[2]
+            ):
+                raise ValueError('candidate topology')
+
+        reader = PdfReader(io.BytesIO(candidate_bytes), strict=False)
+        if len(reader.pages) != len(source_topology) or getattr(reader, 'is_encrypted', False):
+            raise ValueError('candidate parseability')
+        return True
+    except Exception as validation_error:
+        category = 'candidate_topology' if 'topology' in str(validation_error) else 'candidate_invalid'
+        _reimbursement_pdf_conversion_log(
+            input_size,
+            selected_stage=stage,
+            profile=profile,
+            output_size=len(candidate_bytes or b''),
+            failure_category=category,
+        )
+        return False
+    finally:
+        if candidate_document is not None:
+            candidate_document.close()
+
+
+def _reimbursement_structural_pdf_candidate(pdf_bytes):
+    """Compress content streams without changing the source page topology."""
+    try:
+        from pypdf import PdfReader, PdfWriter
+
+        reader = PdfReader(io.BytesIO(pdf_bytes), strict=False)
+        if getattr(reader, 'is_encrypted', False):
+            return None
+        writer = PdfWriter()
+        for page in reader.pages:
+            try:
+                page.compress_content_streams()
+            except Exception:
+                pass
+            writer.add_page(page)
+        try:
+            writer.add_metadata({})
+        except Exception:
+            pass
+        output = io.BytesIO()
+        writer.write(output)
+        return output.getvalue()
+    except Exception:
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            selected_stage='structural',
+            profile='content-streams',
+            failure_category='structural_compression',
+        )
+        return None
+
+
+def _reimbursement_image_target_size(image_size, image_infos, dpi):
+    """Return a downscale target based on the largest displayed image rectangle."""
+    width, height = image_size
+    display_width = 0.0
+    display_height = 0.0
+    for info in image_infos:
+        bbox = info.get('bbox') or ()
+        if len(bbox) != 4:
+            continue
+        display_width = max(display_width, abs(float(bbox[2]) - float(bbox[0])))
+        display_height = max(display_height, abs(float(bbox[3]) - float(bbox[1])))
+    if display_width <= 0 or display_height <= 0:
+        return width, height
+    target_width = max(1, int(round(display_width / 72.0 * dpi)))
+    target_height = max(1, int(round(display_height / 72.0 * dpi)))
+    scale = min(1.0, target_width / float(width), target_height / float(height))
+    return max(1, int(round(width * scale))), max(1, int(round(height * scale)))
+
+
+def _reimbursement_rewrite_pdf_images_native(pdf_bytes, dpi, jpeg_quality):
+    """Rewrite embedded images from a fresh source while retaining text/vector streams."""
+    document = None
+    try:
+        import fitz
+        from PIL import Image, ImageOps
+
+        document = fitz.open(stream=pdf_bytes, filetype='pdf')
+        if document.needs_pass:
+            return None
+
+        image_records = {}
+        for page in document:
+            for info in page.get_image_info(xrefs=True):
+                xref = clean_int(info.get('xref'))
+                if not xref:
+                    continue
+                record = image_records.setdefault(xref, {'page': page, 'infos': []})
+                record['infos'].append(info)
+
+        resampling = getattr(Image, 'Resampling', Image)
+        resample_filter = getattr(resampling, 'LANCZOS')
+        for xref, record in image_records.items():
+            extracted = document.extract_image(xref)
+            image_bytes = extracted.get('image') if extracted else None
+            if not image_bytes:
+                continue
+
+            with Image.open(io.BytesIO(image_bytes)) as source_image:
+                source_image.load()
+                normalized_image = ImageOps.exif_transpose(source_image)
+                try:
+                    if normalized_image.mode in {'RGBA', 'LA'} or 'transparency' in normalized_image.info:
+                        rgba_image = normalized_image.convert('RGBA')
+                        alpha = rgba_image.getchannel('A')
+                        image = Image.new('RGB', rgba_image.size, 'white')
+                        image.paste(rgba_image, mask=alpha)
+                        alpha.close()
+                        rgba_image.close()
+                    else:
+                        image = normalized_image.convert('RGB')
+                finally:
+                    if normalized_image is not source_image:
+                        normalized_image.close()
+
+                try:
+                    target_size = _reimbursement_image_target_size(image.size, record['infos'], dpi)
+                    resized_image = image
+                    if image.size != target_size:
+                        resized_image = image.resize(target_size, resample_filter)
+                    try:
+                        optimized_stream = io.BytesIO()
+                        resized_image.save(
+                            optimized_stream,
+                            format='JPEG',
+                            quality=jpeg_quality,
+                            optimize=True,
+                            progressive=True,
+                            dpi=(dpi, dpi),
+                        )
+                        optimized_bytes = optimized_stream.getvalue()
+                        optimized_stream.close()
+                    finally:
+                        if resized_image is not image:
+                            resized_image.close()
+                finally:
+                    image.close()
+
+            if optimized_bytes and len(optimized_bytes) < len(image_bytes):
+                record['page'].replace_image(xref, stream=optimized_bytes)
+
+        return document.tobytes(deflate=True, garbage=4)
+    except Exception:
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            selected_stage='native',
+            failure_category='native_image_rewrite',
+        )
+        return None
+    finally:
+        if document is not None:
+            document.close()
+
+
+def _reimbursement_rasterize_pdf_profile(pdf_bytes, dpi, jpeg_quality, grayscale=False):
+    """Rasterize each source page while preserving its MediaBox and rotation."""
+    source_document = None
+    output_document = None
     try:
         import fitz
         from PIL import Image
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.units import mm
-        from reportlab.lib.utils import ImageReader
-        from reportlab.pdfgen import canvas
-    except Exception as import_error:
-        print(f"[Reimbursement] PDF raster compression unavailable: {import_error}", flush=True)
-        return pdf_bytes
 
-    try:
-        source_doc = fitz.open(stream=pdf_bytes, filetype='pdf')
-    except Exception as open_error:
-        print(f"[Reimbursement] PDF raster compression skipped: {open_error}", flush=True)
-        return pdf_bytes
+        source_document = fitz.open(stream=pdf_bytes, filetype='pdf')
+        if source_document.needs_pass:
+            return None
 
-    if source_doc.needs_pass:
-        source_doc.close()
-        return pdf_bytes
+        output_document = fitz.open()
+        colorspace = fitz.csGRAY if grayscale else fitz.csRGB
+        image_mode = 'L' if grayscale else 'RGB'
+        scale = float(dpi) / 72.0
 
-    page_count = len(source_doc)
-    if page_count <= 0:
-        source_doc.close()
-        return pdf_bytes
+        for source_page in source_document:
+            media_box = source_page.mediabox
+            media_width = float(media_box.width)
+            media_height = float(media_box.height)
+            source_rotation = int(source_page.rotation or 0)
 
-    settings = [
-        (1.20, 76),
-        (1.00, 70),
-        (0.85, 64),
-        (0.72, 58),
-        (0.60, 52),
-        (0.50, 46),
-    ]
-    best_bytes = None
-    best_size = None
+            # Render in the source page's unrotated coordinate system. The
+            # original rotation is restored only after the image is inserted
+            # into an unrotated page, preventing clipping and double rotation.
+            source_page.set_rotation(0)
+            try:
+                pixmap = source_page.get_pixmap(
+                    matrix=fitz.Matrix(scale, scale),
+                    colorspace=colorspace,
+                    alpha=False,
+                )
+            finally:
+                source_page.set_rotation(source_rotation)
 
-    try:
-        for zoom, jpeg_quality in settings:
-            output = io.BytesIO()
-            pdf_canvas = canvas.Canvas(output, pagesize=A4, pageCompression=1)
-            page_width, page_height = A4
-            margin = 10 * mm
-            max_width = page_width - (2 * margin)
-            max_height = page_height - (2 * margin)
-
-            for page in source_doc:
-                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
-                image = Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
-                image_buffer = io.BytesIO()
+            output_page = output_document.new_page(width=media_width, height=media_height)
+            image = Image.frombytes(image_mode, (pixmap.width, pixmap.height), pixmap.samples)
+            image_stream = io.BytesIO()
+            try:
                 image.save(
-                    image_buffer,
+                    image_stream,
                     format='JPEG',
                     quality=jpeg_quality,
                     optimize=True,
-                    progressive=True
+                    progressive=True,
                 )
-                image_buffer.seek(0)
-
-                image_width, image_height = image.size
-                scale = min(max_width / float(image_width), max_height / float(image_height))
-                draw_width = image_width * scale
-                draw_height = image_height * scale
-                x_pos = (page_width - draw_width) / 2
-                y_pos = (page_height - draw_height) / 2
-
-                pdf_canvas.drawImage(
-                    ImageReader(image_buffer),
-                    x_pos,
-                    y_pos,
-                    width=draw_width,
-                    height=draw_height,
-                    preserveAspectRatio=True,
-                    mask='auto'
+                output_page.insert_image(
+                    fitz.Rect(0, 0, media_width, media_height),
+                    stream=image_stream.getvalue(),
                 )
-                pdf_canvas.showPage()
+            finally:
+                image_stream.close()
+                image.close()
+                del pixmap
 
-            pdf_canvas.save()
-            optimized = output.getvalue()
-            optimized_size = len(optimized)
-            if optimized and (best_size is None or optimized_size < best_size):
-                best_bytes = optimized
-                best_size = optimized_size
-            if optimized and optimized_size <= target_bytes:
-                print(
-                    f"[Reimbursement] Uploaded receipt PDF raster-optimized: {len(pdf_bytes)} bytes -> {optimized_size} bytes.",
-                    flush=True
-                )
-                return optimized
-    except Exception as raster_error:
-        print(f"[Reimbursement] PDF raster compression failed: {raster_error}", flush=True)
+            output_page.set_rotation(source_rotation)
+
+        return output_document.tobytes(deflate=True, garbage=4)
+    except Exception:
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            selected_stage='raster',
+            failure_category='rasterization',
+        )
+        return None
     finally:
-        source_doc.close()
+        if output_document is not None:
+            output_document.close()
+        if source_document is not None:
+            source_document.close()
 
-    if best_bytes and best_size and best_size < len(pdf_bytes):
-        return best_bytes
-    return pdf_bytes
+
+def _reimbursement_pdf_target_bytes(target_bytes):
+    requested_target_bytes = clean_int(target_bytes) or int(
+        os.environ.get('REIMBURSEMENT_RECEIPT_PDF_TARGET_MB', '2') or 2
+    ) * 1024 * 1024
+    return min(max(1, requested_target_bytes), REIMBURSEMENT_RECEIPT_MAX_BYTES)
 
 
-def reimbursement_optimize_pdf_receipt_bytes(pdf_bytes, target_bytes=REIMBURSEMENT_RECEIPT_MAX_BYTES):
-    """Compress uploaded reimbursement receipt PDFs, including scanned PDFs."""
+def _reimbursement_convert_pdf_bytes(pdf_bytes, target_bytes, raise_on_failure):
+    """Run bounded PDF profiles from the original source bytes."""
+    if not pdf_bytes:
+        return pdf_bytes
+
+    target_bytes = _reimbursement_pdf_target_bytes(target_bytes)
+    input_size = len(pdf_bytes)
+    source_document, source_topology = _reimbursement_pdf_open_source(pdf_bytes)
+    source_document.close()
+
+    if input_size <= target_bytes:
+        _reimbursement_pdf_conversion_log(
+            input_size,
+            selected_stage='original',
+            profile='unchanged-valid-pdf',
+            output_size=input_size,
+        )
+        return pdf_bytes
+
+    best_candidate = pdf_bytes
+
+    def consider(candidate, stage, profile):
+        nonlocal best_candidate
+        if not candidate:
+            return None
+        if not _reimbursement_validate_pdf_candidate(
+            candidate,
+            source_topology,
+            input_size,
+            stage,
+            profile,
+        ):
+            return None
+        if len(candidate) < len(best_candidate):
+            best_candidate = candidate
+        if len(candidate) <= target_bytes:
+            _reimbursement_pdf_conversion_log(
+                input_size,
+                selected_stage=stage,
+                profile=profile,
+                output_size=len(candidate),
+            )
+            return candidate
+        return None
+
+    selected = consider(
+        _reimbursement_structural_pdf_candidate(pdf_bytes),
+        'structural',
+        'content-streams',
+    )
+    if selected:
+        return selected
+
+    for dpi, jpeg_quality, profile in REIMBURSEMENT_PDF_NATIVE_PROFILES:
+        selected = consider(
+            _reimbursement_rewrite_pdf_images_native(pdf_bytes, dpi, jpeg_quality),
+            'native',
+            profile,
+        )
+        if selected:
+            return selected
+
+    for dpi, jpeg_quality, grayscale, profile in REIMBURSEMENT_PDF_RASTER_PROFILES:
+        selected = consider(
+            _reimbursement_rasterize_pdf_profile(pdf_bytes, dpi, jpeg_quality, grayscale),
+            'raster',
+            profile,
+        )
+        if selected:
+            return selected
+
+    if raise_on_failure:
+        _reimbursement_pdf_conversion_log(
+            input_size,
+            failure_category='readability_floor',
+        )
+        raise ValueError(REIMBURSEMENT_PDF_READABILITY_FAILURE_MESSAGE)
+
+    _reimbursement_pdf_conversion_log(
+        input_size,
+        selected_stage='best_effort',
+        profile='smallest-validated-candidate',
+        output_size=len(best_candidate),
+        failure_category='readability_floor',
+    )
+    return best_candidate
+
+
+def reimbursement_rasterize_pdf_receipt_bytes(pdf_bytes, target_bytes=REIMBURSEMENT_RECEIPT_MAX_BYTES):
+    """Return the final readable raster profile or raise the exact floor error."""
+    target_bytes = _reimbursement_pdf_target_bytes(target_bytes)
     if not pdf_bytes or len(pdf_bytes) <= target_bytes:
         return pdf_bytes
 
-    optimized = reimbursement_compress_pdf_bytes_best_effort(pdf_bytes, target_bytes)
-    if optimized and len(optimized) <= target_bytes:
-        return optimized
+    source_document, source_topology = _reimbursement_pdf_open_source(pdf_bytes)
+    source_document.close()
+    profile = REIMBURSEMENT_PDF_RASTER_PROFILES[-1]
+    candidate = _reimbursement_rasterize_pdf_profile(
+        pdf_bytes,
+        profile[0],
+        profile[1],
+        profile[2],
+    )
+    if (
+        candidate and
+        len(candidate) <= target_bytes and
+        _reimbursement_validate_pdf_candidate(
+            candidate,
+            source_topology,
+            len(pdf_bytes),
+            'raster',
+            profile[3],
+        )
+    ):
+        return candidate
+    raise ValueError(REIMBURSEMENT_PDF_READABILITY_FAILURE_MESSAGE)
 
-    return reimbursement_rasterize_pdf_receipt_bytes(optimized or pdf_bytes, target_bytes)
+
+def reimbursement_optimize_pdf_receipt_bytes(pdf_bytes, target_bytes=REIMBURSEMENT_RECEIPT_MAX_BYTES):
+    """Strictly compress one uploaded reimbursement PDF to the stored ceiling."""
+    return _reimbursement_convert_pdf_bytes(pdf_bytes, target_bytes, raise_on_failure=True)
 
 
 def reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename):
@@ -25593,14 +25936,15 @@ def reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename):
             file_bytes = optimized_bytes
             stored_ext = optimized_ext
             content_type = optimized_content_type
-    elif ext == 'pdf' and len(file_bytes) > REIMBURSEMENT_RECEIPT_MAX_BYTES:
-        file_bytes = reimbursement_optimize_pdf_receipt_bytes(file_bytes, REIMBURSEMENT_RECEIPT_MAX_BYTES)
+    elif ext == 'pdf':
+        source_document, _ = _reimbursement_pdf_open_source(file_bytes)
+        source_document.close()
+        if len(file_bytes) > REIMBURSEMENT_RECEIPT_MAX_BYTES:
+            file_bytes = reimbursement_optimize_pdf_receipt_bytes(file_bytes, REIMBURSEMENT_RECEIPT_MAX_BYTES)
         content_type = 'application/pdf'
 
     if len(file_bytes) > REIMBURSEMENT_RECEIPT_MAX_BYTES:
-        raise ValueError(
-            'Receipt could not be reduced below 2MB. Please upload a smaller or clearer file.'
-        )
+        raise ValueError(REIMBURSEMENT_PDF_READABILITY_FAILURE_MESSAGE)
 
     return file_bytes, stored_ext, content_type
 
@@ -25920,57 +26264,24 @@ def reimbursement_append_receipt_file_to_writer(writer, receipt):
 
 
 def reimbursement_compress_pdf_bytes_best_effort(pdf_bytes, target_bytes=None):
-    """Best-effort compression for generated All Receipts PDF.
-
-    This keeps the official accounting output small without touching original
-    uploaded receipt files. Exact 2 MB is not guaranteed for many pages or
-    already-optimized PDFs, but image receipts are downscaled before this step.
-    """
+    """Best-effort generated-package compression that never raises the upload error."""
     if not pdf_bytes:
         return pdf_bytes
-
-    target_bytes = clean_int(target_bytes) or int(os.environ.get('REIMBURSEMENT_RECEIPT_PDF_TARGET_MB', '2') or 2) * 1024 * 1024
-    if len(pdf_bytes) <= target_bytes:
-        return pdf_bytes
-
     try:
-        from pypdf import PdfReader, PdfWriter
-
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-        if getattr(reader, 'is_encrypted', False):
-            try:
-                reader.decrypt('')
-            except Exception:
-                return pdf_bytes
-
-        writer = PdfWriter()
-        for page in reader.pages:
-            try:
-                page.compress_content_streams()
-            except Exception:
-                pass
-            writer.add_page(page)
-
-        try:
-            writer.add_metadata({})
-        except Exception:
-            pass
-
-        output = io.BytesIO()
-        writer.write(output)
-        compressed = output.getvalue()
-
-        if compressed and len(compressed) < len(pdf_bytes):
-            print(
-                f"[Reimbursement] All Receipts PDF optimized: {len(pdf_bytes)} bytes -> {len(compressed)} bytes.",
-                flush=True
-            )
-            return compressed
-
-    except Exception as compression_error:
-        print(f"[Reimbursement] All Receipts PDF compression skipped: {compression_error}", flush=True)
-
-    return pdf_bytes
+        return _reimbursement_convert_pdf_bytes(
+            pdf_bytes,
+            target_bytes,
+            raise_on_failure=False,
+        )
+    except Exception:
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes),
+            selected_stage='best_effort',
+            profile='original-fallback',
+            output_size=len(pdf_bytes),
+            failure_category='best_effort_unavailable',
+        )
+        return pdf_bytes
 
 
 def build_reimbursement_all_receipts_pdf(header):
@@ -35875,6 +36186,11 @@ def upload_travel_liquidation_receipt(row_id):
             'row': travel_liquidation_row_to_dict(row),
             'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
         })
+    except ValueError as exc:
+        db.session.rollback()
+        if 'file_path' in locals():
+            managed_storage_rollback_new_file(STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, file_path)
+        return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception as exc:
         db.session.rollback()
         if 'file_path' in locals():
@@ -50687,6 +51003,11 @@ def upload_cash_advance_liquidation_receipt(row_id):
             'row': cash_advance_liquidation_row_to_dict(row),
             'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)
         })
+    except ValueError as exc:
+        db.session.rollback()
+        if 'file_path' in locals():
+            managed_storage_rollback_new_file(STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, file_path)
+        return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception as exc:
         db.session.rollback()
         if 'file_path' in locals():

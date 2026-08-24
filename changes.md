@@ -1,5 +1,49 @@
 # Project Change Log
 
+codex changes - 2026-08-24
+
+- Started the owner-authorized Shared PDF Upload Conversion correction in the isolated
+  `codex/shared-pdf-upload-correction` worktree from verified `origin/main` commit
+  `5d107cf6f275237183b8f80f423a627bf1c1fb43`; the protected primary worktree, its Calibration
+  Certificate changes, scheduler database, output/tmp artifacts, handoff, and unrelated files were
+  not edited or staged.
+- Added `tests/test_shared_pdf_upload_conversion.py` before production edits and ran it against the
+  unchanged baseline using a fresh external `MEDICAL_SERVICE_TEST_DB`: **16 tests ran, 7 failed,
+  6 errored, and 3 passed**. The red controls covered missing native/raster stages, malformed and
+  password-protected small PDFs, old A4 raster geometry, the readability floor, both Liquidation
+  handlers returning 500, and absent stage diagnostics; the old image-heavy raster success and 35
+  MiB intake controls remained positive.
+- Replaced the isolated shared PDF conversion path in `app.py` with strict source validation,
+  structural compression, fresh-source native color profiles, fresh-source 96 DPI color and 72 DPI
+  grayscale raster profiles, candidate reopen/topology validation, bounded stage/profile diagnostics,
+  per-page/image buffer cleanup, and the exact split-document instruction at the readability floor.
+- Kept generated/accounting/email package calls through `reimbursement_compress_pdf_bytes_best_effort`
+  non-throwing: when no candidate reaches its requested target, the helper returns the smallest
+  validated candidate or valid original instead of raising the upload-specific split instruction.
+- Added explicit conversion `ValueError` HTTP 400 branches with rollback/new-file cleanup to both
+  actual Liquidation receipt upload handlers; unexpected storage/database failures retain HTTP 500.
+- Focused post-fix conversion verification now passes **16/16** on a fresh external database,
+  including searchable native text, all four asymmetric rotation geometries across both raster
+  profiles, strict 2 MiB behavior, malformed/password/floor handling, generated-package fallback,
+  both Liquidation 400 branches, the 500 control, diagnostics, and 35 MiB intake ordering.
+- Related accounting attachment, accounting-form, schedule-email, reimbursement/LPR integration,
+  liquidation-row, reimbursement summary/consistency, and Travel Request suites passed **35/35**
+  tests on a fresh external database. The separate 14-test LPR workflow run had one pre-existing
+  SQLite migration-lock failure in `ensure_reimbursement_receipt_columns()` before the standalone
+  LPR POST; no PDF conversion assertion failed. Complete unittest discovery was also launched
+  against a fresh external database, but repeated instances of that same migration-lock path kept
+  it from producing a final unittest summary during this Builder cycle; after verifying the exact
+  isolated runner command lines, the Builder stopped only Python PIDs 5008 and 2764 and recorded
+  `exit=-1`. No aggregate count is claimed, and no project files were discarded.
+- Ran the PDF skill artifact marker exactly once, found bundled Poppler, and inspected deterministic
+  PyMuPDF renders for native, color-raster, and grayscale-raster four-page outputs at rotations
+  0/90/180/270. All pages retained asymmetric markers, page geometry, and expected orientation;
+  Poppler rendered four PNG pages for each raster output. The representative 10,456,189-byte
+  conversion completed in 0.543 seconds and produced a four-page 410,917-byte output.
+- Isolated `app.py` and focused-test AST/bytecode checks passed, the release manifest parsed with 40
+  releases and 188 unique item keys, and `git diff --check` passed. No commit, push, deployment,
+  Railway, production, browser, or primary-worktree action was performed.
+
 - Updated the combined `BC02_BC03` Stock Inventory manager view so Manila (`BC01`) is visible alongside Cebu and Davao, while mutation access remains limited to the assigned Cebu/Davao branches. The page now switches to view-only controls for Manila, and the backend mutation endpoints reject Manila writes; no schema, migration, service-worker, release-manifest, deployment, or production-setting change was performed for this follow-up. The owner separately authorized the commit and push after verification.
 - Simplified the visible Approval Routing/personnel label for the combined assignment to `Cebu + Davao` while retaining the stored `BC02_BC03` value for compatibility; no schema, migration, service-worker, release-manifest, deployment, or production-setting change was performed for this label-only follow-up.
 - Committed as `47e757c` and pushed to `origin/main`; no manual redeploy or production setting change was performed. Railway deployment metadata could not be queried because the Railway CLI is unavailable in this environment.

@@ -53,6 +53,206 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Shared PDF Upload Conversion Repair
+
+**Status:** In progress
+**Approved:** 2026-08-24
+**Detailed:** 2026-08-24
+**Execution authorization:** The owner authorized this focused correction cycle for one fresh
+Builder on 2026-08-24. It is isolated at
+`C:/Users/Jonamar/AppData/Local/Temp/codex-medical-service-sms-pdf-fix-20260824` on branch
+`codex/shared-pdf-upload-correction`, based on verified `origin/main` commit
+`5d107cf6f275237183b8f80f423a627bf1c1fb43`. Review, commit, push, deployment, Railway, and
+production actions remain separately unauthorized.
+
+### Context and intended outcome
+
+The earlier combined dirty-working-tree implementation of the Shared PDF Upload Conversion Repair
+passed its focused and complete tests, but a staged snapshot made by line-number-only extraction was
+not a valid standalone `app.py`. Three read-only reviewers classified that staged snapshot
+`CORRECTION REQUIRED`. They also identified two material risks in the working-tree implementation:
+the raster fallback could clip, mirror, or double-rotate asymmetric content on rotated pages because
+rendering, insertion, and rotation geometry were inconsistent; and generated accounting/email/package
+callers of `reimbursement_compress_pdf_bytes_best_effort` could receive the upload-specific split-PDF
+`ValueError` instead of their historical non-throwing best-effort result.
+
+The correction must produce one bounded, validated conversion path for Timeline schedules,
+Reimbursement, Travel Request, Cash Advance, both Liquidations, and LPR/embedded LPR uploads. It
+keeps the 35 MiB intake limit and strict 2 MiB stored limit, prefers structural/native conversion,
+uses fresh-source raster profiles only as fallback, preserves page count/MediaBox/rotation, and gives
+the exact split instruction when no readable upload candidate reaches the ceiling. The legacy
+best-effort generated-package helper remains non-throwing and returns the smallest validated
+candidate or the valid original when the target is unreachable.
+
+### Decisions taken
+
+1. Work only in the isolated worktree above, created from the verified remote `main`; the protected
+   primary worktree is read-only reference state and must not be staged, reset, cleaned, committed,
+   pushed, or otherwise changed.
+2. Add the focused tests before production edits and run them against the unchanged baseline so the
+   fail-first evidence is real. Patch complete logical functions with context; do not extract or
+   reconstruct code by raw old/new line numbers.
+3. Keep `reimbursement_prepare_receipt_upload_bytes` strict for every upload caller. Validate
+   malformed and password-protected PDFs even when they are already below 2 MiB. Use native color
+   profiles 150/120/96 DPI at q75/q65/q55 and raster profiles 96 DPI color q50 then 72 DPI grayscale
+   q45; never compound degraded candidates or lower the readable floor.
+4. Make raster geometry explicit: render each source page in unrotated coordinates, insert into an
+   unrotated page with the source MediaBox dimensions, then restore the source 0/90/180/270 rotation.
+   Tests must use deterministic asymmetric corner/edge markers and inspect rendered content, not only
+   rotation metadata.
+5. Keep generated/accounting/email callers compatible through the existing
+   `reimbursement_compress_pdf_bytes_best_effort` interface. Strict upload conversion may raise the
+   exact split instruction; best-effort generation must return a valid best candidate/original.
+6. Put conversion `ValueError` handling inside both actual Liquidation upload handlers, rollback the
+   session and any newly written path, and return HTTP 400. Unexpected storage/database failures
+   remain HTTP 500. No routes, request/response shapes, schemas, dependencies, templates, frontend
+   assets, service worker, migration, or attachment-count behavior changes.
+
+### Investigation
+
+1. The baseline shared upload preparation is in `app.py` around
+   `reimbursement_prepare_receipt_upload_bytes`; it previously skipped PDF validation below 2 MiB,
+   performed content-stream compression, used an A4 raster fallback, and returned an oversized best
+   candidate instead of a strict readable-upload failure.
+2. The legacy generated helper is
+   `reimbursement_compress_pdf_bytes_best_effort`; it is called by generated receipt/accounting/email
+   package paths and must not inherit the upload-only exception contract.
+3. The actual upload handlers are
+   `upload_travel_liquidation_receipt` and `upload_cash_advance_liquidation_receipt`. Both previously
+   had one broad exception branch that converted an expected conversion `ValueError` into HTTP 500.
+4. The primary dirty worktree contains protected Calibration Certificate changes, scheduler/database
+   state, artifacts, templates, and unrelated tests. None are part of this isolated branch or this
+   plan record.
+5. The PDF skill requires one artifact-operation marker before the first PDF-producing test/QA
+   command. The required marker was run once before the baseline focused run. Poppler availability
+   must be checked once; PyMuPDF rendering is the fallback for deterministic inspection.
+
+### Affected files
+
+| Path | Authorized correction |
+| --- | --- |
+| `app.py` | Shared PDF candidate conversion/validation/logging, strict upload preparation, non-throwing generated helper, and two Liquidation `ValueError` branches. Preserve CRLF/no BOM. |
+| `tests/test_shared_pdf_upload_conversion.py` | Fail-first and post-fix coverage for upload, generated-package compatibility, topology, raster geometry, diagnostics, intake, and Liquidation status behavior. LF/no BOM. |
+| `plans.md` | This authorized in-progress correction record and final Builder evidence. |
+| `changes.md` | Factual 2026-08-24 correction entries and exact verification. |
+| `static/changelog/releases.json` | One dated engineer-facing Shared PDF release entry only. |
+
+### Numbered execution steps
+
+1. [x] Complete preflight: reread applicable instructions, baseline `changes.md`, plan structure,
+   PDF skill, protected primary status, worktree list, and remote `main`; confirm the isolated path
+   and branch are absent; create the clean worktree from verified `origin/main`; confirm clean status,
+   branch, base, source, tests, and runtime.
+2. [x] Add `tests/test_shared_pdf_upload_conversion.py` before production edits. Run the unchanged
+   baseline with a fresh external `MEDICAL_SERVICE_TEST_DB` and preserve exact fail/error counts,
+   including positive controls for the old raster success and 35 MiB intake guard.
+3. [x] Replace the logical PDF conversion functions in `app.py`: validate source PDFs, preserve
+   topology, run structural/native/fresh-source raster profiles, reopen every candidate, release
+   per-image/page buffers, and separate strict upload failure from best-effort generated fallback.
+4. [x] Add strict PDF validation for already-small uploads and preserve the existing image path,
+   extension/content-type behavior, 35 MiB intake ceiling, 2 MiB stored ceiling, and original
+   display filename behavior.
+5. [x] Add the two in-handler conversion `ValueError` branches with rollback/new-file cleanup and
+   leave the broad unexpected-error branches at HTTP 500.
+6. [x] Run focused, related, complete-suite, syntax, manifest, topology, rendered-marker, and
+   near-limit benchmark verification. Use a fresh external database for each Python suite; never
+   open `scheduler.db`; do not use browser automation. The focused and related suites, syntax,
+   manifest, topology, rendering, and benchmark checks passed; the complete discovery command was
+   attempted but remained in the existing SQLite migration-lock path without producing a final
+   unittest summary, as recorded below.
+7. [x] Complete isolated self-review of only the authorized files/scope, update this plan's Builder
+   evidence and the same-day `changes.md` section with exact pass/fail/skip results, add only the
+   Shared PDF release item, and audit status/diff/line endings. Stop without review classification,
+   staging, commit, push, deployment, Railway, or production work.
+
+### Deliberately excluded
+
+Calibration Certificate implementation or assets, primary dirty-worktree files, templates, frontend
+assets, schemas, migrations, attachment counts, `scheduler.db`, `output/`, `tmp/`, handoff and
+pending-work artifacts, unrelated tests/configuration, dependency changes, service-worker bumps,
+browser automation, Git staging/history/commit/push, Railway settings, deployment, and production
+state. These are protected or unrelated to this server-side correction.
+
+### Verification
+
+- Baseline focused module must run against unchanged source before the fix; post-fix focused coverage
+  must prove strict <=2 MiB conversion, native searchable text, source page count/MediaBox/rotation,
+  malformed/password/floor errors, non-throwing generated-package behavior, both Liquidation 400
+  branches plus a 500 control, and >35 MiB rejection before conversion.
+- Generate representative vector, scanned-color, multipage, and asymmetric-marker PDFs in memory or
+  skill-approved temporary paths. Reopen with PyMuPDF/pypdf, inspect all pages, and render with Poppler
+  if available; otherwise inspect PyMuPDF renders and report Poppler unavailable.
+- Run accounting attachment, schedule-email attachment, reimbursement/liquidation, Travel/Cash
+  Advance, and LPR suites, then complete unittest discovery against fresh external test databases.
+- Run the near-limit conversion benchmark below the 180-second Gunicorn timeout, AST/bytecode-safe
+  syntax checks, release-manifest JSON/uniqueness checks, `git diff --check`, exact status audit, and
+  protected-primary confirmation.
+
+### After implementation
+
+The fresh Builder will append one consolidated local, uncommitted execution record here with exact
+fail-first evidence, files changed, tests and counts, rendered geometry/Poppler status, benchmark,
+limitations, exclusions, and protected-worktree confirmation. The plan remains `In progress` until a
+separately authorized commit exists. Post-implementation review/classification and publication are
+separate gates.
+
+### Risks
+
+The material risks are raster clipping or orientation errors, cumulative quality loss, oversized
+uploads, malformed/password persistence, generated-package exceptions, leaked document identity in
+diagnostics, and unexpected Liquidation error classification. Fresh-source profiles, candidate
+reopen/topology checks, asymmetric rendered markers at every rotation, explicit stage logs, strict
+upload versus non-throwing generated contracts, focused route controls, and protected-worktree audits
+are the proportional safety net.
+
+### Builder execution evidence — correction cycle (2026-08-24)
+
+- **Fail-first:** The focused module was added before production edits and run against unchanged
+  isolated `origin/main`: `python -m unittest discover -s tests -p
+  test_shared_pdf_upload_conversion.py -v` ran 16 tests with **7 failures, 6 errors, and 3
+  passes**. The intended red controls were missing conversion stages, small malformed/password PDF
+  validation, old A4 raster geometry, strict readability-floor behavior, absent diagnostics, and
+  both Liquidation conversion branches returning 500; the old raster-success and 35 MiB intake
+  controls stayed green.
+- **Implementation:** Only `app.py`, the new focused test module, this plan, `changes.md`, and one
+  Shared PDF item in `static/changelog/releases.json` changed in the isolated tree. The converter
+  now validates every source/candidate, tries structural then fresh-source native and raster
+  profiles, preserves page count/MediaBox/rotation, uses explicit unrotated raster geometry with
+  restored rotation, releases page/image buffers, enforces the strict upload ceiling, and keeps the
+  generated-package helper non-throwing. Both actual Liquidation upload handlers now return 400 for
+  conversion `ValueError` after rollback/cleanup while retaining 500 for unexpected failures.
+- **Focused post-fix:** `python -m unittest discover -s tests -p
+  test_shared_pdf_upload_conversion.py -q` ran **16 tests: 16 passed, 0 failed, 0 skipped** in
+  15.382 seconds against a fresh external database.
+- **Related suites:** The accounting attachment, accounting-form, schedule-email, reimbursement/LPR
+  integration, liquidation-row, reimbursement summary/consistency, and Travel Request modules ran
+  **35 tests: 35 passed, 0 failed, 0 skipped**. `tests.test_lpr_workflow` ran **14 tests with 1
+  failure**: its standalone-LPR first POST received 500 from the pre-existing
+  `ensure_reimbursement_receipt_columns()` SQLite unique-index migration reporting `database is
+  locked`; no PDF converter assertion failed. The same migration-lock diagnostic prevented the
+  complete discovery command from reaching unittest's final summary by the Builder report cutoff;
+  therefore no aggregate pass/fail/skip count is claimed for that run. After verifying the exact
+  isolated runner command lines and observing only repeated lock diagnostics, the Builder stopped
+  only its Python child/parent PIDs 5008 and 2764; the session ended with `exit=-1` and no project
+  files were discarded.
+- **Artifact/geometry:** The PDF skill marker was run exactly once before PDF creation. Bundled
+  Poppler was found at
+  `C:/Users/Jonamar/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/poppler/Library/bin`
+  (`pdfinfo.exe` and `pdftoppm.exe`). A deterministic four-page asymmetric source with rotations
+  0/90/180/270 was reopened and rendered with PyMuPDF; native, color-raster, and grayscale-raster
+  outputs retained all four pages, MediaBox dimensions, rotations, searchable native text where
+  applicable, and all corner markers without clipping, mirroring, or double rotation. Poppler
+  rendered four PNG pages for each raster output as a cross-check.
+- **Benchmark and static checks:** The four-page 10,456,189-byte representative conversion produced
+  a 410,917-byte four-page output in **0.543 seconds**, under the 180-second budget. Isolated
+  `app.py` and focused-test AST parsing and `py_compile` passed; `releases.json` parsed with **40
+  releases and 188 unique item keys**, including one Shared PDF entry; `git diff --check` passed.
+- **Scope/safety:** The isolated branch remains uncommitted and unpushed. No browser automation,
+  Railway, deployment, production, schema, dependency, template, service-worker, or database
+  migration action was performed. The protected primary worktree remained unchanged by this cycle;
+  its dirty Calibration Certificate files, database, artifacts, handoff, templates, and tests were
+  not staged or copied into the isolated branch.
+
 ### After implementation — the workflow every plan ends with
 
 ## Fix Approval Center notification 500s caused by missing event metadata
