@@ -55,15 +55,18 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Shared PDF Upload Conversion Repair
 
-**Status:** In progress
+**Status:** Executed
 **Approved:** 2026-08-24
 **Detailed:** 2026-08-24
+**Finished:** 2026-08-24
+**Implementation commit:** `1e4260e`
 **Execution authorization:** The owner authorized this focused correction cycle for one fresh
 Builder on 2026-08-24. It is isolated at
 `C:/Users/Jonamar/AppData/Local/Temp/codex-medical-service-sms-pdf-fix-20260824` on branch
 `codex/shared-pdf-upload-correction`, based on verified `origin/main` commit
-`5d107cf6f275237183b8f80f423a627bf1c1fb43`. Review, commit, push, deployment, Railway, and
-production actions remain separately unauthorized.
+`5d107cf6f275237183b8f80f423a627bf1c1fb43`. The owner later waived another review and separately
+authorized the isolated commit and push on 2026-08-24. Manual deployment, Railway changes, and
+production operations remain unauthorized.
 
 ### Context and intended outcome
 

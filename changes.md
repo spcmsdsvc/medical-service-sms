@@ -43,6 +43,11 @@ codex changes - 2026-08-24
 - Isolated `app.py` and focused-test AST/bytecode checks passed, the release manifest parsed with 40
   releases and 188 unique item keys, and `git diff --check` passed. No commit, push, deployment,
   Railway, production, browser, or primary-worktree action was performed.
+- The owner waived another review and separately authorized commit and push after the isolated
+  verification report. The five-file implementation was committed as `1e4260e`; this record-only
+  follow-up marks the plan `Executed` and is prepared for the same fast-forward publication to
+  `origin/main`. No primary-worktree file, manual deployment, Railway setting, database, or
+  production operation is included.
 
 - Updated the combined `BC02_BC03` Stock Inventory manager view so Manila (`BC01`) is visible alongside Cebu and Davao, while mutation access remains limited to the assigned Cebu/Davao branches. The page now switches to view-only controls for Manila, and the backend mutation endpoints reject Manila writes; no schema, migration, service-worker, release-manifest, deployment, or production-setting change was performed for this follow-up. The owner separately authorized the commit and push after verification.
 - Simplified the visible Approval Routing/personnel label for the combined assignment to `Cebu + Davao` while retaining the stored `BC02_BC03` value for compatibility; no schema, migration, service-worker, release-manifest, deployment, or production-setting change was performed for this label-only follow-up.
