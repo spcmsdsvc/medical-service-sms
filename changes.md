@@ -46,6 +46,11 @@ codex changes - 2026-08-25
   Handoff CC plan is now `In progress` with the Builder's exact red/green and full-discovery
   evidence. Post-implementation review, correction, commit, push, deployment, Railway, and
   production actions remain separately unauthorized.
+- Committed only the Accounting Handoff CC backend, Settings metadata, focused test, admin release
+  item, approved plan, and matching change record as `ec8015e`. P.O./Calibration work and every
+  protected artifact remained unstaged. The owner separately authorized pushing this implementation
+  to `origin/main`; no manual Railway redeploy, variable change, or production-data action is
+  included.
 
 codex changes - 2026-08-24
 
