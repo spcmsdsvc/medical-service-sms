@@ -62,7 +62,8 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 is authorized for this complete package through one fresh Builder. Review, staging, commit, push,
 promotion to `main`, Railway/deployment, production, and browser actions remain separately
 unauthorized.
-**Finished:** 2026-08-25 in implementation commit `87e5ed1`; publication record follows separately.
+**Finished:** 2026-08-25 in implementation commit `87e5ed1`; published through record commit
+`5b2ce1b` and accepted successfully by Railway production.
 
 ### Context and intended outcome
 

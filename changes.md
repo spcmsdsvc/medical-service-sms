@@ -6,7 +6,10 @@ codex changes - 2026-08-25
   `87e5ed1`. Only the six intended P.O. backend, register template, focused test, release manifest,
   approved plan, and matching change record files were included; the protected Calibration
   Certificate worktree and every database/artifact remained outside the commit. The owner
-  separately authorized publication to `origin/main`; remote and Railway verification follow.
+  separately authorized publication to `origin/main`; implementation plus its execution record
+  were fast-forwarded through `5b2ce1b`, `git ls-remote` confirmed the same remote hash, Railway's
+  `empowering-integrity / production` deployment reported **Success**, and the live production
+  release manifest exposed the new one-time P.O. entry.
 
 - Implemented conditional one-time Single P.O. support in `app.py`: Products whose exact status is
   No Expiry Set - No Contract, with a Product Start Date and no End Date, now save as one-time
