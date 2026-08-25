@@ -2,6 +2,29 @@
 
 codex changes - 2026-08-25
 
+- Published the complete Calibration Report and Calibration Certificate package in isolated
+  implementation commit `7f05b06`, rebuilt from the current `origin/main` so the eleven upstream
+  commits and their P.O./shared-PDF corrections remain intact. The commit contains only the
+  calibration backend, editor assets, official DOCX/PDF templates, pinned JS runtimes, affected
+  approval/inventory/report/Timeline templates, release entries, and focused regression tests.
+- Create TSR now provides the optional source-matched Calibration Report editor, durable draft and
+  final DOCX handling, canonical six-name/38-model certificate catalog matching, machine-owned
+  unique BSID data, `YYYY-MMDD-BSID` certificate numbers, and conditional Small/Large focal-spot
+  tables in generated reports.
+- Calibration Certificate approval now supports routed revision-aware requests, immutable signed
+  certificates, the administrator-controlled original-template `_No_Signature.pdf` hard-copy,
+  acting-approver identity/signature rendering, status/notification surfaces, and atomic artifact
+  lifecycle. No-signature files remain locked from engineers and ordinary approvers, use established
+  schedule read visibility for authorized regional/superadmins, cannot be deleted, and are excluded
+  from every client-email preview and send package.
+- Final isolated publication verification passed the real-template Calibration Report suite
+  **16/16**, Certificate approval/PDF suite **20/20**, Reports archive/authorization suite **7/7**,
+  and schedule-email attachment suite **5/5**. Approval notification **3/3**, Approval Center wording
+  **6/6**, and offline resilience **42/42** also passed independently. Python AST, JavaScript syntax,
+  Jinja parsing, release/catalog JSON uniqueness, and `git diff --check` passed. Browser automation
+  was not used; `scheduler.db`, handoffs, output/tmp, production data, and unrelated dirty work were
+  excluded from publication.
+
 - Updated `templates/products.html` so successful product saves update the local inventory state and
   rerender only the affected filtered/sorted list instead of refetching all products and clients.
   The save flow now preserves the user's active filters, sort, and scroll position, removes the
