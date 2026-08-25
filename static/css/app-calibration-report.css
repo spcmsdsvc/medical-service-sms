@@ -1,0 +1,141 @@
+.calibration-report-card{border:1px solid #dbe4ee;border-left:5px solid var(--app-primary,#c8102e);background:linear-gradient(135deg,rgba(255,255,255,.98),rgba(248,250,252,.98));}
+.calibration-report-card .calibration-report-status{font-weight:800;}
+.calibration-report-card .calibration-report-status.ready{color:#15803d;}
+.calibration-report-card .calibration-report-status.draft{color:#b45309;}
+.calibration-report-card .calibration-report-status.muted{color:#64748b;}
+.calibration-report-card .btn{min-height:44px;}
+
+#calibration-report-overlay{position:fixed;inset:0;z-index:2050;display:none;flex-direction:column;background:rgba(15,23,42,.72);backdrop-filter:blur(3px);}
+#calibration-report-overlay.is-open{display:flex;}
+.calibration-report-toolbar{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 18px;background:#fff;border-bottom:1px solid #cbd5e1;box-shadow:0 4px 14px rgba(15,23,42,.15);}
+.calibration-report-toolbar-title{display:flex;align-items:center;gap:10px;min-width:0;}
+.calibration-report-toolbar-title h2{margin:0;font-size:1.1rem;font-weight:900;white-space:nowrap;}
+.calibration-report-toolbar-title small{display:block;color:#64748b;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.calibration-report-toolbar-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.calibration-report-toolbar .btn{min-height:44px;}
+.calibration-report-certificate-controls{display:flex;align-items:stretch;gap:8px;flex:1 1 100%;order:2;flex-wrap:wrap;padding:8px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;}
+.calibration-report-certificate-field,.calibration-report-certificate-preview{display:flex;flex-direction:column;justify-content:center;gap:3px;min-width:150px;margin:0;color:#1e3a8a;font:800 11px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;text-transform:uppercase;letter-spacing:.03em;}
+.calibration-report-certificate-field input{min-height:38px;width:180px;border:1px solid #93c5fd;border-radius:6px;padding:6px 8px;background:#fff;color:#111827;font:700 13px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;text-transform:none;letter-spacing:normal;}
+.calibration-report-certificate-field input:focus{outline:2px solid rgba(37,99,235,.3);border-color:#2563eb;}
+.calibration-report-certificate-preview{min-width:220px;flex:1 1 220px;}
+.calibration-report-certificate-preview output{display:block;min-height:38px;padding:10px 8px;border:1px solid #bfdbfe;border-radius:6px;background:#fff;color:#1e3a8a;font:800 12px/1.2 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-transform:none;letter-spacing:normal;overflow-wrap:anywhere;}
+.calibration-report-certificate-preview small{font:700 10px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;text-transform:none;letter-spacing:normal;color:#64748b;}
+.calibration-report-certificate-controls > .btn{align-self:end;min-height:44px;}
+.calibration-report-modal-status{display:none;margin:0;padding:9px 18px;border-bottom:1px solid #cbd5e1;background:#fff;font:800 13px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;}
+.calibration-report-modal-status.is-visible{display:block;}
+.calibration-report-modal-status.tone-success{background:#ecfdf5;color:#166534;}
+.calibration-report-modal-status.tone-info{background:#eff6ff;color:#1d4ed8;}
+.calibration-report-modal-status.tone-warning{background:#fffbeb;color:#92400e;}
+.calibration-report-modal-status.tone-danger{background:#fef2f2;color:#b91c1c;}
+.calibration-report-workspace{min-height:0;overflow:auto;padding:20px;}
+.calibration-report-editor{width:min(100%,980px);margin:0 auto;}
+.calibration-report-template-note{margin:0 auto 12px;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;color:#475569;font:700 12px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;}
+.calibration-report-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 auto 14px;}
+.calibration-report-tab{min-height:44px;border:1px solid #cbd5e1;border-radius:10px;padding:9px 14px;background:#fff;color:#334155;font-weight:900;cursor:pointer;}
+.calibration-report-tab.is-active{background:var(--app-primary,#c8102e);border-color:var(--app-primary,#c8102e);color:#fff;}
+.calibration-report-page{display:none;width:8.5in;max-width:100%;min-height:11in;margin:0 auto 20px;padding:34px 38px;background:#fff;color:#111;box-shadow:0 12px 36px rgba(15,23,42,.24);font-family:Cambria,"Times New Roman",serif;}
+.calibration-report-page.is-active{display:block;}
+.calibration-report-paper-header{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:center;border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:16px;}
+.calibration-report-paper-header img{display:block;max-width:100%;max-height:52px;object-fit:contain;object-position:left center;}
+.calibration-report-paper-brand{font-size:12px;line-height:1.25;font-weight:700;}
+.calibration-report-paper-brand strong{display:block;font-size:16px;}
+.calibration-report-paper-title{text-align:center;margin:8px 0 14px;font-size:20px;font-weight:900;letter-spacing:.04em;}
+.calibration-report-section{margin-top:13px;border:1.4px solid #111;}
+.calibration-report-section-title{padding:6px 8px;background:#f1f5f9;border-bottom:1.2px solid #111;font-size:13px;font-weight:900;letter-spacing:.02em;}
+.calibration-report-grid{display:grid;grid-template-columns:1fr 1fr;}
+.calibration-report-grid.three{grid-template-columns:1fr 1fr 1fr;}
+.calibration-report-field{min-width:0;padding:6px 8px;border-right:1px solid #111;border-bottom:1px solid #111;}
+.calibration-report-field:nth-child(2n){border-right:0;}
+.calibration-report-grid.three .calibration-report-field:nth-child(2n){border-right:1px solid #111;}
+.calibration-report-grid.three .calibration-report-field:nth-child(3n){border-right:0;}
+.calibration-report-field label{display:block;margin-bottom:3px;font-size:11px;font-weight:900;text-transform:uppercase;color:#334155;}
+.calibration-report-field input,.calibration-report-field textarea,.calibration-report-check-result,.calibration-report-exposure-input,.calibration-report-performance-result{width:100%;min-height:38px;border:1px solid #cbd5e1;border-radius:6px;padding:6px 8px;background:#fff;color:#111;font:700 14px Cambria,"Times New Roman",serif;}
+.calibration-report-field textarea{min-height:60px;resize:vertical;}
+.calibration-report-field input:focus,.calibration-report-field textarea:focus,.calibration-report-check-result:focus,.calibration-report-exposure-input:focus,.calibration-report-performance-result:focus,.calibration-report-reference-bar input:focus{outline:2px solid rgba(37,99,235,.3);border-color:#2563eb;}
+.calibration-report-field select{width:100%;min-height:38px;border:1px solid #cbd5e1;border-radius:6px;padding:6px 8px;background:#fff;color:#111;font:700 14px Cambria,"Times New Roman",serif;}
+.calibration-report-field select:focus{outline:2px solid rgba(37,99,235,.3);border-color:#2563eb;}
+.calibration-report-catalog-help{display:block;margin-top:4px;color:#64748b;font:700 11px/1.25 system-ui,-apple-system,"Segoe UI",sans-serif;}
+.calibration-report-model-match{min-height:30px;margin-top:5px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;color:#475569;font:700 11px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;}
+.calibration-report-model-match small{display:block;margin-top:2px;color:#64748b;font-weight:600;}
+.calibration-report-model-match.is-accepted{border-color:#86efac;background:#f0fdf4;color:#166534;}
+.calibration-report-model-match.is-warning{border-color:#fbbf24;background:#fffbeb;color:#92400e;}
+.calibration-report-model-match.is-empty{color:#64748b;}
+.calibration-report-model-suggestions{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
+.calibration-report-model-suggestion{border:1px solid #f59e0b;border-radius:5px;padding:3px 6px;background:#fff;color:#92400e;font:700 11px/1.2 system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer;}
+.calibration-report-model-suggestion:hover,.calibration-report-model-suggestion:focus{background:#fef3c7;outline:2px solid rgba(245,158,11,.3);}
+.calibration-report-readonly{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:7px 8px;font-size:12px;line-height:1.25;font-weight:700;color:#334155;}
+.calibration-report-help{margin:0 0 10px;color:#64748b;font:700 12px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;}
+.calibration-report-check-table,.calibration-report-exposure-table,.calibration-report-criteria-table{width:100%;border-collapse:collapse;table-layout:fixed;font-family:Cambria,"Times New Roman",serif;color:#111;}
+.calibration-report-check-table th,.calibration-report-check-table td,.calibration-report-exposure-table th,.calibration-report-exposure-table td,.calibration-report-criteria-table th,.calibration-report-criteria-table td{border:1px solid #111;padding:6px;vertical-align:top;}
+.calibration-report-check-table th,.calibration-report-exposure-table th,.calibration-report-criteria-table th{font-size:11px;text-align:center;font-weight:900;background:#f1f5f9;}
+.calibration-report-check-table th:first-child{width:27%;}.calibration-report-check-table th:nth-child(2){width:53%;}.calibration-report-check-table th:last-child{width:20%;}
+.calibration-report-check-label{font-size:13px;font-weight:900;}
+.calibration-report-check-criteria{font-size:12px;line-height:1.25;white-space:pre-wrap;}
+.calibration-report-check-result{min-height:52px;resize:vertical;font-size:13px;}
+.calibration-report-calibration-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;}
+.calibration-report-calibration-grid .calibration-report-field{border:0;padding:0;}
+.calibration-report-signature-panel{margin:10px;border:1px dashed #94a3b8;border-radius:10px;padding:10px;background:#f8fafc;}
+.calibration-report-signature-canvas{display:block;width:100%;height:150px;border:1px solid #94a3b8;border-radius:8px;background:#fff;touch-action:none;cursor:crosshair;}
+.calibration-report-signature-actions{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;}
+.calibration-report-signature-actions .btn{min-height:44px;}
+.calibration-report-signature-status{font-size:12px;color:#64748b;font-weight:700;}
+.calibration-report-exposure-scroll{overflow-x:auto;padding:10px;}
+.calibration-report-exposure-table{min-width:760px;}
+.calibration-report-exposure-table th{font-size:10px;line-height:1.15;}
+.calibration-report-exposure-table td{height:44px;padding:3px;}
+.calibration-report-exposure-input{min-height:36px;padding:4px;font-size:12px;text-align:center;}
+.calibration-report-reference-bar{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:7px 8px;border:1px solid #111;font-size:12px;font-weight:900;}
+.calibration-report-focal-toggle,.calibration-report-focal-size{display:flex;align-items:center;gap:6px;min-height:34px;}
+.calibration-report-focal-toggle input{width:18px;height:18px;accent-color:#2563eb;}
+.calibration-report-focal-size input{width:84px;min-height:32px;border:1px solid #94a3b8;border-radius:5px;padding:4px 6px;background:#fff;color:#111;font:700 12px Cambria,"Times New Roman",serif;}
+.calibration-report-focal-group.is-disabled{opacity:.58;}
+.calibration-report-focal-group.is-disabled .calibration-report-exposure-input{background:#e2e8f0;color:#64748b;cursor:not-allowed;}
+.calibration-report-criteria-table th:first-child{width:72%;}.calibration-report-criteria-table th:last-child{width:28%;}
+.calibration-report-performance-result{min-height:48px;resize:vertical;font-size:12px;}
+.calibration-report-attachment-note{font-size:12px;color:#64748b;font-weight:700;}
+.calibration-report-file-meta{font-size:12px;color:#334155;font-weight:800;overflow-wrap:anywhere;}
+.calibration-report-capacity{font-size:12px;color:#64748b;font-weight:700;}
+.calibration-report-capacity.is-over{color:#b91c1c;}
+.calibration-report-doc-chip-note{font-size:.75rem;color:#64748b;font-weight:700;}
+
+@media(max-width:768px){
+  .calibration-report-toolbar{padding:10px;align-items:flex-start;}
+  .calibration-report-toolbar-title{width:100%;}
+  .calibration-report-toolbar-title h2{font-size:1rem;}
+  .calibration-report-toolbar-title small{white-space:normal;}
+  .calibration-report-toolbar-actions{width:100%;}
+  .calibration-report-toolbar-actions .btn{flex:1 1 calc(50% - 8px);}
+  .calibration-report-certificate-controls{width:100%;order:2;}
+  .calibration-report-certificate-field,.calibration-report-certificate-preview{min-width:0;flex:1 1 calc(50% - 8px);}
+  .calibration-report-certificate-field input{width:100%;}
+  .calibration-report-certificate-controls > .btn{width:100%;flex-basis:100%;}
+  .calibration-report-workspace{padding:8px;}
+  .calibration-report-tabs{position:sticky;top:0;z-index:1;padding:4px 0;background:rgba(226,232,240,.96);}
+  .calibration-report-tab{flex:1 1 30%;padding:8px 6px;font-size:12px;}
+  .calibration-report-page{width:100%;min-height:auto;margin-bottom:10px;padding:16px 12px;box-shadow:0 6px 20px rgba(15,23,42,.18);}
+  .calibration-report-paper-header{grid-template-columns:110px 1fr;gap:10px;}
+  .calibration-report-paper-brand strong{font-size:13px;}
+  .calibration-report-paper-title{font-size:16px;}
+  .calibration-report-grid,.calibration-report-grid.three,.calibration-report-calibration-grid{grid-template-columns:1fr;}
+  .calibration-report-field,.calibration-report-grid.three .calibration-report-field{border-right:0;}
+  .calibration-report-check-table{min-width:720px;}
+  .calibration-report-check-table-wrap{overflow-x:auto;}
+}
+
+[data-app-theme="dark"] .calibration-report-toolbar,[data-app-theme="dark"] .calibration-report-page{color:#111;}
+[data-app-theme="dark"] .calibration-report-toolbar{background:#0f172a;border-color:#334155;color:#f8fafc;}
+[data-app-theme="dark"] .calibration-report-toolbar-title small{color:#cbd5e1;}
+[data-app-theme="dark"] .calibration-report-workspace{background:#1e293b;}
+[data-app-theme="dark"] .calibration-report-tab{background:#0f172a;border-color:#475569;color:#e2e8f0;}
+[data-app-theme="dark"] .calibration-report-tab.is-active{background:var(--app-primary,#c8102e);color:#fff;}
+[data-app-theme="dark"] .calibration-report-card{background:linear-gradient(135deg,#172033,#111827);border-color:#334155;}
+[data-app-theme="dark"] .calibration-report-certificate-controls{background:#172554;border-color:#1d4ed8;}
+[data-app-theme="dark"] .calibration-report-certificate-field,[data-app-theme="dark"] .calibration-report-certificate-preview{color:#bfdbfe;}
+[data-app-theme="dark"] .calibration-report-certificate-field input,[data-app-theme="dark"] .calibration-report-certificate-preview output{background:#0f172a;border-color:#60a5fa;color:#dbeafe;}
+[data-app-theme="dark"] .calibration-report-certificate-preview small{color:#cbd5e1;}
+[data-app-theme="dark"] .calibration-report-field select{background:#0f172a;border-color:#475569;color:#e2e8f0;}
+[data-app-theme="dark"] .calibration-report-catalog-help{color:#cbd5e1;}
+[data-app-theme="dark"] .calibration-report-model-match{background:#0f172a;border-color:#475569;color:#cbd5e1;}
+[data-app-theme="dark"] .calibration-report-model-match.is-accepted{background:#052e16;border-color:#16a34a;color:#bbf7d0;}
+[data-app-theme="dark"] .calibration-report-model-match.is-warning{background:#451a03;border-color:#d97706;color:#fde68a;}
+[data-app-theme="dark"] .calibration-report-model-suggestion{background:#451a03;border-color:#f59e0b;color:#fde68a;}

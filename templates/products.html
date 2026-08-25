@@ -91,6 +91,7 @@
                     <tr>
                         <th><button type="button" class="product-sort-btn" data-sort-key="serial" onclick="setProductSort('serial')">S/N <span class="product-sort-indicator" data-sort-indicator="serial">↕</span></button></th>
                         <th><button type="button" class="product-sort-btn" data-sort-key="name" onclick="setProductSort('name')">Product Name <span class="product-sort-indicator" data-sort-indicator="name">↕</span></button></th>
+                        <th><button type="button" class="product-sort-btn" data-sort-key="bsid" onclick="setProductSort('bsid')">BSID <span class="product-sort-indicator" data-sort-indicator="bsid">↕</span></button></th>
                         <th><button type="button" class="product-sort-btn" data-sort-key="owner" onclick="setProductSort('owner')">Owner (Medical Center) <span class="product-sort-indicator" data-sort-indicator="owner">↕</span></button></th>
                         <th><button type="button" class="product-sort-btn" data-sort-key="start" onclick="setProductSort('start')">Start Date <span class="product-sort-indicator" data-sort-indicator="start">↕</span></button></th>
                         <th><button type="button" class="product-sort-btn" data-sort-key="end" onclick="setProductSort('end')">End Date <span class="product-sort-indicator" data-sort-indicator="end">↕</span></button></th>
@@ -160,6 +161,12 @@
                 <div class="mb-3">
                     <label class="small fw-bold text-muted text-uppercase">Equipment Name</label>
                     <input type="text" id="p-name" class="form-control" placeholder="Manufacturer or Model">
+                </div>
+
+                <div class="mb-3">
+                    <label class="small fw-bold text-muted text-uppercase" for="p-bsid">BSID</label>
+                    <input type="text" id="p-bsid" class="form-control" maxlength="40" placeholder="Machine-level BSID">
+                    <div class="xsmall text-muted mt-1">Optional for legacy inventory; certification requires a BSID.</div>
                 </div>
 
                 <!-- AUTOCOMPLETE CLIENT SEARCH -->
@@ -331,7 +338,7 @@
     };
     let productSortState = { key: '', direction: 'asc' };
     const PRODUCT_SORT_STORAGE_KEY = 'medicalServiceProductSortV1';
-    const PRODUCT_SORT_KEYS = ['serial', 'name', 'owner', 'start', 'end', 'status'];
+    const PRODUCT_SORT_KEYS = ['serial', 'name', 'bsid', 'owner', 'start', 'end', 'status'];
 
     function freshUrl(url){
         const joiner = url.includes('?') ? '&' : '?';
@@ -640,6 +647,7 @@ function renderProductMobileCards(data){
                     <div class="product-mobile-main">
                         <div class="product-mobile-sn">${escapeHtml(p.serial_number)}</div>
                         <div class="product-mobile-name">${escapeHtml(p.name || 'Unnamed Product')}</div>
+                        <div class="product-mobile-sn">BSID: ${escapeHtml(p.bsid || 'Not assigned')}</div>
                         <div class="product-mobile-owner">
                             <i class="fa-solid fa-hospital"></i>
                             <span>${escapeHtml(owner)}</span>
@@ -680,6 +688,7 @@ function getProductSortValue(product, key){
     const values = {
         serial: product.serial_number || '',
         name: product.name || '',
+        bsid: product.bsid || '',
         owner: product.client_name || '',
         start: product.start_warranty || '',
         end: product.end_warranty || '',
@@ -820,6 +829,7 @@ function renderTable(data) {
                 <tr data-serial="${escapeHtml(p.serial_number)}">
                     <td><strong>${escapeHtml(p.serial_number)}</strong></td>
                     <td>${escapeHtml(p.name || '-')}</td>
+                    <td><span class="text-primary fw-bold">${escapeHtml(p.bsid || '-')}</span></td>
                     <td><span class="text-primary fw-bold">${ownerDisplay}</span></td>
                     <td><small>${escapeHtml(p.start_warranty || '-')}</small></td>
                     <td><small>${escapeHtml(p.end_warranty || '-')}</small></td>
@@ -841,7 +851,7 @@ function renderTable(data) {
         const sFilt = document.getElementById('filter-status').value; 
         
         const filtered = productsData.filter(p => 
-            (p.name.toLowerCase().includes(sTxt) || p.serial_number.toLowerCase().includes(sTxt)) && 
+            (p.name.toLowerCase().includes(sTxt) || p.serial_number.toLowerCase().includes(sTxt) || String(p.bsid || '').toLowerCase().includes(sTxt)) &&
             p.client_name.toLowerCase().includes(cFilt) && 
             (sFilt === "" || (p.computed_status || getProductWarrantyStatus(p)) === sFilt)
         );
@@ -905,6 +915,7 @@ function renderTable(data) {
         const serialHelp = document.getElementById('serial-edit-help');
         if(serialHelp) serialHelp.innerText = "Serial number can be changed. This will update linked schedules and create an activity log.";
         document.getElementById('p-name').value = p.name; 
+        document.getElementById('p-bsid').value = p.bsid || '';
         
         // Handle UI context for client search
         let clientDisp = p.client_name;
@@ -933,6 +944,7 @@ function renderTable(data) {
         const data = { 
             serial_number: document.getElementById('p-serial').value, 
             name: document.getElementById('p-name').value, 
+            bsid: document.getElementById('p-bsid').value,
             client_id: document.getElementById('p-cli-id').value,
             start_warranty: document.getElementById('p-w-start').value, 
             end_warranty: document.getElementById('p-w-end').value,
@@ -941,6 +953,11 @@ function renderTable(data) {
         
         data.serial_number = (data.serial_number || '').trim().toUpperCase();
         data.name = (data.name || '').trim();
+        data.bsid = (data.bsid || '').trim();
+
+        if (data.bsid.length > 40) {
+            return productAlert("Validation Error: BSID must be 40 characters or fewer.");
+        }
 
         if (!data.serial_number) {
             return productAlert("Validation Error: Serial number is required.");

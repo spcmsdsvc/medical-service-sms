@@ -1,6 +1,169 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-25-calibration-certificate-print-copy",
+      "release_date": "2026-08-25",
+      "title": "Calibration Certificate Print Copy and Conditional Report Tables",
+      "summary": "Calibration Reports now omit unselected focal-spot tables, and approved certificates include a controlled hard-copy print copy.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-25-calibration-certificate-print-copy-engineers",
+          "category": "Create TSR",
+          "description": "Final Calibration Reports now include only the selected Small/Large focal-spot tables. Approved schedules show the additional No_Signature certificate filename as locked for engineers; it is reserved for administrator printing and is never sent to clients.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-25-calibration-certificate-print-copy-admins",
+          "category": "Approval Center",
+          "description": "New certificate approvals atomically create the acting approver's signed PDF and an original-template No_Signature hard-copy PDF retaining the printed Rodito Aretano certifier block. Authorized administrators can preview/download the print copy; it is immutable and excluded from client-email packages.",
+          "audiences": [
+            "admins",
+            "approvers"
+          ],
+          "sort_order": 20
+        }
+      ]
+    },
+    {
+      "release_key": "2026-08-25-calibration-certificate-catalog",
+      "release_date": "2026-08-25",
+      "title": "Calibration Certificate Catalog Matching",
+      "summary": "Calibration Reports now use canonical equipment names and model matches for consistent certificates.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-25-calibration-certificate-catalog-engineers",
+          "category": "Create TSR",
+          "description": "Engineers select one of six approved Equipment Names and receive live canonical Equipment Model suggestions from the offline catalog. New certificates use YYYY-MMDD-BSID, while Calibration Report documents retain the engineer-entered model and calibration dates remain YYYY/MM/DD. Save Final Report closes the report editor only after the DOCX is durably saved; fallback storage or an unavailable catalog keeps finalization open with an actionable retry message.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-25-calibration-certificate-catalog-approvers",
+          "category": "Approval Center",
+          "description": "New certificate requests snapshot the canonical equipment name and model used for approval. Existing pending requests continue to render their complete stored mapped values and certificate number unchanged through approval; incomplete historical snapshots remain Pending without generating a signed artifact.",
+          "audiences": [
+            "approvers"
+          ],
+          "sort_order": 20
+        }
+      ]
+    },
+    {
+      "release_key": "2026-08-24-calibration-certificate-number-signature",
+      "release_date": "2026-08-24",
+      "title": "Calibration Certificate Numbers and Signatures Refined",
+      "summary": "New certificates use the controlled number format and clearer approver presentation.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-24-calibration-certificate-number-signature-engineers",
+          "category": "Create TSR",
+          "description": "New Calibration Certificate samples and submissions now use YYYY-MM-DD-BSID while the printed calibration dates remain YYYY/MM/DD. Existing pending snapshots remain unchanged, and generated signatures are cleaned, cropped, resampled, and placed with visible underline clearance.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-24-calibration-certificate-number-signature-approvers",
+          "category": "Approval Center",
+          "description": "Approved certificates now show the acting approver's snapshotted title and one fixed Medical Systems Division line, with suffix deduplication; legacy pending certificate numbers remain consistent through approval filenames and PDFs.",
+          "audiences": [
+            "approvers"
+          ],
+          "sort_order": 20
+        }
+      ]
+    },
+    {
+      "release_key": "2026-08-24-certificate-review-notification-fix",
+      "release_date": "2026-08-24",
+      "title": "Calibration Certificate Review Opens Reliably",
+      "summary": "Certificate review and Approval Notifications now remain available for routed approvers.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-24-certificate-review-notification-fix-approvers",
+          "category": "Approval Center",
+          "description": "Calibration Certificate Review now opens the shared guarded detail modal and embeds its PDF as a preview without forcing a download. Approval Notifications and Mark All Read also handle pending Travel Liquidation notifications without returning an Internal Server Error.",
+          "audiences": [
+            "approvers"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-08-24-calibration-certificate-approval",
+      "release_date": "2026-08-24",
+      "title": "Calibration Certificate Approval Workflow",
+      "summary": "Calibration Certificates now use machine-owned BSIDs and a revision-aware routed approval workflow.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-24-calibration-certificate-engineer",
+          "category": "Create TSR",
+          "description": "Engineers manage BSIDs in Product Inventory, see the machine-sourced read-only BSID and YYYY/MM/DD-BSID certificate number in Calibration Report, and receive queued, pending, returned, approved, and retryable certificate status with signed-PDF access. Sample and approved certificates now use one consistent regular data size, the restored original approver typography, a transparent certifier area, and a larger signature.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-24-calibration-certificate-approver",
+          "category": "Approval Center",
+          "description": "Assigned approvers can review Calibration Certificates, return them with required remarks, or approve them with their saved signature, display name, and configured title; signed PDFs remain immutable TSR history. Generated certificates preserve the patterned background, use the original Humanist approver styling, and render a substantially larger transparent signature.",
+          "audiences": [
+            "approvers"
+          ],
+          "sort_order": 20
+        }
+      ]
+    },
+    {
+      "release_key": "2026-08-23-calibration-certificate-sample",
+      "release_date": "2026-08-23",
+      "title": "Calibration Certificate Sample PDF",
+      "summary": "Create TSR can now generate an unattached sample Calibration Certificate PDF from the supplied certificate form.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-23-calibration-certificate-sample-pdf",
+          "category": "Create TSR",
+          "description": "Engineers can enter a BSID in the Calibration Report editor and download exactly one flattened sample Calibration Certificate PDF. The unchanged canonical form is packaged as JavaScript-safe embedded data so Brave cannot intercept a raw PDF response before the form is filled; the certificate number combines the calibration date and machine BSID, and report equipment, hospital/facility, calibration, and TSR values are mapped into the supplied form. The sample remains unattached and incomplete values are reported without changing the finalized Calibration Report DOCX. Missing or corrupt embedded data produces a clear reload message without a download.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-08-19-tsr-calibration-report",
+      "release_date": "2026-08-19",
+      "title": "Optional Calibration Reports in Create TSR",
+      "summary": "Create TSR can now capture an optional Calibration Report using the supplied Word form, then generate a layout-safe DOCX with recoverable local storage and retry-safe delivery.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-19-tsr-calibration-report-editor",
+          "category": "Create TSR",
+          "description": "Engineers can optionally complete the supplied three-page US Letter Calibration Report inside Create TSR. DOCX generation preserves the original Word layout and fills only existing blanks/signature data; destination-specific exact-fit validation rejects values that would add pages, punctuation and international client names remain intact, and the report now separates unattached Sample DOCX download from Save Final Report attachment creation. Sample DOCX generation may proceed with incomplete fields and warns about what remains missing, while the same feedback is shown inside the open report modal. The generated signature cell contains the enlarged signature image without repeating the engineer's name. Page 3 supports independent Small/Large focal spots with editable persisted sizes and Clear Form preserves the ordinary TSR while removing only report data/files. Generated Page 3 output now centers every inserted Small/Large measurement value and keeps the performance criteria table clear of the fixed footer by reducing the unused spacer before it without changing the supplied template. Latest-revision client email selection admits only the recognized generated DOCX, local Blob cleanup remains recoverable across edits/removal, and duplicate-token DOCX validation preserves idempotent retries without changing ordinary PDF/image attachments.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-25-service-contract-po-one-time-single-visit",
       "release_date": "2026-08-25",
       "title": "One-Time Single-Visit P.O. Entries",
