@@ -55,6 +55,14 @@ class ProductContractStatusTests(unittest.TestCase):
         self.assertIn('No Expiry Set - No Contract', source)
         self.assertIn('document.getElementById(\'p-under-contract\').checked', source)
 
+    def test_product_save_stays_in_place_without_refetching_page_data(self):
+        source = (ROOT / 'templates' / 'products.html').read_text(encoding='utf-8')
+        save_source = source.split('async function saveProduct()', 1)[1].split('async function deleteProduct', 1)[0]
+
+        self.assertIn('updateProductListAfterSave(data, editSN);', save_source)
+        self.assertIn('window.scrollTo(scrollX, scrollY)', save_source)
+        self.assertNotIn('await loadData();', save_source)
+
     def test_product_migration_is_additive(self):
         source = (ROOT / 'app.py').read_text(encoding='utf-8')
 

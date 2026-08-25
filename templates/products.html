@@ -849,6 +849,33 @@ function renderTable(data) {
         renderTable(sortProductRows(filtered));
     }
 
+    function updateProductListAfterSave(savedData, previousSerial){
+        const previousIndex = productsData.findIndex(product => product.serial_number === previousSerial);
+        const previousProduct = previousIndex >= 0 ? productsData[previousIndex] : {};
+        const selectedClient = masterClients.find(client => String(client.id) === String(savedData.client_id));
+        const updatedProduct = {
+            ...previousProduct,
+            serial_number: savedData.serial_number,
+            name: savedData.name,
+            bsid: savedData.bsid || '',
+            client_id: selectedClient ? selectedClient.id : savedData.client_id,
+            client_name: selectedClient?.name || 'N/A',
+            start_warranty: savedData.start_warranty || '',
+            end_warranty: savedData.end_warranty || '',
+            under_contract: Boolean(savedData.under_contract)
+        };
+        updatedProduct.computed_status = getProductWarrantyStatus(updatedProduct);
+
+        if(previousIndex >= 0){
+            productsData[previousIndex] = updatedProduct;
+        }else{
+            productsData.push(updatedProduct);
+        }
+
+        productSummary.total_products = productsData.length;
+        applyFilters();
+    }
+
     // --- MODAL CONTROL LOGIC ---
 
     function openAddModal() { 
@@ -956,12 +983,13 @@ function renderTable(data) {
         }); 
 
         if (res.ok) {
-            const result = await res.json().catch(() => ({}));
+            await res.json().catch(() => ({}));
+            const scrollX = window.scrollX;
+            const scrollY = window.scrollY;
             prodModal.hide(); 
-            await loadData(); 
-            if(result && result.serial_changed && result.new_serial){
-                highlightAndScroll(result.new_serial);
-            }
+            updateProductListAfterSave(data, editSN);
+            requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+            productToast(editSN ? 'Product updated.' : 'Product added.', 'success');
         } else {
             const errData = await res.json();
             productAlert("Database Error: " + (errData.message || "Action failed."));
