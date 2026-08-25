@@ -57,7 +57,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Split Accounting Handoff CC by requester branch
 
-**Status:** In progress
+**Status:** Executed — ec8015e
 **Approved:** 2026-08-25
 **Detailed:** 2026-08-25
 **Execution authorization:** Granted 2026-08-25 by the owner's separate message “go ahead”. A fresh
@@ -244,8 +244,9 @@ recipient group remains unchanged.
   `git diff --check` pass; only existing LF-to-CRLF notices were emitted. Browser automation was not
   used. `scheduler.db`, the handoff, output/tmp, Git history, Railway, production, and unrelated
   dirty work remained untouched.
-- The implementation remains local and uncommitted. This plan stays `In progress` until a
-  separately authorized commit exists; post-implementation review has not been authorized or run.
+- The bounded implementation was committed as `ec8015e`. The owner separately authorized its push
+  to `origin/main`; post-implementation review, correction, Railway configuration, manual
+  deployment, and production-data access remain unauthorized.
 
 ## Fix Approval Center notification 500s caused by missing event metadata
 

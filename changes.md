@@ -46,6 +46,11 @@ codex changes - 2026-08-25
   Handoff CC plan is now `In progress` with the Builder's exact red/green and full-discovery
   evidence. Post-implementation review, correction, commit, push, deployment, Railway, and
   production actions remain separately unauthorized.
+- Committed only the Accounting Handoff CC backend, Settings metadata, focused test, admin release
+  item, approved plan, and matching change record as `ec8015e`. P.O./Calibration work and every
+  protected artifact remained unstaged. The owner separately authorized pushing this implementation
+  to `origin/main`; no manual Railway redeploy, variable change, or production-data action is
+  included.
 
 - Updated the combined `BC02_BC03` Stock Inventory manager view so Manila (`BC01`) is visible alongside Cebu and Davao, while mutation access remains limited to the assigned Cebu/Davao branches. The page now switches to view-only controls for Manila, and the backend mutation endpoints reject Manila writes; no schema, migration, service-worker, release-manifest, deployment, or production-setting change was performed for this follow-up. The owner separately authorized the commit and push after verification.
 - Simplified the visible Approval Routing/personnel label for the combined assignment to `Cebu + Davao` while retaining the stored `BC02_BC03` value for compatibility; no schema, migration, service-worker, release-manifest, deployment, or production-setting change was performed for this label-only follow-up.
