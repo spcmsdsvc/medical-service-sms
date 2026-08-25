@@ -387,8 +387,12 @@ EMAIL_RECIPIENT_GROUPS = {
         'description': 'Internal recipients automatically copied when TSR files are emailed to clients.'
     },
     'accounting_handoff_cc': {
-        'label': 'Accounting Handoff CC',
-        'description': 'Extra internal recipients automatically copied on approved accounting handoff emails.'
+        'label': 'Accounting Handoff CC - Manila',
+        'description': 'Extra internal recipients copied on approved accounting handoff emails from Manila/Main employees.'
+    },
+    'accounting_handoff_cc_cebu_davao': {
+        'label': 'Accounting Handoff CC - Cebu/Davao',
+        'description': 'Extra internal recipients copied on approved accounting handoff emails from Cebu or Davao employees.'
     },
     'travel_accounting': {
         'label': 'Travel Request Accounting',
@@ -435,6 +439,7 @@ EMAIL_RECIPIENT_GROUPS = {
 EMAIL_RECIPIENT_GROUP_ORDER = [
     'tsr_client_cc',
     'accounting_handoff_cc',
+    'accounting_handoff_cc_cebu_davao',
     'travel_accounting',
     'cash_advance_accounting',
     'cash_advance_release',
@@ -6207,13 +6212,24 @@ def get_users_email_addresses_for_notifications(users):
     return emails
 
 
+def accounting_handoff_cc_group_for_branch(branch):
+    """Select the shared Accounting Handoff CC group for an engineer branch."""
+    normalized = str(branch or '').strip().lower()
+    if normalized in {'cebu', 'davao', 'bc02', 'bc03'} or 'cebu' in normalized or 'davao' in normalized:
+        return 'accounting_handoff_cc_cebu_davao'
+    return 'accounting_handoff_cc'
+
+
 def get_requester_accounting_copy_emails(record, primary_emails=None):
-    """Return requester and Settings-managed CC copies for accounting handoffs."""
+    """Return requester and branch-selected Settings-managed CC copies for accounting handoffs."""
     requester_id = clean_int(getattr(record, 'user_id', None))
     requester = db.session.get(User, requester_id) if requester_id else None
+    requester_profile = getattr(requester, 'engineer_profile', None) if requester else None
+    requester_branch = clean_str(getattr(requester_profile, 'branch', None)) or ''
+    cc_group_key = accounting_handoff_cc_group_for_branch(requester_branch)
     copy_emails = []
     copy_emails.extend(get_users_email_addresses_for_notifications([requester] if requester else []))
-    copy_emails.extend(get_active_email_recipients_by_group('accounting_handoff_cc'))
+    copy_emails.extend(get_active_email_recipients_by_group(cc_group_key))
     primary_keys = {
         (clean_str(email_addr) or '').strip().lower()
         for email_addr in normalize_email_list(primary_emails)

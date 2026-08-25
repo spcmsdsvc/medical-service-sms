@@ -55,6 +55,198 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ### After implementation — the workflow every plan ends with
 
+## Split Accounting Handoff CC by requester branch
+
+**Status:** In progress
+**Approved:** 2026-08-25
+**Detailed:** 2026-08-25
+**Execution authorization:** Granted 2026-08-25 by the owner's separate message “go ahead”. A fresh
+Builder completed this bounded local implementation cycle. Review, correction, commit, push,
+deployment, Railway, production, and database actions remain separately unauthorized.
+
+### Context and intended outcome
+
+Settings currently exposes one shared `Accounting Handoff CC` recipient group. The helper
+`get_requester_accounting_copy_emails()` adds that same group to every approved Travel Request,
+Reimbursement, standalone Cash Advance, Travel Liquidation, and Cash Advance Liquidation handoff,
+regardless of the requester's branch. Leave Request already demonstrates the intended split: the
+existing Manila group key remains compatible, a second Cebu/Davao key is available in Settings,
+and routing uses the requester's Engineer-profile branch.
+
+The intended outcome is the same two-region routing for only the shared Accounting Handoff CC
+list. Manila/Main requesters copy the Manila list; Cebu or Davao requesters copy the combined
+Cebu/Davao list. The requester remains copied, and each workflow's existing primary Accounting
+recipient group remains unchanged.
+
+### Decisions taken
+
+1. Keep `accounting_handoff_cc` as the stable key for existing rows and relabel it
+   `Accounting Handoff CC - Manila`.
+2. Add `accounting_handoff_cc_cebu_davao` labelled
+   `Accounting Handoff CC - Cebu/Davao` immediately after the Manila group in backend and Settings
+   ordering.
+3. Route from `record.user_id` to the User's linked Engineer profile and use its `branch`, matching
+   Leave Request's source of truth. Cebu, Davao, BC02, BC03, and labels containing Cebu or Davao
+   select the regional group. Manila, Main, BC01, blank, missing, or unknown values select the
+   existing Manila group as the backward-compatible default.
+4. Existing `accounting_handoff_cc` rows stay in place as Manila recipients. Do not duplicate,
+   rewrite, or migrate them into the new regional group; a superadmin will configure the new group
+   explicitly.
+5. Split only the shared handoff CC. Do not split or change `travel_accounting`,
+   `reimbursement_accounting`, `cash_advance_accounting`, or `cash_advance_release`, and do not
+   change any primary To-recipient, email template, attachment, or approval behavior.
+6. Preserve the current requester-copy and case-insensitive deduplication behavior. Only active
+   rows from the selected branch group participate, and an address already present in the primary
+   recipient list or earlier CC candidates appears once.
+7. No database schema migration or service-worker cache bump is required. The recipient table
+   already stores arbitrary registered group keys, Settings is server rendered, is not an app-shell
+   route, and online navigation is network-first.
+
+### Investigation findings
+
+- `app.py:386-449` defines and orders Settings-managed recipient groups. It currently contains one
+  `accounting_handoff_cc` entry and the two Leave Request CC entries.
+- `app.py:3265-3355` validates group keys against that registry and queries active recipients, so
+  registering the regional key is sufficient for the existing Settings save/data endpoints; no
+  table or endpoint change is needed.
+- `app.py:6348-6368` resolves the requester email, always loads `accounting_handoff_cc`, and
+  deduplicates CC addresses against primary recipients. This is the single routing seam used by
+  all five accounting-handoff senders at the current call sites near lines 7729, 8236, 32839,
+  50438, and 54620.
+- `leave_feature.py:31-35` and `leave_feature.py:306-310` establish the approved regional matching
+  and requester-profile branch source used by Leave Request.
+- `templates/settings.html:2387-2459` carries frontend fallback group metadata, and
+  `templates/settings.html:2522-2532` supplies the usage badge. Both must mirror the backend so a
+  degraded or older response does not hide or mislabel the regional group.
+- The worktree is already materially dirty, including `app.py`, `templates/settings.html`, the
+  journals, release manifest, tests, protected artifacts, and parallel P.O. details work. Every
+  authorized edit must re-read the current file and patch only the intended local hunk.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first test — `tests/test_accounting_handoff_recipient_routing.py`.**
+   Re-read `AGENTS.md`, this complete plan, `changes.md`, Git status, the live recipient registry,
+   helper, Settings fallback, and nearby tests. Create one focused test module, avoiding edits to
+   existing dirty test files. Add controls that expect both group registrations and Settings
+   labels, then exercise branch selection for Manila/Main/BC01/default/unknown and
+   Cebu/Davao/BC02/BC03/equivalent labels. Run this module before application edits and record the
+   expected failures caused by the absent regional group/routing. Done when the red result is
+   attributable only to this approved gap and no protected file has been disturbed.
+
+2. **Register the groups — `app.py` recipient constants/order.** Relabel
+   `accounting_handoff_cc` for Manila, add `accounting_handoff_cc_cebu_davao` with a precise
+   Cebu/Davao description, and place it next to Manila in `EMAIL_RECIPIENT_GROUP_ORDER`. Do not
+   change the recipient model, table initializer, Settings API contract, or any primary workflow
+   group. Done when the standard group payload exposes both keys and the normalizer accepts the new
+   key while continuing to reject unknown keys.
+
+3. **Route shared CC by requester — `app.py:get_requester_accounting_copy_emails`.** Add one small
+   pure branch-to-group helper adjacent to the accounting-copy helper. Resolve `record.user_id` to
+   the User and linked Engineer profile, select exactly one shared CC group, then feed that group's
+   active recipients into the existing copy/deduplication pipeline. Keep all five send call sites
+   unchanged because they already converge on this helper. Done when Manila and regional records
+   cannot leak the other region's shared CC list, while requester-copy and primary-address
+   deduplication remain intact.
+
+4. **Expose the split in Settings — `templates/settings.html`.** Update the purpose guidance,
+   fallback group metadata, ordering, descriptions, and usage badges so the two Accounting Handoff
+   CC cards appear together and clearly identify Manila versus Cebu/Davao. Preserve the existing
+   form, card markup, responsive behavior, permissions, and save/delete mechanics. Done when the
+   rendered page and API-driven fallback both identify the same two keys and labels.
+
+5. **Complete focused verification.** Extend the focused module to create isolated User/Engineer
+   profiles and active/inactive recipient rows on a disposable external database. Prove requester
+   email inclusion, branch-only group selection, inactive exclusion, case-insensitive deduplication
+   against primary recipients, Settings payload order, and acceptance of the new save key. Include
+   a control showing the legacy Manila key and rows remain unchanged. Run this module and the
+   affected Settings/changelog and accounting workflow modules.
+
+6. **Release and audit records.** Add one dated admin-facing item to
+   `static/changelog/releases.json` explaining the two Settings lists and requester-branch routing.
+   Validate JSON shape and item-key uniqueness. Append factual results to the existing
+   `codex changes - 2026-08-25` section and update this plan to `In progress` with execution evidence.
+   Re-read each dirty journal/manifest immediately before applying a narrow patch; do not overwrite
+   parallel P.O. details or Calibration Certificate records. Do not edit the already-dirty handoff
+   artifact for this contained change.
+
+7. **Self-review and full verification.** Review the narrow diff against this plan, specifically
+   confirming all five callers still use the shared helper and no primary accounting groups or P.O.
+   code changed. Run Python AST validation, Jinja rendering of Settings, release JSON/uniqueness,
+   `git diff --check`, focused suites, then full `unittest` discovery against a fresh external
+   `MEDICAL_SERVICE_TEST_DB`. Record exact pass/fail/skip totals and any unavailable checks; never
+   open or write `scheduler.db`.
+
+8. **Stop after the Builder report.** Return one consolidated implementation report listing files,
+   behavior, red/green proof, focused/full results, static checks, deviations, and limitations.
+   Leave this plan `In progress` until a separately authorized commit exists. Do not automatically
+   review, correct, stage, commit, push, deploy, or access Railway/production.
+
+### Deliberately excluded
+
+- Splitting workflow-specific primary Accounting or Cash Advance Release lists; the owner selected
+  only the shared Accounting Handoff CC split.
+- Cloning existing Manila recipient rows into Cebu/Davao, because the system cannot safely infer
+  which current addresses belong to both regions.
+- Database/schema migration, new dependencies, email template or attachment changes, changes to
+  Leave Request, service-worker changes, or new administration endpoints.
+- Browser automation, Codex app navigation, 375 px/tap-target work, and console inspection. This
+  change adds metadata to the existing responsive Settings cards without adding controls or layout
+  structure; repository safety prohibits browser use unless separately authorized. Rendered Jinja,
+  Flask-client API/page checks, and source assertions are the proportional substitute.
+- Any P.O. details file, behavior, test, journal entry, cleanup, formatting, staging, commit, push,
+  Railway setting, deployment, production action, or protected artifact operation.
+
+### Verification acceptance bar
+
+- The fail-first focused test is red before the fix for the missing regional group/routing and green
+  after it; the prior source is not destructively reverted to manufacture proof.
+- Settings exposes exactly the existing Manila key plus the new Cebu/Davao key with clear labels and
+  adjacent order, and the save endpoint accepts the new registered key.
+- Manila/Main/BC01/default/unknown requesters receive only Manila shared CC rows. Cebu/Davao and
+  BC02/BC03 requesters receive only Cebu/Davao shared CC rows.
+- Requester-copy, active-row filtering, primary-recipient deduplication, all five handoff call paths,
+  and all workflow-specific primary recipient groups remain unchanged.
+- Focused and full suites pass on disposable databases, or every pre-existing/unavailable result is
+  reported truthfully. AST, Jinja, release JSON/uniqueness, and diff checks pass.
+- `scheduler.db`, P.O. details work, unrelated dirty hunks, the handoff, output/tmp, Git history,
+  Railway, and production remain untouched.
+
+### Risks and safeguards
+
+- **Wrong-region disclosure:** choosing the wrong branch could copy an internal recipient on an
+  unrelated regional request. Centralize selection in one pure helper and test both positive and
+  cross-region-negative cases.
+- **Missing Engineer profile/branch:** defaulting to the stable Manila key preserves current
+  behavior and prevents the new regional list from receiving ambiguous records.
+- **Existing-row compatibility:** retaining `accounting_handoff_cc` avoids a destructive migration;
+  tests pin that key and its rows as Manila.
+- **Dirty-work collision:** `app.py`, Settings, journals, and the release manifest overlap other
+  active work by file. Re-read before each narrow patch, add a new focused test file, never broadly
+  format or replace a file, and stop if the intended hunk materially changed.
+
+### Implementation evidence
+
+- Implemented the registered Manila and Cebu/Davao shared Accounting Handoff CC groups, requester
+  Engineer-profile branch selection, Settings guidance/fallback/usage metadata, and admin release
+  item without changing workflow-specific primary recipients, schemas, email templates,
+  attachments, call sites, or service-worker behavior.
+- Added `tests/test_accounting_handoff_recipient_routing.py`. The unchanged behavior produced
+  **10 expected assertion failures across 6 tests**; the final focused module passes **7/7** and the
+  related Accounting/changelog/Reimbursement Tracker command passes **78/78**, each on a fresh
+  external test database.
+- The Builder's first full-discovery report contained an inconsistent aggregate, so the parent
+  reran complete discovery on a fresh external database after implementation: **744 tests ran;
+  721 passed, 22 failed, and 1 existing test was skipped**. Twenty-one failures are confined to the
+  parallel protected P.O. Details suite, and one is an unrelated Calibration Report Node assertion
+  at its facility-name exact-fit boundary. No P.O. or Calibration source, test, behavior, or record
+  was changed for this package; the Accounting Handoff focused and related suites remain green.
+- Python AST/compile checks, Settings Jinja rendering, release JSON/unique-key validation, and
+  `git diff --check` pass; only existing LF-to-CRLF notices were emitted. Browser automation was not
+  used. `scheduler.db`, the handoff, output/tmp, Git history, Railway, production, and unrelated
+  dirty work remained untouched.
+- The implementation remains local and uncommitted. This plan stays `In progress` until a
+  separately authorized commit exists; post-implementation review has not been authorized or run.
+
 ## Fix Approval Center notification 500s caused by missing event metadata
 
 **Status:** `Executed — 12682f2`
