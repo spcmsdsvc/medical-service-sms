@@ -1,5 +1,52 @@
 # Project Change Log
 
+codex changes - 2026-08-25
+
+- Recorded the owner-approved Accounting Handoff CC branch split at the top of `plans.md` with
+  status **Approved — awaiting go-ahead**. The decision-complete plan keeps the existing
+  `accounting_handoff_cc` rows as Manila, adds a separate Cebu/Davao group, routes the shared CC by
+  the requester's Engineer-profile branch across all five accounting handoffs, and leaves every
+  workflow-specific primary Accounting recipient group unchanged.
+- This approval step changes only `plans.md` and `changes.md`. Under the repository's mandatory
+  two-answer gate, no Builder was launched and no application, Settings template, test, release
+  manifest, service worker, database, `scheduler.db`, P.O. details work, handoff, output/tmp, Git,
+  Railway, production, commit, push, or deployment action was performed. Implementation remains
+  paused pending a separate owner go-ahead.
+
+- Implemented the authorized Accounting Handoff CC branch split in `app.py`: the stable
+  `accounting_handoff_cc` registry key is now labelled Manila, the adjacent
+  `accounting_handoff_cc_cebu_davao` key is registered, and the shared requester-copy helper
+  selects exactly one group from the linked Engineer profile branch. Manila/Main/BC01, blank, and
+  unknown branches retain the Manila default; Cebu/Davao/BC02/BC03 and equivalent labels select
+  the regional list. Existing requester-copy, active-row filtering, primary-recipient
+  deduplication, workflow-specific Accounting groups, and all five callers remain unchanged.
+- Updated `templates/settings.html` with the two adjacent Accounting Handoff CC labels,
+  descriptions, purpose guidance, and usage badges. Added the admin-facing
+  `2026-08-25-accounting-handoff-cc-routing` release item to `static/changelog/releases.json`.
+- Added focused coverage in `tests/test_accounting_handoff_recipient_routing.py`. The fail-first
+  run against a fresh external database produced **10 expected assertion failures in 6 tests** for
+  the absent regional registration/routing; after the narrow backend, Settings, and manifest edits,
+  the focused module passes **6/6**. Full-suite and static verification remain in progress.
+- Added a Flask-client Settings-page render control to the same focused module; the final rerun now
+  passes **7/7**, including rendered Manila/Cebu-Davao metadata, adjacent API payload ordering, and
+  acceptance of the new save key.
+- The focused Accounting Handoff, changelog, and Reimbursement Tracker workflow command passes
+  **78/78** on a fresh external `MEDICAL_SERVICE_TEST_DB`. The Builder's first full-discovery
+  aggregate was internally inconsistent, so the parent reran complete discovery on another fresh
+  external database: **744 tests ran; 721 passed, 22 failed, and 1 existing test was skipped**.
+  Twenty-one failures are confined to the protected, already-dirty P.O. Details suite; the remaining
+  failure is an unrelated Calibration Report Node assertion at the facility-name exact-fit boundary.
+  No P.O. or Calibration file, behavior, or test was edited for this change.
+- In-memory Python AST/compile checks for `app.py` and the focused module, Jinja Settings rendering,
+  release JSON parsing with unique release/item keys, and `git diff --check` all pass. The diff
+  check reports only the repository's existing LF-to-CRLF conversion notices; no browser, service
+  worker, `scheduler.db`, handoff, output/tmp, Git, Railway, production, commit, or deployment
+  action was performed.
+- The owner's separate “go ahead” authorized this recorded implementation cycle, and the Accounting
+  Handoff CC plan is now `In progress` with the Builder's exact red/green and full-discovery
+  evidence. Post-implementation review, correction, commit, push, deployment, Railway, and
+  production actions remain separately unauthorized.
+
 codex changes - 2026-08-24
 
 - Started the owner-authorized Shared PDF Upload Conversion correction in the isolated

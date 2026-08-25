@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-25-accounting-handoff-cc-routing",
+      "release_date": "2026-08-25",
+      "title": "Accounting Handoff CC by Branch",
+      "summary": "Accounting Handoff CC recipients can now be maintained separately for Manila and Cebu/Davao requesters.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-25-accounting-handoff-cc-routing-admins",
+          "category": "Administration",
+          "description": "Settings now keeps separate Accounting Handoff CC - Manila and Accounting Handoff CC - Cebu/Davao lists. Approved Travel Request, Reimbursement, standalone Cash Advance, Travel Liquidation, and Cash Advance Liquidation handoffs copy the list selected from the requester's Engineer-profile branch; existing Manila rows and workflow-specific primary Accounting recipients remain unchanged.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-24-shared-pdf-upload-conversion",
       "release_date": "2026-08-24",
       "title": "Shared PDF Upload Conversion",
