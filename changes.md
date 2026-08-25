@@ -13,17 +13,16 @@ codex changes - 2026-08-25
 - Preserved the server-side 409 fallback for stale Under Contract races even when some selected
   machines already carry client-side pending consent; retry confirmations merge only the newly
   pending serials before the atomic save.
-- Corrected the P.O. plan's local verification record to reflect the completed authorized rewrite,
-  the exact focused/full-suite results, and the remaining unrelated staff-creation failure; the
-  plan remains `In progress` because no commit is authorized or present.
+- Corrected the P.O. plan's verification record and marked it `Executed — 5a93494` after creating
+  the isolated implementation commit from current `origin/main`; the protected Calibration
+  worktree and its index were not used for staging or publication.
 - Updated P.O. regression coverage to use Product-owned dates and current frequency values while
   retaining explicit legacy readability/rejection controls. Verification passes: P.O. module
   **40/40**, affected Analytics P.O. module **5/5**, workbook/export assertions, Python compile,
   Jinja parse, inline JavaScript parse, release JSON parse/uniqueness, and `git diff --check`.
-  Full discovery ran **757 tests: 755 passed, 1 failed, 1 skipped**; the sole failure is the
-  unrelated `test_staff_creation.StaffCreationTests.test_superadmin_rejects_conflicting_staff_permissions_without_writing`
-  initials-catalog collision. No browser, scheduler.db, output/tmp, commit, push, deployment,
-  Railway, or production action was performed; no service-worker bump was needed.
+  The isolated publish candidate passed full discovery with **718 passed and 1 skipped**. No
+  browser, scheduler.db, output/tmp, deployment, Railway-variable, or production-data action was
+  performed; no service-worker bump was needed. The implementation commit is `5a93494`.
 
 - Implemented the owner-authorized Service Contract P.O. Details workflow locally. The P.O. page
   heading is now `Service Contract P.O. Details` while the sidebar label remains `P.O. Details`.

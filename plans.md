@@ -55,18 +55,18 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Service Contract P.O. Details and Fiscal Allocation
 
-**Status:** In progress
+**Status:** Executed — 5a93494
 **Approved:** 2026-08-25
 **Detailed:** 2026-08-25
 **Execution authorization:** 2026-08-25, owner message: “PLEASE IMPLEMENT THIS PLAN”.
-**Finished:** Not yet committed; local implementation only.
-**Local outcome:** Correction cycle completed locally on 2026-08-25. The authorized P.O. test
-rewrite is now included; the full P.O. module passes **40/40** and the affected Analytics P.O.
-module passes **5/5**. Full discovery ran **757 tests: 755 passed, 1 failed, 1 skipped**; the
-single failure is the unrelated `test_staff_creation.StaffCreationTests.test_superadmin_rejects_conflicting_staff_permissions_without_writing`
-initials-catalog collision. Python compile, Jinja parse, inline JavaScript parse, workbook/export
-assertions, release JSON uniqueness/parse, and `git diff --check` pass. No commit exists, so this
-plan remains **In progress** and no unrelated hash is claimed.
+**Finished:** 2026-08-25 in implementation commit `5a93494`; publication closeout is recorded in a
+separate documentation commit.
+**Local outcome:** The authorized implementation and correction cycle is complete. The full P.O.
+module passes **40/40** and the affected Analytics P.O. module passes **5/5**. The isolated
+publish candidate, rebuilt from current `origin/main` without the protected Calibration worktree,
+passes full discovery with **718 passed and 1 skipped**. Python syntax, Jinja parsing, inline
+JavaScript parsing, workbook/export assertions, release JSON uniqueness/parsing, and
+`git diff --check` pass. No browser automation or service-worker bump was required.
 
 ### Context and intended outcome
 
