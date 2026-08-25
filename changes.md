@@ -2,6 +2,70 @@
 
 codex changes - 2026-08-25
 
+- Completed the authorized Service Contract P.O. correction cycle in `app.py`,
+  `templates/po_details.html`, and `tests/test_purchase_orders.py`. Schedule allocation now works
+  in integer cents so small totals never produce negative occurrences; a remainder is assigned to
+  the final occurrence. Machine selection now blocks incomplete or mismatched Product dates
+  immediately, asks about non-contract status before adding a machine, shows pending consent, and
+  sends confirmed serials only with the atomic P.O. save. Legacy edits leave current-frequency
+  radios unselected, fiscal-quarter filtering requires a valid fiscal year, and the Semi Annual KPI
+  is represented alongside Single and Quarterly.
+- Preserved the server-side 409 fallback for stale Under Contract races even when some selected
+  machines already carry client-side pending consent; retry confirmations merge only the newly
+  pending serials before the atomic save.
+- Corrected the P.O. plan's local verification record to reflect the completed authorized rewrite,
+  the exact focused/full-suite results, and the remaining unrelated staff-creation failure; the
+  plan remains `In progress` because no commit is authorized or present.
+- Updated P.O. regression coverage to use Product-owned dates and current frequency values while
+  retaining explicit legacy readability/rejection controls. Verification passes: P.O. module
+  **40/40**, affected Analytics P.O. module **5/5**, workbook/export assertions, Python compile,
+  Jinja parse, inline JavaScript parse, release JSON parse/uniqueness, and `git diff --check`.
+  Full discovery ran **757 tests: 755 passed, 1 failed, 1 skipped**; the sole failure is the
+  unrelated `test_staff_creation.StaffCreationTests.test_superadmin_rejects_conflicting_staff_permissions_without_writing`
+  initials-catalog collision. No browser, scheduler.db, output/tmp, commit, push, deployment,
+  Railway, or production action was performed; no service-worker bump was needed.
+
+- Implemented the owner-authorized Service Contract P.O. Details workflow locally. The P.O. page
+  heading is now `Service Contract P.O. Details` while the sidebar label remains `P.O. Details`.
+  New/edit records use Single, Semi Annual, or Quarterly frequencies; historical Contract and
+  Single Visit values remain readable/filterable but are rejected for new or edited saves.
+- Added Product-sourced Start/End coverage snapshots, matching-date validation for multi-machine
+  P.O.s, client-side read-only date loading, and server-side protection against forged date values.
+  Selecting a machine without `under_contract` now returns an explicit confirmation-required 409;
+  confirmed Product status changes and the P.O. write commit atomically with activity-log entries.
+- Added anchored inclusive service schedules with month-end clamping, FY-April fiscal boundaries,
+  Decimal final-remainder allocation, fiscal quarter and custom From/To filtering, and computed
+  per-visit/filtered scheduled amounts in the register API and responsive page. Excel export now
+  carries computed amount and scheduled dates while keeping one row per P.O.
+- Added the dated Service Contract P.O. Details release-manifest entry and recorded focused helper,
+  route, template, Jinja, and workbook verification. The service-worker cache was not bumped because
+  no cached external asset changed. Existing unrelated dirty Calibration Certificate files,
+  `scheduler.db`, output/tmp, Git history, commit/push, deployment, Railway, and browser actions
+  remain untouched.
+- Added isolated schedule/fiscal helper and endpoint regression coverage to
+  `tests/test_purchase_orders.py`, including the August 25, 2026–August 25, 2028 Single example,
+  final-cent reconciliation, Product-owned dates, status confirmation, and snapshot preservation.
+  The unfiltered computed column intentionally shows the ordinary first per-visit allocation;
+  active fiscal/custom filters sum only matching scheduled occurrences.
+- Corrected the P.O. page's Excel export query serialization so the UI's fiscal-year and quarter
+  controls reach the server as `fiscal_year` and `fiscal_quarter`, while custom From/To parameters
+  remain mutually exclusive as designed.
+- Clarified the P.O. modal's read-only Start Date and End Date labels as Product-sourced values;
+  no sidebar, cached asset, schema, or unrelated template was changed.
+- Fiscal-year filtering now also supports selecting an entire April-to-March fiscal year when no
+  quarter is selected; quarter selections continue to narrow to the corresponding three-month
+  period.
+- Updated the `PurchaseOrder` model default to the current `single` frequency for future direct
+  model-created rows; historical `contract` and `single_visit` database values remain untouched.
+- Extended the P.O. products API with both canonical Product date names and warranty-date aliases,
+  keeping existing client integrations readable while the register consumes the Product snapshot
+  dates.
+- Legacy Contract and Single Visit rows now display `Not allocated` in the computed-amount column
+  even without an active date filter, while their stored base amount and original type remain
+  readable.
+- Updated the purchase-order regression controls for the new frequency vocabulary and Product-owned
+  date behavior, retaining explicit legacy-readability/rejection coverage without changing unrelated
+  workflows.
 - Recorded the owner-approved Accounting Handoff CC branch split at the top of `plans.md` with
   status **Approved — awaiting go-ahead**. The decision-complete plan keeps the existing
   `accounting_handoff_cc` rows as Manila, adds a separate Cebu/Davao group, routes the shared CC by

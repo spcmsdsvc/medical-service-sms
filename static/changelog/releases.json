@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-25-service-contract-po-details",
+      "release_date": "2026-08-25",
+      "title": "Service Contract P.O. Details",
+      "summary": "P.O. Details now records service frequency, Product coverage dates, and fiscal-period allocations.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-25-service-contract-po-details-admins",
+          "category": "Administration",
+          "description": "P.O. Details now supports Single, Semi Annual, and Quarterly service frequencies, loads matching Product coverage dates, warns before changing a machine to Under Contract, and shows scheduled amounts for fiscal quarters or custom date ranges. Historical Contract and Single Visit rows remain readable.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-25-accounting-handoff-cc-routing",
       "release_date": "2026-08-25",
       "title": "Accounting Handoff CC by Branch",

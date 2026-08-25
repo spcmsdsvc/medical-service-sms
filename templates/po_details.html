@@ -125,6 +125,21 @@
         color: #135bb4;
     }
 
+    .po-type-badge.single {
+        background: #e0edff;
+        color: #135bb4;
+    }
+
+    .po-type-badge.semi_annual {
+        background: #fff1d6;
+        color: #8a5700;
+    }
+
+    .po-type-badge.quarterly {
+        background: #e9e1ff;
+        color: #5b31a8;
+    }
+
     .po-number {
         color: var(--app-text, #16243a);
         font-weight: 850;
@@ -369,8 +384,8 @@
     <section class="po-hero mb-3 d-flex flex-wrap align-items-center justify-content-between gap-3">
         <div>
             <div class="small text-uppercase fw-bold opacity-75">Client Records</div>
-            <h1><i class="fa-solid fa-file-invoice me-2" aria-hidden="true"></i>P.O. Details</h1>
-            <p class="mb-0 mt-2 opacity-75">Record client purchase orders and classify them as Contract or Single Visit.</p>
+            <h1><i class="fa-solid fa-file-invoice me-2" aria-hidden="true"></i>Service Contract P.O. Details</h1>
+            <p class="mb-0 mt-2 opacity-75">Record service frequency, coverage dates, and scheduled contract allocations.</p>
         </div>
         <button type="button" class="btn btn-light fw-bold" id="po-add-button">
             <i class="fa-solid fa-plus me-1" aria-hidden="true"></i>Add P.O.
@@ -378,10 +393,11 @@
     </section>
 
     <section class="row g-3 mb-3" aria-label="Purchase order summary">
-        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Total P.O.s</div><div class="po-kpi-value" id="po-total-count">0</div></div></div>
-        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Contracts</div><div class="po-kpi-value" id="po-contract-count">0</div><div class="po-kpi-total" id="po-contract-total">Total amount: ₱0.00</div></div></div>
-        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Single Visits</div><div class="po-kpi-value" id="po-single-count">0</div><div class="po-kpi-total" id="po-single-total">Total amount: ₱0.00</div></div></div>
-        <div class="col-6 col-lg-3"><div class="po-kpi"><div class="po-kpi-label">Medical Centers</div><div class="po-kpi-value" id="po-client-count">0</div></div></div>
+        <div class="col-6 col-lg"><div class="po-kpi"><div class="po-kpi-label">Total P.O.s</div><div class="po-kpi-value" id="po-total-count">0</div></div></div>
+        <div class="col-6 col-lg"><div class="po-kpi"><div class="po-kpi-label">Single</div><div class="po-kpi-value" id="po-single-count">0</div><div class="po-kpi-total" id="po-single-total">Total amount: ₱0.00</div></div></div>
+        <div class="col-6 col-lg"><div class="po-kpi"><div class="po-kpi-label">Semi Annual</div><div class="po-kpi-value" id="po-semi-annual-count">0</div><div class="po-kpi-total" id="po-semi-annual-total">Total amount: ₱0.00</div></div></div>
+        <div class="col-6 col-lg"><div class="po-kpi"><div class="po-kpi-label">Quarterly</div><div class="po-kpi-value" id="po-quarterly-count">0</div><div class="po-kpi-total" id="po-quarterly-total">Total amount: ₱0.00</div></div></div>
+        <div class="col-6 col-lg"><div class="po-kpi"><div class="po-kpi-label">Medical Centers</div><div class="po-kpi-value" id="po-client-count">0</div></div></div>
     </section>
 
     <section class="po-filter-panel mb-3 no-print" aria-label="Purchase order filters">
@@ -399,19 +415,36 @@
                 <input id="po-machine-search" class="form-control" type="search" placeholder="Search serial or name">
             </div>
             <div class="col-6 col-lg-2">
-                <label for="po-type-filter">Type</label>
+                <label for="po-type-filter">Frequency</label>
                 <select id="po-type-filter" class="form-select">
-                    <option value="">All types</option>
-                    <option value="contract">Contract</option>
-                    <option value="single_visit">Single Visit</option>
+                    <option value="">All frequencies</option>
+                    <option value="single">Single</option>
+                    <option value="semi_annual">Semi Annual</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="contract">Legacy Contract</option>
+                    <option value="single_visit">Legacy Single Visit</option>
                 </select>
             </div>
             <div class="col-6 col-lg-2">
-                <label for="po-date-from">Start date from</label>
+                <label for="po-fiscal-year">Fiscal year</label>
+                <input id="po-fiscal-year" class="form-control" type="number" min="1900" max="9999" placeholder="e.g. 2026">
+            </div>
+            <div class="col-6 col-lg-2">
+                <label for="po-fiscal-quarter">Fiscal quarter</label>
+                <select id="po-fiscal-quarter" class="form-select" disabled>
+                    <option value="">Choose quarter</option>
+                    <option value="1">1st Fiscal (Apr–Jun)</option>
+                    <option value="2">2nd Fiscal (Jul–Sep)</option>
+                    <option value="3">3rd Fiscal (Oct–Dec)</option>
+                    <option value="4">4th Fiscal (Jan–Mar)</option>
+                </select>
+            </div>
+            <div class="col-6 col-lg-2">
+                <label for="po-date-from">From date</label>
                 <input id="po-date-from" class="form-control" type="date">
             </div>
             <div class="col-6 col-lg-2">
-                <label for="po-date-to">Start date to</label>
+                <label for="po-date-to">To date</label>
                 <input id="po-date-to" class="form-control" type="date">
             </div>
         </div>
@@ -489,12 +522,12 @@
                     </div>
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-bold" for="po-date">Start Date</label>
-                            <input class="form-control" type="date" id="po-date" required>
+                            <label class="form-label fw-bold" for="po-date">Start Date <span class="po-muted">(from Product)</span></label>
+                            <input class="form-control" type="date" id="po-date" required readonly>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-bold" for="po-end-date">End Date <span class="po-muted" id="po-end-date-note">(required for Contract)</span></label>
-                            <input class="form-control" type="date" id="po-end-date">
+                            <label class="form-label fw-bold" for="po-end-date">End Date <span class="po-muted" id="po-end-date-note">(from Product)</span></label>
+                            <input class="form-control" type="date" id="po-end-date" readonly required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-bold" for="po-number">P.O. Number</label>
@@ -506,15 +539,19 @@
                         </div>
                     </div>
                     <fieldset class="mt-3">
-                        <legend class="form-label fw-bold mb-2">P.O. Type</legend>
+                        <legend class="form-label fw-bold mb-2">Service Frequency</legend>
                         <div class="d-flex flex-wrap gap-3">
                             <label class="form-check">
-                                <input class="form-check-input" type="radio" name="po-type" value="contract" required>
-                                <span class="form-check-label">Contract</span>
+                                <input class="form-check-input" type="radio" name="po-type" value="single" required>
+                                <span class="form-check-label">Single (annual)</span>
                             </label>
                             <label class="form-check">
-                                <input class="form-check-input" type="radio" name="po-type" value="single_visit">
-                                <span class="form-check-label">Single Visit</span>
+                                <input class="form-check-input" type="radio" name="po-type" value="semi_annual">
+                                <span class="form-check-label">Semi Annual</span>
+                            </label>
+                            <label class="form-check">
+                                <input class="form-check-input" type="radio" name="po-type" value="quarterly">
+                                <span class="form-check-label">Quarterly</span>
                             </label>
                         </div>
                     </fieldset>
@@ -549,6 +586,7 @@
         clients: [],
         products: [],
         selectedMachines: [],
+        pendingContractSerials: new Set(),
         sortKey: localStorage.getItem('po_details_sort_key') || 'po_date',
         sortDirection: localStorage.getItem('po_details_sort_direction') || 'desc',
         editingId: null,
@@ -565,6 +603,58 @@
             const amount = Number.parseFloat(row.amount);
             return total + (Number.isFinite(amount) ? amount : 0);
         }, 0);
+    }
+
+    function fiscalWindow(filters) {
+        if (!filters.fiscalYear) return null;
+        const year = Number(filters.fiscalYear);
+        const quarter = Number(filters.fiscalQuarter);
+        if (!Number.isInteger(year)) return null;
+        if (!filters.fiscalQuarter) return { from: `${year}-04-01`, to: `${year + 1}-03-31` };
+        if (![1, 2, 3, 4].includes(quarter)) return null;
+        const startMonth = quarter === 1 ? 4 : quarter === 2 ? 7 : quarter === 3 ? 10 : 1;
+        const startYear = quarter === 4 ? year + 1 : year;
+        const endMonth = quarter === 1 ? 6 : quarter === 2 ? 9 : quarter === 3 ? 12 : 3;
+        const endYear = quarter === 4 ? year + 1 : year;
+        const pad = (value) => String(value).padStart(2, '0');
+        const lastDay = new Date(Date.UTC(endYear, endMonth, 0)).getUTCDate();
+        return {
+            from: `${startYear}-${pad(startMonth)}-01`,
+            to: `${endYear}-${pad(endMonth)}-${pad(lastDay)}`,
+        };
+    }
+
+    function syncFiscalControls() {
+        const yearInput = byId('po-fiscal-year');
+        const quarterInput = byId('po-fiscal-quarter');
+        if (!yearInput || !quarterInput) return false;
+        const year = Number(yearInput.value);
+        const validYear = /^\d{4}$/.test(yearInput.value.trim()) && Number.isInteger(year) && year >= 1900 && year <= 9999;
+        quarterInput.disabled = !validYear;
+        if (!validYear && quarterInput.value) quarterInput.value = '';
+        if (yearInput.value.trim() && !validYear) {
+            notify('Enter a valid four-digit fiscal year before choosing a fiscal quarter.', 'warning');
+        }
+        return validYear;
+    }
+
+    function rowSchedule(row, filters = currentFilters()) {
+        const schedule = Array.isArray(row.allocation_schedule) ? row.allocation_schedule : [];
+        const fiscal = fiscalWindow(filters);
+        const from = fiscal?.from || filters.from;
+        const to = fiscal?.to || filters.to;
+        if (!from && !to) return schedule;
+        return schedule.filter((item) => (!from || item.date_string >= from) && (!to || item.date_string <= to));
+    }
+
+    function computedAmount(row, filters = currentFilters()) {
+        const schedule = rowSchedule(row, filters);
+        const hasDateFilter = Boolean(filters.from || filters.to || fiscalWindow(filters));
+        if (!hasDateFilter && ['contract', 'single_visit'].includes(row.po_type)) return 'Not allocated';
+        if (!hasDateFilter) return schedule[0]?.amount_display || (schedule.length ? 'Not allocated' : '—');
+        if (!schedule.length) return row.allocation_schedule?.length ? '—' : 'Not allocated';
+        const total = schedule.reduce((sum, item) => sum + Number.parseFloat(item.amount_string || 0), 0);
+        return Number.isFinite(total) && total > 0 ? formatPHP(total) : 'Not allocated';
     }
 
     function pageToast(message, kind = 'info') {
@@ -674,6 +764,8 @@
             type: byId('po-type-filter')?.value || '',
             from: byId('po-date-from')?.value || '',
             to: byId('po-date-to')?.value || '',
+            fiscalYear: byId('po-fiscal-year')?.value || '',
+            fiscalQuarter: byId('po-fiscal-quarter')?.value || '',
         };
     }
 
@@ -685,9 +777,15 @@
             const machine = String(
                 row.machine_search || row.machine_display_all || row.machine_display || `${row.product_serial || ''} ${row.product_name || ''}`
             ).toLowerCase();
-            const startDate = row.start_date || row.po_date || '';
-            const inDateRange = (!filters.from || startDate >= filters.from)
-                && (!filters.to || startDate <= filters.to);
+            const hasFiscal = Boolean(filters.fiscalYear || filters.fiscalQuarter);
+            const fiscal = fiscalWindow(filters);
+            const hasDateFilter = Boolean(filters.from || filters.to || (fiscal && hasFiscal));
+            const schedule = rowSchedule(row, filters);
+            const legacyDate = row.start_date || row.po_date || '';
+            const inDateRange = !hasDateFilter
+                || (row.allocation_schedule?.length ? schedule.length > 0 :
+                    (!filters.from || legacyDate >= filters.from) &&
+                    (!filters.to || legacyDate <= filters.to));
             return (!filters.client || client.includes(filters.client))
                 && (!filters.number || number.includes(filters.number))
                 && (!filters.machine || machine.includes(filters.machine))
@@ -729,13 +827,16 @@
     }
 
     function renderKpis() {
-        const contractRows = state.rows.filter((row) => row.po_type === 'contract');
-        const singleVisitRows = state.rows.filter((row) => row.po_type === 'single_visit');
+        const singleRows = state.rows.filter((row) => row.po_type === 'single');
+        const semiAnnualRows = state.rows.filter((row) => row.po_type === 'semi_annual');
+        const quarterlyRows = state.rows.filter((row) => row.po_type === 'quarterly');
         byId('po-total-count').textContent = state.rows.length;
-        byId('po-contract-count').textContent = contractRows.length;
-        byId('po-contract-total').textContent = `Total amount: ${formatPHP(totalAmount(contractRows))}`;
-        byId('po-single-count').textContent = singleVisitRows.length;
-        byId('po-single-total').textContent = `Total amount: ${formatPHP(totalAmount(singleVisitRows))}`;
+        byId('po-single-count').textContent = singleRows.length;
+        byId('po-single-total').textContent = `Total amount: ${formatPHP(totalAmount(singleRows))}`;
+        byId('po-semi-annual-count').textContent = semiAnnualRows.length;
+        byId('po-semi-annual-total').textContent = `Total amount: ${formatPHP(totalAmount(semiAnnualRows))}`;
+        byId('po-quarterly-count').textContent = quarterlyRows.length;
+        byId('po-quarterly-total').textContent = `Total amount: ${formatPHP(totalAmount(quarterlyRows))}`;
         byId('po-client-count').textContent = new Set(state.rows.map((row) => row.client_id)).size;
     }
 
@@ -767,7 +868,8 @@
             <th><button class="po-sort-button" type="button" data-sort="end_date">End Date <span data-sort-indicator="end_date">&#8597;</span></button></th>
             <th><button class="po-sort-button" type="button" data-sort="po_number">P.O. Number <span data-sort-indicator="po_number">&#8597;</span></button></th>
             <th><button class="po-sort-button" type="button" data-sort="po_type">Type <span data-sort-indicator="po_type">&#8597;</span></button></th>
-            <th><button class="po-sort-button" type="button" data-sort="amount">Amount <span data-sort-indicator="amount">&#8597;</span></button></th>
+            <th><button class="po-sort-button" type="button" data-sort="amount">P.O. Amount <span data-sort-indicator="amount">&#8597;</span></button></th>
+            <th>Computed Amount</th>
             <th class="text-end">Actions</th>
         </tr>`;
     }
@@ -788,6 +890,7 @@
             <td><span class="po-number">${escapeHtml(row.po_number)}</span></td>
             <td><span class="po-type-badge ${escapeHtml(row.po_type)}">${escapeHtml(row.po_type_label)}</span></td>
             <td><span class="po-amount">${escapeHtml(row.amount_display || '—')}</span></td>
+            <td><span class="po-amount">${escapeHtml(computedAmount(row))}</span></td>
             <td>${actionHtml(row)}</td>
         </tr>`).join('');
 
@@ -800,7 +903,8 @@
             <div class="small mt-3"><strong>Start Date:</strong> ${escapeHtml(row.start_date || row.po_date || '—')}</div>
             <div class="small"><strong>End Date:</strong> ${escapeHtml(row.end_date || '—')}</div>
             <div class="small"><strong>P.O. number:</strong> <span class="po-number">${escapeHtml(row.po_number)}</span></div>
-            <div class="small"><strong>Amount:</strong> <span class="po-amount">${escapeHtml(row.amount_display || '—')}</span></div>
+            <div class="small"><strong>P.O. amount:</strong> <span class="po-amount">${escapeHtml(row.amount_display || '—')}</span></div>
+            <div class="small"><strong>Computed amount:</strong> <span class="po-amount">${escapeHtml(computedAmount(row))}</span></div>
             <div class="mt-3">${actionHtml(row)}</div>
         </article>`).join('');
         updateSortIndicators();
@@ -837,7 +941,9 @@
             chip.className = 'po-chip';
             const label = document.createElement('span');
             label.className = 'po-chip-label';
-            label.textContent = productDisplay(machine);
+            label.textContent = state.pendingContractSerials.has(
+                String(machine?.serial_number || '').trim().toLowerCase()
+            ) ? `${productDisplay(machine)} — Pending Under Contract` : productDisplay(machine);
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'po-chip-remove';
@@ -859,6 +965,25 @@
         if (message !== null) setMachineNote(message);
     }
 
+    function syncProductCoverageDates() {
+        const selected = state.selectedMachines;
+        const startDates = [...new Set(selected.map((machine) => String(machine?.start_date || machine?.product_start_date || '').trim()).filter(Boolean))];
+        const endDates = [...new Set(selected.map((machine) => String(machine?.end_date || machine?.product_end_date || '').trim()).filter(Boolean))];
+        const dateInputs = [byId('po-date'), byId('po-end-date')];
+        if (!selected.length) {
+            dateInputs.forEach((input) => { if (input) input.value = ''; });
+            return;
+        }
+        if (selected.some((machine) => !machine?.start_date || !machine?.end_date) || startDates.length !== 1 || endDates.length !== 1) {
+            dateInputs.forEach((input) => { if (input) input.value = ''; });
+            setMachineNote('Every selected machine must have matching Product Start Date and Product End Date values.');
+            return;
+        }
+        byId('po-date').value = startDates[0];
+        byId('po-end-date').value = endDates[0];
+        setMachineNote(`${selected.length} machine${selected.length === 1 ? '' : 's'} selected. Dates loaded from Product records.`);
+    }
+
     function setSelectedMachines(machines) {
         const selected = [];
         const seen = new Set();
@@ -870,18 +995,58 @@
         });
         state.selectedMachines = selected;
         syncMachineSelection();
+        syncProductCoverageDates();
     }
 
-    function addMachineSelection(product) {
+    async function addMachineSelection(product) {
+        const serial = String(product?.serial_number || '').trim();
+        if (!serial) return false;
+        const productStart = String(product?.start_date || product?.product_start_date || '').trim();
+        const productEnd = String(product?.end_date || product?.product_end_date || '').trim();
+        if (!productStart || !productEnd) {
+            const message = `Equipment ${serial} must have both a Product Start Date and Product End Date before it can be assigned to a service contract P.O.`;
+            setMachineNote(message);
+            notify(message, 'danger');
+            return false;
+        }
+        const existing = state.selectedMachines[0];
+        const existingStart = String(existing?.start_date || existing?.product_start_date || '').trim();
+        const existingEnd = String(existing?.end_date || existing?.product_end_date || '').trim();
+        if (existing && (productStart !== existingStart || productEnd !== existingEnd)) {
+            const message = 'All selected machines must have matching Product Start Date and Product End Date.';
+            setMachineNote(message);
+            notify(message, 'danger');
+            return false;
+        }
+        const key = serial.toLowerCase();
+        if (state.selectedMachines.some((machine) => String(machine?.serial_number || '').trim().toLowerCase() === key)) {
+            return false;
+        }
+        if (!Boolean(product?.under_contract)) {
+            const confirmed = await confirmAction({
+                title: 'Change Machine Status?',
+                message: `${productDisplay(product)} is not Under Contract. Change its status to Under Contract when this P.O. is saved?`,
+                confirmText: 'Confirm and Add',
+            });
+            if (!confirmed) {
+                setMachineNote(`${productDisplay(product)} was not added because its status was not confirmed.`);
+                return false;
+            }
+            state.pendingContractSerials.add(key);
+        }
         setSelectedMachines([...state.selectedMachines, product]);
-        setMachineNote(`${state.selectedMachines.length} machine${state.selectedMachines.length === 1 ? '' : 's'} selected.`);
+        syncProductCoverageDates();
+        setMachineNote(`${state.selectedMachines.length} machine${state.selectedMachines.length === 1 ? '' : 's'} selected. ${state.pendingContractSerials.size ? 'Under Contract confirmation pending until Save.' : 'Dates loaded from Product records.'}`);
+        return true;
     }
 
     function removeMachineSelection(serial) {
         const key = String(serial || '').trim().toLowerCase();
+        state.pendingContractSerials.delete(key);
         setSelectedMachines(state.selectedMachines.filter(
             (machine) => String(machine?.serial_number || '').trim().toLowerCase() !== key
         ));
+        syncProductCoverageDates();
         setMachineNote(state.selectedMachines.length
             ? `${state.selectedMachines.length} machine${state.selectedMachines.length === 1 ? '' : 's'} selected.`
             : 'Select at least one registered machine.');
@@ -889,8 +1054,10 @@
 
     function clearMachineSelection(message = '') {
         state.selectedMachines = [];
+        state.pendingContractSerials.clear();
         byId('po-machine-input').value = '';
         syncMachineSelection();
+        syncProductCoverageDates();
         setMachineNote(message);
         hideAutocomplete('po-machine-results');
     }
@@ -912,7 +1079,12 @@
 
     function productCoverageDisplay(product) {
         if (Boolean(product?.under_contract)) return 'Under Contract';
-        return product?.end_warranty ? `Warranty ends ${product.end_warranty}` : '';
+        const status = 'Not Under Contract — confirmation required before adding';
+        const dates = product?.start_date && product?.end_date
+            ? `${product.start_date} to ${product.end_date}`
+            : 'Product dates incomplete';
+        if (!product?.start_date || !product?.end_date) return `${status}; ${dates}`;
+        return product?.end_warranty ? `${status}; ${dates}; Warranty ends ${product.end_warranty}` : `${status}; ${dates}`;
     }
 
     function appendAutocompleteMessage(results, message) {
@@ -987,10 +1159,12 @@
                     results,
                     productDisplay(product),
                     productCoverageDisplay(product),
-                    () => {
-                        addMachineSelection(product);
-                        input.value = '';
-                        hideAutocomplete('po-machine-results');
+                    async () => {
+                        const added = await addMachineSelection(product);
+                        if (added) {
+                            input.value = '';
+                            hideAutocomplete('po-machine-results');
+                        }
                     },
                 ));
             }
@@ -1032,10 +1206,8 @@
     function updateEndDateRequirement() {
         const endDate = byId('po-end-date');
         const note = byId('po-end-date-note');
-        const type = document.querySelector('input[name="po-type"]:checked')?.value || '';
-        const required = type === 'contract';
-        if (endDate) endDate.required = required;
-        if (note) note.textContent = required ? '(required for Contract)' : '(optional for Single Visit)';
+        if (endDate) endDate.required = true;
+        if (note) note.textContent = '(read-only Product coverage dates)';
     }
 
     function openForm(row = null) {
@@ -1066,6 +1238,10 @@
             byId('po-amount').value = row.amount || '';
             const radio = document.querySelector(`input[name="po-type"][value="${row.po_type}"]`);
             if (radio) radio.checked = true;
+            else {
+                document.querySelectorAll('input[name="po-type"]').forEach((option) => { option.checked = false; });
+                setMachineNote('This is a legacy P.O. type. Select Single, Semi Annual, or Quarterly before saving.');
+            }
             updateEndDateRequirement();
         }
         state.modal.show();
@@ -1090,6 +1266,30 @@
             body: JSON.stringify(payload),
         });
         const data = await response.json().catch(() => ({}));
+        const alreadyConfirmed = new Set((payload.under_contract_confirmed_serials || []).map((serial) => String(serial).trim().toLowerCase()));
+        const pendingFromServer = Array.isArray(data.machines) ? data.machines : [];
+        const needsStatusRetry = pendingFromServer.some(
+            (machine) => !alreadyConfirmed.has(String(machine?.serial_number || '').trim().toLowerCase())
+        );
+        if (response.status === 409 && data.code === 'under_contract_confirmation_required' && needsStatusRetry) {
+            const machines = pendingFromServer;
+            const labels = machines.map((machine) => productDisplay(machine)).join(', ');
+            const confirmed = await confirmAction({
+                title: 'Change Machine Status?',
+                message: `${labels || 'The selected machine(s)'} are not Under Contract. Change the status to Under Contract and save this P.O.?`,
+                confirmText: 'Change and Save',
+            });
+            if (confirmed) {
+                return sendRecord(url, method, {
+                    ...payload,
+                    under_contract_confirmed_serials: [
+                        ...(payload.under_contract_confirmed_serials || []),
+                        ...machines.map((machine) => machine.serial_number),
+                    ],
+                });
+            }
+            throw new Error('P.O. save cancelled. Set the machine status to Under Contract before saving.');
+        }
         if (response.status === 409 && data.duplicate && !payload.force) {
             const duplicate = data.duplicate;
             const customProceed = await confirmAction({
@@ -1117,6 +1317,8 @@
             po_type: document.querySelector('input[name="po-type"]:checked')?.value || '',
             amount: byId('po-amount').value,
         };
+        const confirmedSerials = Array.from(state.pendingContractSerials);
+        if (confirmedSerials.length) payload.under_contract_confirmed_serials = confirmedSerials;
         try {
             const data = await sendRecord(state.editingId ? `/update_purchase_order/${state.editingId}` : '/add_purchase_order', state.editingId ? 'PUT' : 'POST', payload);
             state.modal.hide();
@@ -1180,6 +1382,29 @@
     byId('po-type-filter').addEventListener('change', renderRows);
     byId('po-date-from').addEventListener('change', renderRows);
     byId('po-date-to').addEventListener('change', renderRows);
+    byId('po-fiscal-year').addEventListener('change', () => {
+        syncFiscalControls();
+        if (byId('po-fiscal-year').value || byId('po-fiscal-quarter').value) {
+            byId('po-date-from').value = '';
+            byId('po-date-to').value = '';
+        }
+        renderRows();
+    });
+    byId('po-fiscal-quarter').addEventListener('change', () => {
+        if (!syncFiscalControls()) return;
+        if (byId('po-fiscal-year').value || byId('po-fiscal-quarter').value) {
+            byId('po-date-from').value = '';
+            byId('po-date-to').value = '';
+        }
+        renderRows();
+    });
+    [byId('po-date-from'), byId('po-date-to')].forEach((input) => input.addEventListener('change', () => {
+        if (input.value) {
+            byId('po-fiscal-year').value = '';
+            byId('po-fiscal-quarter').value = '';
+        }
+        renderRows();
+    }));
     document.querySelectorAll('input[name="po-type"]').forEach((radio) => {
         radio.addEventListener('change', updateEndDateRequirement);
     });
@@ -1190,6 +1415,9 @@
         byId('po-type-filter').value = '';
         byId('po-date-from').value = '';
         byId('po-date-to').value = '';
+        byId('po-fiscal-year').value = '';
+        byId('po-fiscal-quarter').value = '';
+        syncFiscalControls();
         renderRows();
     });
 
@@ -1199,7 +1427,14 @@
         button.disabled = true;
         const filters = currentFilters();
         const params = new URLSearchParams({
-            ...filters,
+            client: filters.client,
+            number: filters.number,
+            machine: filters.machine,
+            type: filters.type,
+            from: filters.from,
+            to: filters.to,
+            fiscal_year: filters.fiscalYear,
+            fiscal_quarter: filters.fiscalQuarter,
             sort: state.sortKey,
             direction: state.sortDirection,
         });
@@ -1235,6 +1470,7 @@
         setupPoAutocomplete('po-client-input', 'po-client-results', 'po-client', 'client');
         setupPoAutocomplete('po-machine-input', 'po-machine-results', 'po-machine', 'machine');
         renderHeader();
+        syncFiscalControls();
         updateEndDateRequirement();
         try { await loadData(); }
         catch (error) { byId('po-result-count').textContent = 'Request failed.'; notify(error.message, 'danger'); }

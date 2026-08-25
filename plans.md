@@ -53,6 +53,118 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Service Contract P.O. Details and Fiscal Allocation
+
+**Status:** In progress
+**Approved:** 2026-08-25
+**Detailed:** 2026-08-25
+**Execution authorization:** 2026-08-25, owner message: “PLEASE IMPLEMENT THIS PLAN”.
+**Finished:** Not yet committed; local implementation only.
+**Local outcome:** Correction cycle completed locally on 2026-08-25. The authorized P.O. test
+rewrite is now included; the full P.O. module passes **40/40** and the affected Analytics P.O.
+module passes **5/5**. Full discovery ran **757 tests: 755 passed, 1 failed, 1 skipped**; the
+single failure is the unrelated `test_staff_creation.StaffCreationTests.test_superadmin_rejects_conflicting_staff_permissions_without_writing`
+initials-catalog collision. Python compile, Jinja parse, inline JavaScript parse, workbook/export
+assertions, release JSON uniqueness/parse, and `git diff --check` pass. No commit exists, so this
+plan remains **In progress** and no unrelated hash is claimed.
+
+### Context and intended outcome
+
+The P.O. Details register must represent service-contract frequency rather than the older
+Contract/Single Visit labels. The register needs product-sourced coverage dates, contract-status
+protection, fiscal-year filtering, and a computed amount for scheduled service occurrences while
+remaining compatible with historical P.O. rows and the existing association tables.
+
+### Decisions taken
+
+1. The page H1 is `Service Contract P.O. Details`; the sidebar remains `P.O. Details`.
+2. Current frequency values are `single`, `semi_annual`, and `quarterly`; Single is one occurrence
+   per year. Historical `contract` and `single_visit` values remain readable/filterable only and
+   cannot be saved on new or edited rows.
+3. Fiscal quarters are April–June, July–September, October–December, and January–March. Fiscal
+   year labels use the starting April year. Custom From/To filtering remains available and is
+   mutually exclusive with fiscal filters.
+4. New/current-frequency P.O. dates are snapshots derived from the selected Product records.
+   Multiple machines require complete, identical dates. Existing snapshots survive unrelated edits.
+5. A non-contract selected machine requires explicit confirmation; confirmed status changes and
+   the P.O. write occur in one transaction after server-side revalidation.
+6. Schedule occurrences are anchored to Start Date, inclusive through End Date, with month-end
+   clamping and Decimal allocation; the final occurrence receives any rounding remainder.
+7. No new database column, service-worker bump, deployment, Railway action, commit, or protected
+   artifact operation is authorized for this implementation.
+
+### Investigation
+
+- `app.py` stores `PurchaseOrder.po_date`/`end_date`, `po_type`, `amount`, and the normalized
+  `PurchaseOrderMachine` association; `Product` currently has warranty dates and `under_contract`.
+- `/get_purchase_orders`, `/add_purchase_order`, `/update_purchase_order`, and
+  `/export_purchase_orders` are the single register/API seams. Analytics reads
+  `normalize_purchase_order_type` and must retain its date-based company-wide behavior.
+- `templates/po_details.html` contains the H1, filters, form, machine autocomplete, list rendering,
+  confirmation modal, and export query construction. `templates/layout.html` owns the sidebar label
+  and is deliberately excluded.
+- The worktree already contains Calibration Certificate, journals, release data, protected
+  `scheduler.db`, output/tmp, and other dirty files; only narrow P.O. hunks may be edited.
+
+### Execution steps
+
+1. Record this authorized plan and preserve all unrelated dirty files. Add fail-first P.O. assertions
+   for current frequencies, fiscal recurrence/allocation, product-date snapshots, status confirmation,
+   and computed filtered values in `tests/test_purchase_orders.py` without touching `scheduler.db`.
+2. In `app.py`, add current/legacy type constants, fiscal-boundary and anchored-schedule helpers,
+   Decimal allocation helpers, and filtered-amount helpers. Extend `purchase_order_to_dict` with
+   product dates and schedule data while retaining legacy API keys.
+3. Rework payload validation to reject legacy/unknown values on new/edit saves, derive read-only
+   dates from selected Products, enforce complete matching dates across machines, preserve existing
+   current-frequency snapshots during unrelated edits, and reject forged client dates.
+4. Add explicit `under_contract_confirmed_serials` handling. Re-fetch and revalidate selected
+   Products, update only confirmed non-contract flags, log those changes, and commit status/P.O.
+   atomically. Return a distinct 409 confirmation response listing pending machines.
+5. Update `templates/po_details.html` for the new heading, frequency controls, product date loading,
+   confirmation flow, fiscal/custom filters, scheduled amount rendering, and matching labels while
+   leaving the sidebar unchanged.
+6. Update Excel export filters, columns, scheduled dates, and computed amount using the same helpers,
+   preserving one row per P.O. and per-P.O. amount semantics.
+7. Add a dated release entry and append detailed factual results to `changes.md`; do not bump the
+   service worker unless a cached external asset is touched.
+8. Self-review the diff, run focused P.O./analytics tests, Python/Jinja/inline-JS checks, workbook
+   assertions, release JSON validation, full suite when feasible, and `git diff --check`. Leave the
+   plan truthfully `In progress` because no commit is authorized.
+
+### Deliberately excluded
+
+No schema migration, general Products permission change, sidebar rename, browser automation, service
+worker cache change, deployment/Railway operation, database reset, staging, commit, push, or unrelated
+Calibration Certificate/journal/template changes are included.
+
+### Verification
+
+Verify fiscal boundaries and year rollover, month-end clamping, inclusive schedules, final-cent
+reconciliation, filtered and unfiltered amounts, legacy discoverability, product-date spoof rejection,
+missing/mismatched-date rejection, confirmation decline/success/stale state, atomic rollback, activity
+logs, API/export parity, one-row-per-P.O., H1/sidebar labels, Jinja/AST/inline-script syntax, release
+JSON shape, focused suites, full suite where feasible, and `git diff --check`. Use isolated test DBs
+only and report browser checks as not run under the project safety rule.
+
+### After implementation
+
+The correction Builder self-reviewed only the P.O. hunks and preserved the protected Accounting,
+Calibration, handoff, scheduler.db, output/tmp, and unrelated test/template changes. Integer-cent
+allocation, immediate Product-date/status selection guards, legacy edit selection, fiscal-year
+parity, and the Semi Annual KPI were corrected. Verification was run against unique temporary test
+databases only: `tests.test_purchase_orders` **40/40**, `tests.test_analytics_purchase_orders`
+**5/5**, and full discovery **755 passed, 1 failed, 1 skipped**, with the named staff-creation
+failure unrelated to P.O. behavior. No browser automation, staging, commit, push, deployment,
+Railway, or production action occurred. The owner may separately authorize read-only review with
+`Review the implementation.`; commit/push and production verification remain separate decisions.
+
+### Risks
+
+The highest risks are financial misallocation, silently changing historical snapshots, cross-client
+machine links, and partial contract-status updates. Centralized Decimal schedule helpers, server-side
+Product revalidation, explicit confirmation, transaction rollback, and focused regression tests limit
+those risks. Existing unrelated dirty changes remain protected throughout.
+
 ## Shared PDF Upload Conversion Repair
 
 **Status:** Executed
