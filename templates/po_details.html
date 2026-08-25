@@ -502,6 +502,24 @@
             <form id="po-form">
                 <div class="modal-body">
                     <input type="hidden" id="po-id">
+                    <fieldset class="mt-3 mb-3">
+                        <legend class="form-label fw-bold mb-2">Service Frequency</legend>
+                        <div class="d-flex flex-wrap gap-3">
+                            <label class="form-check">
+                                <input class="form-check-input" type="radio" name="po-type" value="single" required>
+                                <span class="form-check-label">Single</span>
+                            </label>
+                            <label class="form-check">
+                                <input class="form-check-input" type="radio" name="po-type" value="semi_annual">
+                                <span class="form-check-label">Semi Annual</span>
+                            </label>
+                            <label class="form-check">
+                                <input class="form-check-input" type="radio" name="po-type" value="quarterly">
+                                <span class="form-check-label">Quarterly</span>
+                            </label>
+                        </div>
+                        <div class="form-text po-muted">Single is annual for contract-backed machines and one-time for machines marked No Expiry Set - No Contract.</div>
+                    </fieldset>
                     <div class="mb-3">
                         <label class="form-label fw-bold" for="po-client-input">Medical Center</label>
                         <div class="position-relative">
@@ -513,7 +531,7 @@
                     <div class="mb-3">
                         <label class="form-label fw-bold" for="po-machine-input">Equipment / Machine</label>
                         <div class="position-relative">
-                            <input class="form-control" type="search" id="po-machine-input" autocomplete="off" role="combobox" aria-controls="po-machine-results" aria-expanded="false" placeholder="Select a client first" disabled>
+                            <input class="form-control" type="search" id="po-machine-input" autocomplete="off" role="combobox" aria-controls="po-machine-results" aria-expanded="false" placeholder="Select a frequency first" disabled>
                             <input type="hidden" id="po-machine" required>
                             <div class="search-results d-none" id="po-machine-results" role="listbox"></div>
                         </div>
@@ -538,23 +556,6 @@
                             <input class="form-control" type="number" id="po-amount" min="0.01" step="0.01" inputmode="decimal" placeholder="e.g. 25000.00">
                         </div>
                     </div>
-                    <fieldset class="mt-3">
-                        <legend class="form-label fw-bold mb-2">Service Frequency</legend>
-                        <div class="d-flex flex-wrap gap-3">
-                            <label class="form-check">
-                                <input class="form-check-input" type="radio" name="po-type" value="single" required>
-                                <span class="form-check-label">Single (annual)</span>
-                            </label>
-                            <label class="form-check">
-                                <input class="form-check-input" type="radio" name="po-type" value="semi_annual">
-                                <span class="form-check-label">Semi Annual</span>
-                            </label>
-                            <label class="form-check">
-                                <input class="form-check-input" type="radio" name="po-type" value="quarterly">
-                                <span class="form-check-label">Quarterly</span>
-                            </label>
-                        </div>
-                    </fieldset>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -890,7 +891,7 @@
             <td><span class="po-number">${escapeHtml(row.po_number)}</span></td>
             <td><span class="po-type-badge ${escapeHtml(row.po_type)}">${escapeHtml(row.po_type_label)}</span></td>
             <td><span class="po-amount">${escapeHtml(row.amount_display || '—')}</span></td>
-            <td><span class="po-amount">${escapeHtml(computedAmount(row))}</span></td>
+            <td><span class="po-amount">${escapeHtml(computedAmount(row))}</span><div class="small po-muted">${escapeHtml(row.schedule_mode_label || '')}</div></td>
             <td>${actionHtml(row)}</td>
         </tr>`).join('');
 
@@ -904,7 +905,7 @@
             <div class="small"><strong>End Date:</strong> ${escapeHtml(row.end_date || '—')}</div>
             <div class="small"><strong>P.O. number:</strong> <span class="po-number">${escapeHtml(row.po_number)}</span></div>
             <div class="small"><strong>P.O. amount:</strong> <span class="po-amount">${escapeHtml(row.amount_display || '—')}</span></div>
-            <div class="small"><strong>Computed amount:</strong> <span class="po-amount">${escapeHtml(computedAmount(row))}</span></div>
+            <div class="small"><strong>Computed amount:</strong> <span class="po-amount">${escapeHtml(computedAmount(row))}</span> <span class="po-muted">(${escapeHtml(row.schedule_mode_label || '')})</span></div>
             <div class="mt-3">${actionHtml(row)}</div>
         </article>`).join('');
         updateSortIndicators();
@@ -930,6 +931,18 @@
         return state.selectedMachines
             .map((machine) => String(machine?.serial_number || '').trim())
             .filter(Boolean);
+    }
+
+    function selectedFrequency() {
+        return document.querySelector('input[name="po-type"]:checked')?.value || '';
+    }
+
+    function productIsOneTimeEligible(product) {
+        return Boolean(
+            selectedFrequency() === 'single'
+            && product?.one_time_eligible
+            && String(product?.contract_status || '') === 'No Expiry Set - No Contract'
+        );
     }
 
     function renderSelectedMachineChips() {
@@ -974,14 +987,22 @@
             dateInputs.forEach((input) => { if (input) input.value = ''; });
             return;
         }
-        if (selected.some((machine) => !machine?.start_date || !machine?.end_date) || startDates.length !== 1 || endDates.length !== 1) {
+        const oneTimeModes = selected.map((machine) => Boolean(machine?.one_time_eligible && String(machine?.contract_status || '') === 'No Expiry Set - No Contract'));
+        const oneTime = selectedFrequency() === 'single' && oneTimeModes.length > 0 && oneTimeModes.every(Boolean);
+        const mixedModes = oneTimeModes.some(Boolean) && !oneTimeModes.every(Boolean);
+        if (mixedModes || selected.some((machine) => !machine?.start_date) || startDates.length !== 1 || (!oneTime && (selected.some((machine) => !machine?.end_date) || endDates.length !== 1))) {
             dateInputs.forEach((input) => { if (input) input.value = ''; });
-            setMachineNote('Every selected machine must have matching Product Start Date and Product End Date values.');
+            setMachineNote(mixedModes
+                ? 'One-time Single machines cannot be mixed with contract-backed machines.'
+                : oneTime
+                    ? 'Every one-time machine must have the same Product Start Date.'
+                    : 'Every selected machine must have matching Product Start Date and Product End Date values.');
             return;
         }
         byId('po-date').value = startDates[0];
-        byId('po-end-date').value = endDates[0];
-        setMachineNote(`${selected.length} machine${selected.length === 1 ? '' : 's'} selected. Dates loaded from Product records.`);
+        byId('po-end-date').value = oneTime ? '' : endDates[0];
+        updateEndDateRequirement();
+        setMachineNote(`${selected.length} machine${selected.length === 1 ? '' : 's'} selected. ${oneTime ? 'One-time visit date loaded from Product records.' : 'Dates loaded from Product records.'}`);
     }
 
     function setSelectedMachines(machines) {
@@ -1001,10 +1022,20 @@
     async function addMachineSelection(product) {
         const serial = String(product?.serial_number || '').trim();
         if (!serial) return false;
+        const frequency = selectedFrequency();
+        if (!frequency) {
+            const message = 'Select Single, Semi Annual, or Quarterly before selecting a machine.';
+            setMachineNote(message);
+            notify(message, 'warning');
+            return false;
+        }
         const productStart = String(product?.start_date || product?.product_start_date || '').trim();
         const productEnd = String(product?.end_date || product?.product_end_date || '').trim();
-        if (!productStart || !productEnd) {
-            const message = `Equipment ${serial} must have both a Product Start Date and Product End Date before it can be assigned to a service contract P.O.`;
+        const oneTime = productIsOneTimeEligible(product);
+        if (!productStart || (!productEnd && !oneTime)) {
+            const message = oneTime
+                ? `Equipment ${serial} must have a Product Start Date for a one-time Single P.O.`
+                : `Equipment ${serial} must have both a Product Start Date and Product End Date before it can be assigned to a ${frequency === 'single' ? 'contract-backed Single' : frequency === 'semi_annual' ? 'Semi Annual' : 'Quarterly'} P.O.`;
             setMachineNote(message);
             notify(message, 'danger');
             return false;
@@ -1012,8 +1043,11 @@
         const existing = state.selectedMachines[0];
         const existingStart = String(existing?.start_date || existing?.product_start_date || '').trim();
         const existingEnd = String(existing?.end_date || existing?.product_end_date || '').trim();
-        if (existing && (productStart !== existingStart || productEnd !== existingEnd)) {
-            const message = 'All selected machines must have matching Product Start Date and Product End Date.';
+        const existingOneTime = Boolean(existing?.one_time_eligible && String(existing?.contract_status || '') === 'No Expiry Set - No Contract');
+        if (existing && (oneTime !== existingOneTime || productStart !== existingStart || (!oneTime && productEnd !== existingEnd))) {
+            const message = oneTime || existingOneTime
+                ? 'One-time Single machines must share the same Product Start Date and cannot be mixed with contract-backed machines.'
+                : 'All selected machines must have matching Product Start Date and Product End Date.';
             setMachineNote(message);
             notify(message, 'danger');
             return false;
@@ -1022,7 +1056,7 @@
         if (state.selectedMachines.some((machine) => String(machine?.serial_number || '').trim().toLowerCase() === key)) {
             return false;
         }
-        if (!Boolean(product?.under_contract)) {
+        if (!oneTime && !Boolean(product?.under_contract)) {
             const confirmed = await confirmAction({
                 title: 'Change Machine Status?',
                 message: `${productDisplay(product)} is not Under Contract. Change its status to Under Contract when this P.O. is saved?`,
@@ -1036,7 +1070,7 @@
         }
         setSelectedMachines([...state.selectedMachines, product]);
         syncProductCoverageDates();
-        setMachineNote(`${state.selectedMachines.length} machine${state.selectedMachines.length === 1 ? '' : 's'} selected. ${state.pendingContractSerials.size ? 'Under Contract confirmation pending until Save.' : 'Dates loaded from Product records.'}`);
+        setMachineNote(`${state.selectedMachines.length} machine${state.selectedMachines.length === 1 ? '' : 's'} selected. ${oneTime ? 'One-time visit date loaded from Product records.' : state.pendingContractSerials.size ? 'Under Contract confirmation pending until Save.' : 'Dates loaded from Product records.'}`);
         return true;
     }
 
@@ -1066,9 +1100,10 @@
         const clientId = byId('po-client').value;
         const input = byId('po-machine-input');
         if (!input) return;
-        input.disabled = !clientId;
-        input.placeholder = clientId ? 'Search serial or name' : 'Select a client first';
-        if (!clientId) hideAutocomplete('po-machine-results');
+        const frequency = selectedFrequency();
+        input.disabled = !clientId || !frequency;
+        input.placeholder = !frequency ? 'Select a frequency first' : clientId ? 'Search serial or name' : 'Select a client first';
+        if (!clientId || !frequency) hideAutocomplete('po-machine-results');
     }
 
     function productDisplay(product) {
@@ -1079,6 +1114,9 @@
 
     function productCoverageDisplay(product) {
         if (Boolean(product?.under_contract)) return 'Under Contract';
+        if (product?.one_time_eligible && String(product?.contract_status || '') === 'No Expiry Set - No Contract') {
+            return 'No Expiry Set - No Contract — One-time Single eligible';
+        }
         const status = 'Not Under Contract — confirmation required before adding';
         const dates = product?.start_date && product?.end_date
             ? `${product.start_date} to ${product.end_date}`
@@ -1206,8 +1244,11 @@
     function updateEndDateRequirement() {
         const endDate = byId('po-end-date');
         const note = byId('po-end-date-note');
-        if (endDate) endDate.required = true;
-        if (note) note.textContent = '(read-only Product coverage dates)';
+        const oneTime = selectedFrequency() === 'single'
+            && state.selectedMachines.length > 0
+            && state.selectedMachines.every((machine) => Boolean(machine?.one_time_eligible && String(machine?.contract_status || '') === 'No Expiry Set - No Contract'));
+        if (endDate) endDate.required = !oneTime;
+        if (note) note.textContent = oneTime ? '(not used for one-time visits)' : '(read-only Product coverage dates)';
     }
 
     function openForm(row = null) {
@@ -1219,6 +1260,12 @@
             byId('po-save-button').innerHTML = '<i class="fa-solid fa-check me-1" aria-hidden="true"></i>Update P.O.';
             byId('po-client').value = row.client_id || '';
             byId('po-client-input').value = row.client_name || '';
+            const radio = document.querySelector(`input[name="po-type"][value="${row.po_type}"]`);
+            if (radio) radio.checked = true;
+            else {
+                document.querySelectorAll('input[name="po-type"]').forEach((option) => { option.checked = false; });
+                setMachineNote('This is a legacy P.O. type. Select Single, Semi Annual, or Quarterly before saving.');
+            }
             updateMachineAvailability();
             const machines = Array.isArray(row.machines) ? row.machines : [];
             const ownerMismatch = machines.some(
@@ -1236,12 +1283,6 @@
             byId('po-end-date').value = row.end_date || '';
             byId('po-number').value = row.po_number;
             byId('po-amount').value = row.amount || '';
-            const radio = document.querySelector(`input[name="po-type"][value="${row.po_type}"]`);
-            if (radio) radio.checked = true;
-            else {
-                document.querySelectorAll('input[name="po-type"]').forEach((option) => { option.checked = false; });
-                setMachineNote('This is a legacy P.O. type. Select Single, Semi Annual, or Quarterly before saving.');
-            }
             updateEndDateRequirement();
         }
         state.modal.show();
@@ -1406,7 +1447,11 @@
         renderRows();
     }));
     document.querySelectorAll('input[name="po-type"]').forEach((radio) => {
-        radio.addEventListener('change', updateEndDateRequirement);
+        radio.addEventListener('change', () => {
+            clearMachineSelection('Frequency changed. Select machines again for the new service schedule.');
+            updateMachineAvailability();
+            updateEndDateRequirement();
+        });
     });
     byId('po-clear-filters').addEventListener('click', () => {
         byId('po-client-search').value = '';
@@ -1472,6 +1517,7 @@
         renderHeader();
         syncFiscalControls();
         updateEndDateRequirement();
+        updateMachineAvailability();
         try { await loadData(); }
         catch (error) { byId('po-result-count').textContent = 'Request failed.'; notify(error.message, 'danger'); }
     }

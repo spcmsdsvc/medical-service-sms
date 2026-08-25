@@ -53,6 +53,148 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## One-Time Single-Visit P.O. Support
+
+**Status:** In progress
+**Approved:** 2026-08-25
+**Detailed:** 2026-08-25
+**Execution authorization:** 2026-08-25, direct owner go-ahead message: `go ahead`. Implementation
+is authorized for this complete package through one fresh Builder. Review, staging, commit, push,
+promotion to `main`, Railway/deployment, production, and browser actions remain separately
+unauthorized.
+**Finished:** Not yet committed; local implementation only.
+
+### Context and intended outcome
+
+The Service Contract P.O. workflow currently requires every selected Product to have matching
+Start and End Dates and requires a non-contract Product to be confirmed and changed to Under
+Contract atomically with the successful P.O. save. Some machines instead represent a genuine
+single service visit: their Product status is `No Expiry Set - No Contract`, they have a Product
+Start Date but deliberately have no Product End Date, and saving their P.O. must not change their
+contract status.
+
+Extend the existing `single` frequency conditionally. A contract-backed Single P.O. keeps its
+current annual recurrence. A qualifying no-contract/no-end Product becomes a one-time Single visit
+on its Product Start Date, receives the full P.O. amount once, participates correctly in fiscal and
+custom date filters and Excel export, and remains outside contract. Semi Annual and Quarterly keep
+their current contract-backed complete-date requirements. No fourth type or database migration is
+introduced.
+
+### Decisions and compatibility contract
+
+1. A Product is one-time eligible only when the selected frequency is `single`, its Product Start
+   Date exists, its Product End Date is blank, its `under_contract` flag is false, and its computed
+   status is exactly `No Expiry Set - No Contract`.
+2. A one-time P.O. stores the Product Start Date as its read-only historical `po_date` snapshot and
+   stores a null `end_date`. Its schedule contains exactly one inclusive occurrence on the Start
+   Date and assigns the entire optional P.O. amount to that occurrence.
+3. Qualifying one-time machines are excluded from the Under Contract confirmation protocol. Their
+   Product flag is never changed by P.O. creation or editing.
+4. A false-contract Product that has an End Date retains the existing confirmation-required and
+   atomic status-update behavior. Contract-backed Single records retain annual recurrence; Semi
+   Annual and Quarterly continue to require complete Start and End Dates.
+5. One P.O. cannot mix one-time and contract-backed machines. All one-time machines on one P.O.
+   must share the same Product Start Date; all contract-backed machines retain the existing matching
+   Start/End requirement.
+6. Service Frequency must be selected before machines. Changing frequency clears selected
+   machines, loaded dates, and pending contract confirmations so eligibility cannot become stale.
+7. Type storage and analytics remain `single`. The register/API distinguishes its effective
+   schedule with `one_time`/`One-time` or `annual`/`Annual` metadata rather than adding a type.
+8. Existing current-frequency snapshots remain historical. An unrelated edit to the same machines
+   preserves the saved dates, including a null one-time End Date; replacing machines or converting
+   a legacy record derives a new snapshot under the current rules.
+9. Historical `contract` and `single_visit` records retain their existing legacy-read behavior and
+   must still be converted to a current frequency when edited.
+
+### Numbered execution steps
+
+1. **Builder preflight and protected-work audit.** Re-read all applicable `AGENTS.md` instructions,
+   this complete plan, `changes.md`, Git status, the current P.O. implementation, and relevant
+   tests. Confirm the plan is still compatible with current source. Preserve the active Calibration
+   Certificate work and every unrelated dirty artifact; never access or modify `scheduler.db`,
+   `output/`, `tmp/`, Railway, production, or Git publication state.
+2. **Fail-first regression controls.** In `tests/test_purchase_orders.py` and only any directly
+   affected existing analytics/export assertions, add focused failing coverage for qualifying
+   one-time saves, no Product-status mutation, one full-value occurrence, filtering/export,
+   eligibility failures, mixed coverage, snapshot preservation, schedule labels, and the
+   frequency-first UI contract. Do not build new test infrastructure when the established Flask,
+   template, JavaScript, and workbook controls suffice.
+3. **Frequency-aware backend validation.** In `app.py`, make Product date/coverage resolution aware
+   of the requested P.O. type. Accept only the exact one-time eligibility combination; preserve the
+   current matching Start/End and confirmation rules for ranged schedules; reject missing starts,
+   mixed one-time/ranged selections, mismatched one-time starts, and no-end machines selected for
+   Semi Annual or Quarterly. Continue rejecting client-supplied date spoofing.
+4. **One-time schedule and confirmation behavior.** Update the shared schedule/allocation helpers so
+   `single` with a null End Date creates one occurrence at Start Date and allocates the full amount,
+   while ranged `single` remains annual. Exclude eligible one-time Products from confirmation and
+   status mutation, but retain the server-side confirmation-required conflict and atomic Product/P.O.
+   transaction for other non-contract Products. Preserve blank optional-amount behavior and exact
+   cent reconciliation for ranged schedules.
+5. **API and register interface.** Extend `/get_purchase_orders` serialization with effective
+   schedule-mode value/label data. In `templates/po_details.html`, require frequency before machine
+   selection, clear machine/date/consent state when frequency changes, rename `Single (annual)` to
+   `Single`, explain its conditional Annual/One-time meaning, load a qualifying one-time Start Date
+   with a blank locked End Date, omit its contract prompt, and show actionable eligibility errors.
+   Display the Annual or One-time note beside computed amounts in desktop rows and mobile cards,
+   preserving responsive and dark-mode behavior.
+6. **Filter and Excel parity.** Apply the shared occurrence logic to fiscal-year/quarter and custom
+   inclusive filters and Excel export. A one-time P.O. is included only when its Start-Date
+   occurrence is inside the active range; its computed/exported amount is the full P.O. amount, its
+   scheduled date is the Start Date, its End Date is blank, and export remains one row per P.O.
+7. **Project records and delivery metadata.** Add a dated, user-facing entry to
+   `static/changelog/releases.json` and detailed factual results to `changes.md`. Do not bump the
+   service-worker cache unless implementation unexpectedly changes a cached external asset; the
+   P.O. page behavior is currently delivered through its inline template.
+8. **Proportional verification and closeout.** Run focused P.O./export/analytics tests first, then
+   Python compilation, rendered Jinja and inline-JavaScript syntax checks, workbook value/date
+   inspection, release-manifest parsing/uniqueness, the full repository suite against fresh isolated
+   test databases, and `git diff --check`. Never use `scheduler.db` or in-app browser automation.
+   Record exact pass/fail/skip results and any genuine deviations in this plan and `changes.md`.
+   Leave manual responsive/dark-mode/modal/keyboard/375-pixel verification to the owner unless
+   separate browser permission is granted.
+9. **Authorization boundary.** Stop after local implementation and verification. Review, staging,
+   commit, push, promotion to `main`, Railway/deployment checks, manual redeploy, variables, and
+   production/data operations each remain unauthorized until the owner supplies the required
+   separate instruction. Any later publication must isolate the intended P.O. files from the
+   Calibration worktree and all protected artifacts.
+
+### Acceptance criteria
+
+- A Product showing `No Expiry Set - No Contract`, with a valid Product Start Date and no End Date,
+  can be saved under Single without a contract-status prompt or Product mutation.
+- That P.O. has one scheduled visit on its Start Date, assigns the complete P.O. amount to it, and
+  is included or hidden correctly by inclusive fiscal/custom filters and Excel export.
+- Contract-backed Single P.O.s remain annual. Semi Annual and Quarterly remain ranged and
+  contract-backed. Existing false-contract Products with an End Date retain atomic confirmation.
+- Missing or incompatible machine dates and mixed coverage modes are blocked with actionable
+  messages. Existing legacy and analytics behavior remains compatible.
+
+### Implementation results — local, uncommitted
+
+- `app.py` now treats an exact `No Expiry Set - No Contract` Product with a Start Date and no End
+  Date as a conditional one-time `single` schedule, keeps ranged contract-backed Single annual,
+  preserves null End-Date snapshots on same-machine edits, and leaves valid one-time Products out
+  of the atomic Under Contract confirmation/update path. API payloads expose contract status,
+  one-time eligibility, and effective schedule mode labels.
+- `templates/po_details.html` now requires frequency before machine selection, resets selection and
+  pending confirmation state on frequency changes, supports one-time date loading, and displays
+  Annual/One-time computed-amount notes. Excel and fiscal/custom occurrence filtering use the
+  shared one-occurrence schedule.
+- Focused P.O. tests: **44 passed** across `tests.test_purchase_orders`; analytics tests: **5
+  passed** in `tests.test_analytics_purchase_orders`. Python source compilation, inline JavaScript
+  syntax, release JSON parsing/unique-key validation, and `git diff --check` passed.
+- Full repository run: **766 tests, 1 skipped, 1 unrelated failure** in
+  `test_staff_creation.StaffCreationTests.test_superadmin_rejects_conflicting_staff_permissions_without_writing`;
+  the same test passes in isolation and the failure reports a pre-existing shared test-data
+  initials collision. No P.O. or analytics test failed.
+- The clean isolated publication candidate based on current `origin/main` passed the focused P.O.
+  and analytics set **49/49** and full discovery **722 passed with 1 existing skip**. Its diff is
+  limited to the six intended P.O. implementation/test/release/record files and contains no
+  Calibration implementation hunks or protected artifacts.
+- No browser verification, commit, push, deployment, Railway, production, schema migration, or
+  service-worker cache bump was performed. Calibration Certificate files, `scheduler.db`, and
+  unrelated dirty artifacts were preserved.
+
 ## Service Contract P.O. Details and Fiscal Allocation
 
 **Status:** Executed — 5a93494

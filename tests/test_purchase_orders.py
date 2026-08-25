@@ -82,6 +82,9 @@ class ServiceContractAllocationHelperTests(unittest.TestCase):
         self.assertIn('id="po-semi-annual-total"', template)
         self.assertIn('async function addMachineSelection(product)', template)
         self.assertIn('Pending Under Contract', template)
+        self.assertIn('Single is annual for contract-backed machines and one-time for machines marked No Expiry Set - No Contract.', template)
+        self.assertIn('Select a frequency first', template)
+        self.assertIn('schedule_mode_label', template)
         self.assertIn('This is a legacy P.O. type. Select Single, Semi Annual, or Quarterly before saving.', template)
         self.assertIn('under_contract_confirmation_required', template)
         self.assertIn('Computed Amount', template)
@@ -201,6 +204,185 @@ class ServiceContractPurchaseOrderEndpointTests(unittest.TestCase):
         self.assertEqual(updated.status_code, 200, updated.get_data(as_text=True))
         self.assertEqual(updated.get_json()['purchase_order']['start_date'], '2026-08-25')
         self.assertEqual(updated.get_json()['purchase_order']['end_date'], '2028-08-25')
+
+    def test_one_time_single_saves_without_contract_confirmation_or_product_mutation(self):
+        serial = f'PO-ONE-TIME-{self.suffix}'
+        with self.app.app_context():
+            product = app_module.Product(
+                serial_number=serial, name='One-time Service Machine',
+                client_id=self.client_id, start_warranty_date=date(2026, 8, 25),
+                end_warranty_date=None, under_contract=False,
+            )
+            app_module.db.session.add(product)
+            app_module.db.session.commit()
+        try:
+            created = self.client.post('/add_purchase_order', json={
+                'client_id': self.client_id, 'product_serials': [serial],
+                'po_number': f'ONE-TIME-{self.suffix}', 'po_type': 'single',
+                'amount': '1000000',
+            })
+            self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+            body = created.get_json()['purchase_order']
+            self.assertEqual(body['start_date'], '2026-08-25')
+            self.assertEqual(body['end_date'], '')
+            self.assertEqual(body['schedule_mode'], 'one_time')
+            self.assertEqual(body['schedule_mode_label'], 'One-time')
+            self.assertEqual([item['date_string'] for item in body['allocation_schedule']], ['2026-08-25'])
+            self.assertEqual([item['amount_string'] for item in body['allocation_schedule']], ['1000000.00'])
+            self.assertEqual(body['computed_amount'], '1000000.00')
+            with self.app.app_context():
+                saved = app_module.db.session.get(app_module.Product, serial)
+                self.assertFalse(saved.under_contract)
+                listing = self.client.get('/get_purchase_orders').get_json()
+                product_payload = next(item for item in listing['products'] if item['serial_number'] == serial)
+                self.assertEqual(product_payload['contract_status'], 'No Expiry Set - No Contract')
+                self.assertTrue(product_payload['one_time_eligible'])
+
+            filtered = self.client.get(
+                f'/export_purchase_orders?number={quote("ONE-TIME-")}&from=2026-08-25&to=2026-08-25'
+            )
+            self.assertEqual(filtered.status_code, 200)
+            worksheet = load_workbook(BytesIO(filtered.data), data_only=False)['P.O. Register']
+            self.assertEqual(worksheet['B2'].value.date(), date(2026, 8, 25))
+            self.assertIsNone(worksheet['C2'].value)
+            self.assertEqual(worksheet['K2'].value, 1000000)
+            self.assertEqual(worksheet['L2'].value, '2026-08-25')
+        finally:
+            with self.app.app_context():
+                for po in app_module.PurchaseOrder.query.join(app_module.PurchaseOrderMachine).filter(
+                    app_module.PurchaseOrderMachine.product_serial == serial
+                ).all():
+                    app_module.db.session.delete(po)
+                product = app_module.db.session.get(app_module.Product, serial)
+                if product:
+                    app_module.db.session.delete(product)
+                app_module.db.session.commit()
+
+    def test_one_time_single_requires_start_and_rejects_ranged_frequencies(self):
+        serial = f'PO-ONE-TIME-MISSING-START-{self.suffix}'
+        ranged_serial = f'PO-NO-END-RANGED-{self.suffix}'
+        with self.app.app_context():
+            app_module.db.session.add_all([
+                app_module.Product(
+                    serial_number=serial, name='Missing Start', client_id=self.client_id,
+                    start_warranty_date=None, end_warranty_date=None, under_contract=False,
+                ),
+                app_module.Product(
+                    serial_number=ranged_serial, name='No End Ranged', client_id=self.client_id,
+                    start_warranty_date=date(2026, 8, 25), end_warranty_date=None,
+                    under_contract=False,
+                ),
+            ])
+            app_module.db.session.commit()
+        try:
+            missing_start = self.client.post('/add_purchase_order', json={
+                'client_id': self.client_id, 'product_serial': serial,
+                'po_number': f'ONE-TIME-MISSING-{self.suffix}', 'po_type': 'single',
+            })
+            self.assertEqual(missing_start.status_code, 400)
+            self.assertIn('Start Date', missing_start.get_json()['error'])
+            for po_type in ('semi_annual', 'quarterly'):
+                rejected = self.client.post('/add_purchase_order', json={
+                    'client_id': self.client_id, 'product_serial': ranged_serial,
+                    'po_number': f'NO-END-{po_type}-{self.suffix}', 'po_type': po_type,
+                })
+                self.assertEqual(rejected.status_code, 400)
+                self.assertIn('Product End Date', rejected.get_json()['error'])
+        finally:
+            with self.app.app_context():
+                for serial_value in (serial, ranged_serial):
+                    for po in app_module.PurchaseOrder.query.join(app_module.PurchaseOrderMachine).filter(
+                        app_module.PurchaseOrderMachine.product_serial == serial_value
+                    ).all():
+                        app_module.db.session.delete(po)
+                    product = app_module.db.session.get(app_module.Product, serial_value)
+                    if product:
+                        app_module.db.session.delete(product)
+                app_module.db.session.commit()
+
+    def test_one_time_machines_must_match_and_preserve_blank_end_snapshot(self):
+        serials = [f'PO-ONE-TIME-MATCH-{self.suffix}-{index}' for index in (1, 2)]
+        with self.app.app_context():
+            app_module.db.session.add_all([
+                app_module.Product(
+                    serial_number=serials[0], name='One-time Match One', client_id=self.client_id,
+                    start_warranty_date=date(2026, 8, 25), end_warranty_date=None, under_contract=False,
+                ),
+                app_module.Product(
+                    serial_number=serials[1], name='One-time Match Two', client_id=self.client_id,
+                    start_warranty_date=date(2026, 8, 26), end_warranty_date=None, under_contract=False,
+                ),
+            ])
+            app_module.db.session.commit()
+        try:
+            mismatch = self.client.post('/add_purchase_order', json={
+                'client_id': self.client_id, 'product_serials': serials,
+                'po_number': f'ONE-TIME-MISMATCH-{self.suffix}', 'po_type': 'single',
+            })
+            self.assertEqual(mismatch.status_code, 400)
+            self.assertIn('matching Product Start Dates', mismatch.get_json()['error'])
+
+            created = self.client.post('/add_purchase_order', json={
+                'client_id': self.client_id, 'product_serial': serials[0],
+                'po_number': f'ONE-TIME-SNAPSHOT-{self.suffix}', 'po_type': 'single',
+                'amount': '25.00',
+            })
+            self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+            record_id = created.get_json()['purchase_order']['id']
+            with self.app.app_context():
+                product = app_module.db.session.get(app_module.Product, serials[0])
+                product.start_warranty_date = None
+                product.end_warranty_date = date(2030, 1, 1)
+                app_module.db.session.commit()
+            updated = self.client.put(f'/update_purchase_order/{record_id}', json={
+                'client_id': self.client_id, 'product_serial': serials[0],
+                'po_number': f'ONE-TIME-SNAPSHOT-EDITED-{self.suffix}', 'po_type': 'single',
+                'amount': '25.00',
+            })
+            self.assertEqual(updated.status_code, 200, updated.get_data(as_text=True))
+            self.assertEqual(updated.get_json()['purchase_order']['start_date'], '2026-08-25')
+            self.assertEqual(updated.get_json()['purchase_order']['end_date'], '')
+        finally:
+            with self.app.app_context():
+                for serial_value in serials:
+                    for po in app_module.PurchaseOrder.query.join(app_module.PurchaseOrderMachine).filter(
+                        app_module.PurchaseOrderMachine.product_serial == serial_value
+                    ).all():
+                        app_module.db.session.delete(po)
+                    product = app_module.db.session.get(app_module.Product, serial_value)
+                    if product:
+                        app_module.db.session.delete(product)
+                app_module.db.session.commit()
+
+    def test_one_time_and_contract_backed_machines_cannot_be_mixed(self):
+        one_time_serial = f'PO-ONE-TIME-MIX-{self.suffix}'
+        contract_serial = f'PO-CONTRACT-MIX-{self.suffix}'
+        with self.app.app_context():
+            app_module.db.session.add_all([
+                app_module.Product(
+                    serial_number=one_time_serial, name='One-time Mix Machine', client_id=self.client_id,
+                    start_warranty_date=date(2026, 8, 25), end_warranty_date=None, under_contract=False,
+                ),
+                app_module.Product(
+                    serial_number=contract_serial, name='Contract Mix Machine', client_id=self.client_id,
+                    start_warranty_date=date(2026, 8, 25), end_warranty_date=date(2028, 8, 25), under_contract=True,
+                ),
+            ])
+            app_module.db.session.commit()
+        try:
+            response = self.client.post('/add_purchase_order', json={
+                'client_id': self.client_id, 'product_serials': [one_time_serial, contract_serial],
+                'po_number': f'ONE-TIME-MIX-{self.suffix}', 'po_type': 'single',
+            })
+            self.assertEqual(response.status_code, 400)
+            self.assertIn('cannot be mixed', response.get_json()['error'])
+        finally:
+            with self.app.app_context():
+                for serial_value in (one_time_serial, contract_serial):
+                    product = app_module.db.session.get(app_module.Product, serial_value)
+                    if product:
+                        app_module.db.session.delete(product)
+                app_module.db.session.commit()
 
 
 class PurchaseOrderWorkflowTests(unittest.TestCase):

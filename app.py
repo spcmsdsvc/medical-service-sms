@@ -40368,6 +40368,26 @@ def purchase_order_add_months_clamped(start_date, months):
     return date(year, month, day)
 
 
+def purchase_order_schedule_mode(po_type, end_date=None):
+    """Return the effective schedule mode without adding another stored P.O. type."""
+    normalized_type = normalize_purchase_order_type(po_type)
+    if normalized_type == PO_TYPE_SINGLE and not end_date:
+        return 'one_time'
+    if normalized_type == PO_TYPE_SINGLE:
+        return 'annual'
+    return normalized_type if normalized_type in PO_CURRENT_TYPES else 'legacy'
+
+
+def purchase_order_schedule_mode_label(po_type, end_date=None):
+    return {
+        'one_time': 'One-time',
+        'annual': 'Annual',
+        PO_TYPE_SEMI_ANNUAL: 'Semi Annual',
+        PO_TYPE_QUARTERLY: 'Quarterly',
+        'legacy': 'Not allocated',
+    }.get(purchase_order_schedule_mode(po_type, end_date), 'Not allocated')
+
+
 def purchase_order_fiscal_period(fiscal_year=None, fiscal_quarter=None):
     """Return an inclusive fiscal period; fiscal years begin on April 1."""
     if fiscal_year in (None, '') and fiscal_quarter in (None, ''):
@@ -40392,23 +40412,28 @@ def purchase_order_fiscal_period(fiscal_year=None, fiscal_quarter=None):
 def purchase_order_schedule(start_date, end_date, po_type, amount=None):
     """Build anchored service dates and Decimal allocations for a current P.O."""
     normalized_type = normalize_purchase_order_type(po_type)
-    if normalized_type not in PO_CURRENT_TYPES or not start_date or not end_date:
+    if normalized_type not in PO_CURRENT_TYPES or not start_date:
+        return []
+    one_time = normalized_type == PO_TYPE_SINGLE and not end_date
+    if not one_time and not end_date:
         return []
     interval_months = {
         PO_TYPE_SINGLE: 12,
         PO_TYPE_SEMI_ANNUAL: 6,
         PO_TYPE_QUARTERLY: 3,
     }[normalized_type]
-    if end_date < start_date:
+    if end_date is not None and end_date < start_date:
         return []
     dates = []
     offset = 0
     while True:
         occurrence = purchase_order_add_months_clamped(start_date, offset)
-        if occurrence > end_date:
+        if one_time or occurrence > end_date:
             break
         dates.append(occurrence)
         offset += interval_months
+    if one_time:
+        dates.append(start_date)
     if not dates:
         return []
 
@@ -40617,6 +40642,8 @@ def purchase_order_to_dict(purchase_order):
             'start_date': purchase_order_product_dates(product)[0].isoformat() if purchase_order_product_dates(product)[0] else '',
             'end_date': purchase_order_product_dates(product)[1].isoformat() if purchase_order_product_dates(product)[1] else '',
             'under_contract': bool(getattr(product, 'under_contract', False)) if product else False,
+            'contract_status': product_contract_status(product) if product else '',
+            'one_time_eligible': purchase_order_product_is_one_time(product, po_type) if product else False,
             'display': display or serial,
         })
     machine_serials = [machine['serial_number'] for machine in machines if machine['serial_number']]
@@ -40641,6 +40668,7 @@ def purchase_order_to_dict(purchase_order):
         getattr(purchase_order, 'amount', None),
     )
     per_visit_amount = purchase_order_per_visit_amount(schedule_objects)
+    schedule_mode = purchase_order_schedule_mode(po_type, purchase_order.end_date)
     return {
         'id': purchase_order.id,
         'client_id': purchase_order.client_id,
@@ -40653,6 +40681,8 @@ def purchase_order_to_dict(purchase_order):
         'end_date': purchase_order.end_date.isoformat() if purchase_order.end_date else '',
         'po_type': po_type,
         'po_type_label': PO_TYPE_LABELS.get(po_type, PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT]),
+        'schedule_mode': schedule_mode,
+        'schedule_mode_label': purchase_order_schedule_mode_label(po_type, purchase_order.end_date),
         'amount': amount,
         'amount_display': purchase_order_amount_display(getattr(purchase_order, 'amount', None)),
         'machines': machines,
@@ -40769,10 +40799,35 @@ def purchase_order_products_for_serials(machine_serials):
     return products
 
 
-def purchase_order_dates_from_products(products):
+def purchase_order_product_is_one_time(product, po_type):
+    """Return whether a Product is eligible for a conditional Single one-time visit."""
+    start_date, end_date = purchase_order_product_dates(product)
+    return bool(
+        normalize_purchase_order_type(po_type) == PO_TYPE_SINGLE
+        and start_date
+        and not end_date
+        and not bool(getattr(product, 'under_contract', False))
+        and product_contract_status(product) == 'No Expiry Set - No Contract'
+    )
+
+
+def purchase_order_dates_from_products(products, po_type=PO_TYPE_SINGLE):
     if not products:
         return None, None, 'Select the equipment/machine for this P.O.'
     dates = [purchase_order_product_dates(product) for product in products]
+    one_time_flags = [purchase_order_product_is_one_time(product, po_type) for product in products]
+    if any(one_time_flags) and not all(one_time_flags):
+        return None, None, 'One-time Single machines cannot be mixed with contract-backed machines on the same P.O.'
+    if all(one_time_flags):
+        if any(not start for start, _ in dates):
+            missing = next(
+                product.serial_number for product, (start, _) in zip(products, dates) if not start
+            )
+            return None, None, f'Equipment {missing} must have a Product Start Date for a one-time Single P.O.'
+        first_start = dates[0][0]
+        if any(start != first_start for start, _ in dates[1:]):
+            return None, None, 'All one-time Single machines must have matching Product Start Dates.'
+        return first_start, None, None
     if any(not start or not end for start, end in dates):
         missing = next(
             product.serial_number for product, (start, end) in zip(products, dates)
@@ -40780,7 +40835,7 @@ def purchase_order_dates_from_products(products):
         )
         return None, None, (
             f'Equipment {missing} must have both a Product Start Date and Product End Date '
-            'before it can be assigned to a service contract P.O.'
+            f'before it can be assigned to a {PO_TYPE_LABELS.get(normalize_purchase_order_type(po_type), "service contract")} P.O.'
         )
     first_start, first_end = dates[0]
     if any(start != first_start or end != first_end for start, end in dates[1:]):
@@ -40824,7 +40879,7 @@ def validate_purchase_order_payload(payload, existing=None):
     products = purchase_order_products_for_serials(machine_serials)
     if len(products) != len(machine_serials):
         return None, None, 'One or more selected machines could not be loaded.'
-    product_start, product_end, product_date_error = purchase_order_dates_from_products(products)
+    product_start, product_end, product_date_error = purchase_order_dates_from_products(products, po_type)
     if product_date_error:
         # A current-frequency edit retains its existing historical snapshot when the
         # machine selection is unchanged.  New rows and machine changes must use Products.
@@ -40833,7 +40888,12 @@ def validate_purchase_order_payload(payload, existing=None):
             for link in purchase_order_machine_rows(existing)
         ] if existing is not None else []
         same_machines = sorted(existing_serials) == sorted(serial.casefold() for serial in machine_serials)
-        if not (existing is not None and purchase_order_is_current_type(existing.po_type) and same_machines):
+        if not (
+            existing is not None
+            and purchase_order_is_current_type(existing.po_type)
+            and existing.po_type == po_type
+            and same_machines
+        ):
             return None, None, product_date_error
 
     existing_serials = [
@@ -40841,14 +40901,27 @@ def validate_purchase_order_payload(payload, existing=None):
         for link in purchase_order_machine_rows(existing)
     ] if existing is not None else []
     same_machines = sorted(existing_serials) == sorted(serial.casefold() for serial in machine_serials)
-    if existing is not None and purchase_order_is_current_type(existing.po_type) and same_machines:
+    preserving_snapshot = bool(
+        existing is not None
+        and purchase_order_is_current_type(existing.po_type)
+        and existing.po_type == po_type
+        and same_machines
+    )
+    if (
+        preserving_snapshot
+    ):
         po_date = existing.po_date
         end_date = existing.end_date
     else:
         po_date, end_date = product_start, product_end
-    if not po_date or not end_date:
+    if not po_date:
+        return None, None, 'Selected machines must have a Product Start Date.'
+    if not end_date and not (
+        (po_type == PO_TYPE_SINGLE and all(purchase_order_product_is_one_time(product, po_type) for product in products))
+        or (preserving_snapshot and po_type == PO_TYPE_SINGLE and existing.end_date is None)
+    ):
         return None, None, 'Selected machines must have both Product Start Date and Product End Date.'
-    if end_date < po_date:
+    if end_date and end_date < po_date:
         return None, None, 'End Date cannot be earlier than Start Date.'
     return {
         'client_id': client_id,
@@ -40873,13 +40946,30 @@ def purchase_order_confirmation_serials(payload):
     }
 
 
-def purchase_order_require_contract_confirmation(machine_serials, payload):
+def purchase_order_require_contract_confirmation(machine_serials, payload, existing=None):
     """Return current non-contract Products and only confirmed serials are honored."""
     confirmed = purchase_order_confirmation_serials(payload)
+    po_type = normalize_purchase_order_type((payload or {}).get('po_type'))
+    existing_one_time_serials = set()
+    if (
+        existing is not None
+        and existing.po_type == PO_TYPE_SINGLE
+        and existing.end_date is None
+    ):
+        existing_one_time_serials = {
+            clean_str(link.product_serial).casefold()
+            for link in purchase_order_machine_rows(existing)
+            if clean_str(link.product_serial)
+        }
     pending = []
     for serial in machine_serials:
         product = db.session.get(Product, serial)
-        if product and not bool(product.under_contract):
+        if (
+            product
+            and not bool(product.under_contract)
+            and product.serial_number.casefold() not in existing_one_time_serials
+            and not purchase_order_product_is_one_time(product, po_type)
+        ):
             pending.append(product)
     missing = [product for product in pending if product.serial_number.casefold() not in confirmed]
     return pending, missing
@@ -40939,6 +41029,8 @@ def get_purchase_orders():
                 'name': product.name or '',
                 'client_id': product.client_id,
                 'under_contract': bool(product.under_contract),
+                'contract_status': product_contract_status(product),
+                'one_time_eligible': purchase_order_product_is_one_time(product, PO_TYPE_SINGLE),
                 'start_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
                 'end_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
                 'product_start_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
@@ -41283,7 +41375,7 @@ def update_purchase_order(id):
     if validation_error:
         return jsonify({'success': False, 'error': validation_error}), 400
     pending_contracts, missing_confirmation = purchase_order_require_contract_confirmation(
-        machine_serials, payload,
+        machine_serials, payload, existing=purchase_order,
     )
     if missing_confirmation:
         return jsonify({

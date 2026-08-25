@@ -2,6 +2,59 @@
 
 codex changes - 2026-08-25
 
+- Implemented conditional one-time Single P.O. support in `app.py`: Products whose exact status is
+  No Expiry Set - No Contract, with a Product Start Date and no End Date, now save as one-time
+  records with a null End Date and one full-value scheduled occurrence. Contract-backed Single
+  remains annual; Semi Annual and Quarterly retain complete-date requirements; mixed coverage and
+  mismatched one-time starts are rejected; historical snapshots remain server-owned.
+- Updated the P.O. register template to require frequency before machine selection, clear stale
+  machine/date/confirmation state when frequency changes, identify one-time eligible Products,
+  leave one-time End Dates blank/read-only, omit the Under Contract prompt for valid one-time
+  machines, and display Annual/One-time schedule labels beside computed amounts.
+- Added one-time API metadata (`contract_status`, `one_time_eligible`, `schedule_mode`, and
+  `schedule_mode_label`) and kept fiscal/custom filtering and Excel export aligned with the single
+  Start-Date occurrence and full amount without changing the stored `single` type or schema.
+- Added focused endpoint, schedule, filtering/export, snapshot, eligibility, mixed-coverage, and
+  template-contract tests in `tests/test_purchase_orders.py`. The complete P.O. module passes **44
+  tests**, and the affected analytics module passes **5 tests**. No service-worker cache bump was
+  needed because the P.O. behavior remains in the inline template.
+- Static verification passed: Python source compilation without bytecode writes, inline P.O.
+  JavaScript parsing with Node, release-manifest JSON parsing with unique release keys, and
+  `git diff --check`. The full repository run completed **766 tests with 1 skipped and 1 unrelated
+  failure** in the staff-creation initials-collision test; that test passes in isolation. No browser
+  automation was used, and no commit, push, deployment, Railway, production, schema migration, or
+  service-worker cache change was performed.
+- Prepared the publication candidate in the clean isolated P.O. worktree at current `origin/main`,
+  copying only `app.py`, `templates/po_details.html`, `tests/test_purchase_orders.py`, the one-time
+  release item, and matching plan/change records. A transfer-only argument placement error caused
+  the first isolated one-time endpoint control to fail before commit; it was corrected inside the
+  isolated candidate, and the protected Calibration worktree was never staged or changed.
+- Final clean-candidate verification passed: focused P.O./analytics **49/49** and full discovery
+  **722 tests passed with 1 existing skip**. The candidate contains exactly the six intended files;
+  no Calibration implementation, `scheduler.db`, handoff, output/tmp, unrelated artifact, schema,
+  service-worker, browser, Railway, deployment, or production change is included.
+
+- Began the owner-authorized **One-Time Single-Visit P.O. Support** implementation after the
+  direct `go ahead` instruction. The plan status is now **In progress**. The Builder will preserve
+  the active Calibration Certificate work and unrelated dirty artifacts, use only isolated test
+  databases, and leave review, staging, commit, push, Railway, production, and browser actions
+  unauthorized.
+
+- Recorded the owner-approved **One-Time Single-Visit P.O. Support** package at the top of
+  `plans.md` with status **Approved — awaiting go-ahead**. The plan conditionally treats `single`
+  as one-time for Products whose exact status is `No Expiry Set - No Contract`, whose Product Start
+  Date exists, and whose End Date is blank, while preserving annual contract-backed Single,
+  Semi Annual, Quarterly, legacy-read, fiscal/custom-filter, and one-row-per-P.O. behavior.
+- Locked the approval decisions for frequency-first machine selection, non-mixing of one-time and
+  contract-backed machines, matching one-time Start Dates, null End-Date snapshots, full-amount
+  one-occurrence allocation, Annual/One-time schedule labels, and exemption of valid one-time
+  machines from Under Contract confirmation and Product mutation.
+- This approval-recording step changed only `plans.md` and this mandatory journal. Under the
+  repository's two-answer gate, no Builder was launched and no application source, P.O. template,
+  test, database, `scheduler.db`, release manifest, cache, Calibration Certificate work, protected
+  artifact, Git history, commit, push, Railway, deployment, production, or browser state was
+  changed. Implementation remains paused pending a separate owner go-ahead.
+
 - Completed the authorized Service Contract P.O. correction cycle in `app.py`,
   `templates/po_details.html`, and `tests/test_purchase_orders.py`. Schedule allocation now works
   in integer cents so small totals never produce negative occurrences; a remainder is assigned to

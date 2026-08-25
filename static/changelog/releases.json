@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-25-service-contract-po-one-time-single-visit",
+      "release_date": "2026-08-25",
+      "title": "One-Time Single-Visit P.O. Entries",
+      "summary": "Service Contract P.O. Details now supports one-time Single visits for machines without contract expiry.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-25-service-contract-po-one-time-single-visit-admins",
+          "category": "Administration",
+          "description": "Eligible Products marked No Expiry Set - No Contract can be saved as one-time Single P.O. visits using their Product Start Date, without changing their contract status. Contract-backed Single schedules remain annual, with one-time and Annual labels and fiscal/custom allocation filtering preserved.",
+          "audiences": ["admins"],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-25-service-contract-po-details",
       "release_date": "2026-08-25",
       "title": "Service Contract P.O. Details",
