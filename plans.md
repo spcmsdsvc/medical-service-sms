@@ -55,14 +55,14 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## One-Time Single-Visit P.O. Support
 
-**Status:** In progress
+**Status:** Executed — 87e5ed1
 **Approved:** 2026-08-25
 **Detailed:** 2026-08-25
 **Execution authorization:** 2026-08-25, direct owner go-ahead message: `go ahead`. Implementation
 is authorized for this complete package through one fresh Builder. Review, staging, commit, push,
 promotion to `main`, Railway/deployment, production, and browser actions remain separately
 unauthorized.
-**Finished:** Not yet committed; local implementation only.
+**Finished:** 2026-08-25 in implementation commit `87e5ed1`; publication record follows separately.
 
 ### Context and intended outcome
 

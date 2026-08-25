@@ -2,6 +2,12 @@
 
 codex changes - 2026-08-25
 
+- Committed the isolated, verified **One-Time Single-Visit P.O. Support** implementation as
+  `87e5ed1`. Only the six intended P.O. backend, register template, focused test, release manifest,
+  approved plan, and matching change record files were included; the protected Calibration
+  Certificate worktree and every database/artifact remained outside the commit. The owner
+  separately authorized publication to `origin/main`; remote and Railway verification follow.
+
 - Implemented conditional one-time Single P.O. support in `app.py`: Products whose exact status is
   No Expiry Set - No Contract, with a Product Start Date and no End Date, now save as one-time
   records with a null End Date and one full-value scheduled occurrence. Contract-backed Single
