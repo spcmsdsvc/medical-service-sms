@@ -2,6 +2,14 @@
 
 codex changes - 2026-08-25
 
+- Updated `templates/products.html` so successful product saves update the local inventory state and
+  rerender only the affected filtered/sorted list instead of refetching all products and clients.
+  The save flow now preserves the user's active filters, sort, and scroll position, removes the
+  post-save serial-row auto-scroll, and shows a lightweight success notice without navigating or
+  refreshing the Product page. Add and edit saves retain the existing server/API behavior.
+- Added a focused source-level regression in `tests/test_product_contract_status.py` that protects
+  the in-place save path from reintroducing the post-save product-data refetch or scroll jump.
+
 - Recorded the owner-approved Accounting Handoff CC branch split at the top of `plans.md` with
   status **Approved — awaiting go-ahead**. The decision-complete plan keeps the existing
   `accounting_handoff_cc` rows as Manila, adds a separate Cebu/Davao group, routes the shared CC by
