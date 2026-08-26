@@ -17,6 +17,11 @@ import re
 import sqlite3
 import tempfile
 import unittest
+from datetime import date
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from tests.sw_cache_version import assert_cache_version_at_least
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -126,6 +131,75 @@ class OnlineTsrNumberRouteTests(unittest.TestCase):
     def test_the_headline_message_is_kept(self):
         # The wording engineers and the changelog already know stays at the front.
         self.assertIn('Unable to assign the next TSR number.', self.route)
+
+
+class OnlineTsrNumberPreviewTests(unittest.TestCase):
+    """The blank Create TSR form must show the next server-backed number."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        cls.template = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+
+    def test_server_sequence_advances_after_an_existing_submission(self):
+        class FakeQuery:
+            def filter(self, *args, **kwargs):
+                return self
+
+            def all(self):
+                return [SimpleNamespace(tsr_number='20990102-01-ENG')]
+
+        with app_module.app.app_context():
+            with patch.object(app_module, 'ensure_online_tsr_submission_table'), \
+                    patch.object(app_module.OnlineTsrSubmission, 'query', FakeQuery()):
+                next_number = app_module.online_tsr_next_number_for_date(date(2099, 1, 2), 'ENG')
+
+        self.assertEqual(next_number, '20990102-02-ENG')
+
+    def test_each_blank_form_invalidates_cached_preview_before_generating(self):
+        start = self.template.index('function initializeBlankStandaloneTSR(){')
+        end = self.template.index('\nasync function clearStandaloneTSRPage', start)
+        initialize = self.template[start:end]
+        self.assertIn('invalidateTSRNumberPreview();', initialize)
+        self.assertLess(
+            initialize.index('invalidateTSRNumberPreview();'),
+            initialize.index('generateTSRNumber();'),
+        )
+
+    def test_inflight_old_preview_cannot_overwrite_the_new_blank_form(self):
+        start = self.template.index('let tsrNumberPreviewRefreshPending = false;')
+        end = self.template.index('\nfunction selectedScheduleHasLinkedSchedules', start)
+        preview = self.template[start:end]
+        self.assertIn('tsrNumberPreviewGeneration', preview)
+        self.assertIn('tsrNumberPreviewNeedsRefresh', preview)
+        self.assertIn('if(requestGeneration !== tsrNumberPreviewGeneration)', preview)
+        self.assertIn('tsrNumberPreviewNeedsRefresh = true;', preview)
+        self.assertIn("void refreshTSRNumberPreviewFromServer('', initials);", preview)
+
+    def test_reconnect_retries_a_provisional_preview(self):
+        start = self.template.index('function scheduleOfflineTSRAutoSync(){')
+        end = self.template.index('\nasync function submitStandaloneTSROnline', start)
+        auto_sync = self.template[start:end]
+        self.assertLess(
+            auto_sync.index('return syncOfflineTSRQueue({ silent:false });'),
+            auto_sync.index('invalidateTSRNumberPreview();'),
+        )
+        self.assertIn("void refreshTSRNumberPreviewFromServer('', getEngineerInitialsSafe());", auto_sync)
+
+    def test_service_worker_cache_is_bumped_for_the_preview_fix(self):
+        assert_cache_version_at_least(self, 117, self.app_source)
+
+
+class OnlineTsrNumberManifestTests(unittest.TestCase):
+    def test_release_manifest_mentions_the_preview_fix(self):
+        import json
+
+        manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
+        release = next(item for item in manifest['releases'] if item['release_key'] == '2026-08-26-appearance-accent-themes')
+        self.assertTrue(any(
+            item['item_key'] == '2026-08-26-tsr-number-preview-refresh'
+            for item in release['items']
+        ))
 
 
 if __name__ == '__main__':

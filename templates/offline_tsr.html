@@ -856,6 +856,13 @@ async function fetchNextOnlineTSRNumber(serviceDate=null){
 
 let tsrNumberPreviewRefreshPending = false;
 let tsrNumberPreviewLastServerValue = '';
+let tsrNumberPreviewNeedsRefresh = false;
+let tsrNumberPreviewGeneration = 0;
+function invalidateTSRNumberPreview(){
+  tsrNumberPreviewLastServerValue = '';
+  tsrNumberPreviewNeedsRefresh = true;
+  tsrNumberPreviewGeneration += 1;
+}
 async function refreshTSRNumberPreviewFromServer(previousValue='', initials=''){
   if(tsrNumberPreviewRefreshPending || !navigator.onLine) return;
   const el = document.getElementById('tsr-number');
@@ -863,10 +870,17 @@ async function refreshTSRNumberPreviewFromServer(previousValue='', initials=''){
   const currentValue = String(el.value || '').trim();
   const autoPattern = /^(\d{8})-(\d{1,4})-([A-Z0-9]{1,8})$/i;
   if(currentValue && !autoPattern.test(currentValue)) return;
-  if(currentValue && currentValue === tsrNumberPreviewLastServerValue) return;
+  const forceRefresh = tsrNumberPreviewNeedsRefresh;
+  if(!forceRefresh && currentValue && currentValue === tsrNumberPreviewLastServerValue) return;
+  const requestGeneration = tsrNumberPreviewGeneration;
+  tsrNumberPreviewNeedsRefresh = false;
   tsrNumberPreviewRefreshPending = true;
   try{
     const nextNumber = await fetchNextOnlineTSRNumber(getTSRSequenceDateISO());
+    if(requestGeneration !== tsrNumberPreviewGeneration){
+      tsrNumberPreviewNeedsRefresh = true;
+      return;
+    }
     const latestValue = String(el.value || '').trim();
     const latestMatch = latestValue.match(autoPattern);
     const expectedInitials = String(initials || getEngineerInitialsSafe()).toUpperCase();
@@ -879,6 +893,9 @@ async function refreshTSRNumberPreviewFromServer(previousValue='', initials=''){
     console.warn('[Offline TSR] TSR number preview refresh skipped', err);
   }finally{
     tsrNumberPreviewRefreshPending = false;
+    if(tsrNumberPreviewNeedsRefresh && navigator.onLine){
+      void refreshTSRNumberPreviewFromServer('', initials);
+    }
   }
 }
 
@@ -1106,6 +1123,7 @@ function initializeBlankStandaloneTSR(){
     setFieldValue('tsr-department', 'Radiology', true);
     setFieldValue('tsr-machine-type', 'Medical', true);
     setFieldValue('tsr-serviced-by', LOGGED_IN_ENGINEER_NAME, true);
+    invalidateTSRNumberPreview();
     generateTSRNumber();
     addTSRPartRow();
     renderDocs();
@@ -5878,7 +5896,10 @@ function scheduleOfflineTSRAutoSync(){
     refreshOfflineTSRQueueStore().then(() => {
       updateOfflineTSRStatusIntelligence();
       showTSRStatus('Internet connection restored. Checking pending offline TSR queue...', 'info');
-      syncOfflineTSRQueue({ silent:false });
+      return syncOfflineTSRQueue({ silent:false });
+    }).then(() => {
+      invalidateTSRNumberPreview();
+      void refreshTSRNumberPreviewFromServer('', getEngineerInitialsSafe());
     });
     void mergeServerStandaloneTSRDrafts().then(() => renderStandaloneTSRDraftPanel());
   });

@@ -15,6 +15,15 @@
             "everyone"
           ],
           "sort_order": 10
+        },
+        {
+          "item_key": "2026-08-26-tsr-number-preview-refresh",
+          "category": "Create TSR",
+          "description": "After saving a TSR, the next new Create TSR form now refreshes the server-assigned sequence number instead of leaving the provisional 01 visible. Final saves remain authoritative on the server; daily per-engineer sequencing and offline queue behavior are unchanged.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 20
         }
       ]
     },

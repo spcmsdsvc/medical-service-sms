@@ -24,6 +24,19 @@ codex changes - 2026-08-26
   Railway-variable change, production-data operation, or manual redeploy was performed. The
   owner separately authorized publication of these intended application, test, manifest, and
   journal files.
+- Fixed the Create TSR number preview in `templates/offline_tsr.html`: each newly blank TSR form
+  now invalidates the prior server preview and requests the next per-engineer daily number, so a
+  TSR saved as `01` is followed by a visible `02`. In-flight preview responses are generation-
+  checked so an older request cannot overwrite the new form, and reconnecting syncs queued TSRs
+  before retrying a provisional offline preview. Final save numbering remains server-authoritative;
+  draft saves, daily sequencing, and offline queue semantics are unchanged.
+- Added focused sequence, preview invalidation, stale-response, reconnect, cache-version, and
+  release-manifest regression controls in `tests/test_online_tsr_numbering.py`. Bumped the
+  app-shell service-worker cache to
+  `medical-service-pwa-offline-navigation-v117-tsr-number-preview-refresh` and added the
+  engineer-facing What's New item to `static/changelog/releases.json`. No database migration,
+  browser automation, Railway-variable change, production-data operation, deployment, or manual
+  redeploy was performed.
 
 codex changes - 2026-08-25
 
