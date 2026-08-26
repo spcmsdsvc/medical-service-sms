@@ -1,11 +1,26 @@
 {% extends "layout.html" %}
 
+{% block page_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/app-calibration-report.css') }}?v=7">
+{% endblock %}
+
 {% block content %}
+<script>
+window.CalibrationReportConfig = {
+  templateUrl: {{ url_for('static', filename='templates/calibration-report/calibration-report-template.docx')|tojson }},
+  zipLibUrl: {{ url_for('static', filename='vendor/jszip/jszip.min.js')|tojson }},
+  certificateCatalog: {{ certificate_catalog|tojson }}
+};
+</script>
 {# The schedule queue module, loaded here as well as on the timeline. A TSR written against a
    queued schedule has to ask that queue what the schedule turned into, and going through the
    module's own API is the only safe way to reach its database: opening it by name from this
    page would create an empty copy with no object stores on any device where the timeline has
    not run yet, and every later read would fail. #}
+<script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
+<script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
+<script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=20"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 <div class="offline-tsr-page">
   <div class="offline-tsr-hero no-print">
@@ -277,6 +292,22 @@
         <input type="hidden" id="tsr-documents" class="tsr-field">
       </div>
 
+      <div class="card p-3 p-md-4 mb-3 no-print calibration-report-card" id="calibration-report-card">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+          <div>
+            <label class="small fw-bold text-muted text-uppercase mb-0">Optional Calibration Report</label>
+            <div class="small text-muted" id="calibration-report-summary">Create an optional calibration report from the supplied Word form. It will remain separate from the main TSR PDF.</div>
+          </div>
+          <span id="calibration-report-status" class="calibration-report-status muted">Not Started</span>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-outline-primary fw-bold" id="calibration-report-create-btn"><i class="fa-solid fa-file-circle-plus me-1"></i><span id="calibration-report-entry-label">Create Calibration Report</span></button>
+        </div>
+        <div id="calibration-report-filename" class="calibration-report-file-meta mt-2">No DOCX generated yet.</div>
+        <div id="calibration-report-capacity" class="calibration-report-capacity mt-1">Supporting attachment capacity is checked when the TSR is saved.</div>
+        <div id="calibration-report-attachment-note" class="calibration-report-attachment-note mt-1">No generated report attachment.</div>
+      </div>
+
       <div class="card p-3 p-md-4 mb-3 no-print">
         <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
           <div>
@@ -337,6 +368,33 @@
         <button class="btn btn-outline-dark w-100 fw-bold" type="button" onclick="copyStandaloneTSRText()"><i class="fa-solid fa-copy me-1"></i>Copy Draft Text</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div id="calibration-report-overlay" role="dialog" aria-modal="true" aria-labelledby="calibration-report-overlay-title" aria-hidden="true">
+  <div class="calibration-report-toolbar no-print">
+    <div class="calibration-report-toolbar-title">
+      <i class="fa-solid fa-file-circle-check text-primary" aria-hidden="true"></i>
+      <div><h2 id="calibration-report-overlay-title">Calibration Report</h2><small>Exact supplied form · data-only fill · separate from the main TSR</small></div>
+    </div>
+    <div class="calibration-report-toolbar-actions">
+      <button type="button" class="btn btn-outline-secondary fw-bold" id="calibration-report-close"><i class="fa-solid fa-arrow-left me-1"></i>Back to TSR</button>
+      <button type="button" class="btn btn-outline-primary fw-bold" id="calibration-report-save"><i class="fa-solid fa-bookmark me-1"></i>Save Draft</button>
+      <button type="button" class="btn btn-primary fw-bold" id="calibration-report-generate"><i class="fa-solid fa-file-word me-1"></i><span id="calibration-report-generate-label">Generate Sample DOCX</span></button>
+      <div id="calibration-report-certificate-controls" class="calibration-report-certificate-controls" role="group" aria-label="Calibration Certificate sample">
+        <label class="calibration-report-certificate-field"><span>BSID (from Product Inventory)</span><input id="calibration-report-bsid" type="text" maxlength="40" autocomplete="off" inputmode="text" readonly aria-readonly="true" aria-describedby="calibration-report-certificate-number-help" placeholder="Select a machine with BSID"></label>
+        <label class="calibration-report-certificate-preview"><span>Certificate No.</span><output id="calibration-report-certificate-number" aria-live="polite">Incomplete certificate number</output><small id="calibration-report-certificate-number-help">YYYY-MMDD-BSID</small></label>
+        <button type="button" class="btn btn-outline-primary fw-bold" id="calibration-report-certificate-generate"><i class="fa-solid fa-file-pdf me-1"></i>Generate Sample Certificate PDF</button>
+      </div>
+      <button type="button" class="btn btn-success fw-bold d-none" id="calibration-report-final-save"><i class="fa-solid fa-file-circle-check me-1"></i>Save Final Report</button>
+      <button type="button" class="btn btn-outline-success fw-bold d-none" id="calibration-report-download"><i class="fa-solid fa-file-arrow-down me-1"></i>Download Final DOCX</button>
+      <button type="button" class="btn btn-outline-warning fw-bold d-none" id="calibration-report-clear"><i class="fa-solid fa-eraser me-1"></i>Clear Form</button>
+      <button type="button" class="btn btn-outline-danger fw-bold d-none" id="calibration-report-toolbar-remove"><i class="fa-solid fa-trash-can me-1"></i>Remove Report</button>
+    </div>
+  </div>
+  <div id="calibration-report-modal-status" class="calibration-report-modal-status" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div class="calibration-report-workspace">
+    <div id="calibration-report-editor" class="calibration-report-editor"></div>
   </div>
 </div>
 
@@ -1028,6 +1086,7 @@ function initializeBlankStandaloneTSR(){
     selectedStandaloneScheduleId = '';
     selectedStandaloneScheduleSnapshot = null;
     standaloneDocuments = [];
+    window.calibrationReport?.reset({ removeAutoDocument:true });
     signatureData = { serviced: '', acknowledged: '' };
     offlineTSRAttachments = [];
     const attachmentInput = document.getElementById('tsr-attachment-input');
@@ -1964,6 +2023,7 @@ function clearStandaloneTSRWorkFieldsForScheduleChange(){
     if(el) el.value = '';
   });
   standaloneDocuments = [];
+  window.calibrationReport?.clearForScheduleChange();
   signatureData = { serviced: '', acknowledged: '' };
   offlineTSRAttachments = [];
   const actionsList = document.getElementById('tsr-actions-list');
@@ -2038,6 +2098,7 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
     setFieldValue('tsr-serviced-by', schedule.serviced_by || LOGGED_IN_ENGINEER_NAME, overwrite);
     setFieldValue('tsr-department', 'Radiology', false);
     setFieldValue('tsr-machine-type', 'Medical', true);
+    window.calibrationReport?.onScheduleApplied(schedule, overwrite);
   }finally{
     standaloneTSRAutosavePaused = wasPaused;
   }
@@ -2639,7 +2700,8 @@ async function handleTSRAttachmentInput(event){
   if(!files.length) return;
 
   for(const file of files){
-    if(offlineTSRAttachments.length >= TSR_SUPPORTING_ATTACHMENT_MAX_COUNT){
+    const reservedCalibrationReport = window.calibrationReport?.collect?.() ? 1 : 0;
+    if(offlineTSRAttachments.length >= TSR_SUPPORTING_ATTACHMENT_MAX_COUNT - reservedCalibrationReport){
       showTSRStatus(`Only ${TSR_SUPPORTING_ATTACHMENT_MAX_COUNT} supporting attachments are allowed per TSR.`, 'warning');
       break;
     }
@@ -2687,8 +2749,35 @@ function removeTSRAttachment(attachmentId){
   saveStandaloneTSRDraft(true);
 }
 
+function getTSRAttachmentCapacity(data={}){
+  const ordinary = normalizeQueuedAttachments(
+    Array.isArray(data?.attachments) ? data.attachments : offlineTSRAttachments
+  ).filter(item => !isQueuedTSRSignatureAttachment(item) && item.source !== 'generated_calibration_report');
+  const report = data?.calibration_report || window.calibrationReport?.collect?.() || null;
+  const reportCount = report && report.status !== 'not_started' ? 1 : 0;
+  return {
+    ordinaryCount: ordinary.length,
+    reportCount,
+    total: ordinary.length + reportCount,
+    max: TSR_SUPPORTING_ATTACHMENT_MAX_COUNT
+  };
+}
+
+function validateTSRAttachmentCapacity(data, { show=true }={}){
+  const capacity = getTSRAttachmentCapacity(data || {});
+  if(capacity.total <= capacity.max) return true;
+  if(show){
+    showTSRStatus(`This TSR has ${capacity.total} supporting attachments, but the limit is ${capacity.max}. Remove an ordinary attachment; no file will be truncated.`, 'danger');
+  }
+  return false;
+}
+
 function getCurrentTSRQueuedAttachments(data){
-  return normalizeQueuedAttachments(offlineTSRAttachments).filter(item => !isQueuedTSRSignatureAttachment(item));
+  const generatedReport = window.calibrationReport?.getAttachment?.(data || null);
+  const ordinary = normalizeQueuedAttachments(
+    Array.isArray(data?.attachments) ? data.attachments : offlineTSRAttachments
+  ).filter(item => !isQueuedTSRSignatureAttachment(item) && item.source !== 'generated_calibration_report');
+  return (generatedReport ? [generatedReport] : []).concat(ordinary);
 }
 
 function isQueuedTSRSignatureAttachment(attachment){
@@ -2718,6 +2807,7 @@ function collectTSRData(){
     schedule_coverage:getTSRScheduleCoverageRows(selectedSchedule),
     original_schedule_time_start:selectedSchedule?.time_start || '',
     original_schedule_time_end:selectedSchedule?.time_end || '',
+    calibration_report: window.calibrationReport?.collect?.() || null,
     _draft_id:standaloneCurrentDraftId,
     savedAt:new Date().toISOString(),
     _tsr_form_version:'vector-pdf-v2',
@@ -3010,7 +3100,9 @@ function isStandaloneTSRDraftMeaningful(data){
   const parts = Array.isArray(data.parts) ? data.parts : [];
   const hasParts = parts.some(part => ['item','number','description','qty','dr'].some(key => String(part?.[key] || '').trim()));
   const signatures = data.signatures || {};
+  const calibrationReport = data.calibration_report || {};
   return Boolean(
+    calibrationReport.status !== undefined && calibrationReport.status !== 'not_started' ||
     hasCustomComplaint ||
     hasAdjustedTime ||
     String(data['tsr-requested-by'] || '').trim() ||
@@ -3509,6 +3601,7 @@ function applyStandaloneTSRDraftData(data){
     }
     standaloneDocuments=data.documents||[];
     offlineTSRAttachments=normalizeQueuedAttachments(data.attachments||[]);
+    window.calibrationReport?.apply(data.calibration_report || null);
     signatureData=data.signatures||{serviced:'',acknowledged:''};
     renderTSRScheduleCoveragePanel(data.selectedSchedule || data);
 
@@ -3591,6 +3684,12 @@ async function loadOnlineTSRRevisionFromUrl(){
       original_serial_no: payload['tsr-serial-no'] || submission.serial_number || ''
     });
     applyStandaloneTSRDraftData(payload);
+    if(submission.calibration_certificate && window.calibrationReport?.setApprovalStatus){
+      window.calibrationReport.setApprovalStatus(
+        submission.calibration_certificate,
+        submission.calibration_certificate.status
+      );
+    }
 
     const scheduleId = String(submission.shift_id || payload.schedule_id || payload.selectedScheduleId || '');
     if(scheduleId){
@@ -4231,6 +4330,10 @@ async function resolveQueuedPDFBlob(item){
 
 async function resolveQueuedAttachmentBlob(attachment){
   if(attachment?.blob instanceof Blob) return attachment.blob;
+  if(attachment?.source === 'generated_calibration_report'){
+    const generatedReportBlob = await window.calibrationReport?.resolveAttachmentBlob?.(attachment);
+    if(generatedReportBlob) return generatedReportBlob;
+  }
   if(attachment?.blob_id){
     const record = await loadOfflineTSRBlobRecord(attachment.blob_id);
     if(record?.blob) return record.blob;
@@ -5069,10 +5172,18 @@ async function uploadTSRSupportingAttachments(coreResult, attachments, options={
   });
 
   const normalized = normalizeQueuedAttachments(attachments)
-    .filter(item => !isQueuedTSRSignatureAttachment(item))
-    .slice(0, TSR_SUPPORTING_ATTACHMENT_MAX_COUNT);
+    .filter(item => !isQueuedTSRSignatureAttachment(item));
+  if(normalized.length > TSR_SUPPORTING_ATTACHMENT_MAX_COUNT){
+    throw makeTSRSyncError(`This TSR has ${normalized.length} supporting attachments, but the limit is ${TSR_SUPPORTING_ATTACHMENT_MAX_COUNT}. Remove an ordinary attachment before retrying.`, {
+      phase:'uploading_supporting_attachments',
+      errorCode:'too_many_attachments',
+      retryable:false,
+      attachmentCount:normalized.length
+    });
+  }
   const uploadedTokens = new Set(options.uploadedTokens || []);
   const uploaded = [];
+  let certificate = options.certificate || null;
 
   for(let index = 0; index < normalized.length; index += 1){
     const attachment = normalized[index];
@@ -5107,6 +5218,7 @@ async function uploadTSRSupportingAttachments(coreResult, attachments, options={
     const formData = new FormData();
     formData.append('attachment_token', token);
     formData.append('attachment', blob, attachment.name || `TSR_Attachment_${index + 1}`);
+    if(attachment.source === 'generated_calibration_report') formData.append('attachment_source', 'generated_calibration_report');
     const headers = { 'Accept':'application/json' };
     try{
       const csrfToken = typeof getCSRFToken === 'function' ? getCSRFToken() : '';
@@ -5138,11 +5250,12 @@ async function uploadTSRSupportingAttachments(coreResult, attachments, options={
     }
     uploadedTokens.add(token);
     uploaded.push(result);
+    if(result.certificate) certificate = result.certificate;
     if(typeof options.onUploaded === 'function'){
       await options.onUploaded({ result, token, index, total:normalized.length, uploadedTokens:[...uploadedTokens] });
     }
   }
-  return { uploaded, uploadedTokens:[...uploadedTokens], total:normalized.length };
+  return { uploaded, uploadedTokens:[...uploadedTokens], total:normalized.length, certificate };
 }
 
 async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', options={}){
@@ -5157,8 +5270,12 @@ async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', 
   const queuedAt = new Date().toISOString();
   const selectedSchedule = payload?.selectedSchedule || getSelectedStandaloneSchedule() || {};
 
-  const queuedAttachments = getCurrentTSRQueuedAttachments(payload);
-  const transportPayload = sanitizeTSRPayloadForTransport(payload);
+  let preparedPayload = payload;
+  if(window.calibrationReport?.preparePayload && payload?.calibration_report){
+    preparedPayload = await window.calibrationReport.preparePayload(payload, `calibration-queue-${Date.now()}`);
+  }
+  const queuedAttachments = getCurrentTSRQueuedAttachments(preparedPayload);
+  const transportPayload = sanitizeTSRPayloadForTransport(preparedPayload);
   const submissionToken = ensureTSRSubmissionToken(transportPayload.submission_token || options.submissionToken);
   transportPayload.submission_token = submissionToken;
   transportPayload.pending_schedule_token = payload?.pending_schedule_token || selectedSchedule?.pending_schedule_token || '';
@@ -5522,6 +5639,7 @@ async function uploadQueuedOfflineTSR(item, numberRetryCount=0){
   return Object.assign({}, result, {
     extra_attachment_count:attachmentResult.uploadedTokens.length,
     uploaded_attachment_tokens:attachmentResult.uploadedTokens,
+    certificate:attachmentResult.certificate || result.certificate || null,
     sync_phase:'complete'
   });
 }
@@ -5800,7 +5918,11 @@ function scheduleOfflineTSRAutoSync(){
 }
 
 async function submitStandaloneTSROnline(data, options={}){
-  const payload = sanitizeTSRPayloadForTransport(options.payload || await prepareTSRForFinalSave(data, { assignNumber:true }));
+  let reportReadyPayload = options.payload || await prepareTSRForFinalSave(data, { assignNumber:true });
+  if(window.calibrationReport?.preparePayload && reportReadyPayload?.calibration_report){
+    reportReadyPayload = await window.calibrationReport.preparePayload(reportReadyPayload, `calibration-online-${Date.now()}`);
+  }
+  const payload = sanitizeTSRPayloadForTransport(reportReadyPayload);
   payload.submission_token = ensureTSRSubmissionToken(payload.submission_token);
   const pdfPackage = options.pdfPackage || await buildStandaloneTSRPDFBlobForUpload(payload);
   const formData = new FormData();
@@ -5843,7 +5965,8 @@ async function submitStandaloneTSROnline(data, options={}){
     });
     return Object.assign({}, coreResult, {
       extra_attachment_count:attachmentResult.uploadedTokens.length,
-      uploaded_attachment_tokens:attachmentResult.uploadedTokens
+      uploaded_attachment_tokens:attachmentResult.uploadedTokens,
+      certificate:attachmentResult.certificate || coreResult.certificate || null
     });
   }catch(err){
     uploadedAttachmentTokens = err?.uploadedTokens || uploadedAttachmentTokens;
@@ -5885,12 +6008,16 @@ async function submitStandaloneTSRRevisionOnline(data, options={}){
   }
 
   const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule();
-  const payload = sanitizeTSRPayloadForTransport(options.payload || Object.assign({}, data || {}, {
+  let reportReadyPayload = options.payload || Object.assign({}, data || {}, {
     schedule_id: onlineTSRRevisionContext.shift_id || selectedSchedule?.id || data?.schedule_id || '',
     selectedSchedule: selectedSchedule || data?.selectedSchedule || null,
     revision_reason: revisionReason,
     parent_submission_id: onlineTSRRevisionContext.submission_id
-  }));
+  });
+  if(window.calibrationReport?.preparePayload && reportReadyPayload?.calibration_report){
+    reportReadyPayload = await window.calibrationReport.preparePayload(reportReadyPayload, `calibration-revision-${Date.now()}`);
+  }
+  const payload = sanitizeTSRPayloadForTransport(reportReadyPayload);
   payload.submission_token = ensureTSRSubmissionToken(payload.submission_token);
   const pdfPackage = options.pdfPackage || await buildStandaloneTSRPDFBlobForUpload(payload);
   const formData = new FormData();
@@ -5927,7 +6054,8 @@ async function submitStandaloneTSRRevisionOnline(data, options={}){
   const attachmentResult = await uploadTSRSupportingAttachments(result, currentAttachments);
   return Object.assign({}, result, {
     extra_attachment_count:attachmentResult.uploadedTokens.length,
-    uploaded_attachment_tokens:attachmentResult.uploadedTokens
+    uploaded_attachment_tokens:attachmentResult.uploadedTokens,
+    certificate:attachmentResult.certificate || result.certificate || null
   });
 }
 
@@ -6529,6 +6657,13 @@ async function validateTSRFinalSaveRequirements(data){
     showTSRStatus(`Complete these required TSR details before saving: ${missingCoreDetails.map(item => item.label).join(', ')}.`, 'danger');
     return false;
   }
+  const calibrationReportCheck = window.calibrationReport?.validateForFinalSave?.(data);
+  if(calibrationReportCheck && !calibrationReportCheck.ok){
+    window.calibrationReport?.focusMissing?.(calibrationReportCheck.missing);
+    showTSRStatus(calibrationReportCheck.message || 'Complete the Calibration Report or remove it before saving.', 'danger');
+    return false;
+  }
+  if(!validateTSRAttachmentCapacity(data)) return false;
   if(!hasRequiredServicedSignature(data)){
     const savedSignature = await loadMySavedSignatureForTSR();
     if(savedSignature){

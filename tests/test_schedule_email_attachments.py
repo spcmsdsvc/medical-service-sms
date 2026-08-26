@@ -1,4 +1,5 @@
 import os
+import inspect
 import tempfile
 import unittest
 from datetime import datetime
@@ -90,6 +91,79 @@ class ScheduleEmailAttachmentTests(unittest.TestCase):
         self.assertTrue(package[0]['is_tsr'])
         self.assertFalse(package[1]['is_tsr'])
         self.assertFalse(package[2]['is_tsr'])
+
+    def test_email_package_includes_only_the_latest_marked_calibration_docx(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            names_and_contents = {
+                'main-tsr.pdf': b'tsr',
+                'quotation.pdf': b'pdf',
+                'site-photo.jpg': b'jpg',
+                'latest-calibration.docx': b'latest',
+                'superseded-calibration.docx': b'old',
+                'unrelated-word.docx': b'unrelated',
+            }
+            paths = {}
+            for name, content in names_and_contents.items():
+                path = os.path.join(temp_dir, name)
+                with open(path, 'wb') as output:
+                    output.write(content)
+                paths[name] = path
+
+            records = [
+                SimpleNamespace(id=2, filename='quotation.pdf', original_filename='Quotation.pdf', uploaded_at=None),
+                SimpleNamespace(id=3, filename='site-photo.jpg', original_filename='Site Photo.jpg', uploaded_at=None),
+                SimpleNamespace(id=4, filename='latest-calibration.docx', original_filename='Calibration Report.docx', uploaded_at=None),
+                SimpleNamespace(id=5, filename='superseded-calibration.docx', original_filename='Calibration Report old.docx', uploaded_at=None),
+                SimpleNamespace(id=6, filename='unrelated-word.docx', original_filename='Unrelated Word.docx', uploaded_at=None),
+            ]
+            shift = SimpleNamespace(id=17, files=records, start_time=datetime(2026, 7, 17, 8, 0))
+            main_tsr = {
+                'id': 1,
+                'shift_id': 17,
+                'filename': 'main-tsr.pdf',
+                'display_name': 'TSR_main.pdf',
+                'path': paths['main-tsr.pdf'],
+                'source_type': 'generated',
+                'source_label': 'Generated TSR',
+                'service_date': '2026-07-17',
+                'file_size': os.path.getsize(paths['main-tsr.pdf']),
+            }
+
+            def resolve_path(_prefix, local_path):
+                return paths[os.path.basename(local_path)]
+
+            calibration_state = {
+                'all_ids': {4, 5},
+                'latest_ids': {4},
+                'metadata': {
+                    4: {'revision_no': 2, 'shift_id': 17},
+                    5: {'revision_no': 1, 'shift_id': 17},
+                },
+            }
+            with patch.object(app_module, 'get_tsr_files_for_shift', return_value=[main_tsr]), \
+                    patch.object(app_module, 'get_linked_schedule_file_shifts', return_value=[shift]), \
+                    patch.object(app_module, 'get_linked_schedule_generated_file_ids', return_value={1}), \
+                    patch.object(app_module, 'get_linked_schedule_calibration_report_file_state', return_value=calibration_state), \
+                    patch.object(app_module, 'get_legacy_incomplete_tsr_file_policy', return_value={}), \
+                    patch.object(app_module, 'managed_storage_read_path', side_effect=resolve_path):
+                package = app_module.get_tsr_email_files_for_shift(shift)
+
+        self.assertEqual({item['id'] for item in package}, {1, 2, 3, 4})
+        latest = next(item for item in package if item['id'] == 4)
+        self.assertEqual(latest['source_type'], 'calibration_report')
+        self.assertEqual(latest['source_label'], 'Calibration Report')
+        self.assertEqual({item['id'] for item in package if item['id'] in {5, 6}}, set())
+        self.assertEqual({item['source_type'] for item in package if item['id'] in {2, 3}}, {'supporting_pdf', 'supporting_image'})
+
+    def test_email_helper_has_a_separate_latest_calibration_report_filter(self):
+        source = inspect.getsource(app_module.get_tsr_email_files_for_shift)
+        self.assertIn('get_linked_schedule_calibration_report_file_state', source)
+        self.assertIn('file_id in calibration_report_ids', source)
+        self.assertIn("'source_type': 'calibration_certificate'", source)
+        self.assertIn("'calibration_report' if is_calibration_report", source)
+        self.assertIn('excluded_certificate_ids', source)
+        self.assertIn("get_linked_schedule_calibration_certificate_file_state", source)
+        self.assertIn("'excluded_ids'", source)
 
 
 if __name__ == '__main__':

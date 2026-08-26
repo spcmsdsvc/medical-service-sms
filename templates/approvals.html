@@ -2026,6 +2026,11 @@
             </div>
             <div class="approval-module-mini-grid">
                 <div class="approval-module-mini">
+                    <strong>Calibration Certificates</strong>
+                    <span id="approvalCalibrationCertificatePendingCount">0</span>
+                    <small>Active workflow</small>
+                </div>
+                <div class="approval-module-mini">
                     <strong>Travel Request</strong>
                     <span id="approvalTravelPendingCount">0</span>
                     <small>Active workflow</small>
@@ -2199,6 +2204,11 @@
             label: 'Cash Advance Liquidation',
             negativeAction: 'Return for Revision',
             pendingRemarks: 'Optional for approval. Required when returning for revision.'
+        },
+        calibration_certificate: {
+            label: 'Calibration Certificate',
+            negativeAction: 'Return for Correction',
+            pendingRemarks: 'Optional for approval. Required when returning for correction.'
         },
         lpr: {
             label: 'LPR',
@@ -5751,6 +5761,61 @@ async function dismissApprovalNotification(event, notificationId) {
         </div><div class="approval-actions"><button type="button" class="approval-btn approval-btn-primary" onclick="openLeaveApprovalDetail(${Number(item.id)||0})">${pending ? 'Review' : 'View Details'}</button></div></div></div>`;
     }
 
+    let selectedCalibrationCertificateId = 0;
+    function calibrationCertificateApprovalItem(moduleKey, item, status) {
+        if (moduleKey !== 'calibration_certificate') return null;
+        const pending = String(item.status || status || '').toLowerCase() === 'pending';
+        return `<div class="approval-work-card"><div class="approval-work-top"><div>
+            <div class="approval-work-no">${approvalEscape(item.certificate_number || 'Calibration Certificate')}</div>
+            <div class="approval-work-meta-grid"><div class="approval-work-meta"><small>Machine</small><strong>${approvalEscape(item.machine || item.bsid || '—')}</strong></div><div class="approval-work-meta"><small>TSR</small><strong>${approvalEscape(item.tsr_number || '—')}</strong></div><div class="approval-work-meta"><small>Revision</small><strong>REV${Number(item.revision_no || 1)}</strong></div><div class="approval-work-meta"><small>Status</small><strong>${approvalEscape(item.status || status || '')}</strong></div></div>
+        </div><div class="approval-actions"><button type="button" class="approval-btn approval-btn-primary" onclick="openCalibrationCertificateApprovalDetail(${Number(item.id) || 0})">${pending ? 'Review' : 'View Details'}</button></div></div></div>`;
+    }
+    async function openCalibrationCertificateApprovalDetail(approvalId) {
+        if (!approvalId) return;
+        const loadToken = beginApprovalModalLoad('calibration_certificate');
+        selectedCalibrationCertificateId = Number(approvalId);
+        selectedApprovalModule = 'calibration_certificate';
+        try {
+            const response = await fetch(`/get_calibration_certificate_approval/${encodeURIComponent(approvalId)}`, {credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}});
+            const payload = await parseApprovalJsonResponse(response, 'Unable to load Calibration Certificate details.');
+            if (!approvalModalLoadIsCurrent(loadToken, 'calibration_certificate')) return;
+            const data = payload.approval || {};
+            const body = document.getElementById('approvalDetailBody');
+            const title = document.getElementById('approvalModalTitle');
+            const subtitle = document.getElementById('approvalModalSubtitle');
+            if (title) title.textContent = `Review ${data.certificate_number || 'Calibration Certificate'}`;
+            if (subtitle) subtitle.textContent = `${data.machine || data.bsid || 'Machine'} • REV${Number(data.revision_no || 1)}`;
+            if (body) body.innerHTML = `<div class="approval-detail-grid"><div class="approval-stat"><small>Certificate No.</small><strong>${approvalEscape(data.certificate_number || '')}</strong></div><div class="approval-stat"><small>Machine / BSID</small><strong>${approvalEscape(data.machine || data.bsid || '—')}</strong></div><div class="approval-stat"><small>Facility</small><strong>${approvalEscape(data.facility || '—')}</strong></div><div class="approval-stat"><small>Status</small><strong>${approvalEscape(data.status || '')}</strong></div></div><div class="approval-detail-grid"><div class="approval-stat"><small>TSR</small><strong>${approvalEscape(data.tsr_number || '—')}</strong></div><div class="approval-stat"><small>Calibration Date</small><strong>${approvalEscape(data.calibration_date || '—')}</strong></div><div class="approval-stat"><small>Next Calibration</small><strong>${approvalEscape(data.next_calibration_date || '—')}</strong></div><div class="approval-stat"><small>Requester</small><strong>${approvalEscape(data.requester || '—')}</strong></div></div><div class="approval-modal-panel full"><h3>Certificate Preview</h3><iframe title="Calibration Certificate preview" src="${approvalEscape(data.signed_preview_url || data.unsigned_preview_url || '#')}" style="width:100%;min-height:520px;border:1px solid #e2e8f0;border-radius:10px;"></iframe>${data.no_signature_preview_url ? `<div class="approval-actions mt-2"><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.no_signature_preview_url)}" target="_blank" rel="noopener"><i class="fa-solid fa-print me-1"></i>Preview No-Signature Print Copy</a><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.no_signature_url || '#')}"><i class="fa-solid fa-download me-1"></i>Download No-Signature Print Copy</a></div>` : ''}</div>${data.return_remarks ? `<div class="approval-decision-panel rejected"><h3>Return Remarks</h3><div>${approvalEscape(data.return_remarks)}</div></div>` : ''}`;
+            const approveBtn = document.getElementById('approvalApproveBtn');
+            const rejectBtn = document.getElementById('approvalRejectBtn');
+            const pending = String(data.status || '').toLowerCase() === 'pending' && Boolean(data.is_latest);
+            if (approveBtn) approveBtn.style.display = pending ? '' : 'none';
+            if (rejectBtn) rejectBtn.style.display = pending ? '' : 'none';
+            applyApprovalModuleWording('calibration_certificate', pending);
+            const remarks = document.getElementById('approvalRemarks');
+            if (remarks) { remarks.value = data.return_remarks || ''; remarks.disabled = !pending; remarks.readOnly = !pending; }
+        } catch (error) {
+            showApprovalModalLoadError(loadToken, 'calibration_certificate', error, 'Unable to load Calibration Certificate details.');
+        }
+    }
+    window.openCalibrationCertificateApprovalDetail = openCalibrationCertificateApprovalDetail;
+    async function approveSelectedCalibrationCertificate() {
+        if (!selectedCalibrationCertificateId) return;
+        const response = await fetch(`/approve_calibration_certificate/${selectedCalibrationCertificateId}`, {method:'POST', credentials:'same-origin', headers:{Accept:'application/json','X-CSRFToken':getApprovalCsrfToken()}});
+        const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to approve Calibration Certificate.');
+        approvalAlert(payload.message || 'Calibration Certificate approved.', 'success'); closeApprovalModal(); await refreshAllApprovalCenterLists();
+    }
+    async function returnSelectedCalibrationCertificate() {
+        if (!selectedCalibrationCertificateId) return;
+        const remarks = (document.getElementById('approvalRemarks')?.value || '').trim();
+        if (!remarks) { approvalAlert('Please enter return remarks before returning this Calibration Certificate.'); return; }
+        const response = await fetch(`/return_calibration_certificate/${selectedCalibrationCertificateId}`, {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRFToken':getApprovalCsrfToken()}, body:JSON.stringify({remarks})});
+        const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to return Calibration Certificate.');
+        approvalAlert(payload.message || 'Calibration Certificate returned for correction.'); closeApprovalModal(); await refreshAllApprovalCenterLists();
+    }
+    const originalBuildCalibrationCertificateApprovalItem = window.buildUnifiedApprovalItem;
+    window.buildUnifiedApprovalItem = function(moduleKey, item, status) { return calibrationCertificateApprovalItem(moduleKey, item, status) || originalBuildCalibrationCertificateApprovalItem(moduleKey, item, status); };
+
     const originalBuildUnifiedApprovalItem = window.buildUnifiedApprovalItem;
     window.buildUnifiedApprovalItem = function (moduleKey, item, status) {
         const lprCard = lprApprovalItem(moduleKey, item, status);
@@ -5887,12 +5952,15 @@ async function dismissApprovalNotification(event, notificationId) {
     };
 
     const originalApproveSelectedApproval = window.approveSelectedApproval;
-    window.approveSelectedApproval = function () { if(selectedApprovalModule==='leave_request')return approveSelectedLeave(); return selectedApprovalModule === 'lpr' ? window.approveSelectedLpr() : originalApproveSelectedApproval(); };
+    window.approveSelectedApproval = function () { if(selectedApprovalModule==='calibration_certificate')return approveSelectedCalibrationCertificate(); if(selectedApprovalModule==='leave_request')return approveSelectedLeave(); return selectedApprovalModule === 'lpr' ? window.approveSelectedLpr() : originalApproveSelectedApproval(); };
     const originalRejectSelectedApproval = window.rejectSelectedApproval;
-    window.rejectSelectedApproval = function () { if(selectedApprovalModule==='leave_request')return rejectSelectedLeave(); return selectedApprovalModule === 'lpr' ? window.rejectSelectedLpr() : originalRejectSelectedApproval(); };
+    window.rejectSelectedApproval = function () { if(selectedApprovalModule==='calibration_certificate')return returnSelectedCalibrationCertificate(); if(selectedApprovalModule==='leave_request')return rejectSelectedLeave(); return selectedApprovalModule === 'lpr' ? window.rejectSelectedLpr() : originalRejectSelectedApproval(); };
 
     const originalOpenApprovalNotification = window.openApprovalNotification;
     window.openApprovalNotification = async function (notificationId, moduleKey, recordId) {
+        if (String(moduleKey || '').toLowerCase() === 'calibration_certificate' && Number(recordId || 0)) {
+            await markApprovalNotificationRead(notificationId); await loadApprovalNotifications(); await openCalibrationCertificateApprovalDetail(Number(recordId)); return;
+        }
         if (String(moduleKey || '').toLowerCase() === 'lpr' && Number(recordId || 0)) {
             await markApprovalNotificationRead(notificationId); await loadApprovalNotifications(); await openLprApprovalDetail(Number(recordId)); return;
         }
@@ -5904,13 +5972,13 @@ async function dismissApprovalNotification(event, notificationId) {
 
     const originalRefreshAllApprovalCenterLists = window.refreshAllApprovalCenterLists;
     window.refreshAllApprovalCenterLists = async function () {
-        const modules = ['travel_request','reimbursement','cash_advance','cash_advance_liquidation','travel_liquidation','lpr','leave_request'];
+        const modules = ['calibration_certificate','travel_request','reimbursement','cash_advance','cash_advance_liquidation','travel_liquidation','lpr','leave_request'];
         const statuses = ['Submitted','Approved','Rejected'];
         const result = {};
         for (const module of modules) { result[module] = {}; for (const status of statuses) { try { const response=await fetch(`/get_approval_center_items?module=${module}&status=${status}&_=${Date.now()}`,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}}); const payload=await parseApprovalJsonResponse(response,`Unable to load ${module}.`); result[module][status]=payload.items||[]; } catch(error) { console.error('[Approvals] module load failed',module,status,error); result[module][status]=[]; } } }
         const lprPending = document.getElementById('approvalLprPendingCount'); if (lprPending) lprPending.textContent=String(result.lpr.Submitted.length);
         const leavePending = document.getElementById('approvalLeavePendingCount'); if (leavePending) leavePending.textContent=String(result.leave_request.Submitted.length);
-        const countMap = {reimbursement:'approvalReimbursementPendingCount', travel_request:'approvalTravelPendingCount', travel_liquidation:'approvalLiquidationPendingCount', cash_advance:'approvalCashAdvancePendingCount', cash_advance_liquidation:'approvalCashAdvanceLiquidationPendingCount'};
+        const countMap = {calibration_certificate:'approvalCalibrationCertificatePendingCount', reimbursement:'approvalReimbursementPendingCount', travel_request:'approvalTravelPendingCount', travel_liquidation:'approvalLiquidationPendingCount', cash_advance:'approvalCashAdvancePendingCount', cash_advance_liquidation:'approvalCashAdvanceLiquidationPendingCount'};
         Object.entries(countMap).forEach(([module,id])=>{const el=document.getElementById(id);if(el)el.textContent=String(result[module].Submitted.length);});
         const pending = [], approved = [], rejected = [];
         modules.forEach(module=>{ result[module].Submitted.forEach(item=>pending.push({module,item,status:'Submitted'})); result[module].Approved.forEach(item=>approved.push({module,item,status:'Approved'})); result[module].Rejected.forEach(item=>rejected.push({module,item,status:'Rejected'})); });

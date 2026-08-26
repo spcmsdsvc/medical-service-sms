@@ -23,6 +23,7 @@ class ApprovalNotificationEndpointTests(unittest.TestCase):
         )
         cls.created_user_ids = []
         cls.created_header_ids = []
+        cls.created_liquidation_ids = []
         cls.created_notification_ids = []
         cls.initial_routing_ids = set()
         cls.approver_was_existing = False
@@ -46,6 +47,10 @@ class ApprovalNotificationEndpointTests(unittest.TestCase):
                 if cls.created_header_ids:
                     app_module.ReimbursementHeader.query.filter(
                         app_module.ReimbursementHeader.id.in_(cls.created_header_ids)
+                    ).delete(synchronize_session=False)
+                if cls.created_liquidation_ids:
+                    app_module.TravelLiquidationHeader.query.filter(
+                        app_module.TravelLiquidationHeader.id.in_(cls.created_liquidation_ids)
                     ).delete(synchronize_session=False)
                 if cls.created_user_ids:
                     app_module.User.query.filter(
@@ -116,6 +121,17 @@ class ApprovalNotificationEndpointTests(unittest.TestCase):
         cls.header_id = header.id
         cls.created_header_ids.append(header.id)
 
+        liquidation = app_module.TravelLiquidationHeader(
+            travel_request_id=900000 + requester.id,
+            user_id=requester.id,
+            status='Submitted',
+            submitted_at=now,
+        )
+        db.session.add(liquidation)
+        db.session.flush()
+        cls.liquidation_id = liquidation.id
+        cls.created_liquidation_ids.append(liquidation.id)
+
         valid = app_module.SystemNotification(
             user_id=cls.approver.id,
             module='reimbursement',
@@ -147,7 +163,18 @@ class ApprovalNotificationEndpointTests(unittest.TestCase):
             metadata_json=json.dumps({'event': 'submitted'}),
             created_at=now,
         )
-        db.session.add_all([valid, incomplete, unrelated])
+        travel_liquidation = app_module.SystemNotification(
+            user_id=cls.approver.id,
+            module='travel_liquidation',
+            record_id=liquidation.id,
+            title='Travel Liquidation submitted',
+            message='Test liquidation awaiting approval.',
+            target_url='/approvals?module=travel_liquidation',
+            is_read=False,
+            metadata_json=json.dumps({'event': 'submitted'}),
+            created_at=now,
+        )
+        db.session.add_all([valid, incomplete, unrelated, travel_liquidation])
         db.session.commit()
         cls.initial_routing_ids = {
             route.id for route in app_module.ApprovalRouting.query.all()
@@ -155,11 +182,13 @@ class ApprovalNotificationEndpointTests(unittest.TestCase):
         cls.valid_notification_id = valid.id
         cls.incomplete_notification_id = incomplete.id
         cls.unrelated_notification_id = unrelated.id
+        cls.travel_liquidation_notification_id = travel_liquidation.id
         cls.approver_id = cls.approver.id
         cls.created_notification_ids.extend([
             valid.id,
             incomplete.id,
             unrelated.id,
+            travel_liquidation.id,
         ])
 
     def setUp(self):
@@ -185,11 +214,11 @@ class ApprovalNotificationEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         payload = response.get_json()
         self.assertTrue(payload['success'])
-        self.assertEqual(payload['count'], 1)
-        self.assertEqual(payload['unread_count'], 1)
+        self.assertEqual(payload['count'], 2)
+        self.assertEqual(payload['unread_count'], 2)
         self.assertEqual(
-            [item['id'] for item in payload['items']],
-            [self.valid_notification_id],
+            {item['id'] for item in payload['items']},
+            {self.valid_notification_id, self.travel_liquidation_notification_id},
         )
 
     def test_mark_all_read_only_marks_active_approval_rows(self):
@@ -200,7 +229,7 @@ class ApprovalNotificationEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         payload = response.get_json()
         self.assertTrue(payload['success'])
-        self.assertEqual(payload['updated_count'], 1)
+        self.assertEqual(payload['updated_count'], 2)
 
         with self.app.app_context():
             valid = app_module.db.session.get(
@@ -215,7 +244,12 @@ class ApprovalNotificationEndpointTests(unittest.TestCase):
                 app_module.SystemNotification,
                 self.unrelated_notification_id,
             )
+            travel_liquidation = app_module.db.session.get(
+                app_module.SystemNotification,
+                self.travel_liquidation_notification_id,
+            )
             self.assertTrue(valid.is_read)
+            self.assertTrue(travel_liquidation.is_read)
             self.assertFalse(incomplete.is_read)
             self.assertFalse(unrelated.is_read)
 

@@ -25,6 +25,7 @@ class TsrDraftSyncContractTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
         cls.template_source = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+        cls.calibration_report_source = (ROOT / 'static' / 'js' / 'app-calibration-report.js').read_text(encoding='utf-8')
 
     def test_server_draft_schema_and_owner_scoped_routes_exist(self):
         self.assertIn('class TsrDraft(db.Model)', self.app_source)
@@ -57,6 +58,40 @@ class TsrDraftSyncContractTests(unittest.TestCase):
         self.assertNotIn('browser-only-blob', serialized)
         self.assertNotIn('data:image/png;base64,large', serialized)
         self.assertIn('draft-attachment-1', serialized)
+
+    def test_calibration_report_state_survives_server_projection_without_browser_blob(self):
+        if app_module is None:
+            self.skipTest(f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+        projected = app_module.project_tsr_draft_payload_for_server({
+            'calibration_report': {
+                'schema_version': 2,
+                'status': 'draft',
+                'machine': {'model': 'MobileDaRt', 'serial_number': 'SN-17'},
+                'signature': {'image': 'data:image/png;base64,signature'},
+                'generated': {'blob_id': 'calibration-report-abcd1234'},
+            }
+        })
+        self.assertEqual(projected['calibration_report']['machine']['model'], 'MobileDaRt')
+        self.assertIn('calibration-report-abcd1234', json.dumps(projected))
+        self.assertEqual(projected['calibration_report']['signature']['image'], 'data:image/png;base64,signature')
+
+    def test_calibration_report_cleanup_references_project_without_blob_bytes_or_readiness(self):
+        if app_module is None:
+            self.skipTest(f'app dependencies unavailable: {APP_IMPORT_ERROR}')
+        projected = app_module.project_tsr_draft_payload_for_server({
+            'calibration_report': {
+                'schema_version': 2,
+                'status': 'draft',
+                'generated': {'fingerprint': '', 'attachment_id': '', 'blob_id': ''},
+                'generated_cleanup': {'blob_ids': ['calibration-report-old-1'], 'blob': 'browser-only-blob'},
+            }
+        })
+        report = projected['calibration_report']
+        self.assertEqual(report['generated_cleanup']['blob_ids'], ['calibration-report-old-1'])
+        self.assertNotIn('browser-only-blob', json.dumps(projected))
+        self.assertFalse(report['generated']['attachment_id'])
+        self.assertIn('generated_cleanup', self.calibration_report_source)
+        self.assertIn('hasGeneratedMetadata', self.calibration_report_source)
 
     def test_stale_device_timestamp_is_ignored(self):
         if app_module is None:

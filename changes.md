@@ -1,14 +1,247 @@
 # Project Change Log
 
+codex changes - 2026-08-26
+
+- Fixed Calendar Print Grid pagination in `templates/timeline.html`: large weekly
+  schedule blocks now switch to block flow and allow page fragmentation during printing,
+  so the first week starts beneath the report header instead of being pushed onto a blank
+  second page. The screen-only print preview layout remains flex-stacked.
+- Added `tests/test_timeline_print_layout.py` to guard the print pagination rules and the
+  unchanged screen preview layout. Bumped the app-shell service-worker cache to
+  `medical-service-pwa-offline-navigation-v115-calendar-print-pagination` so installed
+  clients can receive the corrected `/timeline` template. Focused tests pass **2/2**;
+  no browser automation, database, staging, commit, push, deployment, Railway, or
+  production action was performed.
+
 codex changes - 2026-08-25
 
-- Updated `templates/products.html` so successful product saves update the local inventory state and
-  rerender only the affected filtered/sorted list instead of refetching all products and clients.
-  The save flow now preserves the user's active filters, sort, and scroll position, removes the
-  post-save serial-row auto-scroll, and shows a lightweight success notice without navigating or
-  refreshing the Product page. Add and edit saves retain the existing server/API behavior.
-- Added a focused source-level regression in `tests/test_product_contract_status.py` that protects
-  the in-place save path from reintroducing the post-save product-data refetch or scroll jump.
+- Corrected the Calibration Certificate visibility review findings in `app.py` and
+  `templates/timeline.html`: Timeline schedule cards now render managed signed and no-signature
+  certificate files as explicit attachment rows, showing engineers the locked print-copy filename
+  with `Admin download only` and preserving preview links for authorized administrators.
+- Changed no-signature certificate authorization to combine `is_admin_authorized()` with the
+  established TSR archive read-visibility predicate rather than schedule mutation authority, so
+  regional admins can access visible schedules across branches, including Manila, while engineers
+  and ordinary approvers remain denied by the direct archive routes.
+- Added focused regressions in `tests/test_reports_archive_pagination.py` for Timeline certificate
+  rows/lock rendering, Manila-visible regional-admin access, and engineer direct-route 403 behavior.
+  Python compilation, focused archive tests, and `git diff --check` remain required before
+  publication; no database, staging, commit, push, browser, deployment, or production action was
+  performed.
+
+- Implemented conditional one-time Single P.O. support in `app.py`: Products whose exact status is
+  No Expiry Set - No Contract, with a Product Start Date and no End Date, now save as one-time
+  records with a null End Date and one full-value scheduled occurrence. Contract-backed Single
+  remains annual; Semi Annual and Quarterly retain complete-date requirements; mixed coverage and
+  mismatched one-time starts are rejected; historical snapshots remain server-owned.
+- Updated the P.O. register template to require frequency before machine selection, clear stale
+  machine/date/confirmation state when frequency changes, identify one-time eligible Products,
+  leave one-time End Dates blank/read-only, omit the Under Contract prompt for valid one-time
+  machines, and display Annual/One-time schedule labels beside computed amounts.
+- Added one-time API metadata (`contract_status`, `one_time_eligible`, `schedule_mode`, and
+  `schedule_mode_label`) and kept fiscal/custom filtering and Excel export aligned with the single
+  Start-Date occurrence and full amount without changing the stored `single` type or schema.
+- Added focused endpoint, schedule, filtering/export, snapshot, eligibility, mixed-coverage, and
+  template-contract tests in `tests/test_purchase_orders.py`. The complete P.O. module passes **44
+  tests**, and the affected analytics module passes **5 tests**. No service-worker cache bump was
+  needed because the P.O. behavior remains in the inline template.
+- Static verification passed: Python source compilation without bytecode writes, inline P.O.
+  JavaScript parsing with Node, release-manifest JSON parsing with unique release keys, and
+  `git diff --check`. The full repository run completed **766 tests with 1 skipped and 1 unrelated
+  failure** in the staff-creation initials-collision test; that test passes in isolation. No browser
+  automation was used, and no commit, push, deployment, Railway, production, schema migration, or
+  service-worker cache change was performed.
+
+- Began the owner-authorized **One-Time Single-Visit P.O. Support** implementation after the
+  direct `go ahead` instruction. The plan status is now **In progress**. The Builder will preserve
+  the active Calibration Certificate work and unrelated dirty artifacts, use only isolated test
+  databases, and leave review, staging, commit, push, Railway, production, and browser actions
+  unauthorized.
+
+- Recorded the owner-approved **One-Time Single-Visit P.O. Support** package at the top of
+  `plans.md` with status **Approved — awaiting go-ahead**. The plan conditionally treats `single`
+  as one-time for Products whose exact status is `No Expiry Set - No Contract`, whose Product Start
+  Date exists, and whose End Date is blank, while preserving annual contract-backed Single,
+  Semi Annual, Quarterly, legacy-read, fiscal/custom-filter, and one-row-per-P.O. behavior.
+- Locked the approval decisions for frequency-first machine selection, non-mixing of one-time and
+  contract-backed machines, matching one-time Start Dates, null End-Date snapshots, full-amount
+  one-occurrence allocation, Annual/One-time schedule labels, and exemption of valid one-time
+  machines from Under Contract confirmation and Product mutation.
+- This approval-recording step changed only `plans.md` and this mandatory journal. Under the
+  repository's two-answer gate, no Builder was launched and no application source, P.O. template,
+  test, database, `scheduler.db`, release manifest, cache, Calibration Certificate work, protected
+  artifact, Git history, commit, push, Railway, deployment, production, or browser state was
+  changed. Implementation remains paused pending a separate owner go-ahead.
+
+- Completed the locally authorized **Conditional focal tables and controlled no-signature
+  Calibration Certificate** implementation in `static/js/app-calibration-report.js` and `app.py`.
+  Generated Calibration Report DOCX output now removes the entire unselected Small or Large focal
+  table while preserving draft measurements and compacting the page-three spacer layout.
+- New successful certificate approvals now build and verify two immutable managed PDFs in one
+  transaction: the acting approver's signed certificate and a canonical-template
+  `Calibration_Certificate_<number>[_REVn]_No_Signature.pdf` print copy retaining the original
+  Rodito certifier identity and blank signature widget. The additive
+  `no_signature_shift_file_id` migration/link is runtime-only; existing approvals are not
+  backfilled, and partial storage/database failures roll back with cleanup.
+- Added admin-plus-schedule-scope access enforcement for print-copy certificate and generic archive
+  routes, locked Timeline/schedule and Reports archive metadata for engineers, admin-only Approval
+  Center actions, immutable no-signature deletion guards, and explicit exclusion of every print copy
+  from client email preview and send attachment sets. Timeline/archive certificate links are
+  batch-resolved.
+- Advanced the service-worker cache to
+  `medical-service-pwa-offline-navigation-v114-calibration-certificate-no-signature`, served the
+  Calibration Report script as v20, and added engineer/admin release notes. Official templates,
+  template hashes, `scheduler.db`, production/Railway state, and Git publication remain untouched.
+- Verification: focused Calibration/Certificate and report tests **36/36**; related
+  offline/sync/archive/email/notification tests **73/73**; full discovery **762 tests: 761 passed,
+  1 skipped, 1 unrelated pre-existing staff-creation failure** (initials collision). AST, Node,
+  Jinja, JSON, checksum/cache, flattened PDF, and `git diff --check` checks passed. PyMuPDF
+  rendered and visually inspected the representative print PDF; its changed pixels were confined
+  to the original field/widget rectangles. Bundled DOCX rendering was not
+  available because LibreOffice/`soffice` is absent. No browser, staging, commit, push, deployment,
+  Railway, or production action was performed.
+
+- Began the separately authorized implementation of the **Conditional focal tables and controlled
+  no-signature Calibration Certificate** package after the owner's direct `go ahead`. The newest
+  `plans.md` record is now **In progress**. This authorization covers only the approved DOCX table,
+  dual-certificate, access-control, email-exclusion, migration, verification, version, and release
+  work; review, staging, commit, push, deployment, Railway, production, browser automation, and
+  protected-artifact changes remain unauthorized.
+
+- Recorded the owner-approved **Conditional focal tables and controlled no-signature Calibration
+  Certificate** implementation package at the top of `plans.md` with status
+  **Approved — awaiting go-ahead**. Per the plan's explicit workflow gate and the project's
+  two-step authorization rule, no application source, template, database, cache, test, production,
+  Railway, Git, or artifact behavior was changed in this approval-recording step.
+- Locked the approved decisions: generated Calibration Report DOCX files will omit an unchecked
+  Small or Large focal table without clearing draft data; new successful certificate approvals will
+  atomically attach the acting approver's e-signed PDF plus a canonical-template
+  `_No_Signature.pdf` retaining the original Rodito certifier identity; engineers will see only a
+  locked filename while superadmins/regional admins receive schedule-scoped access; and every
+  no-signature revision will be explicitly excluded from client-email preview and send packages.
+
+- Recorded the authorized Calibration Certificate canonical-catalog integrity correction in
+  `plans.md` and implemented the narrow loader/test change locally. The server now rejects raw
+  non-string, blank, padded, or repeated-space equipment/model entries before cleanup, retains the
+  source TXT SHA metadata check, and compares the canonical equipment/model arrays with a pinned
+  SHA-256 held outside the mutable JSON payload.
+- Added real-loader regressions in
+  `tests/test_calibration_certificate_approval_workflow.py` for numeric/non-string, unclean, and
+  clean-but-altered model data with stale/forged metadata. The tampered real submission path now
+  verifies the existing retryable `catalog_unavailable` response with no approval row and no
+  unsigned storage artifact.
+- Verification passes: focused Calibration/Certificate tests **35/35**; related offline,
+  draft/sync, PDF conversion, and email-attachment tests **77/77**; Python AST, Node JavaScript
+  syntax, canonical JSON/shape/source-SHA/payload-SHA checks, and `git diff --check`. No browser,
+  catalog/runtime asset, service-worker/cache/release, database, scheduler.db, output/tmp,
+  staging, commit, push, deployment, Railway, or production action was performed.
+
+- Completed the authorized Service Contract P.O. correction cycle in `app.py`,
+  `templates/po_details.html`, and `tests/test_purchase_orders.py`. Schedule allocation now works
+  in integer cents so small totals never produce negative occurrences; a remainder is assigned to
+  the final occurrence. Machine selection now blocks incomplete or mismatched Product dates
+  immediately, asks about non-contract status before adding a machine, shows pending consent, and
+  sends confirmed serials only with the atomic P.O. save. Legacy edits leave current-frequency
+  radios unselected, fiscal-quarter filtering requires a valid fiscal year, and the Semi Annual KPI
+  is represented alongside Single and Quarterly.
+- Preserved the server-side 409 fallback for stale Under Contract races even when some selected
+  machines already carry client-side pending consent; retry confirmations merge only the newly
+  pending serials before the atomic save.
+- Corrected the P.O. plan's local verification record to reflect the completed authorized rewrite,
+  the exact focused/full-suite results, and the remaining unrelated staff-creation failure; the
+  plan remains `In progress` because no commit is authorized or present.
+- Updated P.O. regression coverage to use Product-owned dates and current frequency values while
+  retaining explicit legacy readability/rejection controls. Verification passes: P.O. module
+  **40/40**, affected Analytics P.O. module **5/5**, workbook/export assertions, Python compile,
+  Jinja parse, inline JavaScript parse, release JSON parse/uniqueness, and `git diff --check`.
+  Full discovery ran **757 tests: 755 passed, 1 failed, 1 skipped**; the sole failure is the
+  unrelated `test_staff_creation.StaffCreationTests.test_superadmin_rejects_conflicting_staff_permissions_without_writing`
+  initials-catalog collision. No browser, scheduler.db, output/tmp, commit, push, deployment,
+  Railway, or production action was performed; no service-worker bump was needed.
+
+- Implemented the owner-authorized Service Contract P.O. Details workflow locally. The P.O. page
+  heading is now `Service Contract P.O. Details` while the sidebar label remains `P.O. Details`.
+  New/edit records use Single, Semi Annual, or Quarterly frequencies; historical Contract and
+  Single Visit values remain readable/filterable but are rejected for new or edited saves.
+- Added Product-sourced Start/End coverage snapshots, matching-date validation for multi-machine
+  P.O.s, client-side read-only date loading, and server-side protection against forged date values.
+  Selecting a machine without `under_contract` now returns an explicit confirmation-required 409;
+  confirmed Product status changes and the P.O. write commit atomically with activity-log entries.
+- Added anchored inclusive service schedules with month-end clamping, FY-April fiscal boundaries,
+  Decimal final-remainder allocation, fiscal quarter and custom From/To filtering, and computed
+  per-visit/filtered scheduled amounts in the register API and responsive page. Excel export now
+  carries computed amount and scheduled dates while keeping one row per P.O.
+- Added the dated Service Contract P.O. Details release-manifest entry and recorded focused helper,
+  route, template, Jinja, and workbook verification. The service-worker cache was not bumped because
+  no cached external asset changed. Existing unrelated dirty Calibration Certificate files,
+  `scheduler.db`, output/tmp, Git history, commit/push, deployment, Railway, and browser actions
+  remain untouched.
+- Added isolated schedule/fiscal helper and endpoint regression coverage to
+  `tests/test_purchase_orders.py`, including the August 25, 2026–August 25, 2028 Single example,
+  final-cent reconciliation, Product-owned dates, status confirmation, and snapshot preservation.
+  The unfiltered computed column intentionally shows the ordinary first per-visit allocation;
+  active fiscal/custom filters sum only matching scheduled occurrences.
+- Corrected the P.O. page's Excel export query serialization so the UI's fiscal-year and quarter
+  controls reach the server as `fiscal_year` and `fiscal_quarter`, while custom From/To parameters
+  remain mutually exclusive as designed.
+- Clarified the P.O. modal's read-only Start Date and End Date labels as Product-sourced values;
+  no sidebar, cached asset, schema, or unrelated template was changed.
+- Fiscal-year filtering now also supports selecting an entire April-to-March fiscal year when no
+  quarter is selected; quarter selections continue to narrow to the corresponding three-month
+  period.
+- Updated the `PurchaseOrder` model default to the current `single` frequency for future direct
+  model-created rows; historical `contract` and `single_visit` database values remain untouched.
+- Extended the P.O. products API with both canonical Product date names and warranty-date aliases,
+  keeping existing client integrations readable while the register consumes the Product snapshot
+  dates.
+- Legacy Contract and Single Visit rows now display `Not allocated` in the computed-amount column
+  even without an active date filter, while their stored base amount and original type remain
+  readable.
+- Updated the purchase-order regression controls for the new frequency vocabulary and Product-owned
+  date behavior, retaining explicit legacy-readability/rejection coverage without changing unrelated
+  workflows.
+
+- Began the owner-authorized implementation of the Calibration Certificate catalog matching and
+  final-save workflow. The approved plan is now **In progress** under a fresh Builder; this cycle
+  is limited to the committed six-name/38-model catalog, deterministic client/server matching,
+  YYYY-MMDD-BSID new-number formatting, immutable Pending snapshots, required Equipment Name
+  selection, and successful-final-save modal closure. Existing dirty work and protected artifacts
+  remain untouched; commit, push, deployment, Railway, production, database, and browser actions
+  remain unauthorized.
+- Added `static/templates/calibration-certificate/calibration-certificate-catalog.json` from the
+  supplied reference data with source SHA-256
+  `1AAB589266A30E6E70FE93E951C86C997D23B1EA1332373EE756E989A97A21BA`, exactly six equipment names,
+  and 38 ordered models with the approved whitespace cleanup. `app.py` now guards the catalog
+  shape/metadata/normalized uniqueness, shares NFKD/combining-mark/ASCII-compact normalization and
+  deterministic Damerau-Levenshtein matching with the offline client, validates new request names
+  and models, and injects the catalog arrays into cached `window.CalibrationReportConfig` without a
+  runtime fetch or new route.
+- Changed only new certificate-number composition to `YYYY-MMDD-BSID`; Calibration Date and Next
+  Calibration Date remain `YYYY/MM/DD`. Certificate mapping now uses the selected canonical
+  Equipment Name and the accepted canonical Equipment Model, while the raw `machine.model` remains
+  in the Calibration Report DOCX and report filename. Approval now passes the immutable eight-field
+  `mapped_data_json` snapshot (including old slash-formatted values) through the signed PDF builder,
+  preserving existing Pending/historical numbers, values, filenames, and artifacts.
+- Replaced Page 1 Modality text with a required six-name native select, added the 38-model datalist,
+  legacy disabled-option handling, live accepted/suggestion states, exact/weak/ambiguous final-save
+  validation, and `certificate.equipment_model` state under schema version 3. Successful Final Save
+  closes the editor only after DOCX preparation and a real `saveStandaloneTSRDraft(true)` result;
+  Save Draft and all failure paths remain open and focus the relevant field.
+- Added responsive/dark catalog-match styling, advanced Calibration Report CSS/JavaScript delivery
+  to v7/v18, advanced the service-worker cache to
+  `medical-service-pwa-offline-navigation-v112-calibration-certificate-catalog`, added the
+  engineer/approver release note, and prepended the active handoff evidence. Canonical and runtime-v2
+  PDF hashes remain `C06F43E221C297229D5108E0F3BA0348FF0C1C6F299A791FF4359D60E9F17EBC` and
+  `20C84569CB120F90E9F9998D68021E99ABCBD65E3C9085C7640754C6F0EBE2D8`; no PDF/template/runtime data,
+  database, scheduler.db, output/tmp, unrelated dirty work, browser, Git, Railway, or production
+  artifact was changed.
+- Added catalog/matcher/snapshot/final-save contract coverage and updated affected certificate/cache
+  expectations. Verification passes: focused certificate/report **28/28**, related
+  offline/TSR/approval/email/archive/upload **89/89**, full discovery **737 passed, 1 existing skip**;
+  Python AST/compile-equivalent, Node syntax, Jinja, JSON/count/uniqueness, checksum, cache/version,
+  rendered-template, flattened one-page/no-fields/no-annotations, representative sample and signed
+  PDF extraction/visual checks, and `git diff --check` all pass. Poppler `pdfinfo`/`pdftoppm` were
+  unavailable, so visual renders used the installed PyMuPDF renderer; no browser automation was used.
 
 - Recorded the owner-approved Accounting Handoff CC branch split at the top of `plans.md` with
   status **Approved — awaiting go-ahead**. The decision-complete plan keeps the existing
@@ -60,14 +293,704 @@ codex changes - 2026-08-25
   to `origin/main`; no manual Railway redeploy, variable change, or production-data action is
   included.
 
-- Updated the combined `BC02_BC03` Stock Inventory manager view so Manila (`BC01`) is visible alongside Cebu and Davao, while mutation access remains limited to the assigned Cebu/Davao branches. The page now switches to view-only controls for Manila, and the backend mutation endpoints reject Manila writes; no schema, migration, service-worker, release-manifest, deployment, or production-setting change was performed for this follow-up. The owner separately authorized the commit and push after verification.
-- Simplified the visible Approval Routing/personnel label for the combined assignment to `Cebu + Davao` while retaining the stored `BC02_BC03` value for compatibility; no schema, migration, service-worker, release-manifest, deployment, or production-setting change was performed for this label-only follow-up.
-- Committed as `47e757c` and pushed to `origin/main`; no manual redeploy or production setting change was performed. Railway deployment metadata could not be queried because the Railway CLI is unavailable in this environment.
+- Recorded the owner-authorized Calibration Certificate commit-readiness correction package at the
+  top of `plans.md` with status **In progress**. The correction is limited to durable Final Save
+  success gating, fail-closed injected catalog handling and `/offline-tsr` unavailable-state
+  rendering, retryable server catalog errors, and immutable Pending snapshot validation; protected
+  `scheduler.db`, handoff/output/tmp, unrelated dirty files, Git, Railway, production, and browser
+  state remain untouched.
+- Added client regression controls for localStorage/non-durable final persistence, successful
+  IndexedDB final persistence, missing/malformed catalog matching, arbitrary raw-model rejection, and
+   actionable unsafe sample failure. Added disposable server coverage for catalog-loader failure,
+   unavailable `/offline-tsr` catalog injection, and incomplete Pending snapshots that must not call
+   the PDF builder, create a signed artifact, or mutate decision state. Focused correction verification
+   completed locally; no commit, push, deployment, or production action was performed.
+- Closed the final-save false-success path in `static/js/app-calibration-report.js`: only the known
+  IndexedDB-backed `offline_tsr_page`/`indexeddb` persistence results may close the modal; fallback,
+  non-durable, failed, skipped, or unknown storage results keep the generated Blob and editor open
+  with an actionable retry message. Valid IndexedDB persistence and ordinary Save Draft behavior stay
+  unchanged. Client catalog validation now fails closed for missing, unavailable, wrong-count,
+  malformed, duplicate, or unusable injected data; final matching and certificate sample generation
+  cannot silently use an arbitrary raw model.
+- Hardened `app.py` catalog handling: `/offline-tsr` injects an explicit unavailable catalog state
+  instead of failing render, server certificate submission converts loader/matcher failures into a
+  retryable `catalog_unavailable` response, reuses the validated catalog for unsigned PDF building,
+  and supplied matcher catalogs reject unclean values.
+  Pending approval now validates all eight nonblank `mapped_data_json` fields before signature/PDF
+  work, leaving malformed records Pending without artifact/file/state mutation while preserving valid
+  historical snapshots and old certificate-number formatting.
+- Advanced the cached Calibration Report JavaScript to v19 and the service-worker shell to cache v113;
+  updated `static/changelog/releases.json` descriptions and matching cache/template test contracts.
+  Fail-first-equivalent controls were observed before the corrections (false modal close, raw-model
+  exact match, escaped catalog exception, and incomplete-snapshot PDF path); final focused
+  Calibration/Certificate verification is **32/32 passed**, related offline/TSR/sync/PDF verification
+  is **72/72 passed**, and fresh disposable full discovery is **755 run, 736 passed, 19 failed** in
+  the pre-existing dirty Purchase Order/staff suites only. Node syntax, Python AST, Jinja, JSON/catalog
+  loader, cache, template/runtime checks, and `git diff --check` pass; browser automation was not used.
 
+- Updated `templates/products.html` so successful product saves update the local inventory state and
+  rerender only the affected filtered/sorted list instead of refetching all products and clients.
+  The save flow now preserves the user's active filters, sort, and scroll position, removes the
+  post-save serial-row auto-scroll, and shows a lightweight success notice without navigating or
+  refreshing the Product page. Add and edit saves retain the existing server/API behavior.
+- Added a focused source-level regression in `tests/test_product_contract_status.py` that protects
+  the in-place save path from reintroducing the post-save product-data refetch or scroll jump.
+
+codex changes - 2026-08-24
+
+- Recorded the owner-approved Calibration Certificate catalog matching and final-save workflow at
+  the top of `plans.md` with status **Approved — awaiting go-ahead**. The decision-complete package
+  uses the supplied six-name/38-model text file only as fixed reference data, changes new numbers to
+  `YYYY-MMDD-BSID`, replaces Modality with an approved Equipment Name dropdown, adds guarded
+  deterministic canonical-model matching for certificate output, preserves immutable Pending
+  snapshots, and closes the editor only after successful final persistence.
+- This approval step changes planning/audit documentation only. No Builder was launched and no
+  application, test, catalog JSON, CSS/JavaScript, PDF/template/runtime data, service worker,
+  release manifest, handoff, database, `scheduler.db`, output/tmp, protected dirty work, Git,
+  Railway, production, commit, push, or deployment action was performed. Implementation remains
+  paused pending a separate owner go-ahead under the repository's two-step gate.
+
+- The owner separately authorized implementation of the recorded Calibration Certificate number,
+  approver division, and signature refinement package with “go ahead. implement it”. The top plan
+  is now `In progress`; implementation remains confined to that approved scope, with review,
+  commit, push, deployment, Railway, production, and database actions still unauthorized.
+- The first isolated Builder preflight stopped before editing because its delegated context could
+  not independently verify the trusted owner authorization. No application, test, PDF/template,
+  cache, release, handoff, database, or protected artifact changed during that attempt; execution
+  is being transferred to a new fresh Builder with the owner message in context.
+
+- Implemented the authorized Calibration Certificate refinement in `app.py` and
+  `static/js/app-calibration-report.js`: new samples/submissions compose `YYYY-MM-DD-BSID`, while
+  mapped Calibration Date and Next Calibration Date remain `YYYY/MM/DD`. Approval now passes the
+  stored certificate-number snapshot into the signed builder, preserving older slash-formatted
+  Pending records through their PDF, filename, and approval history without reissuing approved files.
+- Approved certifier overlays now render the acting approver's snapshotted display name, a maximum
+  two-line configured title with trailing `Medical Systems Division` deduplicated, and one fixed
+  `Medical Systems Division` line using the existing Humanist777 11.158-point path with Helvetica
+  fallback. Unsigned and sample outputs remain blank in the certifier block.
+- Signature overlay processing now retains source ink colors/strokes, cleans near-white backgrounds,
+  rejects blank images, crops transparent margins with safety padding, resamples toward 300 DPI with
+  LANCZOS, and centers/bottom-aligns the visible signature in `(362.4, 272.5, 549.3, 307.5)` with
+  underline clearance. Stored signature images and both protected PDF templates remain unchanged.
+- Bumped Calibration Report JavaScript delivery from v16 to v17 and the service-worker cache to
+  `medical-service-pwa-offline-navigation-v111-calibration-certificate-number-signature`. Added
+  the engineer/approver release note `2026-08-24-calibration-certificate-number-signature`, updated
+  certificate tests, and recorded this implementation evidence without staging, commit, push,
+  deployment, Railway, production, scheduler.db, output/tmp, or browser actions.
+- Verification: fail-first focused controls were **6 failures** before runtime edits; final focused
+  certificate/report controls pass **24/24**, related TSR/offline/revision/email/approval/upload
+  controls pass **113/113**, and full discovery passes **733 with 1 existing skip**, all against
+  fresh disposable external databases. Python AST/compile, Node syntax, Jinja, JSON/release uniqueness,
+  cache/checksum/embedded-data checks, `git diff --check`, flattened Letter/no-fields artifact
+  checks, representative white/transparent/oversized/low-resolution signature renders, blank
+  rejection, and masked runtime pixel comparison pass. No browser automation or protected-artifact
+  cleanup was performed.
+
+- Recorded the owner-approved Calibration Certificate number, approver division, and signature
+  refinement package at the top of `plans.md` with status **Approved — awaiting go-ahead**. The
+  decision-complete plan changes only new certificate numbers to `YYYY-MM-DD-BSID`, preserves
+  slash-formatted calibration-date fields and old Pending snapshots, adds a fixed deduplicated
+  `Medical Systems Division` line beneath the acting approver's snapshotted title, and improves
+  signature cleanup/cropping/resampling and underline clearance without modifying stored signatures.
+- This approval step changes planning/audit documentation only. The canonical and runtime-v2 PDF
+  templates, embedded data, application, tests, cache, release manifest, handoff, database,
+  `scheduler.db`, output/tmp, protected dirty work, Git, Railway, production, commit, push, and
+  deployment remain unchanged. Under the repository's two-step gate, no Builder was launched and
+  implementation remains paused pending a separate owner go-ahead.
+
+- Fixed Calibration Report Page 3 measurement alignment in
+  `static/js/app-calibration-report.js`. Generated Small and Large focal-spot measurement values
+  now explicitly receive centered Word paragraph alignment instead of inheriting the supplied
+  template's inconsistent blank-cell left/center formatting; the protected template, table
+  geometry, headers, performance section, other pages, and DOCX-only browser behavior are unchanged.
+- Added fail-first all-cell coverage in `tests/test_tsr_calibration_report.py` using five populated
+  rows across all seven columns of both Page 3 tables. The old generator failed the new
+  `page3MeasurementsCentered` assertion; the corrected generator passes it. Advanced the report
+  script query to v16 and the service-worker cache to
+  `v110-calibration-report-page3-alignment`, and amended the existing engineer release description.
+- Related Calibration Report, offline resilience, and cache-version tests pass **61/61** against a
+  disposable external database. A representative three-page DOCX with all 70 measurement cells
+  populated was exported by installed Word 16 and all three rendered pages were visually inspected;
+  Page 3 values are uniformly centered with no clipping, overlap, extra page, or footer damage.
+  The required LibreOffice renderer was attempted first but LibreOffice is not installed, so Word
+  provided the visual-render fallback. No browser preview implementation, `scheduler.db`, protected
+  template, storage, Railway, production, commit, push, or deployment action was performed.
+
+- Fixed saved generated Calibration Report DOCX access through the Reports/TSR archive. The shared
+  archive resolver now accepts a DOCX only when its `ShiftFile` points to the same online TSR
+  submission whose `_generated_calibration_report` marker points back to that exact file and
+  shift; unrelated uploaded DOCX files remain rejected by the existing attachment policy.
+- Added a fail-first archive regression in `tests/test_reports_archive_pagination.py`. The pre-fix
+  run reproduced the reported HTTP 400 rejection, while the corrected focused module passes 3/3
+  and proves both the linked generated-report success path and unrelated-DOCX refusal. The change
+  is backend-only: DOCX remains download-only in the archive viewer, with no database, cache,
+  storage, Railway, production, commit, push, or deployment action.
+- Related Reports archive, schedule-email attachment, and Calibration Report verification passes
+  **22/22** against a disposable external database. Python AST and `git diff --check` pass; the
+  latter reports only the repository's existing configured LF-to-CRLF conversion notices.
+
+- Implemented the approved Calibration Certificate typography/signature correction in the certificate
+  renderer and offline sample path. `static/templates/calibration-certificate/calibration-certificate-runtime-v2.pdf`
+  is derived from the protected source by removing only the anchored fixed certifier name/title
+  text; the source remains 466,222 bytes with SHA-256
+  `C06F43E221C297229D5108E0F3BA0348FF0C1C6F299A791FF4359D60E9F17EBC`, while runtime-v2 is
+  517,516 bytes with SHA-256
+  `20C84569CB120F90E9F9998D68021E99ABCBD65E3C9085C7640754C6F0EBE2D8`. The embedded JavaScript
+  data asset was regenerated from that exact runtime hash.
+- Updated `app.py` and `static/js/app-calibration-report.js` so all eight mapped values use one
+  regular Helvetica size (11 points for ordinary data, one uniform size down to 8.5 points for
+  long values, and a clear impossible-fit error), the runtime-v2 asset is used by server and
+  offline samples, and no opaque certifier cover is painted. The signature now uses the recorded
+  enlarged rectangle with near-white source pixels made transparent. Dynamic approver name/title
+  text is centered at the original baselines and 11.158 points using the original embedded
+  Humanist Type0 resource/CID map; same-size Helvetica remains the unsupported-glyph fallback.
+- Bumped the offline data/script query versions to v2/v15 and the service-worker cache to
+  `medical-service-pwa-offline-navigation-v109-certificate-typography`. The existing engineer and
+  approver release descriptions in `static/changelog/releases.json` now describe consistent data
+  typography, original Humanist approver styling, transparent certifier rendering, and the larger
+  signature. Existing title-source and immutable approver snapshot behavior remains unchanged.
+- Added fail-first/runtime geometry, checksum, field/widget, fixed-text-removal, flattening, font,
+  signature-transparency, common-fit, and revision-history coverage in
+  `tests/test_calibration_certificate_approval_workflow.py` and updated client/runtime/cache
+  contracts in `tests/test_tsr_calibration_report.py`. The pre-fix certificate controls ran **7
+  tests with 2 failures and 1 error**; the final certificate module passes **8/8**, the related
+  certificate/TSR/offline/sync/email/approval command passes **97/97**, and complete discovery
+  passes **730 tests with 1 existing skip**, each against disposable external databases.
+- PyMuPDF artifact QA confirms one flattened Letter page with no AcroForm, widgets, or annotations;
+  regular mapped values are consistent, long-facility output uses a common 8.9-point fallback,
+  Robert Rio / Service Manager renders in Humanist777 at 11.158 points, and the signature image
+  stays inside `Rect(387.75, 487.5, 523.75, 521.5)` without a white box or label/line overlap.
+  Source/runtime pixel comparison changed only the removed identity glyph region (4,044 pixels;
+  zero outside a generous mask). Revision coverage preserves approved REV1 history and selects a
+  runtime-v2 pending REV2 with unchanged printed certificate number and `_REV<n>` behavior.
+- Python AST, bundled Node syntax, Jinja, JSON/release, source/runtime/embedded checksum, cache
+  wiring, and `git diff --check` validations pass. ReportLab conversion of the original subset
+  font was rejected after visual QA showed blank glyphs; the final direct Type0 resource reuse is
+  recorded in `plans.md` and does not add a dependency. No browser automation, scheduler.db,
+  output/tmp, unrelated dirty work, staging, commit, push, deployment, Railway, production, or
+  environment action was performed.
+
+- Recorded the owner-approved Calibration Certificate typography and signature correction at the top of `plans.md` with status **Approved — awaiting go-ahead**. The decision-complete package preserves the byte-exact source template, derives a cleaned runtime-v2 without a white certifier cover, gives sample/final outputs one shared 11-point regular data style, enlarges the transparent signature, restores the original 11.158-point Humanist approver typography, and reissues the inspected approved certificate through immutable TSR/certificate revision history.
+- This approval step changes planning/audit documentation only. Under the plan and repository's explicit two-step gate, no Builder was launched and no application, test, PDF/template/runtime asset, service-worker, release manifest, handoff, database, output/tmp, Git, Railway, production, commit, push, or deployment action was performed. Implementation remains paused pending a separate owner go-ahead.
+- Corrected the Calibration Certificate Approval Center modal so its iframe uses new authorized `unsigned_preview_url` / `signed_preview_url` routes instead of requesting the raw PDF artifact. The preview route reads the same protected artifact and returns the project’s existing embedded-PDF HTML shell, preventing Brave or a download manager from forcing a PDF download when Review is opened; the separately authorized raw artifact route remains available for explicit downloads outside the modal.
+- Added fail-first Approval Center and certificate-server source contracts for preview-only modal URLs and the embedded preview route. Post-fix focused checks pass **10/10**, the three affected service-worker/cache contracts pass **3/3**, and a disposable copy of the reported local approval returned HTTP 200 `text/html`, no `Content-Disposition`, and an embedded `data:application/pdf;base64` payload from `/api/calibration-certificates/1/preview/unsigned`.
+- Advanced the service-worker cache to `v108-certificate-inline-preview` and amended the approver-facing release note to state that certificate Review previews in place without forcing a download. No browser automation, `scheduler.db` write, production/Railway action, commit, push, or deployment was performed.
+- Fixed the Calibration Certificate Approval Center Review action in `templates/approvals.html`: the certificate detail loader is now exported for the card's inline action, opens through the shared guarded modal-loading path, ignores stale responses, shows actionable load errors, and applies certificate-specific approve/return wording. Certificate approval notifications now open the same review modal after being marked read.
+- Fixed `/get_my_approval_notifications` in `app.py` by correcting the Travel Liquidation status normalizer call that could raise `NameError` and return an HTML 500 response for an approver whose unread feed included a Travel Liquidation item. The service-worker cache is now `v107-certificate-review-notifications` so deployed clients refresh the repaired Approval Center assets.
+- Added fail-first regression coverage in `tests/test_approval_center_wording.py` and `tests/test_approval_notifications.py` for the globally callable guarded certificate modal, certificate notification routing, and a mixed unread notification feed containing Travel Liquidation. Updated Calibration Report cache-contract expectations and added the approver-facing release note `2026-08-24-certificate-review-notification-fix`.
+- Verified the affected Approval Center and Calibration Certificate workflow tests pass **11/11** on a fresh external disposable database. A read-only copy of the reported local data now returns HTTP 200 JSON for both `/get_my_approval_notifications` and `/get_calibration_certificate_approval/1`; Jinja, inline JavaScript syntax, Python AST, release-manifest JSON/uniqueness, and `git diff --check` validations pass. No browser automation, `scheduler.db` write, commit, push, deployment, or production action was performed.
+- The owner separately authorized implementation of the recorded Calibration Certificate inventory and approval workflow with `go ahead and proceed`. A fresh Builder completed the bounded package locally against the existing dirty worktree; protected `scheduler.db`, output/tmp artifacts, unrelated owner edits, Git history, Railway, production, commit, push, and deployment remain excluded.
+- Implemented nullable, additive `Product.bsid` inventory support in `app.py` and `templates/products.html`: 40-character trimmed/case-preserving values, case-insensitive nonblank uniqueness, migration/index safeguards, JSON/API serialization, CSV round-trip, desktop/mobile display, and field-specific duplicate/length errors. Offline schedule payloads now expose `product_bsid`.
+- Updated the Calibration Report toolbar and client state in `templates/offline_tsr.html` and `static/js/app-calibration-report.js`: machine-sourced BSID is read-only, Certificate No. is `YYYY/MM/DD-BSID`, engineer initials/manual BSID handling are removed, approval metadata is excluded from DOCX fingerprints, and final-save/status messaging covers queue, missing BSID, route, returned, approved, and retry states.
+- Added `CalibrationCertificateApproval`, additive table migration/indexes, private unsigned managed-storage handling, immutable mapped-data/template/report/certificate fingerprints, idempotent submission/status/detail/PDF/approve/return endpoints, first-routed-approver conditional decisions, audit/activity/notification records, revision supersession, and managed signed `ShiftFile` attachment logic in `app.py`.
+- Added server-side canonical-PDF validation and flattening. Generated copies cover/remove only the fixed certifier identity region, retain the official eight field mappings and Letter geometry, leave unsigned certifier content blank, and stamp approved copies with the acting approver's saved signature/name/title. The canonical PDF and embedded JavaScript data asset remain byte-exact.
+- Extended Approval Center catalog/summary/history/detail UI, routing labels, notifications, latest-approved manual-email filtering, service-worker cache (`v106`), CSS/JS cache queries, engineer/approver release notes, and saved-TSR approval-status hydration. No automatic client email, browser automation, production/Railway action, commit, push, or deployment was performed.
+- Added `tests/test_calibration_certificate_approval_workflow.py`; updated stale sample/email assertions for the approved revision-aware workflow. Focused Calibration Report/server certificate tests pass **17/17**; related offline/sync/attachment/email suites pass **85/85**. `app.py` AST compile, standalone Node syntax, Approval Center inline-script syntax, canonical checksum, PDF logical checks, and `git diff --check` pass. Poppler visual rendering remains unavailable because the bundled/host Poppler command is not installed.
+- Full disposable-database discovery was then run after fixing the legacy Product update path to treat an omitted BSID as blank: **712 passed, 1 existing skip**. The first full run exposed the `len(None)` regression in `/update_product/<serial_number>`; the additive fix was applied and the complete suite passed on rerun. Poppler visual rendering remains unavailable.
+- Recorded the owner-approved Calibration Certificate inventory and approval workflow at the top of
+  `plans.md`; after the separate owner go-ahead its status is now `In progress`. The complete plan
+  removes engineer initials from Certificate No., moves unique nullable BSID ownership to Product
+  Inventory, autofills a read-only BSID into Calibration Report, and retains the unattached sample
+  PDF with a blank dynamic certifier block.
+- The approved plan defines an additive revision-aware certificate approval record, queued
+  submission after successful TSR/DOCX sync, the new `calibration_certificate` approval-routing
+  scope, first-routed-approver decision behavior, Return for Correction, immutable acting-approver
+  signature/name/title stamping, current-versus-historical artifact rules, Approval Center and
+  engineer status surfaces, managed storage, tests, PDF render verification, and offline retry
+  safeguards.
+- The implementation remains local and uncommitted pending the separately authorized review/publication
+  steps. The canonical PDF/embedded bytes, `scheduler.db`, output/tmp protected artifacts, unrelated
+  owner changes, Git history, Railway, and production state remain protected.
+- Recorded the separately authorized Shared PDF Upload Conversion Repair package at the top of
+  `plans.md` with status `In progress`, preserving the active Calibration Certificate plan and all
+  prior history. Added the new fail-first `tests/test_shared_pdf_upload_conversion.py` module only;
+  no converter, route, template, database, release, protected artifact, Git, Railway, or production
+  behavior has been changed yet.
+- Ran the new fail-first conversion module against the unchanged implementation with a fresh
+  external `MEDICAL_SERVICE_TEST_DB`: **11 tests ran, 6 failed and 3 errored**. Expected red
+  controls covered absent native/raster stages, malformed/password acceptance, MediaBox loss in
+  the old A4 raster fallback, readability-floor handling, both Liquidation handlers returning 500,
+  and missing stage diagnostics; the 35 MiB intake rejection control passed. No `scheduler.db`,
+  output/tmp artifact, calibration file, Git, Railway, or production state was touched.
+- Replaced the shared PDF conversion path in `app.py` with fresh-source structural compression,
+  native image rewriting at 150/120/96 DPI color profiles, and 96 DPI color then 72 DPI grayscale
+  raster fallback. Selected candidates are reopened and checked for parseability, unchanged page
+  count, MediaBox dimensions, and rotation; oversized readable failures now raise the explicit
+  split-document instruction, and PDF diagnostics record only sizes, stage/profile, and failure
+  category.
+- PDF preparation now rejects malformed and password-protected PDFs before persistence, while the
+  35 MiB intake and 2 MiB stored ceilings remain unchanged. Travel and Cash Advance Liquidation
+  upload conversion `ValueError`s now roll back safely and return HTTP 400; unexpected storage or
+  database failures retain HTTP 500 handling. No service-worker bump or dependency change was made.
+- Focused post-fix conversion verification passes **11/11** against a fresh external test database;
+  `app.py` import/runtime exercised the native and raster paths, topology checks, actionable
+  failures, intake guard, and both Liquidation status branches. `py_compile` was attempted but the
+  existing protected `__pycache__` denied its temporary bytecode write; an AST parse check remains
+  scheduled without writing bytecode.
+- Added the dated engineer-facing Shared PDF Upload Conversion Repair entry to
+  `static/changelog/releases.json`. The implementation remains local and uncommitted; protected
+  Calibration Certificate work, `scheduler.db`, output/tmp, the handoff, Git history, Railway,
+  and production remain untouched.
+- Final rerun after capping the public conversion target at 2 MiB and closing per-image alpha
+  buffers passed **11/11** focused tests and **723/723 with 1 existing skip** for complete discovery,
+  both against fresh external `MEDICAL_SERVICE_TEST_DB` paths. The related 104-test command had
+  already passed **104/104** before that cap-only hardening; no test failure remains.
+- In-memory PDF verification passed for a vector PDF and a two-page scanned-color PDF: native
+  conversion preserved extracted searchable text, output size was 409,590 bytes from a 10,452,832-
+  byte source, page topology remained 612x792 with rotations 90/0, and conversion took 0.348
+  seconds. Poppler (`pdftoppm`/`pdfinfo`) is unavailable on the host, so rendered PNG inspection
+  was not executable; no browser automation was used.
+- A forced final-profile check also passed: with native and color-raster candidates held above the
+  ceiling, the 72 DPI/grayscale quality-45 profile produced a valid 31,212-byte one-page output
+  with the source 612x792 MediaBox and 90-degree rotation.
+- `app.py` AST parsing, release-manifest JSON/uniqueness validation, and `git diff --check` passed.
+  `python -m py_compile app.py` was attempted but cannot write its temporary bytecode into the
+  existing protected `__pycache__`; the no-bytecode AST check is the successful syntax proof.
+
+codex changes - 2026-08-23
+
+- The owner-authorized revised Calibration Certificate correction replaces the failed raw `.bin`
+  transport with `static/templates/calibration-certificate/calibration-certificate-template-data.js`.
+  It embeds the unchanged canonical PDF as JavaScript-safe base64 inside an immutable
+  `CalibrationReportConfig.certificateTemplateData` value; decoding is verified at 466,222 bytes
+  with SHA-256 `C06F43E221C297229D5108E0F3BA0348FF0C1C6F299A791FF4359D60E9F17EBC`, while the
+  network asset is JavaScript text and never begins with `%PDF-`.
+- Removed the certificate `certificateTemplateUrl`, raw PDF/bin `fetch()`, retry URL, and stale
+  response diagnostics from `static/js/app-calibration-report.js`. The in-memory loader now checks
+  embedded data presence, base64 validity, declared length, and PDF header before PDF-lib parsing;
+  missing/corrupt/runtime/field errors produce no download. Existing mappings, facility-to-Text6,
+  blank certifier widget, flattening, warnings, filename, and unattached sample lifecycle remain.
+- Updated `templates/offline_tsr.html` to load the data asset before Calibration Report JS v12 and
+  updated `app.py` to precache it under `medical-service-pwa-offline-navigation-v104-calibration-
+  certificate-embedded-data`; neither the canonical PDF nor a raw `.bin` transport is in the app
+  shell. Removed only the prior task-created `.bin` duplicate and amended the existing release item
+  to describe embedded delivery and corrupt-data failure behavior.
+- Replaced the focused transport/retry assertions in `tests/test_tsr_calibration_report.py` with
+  encoded-asset checksum/length, no raw-fetch, one populated sample Blob, no raw-template filename,
+  flattened output, and missing/corrupt/runtime/field no-download coverage. The focused Calibration
+  Report module passes **14 tests**. The related Calibration/Offline/TSR suite passes **80 tests**;
+  the full suite passes **709 tests** with **1 existing skip**. JavaScript syntax, Jinja parsing,
+  release uniqueness, service-worker/version wiring, canonical/embedded checksum, Flask static
+  delivery, and `git diff --check` all pass. A generated representative PDF renders as one page
+  with all approved values visible, zero fields/widgets/annotations, and no `/AcroForm`.
+
+- The owner-authorized Calibration Certificate transport correction now delivers the unchanged
+  canonical PDF through a byte-identical browser-neutral `.bin` asset. `templates/offline_tsr.html`
+  points `certificateTemplateUrl` to the versioned `.bin?v=3` URL, the service worker precaches that
+  transport under cache `v103-calibration-certificate-neutral-transport`, and the Calibration Report
+  script query advances to v11. This prevents Brave's PDF viewer from intercepting the raw canonical
+  template before the existing PDF-lib fill/appearance/flatten/download path runs; the canonical
+  `.pdf` remains the source of truth and is unchanged.
+- Added focused transport/download contract coverage in `tests/test_tsr_calibration_report.py` for
+  canonical/transport byte and SHA-256 identity, neutral URL/cache wiring, hospital/facility mapping,
+  exactly-one `SAMPLE_Calibration_Certificate_*.pdf` Blob download, no raw-template download, and
+  the existing populated flattened/no-`/AcroForm`/no-widget proof. The pre-fix focused run was red
+  at the missing transport/path/version assertions; the corrected Calibration Report module now
+  passes 13 tests.
+- Final verification passed: the related Calibration/Offline/TSR draft-sync/TSR sync reliability/
+  schedule email command passed 79 tests and full discovery passed 708 tests with 1 existing skip,
+  each against a fresh disposable external `MEDICAL_SERVICE_TEST_DB`; temporary database/WAL/SHM
+  files were removed. Python AST, standalone Node syntax, Jinja parsing, release JSON with 189 unique
+  item keys, cache/version/source checks, canonical/transport SHA-256 and size identity, Flask static
+  response (`200`, `application/octet-stream`, `.bin` disposition), and `git diff --check` passed.
+- Re-generated a representative populated sample through the existing Node PDF-lib harness. `pypdf`
+  verified one Letter page, mapped equipment/facility/date/TSR values, preserved fixed manager text,
+  and zero `/Widget` annotations or `/AcroForm` tree; bundled Poppler rendered one page and visual
+  inspection found no clipping, overlap, missing text, or geometry change. No browser automation was
+  used. `scheduler.db`, output/tmp artifacts, `.claude/`, the handoff, and unrelated dirty owner work
+  remain preserved; no commit, staging, push, Railway, production, migration, or deployment action
+  was performed.
+- Tightened the focused source contract to reject any canonical `.pdf` transport URL in the page
+  or service-worker source, complementing the Node assertion that no raw template filename is ever
+  downloaded.
+- Re-ran the focused Calibration Report module after that contract tightening: **13 tests passed**;
+  the external related/full counts and artifact/static evidence above remain unchanged.
+- Recorded the owner-approved Calibration Certificate unattached sample PDF plan at the top of
+  `plans.md` with status `Approved — awaiting go-ahead`. The plan places BSID, a composed
+  `YYYY/MM/DD-BSID-INITIALS` preview, and sample-PDF generation in the existing Calibration Report
+  toolbar; reuses the report/TSR identity and calibration values; preserves the supplied one-page
+  PDF and fixed certifier content; and keeps the sample flattened, in-memory, and outside all
+  attachment, sync, email, database, and final-report lifecycles.
+- This approval step changed planning/audit documentation only. No application, test, template,
+  runtime, service-worker, release-manifest, handoff, database, output, Git history, Railway,
+  production, commit, push, or deployment action was performed. Under the repository's separate
+  approval/execution gate, implementation remains paused pending a later owner go-ahead.
+- The owner then separately authorized implementation with `go ahead` on 2026-08-23. The approved
+  Calibration Certificate unattached sample PDF plan is now `In progress`; implementation and
+  verification are proceeding within the recorded scope, with protected dirty work, database,
+  output/tmp artifacts, Git history, Railway, production, commit, push, and deployment still
+  excluded.
+- Copied the owner-supplied Calibration Certificate PDF byte-for-byte to
+  `static/templates/calibration-certificate/calibration-certificate-template.pdf` and verified
+  SHA-256 `C06F43E221C297229D5108E0F3BA0348FF0C1C6F299A791FF4359D60E9F17EBC`; added the pinned
+  pdf-lib 1.17.1 browser runtime and MIT license under `static/vendor/pdf-lib/`.
+- Added Calibration Report certificate state normalization, BSID autosave without DOCX
+  invalidation, the composed certificate-number preview, PDF-lib AcroForm field guards/mappings,
+  flattened in-memory sample download, incomplete-value warnings, and the responsive toolbar
+  controls. Added the template/runtime to the service-worker app shell at cache v101 and added a
+  separate engineer-facing release-manifest item. Verification and any deviations will be
+  appended after the focused and artifact checks complete.
+- Verification completed: the focused Calibration Report module passed 13 tests; the related
+  Calibration/Offline/TSR draft-sync/TSR sync reliability/schedule email command passed 79 tests;
+  full discovery passed 708 tests with one existing skip, all against fresh disposable external
+  `MEDICAL_SERVICE_TEST_DB` paths. Node syntax, Python AST, Jinja, JSON/release uniqueness,
+  cache-version, checksum, and `git diff --check` checks passed. The disposable databases and
+  WAL/SHM files were removed and `scheduler.db` was preserved.
+- Generated a representative flattened sample with BSID `B-43`, initials `JA`, punctuation and
+  international facility text. `pypdf` verified the expected values, one Letter page, no widgets,
+  no AcroForm tree, and preserved manager/footer content. Poppler visual inspection found no
+  clipping or geometry changes; a 150-DPI masked comparison found zero changed channels outside
+  the original field rectangles. A disposable in-memory negative control went red when the
+  certificate API marker was removed. Browser automation, commit, staging, push, Railway,
+  production, database migration, and protected-artifact cleanup were not performed.
+- Updated `Handoffs/08-11-26 handoff.md` so its Start Here pointers identify the 2026-08-23
+  Calibration Certificate execution as the newest plan/change evidence; historical 2026-08-19
+  Builder notes remain intact below it.
+- Removed only the task-created temporary `tmp/pdf-lib-pack` package extraction after vendoring;
+  pre-existing `tmp/` contents, `output/`, `scheduler.db`, and all unrelated dirty artifacts were
+  left untouched.
+- Corrected the live certificate-number preview path so editing the Calibration Report machine
+  calibration date refreshes the read-only `YYYY/MM/DD-BSID-INITIALS` preview immediately while
+  retaining the existing DOCX invalidation behavior for ordinary report edits.
+- Re-ran the final focused module (13 passed), related suite (79 passed), and full discovery (708
+  passed, 1 existing skip) after the preview correction; all final counts remained green against
+  fresh external test databases.
+- Appended the final rerun evidence and the preview-correction detail to the active plan's Builder
+  execution record in `plans.md`; the plan remains `In progress` pending separate review and
+  publication authorization.
+- The owner then reported that the local Calibration Certificate template could not be read and
+  separately authorized a focused cache/retry correction. Before editing, the canonical PDF,
+  Flask static response, and vendored PDF-lib load were already byte/parse-valid; the remaining
+  fault path was the bare-path service-worker/browser cache and the client’s single attempt.
+- Added response validation and one bounded recovery retry in
+  `static/js/app-calibration-report.js`: the first `force-cache` response must have nontrivial
+  bytes plus PDF MIME/header evidence before PDF-lib parsing; an invalid response or parse failure
+  retries once with a timestamped URL and `cache:'no-store'`. Failed attempts log only bounded
+  status/content-type diagnostics, and both failures leave the download untouched while showing
+  an actionable reload message.
+- Versioned the certificate URL to `?v=2`, bumped the Calibration Report script query to v10, moved
+  the service-worker shell to `medical-service-pwa-offline-navigation-v102-calibration-certificate-cache-retry`,
+  and precached the same versioned certificate URL. The existing engineer-facing release item now
+  documents stale-cache recovery; the canonical PDF, field mappings, flattening, final report,
+  attachment, sync, email, and database behavior were not changed.
+- Added fail-first retry controls for stale non-PDF, parse-failure, valid-first/no-retry, and
+  both-attempt failure cases. The new stale-response test was red before the source correction;
+  the corrected Calibration Report module passed all 13 tests. The related five-module suite passed
+  79 tests and full discovery passed 708 tests with one existing skip, each against a fresh external
+  `MEDICAL_SERVICE_TEST_DB`. Node syntax, Python AST, Jinja parsing, release JSON and 189-item
+  uniqueness, cache-version floor, canonical checksum, and `git diff --check` passed (only normal
+  LF/CRLF warnings). No visual rerender was needed because only delivery/retry code changed.
+- Temporary external databases were removed and `scheduler.db`, `output/`, `tmp/`, `.claude/`, the
+  loose handoff, and unrelated dirty owner changes were preserved. No browser automation, staging,
+  commit, push, deployment, Railway, production, database migration, or protected-artifact cleanup
+  was performed; the plan remains `In progress` pending separate Planner review/publication.
+- Removed an unused internal retry-error variable from the certificate loader after verification;
+  runtime behavior and all generated PDF bytes remain unchanged.
+
+codex changes - 2026-08-22
+
+- Updated `static/js/app-calibration-report.js` so `Generate Sample DOCX` no longer blocks on missing required fields. It still rejects genuine exact-fit/layout violations, generates the unattached sample in memory, and warns which required fields remain missing after the download.
+- Added `#calibration-report-modal-status` to `templates/offline_tsr.html` and modal status styling in `static/css/app-calibration-report.css`; Calibration Report success, warning, and error messages now remain visible while the report editor is open instead of appearing only in the page-level TSR status area.
+- Bumped the Calibration Report asset queries to CSS v4/JS v6, moved the service-worker cache label to `medical-service-pwa-offline-navigation-v98-calibration-report-sample-warning`, and amended the existing Calibration Report release item without adding a duplicate.
+- Added focused Node coverage for incomplete sample generation, unattached state, and visible in-modal warning feedback. The Calibration Report module passed 10 tests; the related five-module suite passed 76 tests against a disposable external test database. Node syntax, Python AST, release JSON, and cache/source checks passed; no browser automation, commit, push, deployment, Railway, production, storage, or `scheduler.db` action was performed.
+- Updated the generated DOCX signature cell in `static/js/app-calibration-report.js` to omit the engineer-name text and use a larger signature image extent (`2400000 × 500000` EMU), while retaining the engineer-name field for report validation and TSR data.
+- Bumped the Calibration Report JavaScript query to v7 and the service-worker cache label to `medical-service-pwa-offline-navigation-v99-calibration-report-signature` so existing offline shells receive the signature correction.
+- Added focused OOXML assertions for signature-name omission and enlarged dimensions. The generated representative DOCX passed the structural checks and the canonical template SHA-256 remained unchanged; the packaged LibreOffice renderer was blocked by the Windows temporary-folder ACL, and the Word COM fallback did not complete, so no new PNG visual claim is made for this signature-only adjustment.
+- Re-ran the full repository suite after the signature change against a distinct disposable external database: 705 tests passed with one existing skip. The disposable database was removed afterward; `scheduler.db` and unrelated dirty work remain preserved.
+- Updated `static/js/app-calibration-report.js` so generated Page 3 output keeps one small spacer before the performance-criteria table instead of the three source spacer paragraphs. This moves the table clear of the fixed footer area without changing the supplied DOCX template or its table geometry.
+- Added focused generated-OOXML coverage for the compact Page 3 gap; the Calibration Report module passed all 10 tests. The representative DOCX contained five tables with one Page 3 gap paragraph, and the canonical template SHA-256 remained `31B6FE282CBE227B407870F5893493C1B7C529685892CD1997E25C9D4CC5A79E`.
+- Bumped the Calibration Report JavaScript query to v8 and the service-worker cache label to `medical-service-pwa-offline-navigation-v100-calibration-report-page3-fit`; amended the existing Calibration Report release item without adding a duplicate. Node syntax, Python AST, release JSON, and `git diff --check` passed. The packaged LibreOffice renderer still cannot create its Windows temporary profile, so no new PNG visual claim is made; no browser automation, commit, push, deployment, Railway, production, storage, or `scheduler.db` action was performed.
+
+codex changes - 2026-08-20 (Create TSR Calibration Report entry page)
+
+- Recorded the owner-authorized Calibration Report draft-persistence correction at the top of
+  `plans.md` with status `In progress`, preserving the earlier focus-containment plan and all
+  historical records.
+- Updated `templates/offline_tsr.html` so an active `calibration_report` whose status is not
+  `not_started` makes the existing TSR draft meaningful; all ordinary TSR meaningfulness rules and
+  the schedule gate remain unchanged.
+- Updated `static/js/app-calibration-report.js` so `saveReportDraft()` shows success only for an
+  actual returned persisted result and shows the existing failure message for missing, skipped,
+  failed, or `source:'none'` results.
+- Added one focused lightweight regression in `tests/test_tsr_calibration_report.py` covering an
+  otherwise-empty TSR with a distinctive report value, persistence invocation, reopen/apply value
+  restoration, and truthful success/failure statuses. The pre-fix run failed because the active
+  report-only payload was treated as empty; the post-fix focused test passed.
+- The isolated Calibration Report plus TSR draft-sync command passed 19 tests in 9.489 seconds
+  against a disposable external `MEDICAL_SERVICE_TEST_DB`. An initial unisolated draft-sync
+  invocation emitted a migration log and is not counted as evidence; all authoritative focused and
+  full-discovery runs used fresh external databases. Full discovery's shell capture did not return a
+  reliable final count, so no uncounted full-suite result is claimed as acceptance evidence.
+- No deliberate database edit was made. No service-worker, `app.py`, or `static/changelog/releases.json`
+  change was needed because the existing Calibration Report asset query and cache/release metadata
+  already deliver the changed script. No browser automation, commit, push, deployment, Railway,
+  production, or storage action was authorized or performed as part of this correction.
+
+- Recorded the owner-approved Create TSR Calibration Report entry-page plan at the top of `plans.md` as In progress, recorded the prior independent review as APPROVED WITH OBSERVATIONS, and corrected the earlier control record so unperformed pre-fix-red and reversible defect-injection proof is not claimed complete.
+- Reduced the optional Calibration Report card in `templates/offline_tsr.html` to its single `calibration-report-create-btn` entry action while preserving placement directly below Submitted Original Documents, status/guidance/filename/capacity/attachment note, and the existing DOCX asset loading.
+- Updated `static/js/app-calibration-report.js` so the entry action reports Not Started, Draft, and Ready states, opens/continues/opens the existing editor truthfully, and the overlay toolbar owns Back to TSR, Save Draft, Generate/Regenerate DOCX, current-Blob Download DOCX, and the existing narrow Remove Report cleanup flow. Added tab ARIA, keyboard navigation, Escape/Back state and scroll restoration, focus return, and dialog focus containment without native dialogs.
+- Bumped the template asset queries to CSS v2 and Calibration Report JS v3; bumped the service-worker cache label in `app.py` from v94 to `medical-service-pwa-offline-navigation-v95-calibration-report-entry`; amended the existing `2026-08-19-tsr-calibration-report-editor` release item without adding a duplicate.
+- Added an expected-failing pre-UI card-action red control and initial focused Node behavior coverage for placement/action count, state labels, autofill, Back/Escape/focus/scroll, tab ARIA, toolbar readiness, and narrow Blob cleanup; the later review found that its Back/Escape/focus assertions did not prove edited-value persistence or bidirectional wrapping, so those results are baseline evidence only. Existing DOCX, exact-fit, signature, attachment, offline, sync, email, idempotency, and report-less tests remain in the suite.
+- Baseline verification passed: the focused Calibration/Create TSR and related offline/draft/sync/attachment/email set (73 tests), full unittest discovery (702 passed, 1 skipped), Python/Node/Jinja/JSON/cache checks, and `git diff --check`; those runs predated this verification correction and are not evidence for forward Tab, backward Shift+Tab, Back-value, or Escape-value behavior. Browser automation and Word/Poppler rerender were not run because the generator and supplied DOCX were unchanged and project rules prohibit browser testing here; no database, route/API/schema/dependency, production, Railway, staging, commit, or publication change was made.
+- Final source-contract coverage also proves the card remains directly after Submitted Original Documents, contains no legacy quick-action bindings, and leaves toolbar Remove hidden until an active report exists; the final two focused entry-page tests passed after that last visibility/placement adjustment.
+- Began the owner-authorized focused verification correction recorded at the top of `plans.md`; application JavaScript, templates, CSS, app.py, cache/release metadata, DOCX/template assets, database files, and unrelated dirty work remain unchanged.
+- Strengthened `tests/test_tsr_calibration_report.py` so the Node entry-page harness models actual focusable dialog controls, drives Page 3's final editor control, and asserts `preventDefault()` plus exact endpoint focus for both forward Tab and backward Shift+Tab.
+- Added real `data-cr-field` editor input events and Back/Escape reopen assertions proving unique edited values remain in `api.collect()` and are restored to the generated controls; broad containment-only and no-edit claims were removed.
+- The pre-correction entry-page test was green (1 test) despite the inadequate assertions; after the correction the same focused test passed (1 test, 0 failures). The final focused regression and full-suite evidence is recorded in the subsequent bullets.
+- The absolute bundled Node path remains unchanged because it is not needed for these corrections. Browser automation, server, Word/Poppler, production/Railway, scheduler.db, staging, commit, push, and deployment actions remain not run under project rules.
+- Final corrected verification passed: the five-module focused command `venv\\Scripts\\python.exe -m unittest -v tests.test_tsr_calibration_report tests.test_offline_resilience tests.test_tsr_draft_sync tests.test_tsr_sync_reliability tests.test_schedule_email_attachments` ran 73 tests successfully in 10.880 seconds against a fresh external `MEDICAL_SERVICE_TEST_DB`.
+- Full discovery `venv\\Scripts\\python.exe -m unittest discover -s tests -t . -q` ran 702 tests successfully with 1 existing skip in 37.644 seconds against a second fresh external `MEDICAL_SERVICE_TEST_DB`; both temporary databases and WAL/SHM files were removed and `scheduler.db` was preserved.
+- Four disposable-copy defect controls each failed at the intended corrected assertion: forward-wrap, backward-wrap, Back-state retention, and Escape-state retention. Temporary copies were removed and no application source was changed.
+- `venv\\Scripts\\python.exe -m py_compile tests\\test_tsr_calibration_report.py` and `git diff --check -- plans.md changes.md tests/test_tsr_calibration_report.py "Handoffs/08-11-26 handoff.md"` passed; only existing LF-to-CRLF warnings were emitted.
+- Appended the correction outcome to `Handoffs/08-11-26 handoff.md` and recorded exact evidence in the new top `plans.md` correction plan, which remains In progress pending separate Planner review/publication.
+- Browser automation, server/UI verification, Word/Poppler rerender, production/Railway/environment access, scheduler.db testing, staging, commit, push, deployment, and Reviewer classification were not run; the absolute bundled Node path remains unchanged.
+- Implemented the revised focus-containment correction in `static/js/app-calibration-report.js`: the existing own-element semantic checks remain, `tabindex="-1"` is excluded globally, and positive `getClientRects()` geometry is required without treating `aria-hidden` as layout state.
+- Strengthened `tests/test_tsr_calibration_report.py` fake DOM layout modeling with panel parents, inactive/hidden zero-rect behavior, attempted-hidden-focus recording, and an ARIA-only geometry control; Page 1, Page 2, and Page 3 now assert exact visible endpoints and both forward Tab and backward Shift+Tab wrapping while retaining real Back/Escape edited-value restoration checks.
+- The unfixed-source pre-fix control failed specifically for Page 1 and Page 2 forward/backward wrapping because inactive `display:none` panel controls contaminated the candidate list. The corrected focused entry-page test passed 1 test in 0.627 seconds, and the full Calibration contract module passed 7 tests in 7.081 seconds.
+- Ran four disposable external defect controls; forward-wrap, backward-wrap, Back-state, and Escape-state injections each failed at the intended assertion. Temporary copies and all temporary artifacts were removed.
+- Bumped the Calibration script query from v3 to v4, changed the cache label to `medical-service-pwa-offline-navigation-v96-calibration-report-focus-containment`, and amended only the existing Calibration Report release item wording. No CSS or `tests/test_offline_resilience.py` change was required; the absolute bundled Node path remains unchanged.
+- Revised focused five-module verification passed 73 tests in 11.392 seconds against a unique external database; full discovery passed 702 tests with 1 skip in 36.781 seconds against a second fresh external database. Python compile, Node syntax, Jinja parsing, release JSON/uniqueness, cache/app-shell assertions, and tracked-owned `git diff --check` passed.
+- The earlier 73/702 verification entries remain historical results from the previous correction cycle and are not claimed as evidence for the revised inactive-panel/layout correction. No browser/Codex navigation, server, Word/Poppler, scheduler.db test, production/Railway/environment action, staging, commit, push, deployment, or review classification was performed.
+
+- Recorded the owner-authorized Calibration Report sample/final workflow and Page 3 correction at the top of `plans.md` with status `In progress`; the official DOCX template and protected dirty work remain unchanged.
+- Added independent persisted `focal_spots` and editable `focal_sizes` state with legacy defaults, selected-group validation, disabled/muted unselected controls, focal-size OOXML value patching, and fingerprint invalidation in `static/js/app-calibration-report.js`.
+- Replaced the combined Generate/attach action in `templates/offline_tsr.html` with Generate Sample DOCX, Save Final Report, Download Final DOCX, Clear Form, and Remove Report. Sample generation is in-memory and unattached; final save creates the durable generated attachment and persists the TSR draft; normal payload preparation now refuses an unfinalized active report.
+- Preserved punctuation and international client names in DOCX while retaining filename-only sanitization, changed Calibration Report focus styling from red to blue, and added Clear Form cleanup that preserves ordinary TSR fields and manual attachments.
+- Bumped Calibration assets to CSS v3/JS v5, service-worker cache label to `medical-service-pwa-offline-navigation-v97-calibration-report-sample-final`, and amended the existing Calibration Report release item without adding a duplicate.
+- Added focused fail-first coverage for sample/final lifecycle, Unicode, focal selections/sizes, legacy defaults, Clear Form, and final invalidation. The baseline failed on the missing toolbar/actions/state; post-change Calibration Report coverage passed 10 tests, and the five-module related suite passed 76 tests against a disposable external database.
+- The final full repository run returned success for 705 collected tests with one existing skip, using a separate disposable external database; canonical template SHA-256 remained `31B6FE282CBE227B407870F5893493C1B7C529685892CD1997E25C9D4CC5A79E`.
+- Generated a representative `St. Mary's & Niño Clinic` DOCX with non-default 0.72/1.14 focal sizes, opened/exported it through Word 16.0, and rasterized all three pages with bundled Poppler. Every page was inspected for geometry, clipping, headers/footers, and Page 3 values; no browser automation was used.
+- Appended exact Builder execution evidence to the current top plan, including fail-first results,
+  focused/related/full-suite counts, static checks, artifact inspection, the canonical template
+  checksum, and the unavailable LibreOffice-path deviation; the plan remains `In progress` pending
+  separate review/publication.
+- Strengthened the focused sample/final contract so the successful final save is reopened from the
+  payload returned by draft persistence before asserting the international client name, attachment,
+  and document-chip state; the focused Calibration Report module still passes 10 tests.
+
+codex changes - 2026-08-19 (approved Create TSR Calibration Report plan)
+
+- The owner superseded the calibration-report PDF output requirement with a DOCX-only workflow:
+  the existing Create TSR data-entry page will populate and download the supplied Word form with
+  its original layout unchanged. The new DOCX-only plan is now at the top of `plans.md`; the prior
+  PDF correction plan remains below it as historical `Superseded` evidence. The unrelated main TSR
+  PDF workflow and the separately owned Cebu/Davao inventory changes remain out of scope.
+- Copied the supplied `CALIBRATION REPORT.docx` byte-for-byte to
+  `static/templates/calibration-report/calibration-report-template.docx` and verified the source
+  SHA-256 as `31B6FE282CBE227B407870F5893493C1B7C529685892CD1997E25C9D4CC5A79E`.
+- Added the local JSZip 3.10.1 browser runtime at `static/vendor/jszip/jszip.min.js` with its
+  matching license so the browser can patch the local DOCX package without a network or server-side
+  Word dependency. The calibration PDF/template removal and DOCX implementation remain in progress.
+- Replaced the Calibration Report PDF renderer in `static/js/app-calibration-report.js` with local
+  JSZip/OOXML patching of the supplied DOCX: Page 1 fields, Page 2 result/calibration cells and
+  signature cell, Page 3 exposure rows, and both source performance-result cells are filled in place.
+  Untouched source XML/package parts, headers, footers, logos, tables, page breaks, wording, and
+  the two source performance criteria remain in the generated Word package; the signature is added
+  only as `word/media/calibration-signature.png` with the required relationship/content type.
+- Changed the Create TSR Calibration Report page to load the local DOCX template and JSZip runtime,
+  remove the calibration PDF preview iframe/actions, and expose Generate DOCX / Download DOCX with
+  truthful `.docx` filename/status text. Existing draft, autofill, signature, Blob, document-chip,
+  capacity, queue, revision, and latest-report email behavior remains scoped to the same generated
+  report source.
+- Updated `app.py` generated-report upload validation to require `.docx`, bumped the service-worker
+  cache to `v93-calibration-docx-template`, and cached the DOCX template/JSZip. Removed only the
+  obsolete calibration PDF template, pdf-lib runtime/license, and unused calibration logo artifacts;
+  the unrelated main TSR PDF workflow and assets remain present.
+- Replaced PDF-specific calibration tests with five DOCX contract tests covering the exact supplied
+  template checksum/package structure, ZIP/OOXML data injection and XML escaping, table/row/static
+  source preservation, signature media/relationship, DOCX MIME/extension, missing-slot rejection,
+  missing-Blob recovery, regeneration/stale-Blob cleanup, document-chip lifecycle, and explicit
+  attachment-capacity behavior. Updated the generated-report server assertion to require DOCX.
+- Authoritative local verification passed: the focused DOCX contract set passed 5 tests; Word 16.0
+  opened/exported the blank and populated DOCX packages to three-page Letter PDFs; Poppler confirmed
+  3 pages at 612x792 points for both, and all six 150-DPI rendered pages were visually inspected.
+- Re-ran the affected Calibration/TSR/offline/attachment regression set with the project virtual
+  environment: 66 tests passed. The complete repository unittest suite then passed 695 tests with
+  1 existing skip. `app.py` Python compilation, standalone calibration JavaScript syntax, release
+  JSON parsing, calibration-PDF source scans, and `git diff --check` also passed; diff-check emitted
+  only Git's normal LF/CRLF conversion warnings.
+- After the owner reported that the supplied layout footer was missing, added an OOXML furniture
+  guard in `static/js/app-calibration-report.js` that requires the source header/footer references
+  to resolve to the supplied package parts before generation. Added regression checks that the
+  generated DOCX preserves all three footer parts and footer relationships byte-for-byte. The
+  updated Word/Poppler proof shows the footer on all three populated pages; same-DPI comparison
+  found zero changed pixels in the footer region on every page. The footer-guard revision then
+  passed the focused 5-test contract set, the affected 66-test regression set, and the full suite
+  at 695 tests with 1 existing skip.
+  No browser automation, commit, push, deployment, Railway change, production access, database
+  change, or protected-artifact cleanup was performed; Planner review remains pending.
+- Marked all nine DOCX-only execution steps complete in the active `plans.md` record and appended
+  the superseding DOCX implementation/evidence handoff to `Handoffs/08-11-26 handoff.md`; the plan
+  remains `In progress` until Planner review and no publication actions were implied.
+- The Planner's post-implementation review classified the current DOCX-only Calibration Report
+  implementation as `CORRECTION REQUIRED`: the generic client-email extension gate excludes the
+  latest generated DOCX, unbounded field values can expand the supplied three-page Word layout,
+  real edit/remove events can lose the superseded IndexedDB Blob ID before cleanup, and the
+  existing-token upload path can record a generated-report marker before validating the persisted
+  file as DOCX. The canonical supplied Word template, normal short-value three-page rendering,
+  package preservation, and existing focused/full regression baselines were verified as sound and
+  are explicitly frozen by the correction scope.
+- Recorded the complete owner-approved post-review correction plan at the top of `plans.md` with
+  status `Approved - awaiting go-ahead`. The executable plan narrowly covers latest-report DOCX
+  email inclusion without widening generic Word attachments, measured destination-specific fit
+  limits that reject layout-changing values without truncation or reformatting, write-before-swap
+  and Remove cleanup for generated-report Blobs, pre-mutation DOCX validation on duplicate-token
+  retries, behavior-first defect-injection tests, Word/Poppler boundary proof, the service-worker
+  bump, existing release-item amendment, full-suite verification, journals, Planner review, and a
+  separately authorized commit checklist.
+- This update changed planning/audit documentation only. No correction was implemented and no
+  application, test, canonical/external DOCX, generated document, JSZip runtime, database,
+  protected artifact, Git staging/history, browser, Railway, production, commit, push, or deployment
+  action was performed; the approved correction remains paused pending a separate owner go-ahead.
+
+- Began execution of the explicitly authorized Create TSR Calibration Report plan after the owner
+  separately established `ROLE: BUILDER` and said to proceed. The approved scope remains limited
+  to the optional source-matched Calibration Report editor/PDF, its TSR draft/queue/email wiring,
+  focused regression coverage, release/cache metadata, and required journals; commit, push,
+  deployment, production access, database replacement, and protected dirty artifacts remain out
+  of scope.
+- Recorded the complete owner-approved Create TSR Calibration Report implementation plan at the top of `plans.md`; its initial `Approved - awaiting go-ahead` status is now `In progress` after the owner's separate execution authorization. The executable plan covers the source-matched three-page US Letter editor/PDF, scoped autofill, offline draft and attachment lifecycle, revision-aware client-email behavior, affected files, ordered Builder steps, tests, PDF proof, cache/release work, review, and commit checklist.
+- Recorded explicit exclusions for the separate calibration certificate, automatic compliance/dose/date calculations, technical corrections to the supplied Word form, new calibration/Product schemas, historical backfill/deletion, attachment-limit changes, deployment, and production access.
+- Implemented the approved optional Calibration Report slice in `templates/offline_tsr.html`, `static/js/app-calibration-report.js`, and `static/css/app-calibration-report.css`: Create TSR now has a source-matched editor overlay with Draft/Ready status, scoped first-creation autofill, separate calibration signature state, source criteria/results, stable generated-attachment metadata, exact filename construction, and a vector three-page PDF path that uses only the supplied Shimadzu assets plus the explicit signature raster.
+- Added the report assets under `static/images/calibration-report/`, wired the typed report through local drafts, offline queue preparation, online/revision upload paths, the generated-source allowlist and ownership marker in `app.py`, and latest-revision-only Calibration Report selection for client email packages. Ordinary TSR attachments remain capped at the existing ten-file support limit and report-less TSR flows remain unchanged; no schema, migration, database replacement, production access, or deployment was performed.
+- Added deterministic schedule contact payload support in `app.py`, service-worker cache version `v91-calibration-report` with the report CSS/JS/assets in `APP_SHELL`, and the engineer-facing `2026-08-19-tsr-calibration-report` release entry in `static/changelog/releases.json`. Updated the required focused regression modules plus `tests/test_tsr_calibration_report.py`; the focused set currently passes 71 tests. PDF visual/render verification and the final full-suite/checksum/journal closeout remain pending in this Builder task; Git staging/history, commit, push, Railway, and production state remain unchanged.
 - Added one combined `BC02_BC03` Stock Inventory assignment option labelled `BC02 + BC03 - Cebu + Davao` to Approval Routing and superadmin personnel creation. The stored permission expands only at access time to the physical Cebu (`BC02`) and Davao (`BC03`) inventories, allowing the assigned manager to switch between those two branches while keeping Manila excluded; single-branch assignments and engineer read-only branch isolation remain unchanged.
 - Updated the stock-inventory branch resolver/page controls and multi-branch What's New branch filtering in `app.py`, with focused coverage in `tests/test_stock_inventory.py`. No database schema or migration change, service-worker cache bump, release-manifest entry, deployment, or production access was performed for this change; the owner separately authorized the commit and push after verification.
 - Verification passed with `python -m py_compile app.py`, 24 focused Stock Inventory tests, 60 adjacent staff/admin/changelog tests, 65 combined Stock Inventory/changelog tests after the final branch-filter adjustment, and the full repository suite: 700 tests passed with 1 existing skip. No browser automation or Codex app navigation was used.
 - Committed as `5cc323b` and pushed to `origin/main`; no manual Railway redeploy or production setting change was performed. Railway deployment metadata could not be queried because the Railway CLI is unavailable in this environment.
+- Builder closeout audit found that `HEAD` and `origin/main` are now both `41e5103`, while the current working-tree `app.py` also contains an uncommitted Cebu/Davao branch follow-up (`stock_inventory_allowed_branch_codes`, branch options, and physical branch selection) that is absent from `HEAD:app.py` and is interleaved only by file with the approved Calibration Report additions. The published branch templates/tests are clean at `HEAD`; no staging, unstaging, discard, commit, push, deployment, or protected-artifact cleanup was performed during this audit.
+- The combined working tree passed 95 focused Stock Inventory/Calibration/TSR tests and the full suite (700 passed, 1 existing skip), but those results exercise the working-tree branch follow-up as well as Calibration code; a clean published-commit rerun was not substituted for or used to justify bundling the separate branch follow-up. PDF/Poppler, Jinja, rendered inline-JavaScript, Python, manifest, and diff checks passed; further Builder changes are paused pending owner direction on the uncommitted branch follow-up.
+- The owner directed the Builder to continue the approved Calibration Report plan while preserving the uncommitted Cebu/Davao follow-up as a separate owner change. The Builder completed the non-browser closeout and journal updates without staging, discarding, bundling, committing, pushing, deploying, or accessing production; the plan remains `In progress` pending Planner review and separate commit authorization.
+- Updated the combined `BC02_BC03` Stock Inventory manager view so Manila (`BC01`) is visible alongside Cebu and Davao, while mutation access remains limited to the assigned Cebu/Davao branches. The page now switches to view-only controls for Manila, and the backend mutation endpoints reject Manila writes; no schema, migration, service-worker, release-manifest, deployment, or production-setting change was performed for this follow-up. The owner separately authorized the commit and push after verification.
+- Simplified the visible Approval Routing/personnel label for the combined assignment to `Cebu + Davao` while retaining the stored `BC02_BC03` value for compatibility; no schema, migration, service-worker, release-manifest, deployment, or production-setting change was performed for this label-only follow-up.
+- Committed as `47e757c` and pushed to `origin/main`; no manual redeploy or production setting change was performed. Railway deployment metadata could not be queried because the Railway CLI is unavailable in this environment.
+- Recorded the complete owner-approved Create TSR Calibration Report correction plan at the top of
+  `plans.md` with status `Approved - awaiting go-ahead`. The correction makes the supplied Word form
+  the immutable presentation source and limits generated output to data/signature overlays inside
+  its existing blanks; it explicitly supersedes the custom redraw, added printable text, and invented
+  third performance criterion without authorizing implementation.
+- The approved correction plan also captures the reviewed signature-projection loss, incomplete
+  autofill precedence, silent ten-file attachment truncation, premature document chip, missing
+  ready-state download/filename/capacity UI, exact affected files, ordered Builder steps, fail-first
+  behavioral tests, three-page masked visual proof, cache/vendor/release work, full-suite checks,
+  Planner review, protected-artifact safeguards, and commit/publication checklist.
+- This planning task changed only `plans.md` and this mandatory audit entry in `changes.md`. No
+  application code, test code, PDF template, vendor dependency, release manifest, service-worker
+  cache, handoff, database, upload, generated report, Git staging/history, commit, push, deployment,
+  Railway setting, browser state, or production data was changed. Plan approval remains separate
+  from Builder execution authorization.
+- The owner separately authorized Builder execution of the approved Calibration Report correction
+  on 2026-08-19, including resolution of the missing Word-exported canonical PDF, local PDF overlay
+  runtime/license, and Word-renderer validation prerequisites. Commit, push, deployment, production
+  access, database changes, Railway changes, and browser automation remain excluded.
+- Microsoft Word 16.0 exported the supplied `CALIBRATION REPORT.docx` to the immutable local
+  three-page US Letter template at `static/templates/calibration-report/calibration-report-template.pdf`;
+  the exported form was inspected page-by-page with Poppler rendering and pypdf, and its SHA-256 is
+  `BC0CC4F822557762BE68FAACEF6A1EF9FFE076BCEE46A2FE3387D4E303D0FB3E`.
+- Vendored the pinned browser-compatible `pdf-lib` 1.17.1 runtime at
+  `static/vendor/pdf-lib/pdf-lib.min.js` with its MIT license at `static/vendor/pdf-lib/LICENSE`.
+  The Calibration Report now loads that local runtime and Word-exported PDF and overlays only
+  existing source blanks, result lines/cells, measurement rows, and the Page 2 signature area;
+  custom jsPDF page reconstruction, added printable headings/footers, counters, and third criteria
+  were removed.
+- Updated `static/js/app-calibration-report.js` and `templates/offline_tsr.html` for the exact-form
+  editor contract, two source performance criteria, typed `signature.image` migration from legacy
+  `signature.data_url`, corrected schedule/current-TSR autofill precedence, write-before-swap Blob
+  regeneration, direct filename/download UI, and missing-Blob regeneration messaging.
+- Removed silent TSR attachment truncation and added explicit capacity validation: nine ordinary
+  attachments plus the generated report remains valid, while ten ordinary attachments plus the
+  report is rejected without replacing or dropping any ordinary file. Updated `app.py` to cache
+  the new template/runtime under service-worker cache v92 and amended the existing
+  `2026-08-19-tsr-calibration-report` release entry without creating a duplicate.
+- Replaced marker-only Calibration Report coverage with behavioral template/runtime tests and
+  updated offline resilience and draft-sync tests for the non-truncating queue and typed signature
+  projection, including legacy signature migration, exact two-criterion state, schedule/current-TSR
+  autofill precedence, Blob regeneration/recovery, generated document-chip readiness, superseded-
+  Blob cleanup, and non-truncating attachment capacity; the final focused and full suites pass.
+- Corrected Page 2 result overlay coordinates so every dynamic result begins after the supplied
+  form's printed `RESULT:` label. The generated proof remains three US Letter pages, and the
+  supplied Page 1/Page 3 mastheads and office footers plus the compact Page 2 layout remain
+  visually unchanged.
+- Verified the canonical blank template against the generated sample with same-DPI masked raster
+  comparison: zero changed pixels outside the documented approved overlay/signature regions on
+  Pages 1–3; a deliberate outside-mask pixel mutation was detected by the positive control.
+  Poppler rendering and pypdf checks confirmed page count, Letter dimensions, source text, two
+  performance rows, and no custom page-counter/third-criterion markers.
+- Final Builder verification: the affected 66-test set passed; `python -m py_compile app.py`,
+  standalone and rendered inline JavaScript syntax checks, release JSON/unique-id validation,
+  cache v92/app-shell checks, asset checksum inventory, and `git diff --check` all passed. The
+  full repository suite passed 695 tests with 1 expected skip using a disposable
+  `MEDICAL_SERVICE_TEST_DB` path.
+- Final scope audit confirmed the published Cebu/Davao inventory work is present in `HEAD`/
+  `origin/main` and no stock-inventory template/test files or branch-specific hunks were changed
+  by this correction. The modified `scheduler.db`, `.claude/`, loose root handoff, `output/`,
+  `tmp/`, and other owner artifacts remain preserved and unstaged; no commit, push, deployment,
+  Railway change, production access, or browser automation was performed. Planner review remains
+  pending.
+- Completed the Builder journal closeout in `plans.md` (all numbered correction steps checked) and
+  appended the exact implementation/evidence handoff to `Handoffs/08-11-26 handoff.md`. The plan
+  deliberately remains `In progress` rather than `Executed` because no implementation commit or
+  Planner classification exists yet.
+
+- Began and completed the owner-authorized current-top post-review Calibration Report correction
+  plan. Updated the active plan authorization record, checked execution steps 1–11 after Builder
+  work, and deliberately left step 12 (independent Planner/Reviewer review) unchecked; the plan
+  remains `In progress` because no review classification, commit, or publication exists.
+- In `app.py`, latest-report email assembly now admits only the selected generated Calibration
+  Report `.docx` after marker/ownership/latest-revision classification; the generic
+  `SCHEDULE_ATTACHMENT_EXTENSIONS` whitelist remains PDF/PNG/JPG/JPEG, superseded/generated
+  non-latest reports and unrelated DOCX files remain excluded, and ordinary PDF/image attachments
+  remain included. Existing-token generated-report retries now validate the persisted trusted
+  filename as DOCX before marker metadata mutation, preserving same-token idempotency and
+  cross-submission refusal.
+- In `static/js/app-calibration-report.js`, added one destination-specific exact-fit capacity map
+  shared by visible `maxlength` controls and the authoritative generation validator. Accepted
+  values are normalized only for harmless surrounding whitespace; embedded line breaks and
+  first-over-limit values are rejected with a field-specific message before Blob or attachment
+  replacement, without changing the supplied Word template geometry or silently truncating data.
+- Repaired generated Calibration Report Blob lifecycle in
+  `static/js/app-calibration-report.js`: real edits and resets retain narrow cleanup references,
+  replacement writes occur before metadata swap and superseded-ID cleanup, failed writes retain
+  the prior recoverable Blob without ready state, and Remove cleans only generated report IDs while
+  retaining failed cleanup references. Cleanup metadata is outside the content fingerprint and
+  readiness projection, preserving retry/idempotency behavior and unrelated TSR/supporting Blobs.
+- Added behavior-first coverage in `tests/test_schedule_email_attachments.py`,
+  `tests/test_tsr_sync_reliability.py`, `tests/test_tsr_calibration_report.py`, and
+  `tests/test_tsr_draft_sync.py` for latest-DOCX email membership, wrong-extension duplicate
+  retries, valid idempotent retries, cross-submission ownership, exact-fit boundaries/newlines,
+  real input/regeneration/remove Blob cleanup, failed replacement writes, cleanup projection, and
+  preservation of ordinary attachments and unrelated Blob IDs.
+- Bumped the cached report asset version in `app.py` to
+  `medical-service-pwa-offline-navigation-v94-calibration-report-corrections` and amended the
+  existing `2026-08-19-tsr-calibration-report` release item in
+  `static/changelog/releases.json`; no duplicate release item was added and
+  `templates/offline_tsr.html` was not changed by this correction.
+- Final focused verification with an isolated disposable `MEDICAL_SERVICE_TEST_DB`:
+  `venv\\Scripts\\python.exe -m unittest -v tests.test_tsr_calibration_report
+  tests.test_schedule_email_attachments tests.test_tsr_sync_reliability
+  tests.test_tsr_draft_sync` — 29 tests passed in 9.653 seconds.
+- Final full verification with a fresh isolated disposable `MEDICAL_SERVICE_TEST_DB`:
+  `venv\\Scripts\\python.exe -m unittest discover -s tests -t . -q` — 700 tests passed,
+  1 existing test skipped, in 35.882 seconds. Python AST/compile checks, standalone Node
+  syntax, release JSON parsing, canonical-template SHA-256, and `git diff --check` also passed;
+  diff-check emitted only the repository's existing LF/CRLF conversion warnings.
+- Word 16.0 opened the normal generated sample and six temporary longest-accepted boundary
+  samples (Page 1 narrow/value, Page 2 result/detail, Page 3 exposure/performance); each exported
+  to three portrait US Letter pages. Direct bundled Poppler `pdfinfo`/render checks confirmed
+  three pages for every boundary PDF. All QA files were outside the repository in disposable temp
+  storage; the canonical DOCX checksum remained
+  `31B6FE282CBE227B407870F5893493C1B7C529685892CD1997E25C9D4CC5A79E`.
+- Sequencing deviation recorded for later review: the existing pre-fix baseline (14 existing
+  focused tests) and source-level reproduction were established before edits, but the newly added
+  behavior tests were not separately run against a pre-fix working tree or through reversible
+  defect injection before the fixes were applied. The corrected behavior is green and the original
+  failure paths were verified in the baseline; this omission is not being represented as red-test
+  proof.
+- No canonical/external template, `scheduler.db`, production data/storage, Railway setting,
+  environment variable, browser/Codex state, commit, push, deployment, staging, or cleanup of
+  unrelated dirty/untracked work was performed. The pre-existing dirty baseline, including
+  `Handoffs/08-11-26 handoff.md`, `templates/offline_tsr.html`, `.claude/`, `output/`, and
+  `tmp/`, remains protected.
 
 codex changes - 2026-08-18 (approved Approval Center notification correction plan)
 

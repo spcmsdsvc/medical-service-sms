@@ -20,6 +20,7 @@ class ApprovalCenterWordingTests(unittest.TestCase):
 
     def test_every_module_uses_guarded_modal_loading(self):
         modules = (
+            "calibration_certificate",
             "reimbursement",
             "travel_request",
             "travel_liquidation",
@@ -40,8 +41,14 @@ class ApprovalCenterWordingTests(unittest.TestCase):
                     self.source,
                 )
 
+        self.assertIn(
+            "window.openCalibrationCertificateApprovalDetail = openCalibrationCertificateApprovalDetail;",
+            self.source,
+        )
+
     def test_module_names_and_negative_actions_are_consistent(self):
         expected_copy = {
+            "calibration_certificate": "Return for Correction",
             "reimbursement": "Return for Correction",
             "travel_request": "Return for Correction",
             "travel_liquidation": "Return for Revision",
@@ -66,6 +73,22 @@ class ApprovalCenterWordingTests(unittest.TestCase):
     def test_reimbursement_heading_prefers_request_number(self):
         self.assertIn(
             "`Review ${data.request_no || ('Reimbursement #' + data.id)}`",
+            self.source,
+        )
+
+    def test_calibration_notification_opens_certificate_review(self):
+        self.assertIn(
+            "await openCalibrationCertificateApprovalDetail(Number(recordId));",
+            self.source,
+        )
+
+    def test_calibration_certificate_modal_uses_preview_only_urls(self):
+        self.assertIn(
+            "data.signed_preview_url || data.unsigned_preview_url || '#'",
+            self.source,
+        )
+        self.assertNotIn(
+            'src="${approvalEscape(data.signed_url || data.unsigned_url || \'#\')}"',
             self.source,
         )
 

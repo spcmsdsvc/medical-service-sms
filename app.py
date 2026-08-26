@@ -53,6 +53,7 @@ from flask import (
     g,
     session,
     after_this_request,
+    has_app_context,
     has_request_context,
 )
 
@@ -102,6 +103,7 @@ from dotenv import load_dotenv
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import os
 import re
+import calendar
 import io
 import csv
 import secrets
@@ -122,6 +124,7 @@ import mimetypes
 import types
 import shutil
 import sqlite3
+import unicodedata
 from functools import wraps
 from email.message import EmailMessage
 from email.utils import formataddr
@@ -851,6 +854,7 @@ STORAGE_PREFIX_TRAVEL_LIQUIDATIONS = 'travel_liquidation_receipts'
 STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS = 'cash_advance_liquidation_receipts'
 STORAGE_PREFIX_LPR = 'lpr'
 STORAGE_PREFIX_LEAVE_REQUESTS = 'leave_requests'
+STORAGE_PREFIX_CALIBRATION_CERTIFICATES_PRIVATE = 'calibration_certificates_private'
 
 
 def managed_storage_key(prefix, stored_filename):
@@ -1864,9 +1868,19 @@ class Client(db.Model):
 
 
 
+PO_TYPE_SINGLE = 'single'
+PO_TYPE_SEMI_ANNUAL = 'semi_annual'
+PO_TYPE_QUARTERLY = 'quarterly'
+# Historical values remain readable and filterable, but are no longer accepted by
+# new/edit payloads.  Keeping the constants avoids breaking older analytics and rows.
 PO_TYPE_CONTRACT = 'contract'
 PO_TYPE_SINGLE_VISIT = 'single_visit'
+PO_CURRENT_TYPES = (PO_TYPE_SINGLE, PO_TYPE_SEMI_ANNUAL, PO_TYPE_QUARTERLY)
+PO_LEGACY_TYPES = (PO_TYPE_CONTRACT, PO_TYPE_SINGLE_VISIT)
 PO_TYPE_LABELS = {
+    PO_TYPE_SINGLE: 'Single',
+    PO_TYPE_SEMI_ANNUAL: 'Semi Annual',
+    PO_TYPE_QUARTERLY: 'Quarterly',
     PO_TYPE_CONTRACT: 'Contract',
     PO_TYPE_SINGLE_VISIT: 'Single Visit',
 }
@@ -1881,7 +1895,7 @@ class PurchaseOrder(db.Model):
     po_number = db.Column(db.String(60), nullable=False, index=True)
     po_date = db.Column(db.Date, nullable=False, index=True)
     end_date = db.Column(db.Date, nullable=True, index=True)
-    po_type = db.Column(db.String(20), nullable=False, default=PO_TYPE_SINGLE_VISIT)
+    po_type = db.Column(db.String(20), nullable=False, default=PO_TYPE_SINGLE)
     amount = db.Column(db.Numeric(14, 2), nullable=True)
     product_serial = db.Column(
         db.String(100),
@@ -2484,6 +2498,10 @@ class Product(db.Model):
     # Product-level service contract coverage. Warranty dates remain separate;
     # this flag explains the support path after the warranty period expires.
     under_contract = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Machine-level calibration identity.  This is deliberately nullable so
+    # legacy inventory remains usable until an administrator adds the BSID.
+    bsid = db.Column(db.String(40), nullable=True, index=True)
     
     # History of technical visits for this asset
     shifts = db.relationship('Shift', backref='product', lazy=True)
@@ -2493,7 +2511,7 @@ _product_contract_column_ready = False
 
 
 def ensure_product_contract_column():
-    """Add the product contract flag safely to existing SQLite databases."""
+    """Add product contract/BSID fields safely to existing SQLite databases."""
     global _product_contract_column_ready
 
     if _product_contract_column_ready:
@@ -2517,14 +2535,49 @@ def ensure_product_contract_column():
                 )
                 print("[DB MIGRATION] Added product.under_contract", flush=True)
 
+            if 'bsid' not in product_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE product ADD COLUMN bsid VARCHAR(40)"
+                )
+                print("[DB MIGRATION] Added product.bsid", flush=True)
+
             connection.exec_driver_sql(
                 "UPDATE product SET under_contract = 0 WHERE under_contract IS NULL"
             )
+
+            # Blank legacy values are intentionally allowed.  The partial
+            # expression index enforces case-insensitive uniqueness only for
+            # nonblank values without rewriting historical product rows.
+            try:
+                connection.exec_driver_sql(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uq_product_bsid_nonblank "
+                    "ON product (lower(trim(bsid))) WHERE bsid IS NOT NULL AND trim(bsid) <> ''"
+                )
+            except Exception as bsid_index_error:
+                print(f"[Product] BSID uniqueness index unavailable: {bsid_index_error}", flush=True)
 
         _product_contract_column_ready = True
     except Exception as product_contract_error:
         print(f"[Product] Contract column migration failed: {product_contract_error}", flush=True)
         raise
+
+
+def normalize_product_bsid(value):
+    """Trim a BSID while preserving the user's displayed casing."""
+    return clean_str(value)[:40] if clean_str(value) else ''
+
+
+def product_bsid_duplicate(value, exclude_serial=None):
+    """Return an existing product using this BSID case-insensitively."""
+    normalized = normalize_product_bsid(value)
+    if not normalized:
+        return None
+    query = Product.query.filter(
+        func.lower(func.trim(Product.bsid)) == normalized.lower()
+    )
+    if exclude_serial:
+        query = query.filter(Product.serial_number != exclude_serial)
+    return query.first()
 
 
 def product_contract_status(product=None, end_date=None, under_contract=None, today=None):
@@ -2730,6 +2783,49 @@ class OnlineTsrSubmission(db.Model):
     revised_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
 
 
+class CalibrationCertificateApproval(db.Model):
+    """Revision-aware approval record for a finalized Calibration Report."""
+    __tablename__ = 'calibration_certificate_approval'
+
+    id = db.Column(db.Integer, primary_key=True)
+    shift_id = db.Column(db.Integer, db.ForeignKey('shift.id'), nullable=False, index=True)
+    online_tsr_submission_id = db.Column(
+        db.Integer, db.ForeignKey('online_tsr_submission.id'), nullable=False,
+        unique=True, index=True
+    )
+    requester_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    revision_no = db.Column(db.Integer, nullable=False, default=1, index=True)
+    is_latest = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    status = db.Column(db.String(20), nullable=False, default='Pending', index=True)
+    report_fingerprint = db.Column(db.String(80), nullable=True, index=True)
+    certificate_fingerprint = db.Column(db.String(80), nullable=True, index=True)
+    certificate_number = db.Column(db.String(180), nullable=False, index=True)
+    mapped_data_json = db.Column(db.Text, nullable=False, default='{}')
+    template_sha256 = db.Column(db.String(64), nullable=False)
+    unsigned_artifact_path = db.Column(db.String(500), nullable=False)
+    signed_shift_file_id = db.Column(db.Integer, db.ForeignKey('shift_file.id'), nullable=True, index=True)
+    no_signature_shift_file_id = db.Column(db.Integer, db.ForeignKey('shift_file.id'), nullable=True, index=True)
+    approver_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
+    approver_name_snapshot = db.Column(db.String(180), nullable=True)
+    approver_title_snapshot = db.Column(db.String(180), nullable=True)
+    approver_signature_snapshot = db.Column(db.Text, nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+    return_remarks = db.Column(db.Text, nullable=True)
+    submitted_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
+    returned_at = db.Column(db.DateTime, nullable=True)
+    superseded_at = db.Column(db.DateTime, nullable=True)
+    artifact_created_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, onupdate=get_manila_time, nullable=False)
+
+    shift = db.relationship('Shift', foreign_keys=[shift_id])
+    online_tsr_submission = db.relationship('OnlineTsrSubmission', foreign_keys=[online_tsr_submission_id])
+    requester = db.relationship('User', foreign_keys=[requester_user_id])
+    approver = db.relationship('User', foreign_keys=[approver_user_id])
+    signed_shift_file = db.relationship('ShiftFile', foreign_keys=[signed_shift_file_id])
+    no_signature_shift_file = db.relationship('ShiftFile', foreign_keys=[no_signature_shift_file_id])
+
+
 class TsrDraft(db.Model):
     """Server-backed Create TSR draft metadata and typed field snapshot.
 
@@ -2761,6 +2857,7 @@ class TsrDraft(db.Model):
 
 _tsr_knowledge_entry_table_ready = False
 _online_tsr_submission_table_ready = False
+_calibration_certificate_approval_table_ready = False
 _tsr_draft_table_ready = False
 _engineer_signature_column_ready = False
 _contact_designation_column_ready = False
@@ -2879,6 +2976,65 @@ def ensure_online_tsr_submission_table():
         _online_tsr_submission_table_ready = True
     except Exception as table_error:
         print(f"[OnlineTSR] Unable to ensure online_tsr_submission table: {table_error}", flush=True)
+        raise
+
+
+def ensure_calibration_certificate_approval_table():
+    """Create/migrate the certificate approval table additively."""
+    global _calibration_certificate_approval_table_ready
+    if _calibration_certificate_approval_table_ready:
+        return
+    try:
+        CalibrationCertificateApproval.__table__.create(db.engine, checkfirst=True)
+        with db.engine.begin() as connection:
+            existing_columns = {
+                row[1] for row in connection.exec_driver_sql(
+                    "PRAGMA table_info(calibration_certificate_approval)"
+                ).fetchall()
+            }
+            migrations = {
+                'revision_no': "ALTER TABLE calibration_certificate_approval ADD COLUMN revision_no INTEGER DEFAULT 1 NOT NULL",
+                'is_latest': "ALTER TABLE calibration_certificate_approval ADD COLUMN is_latest BOOLEAN DEFAULT 1 NOT NULL",
+                'status': "ALTER TABLE calibration_certificate_approval ADD COLUMN status VARCHAR(20) DEFAULT 'Pending' NOT NULL",
+                'report_fingerprint': "ALTER TABLE calibration_certificate_approval ADD COLUMN report_fingerprint VARCHAR(80)",
+                'certificate_fingerprint': "ALTER TABLE calibration_certificate_approval ADD COLUMN certificate_fingerprint VARCHAR(80)",
+                'certificate_number': "ALTER TABLE calibration_certificate_approval ADD COLUMN certificate_number VARCHAR(180) DEFAULT '' NOT NULL",
+                'mapped_data_json': "ALTER TABLE calibration_certificate_approval ADD COLUMN mapped_data_json TEXT DEFAULT '{}' NOT NULL",
+                'template_sha256': "ALTER TABLE calibration_certificate_approval ADD COLUMN template_sha256 VARCHAR(64) DEFAULT '' NOT NULL",
+                'unsigned_artifact_path': "ALTER TABLE calibration_certificate_approval ADD COLUMN unsigned_artifact_path VARCHAR(500) DEFAULT '' NOT NULL",
+                'signed_shift_file_id': "ALTER TABLE calibration_certificate_approval ADD COLUMN signed_shift_file_id INTEGER",
+                'no_signature_shift_file_id': "ALTER TABLE calibration_certificate_approval ADD COLUMN no_signature_shift_file_id INTEGER",
+                'approver_user_id': "ALTER TABLE calibration_certificate_approval ADD COLUMN approver_user_id INTEGER",
+                'approver_name_snapshot': "ALTER TABLE calibration_certificate_approval ADD COLUMN approver_name_snapshot VARCHAR(180)",
+                'approver_title_snapshot': "ALTER TABLE calibration_certificate_approval ADD COLUMN approver_title_snapshot VARCHAR(180)",
+                'approver_signature_snapshot': "ALTER TABLE calibration_certificate_approval ADD COLUMN approver_signature_snapshot TEXT",
+                'approved_at': "ALTER TABLE calibration_certificate_approval ADD COLUMN approved_at DATETIME",
+                'return_remarks': "ALTER TABLE calibration_certificate_approval ADD COLUMN return_remarks TEXT",
+                'submitted_at': "ALTER TABLE calibration_certificate_approval ADD COLUMN submitted_at DATETIME",
+                'returned_at': "ALTER TABLE calibration_certificate_approval ADD COLUMN returned_at DATETIME",
+                'superseded_at': "ALTER TABLE calibration_certificate_approval ADD COLUMN superseded_at DATETIME",
+                'artifact_created_at': "ALTER TABLE calibration_certificate_approval ADD COLUMN artifact_created_at DATETIME",
+                'created_at': "ALTER TABLE calibration_certificate_approval ADD COLUMN created_at DATETIME",
+                'updated_at': "ALTER TABLE calibration_certificate_approval ADD COLUMN updated_at DATETIME",
+            }
+            for name, statement in migrations.items():
+                if name not in existing_columns:
+                    connection.exec_driver_sql(statement)
+            connection.exec_driver_sql(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_calibration_certificate_submission "
+                "ON calibration_certificate_approval (online_tsr_submission_id)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_calibration_certificate_latest "
+                "ON calibration_certificate_approval (shift_id, is_latest, status)"
+            )
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_calibration_certificate_no_signature_file "
+                "ON calibration_certificate_approval (no_signature_shift_file_id)"
+            )
+        _calibration_certificate_approval_table_ready = True
+    except Exception as certificate_schema_error:
+        print(f"[CalibrationCertificate] Schema migration failed: {certificate_schema_error}", flush=True)
         raise
 
 
@@ -5418,7 +5574,7 @@ REGIONAL_ADMIN_BRANCHES = {'Cebu', 'Davao'}
 # are migrated to assigned approver routing. S1 only adds the backend foundation
 # for future Settings-driven routing.
 APPROVAL_CENTER_MANAGER_USERNAME = 'rodito'
-APPROVAL_REQUEST_SCOPES = {'all', 'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'lpr', 'leave_request', 'request_for_payment'}
+APPROVAL_REQUEST_SCOPES = {'all', 'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'lpr', 'leave_request', 'request_for_payment', 'calibration_certificate'}
 
 
 def available_approval_request_scopes():
@@ -10407,7 +10563,7 @@ def approval_notification_is_active_for_current_user(notification):
         return bool(
             liquidation and
             event_key in {'submitted', 'liquidation_submitted'} and
-            travel_liquidation_normalize_status(getattr(liquidation, 'status', None)) == 'Submitted' and
+            normalize_travel_liquidation_status(getattr(liquidation, 'status', None)) == 'Submitted' and
             can_user_approve_travel_liquidation(current_user, liquidation)
         )
 
@@ -10419,6 +10575,17 @@ def approval_notification_is_active_for_current_user(notification):
             cash_advance_liquidation_normalize_status(getattr(liquidation, 'status', None)) == 'Submitted' and
             can_user_approve_cash_advance_liquidation(current_user, liquidation)
         )
+
+    if module_key == 'calibration_certificate':
+        try:
+            ensure_calibration_certificate_approval_table()
+            approval = db.session.get(CalibrationCertificateApproval, record_id) if record_id else None
+            return bool(
+                approval and event_key == 'submitted' and approval.status == 'Pending' and approval.is_latest and
+                can_user_approve_for_requester(current_user, approval.requester_user_id, 'calibration_certificate')
+            )
+        except Exception:
+            return False
 
     return False
 
@@ -10433,6 +10600,14 @@ def notification_matches_scope(notification, scope):
         return reimbursement_notification_is_for_requester(notification)
     if scope_key == 'cash_advance':
         return cash_advance_notification_is_for_requester(notification, current_user.id)
+    if scope_key == 'calibration_certificate':
+        approval_id = clean_int(getattr(notification, 'record_id', None)) or clean_int(notification_metadata_dict(notification).get('approval_id'))
+        try:
+            ensure_calibration_certificate_approval_table()
+            approval = db.session.get(CalibrationCertificateApproval, approval_id) if approval_id else None
+            return bool(approval and approval.requester_user_id == getattr(current_user, 'id', None))
+        except Exception:
+            return False
     return False
 
 
@@ -10745,12 +10920,59 @@ def offline_tsr_page():
     if not can_back_up_tsr_drafts():
         return redirect(url_for('dashboard_page'))
     filename_template = get_email_template_value('tsr_pdf_filename')
+    try:
+        certificate_catalog = calibration_certificate_catalog()
+    except Exception as catalog_error:
+        app.logger.warning('Calibration Certificate catalog unavailable for offline TSR: %s', catalog_error)
+        certificate_catalog = {
+            'equipment_names': [],
+            'models': [],
+            'available': False,
+            'error': 'Calibration Certificate catalog is unavailable. Reload this page after it is restored.',
+        }
     return render_template(
         'offline_tsr.html',
         offline_storage_health_admin=is_admin_authorized(),
         tsr_filename_template=filename_template,
         signature_stamp_scale=SIGNATURE_STAMP_SCALE,
+        certificate_catalog=certificate_catalog,
     )
+
+
+def offline_tsr_client_contact_payload(client):
+    """Return one deterministic, privacy-scoped contact for an assigned TSR schedule."""
+    if not client:
+        return {'name': '', 'phone': '', 'email': ''}
+
+    dynamic_contact = (
+        Contact.query
+        .filter_by(client_id=client.id)
+        .order_by(Contact.id.asc())
+        .first()
+    )
+    contact = {
+        'name': clean_str(getattr(dynamic_contact, 'name', None)) if dynamic_contact else '',
+        'phone': clean_str(getattr(dynamic_contact, 'phone', None)) if dynamic_contact else '',
+        'email': clean_str(getattr(dynamic_contact, 'email', None)) if dynamic_contact else '',
+    }
+
+    legacy_contacts = [
+        (
+            clean_str(getattr(client, f'contact_person_{index}', None)),
+            clean_str(getattr(client, f'contact_number_{index}', None)),
+            clean_str(getattr(client, f'email_address_{index}', None)),
+        )
+        for index in range(1, 4)
+    ]
+    for name, phone, email in legacy_contacts:
+        if not contact['name'] and name:
+            contact['name'] = name
+        if not contact['phone'] and phone:
+            contact['phone'] = phone
+        if not contact['email'] and email:
+            contact['email'] = email
+
+    return contact
 
 
 @app.route('/get_offline_tsr_schedule_options')
@@ -10821,6 +11043,7 @@ def get_offline_tsr_schedule_options():
 
         client = shift.client
         product = shift.product
+        client_contact = offline_tsr_client_contact_payload(client)
         linked_shifts = get_tsr_completion_linked_shifts(shift)
         schedule_coverage = get_tsr_schedule_coverage_rows(shift, linked_shifts=linked_shifts)
         coverage_engineer_names = list(dict.fromkeys(
@@ -10840,9 +11063,11 @@ def get_offline_tsr_schedule_options():
             'status': shift.status or '',
             'client_name': client.name if client else '',
             'client_address': client.address if client else '',
+            'client_contact': client_contact,
             'client_id': shift.client_id,
             'product_name': product.name if product else '',
             'product_id': shift.product_id or '',
+            'product_bsid': (getattr(product, 'bsid', None) or '') if product else '',
             'engineers': assigned_ids,
             'engineer_names': [eng.name for eng in assigned_engineers],
             'serviced_by': serviced_engineer.name if serviced_engineer else '',
@@ -12647,6 +12872,28 @@ def is_system_generated_tsr_file(file_rec):
         submission = db.session.get(OnlineTsrSubmission, submission_id)
         payload = parse_online_tsr_payload_json(submission)
         return clean_int(payload.get('_attached_file_id')) == clean_int(file_rec.id)
+    except Exception:
+        return False
+
+
+def is_system_generated_calibration_report_file(file_rec):
+    """Identify a generated Calibration Report by its exact submission marker."""
+    if not file_rec or not clean_int(getattr(file_rec, 'id', None)):
+        return False
+    submission_id = clean_int(getattr(file_rec, 'online_tsr_submission_id', None))
+    if not submission_id:
+        return False
+    try:
+        submission = db.session.get(OnlineTsrSubmission, submission_id)
+        if not submission or clean_int(submission.shift_id) != clean_int(getattr(file_rec, 'shift_id', None)):
+            return False
+        payload = parse_online_tsr_payload_json(submission)
+        marker = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
+        return bool(
+            isinstance(marker, dict) and
+            marker.get('source') == 'generated_calibration_report' and
+            clean_int(marker.get('file_id')) == clean_int(file_rec.id)
+        )
     except Exception:
         return False
 
@@ -14579,6 +14826,12 @@ def online_tsr_submission_to_dict(submission, include_payload=True):
         return {}
 
     payload = parse_online_tsr_payload_json(submission) if include_payload else {}
+    certificate_approval = None
+    try:
+        ensure_calibration_certificate_approval_table()
+        certificate_approval = CalibrationCertificateApproval.query.filter_by(online_tsr_submission_id=submission.id).first()
+    except Exception:
+        certificate_approval = None
     return {
         'id': submission.id,
         'submission_id': submission.id,
@@ -14602,7 +14855,8 @@ def online_tsr_submission_to_dict(submission, include_payload=True):
         'was_emailed': bool(payload.get('_last_emailed_at') or payload.get('_sent_recipient_emails')),
         'last_emailed_at': clean_str(payload.get('_last_emailed_at')),
         'recipients': parse_manual_recipient_emails(payload.get('_sent_recipient_emails') or []),
-        'payload': payload if include_payload else None
+        'payload': payload if include_payload else None,
+        'calibration_certificate': calibration_certificate_approval_to_dict(certificate_approval) if certificate_approval else None,
     }
 
 
@@ -15310,6 +15564,1323 @@ def save_offline_tsr_online():
     })
 
 
+def calibration_report_upload_marker(submission, upload_token):
+    """Return the generated report marker only when it belongs to this submission/token."""
+    payload = parse_online_tsr_payload_json(submission)
+    report = payload.get('calibration_report') if isinstance(payload, dict) else None
+    generated = report.get('generated') if isinstance(report, dict) else None
+    if not isinstance(generated, dict):
+        return None
+    attachment_id = normalize_online_tsr_submission_token(generated.get('attachment_id'))
+    if not attachment_id or attachment_id != upload_token:
+        return None
+    return generated
+
+
+def calibration_report_filename_is_docx(filename):
+    """Return whether a generated Calibration Report upload has the required DOCX name."""
+    return clean_str(filename).lower().endswith('.docx')
+
+
+CALIBRATION_CERTIFICATE_TEMPLATE_SHA256 = 'C06F43E221C297229D5108E0F3BA0348FF0C1C6F299A791FF4359D60E9F17EBC'
+CALIBRATION_CERTIFICATE_RUNTIME_SHA256 = '20C84569CB120F90E9F9998D68021E99ABCBD65E3C9085C7640754C6F0EBE2D8'
+CALIBRATION_CERTIFICATE_FIELDS = ('Textfield', 'Text1', 'Text2', 'Text3', 'Text4', 'Text5', 'Text6', 'Textfield-0')
+CALIBRATION_CERTIFICATE_SIGNATURE_RECT = (362.4, 272.5, 549.3, 307.5)
+CALIBRATION_CERTIFICATE_APPROVER_TEXT_RECT = (397.90747, 229.77514, 521.78687, 256.796)
+CALIBRATION_CERTIFICATE_APPROVER_FONT_SIZE = 11.158
+CALIBRATION_CERTIFICATE_DATA_MAX_SIZE = 11.0
+CALIBRATION_CERTIFICATE_DATA_MIN_SIZE = 8.5
+CALIBRATION_CERTIFICATE_DATA_FIELD_WIDTHS = {
+    'Textfield': 333.473,
+    'Text1': 333.472,
+    'Text2': 334.741,
+    'Text3': 333.895,
+    'Text4': 334.740,
+    'Text5': 332.627,
+    'Text6': 336.008,
+    'Textfield-0': 335.163,
+}
+CALIBRATION_CERTIFICATE_DATA_FIELD_PADDING = 6.0
+CALIBRATION_CERTIFICATE_HUMANIST_FONT_NAME = 'CalibrationCertificateHumanist777Light'
+_calibration_certificate_humanist_metrics_cache = None
+CALIBRATION_CERTIFICATE_CATALOG_SOURCE_SHA256 = '1AAB589266A30E6E70FE93E951C86C997D23B1EA1332373EE756E989A97A21BA'
+CALIBRATION_CERTIFICATE_CATALOG_PAYLOAD_SHA256 = 'C1E0B81BD9C49CECFE05274225FCC7D973292C77C77B1084F518C0D545151C32'
+CALIBRATION_CERTIFICATE_CATALOG_PATH = os.path.join(
+    basedir, 'static', 'templates', 'calibration-certificate',
+    'calibration-certificate-catalog.json'
+)
+
+
+def _calibration_certificate_catalog_text(value):
+    """Normalize only the whitespace allowed by the fixed reference catalog."""
+    return re.sub(r'\s+', ' ', str(value or '')).strip()
+
+
+def _calibration_certificate_catalog_payload_sha256(equipment_names, models):
+    """Hash the canonical arrays independent of mutable JSON metadata/formatting."""
+    payload = json.dumps(
+        {'equipment_names': equipment_names, 'models': models},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(',', ':'),
+    ).encode('utf-8')
+    return hashlib.sha256(payload).hexdigest().upper()
+
+
+def calibration_certificate_catalog():
+    """Load and validate the single committed certificate equipment catalog."""
+    try:
+        with open(CALIBRATION_CERTIFICATE_CATALOG_PATH, 'rb') as catalog_stream:
+            raw_bytes = catalog_stream.read()
+        catalog = json.loads(raw_bytes.decode('utf-8'))
+    except Exception as catalog_error:
+        raise RuntimeError(f'Calibration Certificate catalog is unavailable: {catalog_error}')
+    if not isinstance(catalog, dict) or catalog.get('source_sha256') != CALIBRATION_CERTIFICATE_CATALOG_SOURCE_SHA256:
+        raise RuntimeError('Calibration Certificate catalog source checksum metadata is invalid.')
+    equipment_names = catalog.get('equipment_names')
+    models = catalog.get('models')
+    if not isinstance(equipment_names, list) or len(equipment_names) != 6:
+        raise RuntimeError('Calibration Certificate catalog must contain exactly six equipment names.')
+    if not isinstance(models, list) or len(models) != 38:
+        raise RuntimeError('Calibration Certificate catalog must contain exactly 38 equipment models.')
+    raw_values = equipment_names + models
+    if any(not isinstance(value, str) for value in raw_values):
+        raise RuntimeError('Calibration Certificate catalog names and models must be strings.')
+    if any(not value for value in raw_values):
+        raise RuntimeError('Calibration Certificate catalog contains a blank value.')
+    if any(value != _calibration_certificate_catalog_text(value) for value in equipment_names):
+        raise RuntimeError('Calibration Certificate catalog contains an unclean equipment name.')
+    if any(value != _calibration_certificate_catalog_text(value) for value in models):
+        raise RuntimeError('Calibration Certificate catalog contains an unclean equipment model.')
+    normalized = [calibration_certificate_model_normalize(value) for value in equipment_names + models]
+    if any(not value for value in normalized) or len(set(normalized)) != len(normalized):
+        raise RuntimeError('Calibration Certificate catalog contains duplicate normalized values.')
+    if _calibration_certificate_catalog_payload_sha256(equipment_names, models) != CALIBRATION_CERTIFICATE_CATALOG_PAYLOAD_SHA256:
+        raise RuntimeError('Calibration Certificate catalog canonical payload checksum does not match.')
+    return {'equipment_names': list(equipment_names), 'models': list(models)}
+
+
+def calibration_certificate_model_normalize(value):
+    """Return the compact model key shared by Python and the offline JavaScript."""
+    decomposed = unicodedata.normalize('NFKD', str(value or ''))
+    without_marks = ''.join(character for character in decomposed if not unicodedata.combining(character))
+    return re.sub(r'[^a-z0-9]', '', without_marks.lower())
+
+
+def _calibration_certificate_catalog_for_matching(catalog=None):
+    """Return a structurally safe catalog for matching, or fail closed."""
+    catalog = calibration_certificate_catalog() if catalog is None else catalog
+    if not isinstance(catalog, dict):
+        raise RuntimeError('Calibration Certificate catalog is unavailable or invalid.')
+    equipment_names = catalog.get('equipment_names')
+    models = catalog.get('models')
+    if not isinstance(equipment_names, list) or len(equipment_names) != 6:
+        raise RuntimeError('Calibration Certificate catalog must contain exactly six equipment names.')
+    if not isinstance(models, list) or len(models) != 38:
+        raise RuntimeError('Calibration Certificate catalog must contain exactly 38 equipment models.')
+    values = equipment_names + models
+    if any(not isinstance(value, str) or not _calibration_certificate_catalog_text(value) for value in values):
+        raise RuntimeError('Calibration Certificate catalog contains a blank or invalid value.')
+    if any(value != _calibration_certificate_catalog_text(value) for value in values):
+        raise RuntimeError('Calibration Certificate catalog contains an unclean value.')
+    normalized = [calibration_certificate_model_normalize(value) for value in values]
+    if any(not value for value in normalized) or len(set(normalized)) != len(normalized):
+        raise RuntimeError('Calibration Certificate catalog contains duplicate normalized values.')
+    return {'equipment_names': list(equipment_names), 'models': list(models)}
+
+
+def calibration_certificate_model_distance(first, second):
+    """Return unrestricted Damerau-Levenshtein distance for compact model keys."""
+    first, second = str(first or ''), str(second or '')
+    if first == second:
+        return 0
+    if not first:
+        return len(second)
+    if not second:
+        return len(first)
+    inf = len(first) + len(second)
+    matrix = [[0] * (len(second) + 2) for _ in range(len(first) + 2)]
+    matrix[0][0] = inf
+    for index in range(len(first) + 1):
+        matrix[index + 1][0] = inf
+        matrix[index + 1][1] = index
+    for index in range(len(second) + 1):
+        matrix[0][index + 1] = inf
+        matrix[1][index + 1] = index
+    last_seen = {}
+    for row in range(1, len(first) + 1):
+        last_match_col = 0
+        for column in range(1, len(second) + 1):
+            previous_match_row = last_seen.get(second[column - 1], 0)
+            previous_match_col = last_match_col
+            cost = 1
+            if first[row - 1] == second[column - 1]:
+                cost = 0
+                last_match_col = column
+            matrix[row + 1][column + 1] = min(
+                matrix[row][column] + cost,
+                matrix[row + 1][column] + 1,
+                matrix[row][column + 1] + 1,
+                matrix[previous_match_row][previous_match_col]
+                + (row - previous_match_row - 1) + 1 + (column - previous_match_col - 1),
+            )
+        last_seen[first[row - 1]] = row
+    return matrix[len(first) + 1][len(second) + 1]
+
+
+def calibration_certificate_model_match(value, catalog=None):
+    """Match one entered model to the canonical catalog using deterministic thresholds."""
+    catalog = _calibration_certificate_catalog_for_matching(catalog)
+    raw = clean_str(value) or ''
+    normalized = calibration_certificate_model_normalize(raw)
+    models = catalog['models']
+    if not normalized:
+        return {'status': 'empty', 'value': '', 'score': 0.0, 'runner_up_score': 0.0, 'suggestions': models[:3]}
+    exact = next((model for model in models if calibration_certificate_model_normalize(model) == normalized), None)
+    if exact:
+        return {'status': 'exact', 'value': exact, 'score': 1.0, 'runner_up_score': 0.0, 'suggestions': [exact]}
+    ranked = []
+    for model in models:
+        candidate = calibration_certificate_model_normalize(model)
+        distance = calibration_certificate_model_distance(normalized, candidate)
+        denominator = max(len(normalized), len(candidate), 1)
+        ranked.append((1.0 - (distance / denominator), model))
+    ranked.sort(key=lambda item: (-item[0], models.index(item[1])))
+    best_score, best_model = ranked[0]
+    runner_up_score = ranked[1][0] if len(ranked) > 1 else 0.0
+    accepted = best_score >= 0.82 and (best_score - runner_up_score >= 0.04)
+    return {
+        'status': 'accepted' if accepted else ('ambiguous' if best_score - runner_up_score < 0.04 else 'weak'),
+        'value': best_model if accepted else '',
+        'score': round(best_score, 6),
+        'runner_up_score': round(runner_up_score, 6),
+        'suggestions': [model for _, model in ranked[:3]],
+    }
+
+
+def calibration_certificate_catalog_errors(report, catalog=None):
+    """Return actionable validation errors for a new certificate request."""
+    catalog = _calibration_certificate_catalog_for_matching(catalog)
+    report = report if isinstance(report, dict) else {}
+    machine = report.get('machine') if isinstance(report.get('machine'), dict) else {}
+    equipment_name = clean_str(machine.get('modality')) or ''
+    errors = []
+    if equipment_name not in catalog['equipment_names']:
+        errors.append('Select an approved Equipment Name from the Calibration Report list.')
+    match = calibration_certificate_model_match(machine.get('model'), catalog=catalog)
+    if match['status'] not in {'exact', 'accepted'}:
+        suggestions = ', '.join(match.get('suggestions') or [])
+        suffix = f' Closest catalog models: {suggestions}.' if suggestions else ''
+        errors.append('Select an exact catalog Equipment Model before submitting the certificate.' + suffix)
+    return errors, match
+
+
+def calibration_certificate_template_path():
+    return os.path.join(
+        basedir, 'static', 'templates', 'calibration-certificate',
+        'calibration-certificate-runtime-v2.pdf'
+    )
+
+
+def calibration_certificate_source_template_path():
+    return os.path.join(
+        basedir, 'static', 'templates', 'calibration-certificate',
+        'calibration-certificate-template.pdf'
+    )
+
+
+def calibration_certificate_data_font_size(values):
+    """Return one regular Helvetica size that fits every mapped value.
+
+    The shared size starts at the original requested 11 points. It is reduced
+    uniformly only when a value exceeds its widget width and never below the
+    explicit 8.5-point floor. The error names the first field that cannot fit
+    so callers can fail before any approval state or attachment is changed.
+    """
+    try:
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+    except Exception as dependency_error:
+        raise RuntimeError(f'Certificate PDF dependencies are unavailable: {dependency_error}')
+
+    values = values if isinstance(values, dict) else {}
+    labels = {
+        'Textfield': 'Certificate No.', 'Text1': 'Equipment Name',
+        'Text2': 'Equipment Model', 'Text3': 'System ID',
+        'Text4': 'Calibration Date', 'Text5': 'Next Calibration Date',
+        'Text6': 'Installed At', 'Textfield-0': 'TSR No.',
+    }
+    required = []
+    for name in CALIBRATION_CERTIFICATE_FIELDS:
+        text = clean_str(values.get(name)) or ''
+        width = CALIBRATION_CERTIFICATE_DATA_FIELD_WIDTHS[name] - CALIBRATION_CERTIFICATE_DATA_FIELD_PADDING
+        measured = stringWidth(text, 'Helvetica', CALIBRATION_CERTIFICATE_DATA_MAX_SIZE) if text else 0
+        required.append((name, text, width, measured))
+    size = CALIBRATION_CERTIFICATE_DATA_MAX_SIZE
+    for name, text, width, measured in required:
+        if measured > width and measured > 0:
+            size = min(size, CALIBRATION_CERTIFICATE_DATA_MAX_SIZE * width / measured)
+    # Round down to a stable tenth so server and client appearances do not
+    # differ by floating-point noise at a field boundary.
+    size = min(CALIBRATION_CERTIFICATE_DATA_MAX_SIZE, (int(size * 10) / 10.0))
+    if size < CALIBRATION_CERTIFICATE_DATA_MIN_SIZE:
+        offenders = ', '.join(labels[name] for name, text, width, measured in required if measured and measured * CALIBRATION_CERTIFICATE_DATA_MIN_SIZE / CALIBRATION_CERTIFICATE_DATA_MAX_SIZE > width)
+        raise ValueError(f'Calibration Certificate value cannot fit at {CALIBRATION_CERTIFICATE_DATA_MIN_SIZE:g} points: {offenders or "a mapped field"}.')
+    while size >= CALIBRATION_CERTIFICATE_DATA_MIN_SIZE:
+        if all(not text or stringWidth(text, 'Helvetica', size) <= width + 0.01 for name, text, width, measured in required):
+            return round(size, 1)
+        size = round(size - 0.1, 1)
+    offenders = ', '.join(labels[name] for name, text, width, measured in required if text and stringWidth(text, 'Helvetica', CALIBRATION_CERTIFICATE_DATA_MIN_SIZE) > width + 0.01)
+    raise ValueError(f'Calibration Certificate value cannot fit at {CALIBRATION_CERTIFICATE_DATA_MIN_SIZE:g} points: {offenders or "a mapped field"}.')
+
+
+def _calibration_certificate_humanist_metrics(template_bytes):
+    """Extract the original embedded Humanist777 Light resource and metrics."""
+    global _calibration_certificate_humanist_metrics_cache
+    try:
+        from pypdf import PdfReader
+    except Exception as dependency_error:
+        raise RuntimeError(f'Certificate PDF dependencies are unavailable: {dependency_error}')
+    if _calibration_certificate_humanist_metrics_cache:
+        return _calibration_certificate_humanist_metrics_cache
+    reader = PdfReader(io.BytesIO(template_bytes))
+    page = reader.pages[0]
+    fonts = page.get('/Resources', {}).get_object().get('/Font', {})
+    font_ref = fonts.get('/F3')
+    if not font_ref:
+        raise ValueError('The embedded Humanist777 Light font is missing from the Calibration Certificate template.')
+    font = font_ref.get_object()
+    descendant_fonts = font.get('/DescendantFonts') or []
+    if not descendant_fonts:
+        raise ValueError('The embedded Humanist777 Light font has no descendant resource.')
+    descendant = descendant_fonts[0].get_object()
+    # The official template uses Identity-H. Reuse its original Type0
+    # resource rather than converting the subset to a new font: the subset's
+    # CID/GID relationship is what makes the original glyph outlines render.
+    to_unicode = font.get('/ToUnicode')
+    if not to_unicode:
+        raise ValueError('The embedded Humanist777 Light font has no Unicode map.')
+    cmap = to_unicode.get_object().get_data().decode('latin1')
+    unicode_to_cid = {}
+    for match in re.finditer(r'<([0-9A-Fa-f]{4})>\s+<([0-9A-Fa-f]{4})>', cmap):
+        cid = int(match.group(1), 16)
+        codepoint = int(match.group(2), 16)
+        if cid or codepoint:
+            unicode_to_cid[codepoint] = cid
+    widths = {}
+    width_spec = descendant.get('/W') or []
+    if hasattr(width_spec, 'get_object'):
+        width_spec = width_spec.get_object()
+    index = 0
+    while index < len(width_spec):
+        first = int(width_spec[index])
+        second = width_spec[index + 1]
+        if isinstance(second, (list, tuple)):
+            for offset, width in enumerate(second):
+                widths[first + offset] = float(width)
+            index += 2
+        else:
+            last = int(second)
+            width = float(width_spec[index + 2])
+            for cid in range(first, last + 1):
+                widths[cid] = width
+            index += 3
+    _calibration_certificate_humanist_metrics_cache = {
+        'font_ref': font_ref,
+        'unicode_to_cid': unicode_to_cid,
+        'widths': widths,
+        'reader': reader,
+        'font_name': CALIBRATION_CERTIFICATE_HUMANIST_FONT_NAME,
+    }
+    return _calibration_certificate_humanist_metrics_cache
+
+
+def _certificate_font_supports(metrics, text):
+    return all(ord(character) in metrics['unicode_to_cid'] for character in (text or ''))
+
+
+def _certificate_humanist_width(metrics, text, size):
+    return sum(metrics['widths'].get(metrics['unicode_to_cid'][ord(character)], 1000) for character in (text or '')) * size / 1000.0
+
+
+def _certificate_title_lines(title, font_name, max_width, size, humanist_metrics=None):
+    """Wrap the saved approval title over the two original certifier baselines."""
+    title = clean_str(title) or ''
+    if not title:
+        return []
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    width = (
+        (lambda text: _certificate_humanist_width(humanist_metrics, text, size))
+        if humanist_metrics and font_name == CALIBRATION_CERTIFICATE_HUMANIST_FONT_NAME
+        else (lambda text: stringWidth(text, 'Helvetica', size))
+    )
+    words = title.split()
+    lines = []
+    current = ''
+    for word in words:
+        if width(word) > max_width:
+            raise ValueError('Approver title contains a word too wide for the original certificate certifier block.')
+        candidate = f'{current} {word}'.strip()
+        if current and width(candidate) > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    if len(lines) > 2:
+        raise ValueError('Approver title is too long for the original two-line certificate certifier block.')
+    return lines
+
+
+def calibration_certificate_date(value):
+    raw = clean_str(value) or ''
+    match = re.match(r'^(\d{4})[-/](\d{2})[-/](\d{2})', raw)
+    return f'{match.group(1)}/{match.group(2)}/{match.group(3)}' if match else ''
+
+
+def calibration_certificate_number_date(value):
+    """Return the hyphen-formatted date used only in new certificate numbers."""
+    raw = clean_str(value) or ''
+    match = re.match(r'^(\d{4})[-/](\d{2})[-/](\d{2})', raw)
+    return f'{match.group(1)}-{match.group(2)}{match.group(3)}' if match else ''
+
+
+def calibration_certificate_values(payload, shift=None, certificate_number_override=None, mapped_values_override=None, catalog=None):
+    """Return the eight official mapped fields and missing-value labels."""
+    if isinstance(mapped_values_override, dict):
+        values = {name: clean_str(mapped_values_override.get(name)) or '' for name in CALIBRATION_CERTIFICATE_FIELDS}
+        if clean_str(certificate_number_override):
+            values['Textfield'] = clean_str(certificate_number_override) or ''
+        labels = {
+            'Textfield': 'Certificate No.', 'Text1': 'Equipment Name',
+            'Text2': 'Equipment Model', 'Text3': 'System ID',
+            'Text4': 'Calibration Date', 'Text5': 'Next Calibration Date',
+            'Text6': 'Installed At', 'Textfield-0': 'TSR No.'
+        }
+        missing = [labels[name] for name in CALIBRATION_CERTIFICATE_FIELDS if not clean_str(values.get(name))]
+        payload = payload if isinstance(payload, dict) else {}
+        report = payload.get('calibration_report') if isinstance(payload.get('calibration_report'), dict) else {}
+        return values, missing, report
+    payload = payload if isinstance(payload, dict) else {}
+    report = payload.get('calibration_report') if isinstance(payload.get('calibration_report'), dict) else {}
+    machine = report.get('machine') if isinstance(report.get('machine'), dict) else {}
+    facility = report.get('facility') if isinstance(report.get('facility'), dict) else {}
+    calibration = report.get('calibration') if isinstance(report.get('calibration'), dict) else {}
+    certificate = report.get('certificate') if isinstance(report.get('certificate'), dict) else {}
+    product = getattr(shift, 'product', None) if shift else None
+    # The report carries the offline/finalized BSID snapshot. Prefer it when
+    # present so a later inventory edit cannot rewrite an already-saved TSR's
+    # certificate number; use the selected product only as the live fallback.
+    bsid = normalize_product_bsid(certificate.get('bsid')) or normalize_product_bsid(getattr(product, 'bsid', None))
+    date = calibration_certificate_date(calibration.get('machine_calibration_date'))
+    number_date = calibration_certificate_number_date(calibration.get('machine_calibration_date'))
+    next_date = calibration_certificate_date(calibration.get('next_calibration_date'))
+    tsr_number = clean_str(payload.get('tsr-number') or payload.get('tsr_number')) or ''
+    certificate_number = (
+        clean_str(certificate_number_override) or
+        (f'{number_date}-{bsid}' if number_date and bsid else '')
+    )
+    match = calibration_certificate_model_match(machine.get('model'), catalog=catalog)
+    values = {
+        'Textfield': certificate_number,
+        'Text1': clean_str(machine.get('modality')) or '',
+        'Text2': match.get('value') or '',
+        'Text3': clean_str(machine.get('serial_number')) or '',
+        'Text4': date,
+        'Text5': next_date,
+        'Text6': clean_str(facility.get('name')) or '',
+        'Textfield-0': tsr_number,
+    }
+    labels = {
+        'Textfield': 'Certificate No.', 'Text1': 'Equipment Name',
+        'Text2': 'Equipment Model', 'Text3': 'System ID',
+        'Text4': 'Calibration Date', 'Text5': 'Next Calibration Date',
+        'Text6': 'Installed At', 'Textfield-0': 'TSR No.'
+    }
+    missing = [labels[name] for name in CALIBRATION_CERTIFICATE_FIELDS if not clean_str(values.get(name))]
+    return values, missing, report
+
+
+def _certificate_overlay_bytes(signature_data='', approver_name='', approval_title=''):
+    """Create only the approved certifier-region overlay."""
+    try:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.colors import Color
+        from reportlab.pdfbase.pdfmetrics import stringWidth
+        from reportlab.lib.utils import ImageReader
+        from pypdf import PdfReader, PdfWriter
+        from pypdf.generic import DecodedStreamObject, NameObject
+    except Exception as dependency_error:
+        raise RuntimeError(f'Certificate PDF dependencies are unavailable: {dependency_error}')
+
+    buffer = io.BytesIO()
+    canvas_obj = canvas.Canvas(buffer, pagesize=(612, 792))
+    humanist_commands = []
+    if signature_data:
+        try:
+            encoded = signature_data.split(',', 1)[1] if ',' in signature_data else signature_data
+            signature_bytes = base64.b64decode(encoded)
+            # Signature captures commonly arrive as white-backed PNGs. Make
+            # only near-white pixels transparent so the patterned certificate
+            # background remains visible around the ink.
+            from PIL import Image
+            signature_image = Image.open(io.BytesIO(signature_bytes)).convert('RGBA')
+            cleaned_pixels = []
+            signature_pixels = signature_image.load()
+            for y in range(signature_image.height):
+                for x in range(signature_image.width):
+                    red, green, blue, alpha = signature_pixels[x, y]
+                    whiteness = min(red, green, blue)
+                    if whiteness >= 245:
+                        alpha = 0
+                    elif whiteness >= 220:
+                        alpha = int(alpha * (245 - whiteness) / 25)
+                    cleaned_pixels.append((red, green, blue, alpha))
+            signature_image.putdata(cleaned_pixels)
+            # Treat the very faint tail of the near-white transition as
+            # transparent before finding the visible-ink bounds. This keeps
+            # oversized white margins from shrinking the rendered signature
+            # while retaining antialiased ink edges.
+            alpha = signature_image.getchannel('A')
+            visible_alpha = alpha.point(lambda value: 255 if value > 8 else 0)
+            visible_bounds = visible_alpha.getbbox()
+            if not visible_bounds:
+                raise ValueError('Approver signature is blank after background cleanup.')
+            cleaned_alpha = [
+                (red, green, blue, alpha_value if alpha_value > 8 else 0)
+                for red, green, blue, alpha_value in signature_image.getdata()
+            ]
+            signature_image.putdata(cleaned_alpha)
+            left, upper, right, lower = visible_bounds
+            padding = max(1, min(4, round(min(signature_image.size) * 0.02)))
+            signature_image = signature_image.crop((
+                max(0, left - padding),
+                max(0, upper - padding),
+                min(signature_image.width, right + padding),
+                min(signature_image.height, lower + padding),
+            ))
+            if not signature_image.getchannel('A').getbbox():
+                raise ValueError('Approver signature is blank after background cleanup.')
+            cleaned_signature = io.BytesIO()
+            box_left, box_bottom, box_right, box_top = CALIBRATION_CERTIFICATE_SIGNATURE_RECT
+            box_width, box_height = box_right - box_left, box_top - box_bottom
+            image_width, image_height = signature_image.size
+            scale = min(box_width / max(image_width, 1), box_height / max(image_height, 1))
+            draw_width, draw_height = image_width * scale, image_height * scale
+            target_size = (
+                max(1, round(draw_width * 300 / 72)),
+                max(1, round(draw_height * 300 / 72)),
+            )
+            resampling = getattr(Image, 'Resampling', Image).LANCZOS
+            signature_image = signature_image.resize(target_size, resampling)
+            signature_image.save(cleaned_signature, format='PNG')
+            cleaned_signature.seek(0)
+            image = ImageReader(cleaned_signature)
+            image_width, image_height = image.getSize()
+            # The resized image carries the physical target resolution. Keep
+            # the original point dimensions, center it horizontally, and
+            # bottom-align it at the adjusted box so the visible ink remains
+            # about two points above the printed underline.
+            canvas_obj.drawImage(
+                image,
+                box_left + (box_width - draw_width) / 2,
+                box_bottom,
+                width=draw_width,
+                height=draw_height,
+                mask='auto', preserveAspectRatio=True,
+            )
+        except Exception as signature_error:
+            raise ValueError(f'Approver signature is not a readable image: {signature_error}')
+
+    left, title_bottom, right, name_baseline = CALIBRATION_CERTIFICATE_APPROVER_TEXT_RECT
+    center = (left + right) / 2.0
+    max_width = right - left
+    with open(calibration_certificate_template_path(), 'rb') as template_stream:
+        humanist_metrics = _calibration_certificate_humanist_metrics(template_stream.read())
+    name = clean_str(approver_name) or ''
+    title = clean_str(approval_title) or ''
+    # The saved approval title is immutable. Strip only a trailing configured
+    # division suffix for rendering because the division is drawn as its own
+    # fixed line below the title block.
+    title = re.sub(
+        r'(?i)[\s,;:\-–—]*Medical\s+Systems\s+Division\s*$',
+        '',
+        title,
+    ).strip(' \t\r\n,;:\-–—')
+    name_uses_humanist = bool(name and _certificate_font_supports(humanist_metrics, name))
+    title_uses_humanist = bool(title and _certificate_font_supports(humanist_metrics, title))
+    name_font = CALIBRATION_CERTIFICATE_HUMANIST_FONT_NAME if name_uses_humanist else 'Helvetica'
+    title_font = CALIBRATION_CERTIFICATE_HUMANIST_FONT_NAME if title_uses_humanist else 'Helvetica'
+    title_lines = _certificate_title_lines(
+        title,
+        title_font,
+        max_width,
+        CALIBRATION_CERTIFICATE_APPROVER_FONT_SIZE,
+        humanist_metrics=humanist_metrics,
+    )
+    approver_color = Color(0.1372, 0.1215, 0.1254)
+    if name:
+        if name_uses_humanist:
+            name_width = _certificate_humanist_width(humanist_metrics, name, CALIBRATION_CERTIFICATE_APPROVER_FONT_SIZE)
+            if name_width > max_width:
+                raise ValueError('Approver name is too long for the original certificate certifier block.')
+            name_x = center - name_width / 2.0
+            encoded_name = b''.join(
+                int(humanist_metrics['unicode_to_cid'][ord(character)]).to_bytes(2, 'big')
+                for character in name
+            )
+            humanist_commands.append(
+                b'BT /F3 11.158 Tf 0.1372 0.1215 0.1254 rg 1 0 0 1 '
+                + f'{name_x:.5f} {name_baseline:.5f} Tm <{encoded_name.hex()}> Tj ET\n'.encode()
+            )
+        else:
+            if stringWidth(name, 'Helvetica', CALIBRATION_CERTIFICATE_APPROVER_FONT_SIZE) > max_width:
+                raise ValueError('Approver name is too long for the original certificate certifier block.')
+            canvas_obj.setFillColor(approver_color)
+            canvas_obj.setFont(name_font, CALIBRATION_CERTIFICATE_APPROVER_FONT_SIZE)
+            canvas_obj.drawCentredString(center, name_baseline, name)
+    title_baselines = (243.14021, 229.77514)
+    for index, line in enumerate(title_lines[:2]):
+        baseline = title_baselines[index]
+        if title_uses_humanist:
+            line_width = _certificate_humanist_width(humanist_metrics, line, CALIBRATION_CERTIFICATE_APPROVER_FONT_SIZE)
+            line_x = center - line_width / 2.0
+            encoded_line = b''.join(
+                int(humanist_metrics['unicode_to_cid'][ord(character)]).to_bytes(2, 'big')
+                for character in line
+            )
+            humanist_commands.append(
+                b'BT /F3 11.158 Tf 0.1372 0.1215 0.1254 rg 1 0 0 1 '
+                + f'{line_x:.5f} {baseline:.5f} Tm <{encoded_line.hex()}> Tj ET\n'.encode()
+            )
+        else:
+            canvas_obj.setFillColor(approver_color)
+            canvas_obj.setFont(title_font, CALIBRATION_CERTIFICATE_APPROVER_FONT_SIZE)
+            canvas_obj.drawCentredString(center, baseline, line)
+    # Unsigned and sample certificates call this overlay without approver
+    # identity. Keep the entire certifier block blank in that case. Approved
+    # copies get one fixed division line on the next available baseline.
+    if name or title_lines:
+        division = 'Medical Systems Division'
+        division_uses_humanist = _certificate_font_supports(humanist_metrics, division)
+        division_font = CALIBRATION_CERTIFICATE_HUMANIST_FONT_NAME if division_uses_humanist else 'Helvetica'
+        division_baseline = title_baselines[len(title_lines)] if len(title_lines) < len(title_baselines) else 216.41007
+        if division_uses_humanist:
+            division_width = _certificate_humanist_width(humanist_metrics, division, CALIBRATION_CERTIFICATE_APPROVER_FONT_SIZE)
+            if division_width > max_width:
+                raise ValueError('The fixed approver division is too wide for the certificate certifier block.')
+            division_x = center - division_width / 2.0
+            encoded_division = b''.join(
+                int(humanist_metrics['unicode_to_cid'][ord(character)]).to_bytes(2, 'big')
+                for character in division
+            )
+            humanist_commands.append(
+                b'BT /F3 11.158 Tf 0.1372 0.1215 0.1254 rg 1 0 0 1 '
+                + f'{division_x:.5f} {division_baseline:.5f} Tm <{encoded_division.hex()}> Tj ET\n'.encode()
+            )
+        else:
+            canvas_obj.setFillColor(approver_color)
+            canvas_obj.setFont(division_font, CALIBRATION_CERTIFICATE_APPROVER_FONT_SIZE)
+            canvas_obj.drawCentredString(center, division_baseline, division)
+    # ReportLab omits a page for a completely empty overlay. Emit the page so
+    # unsigned certificates still merge a valid transparent one-page overlay.
+    canvas_obj.showPage()
+    canvas_obj.save()
+    if not humanist_commands:
+        return buffer.getvalue()
+
+    # Carry the original Type0 font and its nested embedded stream into the
+    # overlay. A single merged content stream avoids pypdf treating ReportLab's
+    # direct stream object as a non-stream array item.
+    overlay_reader = PdfReader(io.BytesIO(buffer.getvalue()))
+    overlay_writer = PdfWriter()
+    overlay_writer.add_page(overlay_reader.pages[0])
+    overlay_page = overlay_writer.pages[0]
+    resources = overlay_page['/Resources'].get_object()
+    fonts = resources['/Font'].get_object()
+    fonts[NameObject('/F3')] = humanist_metrics['font_ref'].clone(overlay_writer)
+    old_contents = overlay_page['/Contents']
+    old_data = old_contents.get_object().get_data() if hasattr(old_contents, 'get_object') else old_contents.get_data()
+    combined_contents = DecodedStreamObject()
+    combined_contents.set_data(old_data + b'\n' + b''.join(humanist_commands))
+    overlay_page[NameObject('/Contents')] = overlay_writer._add_object(combined_contents)
+    result = io.BytesIO()
+    overlay_writer.write(result)
+    return result.getvalue()
+
+
+def build_calibration_certificate_pdf(payload, shift=None, approver=None, signature_data='', approval_title='', certificate_number_override=None, mapped_values_override=None, catalog=None, canonical=False):
+    """Fill, stamp, flatten, and verify one official certificate copy."""
+    source_path = calibration_certificate_source_template_path()
+    with open(source_path, 'rb') as source_stream:
+        source_bytes = source_stream.read()
+    if hashlib.sha256(source_bytes).hexdigest().upper() != CALIBRATION_CERTIFICATE_TEMPLATE_SHA256:
+        raise ValueError('The protected Calibration Certificate source checksum does not match.')
+    template_path = calibration_certificate_source_template_path() if canonical else calibration_certificate_template_path()
+    with open(template_path, 'rb') as template_stream:
+        template_bytes = template_stream.read()
+    template_hash = hashlib.sha256(template_bytes).hexdigest().upper()
+    expected_template_hash = CALIBRATION_CERTIFICATE_TEMPLATE_SHA256 if canonical else CALIBRATION_CERTIFICATE_RUNTIME_SHA256
+    if template_hash != expected_template_hash:
+        raise ValueError('The protected Calibration Certificate template checksum does not match.')
+    values, missing, report = calibration_certificate_values(
+        payload,
+        shift=shift,
+        certificate_number_override=certificate_number_override,
+        mapped_values_override=mapped_values_override,
+        catalog=catalog,
+    )
+    if missing:
+        raise ValueError(f"Complete the Calibration Certificate values before submission: {', '.join(missing)}.")
+    data_font_size = calibration_certificate_data_font_size(values)
+
+    try:
+        from pypdf import PdfReader, PdfWriter
+        from pypdf.generic import NameObject
+    except Exception:
+        from PyPDF2 import PdfReader, PdfWriter
+        from PyPDF2.generic import NameObject
+
+    reader = PdfReader(io.BytesIO(template_bytes))
+    if len(reader.pages) != 1:
+        raise ValueError('The official Calibration Certificate must contain exactly one page.')
+    fields = reader.get_fields() or {}
+    missing_fields = [name for name in CALIBRATION_CERTIFICATE_FIELDS if name not in fields]
+    if missing_fields:
+        raise ValueError(f"The official Calibration Certificate is missing field(s): {', '.join(missing_fields)}.")
+
+    writer = PdfWriter()
+    writer.clone_document_from_reader(reader)
+    overlay = PdfReader(io.BytesIO(_certificate_overlay_bytes(signature_data, approver_name=approver or '', approval_title=approval_title or '')))
+    writer.pages[0].merge_page(overlay.pages[0])
+    # Use one explicit regular Helvetica appearance size for every mapped
+    # field. The ninth legacy widget is blanked while flattening; its fixed
+    # page text was removed only in the derived runtime-v2 asset.
+    flatten_values = {name: (value, '/Helv', data_font_size) for name, value in values.items()}
+    flatten_values['Rodito Aretano Jr'] = ('', '/Helv', 0)
+    writer.update_page_form_field_values(None, flatten_values, auto_regenerate=False, flatten=True)
+    try:
+        writer.remove_annotations(subtypes='/Widget')
+    except TypeError:
+        writer.remove_annotations()
+    # pypdf leaves an empty indirect /Annots array on pages after removing
+    # widgets. Remove the page key as well so the delivered static PDF has no
+    # annotations at all (and so consumers do not mistake an empty indirect
+    # array for a remaining annotation collection).
+    for output_page in writer.pages:
+        output_page.pop(NameObject('/Annots'), None)
+    writer.root_object.pop(NameObject('/AcroForm'), None)
+    output = io.BytesIO()
+    writer.write(output)
+    data = output.getvalue()
+
+    reopened = PdfReader(io.BytesIO(data))
+    if len(reopened.pages) != 1 or float(reopened.pages[0].mediabox.width) != 612 or float(reopened.pages[0].mediabox.height) != 792:
+        raise ValueError('Generated Calibration Certificate geometry is not one-page Letter.')
+    if reopened.get_fields() or reopened.pages[0].get('/Annots'):
+        raise ValueError('Generated Calibration Certificate still contains form fields or annotations.')
+    rendered_text = '\n'.join(page.extract_text() or '' for page in reopened.pages)
+    if not canonical and 'Rodito Aretano' in rendered_text:
+        raise ValueError('Generated Calibration Certificate contains the fixed Rodito Aretano identity.')
+    if signature_data and approver and approver not in rendered_text:
+        raise ValueError('Generated Calibration Certificate is missing the acting approver name.')
+    return data, values, hashlib.sha256(data).hexdigest()
+
+
+def build_calibration_certificate_no_signature_pdf(payload, shift=None, certificate_number_override=None, mapped_values_override=None, catalog=None):
+    """Build the official hard-copy certificate from the untouched source form.
+
+    This intentionally uses the canonical source rather than runtime-v2 so the
+    original printed Rodito certifier identity remains present. No approval
+    identity or signature overlay is accepted here; only the eight immutable
+    mapped values are filled before flattening.
+    """
+    data, values, fingerprint = build_calibration_certificate_pdf(
+        payload,
+        shift=shift,
+        certificate_number_override=certificate_number_override,
+        mapped_values_override=mapped_values_override,
+        catalog=catalog,
+        canonical=True,
+    )
+    try:
+        from pypdf import PdfReader
+        rendered_text = '\n'.join(page.extract_text() or '' for page in PdfReader(io.BytesIO(data)).pages)
+    except Exception as verify_error:
+        raise ValueError(f'No-signature Calibration Certificate could not be verified: {verify_error}')
+    if 'Rodito' not in rendered_text or 'Senior Service Manager' not in rendered_text:
+        raise ValueError('No-signature Calibration Certificate is missing the original printed certifier identity.')
+    if any(identity in rendered_text for identity in ('Jane Approver', 'Robert Rio')):
+        raise ValueError('No-signature Calibration Certificate contains an acting approver identity.')
+    return data, values, fingerprint
+
+
+def calibration_certificate_private_path(stored_name):
+    return os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(stored_name))
+
+
+def calibration_certificate_approval_to_dict(approval, include_urls=True):
+    payload = {}
+    try:
+        payload = json.loads(approval.mapped_data_json or '{}')
+    except (TypeError, ValueError):
+        payload = {}
+    shift = getattr(approval, 'shift', None)
+    product = getattr(shift, 'product', None) if shift else None
+    item = {
+        'id': approval.id,
+        'module': 'calibration_certificate',
+        'shift_id': approval.shift_id,
+        'submission_id': approval.online_tsr_submission_id,
+        'certificate_number': approval.certificate_number or '',
+        'revision_no': approval.revision_no or 1,
+        'is_latest': bool(approval.is_latest),
+        'status': approval.status or 'Pending',
+        'report_fingerprint': approval.report_fingerprint or '',
+        'certificate_fingerprint': approval.certificate_fingerprint or '',
+        'mapped_data': payload,
+        'machine': product.name if product else '',
+        'bsid': getattr(product, 'bsid', None) or payload.get('bsid', ''),
+        'facility': payload.get('Text6', ''),
+        'calibration_date': payload.get('Text4', ''),
+        'next_calibration_date': payload.get('Text5', ''),
+        'tsr_number': payload.get('Textfield-0', ''),
+        'requester_user_id': approval.requester_user_id,
+        'requester': approval.requester.username if approval.requester else '',
+        'approver_name': approval.approver_name_snapshot or '',
+        'approver_title': approval.approver_title_snapshot or '',
+        'approved_at': approval.approved_at.isoformat() if approval.approved_at else None,
+        'return_remarks': approval.return_remarks or '',
+        'submitted_at': approval.submitted_at.isoformat() if approval.submitted_at else None,
+        'returned_at': approval.returned_at.isoformat() if approval.returned_at else None,
+        'superseded_at': approval.superseded_at.isoformat() if approval.superseded_at else None,
+        'artifact_created_at': approval.artifact_created_at.isoformat() if approval.artifact_created_at else None,
+        'signed_shift_file_id': approval.signed_shift_file_id,
+        'no_signature_shift_file_id': approval.no_signature_shift_file_id,
+    }
+    if include_urls:
+        item['unsigned_url'] = url_for('calibration_certificate_pdf', approval_id=approval.id, artifact='unsigned')
+        item['unsigned_preview_url'] = url_for('calibration_certificate_preview', approval_id=approval.id, artifact='unsigned')
+        if approval.signed_shift_file_id:
+            item['signed_url'] = url_for('calibration_certificate_pdf', approval_id=approval.id, artifact='signed')
+            item['signed_preview_url'] = url_for('calibration_certificate_preview', approval_id=approval.id, artifact='signed')
+        if approval.no_signature_shift_file_id and calibration_certificate_no_signature_admin_can_view(approval):
+            item['no_signature_url'] = url_for('calibration_certificate_pdf', approval_id=approval.id, artifact='no_signature')
+            item['no_signature_preview_url'] = url_for('calibration_certificate_preview', approval_id=approval.id, artifact='no_signature')
+    return item
+
+
+def calibration_certificate_no_signature_file(approval):
+    """Return the managed hard-copy ShiftFile linked to an approval, if any."""
+    return db.session.get(ShiftFile, approval.no_signature_shift_file_id) if approval and approval.no_signature_shift_file_id else None
+
+
+def calibration_certificate_no_signature_admin_can_view(approval):
+    """Restrict the printable Rodito copy to named admins with archive visibility.
+
+    The print copy is read-only.  Use the archive's established visibility
+    predicate instead of the schedule mutation predicate so a regional admin
+    can access any schedule visible in reporting, including Manila schedules.
+    """
+    shift = getattr(approval, 'shift', None) if approval else None
+    return bool(
+        approval and is_admin_authorized() and
+        user_can_view_shift_tsr_archive(shift)
+    )
+
+
+def calibration_certificate_no_signature_approval_for_file(file_record):
+    if not file_record or not clean_int(getattr(file_record, 'id', None)):
+        return None
+    try:
+        ensure_calibration_certificate_approval_table()
+        return CalibrationCertificateApproval.query.filter_by(
+            no_signature_shift_file_id=file_record.id
+        ).first()
+    except Exception:
+        return None
+
+
+def calibration_certificate_approval_for_shift_file(file_record):
+    if not file_record or not clean_int(getattr(file_record, 'id', None)):
+        return None
+    try:
+        ensure_calibration_certificate_approval_table()
+        return CalibrationCertificateApproval.query.filter(
+            or_(
+                CalibrationCertificateApproval.signed_shift_file_id == file_record.id,
+                CalibrationCertificateApproval.no_signature_shift_file_id == file_record.id,
+            )
+        ).first()
+    except Exception:
+        return None
+
+
+def calibration_certificate_approval_map_for_files(file_records):
+    """Resolve certificate links for a batch of schedule files in one query."""
+    file_ids = {
+        clean_int(getattr(file_record, 'id', None))
+        for file_record in (file_records or [])
+        if clean_int(getattr(file_record, 'id', None))
+    }
+    if not file_ids:
+        return {}
+    try:
+        ensure_calibration_certificate_approval_table()
+        approvals = CalibrationCertificateApproval.query.filter(
+            or_(
+                CalibrationCertificateApproval.signed_shift_file_id.in_(file_ids),
+                CalibrationCertificateApproval.no_signature_shift_file_id.in_(file_ids),
+            )
+        ).all()
+    except Exception:
+        return {}
+    result = {}
+    for approval in approvals:
+        signed_id = clean_int(getattr(approval, 'signed_shift_file_id', None))
+        no_signature_id = clean_int(getattr(approval, 'no_signature_shift_file_id', None))
+        if signed_id in file_ids:
+            result[signed_id] = approval
+        if no_signature_id in file_ids:
+            result[no_signature_id] = approval
+    return result
+
+
+def calibration_certificate_mapped_snapshot(raw_snapshot):
+    """Return a complete immutable eight-field snapshot, or ``None``."""
+    try:
+        snapshot = json.loads(raw_snapshot or '{}') if isinstance(raw_snapshot, str) else raw_snapshot
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(snapshot, dict):
+        return None
+    if any(not isinstance(snapshot.get(name), str) or not clean_str(snapshot.get(name)) for name in CALIBRATION_CERTIFICATE_FIELDS):
+        return None
+    return {name: snapshot[name] for name in CALIBRATION_CERTIFICATE_FIELDS}
+
+
+def submit_calibration_certificate_for_submission(submission):
+    """Create one queued certificate request after TSR/DOCX persistence."""
+    ensure_calibration_certificate_approval_table()
+    if not submission:
+        return {'ok': False, 'code': 'submission_missing', 'message': 'The TSR submission was not found.'}
+    existing = CalibrationCertificateApproval.query.filter_by(online_tsr_submission_id=submission.id).first()
+    if existing:
+        return {'ok': True, 'duplicate': True, 'approval': existing}
+    shift = db.session.get(Shift, submission.shift_id)
+    payload = parse_online_tsr_payload_json(submission)
+    try:
+        catalog = calibration_certificate_catalog()
+        values, missing, report = calibration_certificate_values(payload, shift=shift, catalog=catalog)
+        catalog_errors, _ = calibration_certificate_catalog_errors(report, catalog=catalog)
+    except Exception as catalog_error:
+        return {
+            'ok': False,
+            'code': 'catalog_unavailable',
+            'message': f'Calibration Certificate catalog matching is unavailable. Reload and retry submission. ({catalog_error})',
+            'retryable': True,
+        }
+    if catalog_errors:
+        return {'ok': False, 'code': 'catalog_validation', 'message': ' '.join(catalog_errors), 'retryable': True}
+    if missing:
+        return {'ok': False, 'code': 'missing_values', 'missing': missing, 'message': ', '.join(missing)}
+    template_path = calibration_certificate_template_path()
+    with open(template_path, 'rb') as template_stream:
+        template_bytes = template_stream.read()
+    unsigned_bytes, _, certificate_fingerprint = build_calibration_certificate_pdf(payload, shift=shift, catalog=catalog)
+    stored_name = f'private_calibration_certificate_{submission.id}_{secrets.token_hex(8)}.pdf'
+    local_path = calibration_certificate_private_path(stored_name)
+    report_certificate = report.get('certificate') if isinstance(report.get('certificate'), dict) else {}
+    try:
+        managed_storage_write_bytes(
+            STORAGE_PREFIX_CALIBRATION_CERTIFICATES_PRIVATE,
+            local_path,
+            unsigned_bytes,
+            original_filename=stored_name,
+            content_type='application/pdf',
+        )
+        for older in CalibrationCertificateApproval.query.filter_by(shift_id=shift.id, is_latest=True).all():
+            older.is_latest = False
+            if older.status == 'Pending':
+                older.status = 'Superseded'
+                older.superseded_at = get_manila_time()
+        approval = CalibrationCertificateApproval(
+            shift_id=shift.id,
+            online_tsr_submission_id=submission.id,
+            requester_user_id=submission.submitted_by_user_id,
+            revision_no=clean_int(getattr(submission, 'revision_no', None)) or 1,
+            is_latest=True,
+            status='Pending',
+            report_fingerprint=clean_str(report.get('generated', {}).get('fingerprint')) if isinstance(report.get('generated'), dict) else '',
+            certificate_fingerprint=certificate_fingerprint,
+            certificate_number=values['Textfield'],
+            mapped_data_json=json.dumps({**values, 'bsid': normalize_product_bsid(report_certificate.get('bsid')) or normalize_product_bsid(getattr(getattr(shift, 'product', None), 'bsid', None))}, ensure_ascii=False),
+            template_sha256=CALIBRATION_CERTIFICATE_RUNTIME_SHA256,
+            unsigned_artifact_path=stored_name,
+            submitted_at=get_manila_time(),
+            created_at=get_manila_time(),
+            updated_at=get_manila_time(),
+        )
+        db.session.add(approval)
+        db.session.flush()
+        record_universal_approval_audit('calibration_certificate', approval.id, 'submitted', actor_user=db.session.get(User, submission.submitted_by_user_id), status_from='', status_to='Pending', metadata={'submission_id': submission.id, 'revision_no': approval.revision_no})
+        requester = db.session.get(User, submission.submitted_by_user_id) if submission.submitted_by_user_id else None
+        approvers = get_assigned_approvers_for_requester(submission.submitted_by_user_id, 'calibration_certificate') if submission.submitted_by_user_id else []
+        for approver_user in approvers:
+            create_system_notification(approver_user.id, 'Calibration Certificate awaiting approval', f'{values["Textfield"]} is ready for review.', module='calibration_certificate', record_id=approval.id, target_url=url_for('approvals_page'), metadata={'event': 'submitted', 'approval_id': approval.id})
+        if requester:
+            create_system_notification(requester.id, 'Calibration Certificate submitted', 'Your Calibration Certificate is awaiting approver assignment.' if not approvers else 'Your Calibration Certificate is pending approval.', module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'submitted', 'approval_id': approval.id})
+        db.session.commit()
+        return {'ok': True, 'duplicate': False, 'approval': approval}
+    except IntegrityError:
+        db.session.rollback()
+        try:
+            managed_storage_delete(STORAGE_PREFIX_CALIBRATION_CERTIFICATES_PRIVATE, local_path)
+        except Exception:
+            pass
+        existing = CalibrationCertificateApproval.query.filter_by(online_tsr_submission_id=submission.id).first()
+        if existing:
+            return {'ok': True, 'duplicate': True, 'approval': existing}
+        raise
+    except Exception:
+        db.session.rollback()
+        try:
+            managed_storage_delete(STORAGE_PREFIX_CALIBRATION_CERTIFICATES_PRIVATE, local_path)
+        except Exception:
+            pass
+        raise
+
+
+def calibration_certificate_requester_can_view(approval):
+    return bool(
+        approval and approval.requester_user_id == getattr(current_user, 'id', None)
+        and can_work_on_existing_schedule_shift(getattr(approval, 'shift', None))
+    )
+
+
+def calibration_certificate_approver_can_act(approval):
+    return bool(
+        approval and is_approval_center_user() and
+        can_user_approve_for_requester(current_user, approval.requester_user_id, 'calibration_certificate')
+    )
+
+
+@app.route('/submit_calibration_certificate/<int:submission_id>', methods=['POST'])
+@app.route('/api/calibration-certificates/submit/<int:submission_id>', methods=['POST'])
+@csrf.exempt
+@login_required
+def submit_calibration_certificate(submission_id):
+    """Queue one certificate after the matching TSR and generated DOCX exist."""
+    ensure_online_tsr_submission_table()
+    ensure_calibration_certificate_approval_table()
+    submission = db.session.get(OnlineTsrSubmission, submission_id)
+    if not submission or submission.status != 'completed':
+        return jsonify({'success': False, 'status': 'error', 'message': 'Save the TSR before submitting its certificate.'}), 409
+    shift = db.session.get(Shift, submission.shift_id)
+    if not shift or not can_work_on_existing_schedule_shift(shift):
+        return denied('You are not allowed to submit a certificate for this TSR.')
+    if submission.submitted_by_user_id and submission.submitted_by_user_id != getattr(current_user, 'id', None) and not is_admin_authorized():
+        return denied('You are not the requester for this TSR.')
+    payload = parse_online_tsr_payload_json(submission)
+    generated = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
+    if not isinstance(generated, dict) or not clean_int(generated.get('file_id')):
+        return jsonify({'success': False, 'status': 'error', 'code': 'report_not_uploaded', 'message': 'Upload the finalized Calibration Report before submitting its certificate.', 'retryable': True}), 409
+    result = submit_calibration_certificate_for_submission(submission)
+    if not result.get('ok'):
+        return jsonify({'success': False, 'status': 'error', 'code': result.get('code'), 'message': result.get('message'), 'missing': result.get('missing') or [], 'retryable': True}), 400
+    approval = result['approval']
+    return jsonify({'success': True, 'status': 'success', 'duplicate': bool(result.get('duplicate')), 'approval': calibration_certificate_approval_to_dict(approval)})
+
+
+@app.route('/get_calibration_certificate_status/<int:submission_id>', methods=['GET'])
+@app.route('/api/calibration-certificates/status/<int:submission_id>', methods=['GET'])
+@login_required
+def get_calibration_certificate_status(submission_id):
+    ensure_calibration_certificate_approval_table()
+    submission = db.session.get(OnlineTsrSubmission, submission_id)
+    if not submission:
+        return jsonify({'success': False, 'message': 'TSR submission not found.'}), 404
+    approval = CalibrationCertificateApproval.query.filter_by(online_tsr_submission_id=submission.id).first()
+    if not approval:
+        return jsonify({'success': True, 'status': 'Queued until TSR sync', 'approval': None})
+    if not calibration_certificate_requester_can_view(approval) and not calibration_certificate_approver_can_act(approval) and not is_admin_authorized():
+        return denied('You are not allowed to view this certificate status.')
+    status_label = approval.status
+    if approval.status == 'Pending' and not get_assigned_approvers_for_requester(approval.requester_user_id, 'calibration_certificate'):
+        status_label = 'Awaiting approver assignment'
+    return jsonify({'success': True, 'status': status_label, 'approval': calibration_certificate_approval_to_dict(approval)})
+
+
+@app.route('/get_calibration_certificate_approval/<int:approval_id>', methods=['GET'])
+@app.route('/api/calibration-certificates/<int:approval_id>', methods=['GET'])
+@login_required
+def get_calibration_certificate_approval(approval_id):
+    ensure_calibration_certificate_approval_table()
+    approval = db.session.get(CalibrationCertificateApproval, approval_id)
+    if not approval:
+        return jsonify({'success': False, 'message': 'Calibration Certificate approval not found.'}), 404
+    if not (calibration_certificate_requester_can_view(approval) or calibration_certificate_approver_can_act(approval) or is_admin_authorized()):
+        return denied('You are not allowed to view this certificate.')
+    return jsonify({'success': True, 'approval': calibration_certificate_approval_to_dict(approval)})
+
+
+@app.route('/calibration_certificate_preview/<int:approval_id>/<artifact>', methods=['GET'])
+@app.route('/api/calibration-certificates/<int:approval_id>/preview/<artifact>', methods=['GET'])
+@login_required
+def calibration_certificate_preview(approval_id, artifact):
+    """Render an authorized certificate inside HTML so PDF handlers cannot force a download."""
+    ensure_calibration_certificate_approval_table()
+    approval = db.session.get(CalibrationCertificateApproval, approval_id)
+    if not approval or artifact not in {'unsigned', 'signed', 'no_signature'}:
+        return jsonify({'success': False, 'message': 'Certificate artifact not found.'}), 404
+    if artifact == 'no_signature':
+        if not calibration_certificate_no_signature_admin_can_view(approval):
+            return denied('Only an authorized administrator may view the no-signature certificate.')
+    elif not (calibration_certificate_requester_can_view(approval) or calibration_certificate_approver_can_act(approval) or is_admin_authorized()):
+        return denied('You are not allowed to view this certificate artifact.')
+    if artifact == 'unsigned':
+        if not approval.unsigned_artifact_path:
+            return jsonify({'success': False, 'message': 'Unsigned review artifact is unavailable.'}), 404
+        local_path = calibration_certificate_private_path(approval.unsigned_artifact_path)
+        prefix = STORAGE_PREFIX_CALIBRATION_CERTIFICATES_PRIVATE
+        filename = f'REVIEW_{secure_filename(approval.certificate_number)}.pdf'
+    elif artifact == 'signed':
+        file_rec = db.session.get(ShiftFile, approval.signed_shift_file_id) if approval.signed_shift_file_id else None
+        if not file_rec:
+            return jsonify({'success': False, 'message': 'Signed certificate is not available.'}), 404
+        local_path = os.path.join(app.config['UPLOAD_FOLDER'], file_rec.filename)
+        prefix = STORAGE_PREFIX_REPORTS
+        filename = get_shift_file_display_name(file_rec) or f'Calibration_Certificate_{secure_filename(approval.certificate_number)}.pdf'
+    else:
+        file_rec = calibration_certificate_no_signature_file(approval)
+        if not file_rec:
+            return jsonify({'success': False, 'message': 'No-signature certificate is not available.'}), 404
+        local_path = os.path.join(app.config['UPLOAD_FOLDER'], file_rec.filename)
+        prefix = STORAGE_PREFIX_REPORTS
+        filename = get_shift_file_display_name(file_rec) or f'Calibration_Certificate_{secure_filename(approval.certificate_number)}_No_Signature.pdf'
+    try:
+        readable_path = managed_storage_read_path(prefix, local_path)
+        with open(readable_path, 'rb') as certificate_file:
+            pdf_bytes = certificate_file.read()
+    except Exception:
+        return jsonify({'success': False, 'message': 'Certificate artifact could not be read.'}), 404
+    return render_embedded_pdf_preview_shell(
+        f'Calibration Certificate {approval.certificate_number}',
+        pdf_bytes,
+        filename=filename,
+    )
+
+
+@app.route('/calibration_certificate_pdf/<int:approval_id>/<artifact>', methods=['GET'])
+@app.route('/api/calibration-certificates/<int:approval_id>/pdf/<artifact>', methods=['GET'])
+@login_required
+def calibration_certificate_pdf(approval_id, artifact):
+    ensure_calibration_certificate_approval_table()
+    approval = db.session.get(CalibrationCertificateApproval, approval_id)
+    if not approval or artifact not in {'unsigned', 'signed', 'no_signature'}:
+        return jsonify({'success': False, 'message': 'Certificate artifact not found.'}), 404
+    if artifact == 'no_signature':
+        if not calibration_certificate_no_signature_admin_can_view(approval):
+            return denied('Only an authorized administrator may download the no-signature certificate.')
+    elif not (calibration_certificate_requester_can_view(approval) or calibration_certificate_approver_can_act(approval) or is_admin_authorized()):
+        return denied('You are not allowed to view this certificate artifact.')
+    if artifact == 'unsigned':
+        if not approval.unsigned_artifact_path:
+            return jsonify({'success': False, 'message': 'Unsigned review artifact is unavailable.'}), 404
+        local_path = calibration_certificate_private_path(approval.unsigned_artifact_path)
+        prefix = STORAGE_PREFIX_CALIBRATION_CERTIFICATES_PRIVATE
+        download_name = f'REVIEW_{secure_filename(approval.certificate_number)}.pdf'
+    elif artifact == 'signed':
+        file_rec = db.session.get(ShiftFile, approval.signed_shift_file_id) if approval.signed_shift_file_id else None
+        if not file_rec:
+            return jsonify({'success': False, 'message': 'Signed certificate is not available.'}), 404
+        local_path = os.path.join(app.config['UPLOAD_FOLDER'], file_rec.filename)
+        prefix = STORAGE_PREFIX_REPORTS
+        download_name = get_shift_file_display_name(file_rec) or f'Calibration_Certificate_{secure_filename(approval.certificate_number)}.pdf'
+    else:
+        file_rec = calibration_certificate_no_signature_file(approval)
+        if not file_rec:
+            return jsonify({'success': False, 'message': 'No-signature certificate is not available.'}), 404
+        local_path = os.path.join(app.config['UPLOAD_FOLDER'], file_rec.filename)
+        prefix = STORAGE_PREFIX_REPORTS
+        download_name = get_shift_file_display_name(file_rec) or f'Calibration_Certificate_{secure_filename(approval.certificate_number)}_No_Signature.pdf'
+    try:
+        readable_path = managed_storage_read_path(prefix, local_path)
+    except Exception:
+        return jsonify({'success': False, 'message': 'Certificate artifact could not be read.'}), 404
+    return send_file(readable_path, mimetype='application/pdf', as_attachment=False, download_name=download_name, max_age=0)
+
+
+@app.route('/approve_calibration_certificate/<int:approval_id>', methods=['POST'])
+@app.route('/api/calibration-certificates/<int:approval_id>/approve', methods=['POST'])
+@csrf.exempt
+@login_required
+def approve_calibration_certificate(approval_id):
+    ensure_calibration_certificate_approval_table()
+    approval = db.session.get(CalibrationCertificateApproval, approval_id)
+    if not approval:
+        return jsonify({'success': False, 'message': 'Calibration Certificate approval not found.'}), 404
+    if not calibration_certificate_approver_can_act(approval):
+        return denied('You are not an assigned Calibration Certificate approver.')
+    if approval.status != 'Pending' or not approval.is_latest:
+        return jsonify({'success': False, 'message': 'This certificate is stale, superseded, or already decided.'}), 409
+    mapped_snapshot = calibration_certificate_mapped_snapshot(approval.mapped_data_json)
+    if mapped_snapshot is None:
+        return jsonify({
+            'success': False,
+            'code': 'mapped_snapshot_incomplete',
+            'message': 'This Pending Calibration Certificate has an incomplete historical mapped snapshot. It remains Pending; return it for correction and submit a new certificate.',
+            'retryable': True,
+        }), 400
+    signature = get_user_signature_snapshot(current_user)
+    required = approval_signature_required_response(current_user, 'Calibration Certificate')
+    if required:
+        return required
+    payload = parse_online_tsr_payload_json(approval.online_tsr_submission)
+    approver_name = approval_user_display_name(current_user)
+    approver_title = approval_user_title_label(current_user)
+    try:
+        signed_bytes, _, signed_fingerprint = build_calibration_certificate_pdf(
+            payload,
+            shift=None,
+            approver=approver_name,
+            signature_data=signature,
+            approval_title=approver_title,
+            certificate_number_override=approval.certificate_number,
+            mapped_values_override=mapped_snapshot,
+        )
+        no_signature_bytes, _, _ = build_calibration_certificate_no_signature_pdf(
+            payload,
+            shift=None,
+            certificate_number_override=approval.certificate_number,
+            mapped_values_override=mapped_snapshot,
+        )
+    except Exception as certificate_error:
+        return jsonify({'success': False, 'message': str(certificate_error)}), 400
+
+    updated = CalibrationCertificateApproval.query.filter_by(id=approval.id, status='Pending', is_latest=True).update({
+        'status': 'Approved', 'approver_user_id': current_user.id,
+        'approver_name_snapshot': approver_name, 'approver_title_snapshot': approver_title,
+        'approver_signature_snapshot': signature, 'approved_at': get_manila_time(),
+        'updated_at': get_manila_time(), 'artifact_created_at': None,
+    }, synchronize_session=False)
+    if updated != 1:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'This certificate was already decided by another approver.'}), 409
+    safe_number = secure_filename(approval.certificate_number) or f'CERT-{approval.id}'
+    revision_suffix = f'_REV{approval.revision_no}' if (approval.revision_no or 1) > 1 else ''
+    display_name = f'Calibration_Certificate_{safe_number}{revision_suffix}.pdf'
+    no_signature_display_name = f'Calibration_Certificate_{safe_number}{revision_suffix}_No_Signature.pdf'
+    stored_name = f'shift_{approval.shift_id}_{secrets.token_hex(8)}_{secure_filename(display_name)}'
+    no_signature_stored_name = f'shift_{approval.shift_id}_{secrets.token_hex(8)}_{secure_filename(no_signature_display_name)}'
+    local_path = os.path.join(app.config['UPLOAD_FOLDER'], stored_name)
+    no_signature_local_path = os.path.join(app.config['UPLOAD_FOLDER'], no_signature_stored_name)
+    written_paths = []
+    try:
+        # Register paths before each write so an exception after a volume write
+        # still removes every possible partial object during rollback.
+        written_paths.append(local_path)
+        managed_storage_write_bytes(STORAGE_PREFIX_REPORTS, local_path, signed_bytes, original_filename=display_name, content_type='application/pdf')
+        written_paths.append(no_signature_local_path)
+        managed_storage_write_bytes(STORAGE_PREFIX_REPORTS, no_signature_local_path, no_signature_bytes, original_filename=no_signature_display_name, content_type='application/pdf')
+        file_rec = ShiftFile(
+            shift_id=approval.shift_id, filename=stored_name, original_filename=display_name,
+            online_tsr_submission_id=approval.online_tsr_submission_id, uploaded_at=get_manila_time()
+        )
+        no_signature_file_rec = ShiftFile(
+            shift_id=approval.shift_id, filename=no_signature_stored_name, original_filename=no_signature_display_name,
+            online_tsr_submission_id=approval.online_tsr_submission_id, uploaded_at=get_manila_time()
+        )
+        db.session.add(file_rec)
+        db.session.add(no_signature_file_rec)
+        db.session.flush()
+        approval.signed_shift_file_id = file_rec.id
+        approval.no_signature_shift_file_id = no_signature_file_rec.id
+        approval.certificate_fingerprint = signed_fingerprint
+        approval.artifact_created_at = get_manila_time()
+        approval.return_remarks = None
+        record_universal_approval_audit('calibration_certificate', approval.id, 'approved', actor_user=current_user, status_from='Pending', status_to='Approved', metadata={'signed_shift_file_id': file_rec.id, 'no_signature_shift_file_id': no_signature_file_rec.id, 'revision_no': approval.revision_no})
+        requester = db.session.get(User, approval.requester_user_id) if approval.requester_user_id else None
+        if requester:
+            create_system_notification(requester.id, 'Calibration Certificate approved', f'{approval.certificate_number} was approved by {approver_name}.', module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'approved', 'approval_id': approval.id})
+        db.session.add(ActivityLog(user=approver_name or current_user.username, action=f'Approved Calibration Certificate {approval.certificate_number}'))
+        db.session.commit()
+    except Exception as approval_error:
+        db.session.rollback()
+        for written_path in written_paths:
+            try:
+                managed_storage_delete(STORAGE_PREFIX_REPORTS, written_path)
+            except Exception:
+                pass
+        return jsonify({'success': False, 'message': 'Signed certificate could not be attached. The approval remains retryable.', 'retryable': True}), 500
+    return jsonify({'success': True, 'approval': calibration_certificate_approval_to_dict(approval)})
+
+
+@app.route('/return_calibration_certificate/<int:approval_id>', methods=['POST'])
+@app.route('/api/calibration-certificates/<int:approval_id>/return', methods=['POST'])
+@csrf.exempt
+@login_required
+def return_calibration_certificate(approval_id):
+    ensure_calibration_certificate_approval_table()
+    approval = db.session.get(CalibrationCertificateApproval, approval_id)
+    if not approval:
+        return jsonify({'success': False, 'message': 'Calibration Certificate approval not found.'}), 404
+    if not calibration_certificate_approver_can_act(approval):
+        return denied('You are not an assigned Calibration Certificate approver.')
+    if approval.status != 'Pending' or not approval.is_latest:
+        return jsonify({'success': False, 'message': 'This certificate is stale, superseded, or already decided.'}), 409
+    payload = request.get_json(silent=True) or {}
+    remarks = clean_str(payload.get('remarks') or request.form.get('remarks')) or ''
+    if not remarks:
+        return jsonify({'success': False, 'message': 'Remarks are required when returning a certificate for correction.'}), 400
+    updated = CalibrationCertificateApproval.query.filter_by(id=approval.id, status='Pending', is_latest=True).update({
+        'status': 'Returned', 'approver_user_id': current_user.id,
+        'approver_name_snapshot': approval_user_display_name(current_user),
+        'approver_title_snapshot': approval_user_title_label(current_user),
+        'approver_signature_snapshot': get_user_signature_snapshot(current_user),
+        'return_remarks': remarks[:4000], 'returned_at': get_manila_time(), 'updated_at': get_manila_time(),
+    }, synchronize_session=False)
+    if updated != 1:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': 'This certificate was already decided by another approver.'}), 409
+    record_universal_approval_audit('calibration_certificate', approval.id, 'returned', actor_user=current_user, status_from='Pending', status_to='Returned', remarks=remarks)
+    requester = db.session.get(User, approval.requester_user_id) if approval.requester_user_id else None
+    if requester:
+        create_system_notification(requester.id, 'Calibration Certificate returned for correction', remarks[:300], module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'returned', 'approval_id': approval.id})
+    db.session.add(ActivityLog(user=approval_user_display_name(current_user) or current_user.username, action=f'Returned Calibration Certificate {approval.certificate_number} for correction'))
+    db.session.commit()
+    return jsonify({'success': True, 'approval': calibration_certificate_approval_to_dict(approval)})
+
+
+def record_calibration_report_upload(submission, upload_token, file_rec, original_name):
+    """Persist generated-report ownership in the existing submission payload atomically."""
+    payload = parse_online_tsr_payload_json(submission)
+    report = payload.get('calibration_report') if isinstance(payload, dict) else None
+    generated = report.get('generated') if isinstance(report, dict) else None
+    if not isinstance(report, dict) or not isinstance(generated, dict):
+        return False
+
+    generated = dict(generated)
+    generated.update({
+        'file_id': file_rec.id,
+        'uploaded_filename': original_name,
+        'upload_token': upload_token,
+        'source': 'generated_calibration_report',
+    })
+    report['generated'] = generated
+    payload['calibration_report'] = report
+    payload['_generated_calibration_report'] = {
+        'source': 'generated_calibration_report',
+        'attachment_id': clean_str(generated.get('attachment_id')) or upload_token,
+        'fingerprint': clean_str(generated.get('fingerprint')),
+        'file_id': file_rec.id,
+        'filename': original_name,
+        'upload_token': upload_token,
+    }
+    submission.payload_json = json.dumps(payload, ensure_ascii=False)
+    return True
+
+
 @app.route('/upload_online_tsr_attachment/<int:submission_id>', methods=['POST'])
 @csrf.exempt
 @login_required
@@ -15343,6 +16914,21 @@ def upload_online_tsr_attachment(submission_id):
             'message': 'Attachment retry token is missing.'
         }), 400
 
+    attachment_source = clean_str(request.form.get('attachment_source')) or ''
+    if attachment_source not in {'', 'manual_attachment', 'generated_calibration_report'}:
+        return jsonify({
+            'status': 'error',
+            'message': 'Unsupported TSR attachment source.'
+        }), 400
+
+    generated_marker = calibration_report_upload_marker(submission, upload_token) if attachment_source == 'generated_calibration_report' else None
+    if attachment_source == 'generated_calibration_report' and not generated_marker:
+        return jsonify({
+            'status': 'error',
+            'message': 'The generated Calibration Report does not belong to this TSR revision.'
+        }), 409
+
+    certificate_result = {'ok': False, 'code': 'not_requested'}
     existing_file = ShiftFile.query.filter_by(upload_token=upload_token).first()
     if existing_file:
         if existing_file.online_tsr_submission_id != submission.id:
@@ -15350,6 +16936,19 @@ def upload_online_tsr_attachment(submission_id):
                 'status': 'error',
                 'message': 'This attachment token belongs to another TSR.'
             }), 409
+        if attachment_source == 'generated_calibration_report':
+            existing_name = get_shift_file_display_name(existing_file) or getattr(existing_file, 'filename', '')
+            if not calibration_report_filename_is_docx(existing_name):
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Generated Calibration Report attachments must be DOCX files.'
+                }), 400
+            if record_calibration_report_upload(submission, upload_token, existing_file, get_shift_file_display_name(existing_file)):
+                db.session.commit()
+            try:
+                certificate_result = submit_calibration_certificate_for_submission(submission)
+            except Exception as certificate_error:
+                print(f'[CalibrationCertificate] Submission retry failed for TSR {submission.id}: {certificate_error}', flush=True)
         return jsonify({
             'status': 'success',
             'success': True,
@@ -15359,6 +16958,7 @@ def upload_online_tsr_attachment(submission_id):
             'attachment_token': upload_token,
             'file_id': existing_file.id,
             'filename': get_shift_file_display_name(existing_file),
+            'certificate': calibration_certificate_approval_to_dict(certificate_result['approval']) if certificate_result.get('ok') and certificate_result.get('approval') else {'status': certificate_result.get('code', 'retryable')},
         })
 
     saved_count = ShiftFile.query.filter(
@@ -15383,6 +16983,11 @@ def upload_online_tsr_attachment(submission_id):
     original_name = secure_filename(os.path.basename(file_obj.filename))
     if not original_name:
         return jsonify({'status': 'error', 'message': 'Attachment filename is invalid.'}), 400
+    if attachment_source == 'generated_calibration_report' and not calibration_report_filename_is_docx(original_name):
+        return jsonify({
+            'status': 'error',
+            'message': 'Generated Calibration Report attachments must be DOCX files.'
+        }), 400
 
     try:
         file_obj.stream.seek(0)
@@ -15413,6 +17018,9 @@ def upload_online_tsr_attachment(submission_id):
             uploaded_at=get_manila_time(),
         )
         db.session.add(file_rec)
+        db.session.flush()
+        if attachment_source == 'generated_calibration_report':
+            record_calibration_report_upload(submission, upload_token, file_rec, original_name)
         db.session.add(ActivityLog(
             user=(getattr(current_user, 'username', '') or 'System').capitalize(),
             action=f"Uploaded TSR supporting attachment for submission #{submission.id}: {original_name}",
@@ -15423,6 +17031,13 @@ def upload_online_tsr_attachment(submission_id):
             f"submission={submission.id} file={file_rec.id}",
             flush=True,
         )
+        certificate_result = {'ok': False, 'code': 'not_attempted'}
+        if attachment_source == 'generated_calibration_report':
+            try:
+                certificate_result = submit_calibration_certificate_for_submission(submission)
+            except Exception as certificate_error:
+                print(f'[CalibrationCertificate] Submission failed after TSR {submission.id} remained saved: {certificate_error}', flush=True)
+                certificate_result = {'ok': False, 'code': 'retryable_submission_failure', 'message': 'Certificate submission can be retried.'}
         return jsonify({
             'status': 'success',
             'success': True,
@@ -15433,6 +17048,8 @@ def upload_online_tsr_attachment(submission_id):
             'file_id': file_rec.id,
             'filename': get_shift_file_display_name(file_rec),
             'size': len(file_bytes),
+            'attachment_source': attachment_source or 'manual_attachment',
+            'certificate': calibration_certificate_approval_to_dict(certificate_result['approval']) if certificate_result.get('ok') and certificate_result.get('approval') else {'status': certificate_result.get('code', 'not_requested'), 'message': certificate_result.get('message', '')},
         })
     except Exception as attachment_error:
         db.session.rollback()
@@ -15876,7 +17493,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v90-lpr-feature-switch';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v115-calendar-print-pagination';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -15894,11 +17511,17 @@ const APP_SHELL = [
   '/static/css/app-dashboard.css',
   '/static/css/app-analytics.css',
   '/static/css/app-changelog.css',
+  '/static/css/app-calibration-report.css',
   '/static/js/app-appearance.js',
   '/static/js/app-dashboard.js',
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
+  '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
+  '/static/js/app-calibration-report.js?v=20',
   '/static/js/app-offline-schedule.js',
+  '/static/templates/calibration-report/calibration-report-template.docx',
+  '/static/vendor/jszip/jszip.min.js',
+  '/static/vendor/pdf-lib/pdf-lib.min.js',
   '/static/vendor/jspdf/jspdf.umd.min.js',
   '/static/fonts/liberation-sans/LiberationSans-Regular.ttf',
   '/static/fonts/liberation-sans/LiberationSans-Bold.ttf',
@@ -21386,6 +23009,7 @@ def get_products():
         results.append({
             'serial_number': p.serial_number,
             'name': p.name,
+            'bsid': getattr(p, 'bsid', None) or '',
             'client_id': p.client_id,
             'client_name': p.owner.name if p.owner else "N/A",
             'start_warranty': p.start_warranty_date.isoformat() if p.start_warranty_date else "",
@@ -25373,6 +26997,19 @@ REIMBURSEMENT_RECEIPT_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg'}
 REIMBURSEMENT_RECEIPT_MAX_BYTES = 2 * 1024 * 1024
 REIMBURSEMENT_RECEIPT_INTAKE_MAX_BYTES = 35 * 1024 * 1024
 REIMBURSEMENT_RECEIPT_ALLOWED_LABEL = 'PDF, JPG, JPEG, or PNG up to 35MB'
+REIMBURSEMENT_PDF_READABILITY_FAILURE_MESSAGE = (
+    'PDF could not be reduced below 2MB while keeping it readable. '
+    'Please split it into smaller PDFs and upload them separately.'
+)
+REIMBURSEMENT_PDF_NATIVE_PROFILES = (
+    (150, 75, 'native-color-150dpi-q75'),
+    (120, 65, 'native-color-120dpi-q65'),
+    (96, 55, 'native-color-96dpi-q55'),
+)
+REIMBURSEMENT_PDF_RASTER_PROFILES = (
+    (96, 50, False, 'raster-color-96dpi-q50'),
+    (72, 45, True, 'raster-grayscale-72dpi-q45'),
+)
 
 
 def reimbursement_receipt_upload_root():
@@ -25465,120 +27102,317 @@ def reimbursement_optimize_image_receipt_bytes(file_bytes, target_bytes=REIMBURS
     return file_bytes, None, None
 
 
-def reimbursement_rasterize_pdf_receipt_bytes(pdf_bytes, target_bytes=REIMBURSEMENT_RECEIPT_MAX_BYTES):
-    """Last-resort compression for scanned receipt PDFs uploaded by engineers."""
-    if not pdf_bytes or len(pdf_bytes) <= target_bytes:
-        return pdf_bytes
+def _reimbursement_pdf_conversion_log(input_size, selected_stage='', profile='', output_size=None, failure_category=''):
+    """Log bounded PDF conversion facts without filenames or document contents."""
+    fields = [f'input_bytes={int(input_size or 0)}']
+    if selected_stage:
+        fields.append(f'selected_stage={selected_stage}')
+    if profile:
+        fields.append(f'profile={profile}')
+    if output_size is not None:
+        fields.append(f'output_bytes={int(output_size)}')
+    if failure_category:
+        fields.append(f'failure_category={failure_category}')
+    print(f"[PDF conversion] {' '.join(fields)}", flush=True)
 
+
+def _reimbursement_pdf_open_source(pdf_bytes):
+    """Open one PDF source and return it with its unrotated page topology."""
     try:
         import fitz
-        from PIL import Image
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.units import mm
-        from reportlab.lib.utils import ImageReader
-        from reportlab.pdfgen import canvas
-    except Exception as import_error:
-        print(f"[Reimbursement] PDF raster compression unavailable: {import_error}", flush=True)
-        return pdf_bytes
-
-    try:
-        source_doc = fitz.open(stream=pdf_bytes, filetype='pdf')
+        document = fitz.open(stream=pdf_bytes, filetype='pdf')
     except Exception as open_error:
-        print(f"[Reimbursement] PDF raster compression skipped: {open_error}", flush=True)
-        return pdf_bytes
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            failure_category='malformed'
+        )
+        raise ValueError(
+            'PDF is malformed or could not be read. Please export a valid PDF and upload it again.'
+        ) from open_error
 
-    if source_doc.needs_pass:
-        source_doc.close()
-        return pdf_bytes
-
-    page_count = len(source_doc)
-    if page_count <= 0:
-        source_doc.close()
-        return pdf_bytes
-
-    settings = [
-        (1.20, 76),
-        (1.00, 70),
-        (0.85, 64),
-        (0.72, 58),
-        (0.60, 52),
-        (0.50, 46),
-    ]
-    best_bytes = None
-    best_size = None
+    if document.needs_pass:
+        document.close()
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            failure_category='password_protected'
+        )
+        raise ValueError(
+            'PDF is password-protected. Remove the password and upload the PDF again.'
+        )
 
     try:
-        for zoom, jpeg_quality in settings:
-            output = io.BytesIO()
-            pdf_canvas = canvas.Canvas(output, pagesize=A4, pageCompression=1)
-            page_width, page_height = A4
-            margin = 10 * mm
-            max_width = page_width - (2 * margin)
-            max_height = page_height - (2 * margin)
+        if len(document) <= 0:
+            raise ValueError('PDF has no readable pages.')
+        topology = []
+        for page in document:
+            media_box = page.mediabox
+            topology.append((
+                round(float(media_box.width), 3),
+                round(float(media_box.height), 3),
+                int(page.rotation or 0),
+            ))
+        return document, topology
+    except ValueError:
+        document.close()
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            failure_category='malformed'
+        )
+        raise ValueError(
+            'PDF is malformed or could not be read. Please export a valid PDF and upload it again.'
+        )
+    except Exception as topology_error:
+        document.close()
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            failure_category='malformed'
+        )
+        raise ValueError(
+            'PDF is malformed or could not be read. Please export a valid PDF and upload it again.'
+        ) from topology_error
 
-            for page in source_doc:
-                pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
-                image = Image.open(io.BytesIO(pix.tobytes('png'))).convert('RGB')
-                image_buffer = io.BytesIO()
+
+def _reimbursement_validate_pdf_candidate(candidate_bytes, source_topology, input_size, stage, profile):
+    """Reopen and validate one selected candidate without retaining the document."""
+    candidate_doc = None
+    try:
+        import fitz
+        candidate_doc = fitz.open(stream=candidate_bytes, filetype='pdf')
+        if candidate_doc.needs_pass or len(candidate_doc) != len(source_topology):
+            raise ValueError('candidate topology')
+        for page, expected in zip(candidate_doc, source_topology):
+            media_box = page.mediabox
+            actual = (
+                round(float(media_box.width), 3),
+                round(float(media_box.height), 3),
+                int(page.rotation or 0),
+            )
+            if (
+                abs(actual[0] - expected[0]) > 0.1 or
+                abs(actual[1] - expected[1]) > 0.1 or
+                actual[2] != expected[2]
+            ):
+                raise ValueError('candidate topology')
+
+        from pypdf import PdfReader
+        reader = PdfReader(io.BytesIO(candidate_bytes), strict=False)
+        if len(reader.pages) != len(source_topology) or getattr(reader, 'is_encrypted', False):
+            raise ValueError('candidate parseability')
+        return True
+    except Exception as validation_error:
+        category = 'candidate_topology' if 'topology' in str(validation_error) else 'candidate_invalid'
+        _reimbursement_pdf_conversion_log(
+            input_size,
+            selected_stage=stage,
+            profile=profile,
+            output_size=len(candidate_bytes or b''),
+            failure_category=category,
+        )
+        return False
+    finally:
+        if candidate_doc is not None:
+            candidate_doc.close()
+
+
+def _reimbursement_structural_pdf_candidate(pdf_bytes):
+    """Compress content streams without changing the source page topology."""
+    try:
+        from pypdf import PdfReader, PdfWriter
+
+        reader = PdfReader(io.BytesIO(pdf_bytes), strict=False)
+        if getattr(reader, 'is_encrypted', False):
+            raise ValueError('password-protected')
+        writer = PdfWriter()
+        for page in reader.pages:
+            try:
+                page.compress_content_streams()
+            except Exception:
+                pass
+            writer.add_page(page)
+        try:
+            writer.add_metadata({})
+        except Exception:
+            pass
+        output = io.BytesIO()
+        writer.write(output)
+        return output.getvalue()
+    except ValueError:
+        raise
+    except Exception:
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            selected_stage='structural',
+            profile='content-streams',
+            failure_category='structural_compression',
+        )
+        return None
+
+
+def _reimbursement_image_target_size(image_size, image_infos, dpi):
+    """Return a downscale target based on the largest displayed image rectangle."""
+    width, height = image_size
+    display_width = 0.0
+    display_height = 0.0
+    for info in image_infos:
+        bbox = info.get('bbox') or ()
+        if len(bbox) != 4:
+            continue
+        display_width = max(display_width, abs(float(bbox[2]) - float(bbox[0])))
+        display_height = max(display_height, abs(float(bbox[3]) - float(bbox[1])))
+    if display_width <= 0 or display_height <= 0:
+        return width, height
+    target_width = max(1, int(round(display_width / 72.0 * dpi)))
+    target_height = max(1, int(round(display_height / 72.0 * dpi)))
+    scale = min(1.0, target_width / float(width), target_height / float(height))
+    return max(1, int(round(width * scale))), max(1, int(round(height * scale)))
+
+
+def _reimbursement_rewrite_pdf_images_native(pdf_bytes, dpi, jpeg_quality):
+    """Rewrite embedded images from a fresh source while retaining text/vector streams."""
+    document = None
+    try:
+        import fitz
+        from PIL import Image, ImageOps
+
+        document = fitz.open(stream=pdf_bytes, filetype='pdf')
+        if document.needs_pass:
+            return None
+        image_records = {}
+        for page in document:
+            for info in page.get_image_info(xrefs=True):
+                xref = clean_int(info.get('xref'))
+                if not xref:
+                    continue
+                record = image_records.setdefault(xref, {'page': page, 'infos': []})
+                record['infos'].append(info)
+
+        resample_filter = getattr(getattr(Image, 'Resampling', Image), 'LANCZOS')
+        for xref, record in image_records.items():
+            extracted = document.extract_image(xref)
+            image_bytes = extracted.get('image') if extracted else None
+            if not image_bytes:
+                continue
+            with Image.open(io.BytesIO(image_bytes)) as source_image:
+                source_image.load()
+                try:
+                    image = ImageOps.exif_transpose(source_image)
+                except Exception:
+                    image = source_image.copy()
+                if image.mode in ('RGBA', 'LA') or ('transparency' in image.info):
+                    background = Image.new('RGB', image.size, 'white')
+                    rgba_image = image.convert('RGBA')
+                    background.paste(rgba_image, mask=rgba_image.getchannel('A'))
+                    rgba_image.close()
+                    image.close()
+                    image = background
+                else:
+                    image = image.convert('RGB')
+                target_size = _reimbursement_image_target_size(image.size, record['infos'], dpi)
+                if image.size != target_size:
+                    image = image.resize(target_size, resample_filter)
+                optimized_stream = io.BytesIO()
                 image.save(
-                    image_buffer,
+                    optimized_stream,
                     format='JPEG',
                     quality=jpeg_quality,
                     optimize=True,
-                    progressive=True
+                    progressive=True,
+                    dpi=(dpi, dpi),
                 )
-                image_buffer.seek(0)
+                optimized_bytes = optimized_stream.getvalue()
+                image.close()
+                if optimized_bytes and len(optimized_bytes) < len(image_bytes):
+                    record['page'].replace_image(xref, stream=optimized_bytes)
+                optimized_stream.close()
 
-                image_width, image_height = image.size
-                scale = min(max_width / float(image_width), max_height / float(image_height))
-                draw_width = image_width * scale
-                draw_height = image_height * scale
-                x_pos = (page_width - draw_width) / 2
-                y_pos = (page_height - draw_height) / 2
-
-                pdf_canvas.drawImage(
-                    ImageReader(image_buffer),
-                    x_pos,
-                    y_pos,
-                    width=draw_width,
-                    height=draw_height,
-                    preserveAspectRatio=True,
-                    mask='auto'
-                )
-                pdf_canvas.showPage()
-
-            pdf_canvas.save()
-            optimized = output.getvalue()
-            optimized_size = len(optimized)
-            if optimized and (best_size is None or optimized_size < best_size):
-                best_bytes = optimized
-                best_size = optimized_size
-            if optimized and optimized_size <= target_bytes:
-                print(
-                    f"[Reimbursement] Uploaded receipt PDF raster-optimized: {len(pdf_bytes)} bytes -> {optimized_size} bytes.",
-                    flush=True
-                )
-                return optimized
-    except Exception as raster_error:
-        print(f"[Reimbursement] PDF raster compression failed: {raster_error}", flush=True)
+        return document.tobytes(deflate=True, garbage=4)
+    except Exception:
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            selected_stage='native',
+            failure_category='native_image_rewrite',
+        )
+        return None
     finally:
-        source_doc.close()
+        if document is not None:
+            document.close()
 
-    if best_bytes and best_size and best_size < len(pdf_bytes):
-        return best_bytes
-    return pdf_bytes
+
+def _reimbursement_rasterize_pdf_profile(pdf_bytes, dpi, jpeg_quality, grayscale=False):
+    """Rasterize each source page while preserving its MediaBox and rotation."""
+    source_document = None
+    output_document = None
+    try:
+        import fitz
+        from PIL import Image
+
+        source_document = fitz.open(stream=pdf_bytes, filetype='pdf')
+        if source_document.needs_pass:
+            return None
+        output_document = fitz.open()
+        colorspace = fitz.csGRAY if grayscale else fitz.csRGB
+        image_mode = 'L' if grayscale else 'RGB'
+        scale = float(dpi) / 72.0
+        for source_page in source_document:
+            media_box = source_page.mediabox
+            output_page = output_document.new_page(
+                width=float(media_box.width),
+                height=float(media_box.height),
+            )
+            output_page.set_rotation(int(source_page.rotation or 0))
+            pixmap = source_page.get_pixmap(
+                matrix=fitz.Matrix(scale, scale),
+                colorspace=colorspace,
+                alpha=False,
+            )
+            image = Image.frombytes(image_mode, (pixmap.width, pixmap.height), pixmap.samples)
+            image_stream = io.BytesIO()
+            image.save(
+                image_stream,
+                format='JPEG',
+                quality=jpeg_quality,
+                optimize=True,
+                progressive=True,
+            )
+            output_page.insert_image(output_page.rect, stream=image_stream.getvalue())
+            image_stream.close()
+            image.close()
+            del pixmap
+        return output_document.tobytes(deflate=True, garbage=4)
+    except Exception:
+        _reimbursement_pdf_conversion_log(
+            len(pdf_bytes or b''),
+            selected_stage='raster',
+            failure_category='rasterization',
+        )
+        return None
+    finally:
+        if output_document is not None:
+            output_document.close()
+        if source_document is not None:
+            source_document.close()
+
+
+def reimbursement_rasterize_pdf_receipt_bytes(pdf_bytes, target_bytes=REIMBURSEMENT_RECEIPT_MAX_BYTES):
+    """Compatibility wrapper for the final readable raster profile."""
+    target_bytes = min(max(1, clean_int(target_bytes) or REIMBURSEMENT_RECEIPT_MAX_BYTES), REIMBURSEMENT_RECEIPT_MAX_BYTES)
+    if not pdf_bytes or len(pdf_bytes) <= target_bytes:
+        return pdf_bytes
+    source_document, source_topology = _reimbursement_pdf_open_source(pdf_bytes)
+    source_document.close()
+    candidate = _reimbursement_rasterize_pdf_profile(pdf_bytes, 72, 45, True)
+    if (
+        candidate and
+        len(candidate) <= target_bytes and
+        _reimbursement_validate_pdf_candidate(candidate, source_topology, len(pdf_bytes), 'raster', 'raster-grayscale-72dpi-q45')
+    ):
+        return candidate
+    raise ValueError(REIMBURSEMENT_PDF_READABILITY_FAILURE_MESSAGE)
 
 
 def reimbursement_optimize_pdf_receipt_bytes(pdf_bytes, target_bytes=REIMBURSEMENT_RECEIPT_MAX_BYTES):
     """Compress uploaded reimbursement receipt PDFs, including scanned PDFs."""
-    if not pdf_bytes or len(pdf_bytes) <= target_bytes:
-        return pdf_bytes
-
-    optimized = reimbursement_compress_pdf_bytes_best_effort(pdf_bytes, target_bytes)
-    if optimized and len(optimized) <= target_bytes:
-        return optimized
-
-    return reimbursement_rasterize_pdf_receipt_bytes(optimized or pdf_bytes, target_bytes)
+    return reimbursement_compress_pdf_bytes_best_effort(pdf_bytes, target_bytes)
 
 
 def reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename):
@@ -25609,8 +27443,11 @@ def reimbursement_prepare_receipt_upload_bytes(file_obj, original_filename):
             file_bytes = optimized_bytes
             stored_ext = optimized_ext
             content_type = optimized_content_type
-    elif ext == 'pdf' and len(file_bytes) > REIMBURSEMENT_RECEIPT_MAX_BYTES:
-        file_bytes = reimbursement_optimize_pdf_receipt_bytes(file_bytes, REIMBURSEMENT_RECEIPT_MAX_BYTES)
+    elif ext == 'pdf':
+        source_document, _ = _reimbursement_pdf_open_source(file_bytes)
+        source_document.close()
+        if len(file_bytes) > REIMBURSEMENT_RECEIPT_MAX_BYTES:
+            file_bytes = reimbursement_optimize_pdf_receipt_bytes(file_bytes, REIMBURSEMENT_RECEIPT_MAX_BYTES)
         content_type = 'application/pdf'
 
     if len(file_bytes) > REIMBURSEMENT_RECEIPT_MAX_BYTES:
@@ -25936,57 +27773,92 @@ def reimbursement_append_receipt_file_to_writer(writer, receipt):
 
 
 def reimbursement_compress_pdf_bytes_best_effort(pdf_bytes, target_bytes=None):
-    """Best-effort compression for generated All Receipts PDF.
-
-    This keeps the official accounting output small without touching original
-    uploaded receipt files. Exact 2 MB is not guaranteed for many pages or
-    already-optimized PDFs, but image receipts are downscaled before this step.
-    """
+    """Convert a PDF through bounded fresh-source profiles to the stored-size ceiling."""
     if not pdf_bytes:
         return pdf_bytes
 
-    target_bytes = clean_int(target_bytes) or int(os.environ.get('REIMBURSEMENT_RECEIPT_PDF_TARGET_MB', '2') or 2) * 1024 * 1024
-    if len(pdf_bytes) <= target_bytes:
+    requested_target_bytes = clean_int(target_bytes) or int(
+        os.environ.get('REIMBURSEMENT_RECEIPT_PDF_TARGET_MB', '2') or 2
+    ) * 1024 * 1024
+    target_bytes = min(max(1, requested_target_bytes), REIMBURSEMENT_RECEIPT_MAX_BYTES)
+    input_size = len(pdf_bytes)
+    source_document, source_topology = _reimbursement_pdf_open_source(pdf_bytes)
+    source_document.close()
+
+    if input_size <= target_bytes:
+        _reimbursement_pdf_conversion_log(
+            input_size,
+            selected_stage='original',
+            profile='unchanged-valid-pdf',
+            output_size=input_size,
+        )
         return pdf_bytes
 
-    try:
-        from pypdf import PdfReader, PdfWriter
-
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-        if getattr(reader, 'is_encrypted', False):
-            try:
-                reader.decrypt('')
-            except Exception:
-                return pdf_bytes
-
-        writer = PdfWriter()
-        for page in reader.pages:
-            try:
-                page.compress_content_streams()
-            except Exception:
-                pass
-            writer.add_page(page)
-
-        try:
-            writer.add_metadata({})
-        except Exception:
-            pass
-
-        output = io.BytesIO()
-        writer.write(output)
-        compressed = output.getvalue()
-
-        if compressed and len(compressed) < len(pdf_bytes):
-            print(
-                f"[Reimbursement] All Receipts PDF optimized: {len(pdf_bytes)} bytes -> {len(compressed)} bytes.",
-                flush=True
+    structural_candidate = _reimbursement_structural_pdf_candidate(pdf_bytes)
+    if structural_candidate and len(structural_candidate) <= target_bytes:
+        if _reimbursement_validate_pdf_candidate(
+            structural_candidate,
+            source_topology,
+            input_size,
+            'structural',
+            'content-streams',
+        ):
+            _reimbursement_pdf_conversion_log(
+                input_size,
+                selected_stage='structural',
+                profile='content-streams',
+                output_size=len(structural_candidate),
             )
-            return compressed
+            return structural_candidate
 
-    except Exception as compression_error:
-        print(f"[Reimbursement] All Receipts PDF compression skipped: {compression_error}", flush=True)
+    for dpi, jpeg_quality, profile in REIMBURSEMENT_PDF_NATIVE_PROFILES:
+        candidate = _reimbursement_rewrite_pdf_images_native(pdf_bytes, dpi, jpeg_quality)
+        if not candidate or len(candidate) > target_bytes:
+            continue
+        if _reimbursement_validate_pdf_candidate(
+            candidate,
+            source_topology,
+            input_size,
+            'native',
+            profile,
+        ):
+            _reimbursement_pdf_conversion_log(
+                input_size,
+                selected_stage='native',
+                profile=profile,
+                output_size=len(candidate),
+            )
+            return candidate
 
-    return pdf_bytes
+    for dpi, jpeg_quality, grayscale, profile in REIMBURSEMENT_PDF_RASTER_PROFILES:
+        candidate = _reimbursement_rasterize_pdf_profile(
+            pdf_bytes,
+            dpi,
+            jpeg_quality,
+            grayscale,
+        )
+        if not candidate or len(candidate) > target_bytes:
+            continue
+        if _reimbursement_validate_pdf_candidate(
+            candidate,
+            source_topology,
+            input_size,
+            'raster',
+            profile,
+        ):
+            _reimbursement_pdf_conversion_log(
+                input_size,
+                selected_stage='raster',
+                profile=profile,
+                output_size=len(candidate),
+            )
+            return candidate
+
+    _reimbursement_pdf_conversion_log(
+        input_size,
+        failure_category='readability_floor',
+    )
+    raise ValueError(REIMBURSEMENT_PDF_READABILITY_FAILURE_MESSAGE)
 
 
 def build_reimbursement_all_receipts_pdf(header):
@@ -27534,6 +29406,13 @@ def approval_center_module_catalog():
     structure without enabling unfinished workflows.
     """
     modules = [
+        {
+            'key': 'calibration_certificate',
+            'label': 'Calibration Certificates',
+            'status': 'active',
+            'enabled': True,
+            'description': 'Finalized Calibration Certificates awaiting routed approval.'
+        },
         {
             'key': 'travel_request',
             'label': 'Travel Request',
@@ -30646,6 +32525,31 @@ def get_approval_center_summary():
         print(f"[LeaveRequest] Approval summary counts unavailable: {leave_count_error}", flush=True)
     modules = approval_center_module_catalog()
 
+    certificate_counts = {'draft': 0, 'submitted': 0, 'approved': 0, 'rejected': 0, 'pending': 0, 'returned': 0, 'superseded': 0, 'total': 0}
+    try:
+        ensure_calibration_certificate_approval_table()
+        certificate_query = CalibrationCertificateApproval.query
+        requester_ids = get_requester_user_ids_for_approver(current_user, 'calibration_certificate')
+        if requester_ids:
+            certificate_query = certificate_query.filter(CalibrationCertificateApproval.requester_user_id.in_(requester_ids))
+        else:
+            certificate_query = certificate_query.filter(db.text('1 = 0'))
+        for row in certificate_query.all():
+            certificate_counts['total'] += 1
+            key = (clean_str(row.status) or 'Pending').lower()
+            if key == 'pending':
+                certificate_counts['pending'] += 1
+                certificate_counts['submitted'] += 1
+            elif key == 'approved':
+                certificate_counts['approved'] += 1
+            elif key == 'returned':
+                certificate_counts['returned'] += 1
+                certificate_counts['rejected'] += 1
+            elif key == 'superseded':
+                certificate_counts['superseded'] += 1
+    except Exception as certificate_summary_error:
+        print(f'[CalibrationCertificate] Approval summary unavailable: {certificate_summary_error}', flush=True)
+
     travel_counts = {
         'draft': 0,
         'submitted': 0,
@@ -30686,7 +32590,9 @@ def get_approval_center_summary():
         print(f"[TravelRequest] Approval summary counts unavailable: {travel_count_error}", flush=True)
 
     for module in modules:
-        if module['key'] == 'reimbursement':
+        if module['key'] == 'calibration_certificate':
+            module['counts'] = certificate_counts
+        elif module['key'] == 'reimbursement':
             module['counts'] = reimbursement_counts
         elif module['key'] == 'travel_request':
             module['status'] = 'active'
@@ -30729,8 +32635,8 @@ def get_approval_center_summary():
         'generated_at': get_manila_time().isoformat(),
         'modules': modules,
         'summary': {
-            'pending_total': reimbursement_counts['pending'] + travel_counts['pending'] + liquidation_counts['pending'] + cash_advance_counts['pending'] + cash_advance_liquidation_counts['pending'] + lpr_counts['pending'] + leave_counts['pending'],
-            'active_modules': 7 if lpr_enabled() else 6,
+            'pending_total': reimbursement_counts['pending'] + travel_counts['pending'] + liquidation_counts['pending'] + cash_advance_counts['pending'] + cash_advance_liquidation_counts['pending'] + lpr_counts['pending'] + leave_counts['pending'] + certificate_counts['pending'],
+            'active_modules': 8 if lpr_enabled() else 7,
             'coming_soon_modules': 0
         }
     })
@@ -30755,7 +32661,7 @@ def get_approval_center_items():
             'status': 'disabled',
             'message': 'Local Purchase Requisition is not available yet.'
         }), 403
-    if module_key not in {'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'lpr', 'leave_request', 'liquidation'}:
+    if module_key not in {'reimbursement', 'travel_request', 'travel_liquidation', 'cash_advance', 'cash_advance_liquidation', 'lpr', 'leave_request', 'calibration_certificate', 'liquidation'}:
         return jsonify({'success': False, 'error': 'Unknown approval module.'}), 400
 
     requested_status = (request.args.get('status') or 'Submitted').strip().lower()
@@ -30765,10 +32671,33 @@ def get_approval_center_items():
         'approved': 'Approved',
         'rejected': 'Rejected',
         'returned': 'Rejected',
+        'superseded': 'Superseded',
         'draft': 'Draft',
         'all': 'All'
     }
     status_filter = status_map.get(requested_status, 'Submitted')
+
+    if module_key == 'calibration_certificate':
+        ensure_calibration_certificate_approval_table()
+        requester_ids = get_requester_user_ids_for_approver(current_user, 'calibration_certificate')
+        query = CalibrationCertificateApproval.query
+        if requester_ids:
+            query = query.filter(CalibrationCertificateApproval.requester_user_id.in_(requester_ids))
+        else:
+            query = query.filter(db.text('1 = 0'))
+        if status_filter == 'Submitted':
+            query = query.filter(CalibrationCertificateApproval.status == 'Pending', CalibrationCertificateApproval.is_latest.is_(True))
+        elif status_filter != 'All':
+            query = query.filter(CalibrationCertificateApproval.status == status_filter)
+        items = query.order_by(CalibrationCertificateApproval.submitted_at.asc(), CalibrationCertificateApproval.id.asc()).limit(300).all()
+        return jsonify({
+            'success': True,
+            'module': 'calibration_certificate',
+            'enabled': True,
+            'status': status_filter,
+            'items': [calibration_certificate_approval_to_dict(item) for item in items],
+            'count': len(items)
+        })
 
     if module_key == 'travel_request':
         items = travel_request_query_for_current_approver(status_filter).limit(300).all()
@@ -35891,6 +37820,12 @@ def upload_travel_liquidation_receipt(row_id):
             'row': travel_liquidation_row_to_dict(row),
             'liquidation': travel_liquidation_to_dict(liquidation, include_rows=True)
         })
+    except ValueError as conversion_error:
+        db.session.rollback()
+        if 'file_path' in locals():
+            managed_storage_rollback_new_file(STORAGE_PREFIX_TRAVEL_LIQUIDATIONS, file_path)
+        print(f"[TravelLiquidation] Receipt conversion rejected: {conversion_error}", flush=True)
+        return jsonify({'success': False, 'error': str(conversion_error)}), 400
     except Exception as exc:
         db.session.rollback()
         if 'file_path' in locals():
@@ -37450,16 +39385,39 @@ def redact_timeline_payload_for_hr(payload):
     return redacted
 
 
-def timeline_file_detail_payload(file_record):
+def timeline_file_detail_payload(file_record, certificate_approval_map=None):
     """Serialize one schedule file with an explicit recognized-TSR identity flag."""
     is_tsr = shift_file_is_recognized_tsr(file_record)
+    if certificate_approval_map is None:
+        no_signature_approval = calibration_certificate_no_signature_approval_for_file(file_record)
+        certificate_approval = no_signature_approval or calibration_certificate_approval_for_shift_file(file_record)
+    else:
+        certificate_approval = certificate_approval_map.get(clean_int(getattr(file_record, 'id', None)))
+        no_signature_approval = (
+            certificate_approval
+            if certificate_approval and certificate_approval.no_signature_shift_file_id == file_record.id
+            else None
+        )
+    is_no_signature = bool(no_signature_approval)
+    can_access_no_signature = bool(
+        not is_no_signature or
+        calibration_certificate_no_signature_admin_can_view(no_signature_approval)
+    )
     return {
         'id': file_record.id,
         'filename': get_shift_file_display_name(file_record) or file_record.filename,
         'disk_filename': file_record.filename,
         'display_name': get_shift_file_display_name(file_record),
         'is_tsr': is_tsr,
-        'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if is_tsr else '',
+        'certificate_kind': 'no_signature' if is_no_signature else ('signed' if certificate_approval else ''),
+        'is_managed_certificate': bool(certificate_approval),
+        'is_no_signature': is_no_signature,
+        'locked': bool(is_no_signature and not can_access_no_signature),
+        'can_preview': bool(certificate_approval and can_access_no_signature) if certificate_approval else bool(is_tsr),
+        'can_download': bool(certificate_approval and can_access_no_signature) if certificate_approval else bool(is_tsr),
+        'can_delete': bool(not is_no_signature),
+        'preview_url': url_for('preview_tsr_archive_file', file_id=file_record.id, scope='all') if ((certificate_approval and can_access_no_signature) or is_tsr) else '',
+        'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if ((certificate_approval and can_access_no_signature) or is_tsr) else '',
         'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else ''
     }
 
@@ -37539,6 +39497,11 @@ def get_timeline_data():
         )
 
         weekly_shift_ids = [shift.id for shift in weekly_shifts]
+        weekly_file_records = [file_record for shift in weekly_shifts for file_record in shift.files]
+        certificate_approval_map = (
+            calibration_certificate_approval_map_for_files(weekly_file_records)
+            if not timeline_lite else {}
+        )
 
         shift_engineer_map = {shift_id: [] for shift_id in weekly_shift_ids}
         if weekly_shift_ids:
@@ -37632,7 +39595,7 @@ def get_timeline_data():
                 # When timeline_lite=true, skip heavy per-file metadata so the grid can load faster.
                 'files': [] if timeline_lite else [get_shift_file_display_name(file_record) or file_record.filename for file_record in shift.files],
                 'file_details': [] if timeline_lite else [
-                    timeline_file_detail_payload(file_record)
+                    timeline_file_detail_payload(file_record, certificate_approval_map)
                     for file_record in shift.files
                 ],
                 'engineers': assigned_engineer_ids,
@@ -37761,6 +39724,7 @@ def get_shift_details(shift_id):
     travel_request_id = clean_int(getattr(shift, 'travel_request_id', None))
     travel_request_rec = db.session.get(TravelRequest, travel_request_id) if is_travel_block and travel_request_id else None
     travel_suggestions = build_travel_request_schedule_suggestions(travel_request_rec) if travel_request_rec else []
+    certificate_approval_map = calibration_certificate_approval_map_for_files(shift.files)
 
     return jsonify({
         'status': 'success',
@@ -37777,7 +39741,7 @@ def get_shift_details(shift_id):
             'status': shift.status,
             'files': [get_shift_file_display_name(file_record) or file_record.filename for file_record in shift.files],
             'file_details': [
-                timeline_file_detail_payload(file_record)
+                timeline_file_detail_payload(file_record, certificate_approval_map)
                 for file_record in shift.files
             ],
             'manual_upload_count': get_linked_schedule_manual_upload_count(shift),
@@ -38638,6 +40602,7 @@ def get_tsr_archive():
         Shift.start_time.desc(),
         ShiftFile.id.desc(),
     ).all()
+    certificate_approval_map = calibration_certificate_approval_map_for_files(file_records)
 
     submission_ids = {
         clean_int(getattr(file_rec, 'online_tsr_submission_id', None))
@@ -38676,10 +40641,17 @@ def get_tsr_archive():
             continue
 
         submission = primary_submission_files.get(file_id)
+        certificate_approval = certificate_approval_map.get(file_id)
+        is_no_signature = bool(
+            certificate_approval and certificate_approval.no_signature_shift_file_id == file_id
+        )
         is_legacy_replacement = file_id in (legacy_policy.get('replacement_file_ids') or set())
         display_name = get_shift_file_display_name(file_rec)
         disk_name = get_shift_file_disk_name(file_rec)
-        if not submission and not is_legacy_replacement and not existing_files_have_tsr([display_name, disk_name]):
+        if (
+            not submission and not is_legacy_replacement and not certificate_approval and
+            not existing_files_have_tsr([display_name, disk_name])
+        ):
             continue
 
         engineer_names = engineer_name_map.get(shift.id) or []
@@ -38689,6 +40661,10 @@ def get_tsr_archive():
         filename = display_name or disk_name or 'TSR file'
         extension = filename.rsplit('.', 1)[-1].lower() if '.' in filename else ''
         tsr_number = clean_str(getattr(submission, 'tsr_number', None)) if submission else ''
+        no_signature_access = bool(
+            not is_no_signature or
+            calibration_certificate_no_signature_admin_can_view(certificate_approval)
+        )
 
         row = {
             'id': file_rec.id,
@@ -38706,11 +40682,20 @@ def get_tsr_archive():
             'file_type': extension,
             'is_pdf': extension == 'pdf',
             'source': (
+                'Calibration Certificate print copy' if is_no_signature else
+                ('Calibration Certificate' if certificate_approval else
                 'Complete Uploaded TSR' if is_legacy_replacement else
-                ('Generated Online TSR' if submission else 'Uploaded TSR')
+                ('Generated Online TSR' if submission else 'Uploaded TSR'))
             ),
-            'preview_url': url_for('preview_tsr_archive_file', file_id=file_rec.id, scope=scope),
-            'download_url': url_for('download_tsr_archive_file', file_id=file_rec.id, scope=scope),
+            'certificate_kind': 'no_signature' if is_no_signature else ('signed' if certificate_approval else ''),
+            'is_managed_certificate': bool(certificate_approval),
+            'is_no_signature': is_no_signature,
+            'locked': bool(is_no_signature and not no_signature_access),
+            'can_preview': bool(no_signature_access),
+            'can_download': bool(no_signature_access),
+            'can_delete': bool(not is_no_signature),
+            'preview_url': url_for('preview_tsr_archive_file', file_id=file_rec.id, scope=scope) if no_signature_access else '',
+            'download_url': url_for('download_tsr_archive_file', file_id=file_rec.id, scope=scope) if no_signature_access else '',
             '_file_rec': file_rec,
         }
 
@@ -38857,6 +40842,12 @@ def _resolve_tsr_archive_file_for_preview(file_id):
             f'You do not have permission to open TSR file #{file_id} with scope={scope}.',
             403
         )
+    no_signature_approval = calibration_certificate_no_signature_approval_for_file(file_rec)
+    if no_signature_approval and not calibration_certificate_no_signature_admin_can_view(no_signature_approval):
+        return None, _tsr_archive_error_response(
+            'Only an authorized administrator may open the no-signature certificate.',
+            403
+        )
 
     display_name = get_shift_file_display_name(file_rec)
     disk_name = get_shift_file_disk_name(file_rec)
@@ -38894,8 +40885,12 @@ def _resolve_tsr_archive_file_for_preview(file_id):
     ext_source = display_name or disk_name or file_path
     ext = ext_source.rsplit('.', 1)[-1].lower() if '.' in ext_source else ''
     is_supported_schedule_attachment = ext in SCHEDULE_ATTACHMENT_EXTENSIONS
+    is_generated_calibration_report_docx = bool(
+        ext == 'docx' and is_system_generated_calibration_report_file(file_rec)
+    )
     if (
         not is_supported_schedule_attachment and
+        not is_generated_calibration_report_docx and
         not existing_files_have_tsr([display_name, disk_name]) and
         not report_file_content_looks_like_tsr(file_path, display_name or disk_name)
     ):
@@ -39542,11 +41537,12 @@ def export_products():
     ensure_product_contract_column()
     products = Product.query.all()
     output = io.StringIO(); writer = csv.writer(output)
-    writer.writerow(['Serial Number', 'Description', 'Current Owner', 'Start Date', 'End Date', 'Contract', 'Status'])
+    writer.writerow(['Serial Number', 'Description', 'BSID', 'Current Owner', 'Start Date', 'End Date', 'Contract', 'Status'])
     for p in products:
         writer.writerow([
             p.serial_number,
             p.name,
+            getattr(p, 'bsid', None) or '',
             p.owner.name if p.owner else "N/A",
             p.start_warranty_date,
             p.end_warranty_date,
@@ -40026,6 +42022,182 @@ def normalize_purchase_order_type(value):
     return normalized if normalized in PO_TYPE_LABELS else None
 
 
+def purchase_order_is_current_type(value):
+    return normalize_purchase_order_type(value) in PO_CURRENT_TYPES
+
+
+def purchase_order_add_months_clamped(start_date, months):
+    """Add calendar months while keeping month-end service dates valid."""
+    if not isinstance(start_date, date):
+        return None
+    month_index = (start_date.year * 12) + (start_date.month - 1) + int(months)
+    year, month_offset = divmod(month_index, 12)
+    month = month_offset + 1
+    day = min(start_date.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def purchase_order_schedule_mode(po_type, end_date=None):
+    """Return the effective schedule mode without adding another stored P.O. type."""
+    normalized_type = normalize_purchase_order_type(po_type)
+    if normalized_type == PO_TYPE_SINGLE and not end_date:
+        return 'one_time'
+    if normalized_type == PO_TYPE_SINGLE:
+        return 'annual'
+    return normalized_type if normalized_type in PO_CURRENT_TYPES else 'legacy'
+
+
+def purchase_order_schedule_mode_label(po_type, end_date=None):
+    return {
+        'one_time': 'One-time',
+        'annual': 'Annual',
+        PO_TYPE_SEMI_ANNUAL: 'Semi Annual',
+        PO_TYPE_QUARTERLY: 'Quarterly',
+        'legacy': 'Not allocated',
+    }.get(purchase_order_schedule_mode(po_type, end_date), 'Not allocated')
+
+
+def purchase_order_fiscal_period(fiscal_year=None, fiscal_quarter=None):
+    """Return an inclusive fiscal period; fiscal years begin on April 1."""
+    if fiscal_year in (None, '') and fiscal_quarter in (None, ''):
+        return None, None
+    try:
+        year = int(fiscal_year)
+        quarter = int(fiscal_quarter) if fiscal_quarter not in (None, '') else None
+    except (TypeError, ValueError):
+        raise ValueError('Fiscal year and fiscal quarter must be valid numbers.')
+    if year < 1900 or year > 9999:
+        raise ValueError('Fiscal year is invalid.')
+    if quarter is not None and quarter not in (1, 2, 3, 4):
+        raise ValueError('Fiscal quarter must be 1, 2, 3, or 4.')
+    start = date(year, 4, 1)
+    if quarter is None:
+        return start, date(year + 1, 3, 31)
+    start = purchase_order_add_months_clamped(start, (quarter - 1) * 3)
+    end = purchase_order_add_months_clamped(start, 3) - timedelta(days=1)
+    return start, end
+
+
+def purchase_order_schedule(start_date, end_date, po_type, amount=None):
+    """Build anchored service dates and Decimal allocations for a current P.O."""
+    normalized_type = normalize_purchase_order_type(po_type)
+    if normalized_type not in PO_CURRENT_TYPES or not start_date:
+        return []
+    one_time = normalized_type == PO_TYPE_SINGLE and not end_date
+    if not one_time and not end_date:
+        return []
+    interval_months = {
+        PO_TYPE_SINGLE: 12,
+        PO_TYPE_SEMI_ANNUAL: 6,
+        PO_TYPE_QUARTERLY: 3,
+    }[normalized_type]
+    if end_date is not None and end_date < start_date:
+        return []
+    dates = []
+    offset = 0
+    while True:
+        occurrence = purchase_order_add_months_clamped(start_date, offset)
+        if one_time or occurrence > end_date:
+            break
+        dates.append(occurrence)
+        offset += interval_months
+    if one_time:
+        dates.append(start_date)
+    if not dates:
+        return []
+
+    allocations = [None] * len(dates)
+    if amount is not None:
+        try:
+            total = Decimal(str(amount)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        except (InvalidOperation, TypeError, ValueError):
+            total = None
+        if total is not None:
+            # Allocate in integer cents.  Rounding the quotient first can make the
+            # final remainder negative for small totals (for example, 0.02 across
+            # four occurrences), so keep the quotient and remainder in cents and
+            # assign the remainder only to the final occurrence.
+            total_cents = int((total * Decimal('100')).to_integral_value(rounding=ROUND_HALF_UP))
+            quotient_cents, remainder_cents = divmod(total_cents, len(dates))
+            per_visit = Decimal(quotient_cents) / Decimal('100')
+            final_visit = Decimal(quotient_cents + remainder_cents) / Decimal('100')
+            allocations = [per_visit] * (len(dates) - 1) + [final_visit]
+
+    result = []
+    for occurrence, allocation in zip(dates, allocations):
+        fiscal_year = occurrence.year if occurrence.month >= 4 else occurrence.year - 1
+        fiscal_quarter = ((occurrence.month - 4) % 12) // 3 + 1
+        result.append({
+            'date': occurrence,
+            'date_string': occurrence.isoformat(),
+            'fiscal_year': fiscal_year,
+            'fiscal_quarter': fiscal_quarter,
+            'amount': allocation,
+            'amount_string': purchase_order_amount_string(allocation) if allocation is not None else '',
+            'amount_display': purchase_order_amount_display(allocation) if allocation is not None else '',
+        })
+    return result
+
+
+def purchase_order_schedule_payload(start_date, end_date, po_type, amount=None):
+    return [
+        {
+            key: (
+                item[key].isoformat() if key == 'date' and isinstance(item[key], date)
+                else purchase_order_amount_string(item[key]) if key == 'amount' and item[key] is not None
+                else item[key]
+            )
+            for key in ('date', 'date_string', 'fiscal_year', 'fiscal_quarter', 'amount', 'amount_string', 'amount_display')
+        }
+        for item in purchase_order_schedule(start_date, end_date, po_type, amount)
+    ]
+
+
+def purchase_order_filtered_schedule(start_date, end_date, po_type, amount, filter_start=None, filter_end=None):
+    schedule = purchase_order_schedule(start_date, end_date, po_type, amount)
+    if filter_start is None and filter_end is None:
+        return schedule
+    return [
+        item for item in schedule
+        if (filter_start is None or item['date'] >= filter_start)
+        and (filter_end is None or item['date'] <= filter_end)
+    ]
+
+
+def purchase_order_schedule_amount(schedule):
+    if not schedule or any(item.get('amount') is None for item in schedule):
+        return None
+    return sum((item['amount'] for item in schedule), Decimal('0.00')).quantize(Decimal('0.01'))
+
+
+def purchase_order_per_visit_amount(schedule):
+    """Return the ordinary displayed allocation for an unfiltered register row."""
+    if not schedule or schedule[0].get('amount') is None:
+        return None
+    return schedule[0]['amount'].quantize(Decimal('0.01'))
+
+
+def purchase_order_filter_window(args):
+    """Parse fiscal or custom filters, with fiscal filters taking an explicit exclusive path."""
+    fiscal_year = (args.get('fiscal_year') or '').strip()
+    fiscal_quarter = (args.get('fiscal_quarter') or '').strip()
+    start_text = (args.get('from') or '').strip()
+    end_text = (args.get('to') or '').strip()
+    if fiscal_year or fiscal_quarter:
+        if start_text or end_text:
+            raise ValueError('Choose a fiscal filter or a custom From/To date, not both.')
+        return purchase_order_fiscal_period(fiscal_year, fiscal_quarter)
+    filter_start = parse_date(start_text) if start_text else None
+    filter_end = parse_date(end_text) if end_text else None
+    if start_text and not filter_start:
+        raise ValueError('The From date filter is invalid.')
+    if end_text and not filter_end:
+        raise ValueError('The To date filter is invalid.')
+    if filter_start and filter_end and filter_start > filter_end:
+        raise ValueError('The From date filter cannot be later than the To date filter.')
+    return filter_start, filter_end
+
+
 PURCHASE_ORDER_SORT_KEYS = {
     'client_name',
     'machine',
@@ -40111,6 +42283,15 @@ def apply_purchase_order_machines(purchase_order, machine_serials):
     purchase_order.product_serial = machine_serials[0] if machine_serials else None
 
 
+def purchase_order_product_dates(product):
+    if not product:
+        return None, None
+    return (
+        getattr(product, 'start_warranty_date', None),
+        getattr(product, 'end_warranty_date', None),
+    )
+
+
 def purchase_order_to_dict(purchase_order):
     po_type = normalize_purchase_order_type(purchase_order.po_type) or PO_TYPE_SINGLE_VISIT
     amount = purchase_order_amount_string(getattr(purchase_order, 'amount', None))
@@ -40127,6 +42308,11 @@ def purchase_order_to_dict(purchase_order):
             'serial_number': serial,
             'name': name,
             'client_id': getattr(product, 'client_id', None) if product else None,
+            'start_date': purchase_order_product_dates(product)[0].isoformat() if purchase_order_product_dates(product)[0] else '',
+            'end_date': purchase_order_product_dates(product)[1].isoformat() if purchase_order_product_dates(product)[1] else '',
+            'under_contract': bool(getattr(product, 'under_contract', False)) if product else False,
+            'contract_status': product_contract_status(product) if product else '',
+            'one_time_eligible': purchase_order_product_is_one_time(product, po_type) if product else False,
             'display': display or serial,
         })
     machine_serials = [machine['serial_number'] for machine in machines if machine['serial_number']]
@@ -40136,6 +42322,22 @@ def purchase_order_to_dict(purchase_order):
     if len(machine_labels) > 1:
         machine_summary = f'{machine_display} +{len(machine_labels) - 1} more'
     first_machine = machines[0] if machines else None
+    first_product = machine_links[0].product if machine_links and getattr(machine_links[0], 'product', None) else None
+    product_start_date, product_end_date = purchase_order_product_dates(first_product)
+    schedule = purchase_order_schedule_payload(
+        purchase_order.po_date,
+        purchase_order.end_date,
+        po_type,
+        getattr(purchase_order, 'amount', None),
+    )
+    schedule_objects = purchase_order_schedule(
+        purchase_order.po_date,
+        purchase_order.end_date,
+        po_type,
+        getattr(purchase_order, 'amount', None),
+    )
+    per_visit_amount = purchase_order_per_visit_amount(schedule_objects)
+    schedule_mode = purchase_order_schedule_mode(po_type, purchase_order.end_date)
     return {
         'id': purchase_order.id,
         'client_id': purchase_order.client_id,
@@ -40148,6 +42350,8 @@ def purchase_order_to_dict(purchase_order):
         'end_date': purchase_order.end_date.isoformat() if purchase_order.end_date else '',
         'po_type': po_type,
         'po_type_label': PO_TYPE_LABELS.get(po_type, PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT]),
+        'schedule_mode': schedule_mode,
+        'schedule_mode_label': purchase_order_schedule_mode_label(po_type, purchase_order.end_date),
         'amount': amount,
         'amount_display': purchase_order_amount_display(getattr(purchase_order, 'amount', None)),
         'machines': machines,
@@ -40162,7 +42366,13 @@ def purchase_order_to_dict(purchase_order):
         'product_serial': first_machine['serial_number'] if first_machine else '',
         'product_name': first_machine['name'] if first_machine else '',
         'product_client_id': first_machine['client_id'] if first_machine else None,
+        'product_start_date': product_start_date.isoformat() if product_start_date else '',
+        'product_end_date': product_end_date.isoformat() if product_end_date else '',
         'machine_display': machine_display,
+        'allocation_schedule': schedule,
+        'schedule': schedule,
+        'computed_amount': purchase_order_amount_string(per_visit_amount) if per_visit_amount is not None else '',
+        'computed_amount_display': purchase_order_amount_display(per_visit_amount) if per_visit_amount is not None else 'Not allocated',
         'created_at': purchase_order.created_at.isoformat() if purchase_order.created_at else None,
         'created_by': purchase_order.created_by,
         'created_by_username': purchase_order.created_by_user.username if purchase_order.created_by_user else '',
@@ -40245,22 +42455,69 @@ def normalize_purchase_order_machines(payload, client_id, existing=None):
     return machine_serials, None
 
 
+def purchase_order_products_for_serials(machine_serials):
+    products = []
+    for serial in machine_serials:
+        product = db.session.get(Product, serial)
+        if not product:
+            product = Product.query.filter(
+                func.lower(Product.serial_number) == serial.lower()
+            ).first()
+        if product:
+            products.append(product)
+    return products
+
+
+def purchase_order_product_is_one_time(product, po_type):
+    """Return whether a Product is eligible for a conditional Single one-time visit."""
+    start_date, end_date = purchase_order_product_dates(product)
+    return bool(
+        normalize_purchase_order_type(po_type) == PO_TYPE_SINGLE
+        and start_date
+        and not end_date
+        and not bool(getattr(product, 'under_contract', False))
+        and product_contract_status(product) == 'No Expiry Set - No Contract'
+    )
+
+
+def purchase_order_dates_from_products(products, po_type=PO_TYPE_SINGLE):
+    if not products:
+        return None, None, 'Select the equipment/machine for this P.O.'
+    dates = [purchase_order_product_dates(product) for product in products]
+    one_time_flags = [purchase_order_product_is_one_time(product, po_type) for product in products]
+    if any(one_time_flags) and not all(one_time_flags):
+        return None, None, 'One-time Single machines cannot be mixed with contract-backed machines on the same P.O.'
+    if all(one_time_flags):
+        if any(not start for start, _ in dates):
+            missing = next(
+                product.serial_number for product, (start, _) in zip(products, dates) if not start
+            )
+            return None, None, f'Equipment {missing} must have a Product Start Date for a one-time Single P.O.'
+        first_start = dates[0][0]
+        if any(start != first_start for start, _ in dates[1:]):
+            return None, None, 'All one-time Single machines must have matching Product Start Dates.'
+        return first_start, None, None
+    if any(not start or not end for start, end in dates):
+        missing = next(
+            product.serial_number for product, (start, end) in zip(products, dates)
+            if not start or not end
+        )
+        return None, None, (
+            f'Equipment {missing} must have both a Product Start Date and Product End Date '
+            f'before it can be assigned to a {PO_TYPE_LABELS.get(normalize_purchase_order_type(po_type), "service contract")} P.O.'
+        )
+    first_start, first_end = dates[0]
+    if any(start != first_start or end != first_end for start, end in dates[1:]):
+        return None, None, 'All selected machines must have matching Product Start Date and Product End Date.'
+    return first_start, first_end, None
+
+
 def validate_purchase_order_payload(payload, existing=None):
     payload = payload or {}
     client_id = clean_int(payload.get('client_id'))
     po_number = normalize_purchase_order_number(
         payload.get('po_number') if 'po_number' in payload else getattr(existing, 'po_number', None)
     )
-    raw_start_date = (
-        payload.get('start_date')
-        if 'start_date' in payload
-        else payload.get('po_date')
-        if 'po_date' in payload
-        else getattr(existing, 'po_date', None)
-    )
-    po_date = raw_start_date if isinstance(raw_start_date, date) else parse_date(raw_start_date)
-    raw_end_date = payload.get('end_date') if 'end_date' in payload else getattr(existing, 'end_date', None)
-    end_date = raw_end_date if isinstance(raw_end_date, date) else parse_date(raw_end_date)
     po_type = normalize_purchase_order_type(
         payload.get('po_type') if 'po_type' in payload else getattr(existing, 'po_type', None)
     )
@@ -40272,14 +42529,8 @@ def validate_purchase_order_payload(payload, existing=None):
         return None, None, 'Select a medical center.'
     if not po_number:
         return None, None, 'Enter a P.O. number.'
-    if not po_date:
-        return None, None, 'Select a Start Date.'
-    if not po_type:
-        return None, None, 'Select Contract or Single Visit.'
-    if po_type == PO_TYPE_CONTRACT and not end_date:
-        return None, None, 'Select an End Date for a Contract P.O.'
-    if end_date and end_date < po_date:
-        return None, None, 'End Date cannot be earlier than Start Date.'
+    if not po_type or po_type not in PO_CURRENT_TYPES:
+        return None, None, 'Select Single, Semi Annual, or Quarterly.'
     if amount_error:
         return None, None, amount_error
     client = db.session.get(Client, client_id)
@@ -40293,6 +42544,54 @@ def validate_purchase_order_payload(payload, existing=None):
     )
     if machine_error:
         return None, None, machine_error
+
+    products = purchase_order_products_for_serials(machine_serials)
+    if len(products) != len(machine_serials):
+        return None, None, 'One or more selected machines could not be loaded.'
+    product_start, product_end, product_date_error = purchase_order_dates_from_products(products, po_type)
+    if product_date_error:
+        # A current-frequency edit retains its existing historical snapshot when the
+        # machine selection is unchanged.  New rows and machine changes must use Products.
+        existing_serials = [
+            clean_str(link.product_serial).casefold()
+            for link in purchase_order_machine_rows(existing)
+        ] if existing is not None else []
+        same_machines = sorted(existing_serials) == sorted(serial.casefold() for serial in machine_serials)
+        if not (
+            existing is not None
+            and purchase_order_is_current_type(existing.po_type)
+            and existing.po_type == po_type
+            and same_machines
+        ):
+            return None, None, product_date_error
+
+    existing_serials = [
+        clean_str(link.product_serial).casefold()
+        for link in purchase_order_machine_rows(existing)
+    ] if existing is not None else []
+    same_machines = sorted(existing_serials) == sorted(serial.casefold() for serial in machine_serials)
+    preserving_snapshot = bool(
+        existing is not None
+        and purchase_order_is_current_type(existing.po_type)
+        and existing.po_type == po_type
+        and same_machines
+    )
+    if (
+        preserving_snapshot
+    ):
+        po_date = existing.po_date
+        end_date = existing.end_date
+    else:
+        po_date, end_date = product_start, product_end
+    if not po_date:
+        return None, None, 'Selected machines must have a Product Start Date.'
+    if not end_date and not (
+        (po_type == PO_TYPE_SINGLE and all(purchase_order_product_is_one_time(product, po_type) for product in products))
+        or (preserving_snapshot and po_type == PO_TYPE_SINGLE and existing.end_date is None)
+    ):
+        return None, None, 'Selected machines must have both Product Start Date and Product End Date.'
+    if end_date and end_date < po_date:
+        return None, None, 'End Date cannot be earlier than Start Date.'
     return {
         'client_id': client_id,
         'po_number': po_number,
@@ -40301,6 +42600,65 @@ def validate_purchase_order_payload(payload, existing=None):
         'po_type': po_type,
         'amount': amount,
     }, machine_serials, None
+
+
+def purchase_order_confirmation_serials(payload):
+    raw = (payload or {}).get('under_contract_confirmed_serials', [])
+    if isinstance(raw, str):
+        raw = raw.split(',')
+    if not isinstance(raw, (list, tuple, set)):
+        return set()
+    return {
+        clean_str(value).casefold()
+        for value in raw
+        if clean_str(value)
+    }
+
+
+def purchase_order_require_contract_confirmation(machine_serials, payload, existing=None):
+    """Return current non-contract Products and only confirmed serials are honored."""
+    confirmed = purchase_order_confirmation_serials(payload)
+    po_type = normalize_purchase_order_type((payload or {}).get('po_type'))
+    existing_one_time_serials = set()
+    if (
+        existing is not None
+        and existing.po_type == PO_TYPE_SINGLE
+        and existing.end_date is None
+    ):
+        existing_one_time_serials = {
+            clean_str(link.product_serial).casefold()
+            for link in purchase_order_machine_rows(existing)
+            if clean_str(link.product_serial)
+        }
+    pending = []
+    for serial in machine_serials:
+        product = db.session.get(Product, serial)
+        if (
+            product
+            and not bool(product.under_contract)
+            and product.serial_number.casefold() not in existing_one_time_serials
+            and not purchase_order_product_is_one_time(product, po_type)
+        ):
+            pending.append(product)
+    missing = [product for product in pending if product.serial_number.casefold() not in confirmed]
+    return pending, missing
+
+
+def purchase_order_apply_contract_confirmation(pending, confirmed_serials, client_id=None):
+    changed = []
+    confirmed = {clean_str(serial).casefold() for serial in confirmed_serials}
+    for product in pending:
+        # Re-read the row in the current transaction to ensure a stale confirmation
+        # cannot update a machine outside this P.O.'s selected set.
+        current = db.session.get(Product, product.serial_number)
+        if not current or current.serial_number.casefold() not in confirmed:
+            continue
+        if client_id is not None and current.client_id != client_id:
+            raise ValueError('A selected machine is no longer registered to the selected medical center.')
+        if not bool(current.under_contract):
+            current.under_contract = True
+            changed.append(current)
+    return changed
 
 
 @app.route('/po_details')
@@ -40340,13 +42698,25 @@ def get_purchase_orders():
                 'name': product.name or '',
                 'client_id': product.client_id,
                 'under_contract': bool(product.under_contract),
+                'contract_status': product_contract_status(product),
+                'one_time_eligible': purchase_order_product_is_one_time(product, PO_TYPE_SINGLE),
+                'start_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
+                'end_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
+                'product_start_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
+                'product_end_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
+                'start_warranty_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
+                'end_warranty_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
                 'end_warranty': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
             }
             for product in products
         ],
         'po_types': [
-            {'value': PO_TYPE_CONTRACT, 'label': PO_TYPE_LABELS[PO_TYPE_CONTRACT]},
-            {'value': PO_TYPE_SINGLE_VISIT, 'label': PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT]},
+            {'value': value, 'label': PO_TYPE_LABELS[value]}
+            for value in PO_CURRENT_TYPES
+        ],
+        'legacy_po_types': [
+            {'value': value, 'label': PO_TYPE_LABELS[value]}
+            for value in PO_LEGACY_TYPES
         ],
     })
 
@@ -40357,16 +42727,8 @@ def purchase_order_export_records():
     machine_filter = (request.args.get('machine') or '').strip().casefold()
     number_filter = (request.args.get('number') or '').strip().casefold()
     type_filter = normalize_purchase_order_type(request.args.get('type')) if request.args.get('type') else ''
-    start_from_text = (request.args.get('from') or '').strip()
-    start_to_text = (request.args.get('to') or '').strip()
-    start_from = parse_date(start_from_text) if start_from_text else None
-    start_to = parse_date(start_to_text) if start_to_text else None
-    if start_from_text and not start_from:
-        raise ValueError('The Start Date from filter is invalid.')
-    if start_to_text and not start_to:
-        raise ValueError('The Start Date to filter is invalid.')
-    if start_from and start_to and start_from > start_to:
-        raise ValueError('The Start Date from filter cannot be later than the to filter.')
+    filter_start, filter_end = purchase_order_filter_window(request.args)
+    active_date_filter = filter_start is not None or filter_end is not None
 
     sort_key = (request.args.get('sort') or 'po_date').strip().lower()
     if sort_key == 'start_date':
@@ -40403,10 +42765,24 @@ def purchase_order_export_records():
             continue
         if type_filter and normalize_purchase_order_type(record.po_type) != type_filter:
             continue
-        if start_from and (not record.po_date or record.po_date < start_from):
-            continue
-        if start_to and (not record.po_date or record.po_date > start_to):
-            continue
+        if active_date_filter:
+            if purchase_order_is_current_type(record.po_type):
+                matching_schedule = purchase_order_filtered_schedule(
+                    record.po_date,
+                    record.end_date,
+                    record.po_type,
+                    record.amount,
+                    filter_start,
+                    filter_end,
+                )
+                if not matching_schedule:
+                    continue
+            elif not record.po_date or (
+                filter_start is not None and record.po_date < filter_start
+            ) or (
+                filter_end is not None and record.po_date > filter_end
+            ):
+                continue
         filtered.append(record)
 
     def sort_value(record):
@@ -40428,7 +42804,12 @@ def purchase_order_export_records():
         if sort_key == 'po_type':
             return (normalize_purchase_order_type(record.po_type) or PO_TYPE_SINGLE_VISIT).casefold()
         if sort_key == 'amount':
-            return Decimal(str(record.amount)) if record.amount is not None else Decimal('0')
+            schedule = purchase_order_filtered_schedule(
+                record.po_date, record.end_date, record.po_type, record.amount,
+                filter_start, filter_end,
+            ) if purchase_order_is_current_type(record.po_type) else []
+            computed = purchase_order_schedule_amount(schedule)
+            return computed if computed is not None else Decimal('0')
         if sort_key == 'end_date':
             return record.end_date or date.min
         return record.po_date or date.min
@@ -40460,6 +42841,7 @@ def export_purchase_orders():
     ensure_purchase_order_schema()
     try:
         purchase_orders = purchase_order_export_records()
+        filter_start, filter_end = purchase_order_filter_window(request.args)
     except ValueError as export_error:
         return jsonify({'success': False, 'error': str(export_error)}), 400
 
@@ -40480,6 +42862,8 @@ def export_purchase_orders():
         'Machine Name',
         'P.O. Type',
         'Amount (PHP)',
+        'Computed Amount (PHP)',
+        'Scheduled Dates',
         'Created At',
         'Created By',
         'Updated At',
@@ -40496,6 +42880,18 @@ def export_purchase_orders():
             clean_str(getattr(getattr(machine_link, 'product', None), 'name', None)) or ''
             for machine_link in machine_links
         ]
+        matching_schedule = purchase_order_filtered_schedule(
+            record.po_date,
+            record.end_date,
+            record.po_type,
+            record.amount,
+            filter_start,
+            filter_end,
+        ) if purchase_order_is_current_type(record.po_type) else []
+        computed_amount = purchase_order_schedule_amount(matching_schedule)
+        if filter_start is None and filter_end is None and purchase_order_is_current_type(record.po_type):
+            matching_schedule = purchase_order_schedule(record.po_date, record.end_date, record.po_type, record.amount)
+            computed_amount = purchase_order_per_visit_amount(matching_schedule)
         worksheet.append([
             record.id,
             record.po_date,
@@ -40510,6 +42906,8 @@ def export_purchase_orders():
                 PO_TYPE_LABELS[PO_TYPE_SINGLE_VISIT],
             ),
             Decimal(str(record.amount)) if record.amount is not None else None,
+            computed_amount,
+            '\n'.join(item['date_string'] for item in matching_schedule),
             record.created_at,
             record.created_by_user.username if record.created_by_user else '',
             record.updated_at,
@@ -40531,21 +42929,25 @@ def export_purchase_orders():
         row[1].number_format = 'yyyy-mm-dd'
         row[2].number_format = 'yyyy-mm-dd'
         row[9].number_format = '#,##0.00'
-        row[10].number_format = 'yyyy-mm-dd hh:mm'
+        row[10].number_format = '#,##0.00'
+        row[11].number_format = '@'
         row[12].number_format = 'yyyy-mm-dd hh:mm'
+        row[14].number_format = 'yyyy-mm-dd hh:mm'
 
     last_data_row = worksheet.max_row
     if purchase_orders:
         total_row = last_data_row + 2
         worksheet.cell(total_row, 1, 'TOTAL AMOUNT')
         worksheet.cell(total_row, 10, f'=SUM(J2:J{last_data_row})')
+        worksheet.cell(total_row, 11, f'=SUM(K2:K{last_data_row})')
         worksheet.cell(total_row, 1).font = Font(bold=True)
         worksheet.cell(total_row, 10).font = Font(bold=True)
         worksheet.cell(total_row, 10).number_format = '#,##0.00'
+        worksheet.cell(total_row, 11).number_format = '#,##0.00'
 
     worksheet.freeze_panes = 'A2'
-    worksheet.auto_filter.ref = f'A1:M{max(1, len(purchase_orders) + 1)}'
-    widths = [10, 14, 14, 22, 34, 46, 22, 30, 18, 18, 22, 22, 22]
+    worksheet.auto_filter.ref = f'A1:O{max(1, len(purchase_orders) + 1)}'
+    widths = [10, 14, 14, 22, 34, 46, 22, 30, 18, 18, 20, 36, 22, 22, 22]
     for index, width in enumerate(widths, start=1):
         worksheet.column_dimensions[chr(64 + index)].width = width
     worksheet.row_dimensions[1].height = 24
@@ -40573,6 +42975,23 @@ def add_purchase_order():
     values, machine_serials, validation_error = validate_purchase_order_payload(payload)
     if validation_error:
         return jsonify({'success': False, 'error': validation_error}), 400
+    pending_contracts, missing_confirmation = purchase_order_require_contract_confirmation(
+        machine_serials, payload,
+    )
+    if missing_confirmation:
+        return jsonify({
+            'success': False,
+            'code': 'under_contract_confirmation_required',
+            'error': 'Change the selected machine status to Under Contract before saving this P.O.?',
+            'machines': [
+                {
+                    'serial_number': product.serial_number,
+                    'name': product.name or '',
+                    'client_id': product.client_id,
+                }
+                for product in missing_confirmation
+            ],
+        }), 409
 
     duplicate = find_purchase_order_duplicate(values['client_id'], values['po_number'])
     if duplicate and not bool(payload.get('force')):
@@ -40584,6 +43003,11 @@ def add_purchase_order():
 
     purchase_order = PurchaseOrder(**values, created_by=current_user.id)
     try:
+        changed_contracts = purchase_order_apply_contract_confirmation(
+            pending_contracts,
+            purchase_order_confirmation_serials(payload),
+            values['client_id'],
+        )
         db.session.add(purchase_order)
         db.session.flush()
         apply_purchase_order_machines(purchase_order, machine_serials)
@@ -40593,9 +43017,15 @@ def add_purchase_order():
             f"at {purchase_order_amount_display(values['amount']) or 'amount not recorded'} "
             f"for machines {purchase_order_machine_log_label(machine_serials)}"
         )
+        for product in changed_contracts:
+            add_activity_log_entry(
+                f"Changed Product {product.serial_number} status to Under Contract for P.O. {values['po_number']}"
+            )
         db.session.commit()
-    except IntegrityError:
+    except (IntegrityError, ValueError) as save_error:
         db.session.rollback()
+        if isinstance(save_error, ValueError):
+            return jsonify({'success': False, 'error': str(save_error)}), 409
         return jsonify({'success': False, 'error': 'The P.O. could not be saved. Please try again.'}), 409
     return jsonify({'success': True, 'purchase_order': purchase_order_to_dict(purchase_order)}), 201
 
@@ -40613,6 +43043,23 @@ def update_purchase_order(id):
     values, machine_serials, validation_error = validate_purchase_order_payload(payload, existing=purchase_order)
     if validation_error:
         return jsonify({'success': False, 'error': validation_error}), 400
+    pending_contracts, missing_confirmation = purchase_order_require_contract_confirmation(
+        machine_serials, payload, existing=purchase_order,
+    )
+    if missing_confirmation:
+        return jsonify({
+            'success': False,
+            'code': 'under_contract_confirmation_required',
+            'error': 'Change the selected machine status to Under Contract before saving this P.O.?',
+            'machines': [
+                {
+                    'serial_number': product.serial_number,
+                    'name': product.name or '',
+                    'client_id': product.client_id,
+                }
+                for product in missing_confirmation
+            ],
+        }), 409
 
     duplicate = find_purchase_order_duplicate(
         values['client_id'], values['po_number'], exclude_id=purchase_order.id
@@ -40631,6 +43078,11 @@ def update_purchase_order(id):
     old_dates = f"{purchase_order.po_date.isoformat()} to {purchase_order.end_date.isoformat() if purchase_order.end_date else 'no end date'}"
     old_amount = purchase_order_amount_display(purchase_order.amount) or 'amount not recorded'
     try:
+        changed_contracts = purchase_order_apply_contract_confirmation(
+            pending_contracts,
+            purchase_order_confirmation_serials(payload),
+            values['client_id'],
+        )
         for field, value in values.items():
             setattr(purchase_order, field, value)
         apply_purchase_order_machines(purchase_order, machine_serials)
@@ -40640,9 +43092,15 @@ def update_purchase_order(id):
             f"amount {old_amount} -> {purchase_order_amount_display(values['amount']) or 'amount not recorded'}; "
             f"machines {old_machine} -> {purchase_order_machine_log_label(machine_serials)}"
         )
+        for product in changed_contracts:
+            add_activity_log_entry(
+                f"Changed Product {product.serial_number} status to Under Contract for P.O. {values['po_number']}"
+            )
         db.session.commit()
-    except IntegrityError:
+    except (IntegrityError, ValueError) as save_error:
         db.session.rollback()
+        if isinstance(save_error, ValueError):
+            return jsonify({'success': False, 'error': str(save_error)}), 409
         return jsonify({'success': False, 'error': 'The P.O. could not be updated. Please try again.'}), 409
     return jsonify({'success': True, 'purchase_order': purchase_order_to_dict(purchase_order)})
 
@@ -43546,6 +46004,76 @@ def get_tsr_files_for_shift(shift):
     return files
 
 
+def get_linked_schedule_calibration_report_file_state(candidate_shifts):
+    """Return all/latest generated Calibration Report file ids for linked schedules."""
+    shift_ids = [
+        clean_int(getattr(candidate, 'id', None))
+        for candidate in candidate_shifts or []
+        if clean_int(getattr(candidate, 'id', None))
+    ]
+    if not shift_ids:
+        return {'all_ids': set(), 'latest_ids': set(), 'metadata': {}}
+    if not has_app_context():
+        return {'all_ids': set(), 'latest_ids': set(), 'metadata': {}}
+
+    all_ids = set()
+    latest_ids = set()
+    metadata = {}
+    submissions = OnlineTsrSubmission.query.filter(
+        OnlineTsrSubmission.shift_id.in_(shift_ids)
+    ).all()
+    for submission in submissions:
+        payload = parse_online_tsr_payload_json(submission)
+        marker = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
+        if not isinstance(marker, dict) or marker.get('source') != 'generated_calibration_report':
+            continue
+        file_id = clean_int(marker.get('file_id'))
+        if not file_id:
+            continue
+        all_ids.add(file_id)
+        metadata[file_id] = {
+            'revision_no': clean_int(getattr(submission, 'revision_no', None)) or 1,
+            'shift_id': clean_int(getattr(submission, 'shift_id', None)),
+        }
+
+    for shift_id in shift_ids:
+        latest_submission = get_latest_online_tsr_submission_for_shift(shift_id)
+        latest_payload = parse_online_tsr_payload_json(latest_submission)
+        marker = latest_payload.get('_generated_calibration_report') if isinstance(latest_payload, dict) else None
+        latest_file_id = clean_int(marker.get('file_id')) if isinstance(marker, dict) else None
+        if latest_file_id:
+            latest_ids.add(latest_file_id)
+
+    return {'all_ids': all_ids, 'latest_ids': latest_ids, 'metadata': metadata}
+
+
+def get_linked_schedule_calibration_certificate_file_state(candidate_shifts):
+    """Return only latest approved certificate ShiftFiles for client-email selection."""
+    shift_ids = [clean_int(getattr(candidate, 'id', None)) for candidate in candidate_shifts or [] if clean_int(getattr(candidate, 'id', None))]
+    state = {'all_ids': set(), 'latest_ids': set(), 'excluded_ids': set(), 'metadata': {}}
+    if not shift_ids or not has_app_context():
+        return state
+    try:
+        ensure_calibration_certificate_approval_table()
+        approvals = CalibrationCertificateApproval.query.filter(CalibrationCertificateApproval.shift_id.in_(shift_ids)).all()
+        for approval in approvals:
+            if approval.no_signature_shift_file_id:
+                state['excluded_ids'].add(approval.no_signature_shift_file_id)
+                state['metadata'][approval.no_signature_shift_file_id] = {
+                    'revision_no': approval.revision_no or 1,
+                    'status': approval.status,
+                    'certificate_kind': 'no_signature',
+                }
+            if approval.signed_shift_file_id:
+                state['all_ids'].add(approval.signed_shift_file_id)
+                state['metadata'][approval.signed_shift_file_id] = {'revision_no': approval.revision_no or 1, 'status': approval.status}
+                if approval.status == 'Approved' and approval.is_latest:
+                    state['latest_ids'].add(approval.signed_shift_file_id)
+    except Exception as certificate_email_state_error:
+        print(f'[EMAIL-CLIENT] Certificate selection state unavailable: {certificate_email_state_error}', flush=True)
+    return state
+
+
 def get_tsr_email_files_for_shift(shift, tsr_files=None):
     """Return recognized TSRs plus supported schedule documents for email."""
     tsr_files = list(tsr_files) if tsr_files is not None else get_tsr_files_for_shift(shift)
@@ -43559,6 +46087,21 @@ def get_tsr_email_files_for_shift(shift, tsr_files=None):
 
     candidate_shifts = get_linked_schedule_file_shifts(shift)
     generated_ids = get_linked_schedule_generated_file_ids(candidate_shifts)
+    calibration_report_state = get_linked_schedule_calibration_report_file_state(candidate_shifts)
+    calibration_report_ids = calibration_report_state['all_ids']
+    latest_calibration_report_ids = calibration_report_state['latest_ids']
+    certificate_state = get_linked_schedule_calibration_certificate_file_state(candidate_shifts)
+    certificate_ids = certificate_state['all_ids']
+    latest_certificate_ids = certificate_state['latest_ids']
+    excluded_certificate_ids = certificate_state.get('excluded_ids', set())
+    # A print copy must never become a TSR or generic supporting attachment,
+    # even if a legacy payload incorrectly classified it as a primary file.
+    if excluded_certificate_ids:
+        tsr_files = [file_info for file_info in tsr_files if clean_int(file_info.get('id')) not in excluded_certificate_ids]
+        tsr_file_ids = {
+            clean_int(file_info.get('id')) for file_info in tsr_files
+            if clean_int(file_info.get('id'))
+        }
     suppressed_ids = set()
     for candidate_shift in candidate_shifts:
         policy = get_legacy_incomplete_tsr_file_policy(candidate_shift)
@@ -43571,13 +46114,23 @@ def get_tsr_email_files_for_shift(shift, tsr_files=None):
             file_id = clean_int(getattr(file_rec, 'id', None))
             if not file_id or file_id in seen_supporting_ids or file_id in tsr_file_ids:
                 continue
+            if file_id in excluded_certificate_ids:
+                continue
+            if file_id in calibration_report_ids and file_id not in latest_calibration_report_ids:
+                continue
+            if file_id in certificate_ids and file_id not in latest_certificate_ids:
+                continue
             if file_id in generated_ids or file_id in suppressed_ids:
                 continue
 
             display_name = get_shift_file_display_name(file_rec)
             disk_name = get_shift_file_disk_name(file_rec)
             ext = schedule_attachment_extension(display_name or disk_name)
-            if ext not in SCHEDULE_ATTACHMENT_EXTENSIONS:
+            is_calibration_report = file_id in latest_calibration_report_ids
+            is_calibration_certificate = file_id in latest_certificate_ids
+            is_latest_calibration_report_docx = is_calibration_report and ext == 'docx'
+            is_latest_calibration_certificate_pdf = is_calibration_certificate and ext == 'pdf'
+            if ext not in SCHEDULE_ATTACHMENT_EXTENSIONS and not is_latest_calibration_report_docx and not is_latest_calibration_certificate_pdf:
                 continue
 
             file_path = None
@@ -43605,9 +46158,9 @@ def get_tsr_email_files_for_shift(shift, tsr_files=None):
                 'path': file_path,
                 'detection_method': 'supporting_attachment',
                 'uploaded_at': file_rec.uploaded_at.isoformat() if file_rec.uploaded_at else '',
-                'source_type': 'supporting_image' if is_image else 'supporting_pdf',
-                'source_label': 'Supporting Image' if is_image else 'Supporting PDF',
-                'revision_no': None,
+                'source_type': 'calibration_certificate' if is_calibration_certificate else ('calibration_report' if is_calibration_report else ('supporting_image' if is_image else 'supporting_pdf')),
+                'source_label': 'Calibration Certificate' if is_calibration_certificate else ('Calibration Report' if is_calibration_report else ('Supporting Image' if is_image else 'Supporting PDF')),
+                'revision_no': (certificate_state['metadata'].get(file_id, {}).get('revision_no') if is_calibration_certificate else (calibration_report_state['metadata'].get(file_id, {}).get('revision_no') if is_calibration_report else None)),
                 'service_date': source_date.strftime('%Y-%m-%d') if source_date else '',
                 'file_size': os.path.getsize(file_path),
                 'preview_url': f'/preview_tsr_archive_file/{file_id}',
@@ -43618,9 +46171,11 @@ def get_tsr_email_files_for_shift(shift, tsr_files=None):
 
     source_rank = {
         'generated': 0,
-        'uploaded': 1,
-        'supporting_pdf': 2,
-        'supporting_image': 3,
+        'calibration_report': 1,
+        'calibration_certificate': 2,
+        'uploaded': 3,
+        'supporting_pdf': 4,
+        'supporting_image': 5,
     }
     return sorted(
         tsr_files + supporting_files,
@@ -45926,6 +48481,9 @@ def delete_file(filename):
     if not file_recs:
         return jsonify({'message': 'File not found'}), 404
 
+    if any(calibration_certificate_no_signature_approval_for_file(file_rec) for file_rec in file_recs):
+        return denied('The no-signature Calibration Certificate is a managed immutable artifact and cannot be deleted.')
+
     linked_shifts = [
         db.session.get(Shift, file_rec.shift_id)
         for file_rec in file_recs
@@ -46401,6 +48959,10 @@ def add_product():
 
     serial_number = clean_str(d.get('serial_number')).upper()
     product_name = clean_str(d.get('name'))
+    bsid = normalize_product_bsid(d.get('bsid'))
+
+    if len(clean_str(d.get('bsid')) or '') > 40:
+        return jsonify({'message': 'BSID must be 40 characters or fewer.', 'field': 'bsid'}), 400
 
     if not serial_number:
         return jsonify({'message': 'Serial number is required.'}), 400
@@ -46417,6 +48979,14 @@ def add_product():
             'existing_name': existing_product.name or ''
         }), 409
 
+    bsid_product = product_bsid_duplicate(bsid)
+    if bsid_product:
+        return jsonify({
+            'status': 'duplicate',
+            'field': 'bsid',
+            'message': f'BSID {bsid} already exists in inventory.'
+        }), 409
+
     new_p = Product(
         serial_number=serial_number,
         name=product_name,
@@ -46424,6 +48994,7 @@ def add_product():
         start_warranty_date=parse_date(d.get('start_warranty')),
         end_warranty_date=parse_date(d.get('end_warranty')),
         under_contract=parse_bool_flag(d.get('under_contract')),
+        bsid=bsid or None,
     )
 
     try:
@@ -46493,11 +49064,23 @@ def update_product(serial_number):
     old_start = p.start_warranty_date
     old_end = p.end_warranty_date
     old_contract = bool(p.under_contract)
+    old_bsid = normalize_product_bsid(getattr(p, 'bsid', None))
 
     new_client_id = clean_int(d.get('client_id'))
     new_start = parse_date(d.get('start_warranty'))
     new_end = parse_date(d.get('end_warranty'))
     new_contract = parse_bool_flag(d.get('under_contract'))
+    raw_bsid = clean_str(d.get('bsid')) or ''
+    if len(raw_bsid) > 40:
+        return jsonify({'message': 'BSID must be 40 characters or fewer.', 'field': 'bsid'}), 400
+    new_bsid = normalize_product_bsid(raw_bsid)
+    bsid_product = product_bsid_duplicate(new_bsid, exclude_serial=old_serial)
+    if bsid_product:
+        return jsonify({
+            'status': 'duplicate',
+            'field': 'bsid',
+            'message': f'BSID {new_bsid} already exists in inventory.'
+        }), 409
 
     try:
         if new_serial != old_serial:
@@ -46520,6 +49103,7 @@ def update_product(serial_number):
                 start_warranty_date=new_start,
                 end_warranty_date=new_end,
                 under_contract=new_contract,
+                bsid=new_bsid or None,
             )
             db.session.add(replacement)
             db.session.flush()
@@ -46564,6 +49148,7 @@ def update_product(serial_number):
         p.start_warranty_date = new_start
         p.end_warranty_date = new_end
         p.under_contract = new_contract
+        p.bsid = new_bsid or None
         db.session.commit()
 
         changed_fields = []
@@ -46575,6 +49160,8 @@ def update_product(serial_number):
             changed_fields.append('warranty dates')
         if old_contract != new_contract:
             changed_fields.append('contract status')
+        if old_bsid != new_bsid:
+            changed_fields.append('BSID')
 
         field_note = f" ({', '.join(changed_fields)})" if changed_fields else ''
         reassignment_note = ''
@@ -46593,6 +49180,12 @@ def update_product(serial_number):
         db.session.rollback()
 
         if 'UNIQUE constraint failed' in str(product_error) or 'product.serial_number' in str(product_error):
+            if 'bsid' in str(product_error).lower():
+                return jsonify({
+                    'status': 'duplicate',
+                    'field': 'bsid',
+                    'message': f'BSID {new_bsid} already exists in inventory.'
+                }), 409
             return jsonify({
                 'status': 'duplicate',
                 'message': f'Serial number {new_serial} already exists in inventory.',
@@ -46825,6 +49418,7 @@ def import_products():
         updated_count = 0
         skipped_count = 0
         unresolved_owner_count = 0
+        seen_bsids = {}
 
         for row in reader:
             serial = clean_str(csv_get(row, 'Serial Number', 'Serial', 'S/N', 'SN'))
@@ -46832,6 +49426,21 @@ def import_products():
             owner_name = clean_str(csv_get(row, 'Current Owner', 'Owner', 'Client', 'Client Name', 'Medical Center'))
             start_date = parse_date(csv_get(row, 'Start Date', 'Warranty Start', 'Start Warranty', 'Start Warranty Date'))
             end_date = parse_date(csv_get(row, 'Expiry Date', 'End Date', 'Warranty End', 'End Warranty', 'End Warranty Date'))
+            raw_bsid = clean_str(csv_get(row, 'BSID', 'Business Service ID', 'Machine BSID'))
+            if len(raw_bsid) > 40:
+                skipped_count += 1
+                continue
+            bsid = normalize_product_bsid(raw_bsid)
+            bsid_key = bsid.casefold() if bsid else ''
+            if bsid_key and bsid_key in seen_bsids and seen_bsids[bsid_key] != serial:
+                db.session.rollback()
+                return jsonify({
+                    'status': 'duplicate',
+                    'field': 'bsid',
+                    'message': f'BSID {bsid} duplicates serial {seen_bsids[bsid_key]} in this import.'
+                }), 409
+            if bsid_key:
+                seen_bsids[bsid_key] = serial
             contract_value = parse_bool_flag(
                 csv_get(row, 'Contract', 'Under Contract', 'Contract Status')
             ) if has_contract_column else None
@@ -46845,6 +49454,14 @@ def import_products():
                 unresolved_owner_count += 1
 
             product = db.session.get(Product, serial)
+            duplicate_bsid = product_bsid_duplicate(bsid, exclude_serial=serial)
+            if duplicate_bsid:
+                db.session.rollback()
+                return jsonify({
+                    'status': 'duplicate',
+                    'field': 'bsid',
+                    'message': f'BSID {bsid} already exists in inventory.'
+                }), 409
             if product:
                 product.name = product_name
                 product.client_id = client_id
@@ -46852,6 +49469,7 @@ def import_products():
                 product.end_warranty_date = end_date
                 if has_contract_column:
                     product.under_contract = contract_value
+                product.bsid = bsid or None
                 updated_count += 1
             else:
                 db.session.add(Product(
@@ -46861,6 +49479,7 @@ def import_products():
                     start_warranty_date=start_date,
                     end_warranty_date=end_date,
                     under_contract=bool(contract_value) if has_contract_column else False,
+                    bsid=bsid or None,
                 ))
                 created_count += 1
 
@@ -46913,6 +49532,7 @@ def ensure_runtime_sqlite_migrations_before_request():
 
     ensure_shift_file_original_filename_column()
     ensure_product_contract_column()
+    ensure_calibration_certificate_approval_table()
     ensure_schedule_delete_indexes()
     ensure_approval_routing_schema()
     ensure_default_approval_routes()
@@ -47135,6 +49755,7 @@ def initialize_database():
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()
         ensure_product_contract_column()
+        ensure_calibration_certificate_approval_table()
         ensure_schedule_delete_indexes()
         ensure_approval_routing_schema()
         ensure_tsr_draft_schema()
@@ -50703,6 +53324,12 @@ def upload_cash_advance_liquidation_receipt(row_id):
             'row': cash_advance_liquidation_row_to_dict(row),
             'liquidation': cash_advance_liquidation_to_dict(liquidation, include_rows=True)
         })
+    except ValueError as conversion_error:
+        db.session.rollback()
+        if 'file_path' in locals():
+            managed_storage_rollback_new_file(STORAGE_PREFIX_CASH_ADVANCE_LIQUIDATIONS, file_path)
+        print(f"[CashAdvanceLiquidation] Receipt conversion rejected: {conversion_error}", flush=True)
+        return jsonify({'success': False, 'error': str(conversion_error)}), 400
     except Exception as exc:
         db.session.rollback()
         if 'file_path' in locals():

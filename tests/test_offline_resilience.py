@@ -107,6 +107,7 @@ class OfflineTSRStorageStrategyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tsr = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+        cls.calibration_report = (ROOT / 'static' / 'js' / 'app-calibration-report.js').read_text(encoding='utf-8')
 
     def test_new_file_selection_does_not_base64_encode_photos(self):
         file_builder = self.tsr.split('async function fileToQueuedAttachment(')[1].split('\nfunction normalizeQueuedAttachments')[0]
@@ -131,6 +132,13 @@ class OfflineTSRStorageStrategyTests(unittest.TestCase):
         queue = self.tsr.split('async function queueStandaloneTSROffline(')[1].split('\nlet offlineTSRSyncRunning')[0]
         self.assertIn('if(!pdfPackage?.blob)', queue)
         self.assertIn("storageError.phase = 'storing_tsr_pdf'", queue)
+
+    def test_calibration_report_is_typed_state_and_capacity_is_explicit(self):
+        self.assertIn('calibration_report:', self.tsr)
+        self.assertIn("source:'generated_calibration_report'", self.calibration_report)
+        self.assertIn('function getTSRAttachmentCapacity', self.tsr)
+        self.assertIn("errorCode:'too_many_attachments'", self.tsr)
+        self.assertNotIn('.slice(0, TSR_SUPPORTING_ATTACHMENT_MAX_COUNT)', self.tsr)
 
     def test_durable_queue_failure_restores_previous_in_memory_state(self):
         persist = self.tsr.split('async function persistOfflineTSRQueueStore(')[1].split('\nasync function refreshOfflineTSRQueueStore')[0]
