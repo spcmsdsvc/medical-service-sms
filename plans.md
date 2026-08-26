@@ -14,153 +14,54 @@ Companion to the other two journals:
 When a plan is approved, it gets written here in full and then work **stops** until the owner
 separately says to start. See `AGENTS.md`, "Approved Plans", for the full statement.
 
-## One-Time Single-Visit P.O. Support
+## How to use this file
 
-**Status:** In progress
-**Approved:** 2026-08-25
-**Detailed:** 2026-08-25
-**Execution authorization:** 2026-08-25, direct owner go-ahead message: `go ahead`. Implementation
-is authorized for this complete package through one fresh Builder. Review, staging, commit, push,
-promotion to `main`, Railway/deployment, production, and browser actions remain separately
-unauthorized.
-**Finished:** Not yet committed; local implementation only.
+- Newest plan at the top, matching the convention in `changes.md`.
+- Record the plan as approved, not a summary of it. Enough detail that someone else could
+  execute it without the conversation that produced it: the files to touch, the reasoning
+  behind the approach, what is deliberately excluded, and how it will be verified.
+- Every plan carries a **Status** line, kept current:
 
-### Context and intended outcome
+| Status | Meaning |
+| --- | --- |
+| `Approved — awaiting go-ahead` | Agreed and recorded. **Do not start.** |
+| `In progress` | The owner said to start. |
+| `Executed` | Finished, with the commit hash. |
+| `Superseded` / `Abandoned` | Say what replaced it, or why it was dropped. |
 
-The Service Contract P.O. workflow currently requires every selected Product to have matching
-Start and End Dates and requires a non-contract Product to be confirmed and changed to Under
-Contract atomically with the successful P.O. save. Some machines instead represent a genuine
-single service visit: their Product status is `No Expiry Set - No Contract`, they have a Product
-Start Date but deliberately have no Product End Date, and saving their P.O. must not change their
-contract status.
+- When a plan is executed, leave it here with its commit hash rather than deleting it. The
+  record of what was agreed is worth as much afterwards as before, especially where the plan
+  and the outcome differed.
+- If the work turns out to need something the plan did not cover, note it under the plan
+  rather than quietly widening the scope.
 
-Extend the existing `single` frequency conditionally. A contract-backed Single P.O. keeps its
-current annual recurrence. A qualifying no-contract/no-end Product becomes a one-time Single visit
-on its Product Start Date, receives the full P.O. amount once, participates correctly in fiscal and
-custom date filters and Excel export, and remains outside contract. Semi Annual and Quarterly keep
-their current contract-backed complete-date requirements. No fourth type or database migration is
-introduced.
+### Required structure
 
-### Decisions and compatibility contract
+Every plan is written to be **executed by someone who was not in the conversation**. Prose alone
+is not enough: the execution steps must be numbered task bullets that can be worked through and
+ticked off, and the plan must say what happens *after* the code is written, not only during.
 
-1. A Product is one-time eligible only when the selected frequency is `single`, its Product Start
-   Date exists, its Product End Date is blank, its `under_contract` flag is false, and its computed
-   status is exactly `No Expiry Set - No Contract`.
-2. A one-time P.O. stores the Product Start Date as its read-only historical `po_date` snapshot and
-   stores a null `end_date`. Its schedule contains exactly one inclusive occurrence on the Start
-   Date and assigns the entire optional P.O. amount to that occurrence.
-3. Qualifying one-time machines are excluded from the Under Contract confirmation protocol. Their
-   Product flag is never changed by P.O. creation or editing.
-4. A false-contract Product that has an End Date retains the existing confirmation-required and
-   atomic status-update behavior. Contract-backed Single records retain annual recurrence; Semi
-   Annual and Quarterly continue to require complete Start and End Dates.
-5. One P.O. cannot mix one-time and contract-backed machines. All one-time machines on one P.O.
-   must share the same Product Start Date; all contract-backed machines retain the existing matching
-   Start/End requirement.
-6. Service Frequency must be selected before machines. Changing frequency clears selected
-   machines, loaded dates, and pending contract confirmations so eligibility cannot become stale.
-7. Type storage and analytics remain `single`. The register/API distinguishes its effective
-   schedule with `one_time`/`One-time` or `annual`/`Annual` metadata rather than adding a type.
-8. Existing current-frequency snapshots remain historical. An unrelated edit to the same machines
-   preserves the saved dates, including a null one-time End Date; replacing machines or converting
-   a legacy record derives a new snapshot under the current rules.
-9. Historical `contract` and `single_visit` records retain their existing legacy-read behavior and
-   must still be converted to a current frequency when edited.
-
-### Numbered execution steps
-
-1. **Builder preflight and protected-work audit.** Re-read all applicable `AGENTS.md` instructions,
-   this complete plan, `changes.md`, Git status, the current P.O. implementation, and relevant
-   tests. Confirm the plan is still compatible with current source. Preserve the active Calibration
-   Certificate work and every unrelated dirty artifact; never access or modify `scheduler.db`,
-   `output/`, `tmp/`, Railway, production, or Git publication state.
-2. **Fail-first regression controls.** In `tests/test_purchase_orders.py` and only any directly
-   affected existing analytics/export assertions, add focused failing coverage for qualifying
-   one-time saves, no Product-status mutation, one full-value occurrence, filtering/export,
-   eligibility failures, mixed coverage, snapshot preservation, schedule labels, and the
-   frequency-first UI contract. Do not build new test infrastructure when the established Flask,
-   template, JavaScript, and workbook controls suffice.
-3. **Frequency-aware backend validation.** In `app.py`, make Product date/coverage resolution aware
-   of the requested P.O. type. Accept only the exact one-time eligibility combination; preserve the
-   current matching Start/End and confirmation rules for ranged schedules; reject missing starts,
-   mixed one-time/ranged selections, mismatched one-time starts, and no-end machines selected for
-   Semi Annual or Quarterly. Continue rejecting client-supplied date spoofing.
-4. **One-time schedule and confirmation behavior.** Update the shared schedule/allocation helpers so
-   `single` with a null End Date creates one occurrence at Start Date and allocates the full amount,
-   while ranged `single` remains annual. Exclude eligible one-time Products from confirmation and
-   status mutation, but retain the server-side confirmation-required conflict and atomic Product/P.O.
-   transaction for other non-contract Products. Preserve blank optional-amount behavior and exact
-   cent reconciliation for ranged schedules.
-5. **API and register interface.** Extend `/get_purchase_orders` serialization with effective
-   schedule-mode value/label data. In `templates/po_details.html`, require frequency before machine
-   selection, clear machine/date/consent state when frequency changes, rename `Single (annual)` to
-   `Single`, explain its conditional Annual/One-time meaning, load a qualifying one-time Start Date
-   with a blank locked End Date, omit its contract prompt, and show actionable eligibility errors.
-   Display the Annual or One-time note beside computed amounts in desktop rows and mobile cards,
-   preserving responsive and dark-mode behavior.
-6. **Filter and Excel parity.** Apply the shared occurrence logic to fiscal-year/quarter and custom
-   inclusive filters and Excel export. A one-time P.O. is included only when its Start-Date
-   occurrence is inside the active range; its computed/exported amount is the full P.O. amount, its
-   scheduled date is the Start Date, its End Date is blank, and export remains one row per P.O.
-7. **Project records and delivery metadata.** Add a dated, user-facing entry to
-   `static/changelog/releases.json` and detailed factual results to `changes.md`. Do not bump the
-   service-worker cache unless implementation unexpectedly changes a cached external asset; the
-   P.O. page behavior is currently delivered through its inline template.
-8. **Proportional verification and closeout.** Run focused P.O./export/analytics tests first, then
-   Python compilation, rendered Jinja and inline-JavaScript syntax checks, workbook value/date
-   inspection, release-manifest parsing/uniqueness, the full repository suite against fresh isolated
-   test databases, and `git diff --check`. Never use `scheduler.db` or in-app browser automation.
-   Record exact pass/fail/skip results and any genuine deviations in this plan and `changes.md`.
-   Leave manual responsive/dark-mode/modal/keyboard/375-pixel verification to the owner unless
-   separate browser permission is granted.
-9. **Authorization boundary.** Stop after local implementation and verification. Review, staging,
-   commit, push, promotion to `main`, Railway/deployment checks, manual redeploy, variables, and
-   production/data operations each remain unauthorized until the owner supplies the required
-   separate instruction. Any later publication must isolate the intended P.O. files from the
-   Calibration worktree and all protected artifacts.
-
-### Acceptance criteria
-
-- A Product showing `No Expiry Set - No Contract`, with a valid Product Start Date and no End Date,
-  can be saved under Single without a contract-status prompt or Product mutation.
-- That P.O. has one scheduled visit on its Start Date, assigns the complete P.O. amount to it, and
-  is included or hidden correctly by inclusive fiscal/custom filters and Excel export.
-- Contract-backed Single P.O.s remain annual. Semi Annual and Quarterly remain ranged and
-  contract-backed. Existing false-contract Products with an End Date retain atomic confirmation.
-- Missing or incompatible machine dates and mixed coverage modes are blocked with actionable
-  messages. Existing legacy and analytics behavior remains compatible.
-
-### Implementation results — local, uncommitted
-
-- `app.py` now treats an exact `No Expiry Set - No Contract` Product with a Start Date and no End
-  Date as a conditional one-time `single` schedule, keeps ranged contract-backed Single annual,
-  preserves null End-Date snapshots on same-machine edits, and leaves valid one-time Products out
-  of the atomic Under Contract confirmation/update path. API payloads expose contract status,
-  one-time eligibility, and effective schedule mode labels.
-- `templates/po_details.html` now requires frequency before machine selection, resets selection and
-  pending confirmation state on frequency changes, supports one-time date loading, and displays
-  Annual/One-time computed-amount notes. Excel and fiscal/custom occurrence filtering use the
-  shared one-occurrence schedule.
-- Focused P.O. tests: **44 passed** across `tests.test_purchase_orders`; analytics tests: **5
-  passed** in `tests.test_analytics_purchase_orders`. Python source compilation, inline JavaScript
-  syntax, release JSON parsing/unique-key validation, and `git diff --check` passed.
-- Full repository run: **766 tests, 1 skipped, 1 unrelated failure** in
-  `test_staff_creation.StaffCreationTests.test_superadmin_rejects_conflicting_staff_permissions_without_writing`;
-  the same test passes in isolation and the failure reports a pre-existing shared test-data
-  initials collision. No P.O. or analytics test failed.
-- No browser verification, commit, push, deployment, Railway, production, schema migration, or
-  service-worker cache bump was performed. Calibration Certificate files, `scheduler.db`, and
-  unrelated dirty artifacts were preserved.
+| Section | What it must contain |
+| --- | --- |
+| **Status / dates** | The status line, when approved, when detailed, when finished with its commit. |
+| **Context** | The problem, what prompted it, and the intended outcome. Why now. |
+| **Decisions taken** | What the owner settled, so an executor does not reopen it. |
+| **Investigation** | What was verified in the code, with `file:line`. Findings that changed the approach belong here, including anything that turned out **not** to be true. |
+| **Execution steps** | **Numbered tasks, in order**, each naming the files and functions it touches and what "done" looks like. Small enough to finish and check one at a time. |
+| **Deliberately excluded** | What is out of scope and the reason, so it reads as a decision rather than an oversight. |
+| **Verification** | Tests to add, each with the positive control that proves it can fail; the browser sequence; the standing bar (375 px, tap targets, console, suite count). |
+| **After implementation** | The review and release workflow below, made concrete for this plan. |
+| **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
 ## Conditional focal tables and controlled no-signature Calibration Certificate
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-25
 **Detailed:** 2026-08-25
 **Execution authorization:** 2026-08-25, direct owner go-ahead message: `go ahead`. Implementation
 is authorized for this complete package through one fresh Builder. Review, staging, commit, push,
 deployment, Railway, production, and browser actions remain separately unauthorized.
-**Finished:** Not yet committed; local implementation only.
+**Finished:** 2026-08-25 in implementation commit `7f05b06`; publication closeout is recorded separately.
 
 ### Context and intended outcome
 
@@ -395,13 +296,13 @@ exclude `scheduler.db`, handoffs, `.claude/`, output/tmp, and unrelated dirty wo
 
 ## Calibration Certificate canonical catalog integrity correction
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-25
 **Detailed:** 2026-08-25
 **Execution authorization:** 2026-08-25, delegated to a fresh Builder for the remaining
 Calibration Certificate catalog-integrity correction. Review, commit, push, deployment, Railway,
 production, database, and browser actions remain separately unauthorized.
-**Finished:** Not yet committed; local implementation only.
+**Finished:** 2026-08-25 in implementation commit `7f05b06`; publication closeout is recorded separately.
 
 ### Context and intended outcome
 
@@ -497,353 +398,9 @@ out-of-payload checksum, so no runtime asset contract requires a version change.
   SHA/payload SHA checks, and `git diff --check` pass. No browser was used and no commit/push or
   deployment action was performed.
 
-## How to use this file
-
-- Newest plan at the top, matching the convention in `changes.md`.
-- Record the plan as approved, not a summary of it. Enough detail that someone else could
-  execute it without the conversation that produced it: the files to touch, the reasoning
-  behind the approach, what is deliberately excluded, and how it will be verified.
-- Every plan carries a **Status** line, kept current:
-
-| Status | Meaning |
-| --- | --- |
-| `Approved — awaiting go-ahead` | Agreed and recorded. **Do not start.** |
-| `In progress` | The owner said to start. |
-| `Executed` | Finished, with the commit hash. |
-| `Superseded` / `Abandoned` | Say what replaced it, or why it was dropped. |
-
-- When a plan is executed, leave it here with its commit hash rather than deleting it. The
-  record of what was agreed is worth as much afterwards as before, especially where the plan
-  and the outcome differed.
-- If the work turns out to need something the plan did not cover, note it under the plan
-  rather than quietly widening the scope.
-
-### Required structure
-
-Every plan is written to be **executed by someone who was not in the conversation**. Prose alone
-is not enough: the execution steps must be numbered task bullets that can be worked through and
-ticked off, and the plan must say what happens *after* the code is written, not only during.
-
-| Section | What it must contain |
-| --- | --- |
-| **Status / dates** | The status line, when approved, when detailed, when finished with its commit. |
-| **Context** | The problem, what prompted it, and the intended outcome. Why now. |
-| **Decisions taken** | What the owner settled, so an executor does not reopen it. |
-| **Investigation** | What was verified in the code, with `file:line`. Findings that changed the approach belong here, including anything that turned out **not** to be true. |
-| **Execution steps** | **Numbered tasks, in order**, each naming the files and functions it touches and what "done" looks like. Small enough to finish and check one at a time. |
-| **Deliberately excluded** | What is out of scope and the reason, so it reads as a decision rather than an oversight. |
-| **Verification** | Tests to add, each with the positive control that proves it can fail; the browser sequence; the standing bar (375 px, tap targets, console, suite count). |
-| **After implementation** | The review and release workflow below, made concrete for this plan. |
-| **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
-
-## Service Contract P.O. Details and Fiscal Allocation
-
-**Status:** In progress
-**Approved:** 2026-08-25
-**Detailed:** 2026-08-25
-**Execution authorization:** 2026-08-25, owner message: “PLEASE IMPLEMENT THIS PLAN”.
-**Finished:** Not yet committed; local implementation only.
-**Local outcome:** Correction cycle completed locally on 2026-08-25. The authorized P.O. test
-rewrite is now included; the full P.O. module passes **40/40** and the affected Analytics P.O.
-module passes **5/5**. Full discovery ran **757 tests: 755 passed, 1 failed, 1 skipped**; the
-single failure is the unrelated `test_staff_creation.StaffCreationTests.test_superadmin_rejects_conflicting_staff_permissions_without_writing`
-initials-catalog collision. Python compile, Jinja parse, inline JavaScript parse, workbook/export
-assertions, release JSON uniqueness/parse, and `git diff --check` pass. No commit exists, so this
-plan remains **In progress** and no unrelated hash is claimed.
-
-### Context and intended outcome
-
-The P.O. Details register must represent service-contract frequency rather than the older
-Contract/Single Visit labels. The register needs product-sourced coverage dates, contract-status
-protection, fiscal-year filtering, and a computed amount for scheduled service occurrences while
-remaining compatible with historical P.O. rows and the existing association tables.
-
-### Decisions taken
-
-1. The page H1 is `Service Contract P.O. Details`; the sidebar remains `P.O. Details`.
-2. Current frequency values are `single`, `semi_annual`, and `quarterly`; Single is one occurrence
-   per year. Historical `contract` and `single_visit` values remain readable/filterable only and
-   cannot be saved on new or edited rows.
-3. Fiscal quarters are April–June, July–September, October–December, and January–March. Fiscal
-   year labels use the starting April year. Custom From/To filtering remains available and is
-   mutually exclusive with fiscal filters.
-4. New/current-frequency P.O. dates are snapshots derived from the selected Product records.
-   Multiple machines require complete, identical dates. Existing snapshots survive unrelated edits.
-5. A non-contract selected machine requires explicit confirmation; confirmed status changes and
-   the P.O. write occur in one transaction after server-side revalidation.
-6. Schedule occurrences are anchored to Start Date, inclusive through End Date, with month-end
-   clamping and Decimal allocation; the final occurrence receives any rounding remainder.
-7. No new database column, service-worker bump, deployment, Railway action, commit, or protected
-   artifact operation is authorized for this implementation.
-
-### Investigation
-
-- `app.py` stores `PurchaseOrder.po_date`/`end_date`, `po_type`, `amount`, and the normalized
-  `PurchaseOrderMachine` association; `Product` currently has warranty dates and `under_contract`.
-- `/get_purchase_orders`, `/add_purchase_order`, `/update_purchase_order`, and
-  `/export_purchase_orders` are the single register/API seams. Analytics reads
-  `normalize_purchase_order_type` and must retain its date-based company-wide behavior.
-- `templates/po_details.html` contains the H1, filters, form, machine autocomplete, list rendering,
-  confirmation modal, and export query construction. `templates/layout.html` owns the sidebar label
-  and is deliberately excluded.
-- The worktree already contains Calibration Certificate, journals, release data, protected
-  `scheduler.db`, output/tmp, and other dirty files; only narrow P.O. hunks may be edited.
-
-### Execution steps
-
-1. Record this authorized plan and preserve all unrelated dirty files. Add fail-first P.O. assertions
-   for current frequencies, fiscal recurrence/allocation, product-date snapshots, status confirmation,
-   and computed filtered values in `tests/test_purchase_orders.py` without touching `scheduler.db`.
-2. In `app.py`, add current/legacy type constants, fiscal-boundary and anchored-schedule helpers,
-   Decimal allocation helpers, and filtered-amount helpers. Extend `purchase_order_to_dict` with
-   product dates and schedule data while retaining legacy API keys.
-3. Rework payload validation to reject legacy/unknown values on new/edit saves, derive read-only
-   dates from selected Products, enforce complete matching dates across machines, preserve existing
-   current-frequency snapshots during unrelated edits, and reject forged client dates.
-4. Add explicit `under_contract_confirmed_serials` handling. Re-fetch and revalidate selected
-   Products, update only confirmed non-contract flags, log those changes, and commit status/P.O.
-   atomically. Return a distinct 409 confirmation response listing pending machines.
-5. Update `templates/po_details.html` for the new heading, frequency controls, product date loading,
-   confirmation flow, fiscal/custom filters, scheduled amount rendering, and matching labels while
-   leaving the sidebar unchanged.
-6. Update Excel export filters, columns, scheduled dates, and computed amount using the same helpers,
-   preserving one row per P.O. and per-P.O. amount semantics.
-7. Add a dated release entry and append detailed factual results to `changes.md`; do not bump the
-   service worker unless a cached external asset is touched.
-8. Self-review the diff, run focused P.O./analytics tests, Python/Jinja/inline-JS checks, workbook
-   assertions, release JSON validation, full suite when feasible, and `git diff --check`. Leave the
-   plan truthfully `In progress` because no commit is authorized.
-
-### Deliberately excluded
-
-No schema migration, general Products permission change, sidebar rename, browser automation, service
-worker cache change, deployment/Railway operation, database reset, staging, commit, push, or unrelated
-Calibration Certificate/journal/template changes are included.
-
-### Verification
-
-Verify fiscal boundaries and year rollover, month-end clamping, inclusive schedules, final-cent
-reconciliation, filtered and unfiltered amounts, legacy discoverability, product-date spoof rejection,
-missing/mismatched-date rejection, confirmation decline/success/stale state, atomic rollback, activity
-logs, API/export parity, one-row-per-P.O., H1/sidebar labels, Jinja/AST/inline-script syntax, release
-JSON shape, focused suites, full suite where feasible, and `git diff --check`. Use isolated test DBs
-only and report browser checks as not run under the project safety rule.
-
-### After implementation
-
-The correction Builder self-reviewed only the P.O. hunks and preserved the protected Accounting,
-Calibration, handoff, scheduler.db, output/tmp, and unrelated test/template changes. Integer-cent
-allocation, immediate Product-date/status selection guards, legacy edit selection, fiscal-year
-parity, and the Semi Annual KPI were corrected. Verification was run against unique temporary test
-databases only: `tests.test_purchase_orders` **40/40**, `tests.test_analytics_purchase_orders`
-**5/5**, and full discovery **755 passed, 1 failed, 1 skipped**, with the named staff-creation
-failure unrelated to P.O. behavior. No browser automation, staging, commit, push, deployment,
-Railway, or production action occurred. The owner may separately authorize read-only review with
-`Review the implementation.`; commit/push and production verification remain separate decisions.
-
-### Risks
-
-The highest risks are financial misallocation, silently changing historical snapshots, cross-client
-machine links, and partial contract-status updates. Centralized Decimal schedule helpers, server-side
-Product revalidation, explicit confirmation, transaction rollback, and focused regression tests limit
-those risks. Existing unrelated dirty changes remain protected throughout.
-
-## Split Accounting Handoff CC by requester branch
-
-**Status:** Executed — ec8015e
-**Approved:** 2026-08-25
-**Detailed:** 2026-08-25
-**Execution authorization:** Granted 2026-08-25 by the owner's separate message “go ahead”. A fresh
-Builder completed this bounded local implementation cycle. Review, correction, commit, push,
-deployment, Railway, production, and database actions remain separately unauthorized.
-
-### Context and intended outcome
-
-Settings currently exposes one shared `Accounting Handoff CC` recipient group. The helper
-`get_requester_accounting_copy_emails()` adds that same group to every approved Travel Request,
-Reimbursement, standalone Cash Advance, Travel Liquidation, and Cash Advance Liquidation handoff,
-regardless of the requester's branch. Leave Request already demonstrates the intended split: the
-existing Manila group key remains compatible, a second Cebu/Davao key is available in Settings,
-and routing uses the requester's Engineer-profile branch.
-
-The intended outcome is the same two-region routing for only the shared Accounting Handoff CC
-list. Manila/Main requesters copy the Manila list; Cebu or Davao requesters copy the combined
-Cebu/Davao list. The requester remains copied, and each workflow's existing primary Accounting
-recipient group remains unchanged.
-
-### Decisions taken
-
-1. Keep `accounting_handoff_cc` as the stable key for existing rows and relabel it
-   `Accounting Handoff CC - Manila`.
-2. Add `accounting_handoff_cc_cebu_davao` labelled
-   `Accounting Handoff CC - Cebu/Davao` immediately after the Manila group in backend and Settings
-   ordering.
-3. Route from `record.user_id` to the User's linked Engineer profile and use its `branch`, matching
-   Leave Request's source of truth. Cebu, Davao, BC02, BC03, and labels containing Cebu or Davao
-   select the regional group. Manila, Main, BC01, blank, missing, or unknown values select the
-   existing Manila group as the backward-compatible default.
-4. Existing `accounting_handoff_cc` rows stay in place as Manila recipients. Do not duplicate,
-   rewrite, or migrate them into the new regional group; a superadmin will configure the new group
-   explicitly.
-5. Split only the shared handoff CC. Do not split or change `travel_accounting`,
-   `reimbursement_accounting`, `cash_advance_accounting`, or `cash_advance_release`, and do not
-   change any primary To-recipient, email template, attachment, or approval behavior.
-6. Preserve the current requester-copy and case-insensitive deduplication behavior. Only active
-   rows from the selected branch group participate, and an address already present in the primary
-   recipient list or earlier CC candidates appears once.
-7. No database schema migration or service-worker cache bump is required. The recipient table
-   already stores arbitrary registered group keys, Settings is server rendered, is not an app-shell
-   route, and online navigation is network-first.
-
-### Investigation findings
-
-- `app.py:386-449` defines and orders Settings-managed recipient groups. It currently contains one
-  `accounting_handoff_cc` entry and the two Leave Request CC entries.
-- `app.py:3265-3355` validates group keys against that registry and queries active recipients, so
-  registering the regional key is sufficient for the existing Settings save/data endpoints; no
-  table or endpoint change is needed.
-- `app.py:6348-6368` resolves the requester email, always loads `accounting_handoff_cc`, and
-  deduplicates CC addresses against primary recipients. This is the single routing seam used by
-  all five accounting-handoff senders at the current call sites near lines 7729, 8236, 32839,
-  50438, and 54620.
-- `leave_feature.py:31-35` and `leave_feature.py:306-310` establish the approved regional matching
-  and requester-profile branch source used by Leave Request.
-- `templates/settings.html:2387-2459` carries frontend fallback group metadata, and
-  `templates/settings.html:2522-2532` supplies the usage badge. Both must mirror the backend so a
-  degraded or older response does not hide or mislabel the regional group.
-- The worktree is already materially dirty, including `app.py`, `templates/settings.html`, the
-  journals, release manifest, tests, protected artifacts, and parallel P.O. details work. Every
-  authorized edit must re-read the current file and patch only the intended local hunk.
-
-### Numbered execution steps
-
-1. **Preflight and fail-first test — `tests/test_accounting_handoff_recipient_routing.py`.**
-   Re-read `AGENTS.md`, this complete plan, `changes.md`, Git status, the live recipient registry,
-   helper, Settings fallback, and nearby tests. Create one focused test module, avoiding edits to
-   existing dirty test files. Add controls that expect both group registrations and Settings
-   labels, then exercise branch selection for Manila/Main/BC01/default/unknown and
-   Cebu/Davao/BC02/BC03/equivalent labels. Run this module before application edits and record the
-   expected failures caused by the absent regional group/routing. Done when the red result is
-   attributable only to this approved gap and no protected file has been disturbed.
-
-2. **Register the groups — `app.py` recipient constants/order.** Relabel
-   `accounting_handoff_cc` for Manila, add `accounting_handoff_cc_cebu_davao` with a precise
-   Cebu/Davao description, and place it next to Manila in `EMAIL_RECIPIENT_GROUP_ORDER`. Do not
-   change the recipient model, table initializer, Settings API contract, or any primary workflow
-   group. Done when the standard group payload exposes both keys and the normalizer accepts the new
-   key while continuing to reject unknown keys.
-
-3. **Route shared CC by requester — `app.py:get_requester_accounting_copy_emails`.** Add one small
-   pure branch-to-group helper adjacent to the accounting-copy helper. Resolve `record.user_id` to
-   the User and linked Engineer profile, select exactly one shared CC group, then feed that group's
-   active recipients into the existing copy/deduplication pipeline. Keep all five send call sites
-   unchanged because they already converge on this helper. Done when Manila and regional records
-   cannot leak the other region's shared CC list, while requester-copy and primary-address
-   deduplication remain intact.
-
-4. **Expose the split in Settings — `templates/settings.html`.** Update the purpose guidance,
-   fallback group metadata, ordering, descriptions, and usage badges so the two Accounting Handoff
-   CC cards appear together and clearly identify Manila versus Cebu/Davao. Preserve the existing
-   form, card markup, responsive behavior, permissions, and save/delete mechanics. Done when the
-   rendered page and API-driven fallback both identify the same two keys and labels.
-
-5. **Complete focused verification.** Extend the focused module to create isolated User/Engineer
-   profiles and active/inactive recipient rows on a disposable external database. Prove requester
-   email inclusion, branch-only group selection, inactive exclusion, case-insensitive deduplication
-   against primary recipients, Settings payload order, and acceptance of the new save key. Include
-   a control showing the legacy Manila key and rows remain unchanged. Run this module and the
-   affected Settings/changelog and accounting workflow modules.
-
-6. **Release and audit records.** Add one dated admin-facing item to
-   `static/changelog/releases.json` explaining the two Settings lists and requester-branch routing.
-   Validate JSON shape and item-key uniqueness. Append factual results to the existing
-   `codex changes - 2026-08-25` section and update this plan to `In progress` with execution evidence.
-   Re-read each dirty journal/manifest immediately before applying a narrow patch; do not overwrite
-   parallel P.O. details or Calibration Certificate records. Do not edit the already-dirty handoff
-   artifact for this contained change.
-
-7. **Self-review and full verification.** Review the narrow diff against this plan, specifically
-   confirming all five callers still use the shared helper and no primary accounting groups or P.O.
-   code changed. Run Python AST validation, Jinja rendering of Settings, release JSON/uniqueness,
-   `git diff --check`, focused suites, then full `unittest` discovery against a fresh external
-   `MEDICAL_SERVICE_TEST_DB`. Record exact pass/fail/skip totals and any unavailable checks; never
-   open or write `scheduler.db`.
-
-8. **Stop after the Builder report.** Return one consolidated implementation report listing files,
-   behavior, red/green proof, focused/full results, static checks, deviations, and limitations.
-   Leave this plan `In progress` until a separately authorized commit exists. Do not automatically
-   review, correct, stage, commit, push, deploy, or access Railway/production.
-
-### Deliberately excluded
-
-- Splitting workflow-specific primary Accounting or Cash Advance Release lists; the owner selected
-  only the shared Accounting Handoff CC split.
-- Cloning existing Manila recipient rows into Cebu/Davao, because the system cannot safely infer
-  which current addresses belong to both regions.
-- Database/schema migration, new dependencies, email template or attachment changes, changes to
-  Leave Request, service-worker changes, or new administration endpoints.
-- Browser automation, Codex app navigation, 375 px/tap-target work, and console inspection. This
-  change adds metadata to the existing responsive Settings cards without adding controls or layout
-  structure; repository safety prohibits browser use unless separately authorized. Rendered Jinja,
-  Flask-client API/page checks, and source assertions are the proportional substitute.
-- Any P.O. details file, behavior, test, journal entry, cleanup, formatting, staging, commit, push,
-  Railway setting, deployment, production action, or protected artifact operation.
-
-### Verification acceptance bar
-
-- The fail-first focused test is red before the fix for the missing regional group/routing and green
-  after it; the prior source is not destructively reverted to manufacture proof.
-- Settings exposes exactly the existing Manila key plus the new Cebu/Davao key with clear labels and
-  adjacent order, and the save endpoint accepts the new registered key.
-- Manila/Main/BC01/default/unknown requesters receive only Manila shared CC rows. Cebu/Davao and
-  BC02/BC03 requesters receive only Cebu/Davao shared CC rows.
-- Requester-copy, active-row filtering, primary-recipient deduplication, all five handoff call paths,
-  and all workflow-specific primary recipient groups remain unchanged.
-- Focused and full suites pass on disposable databases, or every pre-existing/unavailable result is
-  reported truthfully. AST, Jinja, release JSON/uniqueness, and diff checks pass.
-- `scheduler.db`, P.O. details work, unrelated dirty hunks, the handoff, output/tmp, Git history,
-  Railway, and production remain untouched.
-
-### Risks and safeguards
-
-- **Wrong-region disclosure:** choosing the wrong branch could copy an internal recipient on an
-  unrelated regional request. Centralize selection in one pure helper and test both positive and
-  cross-region-negative cases.
-- **Missing Engineer profile/branch:** defaulting to the stable Manila key preserves current
-  behavior and prevents the new regional list from receiving ambiguous records.
-- **Existing-row compatibility:** retaining `accounting_handoff_cc` avoids a destructive migration;
-  tests pin that key and its rows as Manila.
-- **Dirty-work collision:** `app.py`, Settings, journals, and the release manifest overlap other
-  active work by file. Re-read before each narrow patch, add a new focused test file, never broadly
-  format or replace a file, and stop if the intended hunk materially changed.
-
-### Implementation evidence
-
-- Implemented the registered Manila and Cebu/Davao shared Accounting Handoff CC groups, requester
-  Engineer-profile branch selection, Settings guidance/fallback/usage metadata, and admin release
-  item without changing workflow-specific primary recipients, schemas, email templates,
-  attachments, call sites, or service-worker behavior.
-- Added `tests/test_accounting_handoff_recipient_routing.py`. The unchanged behavior produced
-  **10 expected assertion failures across 6 tests**; the final focused module passes **7/7** and the
-  related Accounting/changelog/Reimbursement Tracker command passes **78/78**, each on a fresh
-  external test database.
-- The Builder's first full-discovery report contained an inconsistent aggregate, so the parent
-  reran complete discovery on a fresh external database after implementation: **744 tests ran;
-  721 passed, 22 failed, and 1 existing test was skipped**. Twenty-one failures are confined to the
-  parallel protected P.O. Details suite, and one is an unrelated Calibration Report Node assertion
-  at its facility-name exact-fit boundary. No P.O. or Calibration source, test, behavior, or record
-  was changed for this package; the Accounting Handoff focused and related suites remain green.
-- Python AST/compile checks, Settings Jinja rendering, release JSON/unique-key validation, and
-  `git diff --check` pass; only existing LF-to-CRLF notices were emitted. Browser automation was not
-  used. `scheduler.db`, the handoff, output/tmp, Git history, Railway, production, and unrelated
-  dirty work remained untouched.
-- The bounded implementation was committed as `ec8015e`. The owner separately authorized its push
-  to `origin/main`; post-implementation review, correction, Railway configuration, manual
-  deployment, and production-data access remain unauthorized.
-
 ## Calibration Certificate catalog matching and final-save workflow
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-24
 **Detailed:** 2026-08-24
 **Execution authorization:** Granted 2026-08-25 by the owner message “go ahead and implement it.” A
@@ -1062,11 +619,11 @@ certificate remain separately authorized.
 
 ## Calibration Certificate catalog/final-save commit-readiness corrections
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-25
 **Detailed:** 2026-08-25
 **Execution authorization:** 2026-08-25, delegated to a fresh Builder for the owner-authorized correction package before publication. Review, commit, push, deployment, Railway, production, database, and browser actions remain separately unauthorized.
-**Finished:** Not yet committed; local implementation only.
+**Finished:** 2026-08-25 in implementation commit `7f05b06`; publication closeout is recorded separately.
 
 ### Context and intended outcome
 
@@ -1220,7 +777,7 @@ without altering unrelated workflows.
 
 ## Calibration Certificate number, approver division, and signature refinement
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-24
 **Detailed:** 2026-08-24
 **Execution authorization:** The owner separately authorized implementation on 2026-08-24 with
@@ -1430,13 +987,13 @@ certificate remain separately authorized steps.
   oversized-margin, and low-resolution signature renders stay within the adjusted rectangle; a
   fully white image is rejected before approval state/file mutation. Representative pages were
   rendered and visually inspected with non-browser tooling.
-- The plan remains **In progress** pending separately authorized post-implementation review and
-  publication. No browser automation, `scheduler.db`, output/tmp cleanup, staging, commit, push,
-  Railway, deployment, production, or environment action was performed.
+- At that implementation stage the plan remained locally in progress pending publication; it is now
+  executed in `7f05b06`. No browser automation, `scheduler.db`, output/tmp cleanup, Railway-variable,
+  production-data, or protected-artifact action was performed.
 
 ## Calibration Certificate typography and signature correction
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-24
 **Detailed:** 2026-08-24
 **Execution authorization:** The owner separately authorized implementation on 2026-08-24 with
@@ -1676,232 +1233,12 @@ flattening assertions, and revision-history tests are the required safety net.
 - Python AST, bundled Node syntax, Jinja, release JSON, source/runtime/embedded checksum, cache
   wiring, and `git diff --check` validations pass. No browser automation was used. `scheduler.db`,
   output/tmp artifacts, unrelated dirty work, Git staging/history, commit, push, deployment,
-  Railway, production, and environment state remain untouched. This plan remains **In progress**;
-  post-implementation review and publication require separate owner authorization.
-
-## Shared PDF Upload Conversion Repair
-
-**Status:** In progress
-**Approved:** 2026-08-24
-**Detailed:** 2026-08-24
-**Execution authorization:** The owner separately authorized this complete implementation
-package for the fresh Builder on 2026-08-24. Implementation is limited to this package; review,
-commit, push, deployment, Railway, and production actions remain separately unauthorized.
-
-### Context and intended outcome
-
-Shared PDF upload conversion currently compresses only PDF content streams first, so scanned
-images remain largely unchanged. Its fallback uses a fixed raster ladder and returns the smallest
-oversized result when no pass reaches the strict 2 MiB stored-file ceiling. The upload layer then
-rejects that result. Both Liquidation upload handlers catch that expected validation failure inside
-their broad exception path and report HTTP 500 instead of an actionable client error.
-
-The intended outcome is one bounded, readable conversion path used by Timeline schedules,
-Reimbursement, Travel Request, Cash Advance, both Liquidation pages, and LPR/embedded LPR. The
-35 MiB intake limit remains unchanged. A valid PDF is accepted only when the stored bytes are at
-or below 2 MiB; if no readable profile can meet that ceiling, the caller receives the exact split-
-document instruction rather than an oversized result or generic server failure.
-
-### Decisions taken
-
-1. The 2 MiB stored limit remains mandatory. Originals above that limit are never retained as the
-   successful converted result.
-2. Preserve readability through a bounded ladder: structural compression first; fresh-source
-   native image rewriting at 150 DPI/quality 75, 120 DPI/65, and 96 DPI/55 in color; fresh-source
-   rasterization at 96 DPI/color quality 50; and final 72 DPI/grayscale quality 45.
-3. Never compound degradation. Every native and raster profile starts from the original source
-   PDF bytes, not a previously degraded candidate.
-4. Preserve source page count, MediaBox dimensions, and rotation. Validate every selected output by
-   reopening it before returning it. Native rewriting is preferred because it preserves searchable
-   and vector content; full-page rasterization is only the fallback and may remove searchability.
-5. Explicitly distinguish password-protected and malformed PDFs with actionable `ValueError`
-   messages. An impossible readable conversion raises: “PDF could not be reduced below 2MB while
-   keeping it readable. Please split it into smaller PDFs and upload them separately.”
-6. Conversion diagnostics are stage-specific and contain only input size, stage/profile, output
-   size, and failure category. They never log filenames, PDF contents, personal data, or secrets.
-7. Liquidation conversion `ValueError` responses are HTTP 400 after safe rollback. Genuine storage,
-   database, and other unexpected failures retain the existing HTTP 500 behavior.
-8. No dependency change is needed; installed PyMuPDF 1.27.2.3 supports native image rewriting.
-
-### Investigation
-
-1. `app.py:1067-1099` routes Timeline schedule attachments through
-   `reimbursement_prepare_receipt_upload_bytes`; `app.py:26188-26437` owns the shared 35 MiB
-   intake, 2 MiB stored limit, image optimization, PDF optimization, and final rejection.
-2. `app.py:26754-26808` currently implements `reimbursement_compress_pdf_bytes_best_effort` as
-   pypdf content-stream compression only and logs the misleading “All Receipts PDF optimized”
-   message. `app.py:26388-26397` then applies the fixed raster fallback, which returns an
-   oversized best candidate instead of failing clearly.
-3. The shared preparation helper is called by Reimbursement at `app.py:27403`, Travel Request at
-   `app.py:30603`, Travel Liquidation at `app.py:36718`, Cash Advance at `app.py:50001`, Cash
-   Advance Liquidation at `app.py:51681`, and LPR at `app.py:56925`; generated receipt/RFP/package
-   PDFs also use the common compressor at `app.py:25556`, `29672`, `36192`, `49803`, `52491`, and
-   `56315`.
-4. `app.py:36322-36372` performs the separate Liquidation extension/MIME/header/intake checks,
-   while `app.py:36700-36779` and `51656-51727` wrap conversion, storage, model creation, and
-   commit in broad exception handlers that currently turn `ValueError` into HTTP 500.
-5. The working tree has protected Calibration Certificate changes in `app.py`, release records,
-   templates, tests, `scheduler.db`, `output/`, `tmp/`, and untracked calibration assets. The
-   relevant shared converter and Liquidation regions have no Calibration Certificate diff hunks;
-   only those shared regions and the new focused test/project records are in this package.
-6. No Poppler executable is available through the host command lookup. PDF logical verification
-   will use PyMuPDF/pypdf; page rendering will be reported as unavailable unless a bundled or host
-   Poppler executable becomes available without changing the project environment.
-
-### Numbered execution steps
-
-1. Add `tests/test_shared_pdf_upload_conversion.py` with deterministic image-heavy, vector-text,
-   multipage/orientation, native-rewrite, raster-fallback, malformed/password, readability-floor,
-   Liquidation HTTP 400, and 35 MiB intake tests. Run this module against the unchanged converter
-   and record the expected failures before editing `app.py`; the positive controls must prove the
-   assertions are not vacuous.
-2. Replace the PDF optimization path in `app.py` around
-   `reimbursement_compress_pdf_bytes_best_effort`, `reimbursement_optimize_pdf_receipt_bytes`,
-   and the raster helper with bounded fresh-source structural/native/raster profiles. Keep the
-   existing public helper and call sites compatible, preserve page topology, validate candidates
-   on reopen, release per-page image buffers, and raise the exact split-document message when no
-   readable candidate is at or below 2 MiB.
-3. Extend `reimbursement_prepare_receipt_upload_bytes` to validate PDF parseability and password
-   state before persistence, including PDFs already below 2 MiB, while retaining the 35 MiB intake
-   check and existing image behavior. Ensure successful PDF helper returns cannot exceed the 2 MiB
-   target.
-4. Update the conversion diagnostics in `app.py` to log input bytes, selected stage/profile,
-   output bytes, and final failure category without filenames or contents. Remove the misleading
-   “All Receipts PDF optimized” message and identify password-protected and malformed sources.
-5. Add separate `ValueError` branches to `upload_travel_liquidation_receipt` and
-   `upload_cash_advance_liquidation_receipt` in `app.py`, rolling back the session and any newly
-   written storage path as appropriate, returning the specific conversion message with HTTP 400,
-   and leaving the broad unexpected-error handler at HTTP 500.
-6. Run focused conversion tests, related accounting attachment/schedule-email/reimbursement-
-   liquidation/LPR suites, generated in-memory vector/scanned/multipage PDF checks, and the
-   near-limit benchmark. Validate page topology, extracted text where native rewriting is chosen,
-   PDF parseability, output size, and incremental buffer cleanup. Use Poppler for every-page
-   rendering if available; otherwise record the unavailable dependency. Run syntax, JSON,
-   `git diff --check`, and complete-suite checks against a fresh external `MEDICAL_SERVICE_TEST_DB`.
-7. Update `static/changelog/releases.json` with one dated engineer-facing release entry and append
-   detailed factual bullets to the existing 2026-08-24 section of `changes.md`. Keep this plan's
-   status `In progress` with truthful Builder evidence. Do not bump the service worker because no
-   cached frontend asset changes are made. Self-review only the converter, Liquidation handlers,
-   focused tests, release record, change log, and this plan; do not touch templates, schemas,
-   databases, attachment counts, the handoff/pending-work artifact, calibration files, protected
-   artifacts, Git history, Railway, or production.
-
-### Interfaces and compatibility
-
-- Existing routes, request fields, response JSON shapes, accepted PDF/image extensions, 35 MiB
-  intake ceiling, 2 MiB stored ceiling, and successful original display filenames remain unchanged.
-- The common helper remains callable by existing generated-PDF and upload workflows, but it never
-  returns an oversized converted PDF when a target is required; an impossible readable result is
-  a validation `ValueError`.
-- Liquidation conversion failures change from generic HTTP 500 to HTTP 400 with the actionable
-  conversion message. Storage/database failures remain HTTP 500.
-- No database migration, new package, service-worker bump, browser automation, or frontend asset
-  change is included.
-
-### Deliberately excluded
-
-Calibration Certificate work and assets, templates, frontend changes, schemas, migrations,
-attachment counts, `scheduler.db`, `output/`, `tmp/`, the handoff and pending-work artifacts,
-unrelated dirty work, Git staging/history/commit/push, Railway settings, deployment, production
-state, browser automation, and service-worker changes are excluded to protect the active owner
-work and because this repair is server-side.
-
-### Verification
-
-- The focused module must first be run against the pre-fix source and its expected red failures
-  recorded. After implementation it must prove the image-heavy conversion reaches <=2 MiB, page
-  count/MediaBox/rotation/validity remain intact, native output retains searchable/vector text,
-  raster fallback succeeds from the original source, malformed/password/floor errors are
-  actionable, both Liquidation endpoints return 400 for conversion failure, and >35 MiB input is
-  rejected before persistence.
-- Run the focused module plus `tests/test_accounting_attachment_management.py`,
-  `tests/test_schedule_email_attachments.py`, reimbursement/liquidation coverage, and
-  `tests/test_lpr_workflow.py`. Then run the complete suite against a fresh external
-  `MEDICAL_SERVICE_TEST_DB`; never open `scheduler.db`.
-- Generate representative vector, scanned-color, and multipage PDFs in memory or under the
-  skill-approved temporary paths. Reopen every selected PDF with PyMuPDF/pypdf, verify topology,
-  size, parseability, and extracted text where native rewriting is selected. Render every page
-  with Poppler when available and inspect legibility, clipping, rotation, page boundaries, and
-  receipt details. Report the missing Poppler executable if rendering cannot run.
-- Benchmark a representative near-limit PDF below Gunicorn's 180-second timeout and verify the
-  implementation releases per-page image/page buffers incrementally. Validate `releases.json`,
-  parse `app.py`, run focused syntax/configuration checks, and run `git diff --check`.
-- Browser automation is prohibited; Flask test-client, source checks, in-memory PDF checks, and
-  rendered-artifact checks are sufficient. Stop and request authorization only if browser testing
-  becomes essential.
-
-### After implementation
-
-The fresh Builder will append one consolidated local, uncommitted execution record here listing
-files changed, pre-fix fail-first evidence, exact pass/fail/skip results, PDF artifact/render and
-benchmark results, tests not run and why, protected-worktree confirmation, deviations, and known
-material limitations. The plan remains `In progress` pending the separately authorized review and
-publication steps. No post-implementation review classification, commit, push, deployment, Railway,
-or production action is performed in this cycle.
-
-### Risks
-
-The main risks are damaging searchable/vector content, changing page geometry or rotation during
-raster fallback, compounding quality loss across profiles, retaining an oversized upload, leaking
-document identity in logs, and misclassifying expected validation as a server failure. Fresh-source
-profiles, native-first selection, the 72 DPI/grayscale quality-45 floor, reopen/topology checks,
-strict final-size rejection, bounded diagnostics, explicit exception handling, focused endpoint
-tests, and protected dirty-worktree checks are the proportional safety net.
-
-### Builder execution evidence — pre-fix fail-first (2026-08-24)
-
-- Added `tests/test_shared_pdf_upload_conversion.py` before production edits and ran it against the
-  protected dirty worktree with a fresh external `MEDICAL_SERVICE_TEST_DB`.
-- The pre-fix run executed **11 tests: 6 failures and 3 errors**. The intended positive controls
-  demonstrated that the old converter could rasterize an image-heavy PDF below 2 MiB and reject a
-  source over 35 MiB, while the new native/raster hook, topology, password/malformed, readability-
-  floor, Liquidation HTTP 400, and stage-diagnostic assertions were red as expected.
-- The failure evidence is preserved in the task report; no implementation file, template,
-  database, release manifest, protected artifact, Git state, Railway setting, or production state
-  was changed during the fail-first run.
-
-### Builder execution evidence — final local verification (2026-08-24)
-
-- Files changed for this package are the shared conversion and Liquidation exception regions in
-  `app.py`, the new `tests/test_shared_pdf_upload_conversion.py`, the top Shared PDF plan entry in
-  this file, the existing 2026-08-24 section in `changes.md`, and the dated engineer-facing entry
-  in `static/changelog/releases.json`. No template, schema, migration, service-worker, handoff,
-  pending-work, database, attachment-count, calibration, output, tmp, Git, Railway, or production
-  file/action was included.
-- The implementation now validates PDFs before persistence, opens every profile from the original
-  bytes, selects the first valid <=2 MiB candidate across structural/native/raster stages, preserves
-  page count/MediaBox/rotation, retains text/vector data on native success, releases per-page
-  raster buffers, logs only bounded conversion facts, and returns the exact split-document message
-  at the readability floor. Both Liquidation conversion branches roll back and return HTTP 400;
-  unexpected failures remain HTTP 500.
-- Fail-first evidence remains **11 tests run, 6 failures and 3 errors** against the pre-fix source.
-  Post-fix focused conversion tests pass **11/11**. The related accounting, schedule-email,
-  reimbursement/liquidation, Travel Request, and LPR command passes **104/104**. Final complete
-  discovery passes **723 tests with 1 existing skip** against a fresh external
-  `MEDICAL_SERVICE_TEST_DB`.
-- In-memory artifact checks pass for vector text and a two-page scanned-color PDF. The selected
-  native output is 409,590 bytes from a 10,452,832-byte source, reopens with pypdf and PyMuPDF,
-  retains searchable text, and preserves `612 x 792` MediaBoxes with rotations `90` and `0`.
-  The representative conversion benchmark is **0.348 seconds**, below the 180-second Gunicorn
-  timeout; `tracemalloc` peak was 32,697,156 bytes during the two-page check. Poppler was not
-  available, so PNG rendering/visual inspection is explicitly skipped; browser automation remains
-  prohibited.
-- A forced fallback check held native and 96 DPI color candidates above the ceiling and selected
-  the final 72 DPI/grayscale quality-45 profile successfully: 31,212 bytes, one valid page,
-  `612 x 792` MediaBox, and 90-degree rotation.
-- `app.py` AST parsing, `releases.json` parsing with 43 releases and 192 unique item keys, and
-  `git diff --check` pass. `py_compile` could not write a temporary `.pyc` into the existing
-  protected `__pycache__`; the no-bytecode AST parse passed. The service-worker cache remains the
-  protected owner value `v106-calibration-certificate-approval`; no bump was made.
-- Final status audit shows the pre-existing protected Calibration Certificate files, modified
-  `scheduler.db`, `output/`, `tmp/`, handoff, unrelated templates/tests, and untracked calibration
-  assets remain dirty/present and were not cleaned, reset, staged, committed, pushed, deployed, or
-  otherwise disturbed. Review, commit, push, Railway, deployment, and production operations remain
-  separately unauthorized.
+  Railway, production, and environment state remained untouched during implementation. The plan is
+  now executed in `7f05b06`; publication was separately authorized by the owner.
 
 ## Calibration Certificate inventory and approval workflow
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-24
 **Detailed:** 2026-08-24
 
@@ -2178,7 +1515,7 @@ masked render comparison are the proportional safety net.
 
 ## Calibration Certificate unattached sample PDF
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-23
 **Detailed:** 2026-08-23
 **Execution authorization:** The owner separately authorized implementation with `go ahead` on
@@ -2480,7 +1817,7 @@ pending separate Planner review and publication authorization.
 
 ## Calibration Report sample/final workflow and Page 3 corrections
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-20
 **Detailed:** 2026-08-20
 **Execution authorization:** The owner separately authorized this implementation with
@@ -2632,7 +1969,7 @@ The plan remains `In progress` pending the separate Planner review/publication s
 
 ## Calibration Report draft-persistence correction
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-20
 **Detailed:** 2026-08-20
 **Execution authorization:** The owner separately authorized this focused Builder correction with
@@ -2726,7 +2063,7 @@ Review, commit, publication, deployment, and production actions remain separate 
 
 ## Calibration Report focus-containment source and fake-layout verification correction
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-20
 **Detailed:** 2026-08-20
 **Execution authorization:** The owner separately authorized this revised focused Builder task with
@@ -2864,7 +2201,7 @@ release publication is part of this correction.
 
 ## Calibration Report focus and state-restoration verification correction
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-20
 **Detailed:** 2026-08-20
 **Execution authorization:** The owner separately authorized this focused Builder correction on
@@ -2998,7 +2335,7 @@ of this correction.
 
 ## Create TSR Calibration Report Entry Page — single entry action and accessible editor shell
 
-**Status:** In progress
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-20
 **Detailed:** 2026-08-20
 **Execution authorization:** The owner authorized this Builder task on 2026-08-20 by instructing it to resume and proceed. Commit, push, deployment, production/Railway/environment access, browser automation, database/schema/dependency changes, and agent spawning remain separately unauthorized.
@@ -3081,9 +2418,10 @@ Explicitly excluded: routes/API/business logic beyond the cache label, database/
 ### After implementation
 
 The Builder report must list files, behavior, exact tests/results, not-run checks/reasons, non-browser verification, deviations, limitations, protected paths, and Reviewer attention. Review and publication are separate explicitly authorized stages.
+
 ## Create TSR Calibration Report post-review correction — delivery, exact-fit bounds, Blob cleanup, and retry validation
 
-**Status:** `In progress`
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-19
 **Detailed:** 2026-08-19
 **Execution authorization:** Granted by the owner on 2026-08-19. The owner explicitly said
@@ -3603,7 +2941,7 @@ This correction is ready for Planner approval only when all of the following are
 
 ## Create TSR Calibration Report correction — DOCX-only supplied form
 
-**Status:** `In progress`
+**Status:** Executed — 7f05b06
 **Approved:** 2026-08-19
 **Detailed:** 2026-08-19
 **Execution authorization:** Granted by the owner on 2026-08-19 after replacing the requested
@@ -4432,7 +3770,7 @@ The correction is complete only when all are true:
 
 ## Create TSR — optional Calibration Report and source-matched three-page PDF
 
-**Status:** `In progress`
+**Status:** `Superseded — replaced by the exact supplied-form and DOCX-only Calibration Report plans`
 **Approved:** 2026-08-19
 **Detailed:** 2026-08-19
 **Execution authorization:** Granted by the owner on 2026-08-19 after explicitly establishing
@@ -5160,6 +4498,659 @@ The implementation phase is complete only when all of the following are true:
    outcome; Planner review is complete.
 10. Protected/unrelated artifacts remain untouched and unstaged. Commit, push, deployment, and
     production changes occur only under their own explicit authorizations.
+
+## One-Time Single-Visit P.O. Support
+
+**Status:** Executed — 87e5ed1
+**Approved:** 2026-08-25
+**Detailed:** 2026-08-25
+**Execution authorization:** 2026-08-25, direct owner go-ahead message: `go ahead`. Implementation
+is authorized for this complete package through one fresh Builder. Review, staging, commit, push,
+promotion to `main`, Railway/deployment, production, and browser actions remain separately
+unauthorized.
+**Finished:** 2026-08-25 in implementation commit `87e5ed1`; published through record commit
+`5b2ce1b` and accepted successfully by Railway production.
+
+### Context and intended outcome
+
+The Service Contract P.O. workflow currently requires every selected Product to have matching
+Start and End Dates and requires a non-contract Product to be confirmed and changed to Under
+Contract atomically with the successful P.O. save. Some machines instead represent a genuine
+single service visit: their Product status is `No Expiry Set - No Contract`, they have a Product
+Start Date but deliberately have no Product End Date, and saving their P.O. must not change their
+contract status.
+
+Extend the existing `single` frequency conditionally. A contract-backed Single P.O. keeps its
+current annual recurrence. A qualifying no-contract/no-end Product becomes a one-time Single visit
+on its Product Start Date, receives the full P.O. amount once, participates correctly in fiscal and
+custom date filters and Excel export, and remains outside contract. Semi Annual and Quarterly keep
+their current contract-backed complete-date requirements. No fourth type or database migration is
+introduced.
+
+### Decisions and compatibility contract
+
+1. A Product is one-time eligible only when the selected frequency is `single`, its Product Start
+   Date exists, its Product End Date is blank, its `under_contract` flag is false, and its computed
+   status is exactly `No Expiry Set - No Contract`.
+2. A one-time P.O. stores the Product Start Date as its read-only historical `po_date` snapshot and
+   stores a null `end_date`. Its schedule contains exactly one inclusive occurrence on the Start
+   Date and assigns the entire optional P.O. amount to that occurrence.
+3. Qualifying one-time machines are excluded from the Under Contract confirmation protocol. Their
+   Product flag is never changed by P.O. creation or editing.
+4. A false-contract Product that has an End Date retains the existing confirmation-required and
+   atomic status-update behavior. Contract-backed Single records retain annual recurrence; Semi
+   Annual and Quarterly continue to require complete Start and End Dates.
+5. One P.O. cannot mix one-time and contract-backed machines. All one-time machines on one P.O.
+   must share the same Product Start Date; all contract-backed machines retain the existing matching
+   Start/End requirement.
+6. Service Frequency must be selected before machines. Changing frequency clears selected
+   machines, loaded dates, and pending contract confirmations so eligibility cannot become stale.
+7. Type storage and analytics remain `single`. The register/API distinguishes its effective
+   schedule with `one_time`/`One-time` or `annual`/`Annual` metadata rather than adding a type.
+8. Existing current-frequency snapshots remain historical. An unrelated edit to the same machines
+   preserves the saved dates, including a null one-time End Date; replacing machines or converting
+   a legacy record derives a new snapshot under the current rules.
+9. Historical `contract` and `single_visit` records retain their existing legacy-read behavior and
+   must still be converted to a current frequency when edited.
+
+### Numbered execution steps
+
+1. **Builder preflight and protected-work audit.** Re-read all applicable `AGENTS.md` instructions,
+   this complete plan, `changes.md`, Git status, the current P.O. implementation, and relevant
+   tests. Confirm the plan is still compatible with current source. Preserve the active Calibration
+   Certificate work and every unrelated dirty artifact; never access or modify `scheduler.db`,
+   `output/`, `tmp/`, Railway, production, or Git publication state.
+2. **Fail-first regression controls.** In `tests/test_purchase_orders.py` and only any directly
+   affected existing analytics/export assertions, add focused failing coverage for qualifying
+   one-time saves, no Product-status mutation, one full-value occurrence, filtering/export,
+   eligibility failures, mixed coverage, snapshot preservation, schedule labels, and the
+   frequency-first UI contract. Do not build new test infrastructure when the established Flask,
+   template, JavaScript, and workbook controls suffice.
+3. **Frequency-aware backend validation.** In `app.py`, make Product date/coverage resolution aware
+   of the requested P.O. type. Accept only the exact one-time eligibility combination; preserve the
+   current matching Start/End and confirmation rules for ranged schedules; reject missing starts,
+   mixed one-time/ranged selections, mismatched one-time starts, and no-end machines selected for
+   Semi Annual or Quarterly. Continue rejecting client-supplied date spoofing.
+4. **One-time schedule and confirmation behavior.** Update the shared schedule/allocation helpers so
+   `single` with a null End Date creates one occurrence at Start Date and allocates the full amount,
+   while ranged `single` remains annual. Exclude eligible one-time Products from confirmation and
+   status mutation, but retain the server-side confirmation-required conflict and atomic Product/P.O.
+   transaction for other non-contract Products. Preserve blank optional-amount behavior and exact
+   cent reconciliation for ranged schedules.
+5. **API and register interface.** Extend `/get_purchase_orders` serialization with effective
+   schedule-mode value/label data. In `templates/po_details.html`, require frequency before machine
+   selection, clear machine/date/consent state when frequency changes, rename `Single (annual)` to
+   `Single`, explain its conditional Annual/One-time meaning, load a qualifying one-time Start Date
+   with a blank locked End Date, omit its contract prompt, and show actionable eligibility errors.
+   Display the Annual or One-time note beside computed amounts in desktop rows and mobile cards,
+   preserving responsive and dark-mode behavior.
+6. **Filter and Excel parity.** Apply the shared occurrence logic to fiscal-year/quarter and custom
+   inclusive filters and Excel export. A one-time P.O. is included only when its Start-Date
+   occurrence is inside the active range; its computed/exported amount is the full P.O. amount, its
+   scheduled date is the Start Date, its End Date is blank, and export remains one row per P.O.
+7. **Project records and delivery metadata.** Add a dated, user-facing entry to
+   `static/changelog/releases.json` and detailed factual results to `changes.md`. Do not bump the
+   service-worker cache unless implementation unexpectedly changes a cached external asset; the
+   P.O. page behavior is currently delivered through its inline template.
+8. **Proportional verification and closeout.** Run focused P.O./export/analytics tests first, then
+   Python compilation, rendered Jinja and inline-JavaScript syntax checks, workbook value/date
+   inspection, release-manifest parsing/uniqueness, the full repository suite against fresh isolated
+   test databases, and `git diff --check`. Never use `scheduler.db` or in-app browser automation.
+   Record exact pass/fail/skip results and any genuine deviations in this plan and `changes.md`.
+   Leave manual responsive/dark-mode/modal/keyboard/375-pixel verification to the owner unless
+   separate browser permission is granted.
+9. **Authorization boundary.** Stop after local implementation and verification. Review, staging,
+   commit, push, promotion to `main`, Railway/deployment checks, manual redeploy, variables, and
+   production/data operations each remain unauthorized until the owner supplies the required
+   separate instruction. Any later publication must isolate the intended P.O. files from the
+   Calibration worktree and all protected artifacts.
+
+### Acceptance criteria
+
+- A Product showing `No Expiry Set - No Contract`, with a valid Product Start Date and no End Date,
+  can be saved under Single without a contract-status prompt or Product mutation.
+- That P.O. has one scheduled visit on its Start Date, assigns the complete P.O. amount to it, and
+  is included or hidden correctly by inclusive fiscal/custom filters and Excel export.
+- Contract-backed Single P.O.s remain annual. Semi Annual and Quarterly remain ranged and
+  contract-backed. Existing false-contract Products with an End Date retain atomic confirmation.
+- Missing or incompatible machine dates and mixed coverage modes are blocked with actionable
+  messages. Existing legacy and analytics behavior remains compatible.
+
+### Implementation results — local, uncommitted
+
+- `app.py` now treats an exact `No Expiry Set - No Contract` Product with a Start Date and no End
+  Date as a conditional one-time `single` schedule, keeps ranged contract-backed Single annual,
+  preserves null End-Date snapshots on same-machine edits, and leaves valid one-time Products out
+  of the atomic Under Contract confirmation/update path. API payloads expose contract status,
+  one-time eligibility, and effective schedule mode labels.
+- `templates/po_details.html` now requires frequency before machine selection, resets selection and
+  pending confirmation state on frequency changes, supports one-time date loading, and displays
+  Annual/One-time computed-amount notes. Excel and fiscal/custom occurrence filtering use the
+  shared one-occurrence schedule.
+- Focused P.O. tests: **44 passed** across `tests.test_purchase_orders`; analytics tests: **5
+  passed** in `tests.test_analytics_purchase_orders`. Python source compilation, inline JavaScript
+  syntax, release JSON parsing/unique-key validation, and `git diff --check` passed.
+- Full repository run: **766 tests, 1 skipped, 1 unrelated failure** in
+  `test_staff_creation.StaffCreationTests.test_superadmin_rejects_conflicting_staff_permissions_without_writing`;
+  the same test passes in isolation and the failure reports a pre-existing shared test-data
+  initials collision. No P.O. or analytics test failed.
+- The clean isolated publication candidate based on current `origin/main` passed the focused P.O.
+  and analytics set **49/49** and full discovery **722 passed with 1 existing skip**. Its diff is
+  limited to the six intended P.O. implementation/test/release/record files and contains no
+  Calibration implementation hunks or protected artifacts.
+- No browser verification, commit, push, deployment, Railway, production, schema migration, or
+  service-worker cache bump was performed. Calibration Certificate files, `scheduler.db`, and
+  unrelated dirty artifacts were preserved.
+
+## Service Contract P.O. Details and Fiscal Allocation
+
+**Status:** Executed — 5a93494
+**Approved:** 2026-08-25
+**Detailed:** 2026-08-25
+**Execution authorization:** 2026-08-25, owner message: “PLEASE IMPLEMENT THIS PLAN”.
+**Finished:** 2026-08-25 in implementation commit `5a93494`; publication closeout is recorded in a
+separate documentation commit.
+**Local outcome:** The authorized implementation and correction cycle is complete. The full P.O.
+module passes **40/40** and the affected Analytics P.O. module passes **5/5**. The isolated
+publish candidate, rebuilt from current `origin/main` without the protected Calibration worktree,
+passes full discovery with **718 passed and 1 skipped**. Python syntax, Jinja parsing, inline
+JavaScript parsing, workbook/export assertions, release JSON uniqueness/parsing, and
+`git diff --check` pass. No browser automation or service-worker bump was required.
+
+### Context and intended outcome
+
+The P.O. Details register must represent service-contract frequency rather than the older
+Contract/Single Visit labels. The register needs product-sourced coverage dates, contract-status
+protection, fiscal-year filtering, and a computed amount for scheduled service occurrences while
+remaining compatible with historical P.O. rows and the existing association tables.
+
+### Decisions taken
+
+1. The page H1 is `Service Contract P.O. Details`; the sidebar remains `P.O. Details`.
+2. Current frequency values are `single`, `semi_annual`, and `quarterly`; Single is one occurrence
+   per year. Historical `contract` and `single_visit` values remain readable/filterable only and
+   cannot be saved on new or edited rows.
+3. Fiscal quarters are April–June, July–September, October–December, and January–March. Fiscal
+   year labels use the starting April year. Custom From/To filtering remains available and is
+   mutually exclusive with fiscal filters.
+4. New/current-frequency P.O. dates are snapshots derived from the selected Product records.
+   Multiple machines require complete, identical dates. Existing snapshots survive unrelated edits.
+5. A non-contract selected machine requires explicit confirmation; confirmed status changes and
+   the P.O. write occur in one transaction after server-side revalidation.
+6. Schedule occurrences are anchored to Start Date, inclusive through End Date, with month-end
+   clamping and Decimal allocation; the final occurrence receives any rounding remainder.
+7. No new database column, service-worker bump, deployment, Railway action, commit, or protected
+   artifact operation is authorized for this implementation.
+
+### Investigation
+
+- `app.py` stores `PurchaseOrder.po_date`/`end_date`, `po_type`, `amount`, and the normalized
+  `PurchaseOrderMachine` association; `Product` currently has warranty dates and `under_contract`.
+- `/get_purchase_orders`, `/add_purchase_order`, `/update_purchase_order`, and
+  `/export_purchase_orders` are the single register/API seams. Analytics reads
+  `normalize_purchase_order_type` and must retain its date-based company-wide behavior.
+- `templates/po_details.html` contains the H1, filters, form, machine autocomplete, list rendering,
+  confirmation modal, and export query construction. `templates/layout.html` owns the sidebar label
+  and is deliberately excluded.
+- The worktree already contains Calibration Certificate, journals, release data, protected
+  `scheduler.db`, output/tmp, and other dirty files; only narrow P.O. hunks may be edited.
+
+### Execution steps
+
+1. Record this authorized plan and preserve all unrelated dirty files. Add fail-first P.O. assertions
+   for current frequencies, fiscal recurrence/allocation, product-date snapshots, status confirmation,
+   and computed filtered values in `tests/test_purchase_orders.py` without touching `scheduler.db`.
+2. In `app.py`, add current/legacy type constants, fiscal-boundary and anchored-schedule helpers,
+   Decimal allocation helpers, and filtered-amount helpers. Extend `purchase_order_to_dict` with
+   product dates and schedule data while retaining legacy API keys.
+3. Rework payload validation to reject legacy/unknown values on new/edit saves, derive read-only
+   dates from selected Products, enforce complete matching dates across machines, preserve existing
+   current-frequency snapshots during unrelated edits, and reject forged client dates.
+4. Add explicit `under_contract_confirmed_serials` handling. Re-fetch and revalidate selected
+   Products, update only confirmed non-contract flags, log those changes, and commit status/P.O.
+   atomically. Return a distinct 409 confirmation response listing pending machines.
+5. Update `templates/po_details.html` for the new heading, frequency controls, product date loading,
+   confirmation flow, fiscal/custom filters, scheduled amount rendering, and matching labels while
+   leaving the sidebar unchanged.
+6. Update Excel export filters, columns, scheduled dates, and computed amount using the same helpers,
+   preserving one row per P.O. and per-P.O. amount semantics.
+7. Add a dated release entry and append detailed factual results to `changes.md`; do not bump the
+   service worker unless a cached external asset is touched.
+8. Self-review the diff, run focused P.O./analytics tests, Python/Jinja/inline-JS checks, workbook
+   assertions, release JSON validation, full suite when feasible, and `git diff --check`. Leave the
+   plan truthfully `In progress` because no commit is authorized.
+
+### Deliberately excluded
+
+No schema migration, general Products permission change, sidebar rename, browser automation, service
+worker cache change, deployment/Railway operation, database reset, staging, commit, push, or unrelated
+Calibration Certificate/journal/template changes are included.
+
+### Verification
+
+Verify fiscal boundaries and year rollover, month-end clamping, inclusive schedules, final-cent
+reconciliation, filtered and unfiltered amounts, legacy discoverability, product-date spoof rejection,
+missing/mismatched-date rejection, confirmation decline/success/stale state, atomic rollback, activity
+logs, API/export parity, one-row-per-P.O., H1/sidebar labels, Jinja/AST/inline-script syntax, release
+JSON shape, focused suites, full suite where feasible, and `git diff --check`. Use isolated test DBs
+only and report browser checks as not run under the project safety rule.
+
+### After implementation
+
+The correction Builder self-reviewed only the P.O. hunks and preserved the protected Accounting,
+Calibration, handoff, scheduler.db, output/tmp, and unrelated test/template changes. Integer-cent
+allocation, immediate Product-date/status selection guards, legacy edit selection, fiscal-year
+parity, and the Semi Annual KPI were corrected. Verification was run against unique temporary test
+databases only: `tests.test_purchase_orders` **40/40**, `tests.test_analytics_purchase_orders`
+**5/5**, and full discovery **755 passed, 1 failed, 1 skipped**, with the named staff-creation
+failure unrelated to P.O. behavior. No browser automation, staging, commit, push, deployment,
+Railway, or production action occurred. The owner may separately authorize read-only review with
+`Review the implementation.`; commit/push and production verification remain separate decisions.
+
+### Risks
+
+The highest risks are financial misallocation, silently changing historical snapshots, cross-client
+machine links, and partial contract-status updates. Centralized Decimal schedule helpers, server-side
+Product revalidation, explicit confirmation, transaction rollback, and focused regression tests limit
+those risks. Existing unrelated dirty changes remain protected throughout.
+
+## Shared PDF Upload Conversion Repair
+
+**Status:** Executed
+**Approved:** 2026-08-24
+**Detailed:** 2026-08-24
+**Finished:** 2026-08-24
+**Implementation commit:** `1e4260e`
+**Execution authorization:** The owner authorized this focused correction cycle for one fresh
+Builder on 2026-08-24. It is isolated at
+`C:/Users/Jonamar/AppData/Local/Temp/codex-medical-service-sms-pdf-fix-20260824` on branch
+`codex/shared-pdf-upload-correction`, based on verified `origin/main` commit
+`5d107cf6f275237183b8f80f423a627bf1c1fb43`. The owner later waived another review and separately
+authorized the isolated commit and push on 2026-08-24. Manual deployment, Railway changes, and
+production operations remain unauthorized.
+
+### Context and intended outcome
+
+The earlier combined dirty-working-tree implementation of the Shared PDF Upload Conversion Repair
+passed its focused and complete tests, but a staged snapshot made by line-number-only extraction was
+not a valid standalone `app.py`. Three read-only reviewers classified that staged snapshot
+`CORRECTION REQUIRED`. They also identified two material risks in the working-tree implementation:
+the raster fallback could clip, mirror, or double-rotate asymmetric content on rotated pages because
+rendering, insertion, and rotation geometry were inconsistent; and generated accounting/email/package
+callers of `reimbursement_compress_pdf_bytes_best_effort` could receive the upload-specific split-PDF
+`ValueError` instead of their historical non-throwing best-effort result.
+
+The correction must produce one bounded, validated conversion path for Timeline schedules,
+Reimbursement, Travel Request, Cash Advance, both Liquidations, and LPR/embedded LPR uploads. It
+keeps the 35 MiB intake limit and strict 2 MiB stored limit, prefers structural/native conversion,
+uses fresh-source raster profiles only as fallback, preserves page count/MediaBox/rotation, and gives
+the exact split instruction when no readable upload candidate reaches the ceiling. The legacy
+best-effort generated-package helper remains non-throwing and returns the smallest validated
+candidate or the valid original when the target is unreachable.
+
+### Decisions taken
+
+1. Work only in the isolated worktree above, created from the verified remote `main`; the protected
+   primary worktree is read-only reference state and must not be staged, reset, cleaned, committed,
+   pushed, or otherwise changed.
+2. Add the focused tests before production edits and run them against the unchanged baseline so the
+   fail-first evidence is real. Patch complete logical functions with context; do not extract or
+   reconstruct code by raw old/new line numbers.
+3. Keep `reimbursement_prepare_receipt_upload_bytes` strict for every upload caller. Validate
+   malformed and password-protected PDFs even when they are already below 2 MiB. Use native color
+   profiles 150/120/96 DPI at q75/q65/q55 and raster profiles 96 DPI color q50 then 72 DPI grayscale
+   q45; never compound degraded candidates or lower the readable floor.
+4. Make raster geometry explicit: render each source page in unrotated coordinates, insert into an
+   unrotated page with the source MediaBox dimensions, then restore the source 0/90/180/270 rotation.
+   Tests must use deterministic asymmetric corner/edge markers and inspect rendered content, not only
+   rotation metadata.
+5. Keep generated/accounting/email callers compatible through the existing
+   `reimbursement_compress_pdf_bytes_best_effort` interface. Strict upload conversion may raise the
+   exact split instruction; best-effort generation must return a valid best candidate/original.
+6. Put conversion `ValueError` handling inside both actual Liquidation upload handlers, rollback the
+   session and any newly written path, and return HTTP 400. Unexpected storage/database failures
+   remain HTTP 500. No routes, request/response shapes, schemas, dependencies, templates, frontend
+   assets, service worker, migration, or attachment-count behavior changes.
+
+### Investigation
+
+1. The baseline shared upload preparation is in `app.py` around
+   `reimbursement_prepare_receipt_upload_bytes`; it previously skipped PDF validation below 2 MiB,
+   performed content-stream compression, used an A4 raster fallback, and returned an oversized best
+   candidate instead of a strict readable-upload failure.
+2. The legacy generated helper is
+   `reimbursement_compress_pdf_bytes_best_effort`; it is called by generated receipt/accounting/email
+   package paths and must not inherit the upload-only exception contract.
+3. The actual upload handlers are
+   `upload_travel_liquidation_receipt` and `upload_cash_advance_liquidation_receipt`. Both previously
+   had one broad exception branch that converted an expected conversion `ValueError` into HTTP 500.
+4. The primary dirty worktree contains protected Calibration Certificate changes, scheduler/database
+   state, artifacts, templates, and unrelated tests. None are part of this isolated branch or this
+   plan record.
+5. The PDF skill requires one artifact-operation marker before the first PDF-producing test/QA
+   command. The required marker was run once before the baseline focused run. Poppler availability
+   must be checked once; PyMuPDF rendering is the fallback for deterministic inspection.
+
+### Affected files
+
+| Path | Authorized correction |
+| --- | --- |
+| `app.py` | Shared PDF candidate conversion/validation/logging, strict upload preparation, non-throwing generated helper, and two Liquidation `ValueError` branches. Preserve CRLF/no BOM. |
+| `tests/test_shared_pdf_upload_conversion.py` | Fail-first and post-fix coverage for upload, generated-package compatibility, topology, raster geometry, diagnostics, intake, and Liquidation status behavior. LF/no BOM. |
+| `plans.md` | This authorized in-progress correction record and final Builder evidence. |
+| `changes.md` | Factual 2026-08-24 correction entries and exact verification. |
+| `static/changelog/releases.json` | One dated engineer-facing Shared PDF release entry only. |
+
+### Numbered execution steps
+
+1. [x] Complete preflight: reread applicable instructions, baseline `changes.md`, plan structure,
+   PDF skill, protected primary status, worktree list, and remote `main`; confirm the isolated path
+   and branch are absent; create the clean worktree from verified `origin/main`; confirm clean status,
+   branch, base, source, tests, and runtime.
+2. [x] Add `tests/test_shared_pdf_upload_conversion.py` before production edits. Run the unchanged
+   baseline with a fresh external `MEDICAL_SERVICE_TEST_DB` and preserve exact fail/error counts,
+   including positive controls for the old raster success and 35 MiB intake guard.
+3. [x] Replace the logical PDF conversion functions in `app.py`: validate source PDFs, preserve
+   topology, run structural/native/fresh-source raster profiles, reopen every candidate, release
+   per-image/page buffers, and separate strict upload failure from best-effort generated fallback.
+4. [x] Add strict PDF validation for already-small uploads and preserve the existing image path,
+   extension/content-type behavior, 35 MiB intake ceiling, 2 MiB stored ceiling, and original
+   display filename behavior.
+5. [x] Add the two in-handler conversion `ValueError` branches with rollback/new-file cleanup and
+   leave the broad unexpected-error branches at HTTP 500.
+6. [x] Run focused, related, complete-suite, syntax, manifest, topology, rendered-marker, and
+   near-limit benchmark verification. Use a fresh external database for each Python suite; never
+   open `scheduler.db`; do not use browser automation. The focused and related suites, syntax,
+   manifest, topology, rendering, and benchmark checks passed; the complete discovery command was
+   attempted but remained in the existing SQLite migration-lock path without producing a final
+   unittest summary, as recorded below.
+7. [x] Complete isolated self-review of only the authorized files/scope, update this plan's Builder
+   evidence and the same-day `changes.md` section with exact pass/fail/skip results, add only the
+   Shared PDF release item, and audit status/diff/line endings. Stop without review classification,
+   staging, commit, push, deployment, Railway, or production work.
+
+### Deliberately excluded
+
+Calibration Certificate implementation or assets, primary dirty-worktree files, templates, frontend
+assets, schemas, migrations, attachment counts, `scheduler.db`, `output/`, `tmp/`, handoff and
+pending-work artifacts, unrelated tests/configuration, dependency changes, service-worker bumps,
+browser automation, Git staging/history/commit/push, Railway settings, deployment, and production
+state. These are protected or unrelated to this server-side correction.
+
+### Verification
+
+- Baseline focused module must run against unchanged source before the fix; post-fix focused coverage
+  must prove strict <=2 MiB conversion, native searchable text, source page count/MediaBox/rotation,
+  malformed/password/floor errors, non-throwing generated-package behavior, both Liquidation 400
+  branches plus a 500 control, and >35 MiB rejection before conversion.
+- Generate representative vector, scanned-color, multipage, and asymmetric-marker PDFs in memory or
+  skill-approved temporary paths. Reopen with PyMuPDF/pypdf, inspect all pages, and render with Poppler
+  if available; otherwise inspect PyMuPDF renders and report Poppler unavailable.
+- Run accounting attachment, schedule-email attachment, reimbursement/liquidation, Travel/Cash
+  Advance, and LPR suites, then complete unittest discovery against fresh external test databases.
+- Run the near-limit conversion benchmark below the 180-second Gunicorn timeout, AST/bytecode-safe
+  syntax checks, release-manifest JSON/uniqueness checks, `git diff --check`, exact status audit, and
+  protected-primary confirmation.
+
+### After implementation
+
+The fresh Builder will append one consolidated local, uncommitted execution record here with exact
+fail-first evidence, files changed, tests and counts, rendered geometry/Poppler status, benchmark,
+limitations, exclusions, and protected-worktree confirmation. The plan remains `In progress` until a
+separately authorized commit exists. Post-implementation review/classification and publication are
+separate gates.
+
+### Risks
+
+The material risks are raster clipping or orientation errors, cumulative quality loss, oversized
+uploads, malformed/password persistence, generated-package exceptions, leaked document identity in
+diagnostics, and unexpected Liquidation error classification. Fresh-source profiles, candidate
+reopen/topology checks, asymmetric rendered markers at every rotation, explicit stage logs, strict
+upload versus non-throwing generated contracts, focused route controls, and protected-worktree audits
+are the proportional safety net.
+
+### Builder execution evidence — correction cycle (2026-08-24)
+
+- **Fail-first:** The focused module was added before production edits and run against unchanged
+  isolated `origin/main`: `python -m unittest discover -s tests -p
+  test_shared_pdf_upload_conversion.py -v` ran 16 tests with **7 failures, 6 errors, and 3
+  passes**. The intended red controls were missing conversion stages, small malformed/password PDF
+  validation, old A4 raster geometry, strict readability-floor behavior, absent diagnostics, and
+  both Liquidation conversion branches returning 500; the old raster-success and 35 MiB intake
+  controls stayed green.
+- **Implementation:** Only `app.py`, the new focused test module, this plan, `changes.md`, and one
+  Shared PDF item in `static/changelog/releases.json` changed in the isolated tree. The converter
+  now validates every source/candidate, tries structural then fresh-source native and raster
+  profiles, preserves page count/MediaBox/rotation, uses explicit unrotated raster geometry with
+  restored rotation, releases page/image buffers, enforces the strict upload ceiling, and keeps the
+  generated-package helper non-throwing. Both actual Liquidation upload handlers now return 400 for
+  conversion `ValueError` after rollback/cleanup while retaining 500 for unexpected failures.
+- **Focused post-fix:** `python -m unittest discover -s tests -p
+  test_shared_pdf_upload_conversion.py -q` ran **16 tests: 16 passed, 0 failed, 0 skipped** in
+  15.382 seconds against a fresh external database.
+- **Related suites:** The accounting attachment, accounting-form, schedule-email, reimbursement/LPR
+  integration, liquidation-row, reimbursement summary/consistency, and Travel Request modules ran
+  **35 tests: 35 passed, 0 failed, 0 skipped**. `tests.test_lpr_workflow` ran **14 tests with 1
+  failure**: its standalone-LPR first POST received 500 from the pre-existing
+  `ensure_reimbursement_receipt_columns()` SQLite unique-index migration reporting `database is
+  locked`; no PDF converter assertion failed. The same migration-lock diagnostic prevented the
+  complete discovery command from reaching unittest's final summary by the Builder report cutoff;
+  therefore no aggregate pass/fail/skip count is claimed for that run. After verifying the exact
+  isolated runner command lines and observing only repeated lock diagnostics, the Builder stopped
+  only its Python child/parent PIDs 5008 and 2764; the session ended with `exit=-1` and no project
+  files were discarded.
+- **Artifact/geometry:** The PDF skill marker was run exactly once before PDF creation. Bundled
+  Poppler was found at
+  `C:/Users/Jonamar/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/poppler/Library/bin`
+  (`pdfinfo.exe` and `pdftoppm.exe`). A deterministic four-page asymmetric source with rotations
+  0/90/180/270 was reopened and rendered with PyMuPDF; native, color-raster, and grayscale-raster
+  outputs retained all four pages, MediaBox dimensions, rotations, searchable native text where
+  applicable, and all corner markers without clipping, mirroring, or double rotation. Poppler
+  rendered four PNG pages for each raster output as a cross-check.
+- **Benchmark and static checks:** The four-page 10,456,189-byte representative conversion produced
+  a 410,917-byte four-page output in **0.543 seconds**, under the 180-second budget. Isolated
+  `app.py` and focused-test AST parsing and `py_compile` passed; `releases.json` parsed with **40
+  releases and 188 unique item keys**, including one Shared PDF entry; `git diff --check` passed.
+- **Scope/safety:** The isolated branch remains uncommitted and unpushed. No browser automation,
+  Railway, deployment, production, schema, dependency, template, service-worker, or database
+  migration action was performed. The protected primary worktree remained unchanged by this cycle;
+  its dirty Calibration Certificate files, database, artifacts, handoff, templates, and tests were
+  not staged or copied into the isolated branch.
+
+### After implementation — the workflow every plan ends with
+
+## Split Accounting Handoff CC by requester branch
+
+**Status:** Executed — 2715ee2
+**Approved:** 2026-08-25
+**Detailed:** 2026-08-25
+**Execution authorization:** Granted 2026-08-25 by the owner's separate message “go ahead”. A fresh
+Builder completed this bounded local implementation cycle. Review, correction, commit, push,
+deployment, Railway, production, and database actions remain separately unauthorized.
+
+### Context and intended outcome
+
+Settings currently exposes one shared `Accounting Handoff CC` recipient group. The helper
+`get_requester_accounting_copy_emails()` adds that same group to every approved Travel Request,
+Reimbursement, standalone Cash Advance, Travel Liquidation, and Cash Advance Liquidation handoff,
+regardless of the requester's branch. Leave Request already demonstrates the intended split: the
+existing Manila group key remains compatible, a second Cebu/Davao key is available in Settings,
+and routing uses the requester's Engineer-profile branch.
+
+The intended outcome is the same two-region routing for only the shared Accounting Handoff CC
+list. Manila/Main requesters copy the Manila list; Cebu or Davao requesters copy the combined
+Cebu/Davao list. The requester remains copied, and each workflow's existing primary Accounting
+recipient group remains unchanged.
+
+### Decisions taken
+
+1. Keep `accounting_handoff_cc` as the stable key for existing rows and relabel it
+   `Accounting Handoff CC - Manila`.
+2. Add `accounting_handoff_cc_cebu_davao` labelled
+   `Accounting Handoff CC - Cebu/Davao` immediately after the Manila group in backend and Settings
+   ordering.
+3. Route from `record.user_id` to the User's linked Engineer profile and use its `branch`, matching
+   Leave Request's source of truth. Cebu, Davao, BC02, BC03, and labels containing Cebu or Davao
+   select the regional group. Manila, Main, BC01, blank, missing, or unknown values select the
+   existing Manila group as the backward-compatible default.
+4. Existing `accounting_handoff_cc` rows stay in place as Manila recipients. Do not duplicate,
+   rewrite, or migrate them into the new regional group; a superadmin will configure the new group
+   explicitly.
+5. Split only the shared handoff CC. Do not split or change `travel_accounting`,
+   `reimbursement_accounting`, `cash_advance_accounting`, or `cash_advance_release`, and do not
+   change any primary To-recipient, email template, attachment, or approval behavior.
+6. Preserve the current requester-copy and case-insensitive deduplication behavior. Only active
+   rows from the selected branch group participate, and an address already present in the primary
+   recipient list or earlier CC candidates appears once.
+7. No database schema migration or service-worker cache bump is required. The recipient table
+   already stores arbitrary registered group keys, Settings is server rendered, is not an app-shell
+   route, and online navigation is network-first.
+
+### Investigation findings
+
+- `app.py:386-449` defines and orders Settings-managed recipient groups. It currently contains one
+  `accounting_handoff_cc` entry and the two Leave Request CC entries.
+- `app.py:3265-3355` validates group keys against that registry and queries active recipients, so
+  registering the regional key is sufficient for the existing Settings save/data endpoints; no
+  table or endpoint change is needed.
+- `app.py:6348-6368` resolves the requester email, always loads `accounting_handoff_cc`, and
+  deduplicates CC addresses against primary recipients. This is the single routing seam used by
+  all five accounting-handoff senders at the current call sites near lines 7729, 8236, 32839,
+  50438, and 54620.
+- `leave_feature.py:31-35` and `leave_feature.py:306-310` establish the approved regional matching
+  and requester-profile branch source used by Leave Request.
+- `templates/settings.html:2387-2459` carries frontend fallback group metadata, and
+  `templates/settings.html:2522-2532` supplies the usage badge. Both must mirror the backend so a
+  degraded or older response does not hide or mislabel the regional group.
+- The worktree is already materially dirty, including `app.py`, `templates/settings.html`, the
+  journals, release manifest, tests, protected artifacts, and parallel P.O. details work. Every
+  authorized edit must re-read the current file and patch only the intended local hunk.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first test — `tests/test_accounting_handoff_recipient_routing.py`.**
+   Re-read `AGENTS.md`, this complete plan, `changes.md`, Git status, the live recipient registry,
+   helper, Settings fallback, and nearby tests. Create one focused test module, avoiding edits to
+   existing dirty test files. Add controls that expect both group registrations and Settings
+   labels, then exercise branch selection for Manila/Main/BC01/default/unknown and
+   Cebu/Davao/BC02/BC03/equivalent labels. Run this module before application edits and record the
+   expected failures caused by the absent regional group/routing. Done when the red result is
+   attributable only to this approved gap and no protected file has been disturbed.
+
+2. **Register the groups — `app.py` recipient constants/order.** Relabel
+   `accounting_handoff_cc` for Manila, add `accounting_handoff_cc_cebu_davao` with a precise
+   Cebu/Davao description, and place it next to Manila in `EMAIL_RECIPIENT_GROUP_ORDER`. Do not
+   change the recipient model, table initializer, Settings API contract, or any primary workflow
+   group. Done when the standard group payload exposes both keys and the normalizer accepts the new
+   key while continuing to reject unknown keys.
+
+3. **Route shared CC by requester — `app.py:get_requester_accounting_copy_emails`.** Add one small
+   pure branch-to-group helper adjacent to the accounting-copy helper. Resolve `record.user_id` to
+   the User and linked Engineer profile, select exactly one shared CC group, then feed that group's
+   active recipients into the existing copy/deduplication pipeline. Keep all five send call sites
+   unchanged because they already converge on this helper. Done when Manila and regional records
+   cannot leak the other region's shared CC list, while requester-copy and primary-address
+   deduplication remain intact.
+
+4. **Expose the split in Settings — `templates/settings.html`.** Update the purpose guidance,
+   fallback group metadata, ordering, descriptions, and usage badges so the two Accounting Handoff
+   CC cards appear together and clearly identify Manila versus Cebu/Davao. Preserve the existing
+   form, card markup, responsive behavior, permissions, and save/delete mechanics. Done when the
+   rendered page and API-driven fallback both identify the same two keys and labels.
+
+5. **Complete focused verification.** Extend the focused module to create isolated User/Engineer
+   profiles and active/inactive recipient rows on a disposable external database. Prove requester
+   email inclusion, branch-only group selection, inactive exclusion, case-insensitive deduplication
+   against primary recipients, Settings payload order, and acceptance of the new save key. Include
+   a control showing the legacy Manila key and rows remain unchanged. Run this module and the
+   affected Settings/changelog and accounting workflow modules.
+
+6. **Release and audit records.** Add one dated admin-facing item to
+   `static/changelog/releases.json` explaining the two Settings lists and requester-branch routing.
+   Validate JSON shape and item-key uniqueness. Append factual results to the existing
+   `codex changes - 2026-08-25` section and update this plan to `In progress` with execution evidence.
+   Re-read each dirty journal/manifest immediately before applying a narrow patch; do not overwrite
+   parallel P.O. details or Calibration Certificate records. Do not edit the already-dirty handoff
+   artifact for this contained change.
+
+7. **Self-review and full verification.** Review the narrow diff against this plan, specifically
+   confirming all five callers still use the shared helper and no primary accounting groups or P.O.
+   code changed. Run Python AST validation, Jinja rendering of Settings, release JSON/uniqueness,
+   `git diff --check`, focused suites, then full `unittest` discovery against a fresh external
+   `MEDICAL_SERVICE_TEST_DB`. Record exact pass/fail/skip totals and any unavailable checks; never
+   open or write `scheduler.db`.
+
+8. **Stop after the Builder report.** Return one consolidated implementation report listing files,
+   behavior, red/green proof, focused/full results, static checks, deviations, and limitations.
+   Leave this plan `In progress` until a separately authorized commit exists. Do not automatically
+   review, correct, stage, commit, push, deploy, or access Railway/production.
+
+### Deliberately excluded
+
+- Splitting workflow-specific primary Accounting or Cash Advance Release lists; the owner selected
+  only the shared Accounting Handoff CC split.
+- Cloning existing Manila recipient rows into Cebu/Davao, because the system cannot safely infer
+  which current addresses belong to both regions.
+- Database/schema migration, new dependencies, email template or attachment changes, changes to
+  Leave Request, service-worker changes, or new administration endpoints.
+- Browser automation, Codex app navigation, 375 px/tap-target work, and console inspection. This
+  change adds metadata to the existing responsive Settings cards without adding controls or layout
+  structure; repository safety prohibits browser use unless separately authorized. Rendered Jinja,
+  Flask-client API/page checks, and source assertions are the proportional substitute.
+- Any P.O. details file, behavior, test, journal entry, cleanup, formatting, staging, commit, push,
+  Railway setting, deployment, production action, or protected artifact operation.
+
+### Verification acceptance bar
+
+- The fail-first focused test is red before the fix for the missing regional group/routing and green
+  after it; the prior source is not destructively reverted to manufacture proof.
+- Settings exposes exactly the existing Manila key plus the new Cebu/Davao key with clear labels and
+  adjacent order, and the save endpoint accepts the new registered key.
+- Manila/Main/BC01/default/unknown requesters receive only Manila shared CC rows. Cebu/Davao and
+  BC02/BC03 requesters receive only Cebu/Davao shared CC rows.
+- Requester-copy, active-row filtering, primary-recipient deduplication, all five handoff call paths,
+  and all workflow-specific primary recipient groups remain unchanged.
+- Focused and full suites pass on disposable databases, or every pre-existing/unavailable result is
+  reported truthfully. AST, Jinja, release JSON/uniqueness, and diff checks pass.
+- `scheduler.db`, P.O. details work, unrelated dirty hunks, the handoff, output/tmp, Git history,
+  Railway, and production remain untouched.
+
+### Risks and safeguards
+
+- **Wrong-region disclosure:** choosing the wrong branch could copy an internal recipient on an
+  unrelated regional request. Centralize selection in one pure helper and test both positive and
+  cross-region-negative cases.
+- **Missing Engineer profile/branch:** defaulting to the stable Manila key preserves current
+  behavior and prevents the new regional list from receiving ambiguous records.
+- **Existing-row compatibility:** retaining `accounting_handoff_cc` avoids a destructive migration;
+  tests pin that key and its rows as Manila.
+- **Dirty-work collision:** `app.py`, Settings, journals, and the release manifest overlap other
+  active work by file. Re-read before each narrow patch, add a new focused test file, never broadly
+  format or replace a file, and stop if the intended hunk materially changed.
+
+### Implementation evidence
+
+- Implemented the registered Manila and Cebu/Davao shared Accounting Handoff CC groups, requester
+  Engineer-profile branch selection, Settings guidance/fallback/usage metadata, and admin release
+  item without changing workflow-specific primary recipients, schemas, email templates,
+  attachments, call sites, or service-worker behavior.
+- Added `tests/test_accounting_handoff_recipient_routing.py`. The unchanged behavior produced
+  **10 expected assertion failures across 6 tests**; the final focused module passes **7/7** and the
+  related Accounting/changelog/Reimbursement Tracker command passes **78/78**, each on a fresh
+  external test database.
+- The Builder's first full-discovery report contained an inconsistent aggregate, so the parent
+  reran complete discovery on a fresh external database after implementation: **744 tests ran;
+  721 passed, 22 failed, and 1 existing test was skipped**. Twenty-one failures are confined to the
+  parallel protected P.O. Details suite, and one is an unrelated Calibration Report Node assertion
+  at its facility-name exact-fit boundary. No P.O. or Calibration source, test, behavior, or record
+  was changed for this package; the Accounting Handoff focused and related suites remain green.
+- Python AST/compile checks, Settings Jinja rendering, release JSON/unique-key validation, and
+  `git diff --check` pass; only existing LF-to-CRLF notices were emitted. Browser automation was not
+  used. `scheduler.db`, the handoff, output/tmp, Git history, Railway, production, and unrelated
+  dirty work remained untouched.
+- The bounded implementation was committed as `2715ee2`. The owner separately authorized its push
+  to `origin/main`; post-implementation review, correction, Railway configuration, manual
+  deployment, and production-data access remain unauthorized.
 
 ## Fix Approval Center notification 500s caused by missing event metadata
 

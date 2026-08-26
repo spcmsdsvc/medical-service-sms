@@ -1,22 +1,6 @@
 {
   "releases": [
     {
-      "release_key": "2026-08-25-service-contract-po-one-time-single-visit",
-      "release_date": "2026-08-25",
-      "title": "One-Time Single-Visit P.O. Entries",
-      "summary": "Service Contract P.O. Details now supports one-time Single visits for machines without contract expiry.",
-      "is_published": true,
-      "items": [
-        {
-          "item_key": "2026-08-25-service-contract-po-one-time-single-visit-admins",
-          "category": "Administration",
-          "description": "Eligible Products marked No Expiry Set - No Contract can be saved as one-time Single P.O. visits using their Product Start Date, without changing their contract status. Contract-backed Single schedules remain annual, with one-time and Annual labels and fiscal/custom allocation filtering preserved.",
-          "audiences": ["admins"],
-          "sort_order": 10
-        }
-      ]
-    },
-    {
       "release_key": "2026-08-25-calibration-certificate-print-copy",
       "release_date": "2026-08-25",
       "title": "Calibration Certificate Print Copy and Conditional Report Tables",
@@ -27,51 +11,20 @@
           "item_key": "2026-08-25-calibration-certificate-print-copy-engineers",
           "category": "Create TSR",
           "description": "Final Calibration Reports now include only the selected Small/Large focal-spot tables. Approved schedules show the additional No_Signature certificate filename as locked for engineers; it is reserved for administrator printing and is never sent to clients.",
-          "audiences": ["engineers"],
+          "audiences": [
+            "engineers"
+          ],
           "sort_order": 10
         },
         {
           "item_key": "2026-08-25-calibration-certificate-print-copy-admins",
           "category": "Approval Center",
           "description": "New certificate approvals atomically create the acting approver's signed PDF and an original-template No_Signature hard-copy PDF retaining the printed Rodito Aretano certifier block. Authorized administrators can preview/download the print copy; it is immutable and excluded from client-email packages.",
-          "audiences": ["admins", "approvers"],
+          "audiences": [
+            "admins",
+            "approvers"
+          ],
           "sort_order": 20
-        }
-      ]
-    },
-    {
-      "release_key": "2026-08-25-service-contract-po-details",
-      "release_date": "2026-08-25",
-      "title": "Service Contract P.O. Details",
-      "summary": "P.O. Details now records service frequency, Product coverage dates, and fiscal-period allocations.",
-      "is_published": true,
-      "items": [
-        {
-          "item_key": "2026-08-25-service-contract-po-details-admins",
-          "category": "Administration",
-          "description": "P.O. Details now supports Single, Semi Annual, and Quarterly service frequencies, loads matching Product coverage dates, warns before changing a machine to Under Contract, and shows scheduled amounts for fiscal quarters or custom date ranges. Historical Contract and Single Visit rows remain readable.",
-          "audiences": [
-            "admins"
-          ],
-          "sort_order": 10
-        }
-      ]
-    },
-    {
-      "release_key": "2026-08-25-accounting-handoff-cc-routing",
-      "release_date": "2026-08-25",
-      "title": "Accounting Handoff CC by Branch",
-      "summary": "Accounting Handoff CC recipients can now be maintained separately for Manila and Cebu/Davao requesters.",
-      "is_published": true,
-      "items": [
-        {
-          "item_key": "2026-08-25-accounting-handoff-cc-routing-admins",
-          "category": "Administration",
-          "description": "Settings now keeps separate Accounting Handoff CC - Manila and Accounting Handoff CC - Cebu/Davao lists. Approved Travel Request, Reimbursement, standalone Cash Advance, Travel Liquidation, and Cash Advance Liquidation handoffs copy the list selected from the requester's Engineer-profile branch; existing Manila rows and workflow-specific primary Accounting recipients remain unchanged.",
-          "audiences": [
-            "admins"
-          ],
-          "sort_order": 10
         }
       ]
     },
@@ -148,24 +101,6 @@
       ]
     },
     {
-      "release_key": "2026-08-24-shared-pdf-upload-conversion",
-      "release_date": "2026-08-24",
-      "title": "Shared PDF Upload Conversion Repair",
-      "summary": "Shared PDF uploads now preserve readable page topology while meeting the strict stored-size ceiling.",
-      "is_published": true,
-      "items": [
-        {
-          "item_key": "2026-08-24-shared-pdf-upload-conversion-engineers",
-          "category": "Attachments",
-          "description": "Timeline schedules, Reimbursement, Travel Request, Cash Advance, Liquidation, and LPR uploads now use bounded native-image and readable raster PDF conversion from fresh source bytes. Valid PDFs stay within the 2MB stored limit with page count, dimensions, and rotation preserved; PDFs that cannot fit remain actionable and ask engineers to split them. Liquidation validation failures now return HTTP 400 instead of a generic server error.",
-          "audiences": [
-            "engineers"
-          ],
-          "sort_order": 10
-        }
-      ]
-    },
-    {
       "release_key": "2026-08-24-calibration-certificate-approval",
       "release_date": "2026-08-24",
       "title": "Calibration Certificate Approval Workflow",
@@ -176,14 +111,18 @@
           "item_key": "2026-08-24-calibration-certificate-engineer",
           "category": "Create TSR",
           "description": "Engineers manage BSIDs in Product Inventory, see the machine-sourced read-only BSID and YYYY/MM/DD-BSID certificate number in Calibration Report, and receive queued, pending, returned, approved, and retryable certificate status with signed-PDF access. Sample and approved certificates now use one consistent regular data size, the restored original approver typography, a transparent certifier area, and a larger signature.",
-          "audiences": ["engineers"],
+          "audiences": [
+            "engineers"
+          ],
           "sort_order": 10
         },
         {
           "item_key": "2026-08-24-calibration-certificate-approver",
           "category": "Approval Center",
           "description": "Assigned approvers can review Calibration Certificates, return them with required remarks, or approve them with their saved signature, display name, and configured title; signed PDFs remain immutable TSR history. Generated certificates preserve the patterned background, use the original Humanist approver styling, and render a substantially larger transparent signature.",
-          "audiences": ["approvers"],
+          "audiences": [
+            "approvers"
+          ],
           "sort_order": 20
         }
       ]
@@ -217,6 +156,76 @@
           "item_key": "2026-08-19-tsr-calibration-report-editor",
           "category": "Create TSR",
           "description": "Engineers can optionally complete the supplied three-page US Letter Calibration Report inside Create TSR. DOCX generation preserves the original Word layout and fills only existing blanks/signature data; destination-specific exact-fit validation rejects values that would add pages, punctuation and international client names remain intact, and the report now separates unattached Sample DOCX download from Save Final Report attachment creation. Sample DOCX generation may proceed with incomplete fields and warns about what remains missing, while the same feedback is shown inside the open report modal. The generated signature cell contains the enlarged signature image without repeating the engineer's name. Page 3 supports independent Small/Large focal spots with editable persisted sizes and Clear Form preserves the ordinary TSR while removing only report data/files. Generated Page 3 output now centers every inserted Small/Large measurement value and keeps the performance criteria table clear of the fixed footer by reducing the unused spacer before it without changing the supplied template. Latest-revision client email selection admits only the recognized generated DOCX, local Blob cleanup remains recoverable across edits/removal, and duplicate-token DOCX validation preserves idempotent retries without changing ordinary PDF/image attachments.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-08-25-service-contract-po-one-time-single-visit",
+      "release_date": "2026-08-25",
+      "title": "One-Time Single-Visit P.O. Entries",
+      "summary": "Service Contract P.O. Details now supports one-time Single visits for machines without contract expiry.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-25-service-contract-po-one-time-single-visit-admins",
+          "category": "Administration",
+          "description": "Eligible Products marked No Expiry Set - No Contract can be saved as one-time Single P.O. visits using their Product Start Date, without changing their contract status. Contract-backed Single schedules remain annual, with one-time and Annual labels and fiscal/custom allocation filtering preserved.",
+          "audiences": ["admins"],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-08-25-service-contract-po-details",
+      "release_date": "2026-08-25",
+      "title": "Service Contract P.O. Details",
+      "summary": "P.O. Details now records service frequency, Product coverage dates, and fiscal-period allocations.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-25-service-contract-po-details-admins",
+          "category": "Administration",
+          "description": "P.O. Details now supports Single, Semi Annual, and Quarterly service frequencies, loads matching Product coverage dates, warns before changing a machine to Under Contract, and shows scheduled amounts for fiscal quarters or custom date ranges. Historical Contract and Single Visit rows remain readable.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-08-25-accounting-handoff-cc-routing",
+      "release_date": "2026-08-25",
+      "title": "Accounting Handoff CC by Branch",
+      "summary": "Accounting Handoff CC recipients can now be maintained separately for Manila and Cebu/Davao requesters.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-25-accounting-handoff-cc-routing-admins",
+          "category": "Administration",
+          "description": "Settings now keeps separate Accounting Handoff CC - Manila and Accounting Handoff CC - Cebu/Davao lists. Approved Travel Request, Reimbursement, standalone Cash Advance, Travel Liquidation, and Cash Advance Liquidation handoffs copy the list selected from the requester's Engineer-profile branch; existing Manila rows and workflow-specific primary Accounting recipients remain unchanged.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-08-24-shared-pdf-upload-conversion",
+      "release_date": "2026-08-24",
+      "title": "Shared PDF Upload Conversion",
+      "summary": "Receipt PDF uploads now stay within the stored size limit when a readable conversion is possible, with clear guidance when a document must be split.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-24-shared-pdf-upload-conversion",
+          "category": "PDF Uploads",
+          "description": "Receipt PDFs are checked for readability, compressed from the original source while preserving pages and orientation, and rejected with an instruction to split the document when no readable version can fit the 2MB stored limit.",
           "audiences": [
             "engineers"
           ],
