@@ -18,7 +18,10 @@ codex changes - 2026-08-26
   and bumped the app-shell cache to v118. Added the `2026-08-26-calibration-report-schedule-download`
   release item in `static/changelog/releases.json`. Python AST, Timeline attachment JavaScript,
   service-worker JavaScript, Jinja, release JSON/key, and `git diff --check` validations pass; no browser,
-  database, Railway, production, commit, or push action was performed.
+  database, Railway-variable, manual deployment, or production-data action was performed.
+- Committed the eight intended implementation, test, release, and journal files on `main` as
+  `164d9e5` after verifying the protected `Handoffs/`, `scheduler.db`, `.claude/`, handoff artifact,
+  `output/`, and `tmp/` changes remained unstaged. Push publication is authorized for this fix only.
 - Fixed Calendar Print Grid pagination in `templates/timeline.html`: large weekly
   schedule blocks now switch to block flow and allow page fragmentation during printing,
   so the first week starts beneath the report header instead of being pushed onto a blank

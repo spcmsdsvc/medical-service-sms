@@ -55,13 +55,14 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Make generated Calibration Reports downloadable from schedule cards
 
-**Status:** In progress
+**Status:** Executed — 164d9e5
 **Approved:** 2026-08-26
 **Detailed:** 2026-08-26
 **Execution authorization:** 2026-08-26, direct owner instruction: `PLEASE IMPLEMENT THIS PLAN:` followed by
-the complete plan below. This authorizes the scoped local implementation and verification only.
-Review, staging, commit, push, deployment, Railway, production, and browser actions remain separately
-unauthorized unless the owner explicitly requests them.
+the complete plan below. The owner subsequently authorized commit and push with `commit and push this
+change/fix only`. This authorizes the scoped implementation, verification, commit, and push only.
+Review, deployment, Railway-variable, production-data, and browser actions remain separately unauthorized.
+**Finished:** 2026-08-26 in implementation commit `164d9e5`; publication closeout is reported after push.
 
 ### Context and intended outcome
 
@@ -181,10 +182,10 @@ permissions, and report generation remain unchanged.
 
 ### After implementation
 
-Record the actual changed files and test results here and in `changes.md`, keep this plan `In progress`
-while the local change remains uncommitted, and stop. A later owner message exactly requesting
-`Review the implementation.` may authorize read-only post-implementation review. Commit/push and
-publication require separate explicit authorization.
+Record the actual changed files and test results here and in `changes.md`; this plan is now `Executed`
+in implementation commit `164d9e5`. A later owner message exactly requesting `Review the implementation.`
+may authorize read-only post-implementation review. Deployment, Railway-variable, production-data, and
+browser actions remain separately unauthorized.
 
 ### Implementation evidence — 2026-08-26
 
@@ -202,7 +203,7 @@ publication require separate explicit authorization.
   `static/changelog/releases.json` contains the new item in the existing 2026-08-26 release.
 - Focused command `python -m unittest tests.test_timeline_tsr_file_details tests.test_reports_archive_pagination tests.test_offline_resilience.ExportsAreNeverCachedTests tests.test_system_backup.BackupDownloadIsNeverCachedTests` passed **26/26**. It covers both API payloads, the authenticated attachment response and unrelated-DOCX rejection, Timeline source behavior, and worker ordering.
 - Static checks passed: Python AST parse, Timeline attachment JavaScript parse with Node, service-worker JavaScript parse with Node, Jinja parse, release JSON parse with unique item keys, and `git diff --check`.
-- Browser verification was not performed because project rules separately gate browser automation. No database migration, report regeneration, email behavior change, production/Railway action, commit, or push was performed. The pre-existing dirty `Handoffs/08-11-26 handoff.md`, `scheduler.db`, `.claude/`, detailed handoff artifact, `output/`, and `tmp/` remain protected.
+- Browser verification was not performed because project rules separately gate browser automation. No database migration, report regeneration, email behavior change, Railway-variable change, manual deployment, or production-data operation was performed. Implementation commit `164d9e5` contains only the eight intended fix, test, release, and journal files; the pre-existing dirty `Handoffs/08-11-26 handoff.md`, `scheduler.db`, `.claude/`, detailed handoff artifact, `output/`, and `tmp/` remain protected.
 
 ### Risks
 
