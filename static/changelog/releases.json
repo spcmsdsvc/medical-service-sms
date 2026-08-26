@@ -24,6 +24,15 @@
             "engineers"
           ],
           "sort_order": 20
+        },
+        {
+          "item_key": "2026-08-26-calibration-report-schedule-download",
+          "category": "Calendar",
+          "description": "Generated Calibration Reports now appear as direct download links on schedule cards and in the schedule file list. Existing TSR previews, certificate locks, and report access permissions are unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 30
         }
       ]
     },

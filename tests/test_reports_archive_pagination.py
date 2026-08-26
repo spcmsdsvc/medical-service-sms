@@ -59,10 +59,40 @@ class ReportsArchivePaginationSourceTests(unittest.TestCase):
         attachments_end = template_source.index('function getTimelineFilePreviewUrl(', attachments_start)
         attachments = template_source[attachments_start:attachments_end]
 
-        self.assertIn('file.is_tsr || file.is_managed_certificate', attachments)
+        self.assertIn('file.is_tsr || file.is_managed_certificate || file.is_calibration_report', attachments)
+        self.assertIn('getTimelineFileDownloadUrl(file)', attachments)
+        self.assertIn("'fa-file-word'", attachments)
+        self.assertIn('actionLabel', attachments)
         self.assertIn('file.is_no_signature && (file.locked || file.can_preview === false)', attachments)
         self.assertIn('Admin download only', attachments)
         self.assertIn('escapeHtml(displayName)', attachments)
+
+        download_start = template_source.index('function getTimelineFileDownloadUrl(')
+        download_end = template_source.index('function isScheduleCompleted(', download_start)
+        download_helper = template_source[download_start:download_end]
+        self.assertIn('fileInfo.locked', download_helper)
+        self.assertIn('fileInfo.can_download === false', download_helper)
+
+        edit_start = template_source.index('const fileListContainer = document.getElementById(\'existing-files-list\');')
+        edit_end = template_source.index('function updateScheduleUploadCount', edit_start)
+        edit_file_list = template_source[edit_start:edit_end]
+        self.assertIn('getTimelineFileDownloadUrl(fileInfo)', edit_file_list)
+        self.assertIn('fileInfo.is_calibration_report', edit_file_list)
+
+    def test_timeline_schedule_card_uses_report_download_accessibility_metadata(self):
+        template_source = (ROOT / 'templates' / 'timeline.html').read_text(encoding='utf-8')
+        attachments_start = template_source.index('function buildTimelineTSRAttachmentsHtml(')
+        attachments_end = template_source.index('function getTimelineFilePreviewUrl(', attachments_start)
+        attachments = template_source[attachments_start:attachments_end]
+        self.assertIn("'Download'", attachments)
+        self.assertIn('aria-label="${actionLabel} ${escapeHtml(displayName)}"', attachments)
+        self.assertIn('download', attachments)
+
+    def test_generated_report_release_item_is_present(self):
+        releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
+        release = next(item for item in releases['releases'] if item['release_date'] == '2026-08-26')
+        item_keys = {item['item_key'] for item in release['items']}
+        self.assertIn('2026-08-26-calibration-report-schedule-download', item_keys)
 
     def test_regional_admin_uses_read_visibility_for_manila_print_copy(self):
         manila_shift = SimpleNamespace(id=991, branch='Manila')

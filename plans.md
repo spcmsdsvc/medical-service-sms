@@ -53,6 +53,166 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Make generated Calibration Reports downloadable from schedule cards
+
+**Status:** In progress
+**Approved:** 2026-08-26
+**Detailed:** 2026-08-26
+**Execution authorization:** 2026-08-26, direct owner instruction: `PLEASE IMPLEMENT THIS PLAN:` followed by
+the complete plan below. This authorizes the scoped local implementation and verification only.
+Review, staging, commit, push, deployment, Railway, production, and browser actions remain separately
+unauthorized unless the owner explicitly requests them.
+
+### Context and intended outcome
+
+The generated Calibration Report DOCX is attached to the relevant schedule shift, but the schedule-card
+file payload currently recognizes only generated TSR files and managed certificate files. As a result,
+the report is omitted from the shared schedule-card attachment list and cannot be clicked to download.
+The intended outcome is that an eligible generated Calibration Report appears on the desktop hover card,
+mobile View Files/detail surface, and schedule edit file list as a direct authenticated DOCX download
+link. Existing TSR previews, managed certificate access controls, email/TSR classification, schedule
+permissions, and report generation remain unchanged.
+
+### Decisions taken
+
+- Clicking the Calibration Report filename downloads the DOCX directly; DOCX preview is not added.
+- Eligibility continues to use the existing exact `_generated_calibration_report` submission marker.
+- `is_calibration_report` remains separate from `is_tsr`; no filename-only fallback or historical backfill
+  is introduced.
+- The existing authenticated archive download route is reused. Locked files and existing certificate
+  authorization checks remain authoritative.
+- The shared Timeline attachment renderer is updated once so desktop, mobile, and schedule-edit surfaces
+  receive the same behavior.
+- The service worker treats `/download_tsr_archive` as network-only before the navigation branch and
+  receives a v118 cache bump. Authenticated report downloads must not be cached or replaced by the
+  offline page.
+
+### Investigation
+
+- `app.py:39453` `timeline_file_detail_payload()` currently sets download/preview metadata only for
+  recognized TSRs and managed certificates; generated Calibration Reports therefore have no download
+  URL and are not downloadable from Timeline metadata.
+- `app.py:12879` `is_system_generated_calibration_report_file()` already validates the exact submission
+  marker and matching file/shift, so the fix can reuse it without changing eligibility.
+- `app.py:40896` `_resolve_tsr_archive_file_for_preview()` and
+  `app.py:41266` `download_tsr_archive_file()` already authorize and serve eligible generated DOCX
+  reports while rejecting unrelated DOCX files.
+- `templates/timeline.html:14818` `buildTimelineTSRAttachmentsHtml()` currently recognizes only
+  `is_tsr` and `is_managed_certificate`, and the schedule edit file list uses preview-only behavior.
+  The shared renderer is the correct narrow UI seam for all three schedule-card surfaces.
+- `app.py:17496` currently has `/download_tsr_archive` only in the later network-first branch and uses
+  cache version v117; direct download requests can therefore reach cache/navigation fallback behavior.
+- Baseline focused Timeline/archive tests pass 13/13 before implementation. Existing dirty
+  `scheduler.db`, `Handoffs/`, `.claude/`, `output/`, `tmp/`, and the detailed handoff artifact are
+  protected and must remain untouched.
+
+### Execution steps
+
+1. **Record the authorized package and protected-worktree baseline.** Update `plans.md` with this full
+   plan and keep the current status `In progress`; update the existing 2026-08-26 section of
+   `changes.md` during the implementation. Confirm the protected dirty artifacts remain unchanged.
+   Done means the plan is executable from this record and no unrelated file is selected for editing.
+
+2. **Add fail-first focused coverage.** In `tests/test_timeline_tsr_file_details.py`, create a marker-linked
+   generated DOCX fixture and assert that both Timeline and details payloads include it with
+   `is_tsr: false`, `is_calibration_report: true`, an authenticated download URL, and no preview URL.
+   Add download-route coverage proving the eligible DOCX is returned as an attachment and an unrelated
+   DOCX is rejected. Extend source-level checks in the focused Timeline/archive/service-worker tests for
+   direct-download rendering and network-only branch ordering. Done means the new acceptance assertions
+   fail against the confirmed baseline for the missing behavior, while the existing positive TSR and
+   certificate controls remain meaningful.
+
+3. **Add backend report metadata without changing classification.** In `app.py`, update
+   `timeline_file_detail_payload()` to call `is_system_generated_calibration_report_file()`, expose
+   `is_calibration_report`, set `can_download` true and `can_preview` false for eligible reports, and
+   provide the authenticated `download_url`. Preserve existing `is_tsr`, managed-certificate locks,
+   no-signature authorization, delete behavior, and all other fields. Done means both Timeline endpoints
+   expose the same correct shape and unrelated DOCX files still have no report metadata or download.
+
+4. **Make report filenames direct download links in the shared Timeline UI.** In `templates/timeline.html`,
+   include `is_calibration_report` in recognized schedule attachments; add download-url gating that refuses
+   fallback URLs for locked or `can_download: false` files; keep ordinary TSR/certificate files on their
+   preview path; render generated DOCX reports with a Word-document icon and accessible Download label.
+   Apply the same action choice to desktop hover cards, mobile View Files/detail output, and the schedule
+   edit file list. Done means report links are direct downloads while ordinary preview and lock/unavailable
+   states are unchanged.
+
+5. **Make authenticated downloads network-only for installed clients.** In the inline service worker in
+   `app.py`, add `/download_tsr_archive` to `NETWORK_ONLY_DOWNLOAD_PREFIXES` before the navigation
+   branch and bump the cache version from v117 to v118. Preserve the later API/archive handling and do
+   not cache authenticated report downloads or replace failures with the offline page. Done means the
+   source ordering and cache identity are covered by focused checks.
+
+6. **Update release and change records.** Add one item to the existing `2026-08-26` object in
+   `static/changelog/releases.json` describing downloadable generated Calibration Reports. Update
+   `changes.md` with the final files, behavior, verification, and explicit no-database/no-browser/
+   no-deployment scope. Amend this plan with actual execution evidence while retaining truthful status;
+   do not invent a commit hash because commit authorization is not included.
+
+7. **Run proportional verification and self-review.** Run the focused Timeline/archive/service-worker
+   tests, Python/JavaScript/Jinja/JSON checks, and `git diff --check`; inspect the final diff for scope,
+   protected-artifact safety, and the direct-download/lock behavior. Browser verification is separately
+   gated by project rules and is not part of this execution. Done means exact pass/fail/skip results are
+   recorded, no protected artifact changed, and no commit/push/deployment is performed.
+
+### Deliberately excluded
+
+- No database migration, database reset, seed, or production data change.
+- No report regeneration, template/package change, filename-only eligibility fallback, or historical
+  backfill.
+- No email attachment classification or TSR classification change.
+- No changes to ordinary TSR preview behavior, managed certificate authorization, schedule permissions,
+  or certificate locks.
+- No production action, Railway variable change, deploy/redeploy, commit, push, or browser automation.
+
+### Verification
+
+- The new generated-DOCX API assertions must cover both Timeline and details payloads, the distinct
+  `is_tsr`/`is_calibration_report` flags, authenticated download URL, and absent preview URL.
+- The download route test must prove an eligible marker-linked DOCX returns attachment disposition and
+  unrelated DOCX remains rejected.
+- Source checks must prove the shared renderer recognizes reports, uses the Word icon and direct download
+  action, refuses locked/disabled fallbacks, and that service-worker network-only handling precedes
+  navigation with v118.
+- Run focused tests and static checks plus `git diff --check`. Do not claim browser results; if browser
+  verification becomes essential, stop and ask the owner first.
+- The standing UI bar is preserved: desktop and 375px mobile behavior must share the renderer, report
+  links must remain usable tap targets, and no console/browser claim is made without authorization.
+
+### After implementation
+
+Record the actual changed files and test results here and in `changes.md`, keep this plan `In progress`
+while the local change remains uncommitted, and stop. A later owner message exactly requesting
+`Review the implementation.` may authorize read-only post-implementation review. Commit/push and
+publication require separate explicit authorization.
+
+### Implementation evidence — 2026-08-26
+
+- `app.py` now classifies exact-marker generated Calibration Report DOCX files separately from TSRs,
+  returns `is_calibration_report: true`, exposes the authenticated archive download URL, sets
+  `can_download: true` and `can_preview: false`, and derives both URLs from the final capability booleans
+  so certificate locks cannot leak a fallback URL.
+- `templates/timeline.html` now carries the report flag through `getShiftFileDetails()`, recognizes it in
+  the shared attachment renderer used by desktop hover cards and mobile View Files, and uses the same
+  direct-download action in the schedule edit file list. Locked or disabled files do not receive fallback
+  URLs; reports use the Word icon, Download label, and download attribute while ordinary TSR/certificate
+  files retain preview links.
+- `app.py` service-worker source now handles `/download_tsr_archive` in the network-only prefix list before
+  navigation and uses cache version `medical-service-pwa-offline-navigation-v118-calibration-report-downloads`.
+  `static/changelog/releases.json` contains the new item in the existing 2026-08-26 release.
+- Focused command `python -m unittest tests.test_timeline_tsr_file_details tests.test_reports_archive_pagination tests.test_offline_resilience.ExportsAreNeverCachedTests tests.test_system_backup.BackupDownloadIsNeverCachedTests` passed **26/26**. It covers both API payloads, the authenticated attachment response and unrelated-DOCX rejection, Timeline source behavior, and worker ordering.
+- Static checks passed: Python AST parse, Timeline attachment JavaScript parse with Node, service-worker JavaScript parse with Node, Jinja parse, release JSON parse with unique item keys, and `git diff --check`.
+- Browser verification was not performed because project rules separately gate browser automation. No database migration, report regeneration, email behavior change, production/Railway action, commit, or push was performed. The pre-existing dirty `Handoffs/08-11-26 handoff.md`, `scheduler.db`, `.claude/`, detailed handoff artifact, `output/`, and `tmp/` remain protected.
+
+### Risks
+
+- If the report flag is conflated with `is_tsr`, email or TSR behavior could change; the separate flag
+  and existing TSR assertions guard against that.
+- If UI fallback URLs ignore lock/download metadata, a disabled or unauthorized file could become
+  clickable; explicit action-url gates and source tests guard against that.
+- If the service worker handles the download after navigation, an authenticated request could be cached
+  or receive the offline page; prefix ordering and the v118 assertion guard against that.
+
 ## Conditional focal tables and controlled no-signature Calibration Certificate
 
 **Status:** Executed — 7f05b06

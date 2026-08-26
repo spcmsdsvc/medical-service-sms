@@ -17493,7 +17493,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v117-tsr-number-preview-refresh';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v118-calibration-report-downloads';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -17540,7 +17540,8 @@ const FIELD_SAFE_ROUTES = [
 // is a list rather than a single route, and why it is matched ahead of the navigate branch.
 const NETWORK_ONLY_DOWNLOAD_PREFIXES = [
   '/export_',
-  '/admin/download-'
+  '/admin/download-',
+  '/download_tsr_archive'
 ];
 
 // Authenticated admin pages that must always be fetched from the server. Backup status
@@ -39451,8 +39452,9 @@ def redact_timeline_payload_for_hr(payload):
 
 
 def timeline_file_detail_payload(file_record, certificate_approval_map=None):
-    """Serialize one schedule file with an explicit recognized-TSR identity flag."""
+    """Serialize one schedule file with explicit schedule-artifact identity flags."""
     is_tsr = shift_file_is_recognized_tsr(file_record)
+    is_calibration_report = is_system_generated_calibration_report_file(file_record)
     if certificate_approval_map is None:
         no_signature_approval = calibration_certificate_no_signature_approval_for_file(file_record)
         certificate_approval = no_signature_approval or calibration_certificate_approval_for_shift_file(file_record)
@@ -39468,21 +39470,32 @@ def timeline_file_detail_payload(file_record, certificate_approval_map=None):
         not is_no_signature or
         calibration_certificate_no_signature_admin_can_view(no_signature_approval)
     )
+    can_preview = (
+        bool(certificate_approval and can_access_no_signature)
+        if certificate_approval
+        else bool(is_tsr)
+    )
+    can_download = (
+        bool(certificate_approval and can_access_no_signature)
+        if certificate_approval
+        else bool(is_tsr or is_calibration_report)
+    )
     return {
         'id': file_record.id,
         'filename': get_shift_file_display_name(file_record) or file_record.filename,
         'disk_filename': file_record.filename,
         'display_name': get_shift_file_display_name(file_record),
         'is_tsr': is_tsr,
+        'is_calibration_report': is_calibration_report,
         'certificate_kind': 'no_signature' if is_no_signature else ('signed' if certificate_approval else ''),
         'is_managed_certificate': bool(certificate_approval),
         'is_no_signature': is_no_signature,
         'locked': bool(is_no_signature and not can_access_no_signature),
-        'can_preview': bool(certificate_approval and can_access_no_signature) if certificate_approval else bool(is_tsr),
-        'can_download': bool(certificate_approval and can_access_no_signature) if certificate_approval else bool(is_tsr),
+        'can_preview': can_preview,
+        'can_download': can_download,
         'can_delete': bool(not is_no_signature),
-        'preview_url': url_for('preview_tsr_archive_file', file_id=file_record.id, scope='all') if ((certificate_approval and can_access_no_signature) or is_tsr) else '',
-        'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if ((certificate_approval and can_access_no_signature) or is_tsr) else '',
+        'preview_url': url_for('preview_tsr_archive_file', file_id=file_record.id, scope='all') if can_preview else '',
+        'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if can_download else '',
         'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else ''
     }
 

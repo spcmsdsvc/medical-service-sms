@@ -14646,15 +14646,23 @@ if(shift.engineers){
                 const item = document.createElement('div');
                 item.className = "list-group-item d-flex justify-content-between align-items-center py-1 px-2 small";
 
-                const previewUrl = getTimelineFilePreviewUrl(fileInfo);
+                const isCalibrationReport = Boolean(fileInfo.is_calibration_report);
+                const actionUrl = isCalibrationReport
+                    ? getTimelineFileDownloadUrl(fileInfo)
+                    : getTimelineFilePreviewUrl(fileInfo);
+                const actionLabel = isCalibrationReport ? 'Download' : 'Preview';
+                const linkAttrs = isCalibrationReport ? 'download' : 'target="_blank" rel="noopener"';
+                const fileIcon = /\.docx$/i.test(displayName)
+                    ? 'fa-file-word'
+                    : (/\.(png|jpe?g)$/i.test(displayName) ? 'fa-file-image' : 'fa-file-lines');
                 const lockedPrintCopy = Boolean(fileInfo.is_no_signature && fileInfo.locked);
-                const fileLinkHtml = previewUrl
-                    ? `<a href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener" class="text-decoration-none text-primary">
-                        <i class="fa-solid ${/\.(png|jpe?g)$/i.test(displayName) ? 'fa-file-image' : 'fa-file-lines'} me-1"></i> ${escapeHtml(displayName)}
+                const fileLinkHtml = actionUrl
+                    ? `<a href="${escapeHtml(actionUrl)}" ${linkAttrs} aria-label="${actionLabel} ${escapeHtml(displayName)}" class="text-decoration-none text-primary">
+                        <i class="fa-solid ${fileIcon} me-1"></i> ${escapeHtml(displayName)}
                     </a>`
                     : `<span class="text-muted">
-                        <i class="fa-solid ${/\.(png|jpe?g)$/i.test(displayName) ? 'fa-file-image' : 'fa-file-lines'} me-1"></i> ${escapeHtml(displayName)}
-                        <span class="xsmall ms-1">(${lockedPrintCopy ? 'Admin download only' : 'preview unavailable'})</span>
+                        <i class="fa-solid ${fileIcon} me-1"></i> ${escapeHtml(displayName)}
+                        <span class="xsmall ms-1">(${lockedPrintCopy ? 'Admin download only' : (isCalibrationReport ? 'download unavailable' : 'preview unavailable')})</span>
                     </span>`;
 
                 item.innerHTML = `
@@ -14785,6 +14793,7 @@ if(shift.engineers){
                 disk_filename: file.disk_filename || file.stored_filename || '',
                 display_name: file.display_name || file.original_filename || cleanStoredFilenameForDisplay(file.filename || file.name || file.disk_filename || ''),
                 is_tsr: Boolean(file.is_tsr),
+                is_calibration_report: Boolean(file.is_calibration_report),
                 certificate_kind: file.certificate_kind || '',
                 is_managed_certificate: Boolean(file.is_managed_certificate),
                 is_no_signature: Boolean(file.is_no_signature),
@@ -14792,8 +14801,8 @@ if(shift.engineers){
                 can_preview: file.can_preview !== false,
                 can_download: file.can_download !== false,
                 can_delete: file.can_delete !== false,
-                preview_url: file.preview_url || (file.locked ? '' : (file.id ? `/preview_tsr_archive_file/${file.id}` : '')),
-                download_url: file.download_url || (file.locked ? '' : (file.id ? `/download_tsr_archive_file/${file.id}` : ''))
+                preview_url: (file.locked || file.can_preview === false) ? '' : (file.preview_url || (file.id ? `/preview_tsr_archive_file/${file.id}` : '')),
+                download_url: (file.locked || file.can_download === false) ? '' : (file.download_url || (file.id ? `/download_tsr_archive_file/${file.id}` : ''))
             })).filter(file => file.filename || file.id);
         }
 
@@ -14803,6 +14812,7 @@ if(shift.engineers){
             disk_filename: filename,
             display_name: cleanStoredFilenameForDisplay(filename),
             is_tsr: false,
+            is_calibration_report: false,
             certificate_kind: '',
             is_managed_certificate: false,
             is_no_signature: false,
@@ -14822,34 +14832,39 @@ if(shift.engineers){
         // Managed calibration certificates are explicit schedule artifacts too.
         // Keep denied no-signature copies in this list so engineers see the
         // filename and lock state instead of an unhelpful "other attachment".
-        const recognizedFiles = files.filter(file => file.is_tsr || file.is_managed_certificate);
+        const recognizedFiles = files.filter(file => file.is_tsr || file.is_managed_certificate || file.is_calibration_report);
         const otherFileCount = Math.max(0, files.length - recognizedFiles.length);
         const heading = options.mobile ? 'TSR Files' : 'TSR Attachments';
         const rows = recognizedFiles.map(file => {
             const displayName = file.display_name || cleanStoredFilenameForDisplay(file.filename) || 'TSR document';
-            const previewUrl = getTimelineFilePreviewUrl(file);
-            const imageIcon = /\.(png|jpe?g)$/i.test(displayName) ? 'fa-file-image' : 'fa-file-pdf';
+            const isCalibrationReport = Boolean(file.is_calibration_report);
+            const actionUrl = isCalibrationReport ? getTimelineFileDownloadUrl(file) : getTimelineFilePreviewUrl(file);
+            const actionLabel = isCalibrationReport ? 'Download' : 'Preview';
+            const linkAttrs = isCalibrationReport ? 'download' : 'target="_blank" rel="noopener"';
+            const fileIcon = /\.docx$/i.test(displayName)
+                ? 'fa-file-word'
+                : (/\.(png|jpe?g)$/i.test(displayName) ? 'fa-file-image' : 'fa-file-pdf');
             if(file.is_no_signature && (file.locked || file.can_preview === false)){
                 return `
                     <div class="timeline-tsr-attachment-unavailable" title="Admin download only">
-                        <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
+                        <i class="fa-solid ${fileIcon}" aria-hidden="true"></i>
                         <span>${escapeHtml(displayName)} <small>(Admin download only)</small></span>
                     </div>
                 `;
             }
-            if(!previewUrl){
+            if(!actionUrl){
                 return `
-                    <div class="timeline-tsr-attachment-unavailable" title="Preview is unavailable for this legacy file">
-                        <i class="fa-solid ${imageIcon}" aria-hidden="true"></i>
+                    <div class="timeline-tsr-attachment-unavailable" title="${isCalibrationReport ? 'Download is unavailable for this file' : 'Preview is unavailable for this legacy file'}">
+                        <i class="fa-solid ${fileIcon}" aria-hidden="true"></i>
                         <span>${escapeHtml(displayName)}</span>
                     </div>
                 `;
             }
             return `
-                <a class="timeline-tsr-attachment-link" href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener" aria-label="Preview ${escapeHtml(displayName)}">
-                    <i class="fa-solid ${imageIcon}" aria-hidden="true"></i>
+                <a class="timeline-tsr-attachment-link" href="${escapeHtml(actionUrl)}" ${linkAttrs} aria-label="${actionLabel} ${escapeHtml(displayName)}">
+                    <i class="fa-solid ${fileIcon}" aria-hidden="true"></i>
                     <span>${escapeHtml(displayName)}</span>
-                    <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                    <i class="fa-solid ${isCalibrationReport ? 'fa-download' : 'fa-arrow-up-right-from-square'}" aria-hidden="true"></i>
                 </a>
             `;
         }).join('');
@@ -14867,6 +14882,14 @@ if(shift.engineers){
                 ${otherFileCount ? `<div class="timeline-tsr-attachments-note">${otherFileCount} other attachment(s) are available from the schedule form.</div>` : ''}
             </section>
         `;
+    }
+
+    function getTimelineFileDownloadUrl(fileInfo){
+        if(!fileInfo) return '';
+        if(fileInfo.locked || fileInfo.can_download === false) return '';
+        if(fileInfo.download_url) return fileInfo.download_url;
+        if(fileInfo.id) return `/download_tsr_archive_file/${encodeURIComponent(fileInfo.id)}`;
+        return '';
     }
 
     function getTimelineFilePreviewUrl(fileInfo){

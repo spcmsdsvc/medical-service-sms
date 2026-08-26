@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import uuid
 from datetime import datetime, time
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -51,7 +52,8 @@ class TimelineTsrFileDetailsSourceTests(unittest.TestCase):
 
     def test_release_and_cache_metadata(self):
         self.assertIn('2026-08-05-schedule-card-tsr-preview-links', self.releases)
-        assert_cache_version_at_least(self, 68, self.app_source)
+        self.assertIn('2026-08-26-calibration-report-schedule-download', self.releases)
+        assert_cache_version_at_least(self, 118, self.app_source)
 
 
 class TimelineTsrFileDetailsApiTests(unittest.TestCase):
@@ -116,7 +118,16 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
                 filename='generated-tsr.pdf',
                 original_filename='Generated TSR.pdf',
             )
-            app_module.db.session.add_all([cls.manual_file, cls.generated_file])
+            cls.calibration_report_file = app_module.ShiftFile(
+                shift_id=cls.shift.id,
+                filename='generated-calibration-report.docx',
+                original_filename='Calibration Report.docx',
+            )
+            app_module.db.session.add_all([
+                cls.manual_file,
+                cls.generated_file,
+                cls.calibration_report_file,
+            ])
             app_module.db.session.commit()
 
             cls.submission = app_module.OnlineTsrSubmission(
@@ -125,11 +136,18 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
                 submitted_by_user_id=cls.user.id,
                 submitted_by_name='Timeline File Engineer',
                 status='saved',
-                payload_json=json.dumps({'_attached_file_id': cls.generated_file.id}),
+                payload_json=json.dumps({
+                    '_attached_file_id': cls.generated_file.id,
+                    '_generated_calibration_report': {
+                        'source': 'generated_calibration_report',
+                        'file_id': cls.calibration_report_file.id,
+                    },
+                }),
             )
             app_module.db.session.add(cls.submission)
             app_module.db.session.commit()
             cls.generated_file.online_tsr_submission_id = cls.submission.id
+            cls.calibration_report_file.online_tsr_submission_id = cls.submission.id
             app_module.db.session.commit()
 
             # An HR schedule viewer: no Engineer profile, so is_hr_schedule_only_user()
@@ -152,6 +170,7 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
             cls.shift_id = cls.shift.id
             cls.manual_file_id = cls.manual_file.id
             cls.generated_file_id = cls.generated_file.id
+            cls.calibration_report_file_id = cls.calibration_report_file.id
             cls.submission_id = cls.submission.id
 
     @classmethod
@@ -209,6 +228,13 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
 
         self.assertTrue(details_by_id[self.generated_file_id]['is_tsr'])
         self.assertFalse(details_by_id[self.manual_file_id]['is_tsr'])
+        report_details = details_by_id[self.calibration_report_file_id]
+        self.assertFalse(report_details['is_tsr'])
+        self.assertTrue(report_details['is_calibration_report'])
+        self.assertTrue(report_details['can_download'])
+        self.assertFalse(report_details['can_preview'])
+        self.assertIn('/download_tsr_archive_file/', report_details['download_url'])
+        self.assertEqual(report_details['preview_url'], '')
         self.assertTrue(details_by_id[self.generated_file_id]['download_url'])
         self.assertEqual(details_by_id[self.manual_file_id]['download_url'], '')
 
@@ -217,6 +243,59 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
         details = {item['id']: item for item in details_response.get_json()['shift']['file_details']}
         self.assertTrue(details[self.generated_file_id]['is_tsr'])
         self.assertFalse(details[self.manual_file_id]['is_tsr'])
+        self.assertFalse(details[self.calibration_report_file_id]['is_tsr'])
+        self.assertTrue(details[self.calibration_report_file_id]['is_calibration_report'])
+        self.assertTrue(details[self.calibration_report_file_id]['download_url'])
+        self.assertEqual(details[self.calibration_report_file_id]['preview_url'], '')
+
+    def test_generated_calibration_report_downloads_as_attachment(self):
+        report_bytes = b'generated calibration report docx bytes'
+        with tempfile.TemporaryDirectory() as temp_dir:
+            report_path = pathlib.Path(temp_dir) / 'generated-calibration-report.docx'
+            report_path.write_bytes(report_bytes)
+            client = self._client_for_user()
+
+            with patch.object(
+                app_module,
+                'managed_storage_read_path',
+                return_value=str(report_path),
+            ):
+                response = client.get(
+                    f'/download_tsr_archive_file/{self.calibration_report_file_id}?scope=all'
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('attachment;', response.headers.get('Content-Disposition', '').lower())
+            self.assertIn('Calibration Report.docx', response.headers.get('Content-Disposition', ''))
+            self.assertEqual(response.data, report_bytes)
+            response.close()
+
+            with app_module.app.app_context():
+                unrelated_file = app_module.ShiftFile(
+                    shift_id=self.shift_id,
+                    filename='unrelated-report.docx',
+                    original_filename='Unrelated Report.docx',
+                )
+                app_module.db.session.add(unrelated_file)
+                app_module.db.session.commit()
+                unrelated_file_id = unrelated_file.id
+
+            try:
+                with patch.object(
+                    app_module,
+                    'managed_storage_read_path',
+                    return_value=str(report_path),
+                ):
+                    unrelated_response = client.get(
+                        f'/download_tsr_archive_file/{unrelated_file_id}?scope=all'
+                    )
+                self.assertEqual(unrelated_response.status_code, 400)
+            finally:
+                with app_module.app.app_context():
+                    file_record = app_module.db.session.get(app_module.ShiftFile, unrelated_file_id)
+                    if file_record:
+                        app_module.db.session.delete(file_record)
+                        app_module.db.session.commit()
 
     def test_both_endpoints_return_an_identical_file_detail_shape(self):
         """The two feeds are served by one serializer; this is what proves it stayed one.
@@ -259,7 +338,7 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
         # who is entitled to them, so the empties above are the redaction and not an
         # unattached fixture.
         engineer_row = self._timeline_row_for(self.user_id)
-        self.assertEqual(len(engineer_row['file_details']), 2)
+        self.assertEqual(len(engineer_row['file_details']), 3)
 
 
 if __name__ == '__main__':

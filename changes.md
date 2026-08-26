@@ -2,6 +2,23 @@
 
 codex changes - 2026-08-26
 
+- Implemented the owner-authorized generated Calibration Report schedule-card download fix and recorded
+  the executable plan in `plans.md`; protected dirty artifacts remain untouched.
+- Added focused coverage for marker-linked Calibration Report metadata, authenticated DOCX attachment
+  downloads, unrelated-DOCX rejection, shared Timeline download rendering, and service-worker network-only
+  routing. The fail-first run exposed the missing metadata/UI/worker behavior before the implementation;
+  the completed focused suite passes **26/26**.
+- Updated `app.py` so `timeline_file_detail_payload()` exposes a separate `is_calibration_report` flag,
+  authenticated download URL, and download-only capability for exact-marker generated DOCX reports while
+  preserving TSR classification, certificate locks, and authorization. Updated the shared
+  `templates/timeline.html` attachment renderer and schedule edit file list to use direct same-origin
+  DOCX downloads with Word icons and accessible Download labels, while preserving ordinary previews and
+  disabling locked/download-ineligible fallback URLs.
+- Added `/download_tsr_archive` to the service worker network-only download prefixes ahead of navigation
+  and bumped the app-shell cache to v118. Added the `2026-08-26-calibration-report-schedule-download`
+  release item in `static/changelog/releases.json`. Python AST, Timeline attachment JavaScript,
+  service-worker JavaScript, Jinja, release JSON/key, and `git diff --check` validations pass; no browser,
+  database, Railway, production, commit, or push action was performed.
 - Fixed Calendar Print Grid pagination in `templates/timeline.html`: large weekly
   schedule blocks now switch to block flow and allow page fragmentation during printing,
   so the first week starts beneath the report header instead of being pushed onto a blank

@@ -250,6 +250,7 @@ class ExportsAreNeverCachedTests(unittest.TestCase):
     def test_exports_are_in_the_network_only_list(self):
         prefixes = self.source.split('const NETWORK_ONLY_DOWNLOAD_PREFIXES = [')[1].split(']')[0]
         self.assertIn("'/export_'", prefixes, 'exports fell out of the network-only list')
+        self.assertIn("'/download_tsr_archive'", prefixes, 'TSR archive downloads must be network-only')
 
     def test_exports_are_handled_before_the_navigation_branch(self):
         """Ordering is the whole fix.
