@@ -1,5 +1,18 @@
 # Project Change Log
 
+codex changes - 2026-08-26
+
+- Fixed Calendar Print Grid pagination in `templates/timeline.html`: large weekly
+  schedule blocks now switch to block flow and allow page fragmentation during printing,
+  so the first week starts beneath the report header instead of being pushed onto a blank
+  second page. The screen-only print preview layout remains flex-stacked.
+- Added `tests/test_timeline_print_layout.py` to guard the print pagination rules and the
+  unchanged screen preview layout. Bumped the app-shell service-worker cache to
+  `medical-service-pwa-offline-navigation-v115-calendar-print-pagination` so installed
+  clients can receive the corrected `/timeline` template. Focused tests pass **2/2**;
+  no browser automation, database, deployment, Railway, or production action was
+  performed; publication is limited to this requested change.
+
 codex changes - 2026-08-25
 
 - Published the complete Calibration Report and Calibration Certificate package in isolated

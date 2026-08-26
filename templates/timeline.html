@@ -18033,6 +18033,20 @@ async function generatePrint(){
                 page-break-inside: avoid;
             }
 
+            @media print {
+                /* Let a large roster start below the report header instead of
+                   moving the entire weekly block to a blank second page. */
+                .weekly-stack {
+                    display: block;
+                }
+
+                .week-block {
+                    page-break-inside: auto;
+                    break-inside: auto;
+                    margin-bottom: 6px;
+                }
+            }
+
             @media screen {
                 body { padding: 10px; background: #e5e7eb; }
                 .print-page {
