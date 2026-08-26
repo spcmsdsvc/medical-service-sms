@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-08-26-appearance-accent-themes",
+      "release_date": "2026-08-26",
+      "title": "More Appearance Themes",
+      "summary": "Choose from three additional accent colors while keeping the same light, dark, or system mode.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-08-26-appearance-accent-themes",
+          "category": "Settings",
+          "description": "Appearance settings now include Purple, Pink, and Teal accent themes. The selected accent follows your account across the app and signed-out screens, including dark mode and offline app-shell pages.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-25-calibration-certificate-print-copy",
       "release_date": "2026-08-25",
       "title": "Calibration Certificate Print Copy and Conditional Report Tables",

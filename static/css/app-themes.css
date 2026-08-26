@@ -33,6 +33,21 @@
     --app-primary-rgb: 37, 99, 235;
     --app-focus: rgba(37, 99, 235, .25);
 }
+:root[data-accent-theme="purple"] {
+    --app-primary: #6d28d9;
+    --app-primary-rgb: 109, 40, 217;
+    --app-focus: rgba(109, 40, 217, .25);
+}
+:root[data-accent-theme="pink"] {
+    --app-primary: #be185d;
+    --app-primary-rgb: 190, 24, 93;
+    --app-focus: rgba(190, 24, 93, .25);
+}
+:root[data-accent-theme="teal"] {
+    --app-primary: #0f766e;
+    --app-primary-rgb: 15, 118, 110;
+    --app-focus: rgba(15, 118, 110, .25);
+}
 
 :root[data-app-theme="dark"] {
     --app-bg: #0f1722;

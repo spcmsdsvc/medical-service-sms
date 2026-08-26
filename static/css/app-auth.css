@@ -14,7 +14,10 @@
 
 :root[data-accent-theme="shimadzu-red"],
 :root[data-accent-theme="clinical-green"],
-:root[data-accent-theme="corporate-blue"] {
+:root[data-accent-theme="corporate-blue"],
+:root[data-accent-theme="purple"],
+:root[data-accent-theme="pink"],
+:root[data-accent-theme="teal"] {
     --login-accent: var(--app-primary);
     --login-accent-rgb: var(--app-primary-rgb);
     --login-page-glow: rgba(var(--app-primary-rgb), 0.20);

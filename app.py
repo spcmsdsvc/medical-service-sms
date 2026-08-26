@@ -17493,7 +17493,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v115-calendar-print-pagination';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v116-appearance-accent-themes';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -21190,7 +21190,10 @@ def admin_storage_bucket_migrate_batch():
 
 
 APPEARANCE_THEME_MODES = {'light', 'dark', 'system'}
-APPEARANCE_ACCENT_THEMES = {'classic', 'shimadzu-red', 'clinical-green', 'corporate-blue'}
+APPEARANCE_ACCENT_THEMES = {
+    'classic', 'shimadzu-red', 'clinical-green', 'corporate-blue',
+    'purple', 'pink', 'teal'
+}
 
 
 def normalize_appearance_mode(value):

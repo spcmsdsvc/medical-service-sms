@@ -12,6 +12,18 @@ codex changes - 2026-08-26
   clients can receive the corrected `/timeline` template. Focused tests pass **2/2**;
   no browser automation, database, deployment, Railway, or production action was
   performed; publication is limited to this requested change.
+- Added Purple, Pink, and Teal accent themes to Appearance settings. The new account-synced
+  accents are accepted by the appearance API, rendered by shared theme/auth CSS, recognized by
+  the authenticated and signed-out templates, and available in dark, light, system, and offline
+  app-shell flows. Teal was selected as the third complementary option alongside Purple and Pink.
+- Bumped the shared theme stylesheet query to `v=19`, the signed-out auth stylesheet to `v=2`,
+  and the service-worker cache to
+  `medical-service-pwa-offline-navigation-v116-appearance-accent-themes` so existing browsers
+  and installed clients receive the new accent definitions. Added focused source controls and
+  the `2026-08-26` What's New manifest entry. No database migration, browser automation,
+  Railway-variable change, production-data operation, or manual redeploy was performed. The
+  owner separately authorized publication of these intended application, test, manifest, and
+  journal files.
 
 codex changes - 2026-08-25
 

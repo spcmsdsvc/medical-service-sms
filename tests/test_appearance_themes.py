@@ -159,6 +159,31 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         assert_cache_version_at_least(self, 35, app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
+    def test_additional_accent_themes_are_available_across_the_app(self):
+        app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        settings = (ROOT / 'templates' / 'settings.html').read_text(encoding='utf-8')
+        styles = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
+        auth_styles = (ROOT / 'static' / 'css' / 'app-auth.css').read_text(encoding='utf-8')
+        expected = {
+            'purple': '#6d28d9',
+            'pink': '#be185d',
+            'teal': '#0f766e',
+        }
+
+        for accent, colour in expected.items():
+            with self.subTest(accent=accent):
+                self.assertIn(f"'{accent}'", app_source)
+                self.assertIn(f'data-appearance-accent="{accent}"', settings)
+                self.assertIn(f"setAppearanceAccent('{accent}')", settings)
+                self.assertIn(f':root[data-accent-theme="{accent}"]', styles)
+                self.assertIn(f'--app-primary: {colour};', styles)
+                self.assertIn(f':root[data-accent-theme="{accent}"]', auth_styles)
+
+        for name in ('layout.html', 'login.html', 'forgot_password.html', 'reset_password.html'):
+            source = (ROOT / 'templates' / name).read_text(encoding='utf-8')
+            for accent in expected:
+                self.assertIn(f"'{accent}'", source, f'{name} does not accept {accent}')
+
     def test_login_uses_last_device_appearance(self):
         login = (ROOT / 'templates' / 'login.html').read_text(encoding='utf-8')
         self.assertIn('medical_appearance_last', login)
@@ -246,7 +271,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '.receipt-pill, .reim-receipt-pill',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-themes.css') }}?v=18", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=19", layout)
 
     def test_dark_mode_covers_system_neutral_surfaces(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
