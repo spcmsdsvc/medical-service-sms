@@ -19,8 +19,10 @@ codex changes - 2026-09-01
 - Focused P.O. coverage passes **45/45**; in-memory `app.py` compilation, release JSON parsing, and
   `git diff --check` pass. The repository-wide run reached **788 tests** with three unrelated
   failures in staff-creation and calibration-report contract tests plus one
-  skip; no browser automation or production/database action was performed. Nothing was
-  committed or pushed.
+  skip; no browser automation or production/database action was performed. The four intended
+  files were committed as `9a9659a` and pushed to `origin/main`; the existing dirty artifacts
+  remain untouched and uncommitted. Railway's `empowering-integrity - web` status then reported
+  successful deployment of `web-production-e2085.up.railway.app`.
 
 codex changes - 2026-08-26
 
