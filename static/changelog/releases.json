@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-01-quarterly-po-computed-amount",
+      "release_date": "2026-09-01",
+      "title": "Quarterly P.O. Computed Amounts",
+      "summary": "Quarterly P.O. computed amounts now match the service visits inside the Product coverage period.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-01-quarterly-po-computed-amount-admins",
+          "category": "P.O. Details",
+          "description": "Quarterly P.O. amounts now divide across four visits for a one-year Product coverage period when the end date is the exact anniversary; the coverage-end anniversary is treated as expiry rather than an extra visit, and the full P.O. amount remains unchanged.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-08-26-appearance-accent-themes",
       "release_date": "2026-08-26",
       "title": "More Appearance Themes",

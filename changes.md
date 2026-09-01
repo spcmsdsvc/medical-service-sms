@@ -1,5 +1,27 @@
 # Project Change Log
 
+codex changes - 2026-09-01
+
+- Fixed the shared `purchase_order_schedule()` calculation in `app.py` so a later Quarterly
+  occurrence exactly equal to the Product End Date is treated as coverage expiry rather than
+  an additional service visit. The starting visit remains included; Single and Semi Annual
+  boundary behavior is unchanged.
+- Corrected the P.O. Details computed amount for one-year Quarterly coverage from five shares
+  to four shares, so a PHP 100,000.00 P.O. from 2026-08-01 through 2027-08-01 now returns four
+  PHP 25,000.00 allocations. The serialized `computed_amount` consumed by the P.O. Details
+  page and the Excel export now uses that corrected schedule automatically.
+- Added regression coverage in `tests/test_purchase_orders.py` for the exact Quarterly
+  anniversary, the serialized computed amount, the allocation count, cent-safe small totals,
+  and the corrected Excel computed amount.
+- Added the user-facing `2026-09-01-quarterly-po-computed-amount` release item to
+  `static/changelog/releases.json`. No service-worker bump was needed because no cached
+  app-shell asset changed.
+- Focused P.O. coverage passes **45/45**; in-memory `app.py` compilation, release JSON parsing, and
+  `git diff --check` pass. The repository-wide run reached **788 tests** with three unrelated
+  failures in staff-creation and calibration-report contract tests plus one
+  skip; no browser automation or production/database action was performed. Nothing was
+  committed or pushed.
+
 codex changes - 2026-08-26
 
 - Implemented the owner-authorized generated Calibration Report schedule-card download fix and recorded

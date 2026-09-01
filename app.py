@@ -42157,7 +42157,11 @@ def purchase_order_fiscal_period(fiscal_year=None, fiscal_quarter=None):
 
 
 def purchase_order_schedule(start_date, end_date, po_type, amount=None):
-    """Build anchored service dates and Decimal allocations for a current P.O."""
+    """Build anchored service dates and Decimal allocations for a current P.O.
+
+    A Quarterly product's end date is its coverage expiry, so a later exact
+    quarterly anniversary is not an additional service visit.
+    """
     normalized_type = normalize_purchase_order_type(po_type)
     if normalized_type not in PO_CURRENT_TYPES or not start_date:
         return []
@@ -42175,7 +42179,12 @@ def purchase_order_schedule(start_date, end_date, po_type, amount=None):
     offset = 0
     while True:
         occurrence = purchase_order_add_months_clamped(start_date, offset)
-        if one_time or occurrence > end_date:
+        quarterly_expiry = (
+            normalized_type == PO_TYPE_QUARTERLY
+            and offset > 0
+            and occurrence == end_date
+        )
+        if one_time or occurrence > end_date or quarterly_expiry:
             break
         dates.append(occurrence)
         offset += interval_months

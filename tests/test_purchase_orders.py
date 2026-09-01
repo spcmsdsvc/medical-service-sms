@@ -65,12 +65,25 @@ class ServiceContractAllocationHelperTests(unittest.TestCase):
 
     def test_small_total_never_creates_negative_allocation(self):
         schedule = app_module.purchase_order_schedule(
-            date(2026, 4, 1), date(2027, 1, 1), 'quarterly', '0.02'
+            date(2026, 4, 1), date(2027, 1, 2), 'quarterly', '0.02'
         )
         self.assertEqual([item['amount_string'] for item in schedule], [
             '0.00', '0.00', '0.00', '0.02',
         ])
         self.assertEqual(sum(item['amount'] for item in schedule), app_module.Decimal('0.02'))
+
+    def test_quarterly_end_anniversary_is_coverage_expiry_not_an_extra_visit(self):
+        schedule = app_module.purchase_order_schedule(
+            date(2026, 8, 1), date(2027, 8, 1), 'quarterly', '100000'
+        )
+        self.assertEqual(
+            [item['date_string'] for item in schedule],
+            ['2026-08-01', '2026-11-01', '2027-02-01', '2027-05-01'],
+        )
+        self.assertEqual(
+            [item['amount_string'] for item in schedule],
+            ['25000.00', '25000.00', '25000.00', '25000.00'],
+        )
 
     def test_template_has_new_heading_filters_and_status_confirmation_contract(self):
         template = (ROOT / 'templates' / 'po_details.html').read_text(encoding='utf-8')
@@ -191,6 +204,9 @@ class ServiceContractPurchaseOrderEndpointTests(unittest.TestCase):
             'po_number': f'SNAPSHOT-{self.suffix}', 'po_type': 'quarterly', 'amount': '1200',
         })
         self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+        created_body = created.get_json()['purchase_order']
+        self.assertEqual(created_body['computed_amount'], '150.00')
+        self.assertEqual(len(created_body['allocation_schedule']), 8)
         record_id = created.get_json()['purchase_order']['id']
         with self.app.app_context():
             product = app_module.db.session.get(app_module.Product, self.serial)
@@ -1544,7 +1560,7 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
         self.assertEqual(worksheet['J2'].value, 100)
         self.assertEqual(worksheet['J3'].value, 25)
         self.assertEqual(worksheet['K2'].value, 50)
-        self.assertEqual(worksheet['K3'].value, 5)
+        self.assertEqual(worksheet['K3'].value, 6.25)
         self.assertEqual(worksheet['F2'].value, 'Test address one')
         self.assertEqual(worksheet['J5'].value, '=SUM(J2:J3)')
         self.assertEqual(worksheet['K5'].value, '=SUM(K2:K3)')
