@@ -15,6 +15,33 @@
             "everyone"
           ],
           "sort_order": 10
+        },
+        {
+          "item_key": "2026-09-02-product-inventory-identity-list",
+          "category": "Product Inventory",
+          "description": "Product Inventory keeps each machine's S/N, name, and edit/delete actions together in a left-pinned list view, with clear filters, result context, and visible loading, empty, and retry states.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 20
+        },
+        {
+          "item_key": "2026-09-02-product-inventory-selectable-freeze",
+          "category": "Product Inventory",
+          "description": "Product Inventory now lets users choose how far the left side of the list stays frozen while reviewing the remaining columns; the preference is remembered in the browser and defaults to the machine identity and actions.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 30
+        },
+        {
+          "item_key": "2026-09-02-product-inventory-compact-certificate-link",
+          "category": "Product Inventory",
+          "description": "Calibration Certificate access now stays beneath each machine's S/N as a compact View Certificate link in both the desktop list and mobile cards, so the inventory table no longer needs a separate certificate column. The existing approved signed preview and API data remain unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 40
         }
       ]
     },

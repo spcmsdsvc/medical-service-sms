@@ -53,6 +53,360 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Products Inventory — Identity-First List Usability Pass
+
+**Status:** In progress
+**Approved:** 2026-09-02
+**Detailed:** 2026-09-02
+**Execution authorization:** The owner separately authorized implementation on 2026-09-02 with
+`PLEASE IMPLEMENT THIS PLAN:` followed by the complete approved package. This authorizes the
+scoped local implementation and verification only. Commit, push, Railway, deployment, production,
+database, migration, and browser-automation actions remain outside this package unless separately
+authorized.
+
+### Scope amendment — user-selectable frozen columns
+
+On 2026-09-02, after reviewing the completed local list usability pass, the owner asked to add
+the previously excluded ability for a user to choose which contiguous left-side column range is
+frozen. This direct request authorizes the following local client-side amendment; it supersedes
+only the earlier column-chooser exclusion and leaves the rest of this package unchanged.
+
+1. Add an accessible `Freeze columns through` selector near the Product filters with `None`, S/N,
+   Product Name + Actions, BSID, Owner, Start Date, End Date, Status, and Calibration Certificate
+   choices. Keep Product Name + Actions as the default so existing behavior does not change.
+2. Compute sticky offsets from the rendered header widths rather than hardcoding a two-column
+   offset. Apply the selected freeze range to table headers and data cells, including a visible
+   boundary shadow, and remove sticky positioning when `None` is selected.
+3. Persist the selection in browser `localStorage`, restore it on page load, and recalculate the
+   offsets on table render and viewport/column resizing. Keep the synchronized top scrollbar,
+   mobile-card breakpoint, print reset, certificate links, and all Product API behavior intact.
+4. Extend focused Products markup coverage for selector options, default/persistence behavior,
+   dynamic sticky selectors/offsets, reset/print behavior, and preserved list/mobile states. Update
+   the dated change log and Product Inventory release manifest entry.
+
+This amendment remains local and uncommitted. No API, database, migration, backend authorization,
+service-worker, deployment, Railway, or browser-automation work is included.
+
+### Scope amendment — adaptive compact column sizing
+
+On 2026-09-02, the owner additionally requested cleaner column spacing: columns that only need a
+small amount of room should remain compact, while longer real data should be allowed to expand
+naturally without losing readable wrapping. This is a client-side presentation amendment to the
+same Products list and does not change the selected-freeze behavior.
+
+1. Change the desktop table from fixed layout to content-aware auto layout with compact width
+   hints for S/N, BSID, dates, status, certificate metadata, Product Name, and Owner.
+2. Keep identity and operational identifiers readable on one line where appropriate, allow model,
+   owner, status, and certificate content to wrap at controlled boundaries, and preserve the
+   existing 90rem desktop minimum/table scroll behavior.
+3. Re-run focused and related Product/calibration tests plus Jinja/JavaScript parsing, release
+   JSON validation, and `git diff --check`. No API/database, mobile-card, print, certificate,
+   deployment, Railway, commit, or push behavior is included in this amendment.
+
+### Scope amendment — compact certificate link under S/N
+
+On 2026-09-02, the owner decided that a dedicated Calibration Certificate column makes the
+Products list harder to use on a 14-inch laptop. This approved amendment supersedes only the
+certificate-column presentation from the original Products certificate package and keeps the
+existing API object, preview authorization, and certificate workflow unchanged.
+
+1. Remove the desktop Calibration Certificate header, column definition, cell renderer, and
+   certificate-specific desktop column styling from `templates/products.html`. Change table
+   loading/empty-state spans and freeze-column counts to the resulting seven-column table.
+2. Render only a compact `View Certificate` link below each machine S/N in desktop rows when
+   `calibration_certificate` contains the current approved signed certificate and its existing
+   preview URL. Do not render a placeholder, certificate number, or calibration date when the
+   object is absent. Keep `target="_blank"`, `rel="noopener"`, the escaped URL, and an accessible
+   machine-specific label.
+3. Render the same identity-adjacent link below the S/N in the existing narrow-phone cards,
+   remove the separate mobile certificate section, and retain a suitably larger mobile touch
+   target. Keep the mobile-card breakpoint and the default S/N plus Product Name/actions freeze
+   range unchanged.
+4. Update the horizontal-scroll hint and freeze selector so they describe only the remaining
+   table columns. Preserve all filtering, sorting, actions, local post-save rendering, print
+   behavior, API serialization, and signed-preview authorization.
+5. Extend `tests/test_product_calibration_certificate.py` to prove the certificate table markup
+   is absent, links appear under desktop/mobile serial identity, new-tab/accessibility attributes
+   remain present, seven-column spans and freeze options are correct, and existing API,
+   authorization, Product action/filter/mobile/print coverage remains intact.
+6. Update `changes.md` and `static/changelog/releases.json` with the user-facing placement change,
+   compatibility impact, and verification evidence. No `app.py`, database, migration,
+   authorization, service-worker, browser, deployment, Railway, commit, or push action is part of
+   this amendment.
+
+### Certificate placement amendment verification
+
+- Run the focused Product Calibration Certificate suite and the related Product contract and
+  Calibration Certificate suites, with the positive source controls described above.
+- Parse `templates/products.html` as Jinja and compile its inline JavaScript. Validate
+  `static/changelog/releases.json` and run `git diff --check`.
+- Run the full discovered suite against a fresh disposable external test database only; report
+  unrelated failures truthfully and never use `scheduler.db`.
+- Do not use browser automation. Leave the local worktree uncommitted and unpushed after
+  implementation; commit, push, deployment, and Railway verification remain separately gated.
+
+### Scope amendment — intrinsic compact table sizing
+
+On 2026-09-02, the owner reported that S/N, BSID, Start Date, and End Date still occupy too much
+space in the desktop list. This direct UI refinement supersedes the earlier artificial 90rem
+minimum only for table sizing; it does not change the list/table workflow or data contract.
+
+1. Keep content-aware auto layout and reduce the preferred widths and cell padding for compact
+   identifiers, dates, product names, owners, and status values. Keep longer real values able to
+   expand and wrap at controlled boundaries.
+2. Size the desktop table intrinsically with `width: max-content` and `min-width: 100%` so unused
+   width is not redistributed into short S/N, BSID, or date columns. Retain the existing table
+   scroll region and synchronized top scrollbar whenever the natural table width exceeds the
+   viewport.
+3. Keep inline actions adjacent to the product name and compact on desktop, while leaving mobile
+   card action touch targets, certificate placement/preview, filtering, sorting, freeze choices,
+   local post-save rendering, and print behavior unchanged.
+4. Update focused source assertions and `changes.md`; run the focused and related Product/
+   Calibration Certificate suites, Jinja/JavaScript parsing, release JSON validation, and
+   `git diff --check`. No API, database, migration, deployment, Railway, commit, or push action
+   is included.
+
+### Context and intended outcome
+
+The Products page is a wide inventory table. On a 14-inch laptop, the existing horizontal scroll
+means the far-right Edit/Delete controls can be separated from the machine identity, and users can
+lose sight of the serial number and product name when acting on a row. The page already has a
+top synchronized horizontal scrollbar and a narrow-phone card fallback, but the laptop table needs
+identity-first actions and clearer workflow context.
+
+The intended outcome is a friendlier full list view: all current data columns remain available by
+horizontal scrolling, while each machine's S/N, name, and actions remain together and visible as
+the user reviews the other columns. Product filtering, certificate preview behavior, local row
+updates, authorization, and print output remain compatible.
+
+### Decisions taken
+
+1. Keep the full table/list view and all current product data columns. Do not replace the laptop
+   layout with cards; the existing cards remain only for narrow phone screens at 768px and below.
+2. Remove the distant right-side Actions column and place compact Edit/Delete icon controls beside
+   the Product Name. Controls must have complete accessible labels and tooltips; engineers retain
+   the existing no-delete restriction.
+3. Freeze the S/N and Product Name/action area on the left during horizontal scrolling so the
+   machine context remains visible while reviewing owner, dates, status, or certificate columns.
+4. Retain the existing synchronized top horizontal scrollbar, table scroll region, and 90rem
+   desktop minimum table width. The list remains horizontally scrollable rather than hiding fields.
+5. Add a Clear Filters control and a compact result summary near the filters. Add visible loading,
+   empty-filter, and request-error states with a retry action.
+6. Edit modal context must identify the selected machine by product name and S/N. Delete
+   confirmation must identify the same machine before destructive action. Improve labels and close
+   button accessibility without changing server-side delete safeguards.
+7. Preserve the existing certificate API payload, approved signed preview authorization and URL,
+   sorting, filtering, local post-save rendering, role behavior, mobile cards, and print behavior.
+8. Do not add saved views, bulk actions, certificate history, new certificate filters, API fields,
+   database columns, or migrations. The later scope amendment adds only the user-selectable
+   contiguous freeze-through control described above.
+
+### Investigation
+
+1. `templates/products.html:23-140` contains the Product Inventory header, three filters, the
+   horizontal table/scrollbar, mobile list, and bottom inventory count footer. The Actions header
+   is currently the last table column at `templates/products.html:107`.
+2. `templates/products.html:884-949` renders desktop rows and currently appends Edit/Delete
+   buttons in the far-right Actions cell. `templates/products.html:668-747` renders existing
+   narrow-phone cards with their own actions.
+3. `templates/products.html:986-1038` initializes the add/edit modal and currently uses a generic
+   edit title. `templates/products.html:1111-1137` builds the delete confirmation without machine
+   identity in the message.
+4. `templates/products.html:407-457` initializes the existing synchronized top scrollbar, and
+   `templates/products.html:1404-1480` defines its scroll and responsive styles. `templates/products.html:1765-1848`
+   hides the table only for the existing narrow-phone card breakpoint.
+5. `tests/test_product_calibration_certificate.py:338-367` contains source-level Products markup
+   coverage and existing certificate API/preview tests. `tests/test_product_contract_status.py:47-75`
+   covers Product status, migration compatibility, and local post-save rendering.
+6. `static/css/app-shell.css:766-831` already provides touch-device horizontal scrolling and
+   nowrap table defaults; `static/css/app-shell.css:899` preserves the table for print. No backend
+   or schema change is necessary.
+
+### Execution steps
+
+1. Update `plans.md` with this complete authorized package and mark it `In progress` before
+   editing implementation files. Confirm the protected dirty worktree remains untouched.
+2. Update `templates/products.html` table markup and row rendering: remove the far-right Actions
+   header/cell, render identity-adjacent icon actions with escaped machine-specific `aria-label`
+   and `title` values, preserve role-based Delete rendering, and keep mobile-card actions intact.
+3. Update `templates/products.html` table CSS so the S/N and Product Name/action columns use
+   deterministic sticky offsets, row/header backgrounds, z-index, compact spacing, controlled
+   wrapping, and light/dark theme-safe styling without breaking the existing top scrollbar.
+4. Add the Products filter/result UX in `templates/products.html`: a Clear Filters action, a
+   compact top result summary synchronized with the existing footer counts, and a visible
+   loading/empty/error table state with a retry action. Preserve filter and sort state behavior.
+5. Update `templates/products.html` modal/confirmation UX: add machine identity context to edit
+   and delete flows, add proper field/close-button associations, and preserve existing modal save,
+   serial-number update, confirmation, and post-save scroll behavior.
+6. Extend `tests/test_product_calibration_certificate.py` and related Product coverage for inline
+   action placement/context, sticky selectors, scroll behavior, role visibility, filter reset and
+   summary states, modal/delete identity, loading/error/empty states, mobile fallback, print rules,
+   and unchanged certificate API/preview behavior. Add positive controls that would fail against
+   the current distant-actions/generic-context implementation.
+7. Update `changes.md` with the user-visible UX changes, accessibility/authorization preservation,
+   tests, compatibility impact, and excluded backend/schema scope. Add a Product Inventory release
+   entry in `static/changelog/releases.json` for the identity-first list usability update.
+8. Self-review the diff against this plan, verify only intended files are changed, and run focused
+   tests first. Then run related Product/calibration tests, Jinja parsing, inline JavaScript parsing,
+   `git diff --check`, release JSON validation, and the isolated full suite with a disposable
+   external test database. Never use `scheduler.db`.
+9. Do not use browser automation under the project safety rules. Report any full-suite failures
+   truthfully as related or unrelated. Leave commit, push, deployment, Railway, and post-implementation
+   review as separate owner-authorized gates.
+
+### Deliberately excluded
+
+- No `app.py`, API, database, migration, Product foreign-key, certificate workflow, or storage
+  lifecycle changes; the existing Product API and certificate preview contract remains authoritative.
+- No replacement of the list/table with laptop cards; cards remain only at the existing narrow-phone
+  breakpoint.
+- No saved views, independent column chooser, bulk operations, certificate history, new
+  sorting/filtering, or real-time refresh; the approved freeze-through selector is the sole
+  column-presentation preference.
+- No browser automation, service-worker cache bump, deployment, Railway change, commit, or push is
+  included in the implementation package.
+
+### Verification
+
+- Focused Product certificate tests must prove inline actions are attached to the correct machine
+  identity, the far-right Actions column is absent, sticky identity/scroll markup exists, action
+  labels preserve role rules, modal/delete contexts name the selected machine, filter reset and
+  summary states render, and loading/empty/error/retry/mobile/print states remain present.
+- Existing Product contract and Calibration Certificate tests must continue to pass, including API
+  serialization, signed preview authorization, unsigned/no-signature denial, sorting/filtering,
+  and local post-save behavior.
+- Parse `templates/products.html` as Jinja and compile its inline JavaScript. Validate release JSON
+  and run `git diff --check`.
+- Run the full isolated test suite against a disposable external test database; do not touch
+  `scheduler.db`. Browser verification remains excluded by project safety rules.
+
+### After implementation
+
+- Keep this plan in `plans.md` with truthful execution evidence and update its status to `Executed`
+  only after all required implementation work and verification finish; no commit hash is recorded
+  until a separate owner-authorized commit exists.
+- Add the dated implementation record to `changes.md` during the same task. Do not alter existing
+  protected handoff/database/untracked artifacts.
+- Post-implementation review remains a separate explicit owner gate. No correction loop, commit,
+  push, deployment, or Railway action is implied by implementation completion.
+
+### Risks
+
+- Sticky table cells can misalign or become unreadable if offsets, widths, stacking order, or theme
+  backgrounds are inconsistent; deterministic first-column widths and source-level responsive
+  checks reduce this risk.
+- Inline action markup could accidentally expose Delete to engineers or lose machine identity in
+  confirmation flows; role assertions and identity-specific tests cover both paths.
+- Loading/error changes could interfere with existing local post-save rendering or filtering; focused
+  state tests plus the related Product suite provide regression coverage.
+
+### Implementation results — local, uncommitted (2026-09-02)
+
+- Updated `templates/products.html` only for the Products behavior: the desktop table now has
+  identity-adjacent Edit/Delete icon actions, no far-right Actions column, sticky S/N and Product
+  Name/action columns, compact fixed-width cells, controlled wrapping, theme-aware sticky fills,
+  top result context, Clear Filters, loading/empty/error/retry states, and selected-machine modal
+  and delete context. The existing certificate block/preview link, list view, top synchronized
+  scrollbar, narrow-phone cards, filtering/sorting, local post-save rendering, and print rules
+  remain in place.
+- Extended `tests/test_product_calibration_certificate.py` with source-level positive controls for
+  machine-specific inline action association, removal of the Actions header, sticky/scroll
+  selectors, engineer Delete visibility, filter/state controls, modal/delete identity context,
+  accessible labels, mobile fallback, and print behavior. The focused suite passes **9/9**.
+- Related Product contract and Calibration Certificate approval suites pass **25/25**. Jinja
+  parsing, inline JavaScript compilation, release-manifest JSON validation, and `git diff --check`
+  pass.
+- The full isolated discovery run used a disposable external SQLite database and completed **805
+  tests with 12 failures and 0 errors**. The failures are confined to existing purchase-order
+  renewal/endpoint setup, staff-creation, and Calibration Report contract tests; no Product or
+  Product Calibration Certificate test failed. No browser automation was used.
+- Updated `changes.md` and `static/changelog/releases.json`. The protected `scheduler.db`, handoff,
+  output/tmp, and unrelated worktree changes were preserved. No `app.py`, API/database contract,
+  migration, service-worker, commit, push, Railway, deployment, or production action was performed.
+- The implementation is locally complete, but this plan remains `In progress` pending the separate
+  owner-authorized commit/push gate.
+
+### Scope amendment results — local, uncommitted (2026-09-02)
+
+- Added the `Freeze columns through` selector and browser-persisted preference in
+  `templates/products.html`. The default remains `Product Name + Actions`; all choices are
+  contiguous from the left edge, and `None` removes sticky positioning.
+- Replaced hardcoded sticky offsets with measured header widths and a dynamic edge shadow. The
+  table recalculates on selection, render, resize, and viewport changes; print, mobile-card,
+  synchronized-scrollbar, certificate, filtering, sorting, and API behavior remain unchanged.
+- Extended `tests/test_product_calibration_certificate.py`; focused Product/calibration coverage is
+  **10/10** and the related Product contract plus Calibration Certificate suite is **25/25**.
+  Jinja parsing, inline JavaScript parsing, release JSON validation, and `git diff --check` pass.
+- Full isolated discovery against a disposable external SQLite database completed **806 tests with
+  12 unrelated failures and 0 errors**. The failures remain limited to purchase-order, staff-
+  creation, and Calibration Report contract tests.
+- Updated `changes.md` and `static/changelog/releases.json`. No backend/API/database/migration,
+  service-worker, browser, deployment, Railway, commit, or push action was performed; protected
+  dirty artifacts remain preserved.
+
+### Certificate placement amendment results — local, uncommitted (2026-09-02)
+
+- Removed the desktop Calibration Certificate table column and its column-specific styling from
+  `templates/products.html`. The seven-column list now places only a compact `View Certificate`
+  link under S/N when the existing API object has a preview URL; certificate number/date and the
+  unavailable placeholder are no longer rendered. The separate mobile certificate section was
+  removed, and the same link is rendered directly under S/N in the existing phone cards with a
+  larger touch target.
+- Updated the scroll hint, seven-column loading/empty spans, and freeze selector/counts. The
+  existing default Product Name + Actions freeze range, API object, signed preview URL and
+  authorization, filtering, sorting, Product actions, local post-save rendering, mobile
+  breakpoint, and print behavior remain unchanged. No `app.py`, database, migration, or
+  authorization change was made.
+- Updated `tests/test_product_calibration_certificate.py`, `changes.md`, and
+  `static/changelog/releases.json` with source-level coverage and the current compatibility
+  boundary. Focused Product/calibration coverage passes **11/11**; related Product contract plus
+  Calibration Certificate coverage passes **25/25**. Jinja parsing, inline JavaScript parsing,
+  release JSON validation, and `git diff --check` pass.
+- The isolated full discovery run used a new disposable external SQLite database and completed
+  **807 tests with 12 failures and 0 errors**. The failures remain confined to purchase-order,
+  staff-creation, and Calibration Report contract tests; no Product or Product Calibration
+  Certificate test failed. No browser automation was used.
+- The amendment is locally complete and remains uncommitted/unpushed. Protected
+  `scheduler.db`, handoff, output/tmp, and unrelated worktree changes were preserved. The plan
+  remains `In progress` pending any separate owner-authorized commit/push gate.
+
+### Intrinsic compact sizing amendment results — local, uncommitted (2026-09-02)
+
+- Reduced the preferred S/N, Product Name, BSID, owner, date, and status widths and table-cell
+  padding in `templates/products.html`. Inline desktop Edit/Delete controls are smaller and sit
+  directly beside short product names. The table now uses intrinsic `max-content` sizing with a
+  100% minimum, so short S/N, BSID, Start Date, and End Date columns do not absorb unused width;
+  longer values can still expand naturally.
+- Preserved the full list/table view, horizontal overflow and synchronized scrollbar, mobile card
+  action sizes, certificate link and preview behavior, selectable freeze range, filtering,
+  sorting, local post-save rendering, print rules, and API/database contract. No backend,
+  migration, authorization, deployment, Railway, commit, or push action was performed.
+- Updated `tests/test_product_calibration_certificate.py` and `changes.md`. Focused
+  Product/calibration coverage passes **11/11**; related Product contract plus Calibration
+  Certificate coverage passes **25/25**. Jinja parsing, inline JavaScript parsing, release JSON
+  validation, and `git diff --check` pass.
+- The prior isolated full-suite verification remains **807 tests with 12 unrelated failures and
+  0 errors**; this CSS-only refinement did not rerun that suite. Protected dirty artifacts remain
+  preserved and the plan remains `In progress` pending any separate owner-authorized publication.
+
+### Adaptive spacing amendment results — local, uncommitted (2026-09-02)
+
+- Changed the desktop Products table to content-aware auto layout with compact preferred widths
+  for S/N, Product Name/actions, BSID, Owner, dates, Status, and Calibration Certificate. Longer
+  identifiers or labels may expand naturally, while descriptive owner/model/status/certificate
+  values wrap cleanly; the 90rem minimum and horizontal scrolling remain in place.
+- The measured sticky-column offsets continue to use the rendered header widths, so every
+  freeze-through choice remains aligned after content expansion or viewport resizing.
+- Added focused adaptive-spacing assertions. The focused Product/calibration suite passes
+  **11/11**, the related Product contract plus Calibration Certificate suite passes **25/25**, and
+  Jinja parsing, inline JavaScript parsing, release JSON validation, and `git diff --check` pass.
+- No backend/API/database/migration, mobile-card, print, deployment, Railway, commit, or push
+  action was performed; protected dirty artifacts remain preserved.
+- Final isolated full discovery after adaptive spacing used a disposable external SQLite database
+  and completed **807 tests with 12 unrelated failures and 0 errors**. The failures remain limited
+  to purchase-order, staff-creation, and Calibration Report contract tests; no Product or
+  calibration-certificate Product test failed.
+
 ## Show approved Calibration Certificates on Products
 
 **Status:** Executed — bfb390e

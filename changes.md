@@ -2,6 +2,60 @@
 
 codex changes - 2026-09-02
 
+- Tightened the remaining compactness issue in `templates/products.html`: S/N, BSID, Start Date,
+  and End Date now use smaller preferred widths, and the desktop table uses intrinsic
+  `max-content` sizing with a 100% minimum instead of an artificial 90rem minimum. Short values
+  no longer absorb unused table width, while longer values can still expand and the horizontal
+  scroll region remains available when needed.
+- Reduced the desktop inline Edit/Delete controls and name/action gap further without changing
+  mobile card touch targets, certificate access, filtering, sorting, freeze behavior, local
+  post-save rendering, or print output. Added focused assertions for the intrinsic sizing and
+  compact action dimensions.
+- Verification of this compact-spacing refinement: focused Product/calibration coverage passes
+  **11/11**, related Product contract plus Calibration Certificate coverage passes **25/25**, and
+  Jinja parsing, inline JavaScript parsing, release JSON validation, and `git diff --check` pass.
+- Tightened the desktop Products list in `templates/products.html`: reduced preferred column
+  widths and cell padding, kept short product names beside their inline actions instead of
+  pushing buttons to the far edge of the name cell, and reduced the Edit/Delete icon controls to
+  a compact 1.75rem target with a visible keyboard focus ring. Mobile card action sizes and the
+  existing Product API, freeze, filtering, sorting, certificate, and print behavior remain
+  unchanged.
+- Updated `tests/test_product_calibration_certificate.py` with compact-width, spacing, and
+  action-size regression assertions. Focused Product/calibration coverage passes **11/11**;
+  related Product contract plus Calibration Certificate coverage passes **25/25**. Jinja and
+  JavaScript parsing, release JSON validation, and `git diff --check` also pass.
+- Moved Products-page Calibration Certificate access beneath each machine's S/N in
+  `templates/products.html`: desktop rows and narrow-phone cards now render only a compact
+  `View Certificate` link when the existing API reports a current approved signed certificate;
+  the dedicated desktop column, mobile certificate section, certificate number/date display, and
+  unavailable placeholder were removed so the list stays compact.
+- Retained the existing escaped preview URL, `target="_blank"`, `rel="noopener"`,
+  machine-specific accessible label, approved-signed-only API payload, preview authorization,
+  filtering, sorting, inline Product actions, selectable freeze behavior, mobile breakpoint, and
+  print output. The table now has seven columns and the freeze selector no longer offers
+  Calibration Certificate; no backend, database, migration, or authorization change was made.
+- Updated `tests/test_product_calibration_certificate.py`, `plans.md`, and the Product Inventory
+  release manifest for the revised placement and compatibility boundary.
+- Verification of the certificate-placement amendment: focused Product/calibration coverage passes
+  **11/11**, related Product contract plus Calibration Certificate coverage passes **25/25**, and
+  Jinja parsing, inline JavaScript parsing, release JSON validation, and `git diff --check` pass.
+- The isolated full suite completed **807 tests with 12 unrelated failures and 0 errors** against a
+  disposable external SQLite database. Failures remain limited to purchase-order, staff-creation,
+  and Calibration Report contract tests; no Product or Product Calibration Certificate test failed.
+  No browser automation, `scheduler.db` use, backend/API/database/migration, commit, push,
+  deployment, or Railway action was performed.
+- Improved Products table spacing in `templates/products.html`: desktop columns now use content-aware auto layout with compact preferred widths for identifiers, dates, status, and certificate metadata; longer values can expand naturally, while owner/model/status/certificate text wraps at readable boundaries and the 90rem horizontal list behavior remains intact.
+- Verification of the adaptive-spacing amendment: focused Product/calibration coverage passes **11/11**, related Product contract plus Calibration Certificate coverage passes **25/25**, and Jinja parsing, inline JavaScript parsing, release JSON validation, and `git diff --check` pass. No backend, database, migration, mobile-card, print, deployment, or production change was made.
+- Final isolated full-suite verification after adaptive spacing completed **807 tests with 12 unrelated failures and 0 errors** against a disposable external SQLite database. The failures remain limited to purchase-order, staff-creation, and Calibration Report contract tests; no Product or calibration-certificate Product test failed.
+- Added a Products-page `Freeze columns through` selector in `templates/products.html`, allowing users to choose None, S/N, Product Name + Actions, BSID, Owner, dates, Status, or Calibration Certificate. Product Name + Actions remains the default, and the selected range is persisted in browser `localStorage`.
+- Replaced the fixed two-column sticky offsets with runtime offsets measured from the rendered table headers, including a moving edge shadow; changing the selection and resizing the table recompute the frozen range while preserving the synchronized top scrollbar, mobile cards, print reset, certificate links, and existing API/database contract.
+- Extended `tests/test_product_calibration_certificate.py` coverage for freeze-column options, default/persistence hooks, dynamic sticky selectors/offsets, and print/list/mobile compatibility. No backend, migration, service-worker, deployment, or production change was made.
+- Verification of the selectable-freeze amendment: focused Product/calibration coverage passes **10/10**, related Product contract plus Calibration Certificate coverage passes **25/25**, and Jinja parsing, inline JavaScript parsing, release JSON validation, and `git diff --check` pass. The isolated full suite completed **806 tests with 12 unrelated failures and 0 errors** in purchase-order, staff-creation, and Calibration Report contract tests; no browser automation or production action was performed.
+- Refined `templates/products.html` into an identity-first desktop list: the S/N and Product Name/action area now stays left-pinned during horizontal scrolling, the distant Actions column is removed, and compact Edit/Delete controls remain beside each machine name with machine-specific accessible labels and tooltips; the existing engineer no-delete rule is preserved.
+- Added a compact Products filter summary and Clear Filters action, visible loading/empty/error states with retry or filter-reset actions, denser column sizing and wrapping, theme-safe sticky cells, and preserved narrow-phone cards and print behavior.
+- Added selected-machine identity context to the edit modal and delete confirmation, plus associated form labels and close-button accessibility. The existing Product API, calibration certificate preview link/authorization behavior, sorting, filtering, local post-save rendering, and database contract remain unchanged; no `app.py`, migration, or schema change was made.
+- Added focused source-level Product UX assertions in `tests/test_product_calibration_certificate.py` and recorded the user-facing Identity-First List release item in `static/changelog/releases.json`.
+- Verification: the focused Product/calibration suite passes **9/9** and the related Product contract plus Calibration Certificate suite passes **25/25**; Jinja parsing, inline JavaScript parsing, release JSON validation, and `git diff --check` pass. The isolated full suite completed **805 tests with 12 unrelated failures and 0 errors** in purchase-order, staff-creation, and Calibration Report contract tests. No browser automation or production action was performed; the implementation remains uncommitted and unpushed pending separate authorization.
 - Added a sticky synchronized horizontal scrollbar above the Products table in `templates/products.html`, so users can reach the right-side Calibration Certificate and Actions columns without first scrolling to the bottom of a long inventory list; the duplicate scrollbar tracks the existing table scroll position and remains hidden in print and narrow-phone card views.
 - Extended `tests/test_product_calibration_certificate.py` coverage for the top scrollbar markup, accessible labels, sticky presentation, scroll synchronization hooks, resize handling, and preserved laptop list view.
 - Revised the Products page laptop responsive behavior in `templates/products.html` per owner direction: retain the table/list view, provide an explicit horizontally scrollable table region with a visible laptop-width hint for the Calibration Certificate and Actions columns, and reserve the existing card fallback for narrow phone screens only.
