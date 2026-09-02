@@ -55,9 +55,10 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Show approved Calibration Certificates on Products
 
-**Status:** In progress
+**Status:** Executed — bfb390e
 **Approved:** 2026-09-02
 **Detailed:** 2026-09-02
+**Finished:** 2026-09-02; committed as `bfb390e` and pushed to `origin/main`. Railway deployment metadata could not be independently queried because the Railway CLI/connector is unavailable in this environment.
 **Execution authorization:** The owner separately authorized implementation on 2026-09-02 with
 `PLEASE IMPLEMENT THIS PLAN:` followed by the complete approved package. This authorizes the
 scoped local implementation and verification only. Certificate preview access, database/schema
@@ -229,8 +230,9 @@ the embedded PDF rather than a downloadable response.
 The implementation report must list changed files, fail-first evidence, exact focused/related/full
 test results, API and authorization behavior, preview checks, release/change journal updates,
 service-worker decision, protected-worktree audit, deviations, and material limitations. The
-implementation is complete locally but review, commit, push, Railway, and deployment remain
-separate owner-authorized actions.
+implementation is complete and published to `origin/main`; post-implementation review remains a
+separate owner-authorized action. Railway deployment metadata could not be independently queried
+because the Railway CLI/connector is unavailable in this environment.
 
 ### Local execution evidence — 2026-09-02
 
@@ -262,8 +264,8 @@ separate owner-authorized actions.
   responses are no-store. No browser automation, production/database action, commit, push,
   Railway, or deployment action was performed. The pre-existing dirty handoff, `scheduler.db`,
   `.claude/`, handoff artifact, `output/`, and `tmp/` remain outside the intended changes.
-- No deviation from the approved product scope was identified. The plan remains `In progress`
-  locally because no commit was authorized; review and publication are separate gates.
+- No deviation from the approved product scope was identified. The plan is now `Executed — bfb390e`;
+  post-implementation review remains a separate gate.
 
 ### Risks
 
