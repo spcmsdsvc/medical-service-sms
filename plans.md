@@ -55,10 +55,10 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## P.O. Renewal Dates Synced to Product
 
-**Status:** Executed — 08e6151
+**Status:** Executed — f42d595
 **Approved:** 2026-09-01
 **Detailed:** 2026-09-01
-**Finished:** 2026-09-02 in implementation commit `08e6151`; scoped publication follows the owner's direct instruction.
+**Finished:** 2026-09-02 in implementation commit `f42d595`; published to `origin/main` under the owner's direct instruction.
 **Execution authorization:** 2026-09-01, direct owner instruction: `PLEASE IMPLEMENT THIS PLAN:` followed by
 the complete approved P.O. renewal plan. This authorizes the scoped implementation and local
 verification only. The owner separately authorized commit and push on 2026-09-02 with `commit and
@@ -214,8 +214,8 @@ blast radius. Existing dirty artifacts remain protected.
 - The protected dirty `Handoffs/`, `scheduler.db`, `.claude/`, detailed handoff artifact, `output/`,
   and `tmp/` remain untouched and unstaged. No schema migration, service-worker bump, browser
   automation, Railway-variable, deployment, production, or database operation was performed. The
-  six approved feature/record files were committed as `08e6151` for the separately authorized
-  scoped publication; review remains a separate gate.
+  six approved feature/record files were committed as `f42d595` and pushed to `origin/main` for the
+  separately authorized scoped publication; review remains a separate gate.
 
 ## Make generated Calibration Reports downloadable from schedule cards
 
