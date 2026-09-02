@@ -348,13 +348,23 @@ class ProductCalibrationCertificateTests(unittest.TestCase):
         self.assertIn('certificate_number', source)
         self.assertIn('calibration_date', source)
 
-    def test_products_markup_uses_cards_for_laptop_sized_viewports(self):
+    def test_products_markup_keeps_list_view_with_laptop_horizontal_scroll(self):
         source = (ROOT / 'templates' / 'products.html').read_text(encoding='utf-8')
 
-        self.assertIn('@media screen and (max-width: 1600px)', source)
-        self.assertIn('.table-responsive {\n            display: none;', source)
-        self.assertIn('.product-mobile-list {\n            display: block;', source)
-        self.assertIn('@media screen and (min-width: 1100px) and (max-width: 1600px)', source)
+        self.assertIn('product-table-scroll-hint', source)
+        self.assertIn('id="product-table-scrollbar"', source)
+        self.assertIn('id="product-table-scrollbar-content"', source)
+        self.assertIn('class="table-responsive product-table-wrap"', source)
+        self.assertIn('role="region"', source)
+        self.assertIn('aria-label="Product inventory table. Scroll horizontally to view all columns."', source)
+        self.assertIn('position: sticky', source)
+        self.assertIn('scrollBar.addEventListener', source)
+        self.assertIn('tableWrap.addEventListener', source)
+        self.assertIn('ResizeObserver', source)
+        self.assertIn('@media screen and (min-width: 769px)', source)
+        self.assertIn('min-width: 90rem', source)
+        self.assertIn('@media screen and (min-width: 769px) and (max-width: 1600px)', source)
+        self.assertNotIn('@media screen and (max-width: 1600px) {\n        .table-responsive {\n            display: none;', source)
         self.assertIn('@media screen and (max-width: 768px)', source)
 
 

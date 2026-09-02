@@ -2,6 +2,10 @@
 
 codex changes - 2026-09-02
 
+- Added a sticky synchronized horizontal scrollbar above the Products table in `templates/products.html`, so users can reach the right-side Calibration Certificate and Actions columns without first scrolling to the bottom of a long inventory list; the duplicate scrollbar tracks the existing table scroll position and remains hidden in print and narrow-phone card views.
+- Extended `tests/test_product_calibration_certificate.py` coverage for the top scrollbar markup, accessible labels, sticky presentation, scroll synchronization hooks, resize handling, and preserved laptop list view.
+- Revised the Products page laptop responsive behavior in `templates/products.html` per owner direction: retain the table/list view, provide an explicit horizontally scrollable table region with a visible laptop-width hint for the Calibration Certificate and Actions columns, and reserve the existing card fallback for narrow phone screens only.
+- Updated `tests/test_product_calibration_certificate.py` to verify the list view, scroll region semantics, 90rem table minimum width, laptop hint breakpoint, and absence of the laptop card switch.
 - The laptop-sized Products layout follow-up was committed as `dde9cdc` and pushed to `origin/main`; the remote branch was verified at `dde9cdc94b8cc7e0301ae91f620ca90f7559ef0e`. Railway deployment metadata could not be queried because the Railway CLI/connector is unavailable in this environment, and no manual redeploy or Railway-variable change was performed.
 - Updated the Products page responsive layout in `templates/products.html` so laptop-sized screen viewports up to 1600px show the complete product cards instead of clipping the wide inventory table; certificate status/link, dates, and actions remain visible, while wider screens retain the desktop table and print output remains unchanged.
 - Added focused markup coverage in `tests/test_product_calibration_certificate.py` for the laptop breakpoint, card fallback, two-column intermediate layout, and screen-only responsive media queries.

@@ -85,7 +85,14 @@
         </div>
 
         <!-- Inventory Table -->
-        <div class="table-responsive">
+        <div class="product-table-scroll-hint no-print" role="note">
+            <i class="fa-solid fa-arrows-left-right" aria-hidden="true"></i>
+            <span>Scroll horizontally to view all columns, including Calibration Certificate and Actions.</span>
+        </div>
+        <div id="product-table-scrollbar" class="product-table-scrollbar no-print" role="region" tabindex="0" aria-controls="product-table-wrap" aria-label="Horizontal product table scrollbar. Drag to view all columns.">
+            <div id="product-table-scrollbar-content" aria-hidden="true"></div>
+        </div>
+        <div id="product-table-wrap" class="table-responsive product-table-wrap" role="region" tabindex="0" aria-label="Product inventory table. Scroll horizontally to view all columns.">
             <table class="table table-hover align-middle">
                 <thead class="table-dark">
                     <tr>
@@ -398,6 +405,53 @@ function highlightAndScroll(serial){
     setTimeout(()=>{
         row.classList.remove('table-warning');
     }, 3000);
+}
+
+function updateProductTableHorizontalScroll(){
+    const scrollBar = document.getElementById('product-table-scrollbar');
+    const scrollContent = document.getElementById('product-table-scrollbar-content');
+    const tableWrap = document.getElementById('product-table-wrap');
+    const table = tableWrap?.querySelector('table');
+    if(!scrollBar || !scrollContent || !tableWrap || !table) return;
+
+    const tableWidth = Math.max(table.scrollWidth, tableWrap.clientWidth);
+    scrollContent.style.width = `${Math.ceil(tableWidth)}px`;
+
+    const isOverflowing = tableWrap.scrollWidth > tableWrap.clientWidth + 1;
+    scrollBar.classList.toggle('is-overflowing', isOverflowing);
+    if(!isOverflowing){
+        scrollBar.scrollLeft = 0;
+        tableWrap.scrollLeft = 0;
+    }
+}
+
+function setupProductTableHorizontalScroll(){
+    const scrollBar = document.getElementById('product-table-scrollbar');
+    const tableWrap = document.getElementById('product-table-wrap');
+    const table = tableWrap?.querySelector('table');
+    if(!scrollBar || !tableWrap || !table) return;
+
+    if(scrollBar.dataset.bound !== 'true'){
+        const syncScroll = (source, target) => {
+            if(Math.abs(target.scrollLeft - source.scrollLeft) > 1){
+                target.scrollLeft = source.scrollLeft;
+            }
+        };
+
+        scrollBar.addEventListener('scroll', () => syncScroll(scrollBar, tableWrap), { passive: true });
+        tableWrap.addEventListener('scroll', () => syncScroll(tableWrap, scrollBar), { passive: true });
+
+        if(typeof ResizeObserver === 'function'){
+            const resizeObserver = new ResizeObserver(updateProductTableHorizontalScroll);
+            resizeObserver.observe(table);
+            resizeObserver.observe(tableWrap);
+        }
+
+        window.addEventListener('resize', updateProductTableHorizontalScroll, { passive: true });
+        scrollBar.dataset.bound = 'true';
+    }
+
+    updateProductTableHorizontalScroll();
 }
 
 
@@ -881,6 +935,7 @@ function renderTable(data) {
         });
 
         updateProductCountFooter(data);
+        setupProductTableHorizontalScroll();
     }
 
     // --- GRID FILTERING LOGIC ---
@@ -1346,6 +1401,82 @@ function renderTable(data) {
         text-align: center;
     }
 
+    .product-table-scroll-hint {
+        display: none;
+        align-items: center;
+        gap: 0.45rem;
+        margin-bottom: 0.55rem;
+        padding: 0.55rem 0.7rem;
+        border: 1px solid #bfdbfe;
+        border-radius: 0.65rem;
+        background: #eff6ff;
+        color: #1e3a8a;
+        font-size: 0.74rem;
+        font-weight: 800;
+    }
+
+    .product-table-scrollbar {
+        display: none;
+        position: sticky;
+        top: 0.5rem;
+        z-index: 3;
+        height: 1.2rem;
+        margin-bottom: 0.55rem;
+        padding: 0 0.2rem;
+        overflow-x: auto;
+        overflow-y: hidden;
+        border: 1px solid #cbd5e1;
+        border-radius: 999px;
+        background: #f8fafc;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+        scrollbar-width: auto;
+        scrollbar-color: #64748b #e2e8f0;
+    }
+
+    .product-table-scrollbar.is-overflowing {
+        display: block;
+    }
+
+    .product-table-scrollbar > div {
+        height: 1px;
+    }
+
+    .product-table-wrap {
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: auto;
+    }
+
+    .product-table-wrap:focus-visible {
+        outline: 2px solid #0d6efd;
+        outline-offset: 3px;
+    }
+
+    :root[data-app-theme="dark"] .product-table-scroll-hint {
+        border-color: #1e3a8a;
+        background: #111d36;
+        color: #bfdbfe;
+    }
+
+    :root[data-app-theme="dark"] .product-table-scrollbar {
+        border-color: #334155;
+        background: #111827;
+        scrollbar-color: #94a3b8 #334155;
+    }
+
+    @media screen and (min-width: 769px) {
+        .product-table-wrap > table {
+            min-width: 90rem;
+        }
+    }
+
+    @media screen and (min-width: 769px) and (max-width: 1600px) {
+        .product-table-scroll-hint {
+            display: flex;
+        }
+    }
+
     .product-certificate-block {
         min-width: 12rem;
         display: grid;
@@ -1450,7 +1581,8 @@ function renderTable(data) {
 
     @media print {
         .inventory-count-footer,
-        .product-mobile-list {
+        .product-mobile-list,
+        .product-table-scrollbar {
             display: none !important;
         }
     }
@@ -1630,29 +1762,6 @@ function renderTable(data) {
         gap: 0.4rem;
     }
 
-    /* Keep the complete inventory readable on laptop-sized viewports. */
-    @media screen and (max-width: 1600px) {
-        .table-responsive {
-            display: none;
-        }
-
-        .product-mobile-list {
-            display: block;
-        }
-    }
-
-    @media screen and (min-width: 1100px) and (max-width: 1600px) {
-        .product-mobile-list {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 1rem;
-        }
-
-        .product-mobile-card {
-            margin-bottom: 0;
-        }
-    }
-
     @media screen and (max-width: 768px) {
         .product-alert-stack {
             top: 12px;
@@ -1727,6 +1836,10 @@ function renderTable(data) {
 
         .table-responsive {
             display: none;
+        }
+
+        .product-table-scrollbar {
+            display: none !important;
         }
 
         .product-mobile-list {
