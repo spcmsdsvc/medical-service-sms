@@ -58,9 +58,10 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 **Status:** Executed — c52d742
 **Approved:** 2026-09-02
 **Detailed:** 2026-09-02
-**Finished:** 2026-09-02; implementation committed as `c52d742` after the focused, related,
-static, and disposable-database verification recorded below. The documentation closeout is
-isolated to this feature worktree; publication is separately verified against `origin/main`.
+**Finished:** 2026-09-02; implementation committed as `c52d742`, documentation closeout as
+`77804cb`, and both published to `origin/main` after the focused, related, static, and
+disposable-database verification recorded below. Railway deployment metadata was unavailable
+because no Railway CLI or connector is installed; no manual redeploy or setting change was made.
 **Execution authorization:** The owner separately authorized implementation, commit, and push on
 2026-09-02 with `PLEASE IMPLEMENT THIS PLAN:` followed by the complete approved package. Work must
 remain isolated from the shared root worktree, whose dirty files belong to another task.
@@ -182,8 +183,9 @@ for this additive link.
    runtime/contract coverage.
 4. The functional change is confined to `app.py`, `templates/approvals.html`, the two focused test
    files, `static/changelog/releases.json`, `changes.md`, and this plan record in commit
-   `c52d742`. The service-worker version was not changed because the download route is already
-   network-only. Browser automation and production state changes were not performed.
+   `c52d742`; the executed-plan documentation closeout is in `77804cb`. The service-worker version
+   was not changed because the download route is already network-only. Browser automation and
+   production state changes were not performed.
 
 ### Risks
 
