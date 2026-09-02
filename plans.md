@@ -196,6 +196,171 @@ query-parameter branch and testing the existing archive path protects current en
 behavior. Missing physical storage remains an ordinary archive error and renders no dead modal
 link. No schema, cache, or generated-document compatibility risk is introduced.
 
+## Selectable Service Files and Per-File Sent Status
+
+**Status:** In progress
+**Approved:** 2026-09-02
+**Detailed:** 2026-09-02
+**Execution authorization:** 2026-09-02; the owner separately said `PLEASE IMPLEMENT THIS PLAN` after
+reviewing and approving this complete package. This authorizes only the scoped local implementation
+and verification below. Commit, push, Railway/deployment, production data, browser automation, and
+protected-artifact actions remain separately gated.
+
+### Context and intended outcome
+
+The Timeline currently presents a single “Send TSR” action whose server package is selected by
+filename and linked-schedule heuristics. Users cannot see which current service files were already
+sent, intentionally resend one file, or send only a calibration artifact after a correction. The
+outcome is a server-validated, per-file “Send Service Files” workflow: the canonical current
+eligible package is visible, unsent files are selected by default, deliberate resend is possible,
+provider success records only the selected files, and normal/lite Timeline cards show a compact
+delivery summary without exposing file details to HR schedule-only users.
+
+### Decisions taken
+
+1. Add one nullable `ShiftFile.last_emailed_at` column through an additive SQLite runtime migration.
+   It is a status marker, not a send-history subsystem. New databases get the model column and old
+   databases are upgraded safely before any route loads ShiftFile rows.
+2. Conservatively backfill only historically provable TSR rows: successful `sent_tsr_email`
+   sidecar metadata must identify the file and the latest online-submission `_last_emailed_at`
+   must be present with attached-file identity. Never infer old calibration-report, certificate,
+   or generic supporting-file status from a neighboring send.
+3. Keep the existing full available-manifest signature validation. POST `selected_attachment_ids`
+   is optional for compatibility: omitted means select all canonical eligible files; an explicit
+   empty list is `400`; an unknown/stale ID is `409` and the UI reloads the modal.
+4. Resolve selected IDs only from the current canonical eligible attachment package. The selected
+   subset controls actual attachments, message signature, subject-scenario requirement, message
+   body wording, and correction notice. A calibration-only follow-up is allowed when a recognized
+   TSR exists on the linked schedule, but the body must not claim a TSR is attached; a TSR
+   correction notice appears only when a revised TSR is selected.
+5. Rename user-facing outbound controls to “Send Service Files” while retaining internal route,
+   function, setting keys, and template values for compatibility. Settings-visible labels become
+   “Service Files Client Email CC” and “Service Files Client Email Subject”. Historical ActivityLog
+   analytics continue matching `Sent TSR to client` while new wording is generalized.
+6. The canonical package includes current recognized TSRs, latest generated calibration reports,
+   latest approved signed calibration certificates, and eligible supporting files. Optional absent
+   artifacts are not pending; newly generated revisions/files are unsent. Linked group/override
+   cards share the same status summary.
+7. The public attachment shape adds `was_sent:boolean` and `last_emailed_at` (ISO string or empty).
+   The Timeline shape is named `service_file_delivery` and includes `overall`, `sent_count`,
+   `total_count`, `last_sent_at`, and applicable category entries (`state`, `sent_count`,
+   `total_count`) for `tsr`, `calibration_report`, `calibration_certificate`, and `supporting`.
+   HR-redacted payloads contain no delivery summary.
+
+### Investigation
+
+1. `app.py:2656-2685` defines `ShiftFile`; it has no delivery marker. Add the nullable field and
+   an additive migration beside `ensure_shift_file_original_filename_column()` around
+   `app.py:45046`, invoked by the guarded before-request schema path.
+2. `app.py:45937-46600` contains TSR sidecar metadata, canonical TSR discovery, calibration-report
+   and certificate state helpers, and `get_tsr_email_files_for_shift()`. The current helper
+   requires a TSR package and returns physical file paths; extend it surgically so one canonical
+   eligible package drives preview, POST validation, delivery summary, and linked cards.
+3. `app.py:46872-47350` builds subjects/bodies, validates preview/send payloads, sends attachments,
+   writes successful metadata, and logs `Sent TSR to client`. This is the single provider-success
+   update point; failure must update no rows and tracking failures must be reported explicitly.
+4. `app.py:39534-39935` serializes Timeline and `/get_shift_details`; normal and lite Timeline
+   payloads currently omit any delivery summary, while `redact_timeline_payload_for_hr()` is the
+   established HR privacy boundary.
+5. `templates/timeline.html:1455-1705` and `14900-15900` contain the outbound modal and inline
+   client logic. Existing attachment rows are display-only and current confirmation/signature
+   invalidation must be extended for per-row selection. Desktop cards are built around
+   `templates/timeline.html:13900-14150`; mobile cards around `:10900-11200`.
+6. `templates/settings.html:2380-2535` and `:2780-3010` render recipient/template labels. Internal
+   keys and stored values must remain unchanged. `static/changelog/README.md` requires a dated
+   `static/changelog/releases.json` item, and the embedded worker source in `app.py:17595` must
+   be bumped for the new cached shell behavior.
+
+### Execution steps
+
+1. Add this complete plan at the top of `plans.md` with `Status: In progress`; confirm protected
+   dirty paths remain untouched. Create focused tests for model/migration/backfill, canonical
+   package selection, omitted/all/subset/empty/stale POST contracts, calibration-only body and
+   correction behavior, provider success/failure/tracking-failure, linked-group summaries,
+   normal/lite/HR Timeline payloads, settings labels, desktop/mobile accessible selection markup,
+   preview invalidation, and refresh. Run these tests against the unchanged code and record the
+   expected failures before source implementation.
+2. Update `app.py` model and migration helpers. Add nullable `ShiftFile.last_emailed_at`, ensure
+   the column exists before ShiftFile queries, and perform only provable TSR backfill from the
+   `sent_tsr_email` sidecar plus online payload timestamp/file identity. Keep failures nonfatal and
+   never backfill calibration/supporting files.
+3. Refactor the canonical attachment/serialization helpers in `app.py` so current eligible IDs
+   are resolved once, per-file sent state is exposed, the full-manifest signature remains stable,
+   and category classification/status aggregation handles linked groups, absent optional
+   artifacts, and new revisions/files. Preserve existing preview/download authorization and
+   generated TSR/certificate filtering.
+4. Extend `prepare_tsr_client_email_message()`, preview, and send routes in `app.py` with exact
+   `selected_attachment_ids` handling. Omitted selects all; empty returns 400; stale/unknown IDs
+   return 409. Use the selected subset for attachments, subject scenario, message signature/body,
+   and revision correction wording. Send only after full validation; on provider success update
+   selected rows and online metadata, on provider failure update none, and return a clear
+   success-with-warning when DB status tracking fails. Preserve analytics compatibility for the
+   historical activity phrase.
+5. Add `service_file_delivery` to normal and lite `/get_timeline_data` payloads using the exact
+   linked canonical package, redact it for HR, and include the same summary in schedule details
+   where the modal/card refresh consumes it. Keep lite file details empty and avoid exposing file
+   names/paths to HR.
+6. Update `templates/timeline.html`: rename user-visible outbound labels, render accessible
+   per-file checkboxes with Sent/timestamp state plus Select Unsent/Select All, preselect unsent
+   rows, disable preview/send without selection, include selected IDs in preview/send POST bodies,
+   invalidate confirmation/preview on selection changes, handle 409 reload, render dynamic
+   category/overall delivery badges with neutral/amber/green semantics, and refresh existing
+   Timeline data after success. Keep send/review/resend available and preserve responsive card
+   and modal behavior.
+7. Update `templates/settings.html` visible labels only; keep `tsr_client_cc`, subject template
+   keys, stored values, generated filenames, Create/Edit TSR, archive, and source artifact names
+   unchanged. Generalize new ActivityLog display wording while retaining historical analytics
+   matching.
+8. Add the user-facing release item, append detailed factual bullets to `changes.md`, bump the
+   embedded service-worker cache version, and validate `static/changelog/releases.json` after
+   reading its README. Do not touch protected output/tmp/database/handoff artifacts.
+9. Self-review the final diff and run focused tests, related TSR/email/Timeline/calibration suites,
+   Python compilation, Jinja parsing, inline JavaScript parse/compile, release JSON validation,
+   and `git diff --check`. Run full discovery only with the project venv and a fresh disposable
+   external SQLite database; report unrelated failures exactly. Browser verification is not run
+   under the project owner rule. Leave work uncommitted and unpushed.
+
+### Deliberately excluded
+
+- No send-history table, recipient history, retry queue, provider redesign, or database reset.
+- No automatic email on certificate approval, no OCR/image TSR classification, and no changes to
+  existing file authorization, generated artifact filenames, approval routing, or source templates.
+- No destructive or production database/storage/Railway action, no commit/push/deploy, and no
+  browser automation. Protected `scheduler.db`, handoff files, `output/`, `tmp/`, and unrelated
+  `.claude`/untracked artifacts remain owner-owned.
+
+### Verification and risks
+
+- Positive controls must demonstrate that the unchanged code fails for each new contract, then the
+  implementation must pass the same focused tests. Provider tests assert no marker changes on
+  failure and explicit warning behavior on tracking failure. Migration tests use disposable
+  SQLite only and verify calibration/supporting markers stay null.
+- The primary risk is sending a stale or unintended file; canonical current-ID resolution plus
+  full-manifest and stale-selection checks limit that blast radius. A second risk is falsely
+  showing sent status; conservative backfill and selected-only writes limit historical inference.
+- The UI risk is stale preview/confirmation state; selection changes clear both signatures, and a
+  successful send reloads the existing Timeline data. Lite/HR payload assertions protect offline
+  performance and privacy.
+
+### Execution outcome (2026-09-02; local and uncommitted)
+
+- Implemented the approved package in `app.py`, `templates/timeline.html`,
+  `templates/settings.html`, `static/changelog/releases.json`, and the new focused
+  `tests/test_service_file_delivery.py`; recorded the implementation in `changes.md`.
+- The additive marker migration, conservative TSR backfill, canonical selection/manifest
+  validation, selected-only provider tracking, tracking-failure warning, linked delivery
+  summaries, HR redaction, accessible selection UI, category badges, settings labels, release
+  item, and service-worker v119 bump are in place. The implementation does not add a send-history
+  subsystem and does not rename internal keys, stored template values, or source artifacts.
+- Verification completed: focused Service Files **17/17**; related email/Timeline **28/28**;
+  attachment/email **18/18**; Python compilation, Jinja compilation, inline JavaScript and
+  service-worker parsing, release JSON validation, and `git diff --check` pass. Full discovery
+  on a fresh disposable test database ran **824 tests with 12 pre-existing failures and 1 skip**
+  (purchase-order, staff-creation, and stale v114 Calibration Report cache assertions).
+- Browser verification was not run under the owner rule. Commit, push, deployment, production
+  database/storage actions, and protected-artifact edits remain out of scope; status stays
+  `In progress` until the owner separately authorizes publication and a commit exists.
+
 ## Products Inventory — Identity-First List Usability Pass
 
 **Status:** Executed — 0505a4c

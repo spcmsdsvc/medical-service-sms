@@ -930,7 +930,7 @@
                             <!-- Populated via openEditModal -->
                         </div>
 
-                        <p class="xsmall text-muted mt-2 mb-0 italic">Compliance: Supporting files are included in Send TSR, but at least one recognized TSR is required.</p>
+                        <p class="xsmall text-muted mt-2 mb-0 italic">Compliance: Supporting files are included in Send Service Files, but at least one recognized TSR is required.</p>
 
                     </div>
                 </div>
@@ -1461,7 +1461,7 @@
                 <div>
                     <h5 class="modal-title fw-bold mb-0">
                         <i class="fa-solid fa-paper-plane me-2"></i>
-                        Send TSR to Client
+                        Send Service Files to Client
                     </h5>
                     <div class="small opacity-75 mt-1">Review recipients, CC, message, and attachments before sending.</div>
                 </div>
@@ -1487,11 +1487,20 @@
                     <div class="tsr-attachment-package-header">
                         <div>
                             <div class="small fw-bold text-uppercase" id="tsr-attachment-package-title">
-                                <i class="fa-solid fa-paperclip me-1"></i>Email Attachments
+                                <i class="fa-solid fa-paperclip me-1"></i>Service File Attachments
                             </div>
-                            <div class="xsmall text-muted" id="tsr-attachment-package-summary">Checking files attached to this schedule...</div>
+                            <div class="xsmall text-muted" id="tsr-attachment-package-summary">Checking service files attached to this schedule...</div>
                         </div>
                         <span class="tsr-attachment-count" id="tsr-attachment-count">0</span>
+                    </div>
+                    <div class="tsr-attachment-selection-tools" role="group" aria-label="Service file selection">
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="tsr-select-unsent-btn" onclick="selectTSRUnsentFiles()" disabled>
+                            <i class="fa-solid fa-filter-circle-check me-1"></i>Select Unsent
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="tsr-select-all-btn" onclick="selectAllTSRFiles()" disabled>
+                            <i class="fa-solid fa-check-double me-1"></i>Select All
+                        </button>
+                        <span class="xsmall text-muted" id="tsr-attachment-selection-summary" role="status" aria-live="polite">No files selected.</span>
                     </div>
                     <div class="tsr-attachment-list" id="tsr-attachment-list">
                         <div class="tsr-attachment-empty"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading attachments...</div>
@@ -1695,7 +1704,7 @@
                 </button>
                 <button type="button" class="btn btn-success btn-sm px-4 fw-bold w-100" id="tsr-send-client-btn" onclick="sendTSRClientEmail()">
                     <i class="fa-solid fa-paper-plane me-1"></i>
-                    Send TSR
+                    Send Service Files
                 </button>
             </div>
         </div>
@@ -2574,6 +2583,137 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     line-height: 1.3;
 }
 
+/* Selectable service-file delivery state */
+.tsr-attachment-selection-tools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    margin-top: 0.65rem;
+}
+
+.tsr-attachment-selection-tools button {
+    min-height: 2.5rem;
+    font-weight: 800;
+}
+
+.tsr-attachment-selection-summary {
+    font-weight: 700;
+}
+
+.tsr-attachment-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    padding: 0.6rem 0.65rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.6rem;
+    background: #fff;
+}
+
+.tsr-attachment-row.is-sent {
+    background: #f8fafc;
+}
+
+.tsr-attachment-row-checkbox {
+    width: 1.2rem;
+    height: 1.2rem;
+    margin-top: 0.18rem;
+    flex: 0 0 auto;
+    accent-color: #0d6efd;
+}
+
+.tsr-attachment-row-main {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.tsr-attachment-row-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    margin-left: 0.35rem;
+    padding: 0.12rem 0.4rem;
+    border-radius: 999px;
+    background: #dcfce7;
+    color: #166534;
+    font-size: 0.62rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.tsr-attachment-row-status small {
+    font-size: 0.58rem;
+    font-weight: 700;
+}
+
+.tsr-attachment-row[aria-disabled="true"] {
+    opacity: 0.78;
+}
+
+.service-file-delivery-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+    max-width: 100%;
+    margin-top: 0.25rem;
+    padding: 0.18rem 0.45rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.62rem;
+    font-weight: 900;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.service-file-delivery-badge.delivery-sent {
+    border-color: #86efac;
+    background: #f0fdf4;
+    color: #166534;
+}
+
+.service-file-delivery-badge.delivery-partial {
+    border-color: #fcd34d;
+    background: #fffbeb;
+    color: #92400e;
+}
+
+.service-file-delivery-badge.delivery-not-sent {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+    color: #475569;
+}
+
+.service-file-delivery-category-icons {
+    display: inline-flex;
+    gap: 0.22rem;
+    margin-left: 0.1rem;
+}
+
+.service-file-delivery-category-icons i {
+    font-size: 0.58rem;
+}
+
+@media (max-width: 576px) {
+    .tsr-attachment-selection-tools {
+        align-items: stretch;
+    }
+
+    .tsr-attachment-selection-tools button {
+        flex: 1 1 auto;
+    }
+
+    .tsr-attachment-selection-summary {
+        flex: 1 1 100%;
+    }
+
+    .service-file-delivery-badge {
+        white-space: normal;
+    }
+}
+
 :root[data-app-theme="dark"] .timeline-tsr-attachments {
     border-color: rgba(148, 163, 184, 0.26);
     background: #172235;
@@ -3051,8 +3191,8 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 
 .tsr-attachment-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
     gap: 0.8rem;
     padding: 0.75rem 0.9rem;
     border-bottom: 1px solid #eef2f7;
@@ -3198,7 +3338,7 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     font-weight: 700;
 }
 
-/* Send TSR uses native Bootstrap modal scrolling; only its visual surfaces are themed. */
+/* Send Service Files uses native Bootstrap modal scrolling; only its visual surfaces are themed. */
 #tsrClientEmailModal .modal-content,
 #tsrClientEmailModal .modal-body,
 #tsrClientEmailModal .modal-footer {
@@ -3495,10 +3635,11 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     }
 
     .tsr-attachment-row {
-        grid-template-columns: minmax(0, 1fr);
+        grid-template-columns: auto minmax(0, 1fr);
     }
 
     .tsr-attachment-preview-btn {
+        grid-column: 2;
         width: 100%;
         min-height: 42px;
     }
@@ -4872,6 +5013,10 @@ body.mobile-scheduler-mode .mobile-add-schedule-card {
     font-weight: 800;
     color: #0f172a;
     background: #fff;
+}
+
+.tsr-attachment-row.is-preview {
+    grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .mobile-admin-quick-add-actions {
@@ -9486,6 +9631,7 @@ function shouldUseEngineerMobileView(){
         const fileCount = getShiftFileDetails(shift).length;
         const linkedScheduleKey = getLinkedScheduleKey(shift);
         const linkedScheduleBadge = getLinkedScheduleBadgeHtml(shift, 'mobile-lite');
+        const deliveryBadge = buildServiceFileDeliveryBadgeHtml(shift, 'mobile-lite');
         const openTravelRequestButton = getOpenTravelRequestButtonHtml(shift, 'mobile-lite');
 
         return `
@@ -9502,6 +9648,7 @@ function shouldUseEngineerMobileView(){
                     ${productLabel ? `<span class="mobile-full-calendar-lite-mini-badge"><i class="fa-solid fa-screwdriver-wrench"></i>${escapeHtml(productLabel)}</span>` : ''}
                     ${fileCount ? `<span class="mobile-full-calendar-lite-mini-badge"><i class="fa-solid fa-paperclip"></i>${fileCount}</span>` : ''}
                 </div>
+                ${deliveryBadge}
             </button>
         `;
     }
@@ -9691,7 +9838,7 @@ function shouldUseEngineerMobileView(){
             return;
         }
 
-        timelineAlert('Send TSR Email shortcut is not available. Please open the schedule first.');
+        timelineAlert('Send Service Files shortcut is not available. Please open the schedule first.');
     }
 
     async function openMobileFullCalendarLiteAttachAction(shiftId, dayIso, engineerId){
@@ -9775,6 +9922,7 @@ function shouldUseEngineerMobileView(){
         const addressLabel = shift?.client_address || shift?.address || '';
         const files = getShiftFileDetails(shift);
         const canSendTSR = canSendTSRForSchedule(shift);
+        const deliveryBadge = buildServiceFileDeliveryBadgeHtml(shift, 'mobile-lite');
 
         const backdrop = ensureMobileFullCalendarLiteDetailSheet();
         const title = document.getElementById('mobile-full-calendar-lite-detail-title');
@@ -9801,6 +9949,7 @@ function shouldUseEngineerMobileView(){
                     ${addressLabel ? buildMobileFullCalendarLiteDetailRow('Address', addressLabel) : ''}
                     ${buildMobileFullCalendarLiteDetailRow('Attachments', files.length ? `${files.length} file(s)` : 'None')}
                 </div>
+                ${deliveryBadge}
                 ${buildTimelineTSRAttachmentsHtml(shift, { mobile: true })}
                 <div class="mobile-full-calendar-lite-quick-actions">
                     ${isTravelBlock ? `
@@ -9827,7 +9976,7 @@ function shouldUseEngineerMobileView(){
                         </button>` : ''}
                         ${canSendTSR ? `<button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-email" onclick="openMobileFullCalendarLiteEmailAction('${escapeHtml(String(shift?.id || ''))}')">
                             <i class="fa-solid fa-paper-plane"></i>
-                            Send TSR Email
+                            Send Service Files
                         </button>` : ''}
                         <button type="button" class="mobile-full-calendar-lite-quick-action mobile-full-calendar-lite-action-attach" onclick="openMobileFullCalendarLiteAttachAction('${escapeHtml(String(shift?.id || ''))}', '${escapeHtml(String(dayIso || ''))}', '${escapeHtml(String(engineerId || ''))}')">
                             <i class="fa-solid fa-paperclip"></i>
@@ -10259,7 +10408,7 @@ async function openMobileAddSchedule(){
             : `<button type="button" class="mobile-sticky-btn mobile-sticky-disabled" title="View only" aria-label="View only" disabled><i class="fa-solid ${isApprovedTravelBlock ? 'fa-plane' : 'fa-lock'}"></i></button>`;
 
         const sendBtn = canSendTSR
-            ? `<button type="button" class="mobile-sticky-btn mobile-sticky-send" title="Send TSR" aria-label="Send TSR" onclick="openTSRClientEmailModal(${shift.id})"><i class="fa-solid fa-paper-plane"></i></button>`
+            ? `<button type="button" class="mobile-sticky-btn mobile-sticky-send" title="Send Service Files" aria-label="Send Service Files" onclick="openTSRClientEmailModal(${shift.id})"><i class="fa-solid fa-paper-plane"></i></button>`
             : `<button type="button" class="mobile-sticky-btn mobile-sticky-disabled" title="TSR not ready" aria-label="TSR not ready" disabled><i class="fa-solid fa-file-invoice"></i></button>`;
 
         const hasOfflineTSRDraft = shift?.id ? hasOfflineTSRDraftForShift(shift.id) : false;
@@ -11070,6 +11219,7 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
         const hasMobileTravelOverlapWarning = isApprovedTravelBlock && dayShiftList.some(item => !isTimelineTravelBlock(item));
         const linkedScheduleKey = getLinkedScheduleKey(shift);
         const linkedScheduleBadge = getLinkedScheduleBadgeHtml(shift, 'mobile');
+        const deliveryBadge = buildServiceFileDeliveryBadgeHtml(shift, 'mobile');
         const openTravelRequestButton = getOpenTravelRequestButtonHtml(shift, 'mobile');
         const mobileContextKey = buildMobileScheduleContextKey(shift, day, rowEngineer);
         rememberMobileScheduleContext(mobileContextKey, { shift, day, engineer: rowEngineer, contact, clientAddress, canManage, canSendTSR });
@@ -11088,7 +11238,7 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
             : `<button type="button" class="mobile-action-btn mobile-action-muted" disabled><i class="fa-solid fa-lock"></i>View Only</button>`;
 
         const tsrAction = canSendTSR
-            ? `<button type="button" class="mobile-action-btn mobile-action-success" onclick="openTSRClientEmailModal(${shift.id})"><i class="fa-solid fa-paper-plane"></i>Send TSR</button>`
+            ? `<button type="button" class="mobile-action-btn mobile-action-success" onclick="openTSRClientEmailModal(${shift.id})"><i class="fa-solid fa-paper-plane"></i>Send Service Files</button>`
             : `<button type="button" class="mobile-action-btn mobile-action-muted" disabled><i class="fa-solid fa-file-invoice"></i>${isWork ? 'TSR Pending' : 'No TSR'}</button>`;
 
         const detailsAction = `<button type="button" class="mobile-action-btn mobile-action-dark" onclick="setMobileStickyActionContextByKey('${escapeHtml(mobileContextKey)}')"><i class="fa-solid fa-circle-info"></i>Details</button>`;
@@ -11119,7 +11269,7 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
 
         const mobileTSRPanel = isWork
             ? (fileCount > 0
-                ? `<div class="mobile-tsr-ready-panel"><i class="fa-solid fa-circle-check"></i><div>TSR attached. Send TSR is available when the schedule is completed.</div></div>`
+                ? `<div class="mobile-tsr-ready-panel"><i class="fa-solid fa-circle-check"></i><div>TSR attached. Send Service Files is available when the schedule is completed.</div></div>`
                 : `<div class="mobile-tsr-requirement-panel"><i class="fa-solid fa-triangle-exclamation"></i><div>Create or upload a TSR before marking this schedule Completed.</div></div>`)
             : '';
 
@@ -11141,6 +11291,7 @@ function getPureEngineerMobileWorkflowClass(shift, isWork, fileCount){
                     ${contact?.name || contact?.phone || contact?.email ? `<div class="mobile-meta-row"><i class="fa-solid fa-address-book"></i><span>${escapeHtml([contact.name, contact.phone, contact.email].filter(Boolean).join(' • '))}</span></div>` : ''}
                     ${fileCount ? `<div class="mobile-meta-row"><i class="fa-solid fa-paperclip"></i><span>${getShiftFileDetails(shift).map(file => escapeHtml(file.display_name || cleanStoredFilenameForDisplay(file.filename))).join(', ')}</span></div>` : ''}
                 </div>
+                ${deliveryBadge}
 
                 ${assignedNames.length ? `<div class="mobile-engineer-chips">${assignedNames.map(name => `<span class="mobile-engineer-chip">${escapeHtml(name)}</span>`).join('')}</div>` : ''}
 
@@ -11794,6 +11945,48 @@ function collectMobileEngineerSchedules(){
         return `<div class="${cls} no-print" title="Linked multi-day schedule"><i class="fa-solid fa-link"></i>${escapeHtml(label)}</div>`;
     }
 
+    function getServiceFileDeliverySummary(shift){
+        const summary = shift?.service_file_delivery;
+        return summary && typeof summary === 'object' ? summary : null;
+    }
+
+    function buildServiceFileDeliveryBadgeHtml(shift, mode='desktop'){
+        const summary = getServiceFileDeliverySummary(shift);
+        const total = Number(summary?.total_count || 0);
+        if(!summary || total <= 0) return '';
+
+        const overall = String(summary.overall || '').toLowerCase();
+        const sentCount = Number(summary.sent_count || 0);
+        const stateText = overall === 'sent'
+            ? `All sent ${sentCount}/${total}`
+            : (overall === 'partial' ? `Sent ${sentCount}/${total}` : 'Not sent');
+        const categoryLabels = {
+            tsr: ['TSR', 'fa-file-lines'],
+            calibration_report: ['Calibration report', 'fa-file-word'],
+            calibration_certificate: ['Calibration certificate', 'fa-certificate'],
+            supporting: ['Supporting', 'fa-paperclip']
+        };
+        const applicable = Object.entries(summary.categories || {})
+            .filter(([, item]) => Number(item?.total_count || 0) > 0);
+        const categoryDetails = applicable.map(([key, item]) => {
+            const label = categoryLabels[key]?.[0] || key;
+            const count = Number(item?.sent_count || 0);
+            const categoryState = String(item?.state || '').replaceAll('_', ' ');
+            return `${label}: ${categoryState} (${count}/${Number(item?.total_count || 0)})`;
+        });
+        const categoryIcons = applicable.map(([key]) => {
+            const [label, icon] = categoryLabels[key] || [key, 'fa-file'];
+            return `<i class="fa-solid ${icon}" aria-hidden="true" title="${escapeHtml(label)}"></i>`;
+        }).join('');
+        const lastSent = summary.last_sent_at
+            ? new Date(summary.last_sent_at).toLocaleString(undefined, {dateStyle: 'medium', timeStyle: 'short'})
+            : '';
+        const detailText = categoryDetails.length ? ` ${categoryDetails.join('; ')}.` : '';
+        const tooltip = `Service file delivery: ${stateText}.${detailText}${lastSent ? ` Last sent ${lastSent}.` : ''}`;
+        const cssState = overall === 'sent' ? 'sent' : (overall === 'partial' ? 'partial' : 'not-sent');
+        return `<span class="service-file-delivery-badge service-file-delivery-badge-${escapeHtml(mode)} delivery-${cssState}" role="status" title="${escapeHtml(tooltip)}" aria-label="${escapeHtml(tooltip)}"><span>${escapeHtml(stateText)}</span><span class="service-file-delivery-category-icons" aria-hidden="true">${categoryIcons}</span></span>`;
+    }
+
     function findTimelineShiftForSummary(shiftId, engineerId='', dayIso=''){
         const idValue = String(shiftId || '');
         if(!idValue) return null;
@@ -11888,6 +12081,7 @@ function collectMobileEngineerSchedules(){
         const isInternal = !isTravelBlock && !shift.client_id;
         const fileCount = getShiftFileDetails(shift).length;
         const linked = getLinkedScheduleSummaryContext(shift);
+        const deliveryBadge = buildServiceFileDeliveryBadgeHtml(shift, 'hover');
         const assignedNames = getTimelineAssignedEngineerNamesForSummary(shift, engineerId);
         const timeRange = (shift.time_start && shift.time_end) ? `${t12(shift.time_start)} – ${t12(shift.time_end)}` : '';
         const title = isTravelBlock ? getTimelineTravelTitle(shift) : (shift.client_name || parseTypedScheduleTitle(shift.task).category || shift.task || 'Schedule');
@@ -11904,7 +12098,8 @@ function collectMobileEngineerSchedules(){
             assignedNames.length > 1 ? `<span class="timeline-hover-mini-badge linked"><i class="fa-solid fa-users"></i>${assignedNames.length} Engineers</span>` : '',
             shift.is_time_override ? '<span class="timeline-hover-mini-badge warning"><i class="fa-solid fa-clock"></i>Custom Time</span>' : '',
             fileCount ? `<span class="timeline-hover-mini-badge"><i class="fa-solid fa-paperclip"></i>${fileCount} File(s)</span>` : '',
-            canSendTSRForSchedule(shift) ? '<span class="timeline-hover-mini-badge"><i class="fa-solid fa-paper-plane"></i>TSR Ready</span>' : ''
+            canSendTSRForSchedule(shift) ? '<span class="timeline-hover-mini-badge"><i class="fa-solid fa-paper-plane"></i>Service Files Ready</span>' : '',
+            deliveryBadge
         ].filter(Boolean).join('');
 
         return `
@@ -12063,11 +12258,11 @@ function collectMobileEngineerSchedules(){
                 ` : ''}
                 ${canSend ? `
                     <button type="button" class="timeline-summary-action-btn timeline-summary-action-send" onclick="openTimelineSummarySendTSR(event)">
-                        <i class="fa-solid fa-paper-plane"></i>Send TSR
+                        <i class="fa-solid fa-paper-plane"></i>Send Service Files
                     </button>
                 ` : `
                     <button type="button" class="timeline-summary-action-btn timeline-summary-action-send" disabled>
-                        <i class="fa-solid fa-paper-plane"></i>Send TSR
+                        <i class="fa-solid fa-paper-plane"></i>Send Service Files
                     </button>
                 `}
                 ${isTravelBlock && requestId && shift.can_open_travel_request === true ? `
@@ -13943,6 +14138,7 @@ async function loadGrid() {
 
                         const linkedScheduleKey = getLinkedScheduleKey(s);
                         const linkedScheduleBadge = getLinkedScheduleBadgeHtml(s, 'desktop');
+                        const deliveryBadge = buildServiceFileDeliveryBadgeHtml(s, 'desktop');
                         const openTravelRequestButton = getOpenTravelRequestButtonHtml(s, 'desktop');
                         const shiftActionPayload = JSON.stringify(s).replace(/"/g, '&quot;');
                         const engineerNamePayload = escapeHtml(JSON.stringify(eng.name || ''));
@@ -13962,7 +14158,7 @@ async function loadGrid() {
                                     </button>
                                 ` : ''}
                                 ${canSendTSRForSchedule(s) ? `
-                                    <button type="button" class="schedule-card-action-btn schedule-card-action-send" draggable="false" title="Send TSR" aria-label="Send TSR" onmousedown="event.stopPropagation()" onclick="event.stopPropagation(); openTSRClientEmailModal(${s.id})">
+                                    <button type="button" class="schedule-card-action-btn schedule-card-action-send" draggable="false" title="Send Service Files" aria-label="Send Service Files" onmousedown="event.stopPropagation()" onclick="event.stopPropagation(); openTSRClientEmailModal(${s.id})">
                                         <i class="fa-solid fa-paper-plane"></i>
                                     </button>
                                 ` : ''}
@@ -14007,6 +14203,7 @@ async function loadGrid() {
 
                             ${isApprovedTravelBlock ? `<div class="schedule-travel-request-badge no-print"><i class="fa-solid fa-plane"></i> Approved Travel</div>` : ''}
                             ${linkedScheduleBadge}
+                            ${deliveryBadge}
                             ${s.is_time_override ? '<div class="schedule-override-badge no-print"><i class="fa-solid fa-clock"></i> Custom Time</div>' : ''}
                             ${badgeHtml ? `<div class="schedule-status">${badgeHtml}</div>` : ''}
 
@@ -14802,7 +14999,11 @@ if(shift.engineers){
                 can_download: file.can_download !== false,
                 can_delete: file.can_delete !== false,
                 preview_url: (file.locked || file.can_preview === false) ? '' : (file.preview_url || (file.id ? `/preview_tsr_archive_file/${file.id}` : '')),
-                download_url: (file.locked || file.can_download === false) ? '' : (file.download_url || (file.id ? `/download_tsr_archive_file/${file.id}` : ''))
+                download_url: (file.locked || file.can_download === false) ? '' : (file.download_url || (file.id ? `/download_tsr_archive_file/${file.id}` : '')),
+                attachment_type: file.attachment_type || (file.is_tsr ? 'tsr' : 'supporting'),
+                source_type: file.source_type || '',
+                was_sent: Boolean(file.was_sent || file.last_emailed_at),
+                last_emailed_at: file.last_emailed_at || ''
             })).filter(file => file.filename || file.id);
         }
 
@@ -14821,7 +15022,11 @@ if(shift.engineers){
             can_download: false,
             can_delete: true,
             preview_url: '',
-            download_url: ''
+            download_url: '',
+            attachment_type: 'supporting',
+            source_type: '',
+            was_sent: false,
+            last_emailed_at: ''
         })).filter(file => file.filename);
     }
 
@@ -14906,7 +15111,9 @@ if(shift.engineers){
     }
 
     function hasScheduleTSRAttachment(shift){
-        return getShiftFileDetails(shift).length > 0;
+        const summaryTsr = Number(shift?.service_file_delivery?.categories?.tsr?.total_count || 0);
+        if(summaryTsr > 0) return true;
+        return getShiftFileDetails(shift).some(file => Boolean(file?.is_tsr));
     }
 
     function canSendTSRForSchedule(shift){
@@ -14922,6 +15129,8 @@ if(shift.engineers){
     let currentTSRAttachmentManifestSignature = '';
     let currentTSRSubjectScenarioRequired = false;
     let currentTSRSubjectScenarios = [];
+    let currentTSRAttachmentFiles = [];
+    let currentTSRSelectedAttachmentIds = [];
     let currentScheduleManualUploadCount = 0;
     let currentScheduleHasTSR = false;
     const SCHEDULE_MANUAL_UPLOAD_LIMIT = 10;
@@ -14977,8 +15186,10 @@ if(shift.engineers){
         invalidateTSREmailPreview();
         const sendBtn = document.getElementById('tsr-send-client-btn');
         if(sendBtn){
-            sendBtn.disabled = !currentTSRAttachmentManifestSignature || (currentTSRSubjectScenarioRequired && !selected);
+            sendBtn.disabled = !currentTSRAttachmentManifestSignature
+                || !currentTSRSelectedAttachmentIds.length;
         }
+        updateTSRAttachmentSelection(false);
     }
 
     function updateScheduleUploadCount(selectedCount=0){
@@ -15050,11 +15261,95 @@ if(shift.engineers){
         return parsed.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
+    function getTSRAttachmentId(file){
+        const parsed = Number(file?.id);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    function getSelectedTSRAttachmentIds(){
+        const checkboxes = Array.from(document.querySelectorAll('#tsr-attachment-list input[data-tsr-attachment-id]'));
+        const checkboxIds = checkboxes.filter(input => input.checked)
+            .map(input => Number(input.dataset.tsrAttachmentId))
+            .filter(id => Number.isFinite(id) && id > 0);
+        return checkboxes.length ? checkboxIds : currentTSRSelectedAttachmentIds.slice();
+    }
+
+    function updateTSRAttachmentSelection(invalidate=true){
+        const ids = getSelectedTSRAttachmentIds();
+        currentTSRSelectedAttachmentIds = Array.from(new Set(ids));
+        const count = currentTSRSelectedAttachmentIds.length;
+        const total = currentTSRAttachmentFiles.length;
+        const summaryEl = document.getElementById('tsr-attachment-selection-summary');
+        if(summaryEl){
+            summaryEl.textContent = count
+                ? `${count} of ${total} service file${total === 1 ? '' : 's'} selected.`
+                : 'No files selected. Select at least one service file to continue.';
+            summaryEl.classList.toggle('text-danger', !count && total > 0);
+        }
+
+        const hasFiles = total > 0;
+        ['tsr-select-unsent-btn', 'tsr-select-all-btn'].forEach(id => {
+            const button = document.getElementById(id);
+            if(button) button.disabled = !hasFiles;
+        });
+
+        const previewBtn = document.getElementById('tsr-preview-email-btn');
+        if(previewBtn){
+            previewBtn.disabled = !currentTSRAttachmentManifestSignature || !count;
+        }
+        const sendBtn = document.getElementById('tsr-send-client-btn');
+        if(sendBtn){
+            sendBtn.disabled = !currentTSRAttachmentManifestSignature
+                || !count
+                || (currentTSRSubjectScenarioRequired && !getSelectedTSRSubjectScenario());
+        }
+
+        if(invalidate){
+            resetTSRSendConfirmState();
+            invalidateTSREmailPreview();
+        }
+    }
+
+    function handleTSRAttachmentSelectionChange(){
+        updateTSRAttachmentSelection(true);
+    }
+
+    function selectTSRUnsentFiles(){
+        const unsentIds = new Set(currentTSRAttachmentFiles
+            .filter(file => !file?.was_sent && !file?.last_emailed_at)
+            .map(getTSRAttachmentId)
+            .filter(Boolean));
+        document.querySelectorAll('#tsr-attachment-list input[data-tsr-attachment-id]').forEach(input => {
+            input.checked = unsentIds.has(Number(input.dataset.tsrAttachmentId));
+        });
+        updateTSRAttachmentSelection(true);
+    }
+
+    function selectAllTSRFiles(){
+        document.querySelectorAll('#tsr-attachment-list input[data-tsr-attachment-id]').forEach(input => {
+            input.checked = true;
+        });
+        updateTSRAttachmentSelection(true);
+    }
+
     function renderTSREmailAttachmentManifest(files, options={}){
         const listEl = document.getElementById(options.listId || 'tsr-attachment-list');
         const countEl = document.getElementById(options.countId || 'tsr-attachment-count');
         const summaryEl = document.getElementById(options.summaryId || 'tsr-attachment-package-summary');
         const normalizedFiles = Array.isArray(files) ? files : [];
+        const isComposeList = options.readOnly !== true && (options.listId || 'tsr-attachment-list') === 'tsr-attachment-list';
+        if(isComposeList){
+            const previousIds = new Set(currentTSRSelectedAttachmentIds);
+            currentTSRAttachmentFiles = normalizedFiles.slice();
+            const availableIds = new Set(normalizedFiles.map(getTSRAttachmentId).filter(Boolean));
+            const retainedIds = Array.from(previousIds).filter(id => availableIds.has(id));
+            currentTSRSelectedAttachmentIds = retainedIds.length
+                ? retainedIds
+                : normalizedFiles
+                    .filter(file => !file?.was_sent && !file?.last_emailed_at)
+                    .map(getTSRAttachmentId)
+                    .filter(Boolean);
+        }
         const tsrCount = normalizedFiles.filter(file => Boolean(file.is_tsr) || file.attachment_type === 'tsr').length;
         const supportingCount = Math.max(0, normalizedFiles.length - tsrCount);
 
@@ -15068,6 +15363,7 @@ if(shift.engineers){
 
         if(!normalizedFiles.length){
             listEl.innerHTML = '<div class="tsr-attachment-empty text-danger"><i class="fa-solid fa-triangle-exclamation me-1"></i>No email attachments are available to send.</div>';
+            if(isComposeList) updateTSRAttachmentSelection(false);
             return;
         }
 
@@ -15082,11 +15378,23 @@ if(shift.engineers){
             const previewButton = previewUrl
                 ? `<a class="btn btn-outline-primary btn-sm tsr-attachment-preview-btn" href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener"><i class="fa-solid fa-eye me-1"></i>Preview</a>`
                 : '<button type="button" class="btn btn-outline-secondary btn-sm tsr-attachment-preview-btn" disabled><i class="fa-solid fa-eye-slash me-1"></i>No Preview</button>';
+            const attachmentId = getTSRAttachmentId(file);
+            const wasSent = Boolean(file.was_sent || file.last_emailed_at);
+            const sentDate = wasSent && file.last_emailed_at
+                ? new Date(file.last_emailed_at).toLocaleString(undefined, {dateStyle: 'medium', timeStyle: 'short'})
+                : '';
+            const statusLabel = wasSent
+                ? `<span class="tsr-attachment-row-status" title="Sent ${escapeHtml(sentDate || 'previously')}" aria-label="Sent ${escapeHtml(sentDate || 'previously')}"><i class="fa-solid fa-check"></i>Sent${sentDate ? ` <small>${escapeHtml(sentDate)}</small>` : ''}</span>`
+                : '<span class="tsr-attachment-row-status" style="background:#f1f5f9;color:#475569;" aria-label="Unsent">Unsent</span>';
+            const checkbox = isComposeList && attachmentId
+                ? `<input class="tsr-attachment-row-checkbox" type="checkbox" data-tsr-attachment-id="${attachmentId}" data-was-sent="${wasSent ? '1' : '0'}" ${currentTSRSelectedAttachmentIds.includes(attachmentId) ? 'checked' : ''} onchange="handleTSRAttachmentSelectionChange()" aria-label="Select ${escapeHtml(displayName)} for Service Files email" title="${wasSent ? 'Select to intentionally resend this file' : 'Select this service file'}">`
+                : '';
 
             return `
-                <div class="tsr-attachment-row">
-                    <div class="min-w-0">
-                        <div class="tsr-attachment-name">${escapeHtml(displayName)}</div>
+                <div class="tsr-attachment-row ${wasSent ? 'is-sent' : ''} ${isComposeList ? '' : 'is-preview'}">
+                    ${checkbox}
+                    <div class="tsr-attachment-row-main">
+                        <div class="tsr-attachment-name">${escapeHtml(displayName)} ${statusLabel}</div>
                         <div class="tsr-attachment-meta">
                             <span class="tsr-attachment-source"><i class="fa-solid ${sourceIcon} me-1"></i>${escapeHtml(sourceLabel)}</span>
                             ${revisionLabel ? `<span>${escapeHtml(revisionLabel)}</span>` : ''}
@@ -15098,6 +15406,7 @@ if(shift.engineers){
                 </div>
             `;
         }).join('');
+        if(isComposeList) updateTSRAttachmentSelection(false);
     }
 
     function renderTSRSystemCCDisplay(emailList){
@@ -15109,7 +15418,7 @@ if(shift.engineers){
             listEl.innerHTML = `
                 <span class="tsr-system-cc-muted">
                     <i class="fa-solid fa-gear me-1"></i>
-                    Configured in Settings → Email Recipients → TSR Client Email CC
+                    Configured in Settings → Email Recipients → Service Files Client Email CC
                 </span>
             `;
             return;
@@ -15417,7 +15726,7 @@ if(shift.engineers){
             sendBtn.dataset.confirmSignature = '';
             sendBtn.classList.remove('btn-warning');
             sendBtn.classList.add('btn-success');
-            sendBtn.innerHTML = '<i class="fa-solid fa-paper-plane me-1"></i>Send TSR';
+            sendBtn.innerHTML = '<i class="fa-solid fa-paper-plane me-1"></i>Send Service Files';
         }
 
         const noteEl = document.getElementById('tsr-send-confirm-note');
@@ -15531,7 +15840,7 @@ if(shift.engineers){
 async function openTSRClientEmailModal(shiftId){
         const modalEl = document.getElementById('tsrClientEmailModal');
         if(!modalEl){
-            timelineAlert("TSR email modal missing.");
+            timelineAlert("Service Files email modal missing.");
             return;
         }
 
@@ -15548,6 +15857,8 @@ async function openTSRClientEmailModal(shiftId){
         invalidateTSREmailPreview();
         resetTSRSubjectScenarioPanel();
         currentTSRAttachmentManifestSignature = '';
+        currentTSRAttachmentFiles = [];
+        currentTSRSelectedAttachmentIds = [];
         renderTSREmailAttachmentManifest([]);
         if(sendBtn) sendBtn.disabled = true;
         renderTSRSystemCCDisplay([]);
@@ -15594,6 +15905,9 @@ async function openTSRClientEmailModal(shiftId){
             titleEl.innerText = payload.client_name ? `TSR for ${payload.client_name}` : "Technical Service Report";
             currentTSRAttachmentManifestSignature = String(payload.attachment_manifest_signature || '');
             const emailAttachments = payload.attachments || payload.tsr_files || [];
+            currentTSRSelectedAttachmentIds = Array.isArray(payload.selected_attachment_ids)
+                ? payload.selected_attachment_ids.map(Number).filter(id => Number.isFinite(id) && id > 0)
+                : [];
             renderTSREmailAttachmentManifest(emailAttachments);
             renderTSRSubjectScenarioPanel(payload);
             const tsrCount = Number(payload.tsr_count ?? (payload.tsr_files || []).length ?? 0);
@@ -15670,12 +15984,12 @@ async function openTSRClientEmailModal(shiftId){
                 updateTSREmailSuggestionsSummary(0, 'No attached TSR file found for this schedule.');
                 if(sendBtn) sendBtn.disabled = true;
             }else if(sendBtn){
-                sendBtn.disabled = currentTSRSubjectScenarioRequired && !getSelectedTSRSubjectScenario();
+                updateTSRAttachmentSelection(false);
             }
 
         }catch(err){
             console.error(err);
-            detectedContainer.innerHTML = '<div class="alert alert-danger small mb-0">Unable to open TSR email preview.</div>';
+            detectedContainer.innerHTML = '<div class="alert alert-danger small mb-0">Unable to open Service Files preview.</div>';
             updateTSREmailSuggestionsSummary(0, 'Unable to load suggestions. Type the recipient manually.');
             renderTSREmailAttachmentManifest([]);
             resetTSRSubjectScenarioPanel();
@@ -15705,6 +16019,7 @@ async function openTSRClientEmailModal(shiftId){
         const recipients = getTSRRecipientsForSend();
         const manualCC = getTSRManualCCForSend();
         const subjectScenario = getSelectedTSRSubjectScenario();
+        const selectedAttachmentIds = getSelectedTSRAttachmentIds();
         if(!shiftId){
             timelineAlert('Schedule ID missing.');
             return;
@@ -15714,12 +16029,10 @@ async function openTSRClientEmailModal(shiftId){
             document.getElementById('tsr-client-email')?.focus();
             return;
         }
-        if(currentTSRSubjectScenarioRequired && !subjectScenario){
-            timelineAlert('Please select the email subject scenario for this mixed TSR package.');
-            document.getElementById('tsr-email-subject-scenario')?.focus();
+        if(!selectedAttachmentIds.length){
+            timelineAlert('Please select at least one service file to preview.');
             return;
         }
-
         if(previewBtn){
             previewBtn.disabled = true;
             previewBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin me-1"></i>Preparing...';
@@ -15732,7 +16045,8 @@ async function openTSRClientEmailModal(shiftId){
                     emails: recipients,
                     manual_cc: manualCC,
                     subject_scenario: subjectScenario,
-                    attachment_manifest_signature: currentTSRAttachmentManifestSignature
+                    attachment_manifest_signature: currentTSRAttachmentManifestSignature,
+                    selected_attachment_ids: selectedAttachmentIds
                 })
             });
             const payload = await response.json().catch(() => ({}));
@@ -15763,7 +16077,7 @@ async function openTSRClientEmailModal(shiftId){
             timelineAlert('Unexpected error while preparing the email preview.');
         }finally{
             if(previewBtn){
-                previewBtn.disabled = false;
+                previewBtn.disabled = !currentTSRAttachmentManifestSignature || !getSelectedTSRAttachmentIds().length;
                 previewBtn.innerHTML = '<i class="fa-solid fa-eye me-1"></i>Preview Email';
             }
         }
@@ -15777,6 +16091,7 @@ async function openTSRClientEmailModal(shiftId){
         const recipientLabel = recipients.join(', ');
         const ccLabel = getDisplayedTSRCCLabel();
         const subjectScenario = getSelectedTSRSubjectScenario();
+        const selectedAttachmentIds = getSelectedTSRAttachmentIds();
 
         if(!shiftId){
             timelineAlert("Schedule ID missing.");
@@ -15788,24 +16103,22 @@ async function openTSRClientEmailModal(shiftId){
             document.getElementById('tsr-client-email')?.focus();
             return;
         }
-
-        if(currentTSRSubjectScenarioRequired && !subjectScenario){
-            timelineAlert('Please select the email subject scenario for this mixed TSR package.');
-            document.getElementById('tsr-email-subject-scenario')?.focus();
+        if(!selectedAttachmentIds.length){
+            timelineAlert('Please select at least one service file before sending.');
             return;
         }
 
-        const sendSignature = `${recipientLabel}|${manualCC.join(',')}|${ccLabel}|${currentTSRAttachmentManifestSignature}|${subjectScenario}`;
+        const sendSignature = `${recipientLabel}|${manualCC.join(',')}|${ccLabel}|${currentTSRAttachmentManifestSignature}|${selectedAttachmentIds.join(',')}|${subjectScenario}`;
         if(sendBtn && sendBtn.dataset.confirmReady !== '1'){
             sendBtn.dataset.confirmReady = '1';
             sendBtn.dataset.confirmSignature = sendSignature;
             sendBtn.classList.remove('btn-success');
             sendBtn.classList.add('btn-warning');
-            sendBtn.innerHTML = '<i class="fa-solid fa-check me-1"></i>Confirm Send TSR';
+            sendBtn.innerHTML = '<i class="fa-solid fa-check me-1"></i>Confirm Send Service Files';
 
             const noteEl = document.getElementById('tsr-send-confirm-note');
             if(noteEl){
-                noteEl.innerHTML = `<i class="fa-solid fa-circle-check me-1"></i>Click Confirm Send TSR to email ${escapeHtml(recipientLabel)}. CC: ${escapeHtml(ccLabel)}`;
+                noteEl.innerHTML = `<i class="fa-solid fa-circle-check me-1"></i>Click Confirm Send Service Files to email ${escapeHtml(recipientLabel)}. CC: ${escapeHtml(ccLabel)}`;
                 noteEl.classList.remove('d-none');
             }
 
@@ -15816,7 +16129,7 @@ async function openTSRClientEmailModal(shiftId){
 
         if(sendBtn && sendBtn.dataset.confirmSignature !== sendSignature){
             resetTSRSendConfirmState();
-            timelineAlert("Recipients changed. Please click Send TSR again to confirm.");
+            timelineAlert("Recipients or selected files changed. Please click Send Service Files again to confirm.");
             return;
         }
 
@@ -15837,14 +16150,15 @@ async function openTSRClientEmailModal(shiftId){
                     emails: recipients,
                     manual_cc: manualCC,
                     attachment_manifest_signature: currentTSRAttachmentManifestSignature,
-                    subject_scenario: subjectScenario
+                    subject_scenario: subjectScenario,
+                    selected_attachment_ids: selectedAttachmentIds
                 })
             });
 
             const payload = await response.json().catch(() => ({}));
 
             if(!response.ok){
-                timelineAlert(payload.message || "Unable to send TSR email.");
+                timelineAlert(payload.message || "Unable to send Service Files email.");
                 if(payload.attachments_changed){
                     await openTSRClientEmailModal(shiftId);
                 }
@@ -15868,16 +16182,21 @@ async function openTSRClientEmailModal(shiftId){
 
             const modal = bootstrap.Modal.getInstance(document.getElementById('tsrClientEmailModal'));
             if(modal) modal.hide();
+            try{
+                await refreshTimelineGrid();
+            }catch(refreshError){
+                console.warn('Timeline refresh after service-file send failed:', refreshError);
+            }
 
         }catch(err){
             console.error(err);
-            timelineAlert("Unexpected error while sending TSR email.");
+            timelineAlert("Unexpected error while sending Service Files.");
         }finally{
             if(sendBtn){
                 const attachmentCount = Number(document.getElementById('tsr-attachment-count')?.textContent || 0);
                 sendBtn.disabled = !currentTSRAttachmentManifestSignature
-                    || attachmentCount < 1
-                    || (currentTSRSubjectScenarioRequired && !getSelectedTSRSubjectScenario());
+                    || !getSelectedTSRAttachmentIds().length
+                    || attachmentCount < 1;
                 resetTSRSendConfirmState();
             }
         }
@@ -16230,7 +16549,7 @@ async function openTSRClientEmailModal(shiftId){
         dataSet.append('product_id', productValue);
 
         // Step 2: Save known client/contact emails as metadata for manually uploaded TSR files.
-        // This avoids OCR for scanned PDFs and lets Send TSR detect recipients later.
+        // This avoids OCR for scanned PDFs and lets Send Service Files detect recipients later.
         const tsrUploadRecipients = refreshTSRUploadRecipientMetadata(clientValue);
         if(tsrUploadRecipients.length){
             dataSet.append('tsr_recipient_emails', tsrUploadRecipients.join(', '));

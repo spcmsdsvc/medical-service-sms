@@ -670,7 +670,8 @@
                 <div class="card-body p-4 bg-white">
                     <div class="alert alert-light border small mb-4">
                         <strong>Purpose:</strong> Manage reusable email recipient groups from one place.
-                        TSR Client Email CC is used when sending TSR files to clients. Accounting Handoff CC is split by the requester's Engineer-profile branch: Manila/Main uses the Manila list, while Cebu/Davao uses the regional list. Travel Request Accounting, Reimbursement Accounting, Cash Advance Accounting, and Cash Advance Release remain separate groups for their own handoffs.
+                        Service Files Client Email CC is used when sending service files to clients. Accounting Handoff CC is split by the requester's Engineer-profile branch: Manila/Main uses the Manila list, while Cebu/Davao uses the regional list. Travel Request Accounting, Reimbursement Accounting, Cash Advance Accounting, and Cash Advance Release remain separate groups for their own handoffs.
+                        Service Files Client Email Subject templates remain available below for the same outbound service-file workflow.
                     </div>
 
                     <div id="email-recipient-loading" class="text-muted small fw-bold mb-3">
@@ -2390,8 +2391,8 @@
     const emailRecipientGroupFallbacks = [
         {
             key: 'tsr_client_cc',
-            label: 'TSR Client Email CC',
-            description: 'Reusable CC recipients when TSR files are emailed to clients.'
+            label: 'Service Files Client Email CC',
+            description: 'Reusable CC recipients when service files are emailed to clients.'
         },
         {
             key: 'accounting_handoff_cc',
@@ -2529,7 +2530,7 @@
 
     function emailRecipientUsageLabel(groupKey) {
         const map = {
-            tsr_client_cc: 'Used by Send TSR',
+            tsr_client_cc: 'Used by Send Service Files',
             accounting_handoff_cc: 'Used by Manila/Main Accounting handoffs',
             accounting_handoff_cc_cebu_davao: 'Used by Cebu/Davao Accounting handoffs',
             travel_accounting: 'Used by Travel Request',

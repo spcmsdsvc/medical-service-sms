@@ -2,6 +2,32 @@
 
 codex changes - 2026-09-02
 
+- Implemented selectable Service Files delivery in `app.py`: added the nullable
+  `ShiftFile.last_emailed_at` marker with additive SQLite migration and conservative
+  historical TSR-only backfill, exposed `was_sent`/`last_emailed_at` in attachment payloads,
+  validated optional `selected_attachment_ids` against the current canonical manifest,
+  preserved full-manifest stale checks, and updated only selected files after provider success.
+  Provider failures leave markers untouched; tracking failures return an explicit success warning
+  that tells the sender not to resend automatically while retaining a generalized ActivityLog row.
+- Added linked-job `service_file_delivery` summaries to normal and lite Timeline payloads with
+  overall and per-category states/counts for TSR, calibration reports, approved certificates, and
+  supporting files. HR-redacted payloads omit the summary, while linked schedule cards share the
+  server-derived state and treat absent optional artifacts as not applicable.
+- Updated `templates/timeline.html` with the Send Service Files modal, accessible per-file
+  selection, Select Unsent/Select All actions, intentional-resend status/timestamps, preview/send
+  invalidation and stale-list reload handling, calibration-only wording, desktop/hover/mobile
+  delivery badges, and post-send Timeline refresh. Updated `templates/settings.html` labels while
+  preserving internal keys/template values; added the dated release entry and bumped the embedded
+  service-worker cache to v119.
+- Added `tests/test_service_file_delivery.py` fail-first and focused coverage. The post-change
+  focused suite passes **17/17**; related email/Timeline suites pass **28/28** and **18/18**;
+  Python compilation, Jinja template compilation, inline JavaScript and service-worker parsing,
+  release JSON validation, and `git diff --check` pass. Full discovery on the package's fresh
+  disposable SQLite database ran **824 tests with 12 pre-existing failures and 1 skip**: eight
+  purchase-order setup failures, two staff-creation failures, and two stale Calibration Report
+  cache-version assertions (v114); no new Service Files failure was observed. Browser verification,
+  commit, push, deployment, and protected-artifact changes were not performed.
+
 - Published the Products Inventory usability package as commit `0505a4c` to `origin/main` after
   staging only `changes.md`, `plans.md`, `static/changelog/releases.json`, `templates/products.html`,
   and `tests/test_product_calibration_certificate.py`. `git ls-remote origin refs/heads/main`

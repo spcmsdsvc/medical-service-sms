@@ -52,6 +52,15 @@
             "admins"
           ],
           "sort_order": 50
+        },
+        {
+          "item_key": "2026-09-02-service-file-delivery",
+          "category": "Timeline",
+          "description": "Timeline cards now show whether the linked service files have not been sent, are partially sent, or are all sent. Send Service Files lets you choose unsent or intentionally resend selected TSR, calibration, and supporting files, then refreshes the delivery status after a successful send.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 60
         }
       ]
     },

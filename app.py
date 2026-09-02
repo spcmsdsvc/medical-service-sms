@@ -386,8 +386,8 @@ def is_new_workflow_path(path):
 
 EMAIL_RECIPIENT_GROUPS = {
     'tsr_client_cc': {
-        'label': 'TSR Client Email CC',
-        'description': 'Internal recipients automatically copied when TSR files are emailed to clients.'
+        'label': 'Service Files Client Email CC',
+        'description': 'Internal recipients automatically copied when service files are emailed to clients.'
     },
     'accounting_handoff_cc': {
         'label': 'Accounting Handoff CC - Manila',
@@ -508,8 +508,8 @@ EMAIL_TEMPLATE_DEFAULTS = {
         'default_template': 'NCS_TSR_{billing_marker}_Shimadzu_{client_name}_{product_name}({serial_number})_{task}_{date_mmddyyyy}.pdf'
     },
     'tsr_client_subject': {
-        'label': 'TSR Client Email Subject',
-        'description': 'Subject used when sending TSR files to clients.',
+        'label': 'Service Files Client Email Subject',
+        'description': 'Subject used when sending service files to clients.',
         'template_type': 'subject',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
@@ -517,8 +517,8 @@ EMAIL_TEMPLATE_DEFAULTS = {
         'scenario_label': 'Standard',
     },
     'tsr_client_subject_warranty': {
-        'label': 'TSR Client Email Subject - Warranty',
-        'description': 'Subject used for Warranty TSR files sent to clients.',
+        'label': 'Service Files Client Email Subject - Warranty',
+        'description': 'Subject used for Warranty service files sent to clients.',
         'template_type': 'subject',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
@@ -527,8 +527,8 @@ EMAIL_TEMPLATE_DEFAULTS = {
         'seed_from_template_key': 'tsr_client_subject',
     },
     'tsr_client_subject_foc': {
-        'label': 'TSR Client Email Subject - FOC',
-        'description': 'Subject used for FOC TSR files sent to clients.',
+        'label': 'Service Files Client Email Subject - FOC',
+        'description': 'Subject used for FOC service files sent to clients.',
         'template_type': 'subject',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
@@ -537,8 +537,8 @@ EMAIL_TEMPLATE_DEFAULTS = {
         'seed_from_template_key': 'tsr_client_subject',
     },
     'tsr_client_subject_with_po': {
-        'label': 'TSR Client Email Subject - With P.O.',
-        'description': 'Subject used for TSR files with a P.O. sent to clients.',
+        'label': 'Service Files Client Email Subject - With P.O.',
+        'description': 'Subject used for service files with a P.O. sent to clients.',
         'template_type': 'subject',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
@@ -547,8 +547,8 @@ EMAIL_TEMPLATE_DEFAULTS = {
         'seed_from_template_key': 'tsr_client_subject',
     },
     'tsr_client_subject_po_sc': {
-        'label': 'TSR Client Email Subject - With P.O. + SC',
-        'description': 'Subject used for SC TSR files with a P.O. sent to clients.',
+        'label': 'Service Files Client Email Subject - With P.O. + SC',
+        'description': 'Subject used for SC service files with a P.O. sent to clients.',
         'template_type': 'subject',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
@@ -557,8 +557,8 @@ EMAIL_TEMPLATE_DEFAULTS = {
         'seed_from_template_key': 'tsr_client_subject',
     },
     'tsr_client_subject_po_sv': {
-        'label': 'TSR Client Email Subject - With P.O. + SV',
-        'description': 'Subject used for SV TSR files with a P.O. sent to clients.',
+        'label': 'Service Files Client Email Subject - With P.O. + SV',
+        'description': 'Subject used for SV service files with a P.O. sent to clients.',
         'template_type': 'subject',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
         'scenario_group': 'tsr_client_subject',
@@ -567,7 +567,7 @@ EMAIL_TEMPLATE_DEFAULTS = {
         'seed_from_template_key': 'tsr_client_subject',
     },
     'tsr_client_subject_installation': {
-        'label': 'TSR Client Email Subject - Installation',
+        'label': 'Service Files Client Email Subject - Installation',
         'description': 'Subject used when Installation is selected in Create TSR.',
         'template_type': 'subject',
         'default_template': TSR_CLIENT_SUBJECT_DEFAULT_TEMPLATE,
@@ -1397,6 +1397,7 @@ def prevent_login_redirect_cache(response):
 
 
 _shift_file_original_filename_ready = False
+_shift_file_last_emailed_at_ready = False
 
 
 def derive_original_filename_from_stored_filename(filename):
@@ -2681,6 +2682,10 @@ class ShiftFile(db.Model):
 
     uploaded_at = db.Column(db.DateTime, default=get_manila_time)
 
+    # Timestamp of the most recent successful client-email delivery that included
+    # this exact file.  This is intentionally a marker, not a send-history table.
+    last_emailed_at = db.Column(db.DateTime, nullable=True)
+
 
 
 
@@ -3451,12 +3456,24 @@ def ensure_email_template_setting_table():
 
 def email_template_setting_to_dict(template):
     cfg = EMAIL_TEMPLATE_DEFAULTS.get(template.template_key or '', {})
+    # Keep the stored template value and internal key intact while allowing a
+    # user-facing label rename to take effect for rows created by older builds.
+    visible_label = (
+        cfg.get('label')
+        if template.template_key in TSR_CLIENT_SUBJECT_TEMPLATE_KEYS
+        else (template.label or cfg.get('label') or template.template_key or '')
+    )
+    visible_description = (
+        cfg.get('description')
+        if template.template_key in TSR_CLIENT_SUBJECT_TEMPLATE_KEYS
+        else (template.description or cfg.get('description') or '')
+    )
     return {
         'id': template.id,
         'template_key': template.template_key or '',
         'template_type': template.template_type or cfg.get('template_type') or 'subject',
-        'label': template.label or cfg.get('label') or template.template_key or '',
-        'description': template.description or cfg.get('description') or '',
+        'label': visible_label,
+        'description': visible_description,
         'template_value': template.template_value or cfg.get('default_template') or '',
         'default_template': cfg.get('default_template') or '',
         'is_active': bool(template.is_active),
@@ -4672,6 +4689,7 @@ def ensure_live_engineer_signature_schema_before_routes():
     ensure_user_hr_schedule_view_column()
     ensure_user_admin_capability_columns()
     ensure_online_tsr_submission_table()
+    ensure_shift_file_last_emailed_at_column()
     ensure_contact_designation_column()
     ensure_system_notification_table()
     ensure_changelog_tables()
@@ -17659,7 +17677,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v118-calibration-report-downloads';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v119-service-file-delivery';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -19557,6 +19575,8 @@ def settings_email_templates_reset(template_key):
             created_at=get_manila_time()
         )
 
+    template.label = cfg.get('label') or template.label or template_key
+    template.description = cfg.get('description') or template.description or ''
     template.template_value = cfg.get('default_template') or ''
     template.is_active = True
     template.updated_by_id = getattr(current_user, 'id', None)
@@ -39610,6 +39630,8 @@ def redact_timeline_payload_for_hr(payload):
         'product_id': None,
         'files': [],
         'file_details': [],
+        'service_file_delivery': None,
+        'has_linked_tsr': False,
         'travel_request_no': '',
         'travel_destination': '',
         'travel_purpose': '',
@@ -39668,7 +39690,12 @@ def timeline_file_detail_payload(file_record, certificate_approval_map=None):
         'can_delete': bool(not is_no_signature),
         'preview_url': url_for('preview_tsr_archive_file', file_id=file_record.id, scope='all') if can_preview else '',
         'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if can_download else '',
-        'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else ''
+        'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else '',
+        'was_sent': bool(getattr(file_record, 'last_emailed_at', None)),
+        'last_emailed_at': (
+            file_record.last_emailed_at.isoformat()
+            if getattr(file_record, 'last_emailed_at', None) else ''
+        ),
     }
 
 
@@ -39679,6 +39706,7 @@ def get_timeline_data():
         return denied('You are not authorized to view the calendar.')
 
     ensure_shift_file_original_filename_column()
+    ensure_shift_file_last_emailed_at_column()
 
     """
     Main calendar grid API. Maps engineers to weekly date slots.
@@ -39829,6 +39857,12 @@ def get_timeline_data():
             is_travel_block = schedule_type == 'travel'
             travel_request_id = clean_int(getattr(shift, 'travel_request_id', None))
             travel_request_rec = travel_request_map.get(travel_request_id) if is_travel_block and travel_request_id else None
+            service_file_delivery = get_shift_service_file_delivery_summary(shift)
+            service_file_tsr_total = (
+                service_file_delivery.get('categories', {})
+                .get('tsr', {})
+                .get('total_count', 0)
+            )
 
             payload = {
                 'id': shift.id,
@@ -39848,6 +39882,8 @@ def get_timeline_data():
                     timeline_file_detail_payload(file_record, certificate_approval_map)
                     for file_record in shift.files
                 ],
+                'service_file_delivery': service_file_delivery,
+                'has_linked_tsr': bool(service_file_tsr_total),
                 'engineers': assigned_engineer_ids,
                 'day_owner_engineer_id': shift.engineer_id,
                 'day_owner_engineer_name': shift.engineer.name if shift.engineer else '',
@@ -39930,6 +39966,7 @@ def get_shift_details(shift_id):
     - Existing default timeline behavior remains unchanged until frontend is patched.
     """
     ensure_shift_file_original_filename_column()
+    ensure_shift_file_last_emailed_at_column()
 
     if is_hr_schedule_only_user():
         return denied('Detailed schedule data is not available for HR schedule viewing.')
@@ -39975,6 +40012,7 @@ def get_shift_details(shift_id):
     travel_request_rec = db.session.get(TravelRequest, travel_request_id) if is_travel_block and travel_request_id else None
     travel_suggestions = build_travel_request_schedule_suggestions(travel_request_rec) if travel_request_rec else []
     certificate_approval_map = calibration_certificate_approval_map_for_files(shift.files)
+    service_file_delivery = get_shift_service_file_delivery_summary(shift)
 
     return jsonify({
         'status': 'success',
@@ -39996,7 +40034,10 @@ def get_shift_details(shift_id):
             ],
             'manual_upload_count': get_linked_schedule_manual_upload_count(shift),
             'manual_upload_limit': SCHEDULE_MANUAL_UPLOAD_LIMIT,
-            'has_linked_tsr': linked_schedule_has_tsr_filename(shift),
+            'has_linked_tsr': bool(
+                service_file_delivery.get('categories', {}).get('tsr', {}).get('total_count', 0)
+            ),
+            'service_file_delivery': service_file_delivery,
             'engineers': assigned_engineer_ids,
             'day_owner_engineer_id': shift.engineer_id,
             'day_owner_engineer_name': shift.engineer.name if shift.engineer else '',
@@ -41595,7 +41636,10 @@ def get_reports_summary():
     email_query = ActivityLog.query.filter(
         func.date(ActivityLog.timestamp) >= start_date,
         func.date(ActivityLog.timestamp) <= end_date,
-        ActivityLog.action.ilike('%Sent TSR to client%')
+        or_(
+            ActivityLog.action.ilike('%Sent TSR to client%'),
+            ActivityLog.action.ilike('%Sent Service Files to client%')
+        )
     ).order_by(ActivityLog.timestamp.desc())
     email_logs = email_query.limit(15).all()
     email_sent_count = email_query.count()
@@ -45185,6 +45229,144 @@ def ensure_shift_file_original_filename_column():
     _shift_file_original_filename_ready = True
 
 
+def _parse_service_file_email_timestamp(value):
+    """Parse a stored client-email timestamp without guessing missing history."""
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        raw_value = clean_str(value) or ''
+        if not raw_value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw_value.replace('Z', '+00:00'))
+        except (TypeError, ValueError):
+            return None
+
+    # SQLite DateTime columns in this application are timezone-naive. Keep the
+    # wall-clock value written by the existing Manila-time helpers while avoiding
+    # a mixed aware/naive comparison during conservative backfill.
+    return parsed.replace(tzinfo=None) if getattr(parsed, 'tzinfo', None) else parsed
+
+
+def ensure_shift_file_last_emailed_at_column():
+    """Add the per-file delivery marker and conservatively backfill proven TSR sends.
+
+    The sidecar records which TSR files participated in a successful historical
+    send, while the online TSR payload supplies the matching send timestamp and
+    attached-file identity. Both signals are required; calibration, certificate,
+    and generic supporting files are never inferred from a neighboring send.
+    """
+    global _shift_file_last_emailed_at_ready
+
+    if _shift_file_last_emailed_at_ready:
+        return
+
+    try:
+        with db.engine.begin() as connection:
+            table_exists = connection.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='shift_file'"
+            ).fetchone()
+            if not table_exists:
+                _shift_file_last_emailed_at_ready = True
+                return
+
+            existing_columns = {
+                row[1]
+                for row in connection.exec_driver_sql("PRAGMA table_info(shift_file)").fetchall()
+            }
+            if 'last_emailed_at' not in existing_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE shift_file ADD COLUMN last_emailed_at DATETIME"
+                )
+                print("[DB MIGRATION] Added shift_file.last_emailed_at", flush=True)
+
+            # Do not attempt historical inference until the online submission
+            # table exists. Fresh databases have no rows; older databases are
+            # upgraded by ensure_online_tsr_submission_table() in before_request.
+            online_table = connection.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='online_tsr_submission'"
+            ).fetchone()
+            if not online_table:
+                _shift_file_last_emailed_at_ready = True
+                return
+
+            try:
+                sidecar_store = load_tsr_email_metadata_store()
+            except Exception as sidecar_error:
+                print(f"[EMAIL-CLIENT] Historical delivery backfill skipped: {sidecar_error}", flush=True)
+                sidecar_store = {}
+
+            if not isinstance(sidecar_store, dict) or not sidecar_store:
+                _shift_file_last_emailed_at_ready = True
+                return
+
+            file_rows = connection.exec_driver_sql(
+                "SELECT id, shift_id, filename FROM shift_file WHERE last_emailed_at IS NULL"
+            ).fetchall()
+            if not file_rows:
+                _shift_file_last_emailed_at_ready = True
+                return
+
+            submission_rows = connection.exec_driver_sql(
+                "SELECT id, shift_id, payload_json FROM online_tsr_submission"
+            ).fetchall()
+            submissions_by_shift = {}
+            for submission_row in submission_rows:
+                submissions_by_shift.setdefault(clean_int(submission_row[1]), []).append(submission_row)
+
+            def metadata_for_file(file_id, filename):
+                keys = [f"id:{clean_int(file_id)}"]
+                if clean_str(filename):
+                    keys.append(f"filename:{clean_str(filename)}")
+                for key in keys:
+                    metadata = sidecar_store.get(key)
+                    if isinstance(metadata, dict) and metadata.get('alias_for'):
+                        metadata = sidecar_store.get(metadata.get('alias_for'))
+                    if isinstance(metadata, dict) and metadata.get('source') == 'sent_tsr_email':
+                        return metadata
+                return None
+
+            backfilled = 0
+            for file_id, shift_id, filename in file_rows:
+                if not clean_int(file_id) or not clean_int(shift_id):
+                    continue
+                # A sent_tsr_email sidecar entry is necessary but deliberately
+                # insufficient on its own: it must pair with the exact attached
+                # file marker in an online payload that carries _last_emailed_at.
+                if not metadata_for_file(file_id, filename):
+                    continue
+
+                candidates = []
+                for submission_row in submissions_by_shift.get(clean_int(shift_id), []):
+                    try:
+                        payload = json.loads(submission_row[2] or '{}')
+                    except (TypeError, ValueError):
+                        continue
+                    if not isinstance(payload, dict):
+                        continue
+                    if clean_int(payload.get('_attached_file_id')) != clean_int(file_id):
+                        continue
+                    timestamp = _parse_service_file_email_timestamp(payload.get('_last_emailed_at'))
+                    if timestamp:
+                        candidates.append(timestamp)
+
+                if not candidates:
+                    continue
+                latest_timestamp = max(candidates)
+                connection.exec_driver_sql(
+                    "UPDATE shift_file SET last_emailed_at = ? WHERE id = ? AND last_emailed_at IS NULL",
+                    (latest_timestamp, file_id),
+                )
+                backfilled += 1
+
+            if backfilled:
+                print(f"[DB MIGRATION] Backfilled {backfilled} proven TSR delivery marker(s)", flush=True)
+
+        _shift_file_last_emailed_at_ready = True
+    except Exception as last_emailed_error:
+        print(f"[EMAIL-CLIENT] Unable to ensure shift_file.last_emailed_at: {last_emailed_error}", flush=True)
+        raise
+
 
 def ensure_schedule_delete_indexes():
     """Safe live migration: add non-unique indexes used by preview/range delete.
@@ -46134,10 +46316,18 @@ def save_tsr_email_metadata_for_file_infos(file_infos, emails, source='manual_up
         existing = store.get(primary_key) if isinstance(store.get(primary_key), dict) else {}
         existing_emails = normalize_email_list(existing.get('emails') or [])
         merged_emails = normalize_email_list(existing_emails + clean_emails)
-        if merged_emails != existing_emails or not existing:
+        desired_source = clean_str(source) or 'manual_upload'
+        if (
+            merged_emails != existing_emails
+            or not existing
+            or (
+                desired_source == 'sent_tsr_email'
+                and existing.get('source') != desired_source
+            )
+        ):
             existing.update({
                 'emails': merged_emails,
-                'source': clean_str(source) or 'manual_upload',
+                'source': desired_source,
                 'updated_at': now_label
             })
             # Store helpful attachment labels when available.
@@ -46249,7 +46439,9 @@ def get_tsr_files_for_shift(shift):
     OCR/image-only TSR scanning is intentionally not included here because it
     would require heavier Railway system dependencies.
     """
-    ensure_shift_file_original_filename_column()
+    if has_app_context():
+        ensure_shift_file_original_filename_column()
+        ensure_shift_file_last_emailed_at_column()
 
     if not shift:
         return []
@@ -46338,7 +46530,12 @@ def get_tsr_files_for_shift(shift):
                 'display_name': display_name or disk_name,
                 'path': file_path,
                 'detection_method': detection_method,
-                'uploaded_at': file_rec.uploaded_at.isoformat() if file_rec.uploaded_at else ''
+                'uploaded_at': file_rec.uploaded_at.isoformat() if file_rec.uploaded_at else '',
+                'was_sent': bool(getattr(file_rec, 'last_emailed_at', None)),
+                'last_emailed_at': (
+                    file_rec.last_emailed_at.isoformat()
+                    if getattr(file_rec, 'last_emailed_at', None) else ''
+                ),
             })
 
     try:
@@ -46583,6 +46780,11 @@ def get_tsr_email_files_for_shift(shift, tsr_files=None):
                 'preview_url': f'/preview_tsr_archive_file/{file_id}',
                 'is_tsr': False,
                 'attachment_type': 'supporting',
+                'was_sent': bool(getattr(file_rec, 'last_emailed_at', None)),
+                'last_emailed_at': (
+                    file_rec.last_emailed_at.isoformat()
+                    if getattr(file_rec, 'last_emailed_at', None) else ''
+                ),
             })
             seen_supporting_ids.add(file_id)
 
@@ -46595,7 +46797,7 @@ def get_tsr_email_files_for_shift(shift, tsr_files=None):
         'supporting_image': 5,
     }
     return sorted(
-        tsr_files + supporting_files,
+        annotate_service_file_delivery_state(tsr_files + supporting_files),
         key=lambda item: (
             source_rank.get(clean_str(item.get('source_type')) or '', 9),
             clean_str(item.get('service_date')) or '',
@@ -46604,20 +46806,168 @@ def get_tsr_email_files_for_shift(shift, tsr_files=None):
     )
 
 
+def annotate_service_file_delivery_state(email_files):
+    """Attach the exact ShiftFile delivery marker to a canonical file manifest."""
+    files = list(email_files or [])
+    records_by_id = {}
+    if has_app_context():
+        file_ids = {
+            clean_int(item.get('id'))
+            for item in files
+            if isinstance(item, dict) and clean_int(item.get('id'))
+        }
+        if file_ids:
+            try:
+                ensure_shift_file_last_emailed_at_column()
+                records_by_id = {
+                    clean_int(record.id): record
+                    for record in ShiftFile.query.filter(ShiftFile.id.in_(file_ids)).all()
+                }
+            except Exception as state_error:
+                print(f'[EMAIL-CLIENT] File delivery state lookup skipped: {state_error}', flush=True)
+
+    for file_info in files:
+        if not isinstance(file_info, dict):
+            continue
+        file_id = clean_int(file_info.get('id'))
+        record = records_by_id.get(file_id)
+        last_emailed_at = file_info.get('last_emailed_at')
+        if not last_emailed_at and record is not None:
+            last_emailed_at = getattr(record, 'last_emailed_at', None)
+        if isinstance(last_emailed_at, datetime):
+            last_emailed_at = last_emailed_at.isoformat()
+        else:
+            last_emailed_at = clean_str(last_emailed_at) or ''
+        file_info['last_emailed_at'] = last_emailed_at
+        file_info['was_sent'] = bool(file_info.get('was_sent') or last_emailed_at)
+    return files
+
+
+def get_shift_service_file_delivery_summary(shift, email_files=None):
+    """Return compact delivery state for one linked schedule's canonical package."""
+    cache = None
+    cache_key = None
+    if has_request_context():
+        cache = getattr(g, '_service_file_delivery_summary_cache', None)
+        if cache is None:
+            cache = {}
+            setattr(g, '_service_file_delivery_summary_cache', cache)
+        try:
+            linked_ids = tuple(sorted(
+                clean_int(item.id)
+                for item in get_linked_schedule_file_shifts(shift)
+                if clean_int(getattr(item, 'id', None))
+            ))
+        except Exception:
+            linked_ids = (clean_int(getattr(shift, 'id', None)),)
+        cache_key = linked_ids or (clean_int(getattr(shift, 'id', None)),)
+        if cache_key in cache and email_files is None:
+            return cache[cache_key]
+
+    package = list(email_files) if email_files is not None else []
+    if email_files is None:
+        try:
+            package = get_tsr_email_files_for_shift(shift)
+        except Exception as package_error:
+            print(f'[EMAIL-CLIENT] Delivery summary package lookup skipped: {package_error}', flush=True)
+            package = []
+    package = annotate_service_file_delivery_state(package)
+
+    category_names = ('tsr', 'calibration_report', 'calibration_certificate', 'supporting')
+    category_rows = {
+        name: {'state': 'not_applicable', 'sent_count': 0, 'total_count': 0}
+        for name in category_names
+    }
+    last_sent_values = []
+    for file_info in package:
+        if not isinstance(file_info, dict):
+            continue
+        source_type = clean_str(file_info.get('source_type')) or ''
+        attachment_type = clean_str(file_info.get('attachment_type')) or ''
+        category = (
+            'tsr' if bool(file_info.get('is_tsr')) or file_info.get('attachment_type') == 'tsr' else
+            'calibration_report' if source_type == 'calibration_report' or attachment_type == 'calibration_report' or bool(file_info.get('is_calibration_report')) else
+            'calibration_certificate' if source_type == 'calibration_certificate' or attachment_type == 'calibration_certificate' or file_info.get('certificate_kind') in {'signed', 'no_signature'} else
+            'supporting'
+        )
+        row = category_rows[category]
+        row['total_count'] += 1
+        sent = bool(file_info.get('was_sent') or file_info.get('last_emailed_at'))
+        if sent:
+            row['sent_count'] += 1
+            timestamp = _parse_service_file_email_timestamp(file_info.get('last_emailed_at'))
+            if timestamp:
+                last_sent_values.append(timestamp)
+
+    for row in category_rows.values():
+        if not row['total_count']:
+            row['state'] = 'not_applicable'
+        elif row['sent_count'] <= 0:
+            row['state'] = 'not_sent'
+        elif row['sent_count'] >= row['total_count']:
+            row['state'] = 'sent'
+        else:
+            row['state'] = 'partial'
+
+    sent_count = sum(row['sent_count'] for row in category_rows.values())
+    total_count = sum(row['total_count'] for row in category_rows.values())
+    if not total_count:
+        overall = 'not_applicable'
+    elif sent_count <= 0:
+        overall = 'not_sent'
+    elif sent_count >= total_count:
+        overall = 'sent'
+    else:
+        overall = 'partial'
+
+    latest_sent = max(last_sent_values) if last_sent_values else None
+    summary = {
+        'overall': overall,
+        'sent_count': sent_count,
+        'total_count': total_count,
+        'last_sent_at': latest_sent.isoformat() if latest_sent else '',
+        'categories': category_rows,
+    }
+    if cache is not None and cache_key is not None and email_files is None:
+        cache[cache_key] = summary
+    return summary
+
+
+# Descriptive alias for callers that prefer a builder-style name.
+build_service_file_delivery_summary = get_shift_service_file_delivery_summary
+
+
 def serialize_tsr_email_attachment(file_info):
+    """Serialize one canonical email attachment with per-file delivery state."""
+    if isinstance(file_info, dict):
+        value = file_info.get
+    else:
+        value = lambda key, default=None: getattr(file_info, key, default)
+    last_emailed_at = value('last_emailed_at')
+    if isinstance(last_emailed_at, datetime):
+        last_emailed_at = last_emailed_at.isoformat()
+    else:
+        last_emailed_at = clean_str(last_emailed_at) or ''
+
+    was_sent = bool(
+        value('was_sent', False)
+        or last_emailed_at
+    )
     return {
-        'id': file_info.get('id'),
-        'filename': file_info.get('filename'),
-        'display_name': file_info.get('display_name') or file_info.get('filename'),
-        'uploaded_at': file_info.get('uploaded_at'),
-        'service_date': file_info.get('service_date'),
-        'source_type': file_info.get('source_type') or 'uploaded',
-        'source_label': file_info.get('source_label') or 'Uploaded TSR',
-        'revision_no': file_info.get('revision_no'),
-        'file_size': clean_int(file_info.get('file_size')) or 0,
-        'preview_url': file_info.get('preview_url') or '',
-        'is_tsr': bool(file_info.get('is_tsr')),
-        'attachment_type': file_info.get('attachment_type') or ('tsr' if file_info.get('is_tsr') else 'supporting'),
+        'id': value('id'),
+        'filename': value('filename'),
+        'display_name': value('display_name') or value('filename'),
+        'uploaded_at': value('uploaded_at'),
+        'service_date': value('service_date'),
+        'source_type': value('source_type') or 'uploaded',
+        'source_label': value('source_label') or 'Uploaded TSR',
+        'revision_no': value('revision_no'),
+        'file_size': clean_int(value('file_size')) or 0,
+        'preview_url': value('preview_url') or '',
+        'is_tsr': bool(value('is_tsr')),
+        'attachment_type': value('attachment_type') or ('tsr' if value('is_tsr') else 'supporting'),
+        'was_sent': was_sent,
+        'last_emailed_at': last_emailed_at,
     }
 
 
@@ -47051,8 +47401,49 @@ def build_tsr_client_email_bodies(shift, sender_name, font_key=None):
 
 def append_tsr_email_correction_notice(shift, text_body, html_body):
     """Append the active TSR revision notice to both email body formats."""
-    latest_submission = get_latest_online_tsr_submission_for_shift(shift.id)
-    revision_no = clean_int(getattr(latest_submission, 'revision_no', None)) if latest_submission else None
+    # A calibration-only follow-up intentionally does not claim that a revised
+    # TSR was attached. prepare_tsr_client_email_message sets this request-local
+    # marker while building the preview/send message; the normal three-argument
+    # signature remains compatible with older callers and tests.
+    selected_file_ids = getattr(shift, '_service_file_selected_ids', None)
+    latest_submission = None
+    revision_no = None
+    if selected_file_ids is None:
+        latest_submission = get_latest_online_tsr_submission_for_shift(shift.id)
+        revision_no = clean_int(getattr(latest_submission, 'revision_no', None)) if latest_submission else None
+    if selected_file_ids is not None:
+        selected_file_ids = {
+            clean_int(file_id)
+            for file_id in selected_file_ids
+            if clean_int(file_id)
+        }
+        selected_submissions = []
+        try:
+            candidate_shifts = get_linked_schedule_file_shifts(shift)
+        except Exception:
+            candidate_shifts = [shift]
+        seen_shift_ids = set()
+        for candidate_shift in candidate_shifts or [shift]:
+            candidate_shift_id = clean_int(getattr(candidate_shift, 'id', None))
+            if not candidate_shift_id or candidate_shift_id in seen_shift_ids:
+                continue
+            seen_shift_ids.add(candidate_shift_id)
+            candidate_submission = get_latest_online_tsr_submission_for_shift(candidate_shift_id)
+            candidate_payload = parse_online_tsr_payload_json(candidate_submission)
+            if clean_int(candidate_payload.get('_attached_file_id')) in selected_file_ids:
+                selected_submissions.append(candidate_submission)
+        if not selected_submissions:
+            return text_body, html_body
+        latest_submission = max(
+            selected_submissions,
+            key=lambda submission: (
+                clean_int(getattr(submission, 'revision_no', None)) or 1,
+                clean_str(getattr(submission, 'created_at', None)) or '',
+                clean_int(getattr(submission, 'id', None)) or 0,
+            ),
+        )
+        revision_no = clean_int(getattr(latest_submission, 'revision_no', None)) if latest_submission else None
+
     if not latest_submission or (revision_no or 1) <= 1:
         return text_body, html_body
 
@@ -47073,6 +47464,77 @@ def append_tsr_email_correction_notice(shift, text_body, html_body):
     return text_body, html_body
 
 
+def resolve_service_file_selection(email_attachments, payload):
+    """Resolve optional selected_attachment_ids against the current full manifest."""
+    available_files = list(email_attachments or [])
+    available_ids = {
+        clean_int(item.get('id'))
+        for item in available_files
+        if isinstance(item, dict) and clean_int(item.get('id'))
+    }
+    if 'selected_attachment_ids' not in (payload or {}):
+        return available_files, sorted(available_ids), None, 200
+
+    raw_ids = (payload or {}).get('selected_attachment_ids')
+    if not isinstance(raw_ids, (list, tuple, set)):
+        return None, [], 'selected_attachment_ids must be an array.', 400
+
+    selected_ids = []
+    malformed = False
+    for raw_id in raw_ids:
+        parsed_id = clean_int(raw_id)
+        if not parsed_id:
+            malformed = True
+            continue
+        if parsed_id not in selected_ids:
+            selected_ids.append(parsed_id)
+
+    if malformed:
+        return None, [], 'selected_attachment_ids contains an invalid file ID.', 400
+    if not selected_ids:
+        return None, [], 'Select at least one service file before continuing.', 400
+
+    unknown_ids = sorted(set(selected_ids) - available_ids)
+    if unknown_ids:
+        return None, [], (
+            'The selected attachments/service files are no longer available. Please reload the attachment list and review it again.'
+        ), 409
+
+    selected_set = set(selected_ids)
+    selected_files = [
+        file_info for file_info in available_files
+        if clean_int(file_info.get('id')) in selected_set
+    ]
+    return selected_files, selected_ids, None, 200
+
+
+def mark_service_files_emailed(file_infos, sent_at=None):
+    """Record one successful provider delivery against the selected ShiftFiles."""
+    def file_value(item, key, default=None):
+        return item.get(key, default) if isinstance(item, dict) else getattr(item, key, default)
+
+    file_ids = [
+        clean_int(file_value(item, 'id'))
+        for item in file_infos or []
+        if clean_int(file_value(item, 'id'))
+    ]
+    file_ids = list(dict.fromkeys(file_ids))
+    if not file_ids:
+        raise ValueError('No selected service files were available for delivery tracking.')
+
+    ensure_shift_file_last_emailed_at_column()
+    records = ShiftFile.query.filter(ShiftFile.id.in_(file_ids)).all()
+    records_by_id = {clean_int(record.id): record for record in records}
+    missing_ids = sorted(set(file_ids) - set(records_by_id))
+    if missing_ids:
+        raise LookupError(f'Selected service file(s) no longer exist: {missing_ids}')
+
+    timestamp = sent_at if isinstance(sent_at, datetime) else get_manila_time()
+    for file_id in file_ids:
+        records_by_id[file_id].last_emailed_at = timestamp
+    return [records_by_id[file_id] for file_id in file_ids]
+
+
 def prepare_tsr_client_email_message(shift, payload):
     """Build and validate the exact TSR client email used by preview and send."""
     payload = payload or {}
@@ -47089,10 +47551,29 @@ def prepare_tsr_client_email_message(shift, payload):
     previewed_manifest_signature = clean_str(payload.get('attachment_manifest_signature')) or ''
     if previewed_manifest_signature and previewed_manifest_signature != current_manifest_signature:
         return None, (
-            'The email attachments have changed. Please reopen Send TSR and review the updated files before sending.'
+            'The email attachments have changed. Please reopen Send Service Files and review the updated files before sending.'
         ), 409
 
-    subject_package = get_tsr_subject_package_metadata(tsr_files)
+    selected_attachments, selected_attachment_ids, selection_error, selection_status = resolve_service_file_selection(
+        email_attachments,
+        payload,
+    )
+    if selection_error:
+        return None, selection_error, selection_status
+
+    selected_id_set = set(selected_attachment_ids)
+    selected_tsr_files = [
+        file_info for file_info in tsr_files
+        if clean_int(file_info.get('id')) in selected_id_set
+    ]
+    # Build body/notice decisions from the selected subset while retaining the
+    # old three-argument helper calls for compatibility with existing extensions.
+    previous_selected_ids = getattr(shift, '_service_file_selected_ids', None)
+    previous_selected_has_tsr = getattr(shift, '_service_file_selected_has_tsr', None)
+    shift._service_file_selected_ids = selected_attachment_ids
+    shift._service_file_selected_has_tsr = bool(selected_tsr_files)
+
+    subject_package = get_tsr_subject_package_metadata(selected_tsr_files)
     requested_subject_scenario = normalize_tsr_subject_scenario(payload.get('subject_scenario'))
     if subject_package['mixed']:
         if not requested_subject_scenario:
@@ -47106,12 +47587,24 @@ def prepare_tsr_client_email_message(shift, payload):
     subject = build_tsr_client_email_subject(
         shift,
         subject_scenario=subject_scenario,
-        tsr_files=tsr_files,
+        tsr_files=selected_tsr_files,
     )
     sender_name = current_user.username.capitalize() if current_user and current_user.is_authenticated else 'Scheduler'
     font_key = clean_str(payload.get('font_key')) or DEFAULT_TSR_EMAIL_FONT_KEY
     text_body, html_body = build_tsr_client_email_bodies(shift, sender_name, font_key=font_key)
     text_body, html_body = append_tsr_email_correction_notice(shift, text_body, html_body)
+
+    if not selected_tsr_files:
+        # Keep the normal TSR wording untouched for existing sends, but make a
+        # calibration/supporting-only follow-up truthful about its contents.
+        text_body = text_body.replace(
+            'Attached is the Technical Service Report (TSR) for the completed service visit.',
+            'Attached are the selected service files for the completed service visit. No TSR document is attached in this follow-up.',
+        )
+        html_body = html_body.replace(
+            'Attached is the Technical Service Report (TSR) for the completed service visit.',
+            'Attached are the selected service files for the completed service visit. No TSR document is attached in this follow-up.',
+        )
 
     recipient_keys = {email_addr.lower() for email_addr in recipient_emails}
     system_cc = [
@@ -47141,6 +47634,7 @@ def prepare_tsr_client_email_message(shift, payload):
         'subject': subject,
         'text_body': text_body,
         'attachment_manifest_signature': current_manifest_signature,
+        'selected_attachment_ids': sorted(selected_id_set),
         'subject_scenario': subject_scenario,
     }
     message_signature = hashlib.sha256(
@@ -47159,11 +47653,18 @@ def prepare_tsr_client_email_message(shift, payload):
         'font_stack': get_tsr_email_font_stack(font_key),
         'text_body': text_body,
         'html_body': html_body,
-        'tsr_files': tsr_files,
-        'email_attachments': email_attachments,
+        'tsr_files': selected_tsr_files,
+        'available_tsr_files': tsr_files,
+        'available_attachments': email_attachments,
+        'selected_attachments': selected_attachments,
+        'email_attachments': selected_attachments,
+        'selected_attachment_ids': selected_attachment_ids,
         'attachment_manifest_signature': current_manifest_signature,
         'message_signature': message_signature,
-        'attachments': [serialize_tsr_email_attachment(item) for item in email_attachments],
+        # Preview/send callers must see the exact selected package. The raw
+        # available manifest remains available separately for signature and
+        # stale-selection validation.
+        'attachments': [serialize_tsr_email_attachment(item) for item in selected_attachments],
         'sender_name': sender_name,
     }, None, 200
 
@@ -47191,11 +47692,12 @@ def preview_tsr_client_email(shift_id):
         return jsonify({'message': 'Schedule not found.'}), 404
 
     if not can_work_on_existing_schedule_shift(shift):
-        return denied('You are not authorized to send TSR for this schedule.')
+        return denied('You are not authorized to send Service Files for this schedule.')
 
     tsr_files = get_tsr_files_for_shift(shift)
     email_attachments = get_tsr_email_files_for_shift(shift, tsr_files=tsr_files)
     attachment_manifest_signature = get_tsr_email_attachment_manifest_signature(email_attachments)
+    delivery_summary = get_shift_service_file_delivery_summary(shift, email_files=email_attachments)
     manual_upload_count = get_linked_schedule_manual_upload_count(shift)
     saved_email_candidates = get_saved_tsr_email_metadata_candidates(tsr_files)
     detected_emails = merge_tsr_email_candidate_lists(
@@ -47268,6 +47770,12 @@ def preview_tsr_client_email(shift_id):
         'service_date': shift.start_time.strftime('%Y-%m-%d') if shift.start_time else '',
         'tsr_files': [serialize_tsr_email_attachment(file_info) for file_info in tsr_files],
         'attachments': [serialize_tsr_email_attachment(file_info) for file_info in email_attachments],
+        'selected_attachment_ids': [
+            clean_int(file_info.get('id'))
+            for file_info in email_attachments
+            if not file_info.get('was_sent') and clean_int(file_info.get('id'))
+        ],
+        'service_file_delivery': delivery_summary,
         'tsr_count': len(tsr_files),
         'supporting_count': max(0, len(email_attachments) - len(tsr_files)),
         'manual_upload_count': manual_upload_count,
@@ -47301,19 +47809,19 @@ def preview_tsr_client_email(shift_id):
 @app.route('/preview_tsr_client_email_message/<int:shift_id>', methods=['POST'])
 @login_required
 def preview_tsr_client_email_message(shift_id):
-    """Return the complete, read-only message that Send TSR would deliver."""
+    """Return the complete, read-only message that Send Service Files would deliver."""
     shift = db.session.get(Shift, shift_id)
     if not shift:
         return no_store_jsonify({'message': 'Schedule not found.'}, 404)
     if not can_work_on_existing_schedule_shift(shift):
-        return denied('You are not authorized to send TSR for this schedule.')
+        return denied('You are not authorized to send Service Files for this schedule.')
 
     message, error_message, status_code = prepare_tsr_client_email_message(
         shift,
         request.get_json(silent=True) or {},
     )
     if not message:
-        response_payload = {'message': error_message or 'Unable to prepare email preview.'}
+        response_payload = {'message': error_message or 'Unable to prepare Service Files preview.'}
         if status_code == 409:
             response_payload['attachments_changed'] = True
         return no_store_jsonify(response_payload, status_code)
@@ -47330,6 +47838,12 @@ def preview_tsr_client_email_message(shift_id):
         'text_body': message['text_body'],
         'html_body': message['html_body'],
         'attachments': message['attachments'],
+        'selected_attachment_ids': message['selected_attachment_ids'],
+        'available_attachment_ids': [
+            clean_int(file_info.get('id'))
+            for file_info in message.get('available_attachments', [])
+            if clean_int(file_info.get('id'))
+        ],
         'attachment_manifest_signature': message['attachment_manifest_signature'],
         'message_signature': message['message_signature'],
     })
@@ -47358,12 +47872,12 @@ def send_tsr_client_email(shift_id):
         return jsonify({'message': 'Schedule not found.'}), 404
 
     if not can_work_on_existing_schedule_shift(shift):
-        return denied('You are not authorized to send TSR for this schedule.')
+        return denied('You are not authorized to send Service Files for this schedule.')
 
     payload = request.get_json(silent=True) or {}
     message, error_message, status_code = prepare_tsr_client_email_message(shift, payload)
     if not message:
-        response_payload = {'message': error_message or 'Unable to prepare TSR email.'}
+        response_payload = {'message': error_message or 'Unable to prepare Service Files email.'}
         if status_code == 409:
             response_payload['attachments_changed'] = True
         return jsonify(response_payload), status_code
@@ -47378,43 +47892,92 @@ def send_tsr_client_email(shift_id):
     )
 
     if not email_sent:
-        return jsonify({'message': email_message or 'Unable to send TSR email.'}), 500
+        return jsonify({'message': email_message or 'Unable to send Service Files email.'}), 500
 
-    save_tsr_email_metadata_for_file_infos(
-        message['tsr_files'],
-        message['recipient_emails'],
-        source='sent_tsr_email'
-    )
-    remember_warning = ''
+    sent_at = get_manila_time()
+    tracking_warning = ''
+    tracked_records = []
+    recipients_label = ', '.join(message['recipient_emails'])
     try:
-        latest_submission = get_latest_online_tsr_submission_for_shift(shift.id)
-        if latest_submission:
-            latest_payload = parse_online_tsr_payload_json(latest_submission)
-            latest_payload['_last_emailed_at'] = get_manila_time().isoformat()
-            latest_payload['_sent_recipient_emails'] = message['recipient_emails']
-            latest_payload['_sent_cc_emails'] = message['final_cc']
-            latest_submission.payload_json = json.dumps(latest_payload, ensure_ascii=False)
+        # Provider success is the only point at which markers may be written.
+        # The selected subset includes supporting/certificate files as well as TSRs.
+        tracked_records = mark_service_files_emailed(message['selected_attachments'], sent_at=sent_at)
+        if message['tsr_files']:
+            save_tsr_email_metadata_for_file_infos(
+                message['tsr_files'],
+                message['recipient_emails'],
+                source='sent_tsr_email'
+            )
+
+            selected_tsr_ids = {
+                clean_int(file_info.get('id'))
+                for file_info in message['tsr_files']
+                if clean_int(file_info.get('id'))
+            }
+            source_shift_ids = {
+                clean_int(file_info.get('shift_id'))
+                for file_info in message['tsr_files']
+                if clean_int(file_info.get('shift_id'))
+            }
+            for source_shift_id in source_shift_ids:
+                latest_submission = get_latest_online_tsr_submission_for_shift(source_shift_id)
+                if not latest_submission:
+                    continue
+                latest_payload = parse_online_tsr_payload_json(latest_submission)
+                # A submission marker represents one generated TSR. Do not
+                # stamp it when the selected package omitted that file.
+                if clean_int(latest_payload.get('_attached_file_id')) not in selected_tsr_ids:
+                    continue
+                latest_payload['_last_emailed_at'] = sent_at.isoformat()
+                latest_payload['_sent_recipient_emails'] = message['recipient_emails']
+                latest_payload['_sent_cc_emails'] = message['final_cc']
+                latest_submission.payload_json = json.dumps(latest_payload, ensure_ascii=False)
+
         remembered_cc = remember_tsr_client_cc_emails(message['manual_cc'])
+        cc_log = f" | CC: {', '.join(message['final_cc'])}" if message['final_cc'] else ""
+        db.session.add(ActivityLog(
+            user=message['sender_name'],
+            action=f"Sent Service Files to client: {recipients_label}{cc_log} | Font: {message['font_key']} | {shift.title}"
+        ))
+        db.session.commit()
     except Exception as email_meta_error:
         db.session.rollback()
         remembered_cc = get_user_remembered_tsr_client_cc_emails()
-        remember_warning = ' Email sent, but remembered CC could not be updated.'
+        tracking_warning = (
+            ' Email sent, but per-file sent status could not be recorded. '
+            'Please do not resend automatically; ask an administrator to verify delivery.'
+        )
         print(
-            f"[EMAIL-CLIENT] Online TSR email metadata update skipped for shift_id={shift.id}: {email_meta_error}",
+            f"[EMAIL-CLIENT] Service-file delivery tracking failed for shift_id={shift.id}: {email_meta_error}",
             flush=True
         )
+        # Provider success should still leave an auditable activity entry when
+        # the optional per-file marker transaction fails.  Retry this write
+        # after the rollback so the warning does not erase evidence of the
+        # successful provider delivery.
+        try:
+            cc_log = f" | CC: {', '.join(message['final_cc'])}" if message['final_cc'] else ""
+            db.session.add(ActivityLog(
+                user=message['sender_name'],
+                action=f"Sent Service Files to client: {recipients_label}{cc_log} | Font: {message['font_key']} | {shift.title}"
+            ))
+            db.session.commit()
+        except Exception as activity_log_error:
+            db.session.rollback()
+            print(
+                f"[EMAIL-CLIENT] Successful delivery activity log could not be recorded for shift_id={shift.id}: {activity_log_error}",
+                flush=True
+            )
 
-    recipients_label = ', '.join(message['recipient_emails'])
-    cc_log = f" | CC: {', '.join(message['final_cc'])}" if message['final_cc'] else ""
-    db.session.add(ActivityLog(
-        user=message['sender_name'],
-        action=f"Sent TSR to client: {recipients_label}{cc_log} | Font: {message['font_key']} | {shift.title}"
-    ))
-    db.session.commit()
+    if tracked_records and not tracking_warning:
+        sent_label = sent_at.isoformat()
+        for file_info in message['selected_attachments']:
+            file_info['was_sent'] = True
+            file_info['last_emailed_at'] = sent_label
 
     return jsonify({
         'status': 'success',
-        'message': f'TSR sent to {recipients_label}.{remember_warning}',
+        'message': f'Service files sent to {recipients_label}.{tracking_warning}',
         'email': recipients_label,
         'emails': message['recipient_emails'],
         'recipient_count': len(message['recipient_emails']),
@@ -47427,6 +47990,11 @@ def send_tsr_client_email(shift_id):
         'subject': message['subject'],
         'font_key': message['font_key'],
         'font_stack': message['font_stack'],
+        'selected_attachment_ids': message['selected_attachment_ids'],
+        'attachment_states': [
+            serialize_tsr_email_attachment(file_info)
+            for file_info in message['selected_attachments']
+        ],
         'attachments': [
             file_info.get('display_name') or file_info.get('filename')
             for file_info in message['email_attachments']
@@ -50171,6 +50739,8 @@ def initialize_database():
         ensure_engineer_signature_column()
         ensure_shift_override_columns()
         ensure_shift_file_original_filename_column()
+        ensure_online_tsr_submission_table()
+        ensure_shift_file_last_emailed_at_column()
         ensure_product_contract_column()
         ensure_calibration_certificate_approval_table()
         ensure_schedule_delete_indexes()
