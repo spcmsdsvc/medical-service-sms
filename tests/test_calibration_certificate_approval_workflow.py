@@ -13,6 +13,7 @@ import tempfile
 import unittest
 import uuid
 from datetime import datetime, timedelta
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
 from pypdf import PdfReader
@@ -299,6 +300,249 @@ class CalibrationCertificateServerTests(unittest.TestCase):
                 app.config['UPLOAD_FOLDER'] = original_upload_folder
                 with app.app_context():
                     db.session.remove()
+
+
+class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
+    def _create_fixture(self):
+        app = app_module.app
+        db = app_module.db
+        with app.app_context():
+            db.create_all()
+            suffix = uuid.uuid4().hex[:10]
+            requester = app_module.User(
+                username=f'calibration_report_requester_{suffix}',
+                password='test-only', role='engineer',
+            )
+            approver = app_module.User(
+                username=f'calibration_report_approver_{suffix}',
+                password='test-only', role='approver', can_approve_requests=True,
+            )
+            administrator = app_module.User(
+                username=f'calibration_report_admin_{suffix}',
+                password='test-only', role='superadmin',
+            )
+            unauthorized = app_module.User(
+                username=f'calibration_report_unauthorized_{suffix}',
+                password='test-only', role='engineer',
+            )
+            db.session.add_all([requester, approver, administrator, unauthorized])
+            db.session.flush()
+            engineer = app_module.Engineer(
+                user_id=requester.id,
+                employee_id=f'CAL-REPORT-{suffix}',
+                name='Calibration Report Requester',
+                initials='CR',
+                branch='Manila',
+            )
+            client = app_module.Client(name=f'Calibration Report Clinic {suffix}')
+            db.session.add_all([engineer, client])
+            db.session.flush()
+            product = app_module.Product(
+                serial_number=f'CAL-REPORT-{suffix}',
+                name='Calibration Report Machine',
+                client_id=client.id,
+                bsid=f'B-CAL-REPORT-{suffix}',
+            )
+            db.session.add(product)
+            db.session.flush()
+            shift = app_module.Shift(
+                title='Calibration Report Approval',
+                start_time=datetime.now(),
+                end_time=datetime.now() + timedelta(hours=1),
+                engineer_id=engineer.id,
+                client_id=client.id,
+                product_id=product.serial_number,
+                status='Completed',
+            )
+            db.session.add(shift)
+            db.session.flush()
+            report_name = f'Calibration Report {suffix}.docx'
+            disk_name = f'shift_{shift.id}_{uuid.uuid4().hex[:16]}_calibration_report.docx'
+            report_file = app_module.ShiftFile(
+                shift_id=shift.id,
+                filename=disk_name,
+                original_filename=report_name,
+            )
+            db.session.add(report_file)
+            db.session.flush()
+            payload = complete_payload()
+            payload['_generated_calibration_report'] = {
+                'source': 'generated_calibration_report',
+                'file_id': report_file.id,
+                'filename': report_name,
+                'fingerprint': f'fingerprint-{suffix}',
+            }
+            submission = app_module.OnlineTsrSubmission(
+                shift_id=shift.id,
+                tsr_number=f'TSR-CAL-REPORT-{suffix}',
+                client_name=client.name,
+                product_name=product.name,
+                serial_number=product.serial_number,
+                submitted_by_user_id=requester.id,
+                submitted_by_name=engineer.name,
+                status='completed',
+                submission_token=f'calibration-report-{suffix}',
+                payload_json=json.dumps(payload),
+                revision_no=1,
+                is_latest=True,
+            )
+            db.session.add(submission)
+            db.session.flush()
+            report_file.online_tsr_submission_id = submission.id
+            approval = app_module.CalibrationCertificateApproval(
+                shift_id=shift.id,
+                online_tsr_submission_id=submission.id,
+                requester_user_id=requester.id,
+                revision_no=1,
+                is_latest=True,
+                status='Pending',
+                certificate_number=f'2026/{suffix}-B-43',
+                mapped_data_json=json.dumps({'Textfield': f'2026/{suffix}-B-43'}),
+                template_sha256=app_module.CALIBRATION_CERTIFICATE_RUNTIME_SHA256,
+                unsigned_artifact_path=f'calibration-certificates/{suffix}.pdf',
+            )
+            db.session.add(approval)
+            db.session.commit()
+            fixture = {
+                'approval_id': approval.id,
+                'file_id': report_file.id,
+                'shift_id': shift.id,
+                'submission_id': submission.id,
+                'report_name': report_name,
+                'disk_name': disk_name,
+                'requester_id': requester.id,
+                'approver_id': approver.id,
+                'administrator_id': administrator.id,
+                'unauthorized_id': unauthorized.id,
+            }
+            db.session.remove()
+            return fixture
+
+    def _invoke_download(self, user_id, file_id, approval_id):
+        app = app_module.app
+        db = app_module.db
+        request_path = (
+            f'/download_tsr_archive_file/{file_id}'
+            f'?scope=all&approval_id={approval_id}'
+        )
+        with app.app_context(), app.test_request_context(request_path):
+            user = db.session.get(app_module.User, user_id)
+            app_module.login_user(user)
+            try:
+                response = app_module.download_tsr_archive_file(file_id)
+                response.direct_passthrough = False
+                response.get_data()
+                response.close()
+                return response
+            finally:
+                app_module.logout_user()
+                db.session.remove()
+
+    def _download(self, fixture, user_id, storage_root, extra_file_id=None):
+        path = pathlib.Path(storage_root) / fixture['disk_name']
+        path.write_bytes(b'finalized calibration report docx bytes')
+        file_id = extra_file_id or fixture['file_id']
+        return self._invoke_download(user_id, file_id, fixture['approval_id'])
+
+    def test_serializer_exposes_exact_report_filename_and_approval_scoped_url(self):
+        fixture = self._create_fixture()
+        with app_module.app.app_context(), app_module.app.test_request_context('/'):
+            approval = app_module.db.session.get(
+                app_module.CalibrationCertificateApproval,
+                fixture['approval_id'],
+            )
+            item = app_module.calibration_certificate_approval_to_dict(approval)
+            app_module.db.session.remove()
+
+        self.assertEqual(item['calibration_report_filename'], fixture['report_name'])
+        parsed = urlsplit(item['calibration_report_download_url'])
+        self.assertEqual(parsed.path, f"/download_tsr_archive_file/{fixture['file_id']}")
+        self.assertEqual(
+            parse_qs(parsed.query),
+            {'scope': ['all'], 'approval_id': [str(fixture['approval_id'])]},
+        )
+
+    def test_approval_scoped_download_allows_requester_approver_and_admin(self):
+        fixture = self._create_fixture()
+        app = app_module.app
+        original_upload_folder = app.config.get('UPLOAD_FOLDER')
+        with tempfile.TemporaryDirectory(prefix='calibration_report_approval_download_') as storage_root:
+            app.config['UPLOAD_FOLDER'] = storage_root
+            try:
+                report_path = pathlib.Path(storage_root) / fixture['disk_name']
+                report_path.write_bytes(b'finalized calibration report docx bytes')
+                cases = (
+                    ('requester', fixture['requester_id']),
+                    ('approver', fixture['approver_id']),
+                    ('administrator', fixture['administrator_id']),
+                )
+                for label, user_id in cases:
+                    with self.subTest(label=label):
+                        with patch.object(
+                            app_module,
+                            'calibration_certificate_requester_can_view',
+                            return_value=label == 'requester',
+                        ), patch.object(
+                            app_module,
+                            'calibration_certificate_approver_can_act',
+                            return_value=label == 'approver',
+                        ), patch.object(
+                            app_module,
+                            'is_admin_authorized',
+                            return_value=label == 'administrator',
+                        ):
+                            response = self._invoke_download(
+                                user_id,
+                                fixture['file_id'],
+                                fixture['approval_id'],
+                            )
+                        self.assertEqual(response.status_code, 200)
+                        self.assertEqual(response.data, b'finalized calibration report docx bytes')
+                        self.assertIn(
+                            f'filename="{fixture["report_name"]}"',
+                            response.headers.get('Content-Disposition', ''),
+                        )
+
+            finally:
+                app.config['UPLOAD_FOLDER'] = original_upload_folder
+
+    def test_approval_scoped_download_denies_unauthorized_user_and_mismatched_file(self):
+        fixture = self._create_fixture()
+        app = app_module.app
+        db = app_module.db
+        original_upload_folder = app.config.get('UPLOAD_FOLDER')
+        with tempfile.TemporaryDirectory(prefix='calibration_report_approval_denial_') as storage_root:
+            app.config['UPLOAD_FOLDER'] = storage_root
+            try:
+                unauthorized_response = self._download(
+                    fixture,
+                    fixture['unauthorized_id'],
+                    storage_root,
+                )
+                self.assertEqual(unauthorized_response.status_code, 403)
+
+                with app.app_context():
+                    mismatched = app_module.ShiftFile(
+                        shift_id=fixture['shift_id'],
+                        online_tsr_submission_id=fixture['submission_id'],
+                        filename=f"shift_{fixture['shift_id']}_{uuid.uuid4().hex[:16]}_unrelated.docx",
+                        original_filename='Unrelated Attachment.docx',
+                    )
+                    db.session.add(mismatched)
+                    db.session.commit()
+                    mismatched_id = mismatched.id
+                    db.session.remove()
+                pathlib.Path(storage_root, mismatched.filename).write_bytes(b'unrelated docx bytes')
+
+                with patch.object(app_module, 'calibration_certificate_approver_can_act', return_value=True):
+                    mismatched_response = self._invoke_download(
+                        fixture['approver_id'],
+                        mismatched_id,
+                        fixture['approval_id'],
+                    )
+                self.assertEqual(mismatched_response.status_code, 403)
+            finally:
+                app.config['UPLOAD_FOLDER'] = original_upload_folder
 
     def test_product_bsid_and_submission_contracts_are_present(self):
         source = (ROOT / "app.py").read_text(encoding="utf-8")

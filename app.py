@@ -16413,6 +16413,41 @@ def products_page_calibration_certificate_can_view(approval):
     )
 
 
+def calibration_certificate_generated_report_file(approval):
+    """Return the exact generated DOCX linked to a certificate submission."""
+    if not approval:
+        return None
+
+    approval_shift_id = clean_int(getattr(approval, 'shift_id', None))
+    submission_id = clean_int(getattr(approval, 'online_tsr_submission_id', None))
+    if not approval_shift_id or not submission_id:
+        return None
+
+    submission = getattr(approval, 'online_tsr_submission', None)
+    if not submission or clean_int(getattr(submission, 'id', None)) != submission_id:
+        submission = db.session.get(OnlineTsrSubmission, submission_id)
+    if not submission or clean_int(getattr(submission, 'shift_id', None)) != approval_shift_id:
+        return None
+
+    payload = parse_online_tsr_payload_json(submission)
+    marker = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
+    report_file_id = clean_int(marker.get('file_id')) if isinstance(marker, dict) else None
+    if not report_file_id:
+        return None
+
+    report_file = db.session.get(ShiftFile, report_file_id)
+    if not report_file:
+        return None
+    if (
+        clean_int(getattr(report_file, 'shift_id', None)) != approval_shift_id or
+        clean_int(getattr(report_file, 'online_tsr_submission_id', None)) != submission_id or
+        not calibration_report_filename_is_docx(get_shift_file_display_name(report_file)) or
+        not is_system_generated_calibration_report_file(report_file)
+    ):
+        return None
+    return report_file
+
+
 def calibration_certificate_approval_to_dict(approval, include_urls=True):
     payload = {}
     try:
@@ -16421,6 +16456,7 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
         payload = {}
     shift = getattr(approval, 'shift', None)
     product = getattr(shift, 'product', None) if shift else None
+    generated_report_file = calibration_certificate_generated_report_file(approval)
     item = {
         'id': approval.id,
         'module': 'calibration_certificate',
@@ -16451,6 +16487,8 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
         'artifact_created_at': approval.artifact_created_at.isoformat() if approval.artifact_created_at else None,
         'signed_shift_file_id': approval.signed_shift_file_id,
         'no_signature_shift_file_id': approval.no_signature_shift_file_id,
+        'calibration_report_filename': get_shift_file_display_name(generated_report_file) if generated_report_file else '',
+        'calibration_report_download_url': '',
     }
     if include_urls:
         item['unsigned_url'] = url_for('calibration_certificate_pdf', approval_id=approval.id, artifact='unsigned')
@@ -16461,6 +16499,13 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
         if approval.no_signature_shift_file_id and calibration_certificate_no_signature_admin_can_view(approval):
             item['no_signature_url'] = url_for('calibration_certificate_pdf', approval_id=approval.id, artifact='no_signature')
             item['no_signature_preview_url'] = url_for('calibration_certificate_preview', approval_id=approval.id, artifact='no_signature')
+        if generated_report_file:
+            item['calibration_report_download_url'] = url_for(
+                'download_tsr_archive_file',
+                file_id=generated_report_file.id,
+                scope='all',
+                approval_id=approval.id,
+            )
     return item
 
 
@@ -16657,6 +16702,28 @@ def calibration_certificate_approver_can_act(approval):
         approval and is_approval_center_user() and
         can_user_approve_for_requester(current_user, approval.requester_user_id, 'calibration_certificate')
     )
+
+
+def calibration_certificate_report_approval_for_file_download(file_record, approval_id):
+    """Authorize an approval-scoped download for its exact generated report."""
+    approval_id = clean_int(approval_id)
+    if not file_record or not approval_id:
+        return None
+
+    approval = db.session.get(CalibrationCertificateApproval, approval_id)
+    if not approval:
+        return None
+    if not (
+        calibration_certificate_requester_can_view(approval) or
+        calibration_certificate_approver_can_act(approval) or
+        is_admin_authorized()
+    ):
+        return None
+
+    generated_report_file = calibration_certificate_generated_report_file(approval)
+    if not generated_report_file or clean_int(generated_report_file.id) != clean_int(file_record.id):
+        return None
+    return approval
 
 
 @app.route('/submit_calibration_certificate/<int:submission_id>', methods=['POST'])
@@ -41010,7 +41077,7 @@ def get_tsr_archive_file_candidate_paths(disk_name, display_name=None):
     return candidates
 
 
-def _resolve_tsr_archive_file_for_preview(file_id):
+def _resolve_tsr_archive_file_for_preview(file_id, approval_id=None):
     """Return validated TSR archive file info for preview/download routes."""
     print(f"[TSR-ARCHIVE] Resolving file_id={file_id} path={request.path}", flush=True)
 
@@ -41020,7 +41087,13 @@ def _resolve_tsr_archive_file_for_preview(file_id):
 
     shift = db.session.get(Shift, file_rec.shift_id)
     scope = tsr_archive_requested_scope()
-    if not user_can_view_shift_tsr_archive(shift, scope):
+    if approval_id is not None:
+        if not calibration_certificate_report_approval_for_file_download(file_rec, approval_id):
+            return None, _tsr_archive_error_response(
+                f'You do not have permission to open Calibration Report file #{file_id}.',
+                403
+            )
+    elif not user_can_view_shift_tsr_archive(shift, scope):
         return None, _tsr_archive_error_response(
             f'You do not have permission to open TSR file #{file_id} with scope={scope}.',
             403
@@ -41385,7 +41458,10 @@ def preview_tsr_archive_content(file_id):
 @login_required
 def download_tsr_archive_file(file_id):
     """Authenticated TSR archive download with engineer/admin visibility guard."""
-    resolved, error_response = _resolve_tsr_archive_file_for_preview(file_id)
+    resolved, error_response = _resolve_tsr_archive_file_for_preview(
+        file_id,
+        approval_id=request.args.get('approval_id'),
+    )
     if error_response:
         return error_response
 

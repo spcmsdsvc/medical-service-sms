@@ -42,6 +42,16 @@
             "everyone"
           ],
           "sort_order": 40
+        },
+        {
+          "item_key": "2026-09-02-approval-center-calibration-report-link",
+          "category": "Approval Center",
+          "description": "Calibration Certificate approvers can now open the exact generated Calibration Report DOCX from the certificate review modal before approving or returning it. The link is restricted to the related requester, assigned approver, or authorized administrator; generic TSR archive access is unchanged.",
+          "audiences": [
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 50
         }
       ]
     },

@@ -53,6 +53,125 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Approval Center — Calibration Report Link
+
+**Status:** In progress
+**Approved:** 2026-09-02
+**Detailed:** 2026-09-02
+**Execution authorization:** The owner separately authorized implementation, commit, and push on
+2026-09-02 with `PLEASE IMPLEMENT THIS PLAN:` followed by the complete approved package. Work must
+remain isolated from the shared root worktree, whose dirty files belong to another task.
+
+### Context and intended outcome
+
+Calibration Certificate approvers currently see the certificate details and embedded certificate
+preview in Approval Center, but cannot open the finalized Calibration Report DOCX that the
+certificate submission was built from. Add an authenticated `Download Calibration Report (DOCX)`
+link to the certificate detail modal. The link must resolve only to the exact generated report
+belonging to that certificate submission, so an approver can inspect the source report before
+approving it without broadening generic TSR archive access.
+
+### Decisions taken
+
+1. Reuse the existing generated-report `ShiftFile` and the submission's
+   `_generated_calibration_report` marker. Do not infer identity from a filename alone.
+2. Match the approval submission, report `ShiftFile`, shift, marker `file_id`, and DOCX filename
+   before serializing a report link or authorizing a report download.
+3. Permit the approval-scoped report link only for the assigned approver, the certificate
+   requester, or an authorized administrator. Preserve existing generic TSR archive visibility,
+   `scope=my|all` behavior, and network-only download semantics.
+4. Render a safe new-tab link with `target="_blank"` and `rel="noopener"`; render an unavailable
+   message when the serializer has no valid report metadata. Preserve the certificate preview and
+   Approve/Return controls.
+5. Keep the report DOCX-only workflow. Do not add PDF conversion, a second preview route, schema
+   changes, migrations, or a service-worker cache bump because `/download_tsr_archive` is already
+   network-only.
+
+### Investigation
+
+1. `app.py:12895-12919` already identifies a system-generated Calibration Report by checking the
+   submission link, matching shift, marker source, and exact marker `file_id`.
+2. `app.py:16416-16470` serializes Calibration Certificate approval data and is reused by the
+   Approval Center detail endpoint. It already emits certificate preview/download URLs.
+3. `app.py:16648-16665` contains the existing requester and assigned-approver predicates, while
+   `app.py:41013-41119` validates archive files and accepts only generated report DOCX files in
+   the existing archive workflow.
+4. `app.py:41384-41429` serves authenticated archive downloads through the shared resolver. The
+   resolver's generic archive branch must remain unchanged when no approval context is supplied.
+5. `templates/approvals.html:5773-5801` builds the Calibration Certificate detail modal with
+   escaped metadata, an embedded certificate preview, and the existing decision controls.
+6. `tests/test_calibration_certificate_approval_workflow.py` provides disposable-DB workflow
+   coverage and `tests/test_approval_center_wording.py` provides source-level modal contract
+   coverage. `tests/test_reports_archive_pagination.py` confirms generated report DOCX identity
+   is already required by the generic archive validator.
+
+### Execution steps
+
+1. Add this complete approved record to `plans.md` with status `In progress`, and confirm the
+   shared root worktree remains untouched. Done means all edits occur only in the clean
+   `codex/calibration-report-approval` worktree.
+2. Extend `tests/test_calibration_certificate_approval_workflow.py` with positive controls for
+   serializer report metadata, the exact approval-scoped file authorization, and successful DOCX
+   download, plus denial controls for an unauthorized user and a mismatched report file. Run these
+   fail-first against the unchanged application and record the expected failures.
+3. Add a small `app.py` resolver adjacent to the Calibration Certificate serializer that loads the
+   submission marker, verifies the approval/shift/submission/file relationships and DOCX name, and
+   returns only the exact generated `ShiftFile`. Add `calibration_report_filename` and
+   `calibration_report_download_url` to `calibration_certificate_approval_to_dict`.
+4. Extend `_resolve_tsr_archive_file_for_preview` in `app.py` only when an `approval_id` query
+   parameter is present: authorize the exact generated report for the requester, assigned
+   approver, or authorized administrator, then continue through the existing storage, file-type,
+   and download checks. Leave generic archive requests and network-only headers intact.
+5. Update the Calibration Certificate branch of `templates/approvals.html` to show a Calibration
+   Report panel with the escaped DOCX link and safe new-tab attributes, or a clear unavailable
+   message when the link is absent. Keep the certificate iframe, optional print-copy controls,
+   return remarks, and decision controls intact.
+6. Extend `tests/test_approval_center_wording.py` for the report panel, escaped URL expression,
+   download label, `target="_blank"`, `rel="noopener"`, and unavailable state. Keep the existing
+   preview-only URL assertions.
+7. Update the existing 2026-09-02 entry in `static/changelog/releases.json` with the approver-
+   facing report-link release item. Update the current dated section in `changes.md` with the
+   exact user-visible, authorization, test, and compatibility changes. No protected artifact or
+   other task file may be staged.
+8. Self-review the diff and run the focused fail-first and post-fix approval/archive tests, related
+   tests, Python compilation, Jinja parsing, inline JavaScript parsing, release JSON validation,
+   and `git diff --check`. Run the full discovered suite against a fresh disposable external
+   SQLite database; report unrelated failures truthfully. Browser automation, production database
+   or storage changes, manual redeploys, and Railway-variable changes are excluded.
+9. Before publication, verify the remote `main` head is still the recorded baseline. Commit only
+   `app.py`, `templates/approvals.html`, the two approval test files, `static/changelog/releases.json`,
+   `changes.md`, and `plans.md` (plus no generated/protected files). If `origin/main` advanced,
+   rebase or cherry-pick only this feature in the clean worktree. Push only this feature to
+   `origin/main`, verify `git ls-remote origin refs/heads/main`, and query Railway deployment
+   metadata if available without changing production settings or disturbing the shared root.
+
+### Deliberately excluded
+
+The shared dirty root and its other task files are excluded. No changes to `scheduler.db`,
+handoffs, `.claude/`, `output/`, `tmp/`, generated artifacts, database schema/migrations, report
+generation, certificate preview/PDF behavior, generic archive policy, service-worker cache,
+browser automation, production database/storage, Railway variables, or manual deployment are
+authorized by this plan.
+
+### Verification
+
+The positive controls must fail before the resolver, serializer, archive authorization, and modal
+markup exist, then pass after implementation. Focused workflow/archive and wording tests must pass;
+related approval/archive tests, Python compilation, Jinja compilation, inline JavaScript parsing,
+release JSON parsing, and `git diff --check` must pass. The full suite must run on a disposable
+external SQLite database only. The browser sequence is intentionally not run under the project
+Codex-app safety rule; the server/client source contracts provide the proportional verification
+for this additive link.
+
+### Risks
+
+The primary risk is exposing a different TSR attachment through an approval link. Exact marker,
+submission, shift, file, and DOCX checks plus mismatch/unauthorized tests limit that blast radius.
+The second risk is changing generic archive access; keeping approval authorization as an explicit
+query-parameter branch and testing the existing archive path protects current engineer/admin
+behavior. Missing physical storage remains an ordinary archive error and renders no dead modal
+link. No schema, cache, or generated-document compatibility risk is introduced.
+
 ## Products Inventory — Identity-First List Usability Pass
 
 **Status:** Executed — 0505a4c

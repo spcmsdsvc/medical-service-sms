@@ -92,6 +92,14 @@ class ApprovalCenterWordingTests(unittest.TestCase):
             self.source,
         )
 
+    def test_calibration_certificate_modal_exposes_safe_report_download_or_unavailable_state(self):
+        self.assertIn("data.calibration_report_download_url", self.source)
+        self.assertIn("data.calibration_report_filename", self.source)
+        self.assertIn("Download Calibration Report (DOCX)", self.source)
+        self.assertIn('href="${approvalEscape(data.calibration_report_download_url)}"', self.source)
+        self.assertIn('target="_blank" rel="noopener"', self.source)
+        self.assertIn("The finalized Calibration Report is unavailable for this submission.", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()
