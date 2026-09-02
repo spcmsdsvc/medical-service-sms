@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-02-product-calibration-certificates",
+      "release_date": "2026-09-02",
+      "title": "Product Calibration Certificate Links",
+      "summary": "Product Inventory now shows machines with current approved calibration certificates.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-02-product-calibration-certificates-everyone",
+          "category": "Product Inventory",
+          "description": "Machines with a current approved signed Calibration Certificate now show the certificate number and a View Certificate link that opens the secure certificate preview in a new tab. Pending, returned, unsigned, and historical revisions remain hidden.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-01-quarterly-po-computed-amount",
       "release_date": "2026-09-01",
       "title": "Quarterly P.O. Computed Amounts",

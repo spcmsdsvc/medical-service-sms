@@ -53,6 +53,227 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Show approved Calibration Certificates on Products
+
+**Status:** In progress
+**Approved:** 2026-09-02
+**Detailed:** 2026-09-02
+**Execution authorization:** The owner separately authorized implementation on 2026-09-02 with
+`PLEASE IMPLEMENT THIS PLAN:` followed by the complete approved package. This authorizes the
+scoped local implementation and verification only. Certificate preview access, database/schema
+changes outside this package, browser automation, commit, push, Railway, deployment, and
+production actions remain bounded by the scope below.
+
+### Context and intended outcome
+
+The Calibration Report and Calibration Certificate workflow is already tied to a machine through
+the existing `CalibrationCertificateApproval.shift_id -> Shift.product_id -> Product.serial_number`
+relationship. The signed approved certificate is an immutable `ShiftFile` attached to the same
+service shift; the report remains a generated DOCX in the existing TSR/report workflow.
+
+The Products page currently exposes inventory, BSID, owner, warranty, contract, and status data but
+does not indicate whether a machine has a current approved signed Calibration Certificate. The
+intended outcome is a read-only Product Inventory projection of the newest approved certificate for
+each machine. A visible `View Certificate` link opens the existing embedded PDF preview in a new
+tab.
+
+### Decisions taken
+
+1. Products shows only the latest approved signed certificate for a machine. Pending, Returned,
+   Superseded, unsigned review, no-signature print-copy, sample, and historical certificates are
+   not displayed as available certificates.
+2. If multiple current approved certificates are associated with a machine through different
+   service shifts, select the newest by `CalibrationCertificateApproval.approved_at DESC`, then
+   approval ID descending as the deterministic tie-breaker.
+3. A newer revision that has made an older approval non-latest hides the older certificate from the
+   Product Inventory current view, preserving the existing latest-revision semantics.
+4. Product Inventory shows the certificate only; no Calibration Report DOCX link or DOCX preview is
+   added to this package.
+5. Any authenticated user who can access the Products page may preview a current approved signed
+   certificate, including users without requester/assigned-engineer status. Unsigned and
+   no-signature artifacts remain protected by their existing authorization rules.
+6. The existing Shift-to-Product relationship remains authoritative. No direct Product foreign key,
+   approval schema column, migration, certificate-history UI, or storage lifecycle change is added.
+7. The Products desktop table gets a `Calibration Certificate` column. A certificate-bearing row
+   shows a compact available state, certificate number/date, and `View Certificate`; an empty row
+   shows `No certificate on file`. The mobile card gets the equivalent accessible block.
+8. The existing embedded preview route is reused with the signed artifact. The link uses a normal
+   same-origin anchor with `target="_blank"` and `rel="noopener"`; no forced download is added.
+
+### Investigation
+
+1. `app.py:2483-2508` defines `Product` with serial number as the machine primary key and
+   `app.py:2693-2720` defines `Shift.product_id` as the existing machine link.
+2. `app.py:2786-2826` defines `CalibrationCertificateApproval`, including `shift_id`, revision/
+   status/latest fields, approval timestamps, and signed/no-signature `ShiftFile` references.
+3. `app.py:16320-16370` serializes certificate metadata and existing preview URLs. The signed
+   preview is `/calibration_certificate_preview/<approval_id>/signed`.
+4. `app.py:16627-16674` already reads the signed PDF and returns
+   `render_embedded_pdf_preview_shell()` with no-cache headers. The existing route authorizes
+   requesters, assigned approvers, and authorized administrators; this package adds the narrowly
+   scoped current-Product viewer condition only for signed approved artifacts.
+5. `app.py:23002-23026` owns `/get_products` and currently returns inventory/contract fields. A
+   single batch query is required so certificate lookup does not perform one approval query per
+   Product.
+6. `templates/products.html:92-108` owns desktop table headings,
+   `:613-684` owns mobile cards, and `:793-844` owns desktop rendering. The page already loads
+   `/get_products` with `cache: no-store`; post-save rendering preserves prior fields through the
+   existing local Product object merge.
+7. The inline service worker at `app.py:17496` does not precache `/products_page`, so changing
+   this server-rendered page and its API does not require a cache-version bump.
+8. Existing dirty owner work is present in `Handoffs/08-11-26 handoff.md`, `scheduler.db`,
+   `.claude/`, the handoff artifact, `output/`, and `tmp/`. Those files are protected and are not
+   part of this package.
+
+### Interfaces and compatibility
+
+`GET /get_products` retains every existing field and adds:
+
+```json
+{
+  "calibration_certificate": null
+}
+```
+
+or, when a current approved signed certificate exists:
+
+```json
+{
+  "calibration_certificate": {
+    "approval_id": 123,
+    "certificate_number": "2026-0820-B-43",
+    "calibration_date": "2026/08/20",
+    "next_calibration_date": "2027/08/20",
+    "preview_url": "/calibration_certificate_preview/123/signed"
+  }
+}
+```
+
+The nested field is additive and is ignored by existing Timeline, Clients, Travel Request, and
+offline reference consumers. The preview route remains authenticated and returns HTML containing
+the embedded PDF rather than a downloadable response.
+
+### Numbered execution steps
+
+1. **Preflight and record the package.** Re-read `AGENTS.md`, `changes.md`, this plan, current
+   Git status/diff, the affected Product/certificate source, templates, and tests. Preserve the
+   dirty handoff, database, `.claude/`, handoff artifact, `output/`, `tmp/`, and unrelated work.
+   Do not access production or Railway state.
+2. **Add fail-first tests.** Create
+   `tests/test_product_calibration_certificate.py` with disposable external database/storage
+   setup. Add controls for API serialization, latest approval selection, newer-pending hiding,
+   status/artifact exclusion, Product-page preview access, unsigned/no-signature denial, and
+   desktop/mobile markup/new-tab/empty-state contracts. Run the focused controls against the
+   unchanged implementation and retain the expected failures before application edits.
+3. **Implement the server projection.** In `app.py`, add a batch helper that ensures the existing
+   approval table, joins approvals to `Shift`, filters `Approved` + `is_latest` + signed-file
+   records, orders by approval time and ID, and maps the first row per Product serial. Serialize
+   only the approved certificate ID, number, mapped calibration dates, and signed preview URL.
+   Return `null` when no current approved signed record is available.
+4. **Implement preview authorization.** Add a narrowly scoped Product Inventory viewer predicate
+   matching the existing Products-page access boundary. Extend only the signed branch of
+   `calibration_certificate_preview()` to allow that predicate when the approval is current,
+   approved, signed, and still linked to an existing Product. Keep unsigned/no-signature preview
+   and PDF-download authorization unchanged.
+5. **Update the Products UI.** In `templates/products.html`, render the new desktop column and
+   responsive mobile certificate block from the nested API object. Escape all dynamic values,
+   use accessible link labels, `target="_blank"`, `rel="noopener"`, and a minimum mobile touch
+   target. Keep the existing sort keys, filters, print behavior, add/edit flow, and in-place
+   post-save list update unchanged.
+6. **Update release and change records.** Add a user-facing Product Inventory item to
+   `static/changelog/releases.json`. Update `changes.md` under `codex changes - 2026-09-02` with
+   the API, UI, authorization, compatibility, and verification facts. Do not bump the service
+   worker because Products is not cached.
+7. **Verify locally.** Run the focused new tests, related Product/certificate/TSR tests, Python
+   compilation, release JSON parsing, template/source checks, and `git diff --check`. Run the full
+   isolated discovery suite where feasible using disposable external database paths; remove only
+   those test-created temporary files exactly after use. Inspect the final diff and confirm all
+   protected artifacts remain untouched. Browser automation is prohibited by project rules.
+8. **Close the implementation gate.** Append truthful local execution evidence to this plan,
+   including exact test results, skipped checks, and limitations. Leave Git history, staging,
+   commit, push, Railway, deployment, production data, and browser state unchanged because they
+   require separate authorization.
+
+### Deliberately excluded
+
+- Calibration Report display, DOCX preview, DOCX download link, or report-history UI on Products.
+- Pending/Returned/Superseded/unsigned/no-signature status indicators on Products.
+- Certificate history, counts, new filters, new sort keys, live polling, or automatic refresh.
+- A new Product-to-approval database relationship, schema migration, backfill, or storage change.
+- Changes to certificate generation, approval routing, revision behavior, email selection, or
+  certificate deletion/overwrite behavior.
+- Browser automation, Codex navigation, `scheduler.db`, deployment, Railway variables, production
+  data, commit, push, merge, or rebase.
+
+### Verification and acceptance
+
+- A Product with a current approved signed certificate returns the nested metadata object and shows
+  `View Certificate` plus its certificate number/date on desktop and mobile.
+- A Product with no certificate, only a sample, only a pending/returned/superseded approval, only
+  an unsigned artifact, or a stale historical approval returns `calibration_certificate: null`.
+- When multiple current approved certificates exist for one Product, the newest approval time wins;
+  equal times use the highest approval ID.
+- A non-requester/non-assigned user who can access Products receives the signed preview HTML in a
+  Flask test-client/request-context check, including the embedded PDF shell and no
+  `Content-Disposition` download header.
+- The same Product-page user cannot use this new access path for unsigned or no-signature copies.
+- Existing requester, approver, administrator, archive, TSR, and Product CRUD behavior remains
+  covered by the related suite.
+- Source checks confirm both desktop/mobile rendering, escaped metadata, accessible labels,
+  `target="_blank"`, `rel="noopener"`, and `No certificate on file` fallback.
+- Python/Jinja/JSON checks, focused and related tests, isolated full discovery, and `git diff
+  --check` are reported with exact pass/fail/skip results. Browser verification is not run.
+
+### After implementation
+
+The implementation report must list changed files, fail-first evidence, exact focused/related/full
+test results, API and authorization behavior, preview checks, release/change journal updates,
+service-worker decision, protected-worktree audit, deviations, and material limitations. The
+implementation is complete locally but review, commit, push, Railway, and deployment remain
+separate owner-authorized actions.
+
+### Local execution evidence — 2026-09-02
+
+- Recorded this complete plan before implementation, then received the separate owner go-ahead
+  in the current `PLEASE IMPLEMENT THIS PLAN:` instruction.
+- Fail-first focused run against the unchanged application: `tests.test_product_calibration_certificate`
+  ran **7 tests**, with **2 failures and 4 errors**; the failures were the expected missing API,
+  preview authorization, and Products markup behavior.
+- Final focused run: `tests.test_product_calibration_certificate` passed **7/7**. Final related
+  run of `tests.test_product_contract_status` and
+  `tests.test_calibration_certificate_approval_workflow` passed **25/25**.
+- The new Product API projection returns only `approval_id`, `certificate_number`,
+  `calibration_date`, `next_calibration_date`, and the signed embedded-preview URL. The batch
+  query joins `CalibrationCertificateApproval` to `Shift` and its signed `ShiftFile`, filters
+  `Approved` + latest + signed records, and selects by approval timestamp then ID per Product.
+- The signed preview now permits active Products-page users for current approved signed records
+  linked to an existing Product. Unsigned/no-signature preview and PDF download routes retain
+  their existing authorization behavior. Flask test-client verification passed with HTML content,
+  embedded `data:application/pdf;base64` shell, no `Content-Disposition` download header, and
+  no-store cache headers.
+- Template/source checks passed for the desktop/mobile blocks, escaped metadata, accessible
+  new-tab attributes, touch-sized mobile link, and empty-state text. In-memory `app.py`
+  compilation, release JSON parsing, and `git diff --check` passed.
+- Full isolated discovery ran **803 tests** with **12 failures and 1 skip**. The 12 failures are
+  outside this package in existing P.O. renewal/endpoint, staff-creation, and Calibration Report
+  contract tests; the focused and related Product/Calibration Certificate coverage passed.
+- Added the Product Inventory release item and implementation evidence to `changes.md`. No
+  service-worker bump was made because Products is not in the cached app shell and the API/preview
+  responses are no-store. No browser automation, production/database action, commit, push,
+  Railway, or deployment action was performed. The pre-existing dirty handoff, `scheduler.db`,
+  `.claude/`, handoff artifact, `output/`, and `tmp/` remain outside the intended changes.
+- No deviation from the approved product scope was identified. The plan remains `In progress`
+  locally because no commit was authorized; review and publication are separate gates.
+
+### Risks
+
+The main risks are exposing a non-current or unsigned certificate, selecting the wrong certificate
+when a machine has multiple service shifts, issuing one database query per Product, or breaking
+existing Product consumers with a changed response shape. Status/latest/signed filtering, a batch
+lookup, additive nested JSON, route-level authorization, and focused revision/artifact tests are
+the safety net. The existing Shift-to-Product association and serial-number correction semantics
+remain unchanged; this package does not redesign schedule reassignment or certificate history.
+
 ## P.O. Renewal Dates Synced to Product
 
 **Status:** Executed — f42d595

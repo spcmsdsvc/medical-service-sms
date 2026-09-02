@@ -96,6 +96,7 @@
                         <th><button type="button" class="product-sort-btn" data-sort-key="start" onclick="setProductSort('start')">Start Date <span class="product-sort-indicator" data-sort-indicator="start">↕</span></button></th>
                         <th><button type="button" class="product-sort-btn" data-sort-key="end" onclick="setProductSort('end')">End Date <span class="product-sort-indicator" data-sort-indicator="end">↕</span></button></th>
                         <th><button type="button" class="product-sort-btn" data-sort-key="status" onclick="setProductSort('status')">Status <span class="product-sort-indicator" data-sort-indicator="status">↕</span></button></th>
+                        <th>Calibration Certificate</th>
                         <th class="no-print text-end">Actions</th>
                     </tr>
                 </thead>
@@ -676,11 +677,47 @@ function renderProductMobileCards(data){
                     ${p.under_contract ? 'Under Contract' : 'No Contract'}
                 </div>
 
+                <div class="product-mobile-certificate">
+                    <div class="product-mobile-certificate-label">
+                        <i class="fa-solid fa-certificate"></i>
+                        <span>Calibration Certificate</span>
+                    </div>
+                    ${renderProductCertificateBlock(p, true)}
+                </div>
+
                 <div class="product-mobile-actions">
                     ${actions}
                 </div>
             </div>`;
     }).join('');
+}
+
+function renderProductCertificateBlock(product, mobile = false){
+    const certificate = product.calibration_certificate;
+    const blockClass = mobile
+        ? 'product-certificate-block product-certificate-block-mobile'
+        : 'product-certificate-block';
+
+    if(!certificate){
+        return `<div class="${blockClass}"><span class="product-certificate-empty">No certificate on file</span></div>`;
+    }
+
+    const serial = escapeHtml(product.serial_number || 'product');
+    const certificateNumber = escapeHtml(certificate.certificate_number || 'Certificate available');
+    const calibrationDate = escapeHtml(certificate.calibration_date || 'Date unavailable');
+    const previewUrl = escapeHtml(certificate.preview_url || '#');
+
+    return `
+        <div class="${blockClass}">
+            <div class="product-certificate-meta">
+                <span class="product-certificate-number">${certificateNumber}</span>
+                <span class="product-certificate-date">Calibrated ${calibrationDate}</span>
+            </div>
+            <a class="product-certificate-link" href="${previewUrl}" target="_blank" rel="noopener" aria-label="View calibration certificate ${certificateNumber} for ${serial}">
+                <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                <span>View Certificate</span>
+            </a>
+        </div>`;
 }
 
 function getProductSortValue(product, key){
@@ -825,6 +862,8 @@ function renderTable(data) {
                     </button>`;
             }
 
+            const certificateMarkup = renderProductCertificateBlock(p);
+
             body.innerHTML += `
                 <tr data-serial="${escapeHtml(p.serial_number)}">
                     <td><strong>${escapeHtml(p.serial_number)}</strong></td>
@@ -834,6 +873,7 @@ function renderTable(data) {
                     <td><small>${escapeHtml(p.start_warranty || '-')}</small></td>
                     <td><small>${escapeHtml(p.end_warranty || '-')}</small></td>
                     <td>${sBadge}</td>
+                    <td>${certificateMarkup}</td>
                     <td class="text-end no-print">
                         <div class="btn-group">${actionButtons}</div>
                     </td>
@@ -1304,6 +1344,108 @@ function renderTable(data) {
         white-space: normal;
         line-height: 1.25;
         text-align: center;
+    }
+
+    .product-certificate-block {
+        min-width: 12rem;
+        display: grid;
+        gap: 0.3rem;
+    }
+
+    .product-certificate-meta {
+        display: grid;
+        gap: 0.08rem;
+        line-height: 1.2;
+    }
+
+    .product-certificate-number {
+        color: var(--app-text, #0f172a);
+        font-size: 0.78rem;
+        font-weight: 900;
+        overflow-wrap: anywhere;
+    }
+
+    .product-certificate-date {
+        color: var(--app-muted, #64748b);
+        font-size: 0.7rem;
+        font-weight: 700;
+    }
+
+    .product-certificate-link {
+        width: fit-content;
+        min-height: 2.25rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border-radius: 0.65rem;
+        padding: 0.35rem 0.65rem;
+        background: #eff6ff;
+        color: #0d6efd;
+        font-size: 0.74rem;
+        font-weight: 900;
+        text-decoration: none;
+    }
+
+    .product-certificate-link:hover,
+    .product-certificate-link:focus-visible {
+        background: #dbeafe;
+        color: #084298;
+        text-decoration: underline;
+    }
+
+    .product-certificate-empty {
+        color: var(--app-muted, #64748b);
+        font-size: 0.76rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .product-mobile-certificate {
+        margin-top: 0.85rem;
+        padding: 0.8rem;
+        border: 1px solid #dbeafe;
+        background: #f8fbff;
+        border-radius: 0.9rem;
+    }
+
+    .product-mobile-certificate-label {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        color: #1e3a8a;
+        font-size: 0.74rem;
+        font-weight: 900;
+        margin-bottom: 0.45rem;
+    }
+
+    .product-certificate-block-mobile {
+        min-width: 0;
+    }
+
+    .product-certificate-block-mobile .product-certificate-link {
+        width: 100%;
+        min-height: 2.6rem;
+        justify-content: center;
+    }
+
+    :root[data-app-theme="dark"] .product-certificate-link {
+        background: #172554;
+        color: #bfdbfe;
+    }
+
+    :root[data-app-theme="dark"] .product-certificate-link:hover,
+    :root[data-app-theme="dark"] .product-certificate-link:focus-visible {
+        background: #1e3a8a;
+        color: #dbeafe;
+    }
+
+    :root[data-app-theme="dark"] .product-mobile-certificate {
+        border-color: #1e3a8a;
+        background: #111d36;
+    }
+
+    :root[data-app-theme="dark"] .product-mobile-certificate-label {
+        color: #bfdbfe;
     }
 
     @media print {

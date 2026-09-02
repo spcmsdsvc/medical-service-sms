@@ -5825,6 +5825,22 @@ def is_hr_schedule_only_user(user=None):
     )
 
 
+def can_access_products_page(user=None):
+    """Return whether an active account can use the Products page surface."""
+    target = user or current_user
+    if not (
+        target and
+        getattr(target, 'is_authenticated', False) and
+        bool(getattr(target, 'is_active', True))
+    ):
+        return False
+    return bool(
+        not is_approver_only_user(target) and
+        not is_stock_inventory_only_user(target) and
+        not is_hr_schedule_only_user(target)
+    )
+
+
 def is_hr_schedule_engineer_profile(engineer=None):
     """Return True when an Engineer profile belongs to an HR Schedule Viewer account.
 
@@ -16319,6 +16335,84 @@ def calibration_certificate_private_path(stored_name):
     return os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(stored_name))
 
 
+def latest_approved_calibration_certificates_for_products(products):
+    """Return minimal metadata for one current approved signed certificate per Product.
+
+    The approval workflow remains shift-owned. This batch lookup follows the existing
+    Shift-to-Product relationship once, then chooses the newest eligible approval for each
+    Product without exposing the larger approval snapshot used by certificate workflows.
+    """
+    product_serials = {
+        product.serial_number
+        for product in (products or [])
+        if clean_str(getattr(product, 'serial_number', None))
+    }
+    if not product_serials:
+        return {}
+
+    ensure_calibration_certificate_approval_table()
+    approvals = (
+        CalibrationCertificateApproval.query
+        .join(Shift, CalibrationCertificateApproval.shift_id == Shift.id)
+        .join(ShiftFile, CalibrationCertificateApproval.signed_shift_file_id == ShiftFile.id)
+        .options(joinedload(CalibrationCertificateApproval.shift))
+        .filter(
+            Shift.product_id.in_(product_serials),
+            ShiftFile.shift_id == Shift.id,
+            CalibrationCertificateApproval.status == 'Approved',
+            CalibrationCertificateApproval.is_latest.is_(True),
+            CalibrationCertificateApproval.signed_shift_file_id.isnot(None),
+        )
+        .order_by(
+            CalibrationCertificateApproval.approved_at.desc(),
+            CalibrationCertificateApproval.id.desc(),
+        )
+        .all()
+    )
+
+    result = {}
+    for approval in approvals:
+        product_id = clean_str(getattr(getattr(approval, 'shift', None), 'product_id', None))
+        if product_id in product_serials and product_id not in result:
+            result[product_id] = product_calibration_certificate_to_dict(approval)
+    return result
+
+
+def product_calibration_certificate_to_dict(approval):
+    """Serialize the minimal certificate metadata shown by Product Inventory."""
+    payload = {}
+    try:
+        payload = json.loads(approval.mapped_data_json or '{}')
+    except (TypeError, ValueError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    return {
+        'approval_id': approval.id,
+        'certificate_number': approval.certificate_number or '',
+        'calibration_date': payload.get('Text4', '') or '',
+        'next_calibration_date': payload.get('Text5', '') or '',
+        'preview_url': f'/calibration_certificate_preview/{approval.id}/signed',
+    }
+
+
+def products_page_calibration_certificate_can_view(approval):
+    """Authorize Product-page viewers for current approved signed certificates only."""
+    shift = getattr(approval, 'shift', None) if approval else None
+    product = getattr(shift, 'product', None) if shift else None
+    signed_file_id = clean_int(getattr(approval, 'signed_shift_file_id', None)) if approval else None
+    signed_file = db.session.get(ShiftFile, signed_file_id) if signed_file_id else None
+    return bool(
+        approval and
+        can_access_products_page() and
+        approval.status == 'Approved' and
+        bool(approval.is_latest) and
+        product and
+        signed_file and
+        signed_file.shift_id == approval.shift_id
+    )
+
+
 def calibration_certificate_approval_to_dict(approval, include_urls=True):
     payload = {}
     try:
@@ -16636,7 +16730,12 @@ def calibration_certificate_preview(approval_id, artifact):
     if artifact == 'no_signature':
         if not calibration_certificate_no_signature_admin_can_view(approval):
             return denied('Only an authorized administrator may view the no-signature certificate.')
-    elif not (calibration_certificate_requester_can_view(approval) or calibration_certificate_approver_can_act(approval) or is_admin_authorized()):
+    elif not (
+        (artifact == 'signed' and products_page_calibration_certificate_can_view(approval)) or
+        calibration_certificate_requester_can_view(approval) or
+        calibration_certificate_approver_can_act(approval) or
+        is_admin_authorized()
+    ):
         return denied('You are not allowed to view this certificate artifact.')
     if artifact == 'unsigned':
         if not approval.unsigned_artifact_path:
@@ -23007,6 +23106,11 @@ def get_products():
     if is_hr_schedule_only_user():
         return jsonify([])
     products = Product.query.all()
+    certificate_approvals = (
+        latest_approved_calibration_certificates_for_products(products)
+        if can_access_products_page()
+        else {}
+    )
     results = []
 
     for p in products:
@@ -23019,7 +23123,8 @@ def get_products():
             'start_warranty': p.start_warranty_date.isoformat() if p.start_warranty_date else "",
             'end_warranty': p.end_warranty_date.isoformat() if p.end_warranty_date else "",
             'under_contract': bool(p.under_contract),
-            'computed_status': product_contract_status(p)
+            'computed_status': product_contract_status(p),
+            'calibration_certificate': certificate_approvals.get(p.serial_number),
         })
 
     return jsonify(results)

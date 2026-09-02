@@ -1,5 +1,16 @@
 # Project Change Log
 
+codex changes - 2026-09-02
+
+- Recorded the approved implementation plan for exposing current approved signed Calibration Certificates on the Products page in `plans.md`; implementation is authorized for this task and remains local until separately published.
+- Added the focused `tests/test_product_calibration_certificate.py` coverage and ran it fail-first against the unchanged application: **7 tests ran, with 2 failures and 4 errors**, confirming the missing Product API field, preview authorization, and Products markup before implementation.
+- Added a batch Product-to-Shift-to-Calibration Certificate lookup in `app.py` that exposes only the newest current approved signed certificate per Product, with the requested minimal metadata and a stable embedded-preview URL; pending, returned, superseded, unsigned, and historical approvals remain `null`.
+- Extended the signed certificate preview authorization so active Product-page users may view a current approved signed certificate linked to an existing Product, while unsigned, no-signature, download, requester, approver, and administrator rules remain otherwise unchanged.
+- Updated `templates/products.html` with the desktop Calibration Certificate column and responsive mobile certificate block, including escaped metadata, accessible new-tab links, touch-sized controls, and the `No certificate on file` empty state without adding certificate sorting or history.
+- Added the user-facing Product Inventory release item to `static/changelog/releases.json`; no schema or service-worker change was made.
+- The focused post-implementation Product Certificate suite passes **7/7**, and the related Product contract plus Calibration Certificate suite passes **25/25**. The full isolated suite ran **803 tests** with **12 failures and 1 skip**; the failures are confined to existing purchase-order renewal/endpoint, staff-creation, and Calibration Report contract tests outside this change. No browser automation, service-worker bump, production/database action, commit, or push was performed.
+- Recorded the exact fail-first, focused, related, full-suite, preview, source, and protected-worktree verification evidence in the approved plan; the implementation is complete locally but remains uncommitted pending the separate review/publication gates.
+
 codex changes - 2026-09-01
 
 - Fixed the shared `purchase_order_schedule()` calculation in `app.py` so a later Quarterly
