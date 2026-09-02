@@ -23,6 +23,63 @@ codex changes - 2026-09-01
   files were committed as `9a9659a` and pushed to `origin/main`; the existing dirty artifacts
   remain untouched and uncommitted. Railway's `empowering-integrity - web` status then reported
   successful deployment of `web-production-e2085.up.railway.app`.
+- Recorded the owner-approved **P.O. Renewal Dates Synced to Product** implementation package in
+  `plans.md` and began the authorized local implementation. The package is add-only: an expired
+  latest dated P.O. enables a new user-entered range, the new P.O. stores that range, and selected
+  Product current dates update atomically while old P.O. snapshots remain unchanged. No code,
+  database, service-worker, browser, commit, push, Railway, or production change is recorded by
+  this plan-recording step; protected dirty artifacts remain untouched.
+- Added the focused P.O. renewal regression controls in `tests/test_purchase_orders.py` for valid
+  renewal, Product synchronization, unchanged historical snapshots, Under Contract confirmation
+  atomicity, latest-active/no-history/null-End rejection, strict date boundaries, multi-machine and
+  mixed selection rules, edit isolation, API metadata, and template controls. The application source
+  remains unchanged at this fail-first checkpoint; the expected pre-fix failures are being run and
+  recorded before implementation edits.
+- Fail-first command `venv\\Scripts\\python.exe -m unittest tests.test_purchase_orders.PurchaseOrderRenewalTests`
+  ran against the unchanged application with **8 tests: 7 failures and 1 error**, as expected:
+  renewal payloads followed Product-date validation, confirmation was not requested, renewal edits
+  were accepted, API renewal metadata and template controls were absent, and the latest-context
+  assertions could not be reached. No application source was edited before this result.
+- Implemented the server-side P.O. renewal seam in `app.py`: latest linked dated P.O. metadata is
+  selected by End Date then highest P.O. id, null-End records are ignored, expiry is evaluated
+  against Manila today, and API Product metadata now includes renewal eligibility, latest prior End
+  Date, and the default next Start Date. New renewal payloads require valid non-overlapping dates,
+  all selected machines to be eligible, and add-only mode; normal/omitted date mode remains
+  Product-owned and existing edits preserve their stored snapshots.
+- Renewal adds now require the existing Under Contract confirmation for non-contract Products,
+  synchronize selected Product dates and create the P.O./machine links in one transaction, and log
+  the renewal date synchronization. No template, release manifest, schema, service-worker, Git,
+  Railway, production, or protected-artifact change has been made by this server implementation step.
+- Updated `templates/po_details.html` so the P.O. form consumes renewal metadata, automatically
+  switches all-eligible new selections to editable renewal dates with a safe default Start Date and
+  required blank End Date, blocks mixed renewal/Product selections, shows the Product-update/history
+  notice, preserves read-only Product-owned edit/normal behavior, and submits `date_mode` with the
+  existing date fields. The final release metadata is recorded below.
+- Added the approved `2026-09-01-po-renewal-dates-synced-to-product-admins` item to the existing
+  2026-09-01 release object in `static/changelog/releases.json`, describing add-only expired-P.O.
+  renewal ranges, Product-date synchronization after confirmation, and historical snapshot
+  preservation. No service-worker cache bump or schema migration was introduced.
+- Refined the renewal selection status message so a renewal-eligible Product that also qualifies for
+  one-time Single behavior is described as a renewal range, while the existing one-time message
+  remains for ordinary Product-owned selections.
+- Completed focused verification against isolated `MEDICAL_SERVICE_TEST_DB` databases: the new
+  `PurchaseOrderRenewalTests` pass **8/8**, and `tests.test_purchase_orders` plus
+  `tests.test_analytics_purchase_orders` pass **58/58** when the test-only login limiter is disabled.
+  The same combined command with the normal limiter reached 58 tests but had four setup-only 429
+  failures after the repository-wide 10-login-per-minute threshold; no source configuration was
+  changed to obtain the isolated verification result.
+- Static verification passed: `app.py` Python compile and AST parsing, `po_details.html` Jinja parse,
+  inline JavaScript parse with Node, release JSON parsing with the expected renewal item, and
+  `git diff --check`. The release-coverage test passed **2/2** with **1** expected skip.
+- Full isolated discovery ran **796 tests** with **0 errors**, **1 skip**, and **7 unrelated failures**:
+  four P.O. legacy setup logins were rate-limited (429), the staff-creation initials-collision
+  fixture failed, and two calibration-report tests still expect an older cache/runtime contract.
+  No renewal test or P.O./analytics/export test failed. Browser automation, commit, push, Railway,
+  deployment, production/database operations, and protected-artifact changes were not performed.
+- Created the focused commit `08e6151` (`Add P.O. renewal date synchronization`) containing only
+  `app.py`, `templates/po_details.html`, `tests/test_purchase_orders.py`,
+  `static/changelog/releases.json`, `plans.md`, and `changes.md`. The protected database, handoff,
+  `.claude/`, detailed handoff artifact, `output/`, and `tmp/` remain outside the commit.
 
 codex changes - 2026-08-26
 

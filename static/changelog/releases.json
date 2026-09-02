@@ -15,6 +15,15 @@
             "admins"
           ],
           "sort_order": 10
+        },
+        {
+          "item_key": "2026-09-01-po-renewal-dates-synced-to-product-admins",
+          "category": "P.O. Details",
+          "description": "When a machine's latest dated P.O. has expired, a new renewal range can be recorded without rewriting the historical P.O.; the selected Product coverage dates are synchronized to the new P.O. after confirmation.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 20
         }
       ]
     },

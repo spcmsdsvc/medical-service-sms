@@ -42379,6 +42379,76 @@ def purchase_order_product_dates(product):
     )
 
 
+def purchase_order_payload_date_mode(payload):
+    """Return the explicit date owner for a P.O. payload."""
+    if 'date_mode' not in (payload or {}):
+        return 'product', None
+    raw_mode = clean_str((payload or {}).get('date_mode'))
+    date_mode = raw_mode.casefold() if raw_mode else None
+    if date_mode not in {'product', 'renewal'}:
+        return None, 'Date mode must be Product or Renewal.'
+    return date_mode, None
+
+
+def purchase_order_renewal_context(product_serials=None, today=None):
+    """Return the latest dated linked P.O. context for each requested machine.
+
+    Only association-table links are authoritative.  A null-End P.O. is ignored,
+    and ordering by End Date then P.O. id makes the latest record deterministic.
+    """
+    requested = []
+    requested_by_key = {}
+    for raw_serial in product_serials or []:
+        serial = clean_str(raw_serial) or ''
+        key = serial.casefold()
+        if not serial or key in requested_by_key:
+            continue
+        requested.append(serial)
+        requested_by_key[key] = serial
+
+    contexts = {
+        serial: {
+            'renewal_eligible': False,
+            'latest_prior_end_date': None,
+            'default_renewal_start_date': None,
+            'latest_prior_po_id': None,
+        }
+        for serial in requested
+    }
+    query = db.session.query(
+        PurchaseOrderMachine.product_serial,
+        PurchaseOrder.id,
+        PurchaseOrder.end_date,
+    ).join(
+        PurchaseOrder,
+        PurchaseOrder.id == PurchaseOrderMachine.purchase_order_id,
+    ).filter(
+        PurchaseOrder.end_date.isnot(None),
+    )
+    if requested:
+        query = query.filter(PurchaseOrderMachine.product_serial.in_(requested))
+    rows = query.order_by(
+        PurchaseOrderMachine.product_serial.asc(),
+        PurchaseOrder.end_date.desc(),
+        PurchaseOrder.id.desc(),
+    ).all()
+    seen = set()
+    reference_date = today or get_manila_today()
+    for product_serial, purchase_order_id, prior_end in rows:
+        key = (clean_str(product_serial) or '').casefold()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        output_serial = requested_by_key.get(key, product_serial)
+        contexts[output_serial] = {
+            'renewal_eligible': bool(prior_end < reference_date),
+            'latest_prior_end_date': prior_end,
+            'default_renewal_start_date': prior_end + timedelta(days=1),
+            'latest_prior_po_id': purchase_order_id,
+        }
+    return contexts
+
+
 def purchase_order_to_dict(purchase_order):
     po_type = normalize_purchase_order_type(purchase_order.po_type) or PO_TYPE_SINGLE_VISIT
     amount = purchase_order_amount_string(getattr(purchase_order, 'amount', None))
@@ -42601,6 +42671,11 @@ def purchase_order_dates_from_products(products, po_type=PO_TYPE_SINGLE):
 
 def validate_purchase_order_payload(payload, existing=None):
     payload = payload or {}
+    date_mode, date_mode_error = purchase_order_payload_date_mode(payload)
+    if date_mode_error:
+        return None, None, date_mode_error
+    if date_mode == 'renewal' and existing is not None:
+        return None, None, 'Renewal date mode is only available when adding a new P.O.'
     client_id = clean_int(payload.get('client_id'))
     po_number = normalize_purchase_order_number(
         payload.get('po_number') if 'po_number' in payload else getattr(existing, 'po_number', None)
@@ -42635,6 +42710,42 @@ def validate_purchase_order_payload(payload, existing=None):
     products = purchase_order_products_for_serials(machine_serials)
     if len(products) != len(machine_serials):
         return None, None, 'One or more selected machines could not be loaded.'
+    if date_mode == 'renewal':
+        renewal_context = purchase_order_renewal_context(machine_serials)
+        ineligible = [
+            serial for serial in machine_serials
+            if not renewal_context.get(serial, {}).get('renewal_eligible')
+        ]
+        if ineligible:
+            return None, None, (
+                'Renewal is available only when every selected machine is renewal-eligible and has a latest dated '
+                f'P.O. that expired before today: {purchase_order_machine_log_label(ineligible)}.'
+            )
+        renewal_start = parse_date(payload.get('start_date'))
+        if not renewal_start:
+            return None, None, 'Enter a valid renewal Start Date.'
+        renewal_end = parse_date(payload.get('end_date'))
+        if not renewal_end:
+            return None, None, 'Enter a valid renewal End Date.'
+        if renewal_end < renewal_start:
+            return None, None, 'End Date cannot be earlier than Start Date.'
+        overlapping = [
+            serial for serial in machine_serials
+            if renewal_start <= renewal_context[serial]['latest_prior_end_date']
+        ]
+        if overlapping:
+            return None, None, (
+                'Renewal Start Date must be strictly after every selected machine\'s '
+                f'latest prior P.O. End Date: {purchase_order_machine_log_label(overlapping)}.'
+            )
+        return {
+            'client_id': client_id,
+            'po_number': po_number,
+            'po_date': renewal_start,
+            'end_date': renewal_end,
+            'po_type': po_type,
+            'amount': amount,
+        }, machine_serials, None
     product_start, product_end, product_date_error = purchase_order_dates_from_products(products, po_type)
     if product_date_error:
         # A current-frequency edit retains its existing historical snapshot when the
@@ -42706,6 +42817,8 @@ def purchase_order_require_contract_confirmation(machine_serials, payload, exist
     """Return current non-contract Products and only confirmed serials are honored."""
     confirmed = purchase_order_confirmation_serials(payload)
     po_type = normalize_purchase_order_type((payload or {}).get('po_type'))
+    date_mode, _date_mode_error = purchase_order_payload_date_mode(payload)
+    renewal_mode = date_mode == 'renewal'
     existing_one_time_serials = set()
     if (
         existing is not None
@@ -42724,7 +42837,7 @@ def purchase_order_require_contract_confirmation(machine_serials, payload, exist
             product
             and not bool(product.under_contract)
             and product.serial_number.casefold() not in existing_one_time_serials
-            and not purchase_order_product_is_one_time(product, po_type)
+            and (renewal_mode or not purchase_order_product_is_one_time(product, po_type))
         ):
             pending.append(product)
     missing = [product for product in pending if product.serial_number.casefold() not in confirmed]
@@ -42746,6 +42859,19 @@ def purchase_order_apply_contract_confirmation(pending, confirmed_serials, clien
             current.under_contract = True
             changed.append(current)
     return changed
+
+
+def purchase_order_apply_renewal_product_dates(machine_serials, start_date, end_date, client_id):
+    """Synchronize current Product coverage dates inside the P.O. transaction."""
+    updated = []
+    for serial in machine_serials:
+        product = db.session.get(Product, serial)
+        if not product or product.client_id != client_id:
+            raise ValueError('A selected machine is no longer registered to the selected medical center.')
+        product.start_warranty_date = start_date
+        product.end_warranty_date = end_date
+        updated.append(product)
+    return updated
 
 
 @app.route('/po_details')
@@ -42775,28 +42901,37 @@ def get_purchase_orders():
         Product.client_id.asc(),
         func.lower(Product.serial_number).asc(),
     ).all()
+    renewal_context = purchase_order_renewal_context(
+        [product.serial_number for product in products]
+    )
+    product_payloads = []
+    for product in products:
+        context = renewal_context.get(product.serial_number, {})
+        latest_prior_end = context.get('latest_prior_end_date')
+        default_renewal_start = context.get('default_renewal_start_date')
+        product_payloads.append({
+            'serial_number': product.serial_number or '',
+            'name': product.name or '',
+            'client_id': product.client_id,
+            'under_contract': bool(product.under_contract),
+            'contract_status': product_contract_status(product),
+            'one_time_eligible': purchase_order_product_is_one_time(product, PO_TYPE_SINGLE),
+            'start_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
+            'end_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
+            'product_start_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
+            'product_end_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
+            'start_warranty_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
+            'end_warranty_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
+            'end_warranty': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
+            'renewal_eligible': bool(context.get('renewal_eligible')),
+            'latest_prior_end_date': latest_prior_end.isoformat() if latest_prior_end else '',
+            'default_renewal_start_date': default_renewal_start.isoformat() if default_renewal_start else '',
+        })
     return jsonify({
         'success': True,
         'purchase_orders': [purchase_order_to_dict(item) for item in purchase_orders],
         'clients': [{'id': client.id, 'name': client.name or '', 'address': client.address or ''} for client in clients],
-        'products': [
-            {
-                'serial_number': product.serial_number or '',
-                'name': product.name or '',
-                'client_id': product.client_id,
-                'under_contract': bool(product.under_contract),
-                'contract_status': product_contract_status(product),
-                'one_time_eligible': purchase_order_product_is_one_time(product, PO_TYPE_SINGLE),
-                'start_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
-                'end_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
-                'product_start_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
-                'product_end_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
-                'start_warranty_date': product.start_warranty_date.isoformat() if product.start_warranty_date else '',
-                'end_warranty_date': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
-                'end_warranty': product.end_warranty_date.isoformat() if product.end_warranty_date else '',
-            }
-            for product in products
-        ],
+        'products': product_payloads,
         'po_types': [
             {'value': value, 'label': PO_TYPE_LABELS[value]}
             for value in PO_CURRENT_TYPES
@@ -43062,6 +43197,8 @@ def add_purchase_order():
     values, machine_serials, validation_error = validate_purchase_order_payload(payload)
     if validation_error:
         return jsonify({'success': False, 'error': validation_error}), 400
+    date_mode, _date_mode_error = purchase_order_payload_date_mode(payload)
+    renewal_mode = date_mode == 'renewal'
     pending_contracts, missing_confirmation = purchase_order_require_contract_confirmation(
         machine_serials, payload,
     )
@@ -43095,6 +43232,12 @@ def add_purchase_order():
             purchase_order_confirmation_serials(payload),
             values['client_id'],
         )
+        renewal_products = purchase_order_apply_renewal_product_dates(
+            machine_serials,
+            values['po_date'],
+            values['end_date'],
+            values['client_id'],
+        ) if renewal_mode else []
         db.session.add(purchase_order)
         db.session.flush()
         apply_purchase_order_machines(purchase_order, machine_serials)
@@ -43107,6 +43250,12 @@ def add_purchase_order():
         for product in changed_contracts:
             add_activity_log_entry(
                 f"Changed Product {product.serial_number} status to Under Contract for P.O. {values['po_number']}"
+            )
+        for product in renewal_products:
+            add_activity_log_entry(
+                f"Updated Product {product.serial_number} coverage dates to "
+                f"{values['po_date'].isoformat()} to {values['end_date'].isoformat()} "
+                f"for renewal P.O. {values['po_number']}"
             )
         db.session.commit()
     except (IntegrityError, ValueError) as save_error:

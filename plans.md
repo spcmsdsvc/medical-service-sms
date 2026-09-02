@@ -53,6 +53,170 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## P.O. Renewal Dates Synced to Product
+
+**Status:** Executed — 08e6151
+**Approved:** 2026-09-01
+**Detailed:** 2026-09-01
+**Finished:** 2026-09-02 in implementation commit `08e6151`; scoped publication follows the owner's direct instruction.
+**Execution authorization:** 2026-09-01, direct owner instruction: `PLEASE IMPLEMENT THIS PLAN:` followed by
+the complete approved P.O. renewal plan. This authorizes the scoped implementation and local
+verification only. The owner separately authorized commit and push on 2026-09-02 with `commit and
+push only this changes`, limited to the approved files. Review, manual deployment, Railway-variable,
+production, and browser actions remain separately unauthorized.
+
+### Context and intended outcome
+
+The P.O. Details workflow currently derives new P.O. Start and End Dates from the selected Product
+record. When a machine has a prior dated P.O. that has expired, the user needs to record a new
+contract range without overwriting the old contract's dates. The intended result is an add-only
+renewal mode: the user enters a new range, the new P.O. stores that range, and the selected Product
+records become current with the same dates. Existing P.O. snapshots and schedules remain unchanged.
+
+### Decisions taken
+
+1. Renewal mode is enabled only when every selected machine has a latest linked P.O. with a non-null
+   End Date before the current Manila date. A newer active P.O. blocks renewal even if an older P.O.
+   is expired. Null-End one-time P.O.s do not establish eligibility.
+2. The new Start Date must be strictly after every selected machine's latest dated P.O. End Date.
+   The UI defaults it to one day after the latest prior End Date and leaves the new End Date blank.
+3. One entered date range applies to every selected machine. All selected machines must independently
+   satisfy renewal eligibility; mixed renewal and ordinary Product-date selections are blocked.
+4. Renewal dates are accepted only for new P.O. records. Existing P.O. edits continue preserving
+   their stored snapshot and never update Product dates.
+5. Renewal mode is a ranged contract even if a current Product otherwise qualifies for one-time
+   Single behavior. The existing Under Contract confirmation remains required for a Product that is
+   not currently under contract; confirmation, Product date updates, and P.O. creation commit
+   atomically.
+6. The P.O.'s stored `po_date`/`end_date`, root API fields, and schedules remain historical. The
+   existing `machines[].start_date`/`end_date` fields continue to represent the current Product
+   values; no per-P.O./machine date-history schema is added.
+7. Existing normal-mode behavior remains server-owned: omitted `date_mode` defaults to Product dates,
+   and client-supplied dates are ignored in that mode. Existing P.O. access permissions, one-time
+   behavior, schedule math, filtering, and export behavior remain otherwise unchanged.
+
+### Investigation
+
+- `app.py:1889-1925` stores P.O. snapshots in `PurchaseOrder.po_date` and `end_date`; the
+  `PurchaseOrderMachine` association at `app.py:1929-1950` is the authoritative machine link.
+- `app.py:2483-2505` stores only the current Product `start_warranty_date` and
+  `end_warranty_date`; there is no per-P.O. Product-date history.
+- `app.py:42355-42470` serializes the P.O. snapshot and schedule while its nested machine dates read
+  the current Product. `app.py:42590-42680` currently derives new dates from Products and preserves
+  current-frequency edit snapshots.
+- `app.py:42760-42810` is the single register payload seam for Product metadata and machine choices;
+  `app.py:43055-43215` owns add/edit validation, confirmation, P.O. creation, association writes,
+  logging, and the transaction boundary.
+- `templates/po_details.html:495-535` currently renders read-only Product-sourced date inputs;
+  `:981-1085`, `:1160-1385` own machine selection, date synchronization, edit loading, and submit
+  payload construction.
+- `tests/test_purchase_orders.py` already protects Product-owned date spoof rejection, atomic
+  Under Contract confirmation, old P.O. snapshot preservation, one-time behavior, schedule/export
+  parity, and template contracts. These are the regression seams for the new behavior.
+- The existing P.O. page uses an inline template script and no new cached external asset is expected;
+  no service-worker cache bump or schema migration is expected.
+
+### Numbered execution steps
+
+1. **Preflight and record the authorized package.** Re-read the applicable instructions, this plan,
+   `changes.md`, current Git status/diff, affected P.O. source, template, and tests. Preserve the
+   dirty `Handoffs/`, `scheduler.db`, `.claude/`, handoff artifact, `output/`, `tmp/`, and unrelated
+   work. Do not access or modify production or Railway state.
+2. **Add fail-first regression controls.** Extend `tests/test_purchase_orders.py` with controls for
+   expired-P.O. renewal, Product updates, unchanged old snapshots, confirmation/no-mutation,
+   active/no-history/null-End/newer-active rejection, strict date boundaries, multi-machine rules,
+   edit isolation, API metadata, and template behavior. Run the focused controls against the
+   unchanged implementation and record the expected failures before application edits.
+3. **Implement server-side renewal context and validation.** In `app.py`, add a helper that finds
+   each machine's latest dated linked P.O. and returns expiry/default-start metadata. Extend
+   `validate_purchase_order_payload()` with `date_mode` handling: normal mode keeps Product-derived
+   dates and snapshot preservation; renewal mode is add-only, server-revalidated, requires valid
+   submitted dates, requires every selected machine's latest dated P.O. to be expired, and rejects
+   overlap or mixed eligibility.
+4. **Implement atomic add behavior.** Update the add route and confirmation helpers so renewal mode
+   bypasses one-time classification, retains the existing confirmation response for non-contract
+   Products, updates all selected Product date fields, creates the P.O. and machine links, writes
+   factual activity entries, and commits once. Any validation, confirmation, integrity, or save
+   error must roll back both Product and P.O. state. Reject renewal mode on update.
+5. **Update the P.O. Details UI.** In `templates/po_details.html`, consume server-provided renewal
+   metadata, automatically enable editable dates only when all selected machines are eligible,
+   default Start Date safely, leave End Date blank/required, prevent mixed selections, display the
+   Product-update/history notice, and send `date_mode`, `start_date`, and `end_date`. Keep current
+   frequency-first, one-time, confirmation retry, duplicate, edit, responsive, and dark-mode paths.
+6. **Add API and release records.** Preserve API compatibility while exposing renewal eligibility,
+   latest prior End Date, and default renewal Start Date in `/get_purchase_orders`. Add the user-facing
+   renewal item to the existing `2026-09-01` release object and keep `changes.md` factual. Do not add
+   a database migration or service-worker bump unless an unexpected cached asset contract requires it.
+7. **Verify and close out locally.** Run focused P.O./analytics/export tests, Python compilation,
+   Jinja and inline-JavaScript checks, release JSON validation, full isolated-suite testing where
+   feasible, and `git diff --check`. Inspect the final diff and confirm protected artifacts are
+   untouched. Browser automation is excluded by project safety rules.
+8. **Stop at the publication gate.** Amend this plan with actual implementation evidence and keep
+   the commit hash blank until a commit is separately authorized. Do not stage, commit, push, promote,
+   deploy, change Railway variables, or perform production/database operations.
+
+### Deliberately excluded
+
+- No per-P.O./machine Product-date snapshot table or migration; the approved history boundary is the
+  existing P.O. date snapshot plus current Product dates.
+- No custom-date workflow for editing existing P.O.s, no per-machine date-entry UI, and no renewal
+  when the latest dated P.O. is active, absent, or only a null-End one-time record.
+- No changes to permissions, quarterly calculation rules, one-time eligibility outside renewal mode,
+  analytics definitions, Product field names, service-worker cache, browser automation, deployment,
+  Railway variables, production data, or unrelated dirty work.
+
+### Verification and acceptance
+
+- A machine whose latest dated P.O. ended before today exposes editable renewal dates; a machine with
+  no eligible expired latest P.O. retains read-only Product-derived dates.
+- A valid renewal stores the entered range on the new P.O., updates every selected Product to that
+  range, and leaves the old P.O.'s root dates, schedule, and computed amount unchanged.
+- The new P.O. uses the shared schedule/filter/export helpers with its stored dates. Single renewal is
+  ranged/annual; Semi Annual and Quarterly remain ranged; valid one-time Single behavior is unchanged.
+- Confirmation cancellation or missing confirmation produces the existing 409 and leaves Product
+  dates/status and P.O. rows unchanged. Successful confirmation updates status and dates in one
+  commit.
+- Tests cover strict `new_start > prior_end`, invalid/missing dates, latest-active precedence,
+  multiple eligible machines, mixed selection rejection, normal-mode spoof rejection, edit isolation,
+  API metadata, and template controls. Static checks and full-suite results are recorded truthfully.
+
+### Risks and safeguards
+
+The main risks are overlapping contracts, silently rewriting current Product dates, and losing
+historical P.O. values. Server-side latest-P.O. lookup, strict boundary validation, atomic writes,
+normal-mode compatibility, old-snapshot assertions, and focused isolated-database tests limit the
+blast radius. Existing dirty artifacts remain protected.
+
+### Implementation evidence (2026-09-01)
+
+- Implemented the approved scope in `app.py`, `templates/po_details.html`,
+  `tests/test_purchase_orders.py`, and `static/changelog/releases.json`. The server now derives
+  latest dated linked-P.O. context by non-null End Date and highest id, ignores null-End records,
+  applies Manila-date eligibility, validates renewal ranges server-side, rejects renewal edits,
+  preserves normal Product-owned dates, and atomically updates Product dates with the new P.O. and
+  machine links. The UI consumes the new metadata, protects mixed selections, exposes editable
+  renewal dates only for all-eligible new selections, and submits the explicit date mode.
+- Added focused fail-first controls before source edits: `venv\\Scripts\\python.exe -m unittest
+  tests.test_purchase_orders.PurchaseOrderRenewalTests` produced the expected **8 tests: 7 failures
+  and 1 error** against the unchanged application. After implementation and final test strengthening,
+  the same class passed **8/8**.
+- The completed P.O./analytics/export command ran **58/58** with the test-only login limiter
+  disabled. It covers the existing P.O. workflow, schedules, filters, Excel export, analytics
+  permissions/counts, and the renewal controls. A normal-limiter run reached 58 tests but had four
+  setup-only 429 login failures, which is the repository's per-IP authentication throttle rather
+  than a renewal failure.
+- Static checks passed: Python AST parse and compile, Jinja parse, Node inline-JavaScript parse,
+  release JSON validation, and `git diff --check`. `tests.test_changelog_coverage` passed **2/2**
+  with **1** expected skip. Full isolated discovery ran **796 tests** with **0 errors**, **1 skip**,
+  and **7 unrelated failures**: four P.O. legacy setup login-throttle failures, one staff-creation
+  initials-collision fixture failure, and two calibration-report tests expecting an older
+  cache/runtime contract. No renewal or P.O./analytics/export test failed.
+- The protected dirty `Handoffs/`, `scheduler.db`, `.claude/`, detailed handoff artifact, `output/`,
+  and `tmp/` remain untouched and unstaged. No schema migration, service-worker bump, browser
+  automation, Railway-variable, deployment, production, or database operation was performed. The
+  six approved feature/record files were committed as `08e6151` for the separately authorized
+  scoped publication; review remains a separate gate.
+
 ## Make generated Calibration Reports downloadable from schedule cards
 
 **Status:** Executed — 164d9e5

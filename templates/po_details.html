@@ -157,6 +157,10 @@
         color: var(--app-muted-text, #60738d);
     }
 
+    .po-renewal-notice {
+        border-left: .35rem solid var(--app-primary, #0d6efd);
+    }
+
     .po-action-group {
         display: flex;
         flex-wrap: wrap;
@@ -538,9 +542,12 @@
                         <div class="form-text po-muted" id="po-machine-note" aria-live="polite"></div>
                         <div class="po-chip-list" id="po-machine-chips" aria-label="Selected machines"></div>
                     </div>
+                    <div class="alert alert-info po-renewal-notice d-none" id="po-renewal-notice" role="status">
+                        Renewal dates will update the selected Product coverage dates while preserving every existing P.O. snapshot.
+                    </div>
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-bold" for="po-date">Start Date <span class="po-muted">(from Product)</span></label>
+                            <label class="form-label fw-bold" for="po-date">Start Date <span class="po-muted" id="po-start-date-note">(from Product)</span></label>
                             <input class="form-control" type="date" id="po-date" required readonly>
                         </div>
                         <div class="col-md-6">
@@ -588,6 +595,7 @@
         products: [],
         selectedMachines: [],
         pendingContractSerials: new Set(),
+        dateMode: 'product',
         sortKey: localStorage.getItem('po_details_sort_key') || 'po_date',
         sortDirection: localStorage.getItem('po_details_sort_direction') || 'desc',
         editingId: null,
@@ -937,6 +945,14 @@
         return document.querySelector('input[name="po-type"]:checked')?.value || '';
     }
 
+    function productIsRenewalEligible(product) {
+        return Boolean(
+            product?.renewal_eligible
+            && product?.latest_prior_end_date
+            && product?.default_renewal_start_date
+        );
+    }
+
     function productIsOneTimeEligible(product) {
         return Boolean(
             selectedFrequency() === 'single'
@@ -984,7 +1000,33 @@
         const endDates = [...new Set(selected.map((machine) => String(machine?.end_date || machine?.product_end_date || '').trim()).filter(Boolean))];
         const dateInputs = [byId('po-date'), byId('po-end-date')];
         if (!selected.length) {
+            state.dateMode = 'product';
+            updateDateInputMode(false);
             dateInputs.forEach((input) => { if (input) input.value = ''; });
+            return;
+        }
+        const renewalFlags = selected.map((machine) => productIsRenewalEligible(machine));
+        const mixedRenewalModes = renewalFlags.some(Boolean) && !renewalFlags.every(Boolean);
+        if (!state.editingId && renewalFlags.every(Boolean)) {
+            state.dateMode = 'renewal';
+            const defaultStarts = selected
+                .map((machine) => String(machine?.default_renewal_start_date || '').trim())
+                .filter(Boolean);
+            const defaultStart = defaultStarts.reduce(
+                (latest, value) => (!latest || value > latest ? value : latest),
+                '',
+            );
+            updateDateInputMode(true);
+            byId('po-date').value = defaultStart;
+            byId('po-end-date').value = '';
+            setMachineNote(`${selected.length} machine${selected.length === 1 ? '' : 's'} selected. Renewal Start Date defaults after the latest prior P.O.; enter a new End Date.`);
+            return;
+        }
+        state.dateMode = 'product';
+        updateDateInputMode(false);
+        if (mixedRenewalModes) {
+            dateInputs.forEach((input) => { if (input) input.value = ''; });
+            setMachineNote('Mixed renewal and Product-date selections are not allowed.');
             return;
         }
         const oneTimeModes = selected.map((machine) => Boolean(machine?.one_time_eligible && String(machine?.contract_status || '') === 'No Expiry Set - No Contract'));
@@ -1029,10 +1071,18 @@
             notify(message, 'warning');
             return false;
         }
+        const renewal = productIsRenewalEligible(product);
+        const existing = state.selectedMachines[0];
+        if (existing && renewal !== productIsRenewalEligible(existing)) {
+            const message = 'Mixed renewal and Product-date selections are not allowed.';
+            setMachineNote(message);
+            notify(message, 'danger');
+            return false;
+        }
         const productStart = String(product?.start_date || product?.product_start_date || '').trim();
         const productEnd = String(product?.end_date || product?.product_end_date || '').trim();
         const oneTime = productIsOneTimeEligible(product);
-        if (!productStart || (!productEnd && !oneTime)) {
+        if (!renewal && (!productStart || (!productEnd && !oneTime))) {
             const message = oneTime
                 ? `Equipment ${serial} must have a Product Start Date for a one-time Single P.O.`
                 : `Equipment ${serial} must have both a Product Start Date and Product End Date before it can be assigned to a ${frequency === 'single' ? 'contract-backed Single' : frequency === 'semi_annual' ? 'Semi Annual' : 'Quarterly'} P.O.`;
@@ -1040,11 +1090,10 @@
             notify(message, 'danger');
             return false;
         }
-        const existing = state.selectedMachines[0];
         const existingStart = String(existing?.start_date || existing?.product_start_date || '').trim();
         const existingEnd = String(existing?.end_date || existing?.product_end_date || '').trim();
         const existingOneTime = Boolean(existing?.one_time_eligible && String(existing?.contract_status || '') === 'No Expiry Set - No Contract');
-        if (existing && (oneTime !== existingOneTime || productStart !== existingStart || (!oneTime && productEnd !== existingEnd))) {
+        if (!renewal && existing && (oneTime !== existingOneTime || productStart !== existingStart || (!oneTime && productEnd !== existingEnd))) {
             const message = oneTime || existingOneTime
                 ? 'One-time Single machines must share the same Product Start Date and cannot be mixed with contract-backed machines.'
                 : 'All selected machines must have matching Product Start Date and Product End Date.';
@@ -1056,7 +1105,7 @@
         if (state.selectedMachines.some((machine) => String(machine?.serial_number || '').trim().toLowerCase() === key)) {
             return false;
         }
-        if (!oneTime && !Boolean(product?.under_contract)) {
+        if ((renewal || !oneTime) && !Boolean(product?.under_contract)) {
             const confirmed = await confirmAction({
                 title: 'Change Machine Status?',
                 message: `${productDisplay(product)} is not Under Contract. Change its status to Under Contract when this P.O. is saved?`,
@@ -1070,7 +1119,7 @@
         }
         setSelectedMachines([...state.selectedMachines, product]);
         syncProductCoverageDates();
-        setMachineNote(`${state.selectedMachines.length} machine${state.selectedMachines.length === 1 ? '' : 's'} selected. ${oneTime ? 'One-time visit date loaded from Product records.' : state.pendingContractSerials.size ? 'Under Contract confirmation pending until Save.' : 'Dates loaded from Product records.'}`);
+        setMachineNote(`${state.selectedMachines.length} machine${state.selectedMachines.length === 1 ? '' : 's'} selected. ${renewal ? 'Renewal dates loaded; enter a new End Date.' : oneTime ? 'One-time visit date loaded from Product records.' : state.pendingContractSerials.size ? 'Under Contract confirmation pending until Save.' : 'Dates loaded from Product records.'}`);
         return true;
     }
 
@@ -1089,6 +1138,7 @@
     function clearMachineSelection(message = '') {
         state.selectedMachines = [];
         state.pendingContractSerials.clear();
+        state.dateMode = 'product';
         byId('po-machine-input').value = '';
         syncMachineSelection();
         syncProductCoverageDates();
@@ -1113,6 +1163,9 @@
     }
 
     function productCoverageDisplay(product) {
+        if (productIsRenewalEligible(product)) {
+            return `Renewal eligible — latest P.O. ended ${product.latest_prior_end_date}; Start Date defaults to ${product.default_renewal_start_date}`;
+        }
         if (Boolean(product?.under_contract)) return 'Under Contract';
         if (product?.one_time_eligible && String(product?.contract_status || '') === 'No Expiry Set - No Contract') {
             return 'No Expiry Set - No Contract — One-time Single eligible';
@@ -1234,6 +1287,7 @@
         byId('po-modal-title').textContent = 'Add P.O.';
         byId('po-save-button').innerHTML = '<i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Save P.O.';
         state.editingId = null;
+        state.dateMode = 'product';
         byId('po-client').value = '';
         byId('po-client-input').value = '';
         clearMachineSelection();
@@ -1244,17 +1298,31 @@
     function updateEndDateRequirement() {
         const endDate = byId('po-end-date');
         const note = byId('po-end-date-note');
+        const renewal = state.dateMode === 'renewal' && !state.editingId;
         const oneTime = selectedFrequency() === 'single'
             && state.selectedMachines.length > 0
             && state.selectedMachines.every((machine) => Boolean(machine?.one_time_eligible && String(machine?.contract_status || '') === 'No Expiry Set - No Contract'));
-        if (endDate) endDate.required = !oneTime;
-        if (note) note.textContent = oneTime ? '(not used for one-time visits)' : '(read-only Product coverage dates)';
+        if (endDate) endDate.required = renewal || !oneTime;
+        if (note) note.textContent = renewal ? '(enter renewal End Date)' : oneTime ? '(not used for one-time visits)' : '(read-only Product coverage dates)';
+    }
+
+    function updateDateInputMode(renewal) {
+        const startDate = byId('po-date');
+        const endDate = byId('po-end-date');
+        const notice = byId('po-renewal-notice');
+        const startNote = byId('po-start-date-note');
+        if (startDate) startDate.readOnly = !renewal;
+        if (endDate) endDate.readOnly = !renewal;
+        if (notice) notice.classList.toggle('d-none', !renewal);
+        if (startNote) startNote.textContent = renewal ? '(new renewal range)' : '(from Product)';
+        updateEndDateRequirement();
     }
 
     function openForm(row = null) {
         resetForm();
         if (row) {
             state.editingId = row.id;
+            state.dateMode = 'product';
             byId('po-id').value = row.id;
             byId('po-modal-title').textContent = 'Edit P.O.';
             byId('po-save-button').innerHTML = '<i class="fa-solid fa-check me-1" aria-hidden="true"></i>Update P.O.';
@@ -1283,6 +1351,7 @@
             byId('po-end-date').value = row.end_date || '';
             byId('po-number').value = row.po_number;
             byId('po-amount').value = row.amount || '';
+            updateDateInputMode(false);
             updateEndDateRequirement();
         }
         state.modal.show();
@@ -1358,6 +1427,7 @@
             po_type: document.querySelector('input[name="po-type"]:checked')?.value || '',
             amount: byId('po-amount').value,
         };
+        payload.date_mode = state.dateMode;
         const confirmedSerials = Array.from(state.pendingContractSerials);
         if (confirmedSerials.length) payload.under_contract_confirmed_serials = confirmedSerials;
         try {

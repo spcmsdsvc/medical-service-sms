@@ -3,7 +3,7 @@
 import pathlib
 import unittest
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from io import BytesIO
 from urllib.parse import quote
 
@@ -1597,6 +1597,376 @@ class PurchaseOrderWorkflowTests(unittest.TestCase):
             'po_number': f'GONE-EDIT-{self.suffix}',
             'po_type': 'single',
         }).status_code, 404)
+
+
+class PurchaseOrderRenewalTests(unittest.TestCase):
+    """Focused renewal controls with per-test disposable P.O. fixtures."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+        cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+        cls.suffix = uuid.uuid4().hex[:8]
+        with cls.app.app_context():
+            app_module.db.create_all()
+            app_module.ensure_user_admin_capability_columns()
+            app_module.ensure_purchase_order_schema()
+            cls.user = app_module.User(
+                username=f'po_renewal_{cls.suffix}',
+                password=app_module.generate_password_hash('test-password'),
+                role='staff',
+                is_active=True,
+                po_admin_access=True,
+            )
+            app_module.db.session.add(cls.user)
+            app_module.db.session.commit()
+            cls.user_id = cls.user.id
+
+    @classmethod
+    def tearDownClass(cls):
+        with cls.app.app_context():
+            user = app_module.db.session.get(app_module.User, cls.user_id)
+            if user:
+                app_module.db.session.delete(user)
+            app_module.db.session.commit()
+            app_module.db.session.remove()
+
+    def setUp(self):
+        self.client = self.app.test_client()
+        response = self.client.post('/login', data={
+            'username': f'po_renewal_{self.suffix}',
+            'password': 'test-password',
+        })
+        self.assertIn(response.status_code, (302, 303))
+        self.created_serials = []
+        with self.app.app_context():
+            self.client_record = app_module.Client(
+                name=f'P.O. Renewal Client {self.suffix}-{uuid.uuid4().hex[:6]}',
+                address='Renewal address',
+            )
+            app_module.db.session.add(self.client_record)
+            app_module.db.session.commit()
+            self.client_id = self.client_record.id
+
+    def tearDown(self):
+        with self.app.app_context():
+            for purchase_order in app_module.PurchaseOrder.query.filter_by(client_id=self.client_id).all():
+                app_module.db.session.delete(purchase_order)
+            for serial in self.created_serials:
+                product = app_module.db.session.get(app_module.Product, serial)
+                if product:
+                    app_module.db.session.delete(product)
+            client = app_module.db.session.get(app_module.Client, self.client_id)
+            if client:
+                app_module.db.session.delete(client)
+            app_module.db.session.commit()
+            app_module.db.session.remove()
+
+    def _product(self, label, *, start=None, end=None, under_contract=True):
+        serial = f'PO-RENEW-{self.suffix}-{label}-{uuid.uuid4().hex[:6]}'
+        with self.app.app_context():
+            product = app_module.Product(
+                serial_number=serial,
+                name=f'Renewal Machine {label}',
+                client_id=self.client_id,
+                start_warranty_date=start,
+                end_warranty_date=end,
+                under_contract=under_contract,
+            )
+            app_module.db.session.add(product)
+            app_module.db.session.commit()
+        self.created_serials.append(serial)
+        return serial
+
+    def _po(self, serials, *, start, end, po_type='single', amount='100.00'):
+        number = f'RENEWAL-OLD-{self.suffix}-{uuid.uuid4().hex[:6]}'
+        with self.app.app_context():
+            purchase_order = app_module.PurchaseOrder(
+                client_id=self.client_id,
+                po_number=number,
+                po_date=start,
+                end_date=end,
+                po_type=po_type,
+                amount=amount,
+                created_by=self.user_id,
+            )
+            app_module.db.session.add(purchase_order)
+            app_module.db.session.flush()
+            app_module.apply_purchase_order_machines(purchase_order, list(serials))
+            app_module.db.session.commit()
+            return purchase_order.id
+
+    def _payload(self, serials, *, start, end, date_mode='renewal', po_type='single'):
+        return {
+            'client_id': self.client_id,
+            'product_serials': list(serials),
+            'po_number': f'RENEWAL-NEW-{self.suffix}-{uuid.uuid4().hex[:6]}',
+            'po_type': po_type,
+            'amount': '1000.00',
+            'date_mode': date_mode,
+            'start_date': start,
+            'end_date': end,
+        }
+
+    def _count_pos(self):
+        with self.app.app_context():
+            return app_module.PurchaseOrder.query.filter_by(client_id=self.client_id).count()
+
+    def test_valid_renewal_updates_all_products_and_preserves_old_snapshot(self):
+        today = app_module.get_manila_today()
+        old_end = today - timedelta(days=30)
+        serial = self._product('single', start=today - timedelta(days=400), end=None)
+        old_id = self._po(
+            [serial],
+            start=today - timedelta(days=395),
+            end=old_end,
+            amount='321.45',
+        )
+        new_start = old_end + timedelta(days=1)
+        new_end = today + timedelta(days=365)
+        with self.app.app_context():
+            old = app_module.db.session.get(app_module.PurchaseOrder, old_id)
+            old_snapshot = (old.po_date, old.end_date, old.amount)
+            old_schedule = app_module.purchase_order_schedule(
+                old.po_date, old.end_date, old.po_type, old.amount,
+            )
+
+        response = self.client.post(
+            '/add_purchase_order',
+            json=self._payload([serial], start=new_start.isoformat(), end=new_end.isoformat()),
+        )
+        self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+        body = response.get_json()['purchase_order']
+        self.assertEqual(body['start_date'], new_start.isoformat())
+        self.assertEqual(body['end_date'], new_end.isoformat())
+        self.assertEqual(body['schedule_mode'], 'annual')
+        self.assertEqual(body['schedule_mode_label'], 'Annual')
+
+        with self.app.app_context():
+            old = app_module.db.session.get(app_module.PurchaseOrder, old_id)
+            self.assertEqual((old.po_date, old.end_date, old.amount), old_snapshot)
+            self.assertEqual(
+                app_module.purchase_order_schedule(old.po_date, old.end_date, old.po_type, old.amount),
+                old_schedule,
+            )
+            product = app_module.db.session.get(app_module.Product, serial)
+            self.assertEqual(product.start_warranty_date, new_start)
+            self.assertEqual(product.end_warranty_date, new_end)
+
+    def test_renewal_confirmation_required_and_missing_confirmation_is_atomic(self):
+        today = app_module.get_manila_today()
+        old_end = today - timedelta(days=14)
+        original_start = today - timedelta(days=500)
+        serial = self._product('confirm', start=original_start, end=None, under_contract=False)
+        old_id = self._po([serial], start=today - timedelta(days=500), end=old_end)
+        payload = self._payload(
+            [serial],
+            start=(old_end + timedelta(days=1)).isoformat(),
+            end=(today + timedelta(days=180)).isoformat(),
+        )
+        before_count = self._count_pos()
+        pending = self.client.post('/add_purchase_order', json=payload)
+        self.assertEqual(pending.status_code, 409)
+        self.assertEqual(pending.get_json()['code'], 'under_contract_confirmation_required')
+        self.assertEqual(self._count_pos(), before_count)
+        with self.app.app_context():
+            product = app_module.db.session.get(app_module.Product, serial)
+            self.assertEqual(product.start_warranty_date, original_start)
+            self.assertIsNone(product.end_warranty_date)
+            self.assertFalse(product.under_contract)
+            old = app_module.db.session.get(app_module.PurchaseOrder, old_id)
+            self.assertEqual(old.end_date, old_end)
+
+        payload['under_contract_confirmed_serials'] = [serial]
+        saved = self.client.post('/add_purchase_order', json=payload)
+        self.assertEqual(saved.status_code, 201, saved.get_data(as_text=True))
+        with self.app.app_context():
+            product = app_module.db.session.get(app_module.Product, serial)
+            self.assertTrue(product.under_contract)
+            self.assertEqual(product.start_warranty_date, old_end + timedelta(days=1))
+            self.assertEqual(product.end_warranty_date, today + timedelta(days=180))
+
+    def test_latest_active_no_history_and_null_end_records_block_renewal(self):
+        today = app_module.get_manila_today()
+        expired_end = today - timedelta(days=20)
+        active = self._product('active', start=today - timedelta(days=500), end=None)
+        self._po([active], start=today - timedelta(days=500), end=expired_end)
+        self._po([active], start=today - timedelta(days=10), end=today)
+
+        no_history = self._product('none', start=today - timedelta(days=100), end=None)
+        null_end = self._product('null', start=today - timedelta(days=100), end=None)
+        self._po([null_end], start=today - timedelta(days=20), end=None)
+        null_end_after_expired = self._product('null-ignored', start=today - timedelta(days=100), end=None)
+        ignored_end = today - timedelta(days=15)
+        ignored_id = self._po([null_end_after_expired], start=today - timedelta(days=30), end=ignored_end)
+        self._po([null_end_after_expired], start=today - timedelta(days=10), end=None)
+
+        for serial in (active, no_history, null_end):
+            response = self.client.post(
+                '/add_purchase_order',
+                json=self._payload(
+                    [serial],
+                    start=(today + timedelta(days=1)).isoformat(),
+                    end=(today + timedelta(days=90)).isoformat(),
+                ),
+            )
+            self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+            self.assertIn('expired', response.get_json()['error'].lower())
+
+        with self.app.app_context():
+            context = app_module.purchase_order_renewal_context([null_end_after_expired])
+            self.assertTrue(context[null_end_after_expired]['renewal_eligible'])
+            self.assertEqual(context[null_end_after_expired]['latest_prior_end_date'], ignored_end)
+            self.assertEqual(context[null_end_after_expired]['latest_prior_po_id'], ignored_id)
+
+    def test_renewal_requires_strict_non_overlapping_and_valid_submitted_dates(self):
+        today = app_module.get_manila_today()
+        old_end = today - timedelta(days=10)
+        serial = self._product('boundary', start=today - timedelta(days=300), end=None)
+        self._po([serial], start=today - timedelta(days=300), end=old_end)
+        before_count = self._count_pos()
+
+        for start, end, expected in (
+            (old_end.isoformat(), (today + timedelta(days=90)).isoformat(), 'after'),
+            ((old_end - timedelta(days=1)).isoformat(), (today + timedelta(days=90)).isoformat(), 'after'),
+            ('not-a-date', (today + timedelta(days=90)).isoformat(), 'valid'),
+            ((old_end + timedelta(days=1)).isoformat(), '', 'End Date'),
+            ((old_end + timedelta(days=1)).isoformat(), '2026-02-30', 'valid'),
+        ):
+            response = self.client.post(
+                '/add_purchase_order',
+                json=self._payload([serial], start=start, end=end),
+            )
+            self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+            self.assertIn(expected.lower(), response.get_json()['error'].lower())
+            self.assertEqual(self._count_pos(), before_count)
+
+        invalid_mode = self.client.post(
+            '/add_purchase_order',
+            json=self._payload(
+                [serial],
+                start=(old_end + timedelta(days=1)).isoformat(),
+                end=(today + timedelta(days=90)).isoformat(),
+                date_mode='client-spoof',
+            ),
+        )
+        self.assertEqual(invalid_mode.status_code, 400)
+        self.assertIn('date mode', invalid_mode.get_json()['error'].lower())
+
+    def test_multiple_eligible_machines_use_one_range_and_mixed_selection_is_rejected(self):
+        today = app_module.get_manila_today()
+        first_end = today - timedelta(days=40)
+        second_end = today - timedelta(days=12)
+        first = self._product('multi-one', start=today - timedelta(days=500), end=None)
+        second = self._product('multi-two', start=today - timedelta(days=500), end=None)
+        self._po([first], start=today - timedelta(days=500), end=first_end)
+        self._po([second], start=today - timedelta(days=500), end=second_end)
+        new_start = second_end + timedelta(days=1)
+        new_end = today + timedelta(days=300)
+        saved = self.client.post(
+            '/add_purchase_order',
+            json=self._payload([first, second], start=new_start.isoformat(), end=new_end.isoformat()),
+        )
+        self.assertEqual(saved.status_code, 201, saved.get_data(as_text=True))
+        self.assertEqual(saved.get_json()['purchase_order']['machine_serials'], [first, second])
+        with self.app.app_context():
+            for serial in (first, second):
+                product = app_module.db.session.get(app_module.Product, serial)
+                self.assertEqual(product.start_warranty_date, new_start)
+                self.assertEqual(product.end_warranty_date, new_end)
+
+        ordinary = self._product('mixed', start=today - timedelta(days=100), end=None)
+        mixed = self.client.post(
+            '/add_purchase_order',
+            json=self._payload(
+                [first, ordinary],
+                start=(new_end + timedelta(days=1)).isoformat(),
+                end=(today + timedelta(days=400)).isoformat(),
+            ),
+        )
+        self.assertEqual(mixed.status_code, 400)
+        self.assertIn('eligible', mixed.get_json()['error'].lower())
+
+    def test_edit_rejects_renewal_mode_and_normal_mode_remains_product_owned(self):
+        today = app_module.get_manila_today()
+        old_end = today - timedelta(days=25)
+        product_start = today - timedelta(days=400)
+        product_end = today + timedelta(days=200)
+        serial = self._product('edit', start=product_start, end=product_end)
+        old_id = self._po([serial], start=today - timedelta(days=400), end=old_end)
+        with self.app.app_context():
+            old = app_module.db.session.get(app_module.PurchaseOrder, old_id)
+            original_snapshot = (old.po_date, old.end_date, old.po_number)
+        renewal_edit = self.client.put(
+            f'/update_purchase_order/{old_id}',
+            json=self._payload(
+                [serial],
+                start=(old_end + timedelta(days=1)).isoformat(),
+                end=(today + timedelta(days=200)).isoformat(),
+            ),
+        )
+        self.assertEqual(renewal_edit.status_code, 400)
+        self.assertIn('only available', renewal_edit.get_json()['error'].lower())
+        with self.app.app_context():
+            old = app_module.db.session.get(app_module.PurchaseOrder, old_id)
+            product = app_module.db.session.get(app_module.Product, serial)
+            self.assertEqual((old.po_date, old.end_date, old.po_number), original_snapshot)
+            self.assertEqual((product.start_warranty_date, product.end_warranty_date), (product_start, product_end))
+
+        normal_edit = self.client.put(
+            f'/update_purchase_order/{old_id}',
+            json={
+                'client_id': self.client_id,
+                'product_serials': [serial],
+                'po_number': f'NORMAL-EDIT-{self.suffix}',
+                'po_type': 'single',
+                'date_mode': 'product',
+                'start_date': '1900-01-01',
+                'end_date': '1900-01-02',
+            },
+        )
+        self.assertEqual(normal_edit.status_code, 200, normal_edit.get_data(as_text=True))
+        self.assertEqual(normal_edit.get_json()['purchase_order']['start_date'], product_start.isoformat())
+
+    def test_purchase_order_api_exposes_latest_renewal_metadata(self):
+        today = app_module.get_manila_today()
+        prior_end = today - timedelta(days=7)
+        eligible = self._product('api-eligible', start=today - timedelta(days=100), end=None)
+        no_history = self._product('api-none', start=today - timedelta(days=100), end=None)
+        first_tie_id = self._po([eligible], start=today - timedelta(days=100), end=prior_end)
+        second_tie_id = self._po([eligible], start=today - timedelta(days=90), end=prior_end)
+        response = self.client.get('/get_purchase_orders')
+        self.assertEqual(response.status_code, 200)
+        products = {
+            item['serial_number']: item
+            for item in response.get_json()['products']
+        }
+        self.assertTrue(products[eligible]['renewal_eligible'])
+        self.assertEqual(products[eligible]['latest_prior_end_date'], prior_end.isoformat())
+        self.assertEqual(
+            products[eligible]['default_renewal_start_date'],
+            (prior_end + timedelta(days=1)).isoformat(),
+        )
+        with self.app.app_context():
+            context = app_module.purchase_order_renewal_context([eligible])
+            self.assertEqual(context[eligible]['latest_prior_po_id'], max(first_tie_id, second_tie_id))
+        self.assertFalse(products[no_history]['renewal_eligible'])
+        self.assertEqual(products[no_history]['latest_prior_end_date'], '')
+        self.assertEqual(products[no_history]['default_renewal_start_date'], '')
+
+    def test_template_contains_renewal_controls_and_history_notice(self):
+        template = (ROOT / 'templates' / 'po_details.html').read_text(encoding='utf-8')
+        for expected in (
+            'id="po-renewal-notice"',
+            'Renewal dates will update the selected Product coverage dates while preserving every existing P.O. snapshot.',
+            'date_mode',
+            'renewal_eligible',
+            'latest_prior_end_date',
+            'default_renewal_start_date',
+            'Mixed renewal and Product-date selections are not allowed.',
+            "payload.date_mode = state.dateMode",
+        ):
+            self.assertIn(expected, template)
 
 
 if __name__ == '__main__':
