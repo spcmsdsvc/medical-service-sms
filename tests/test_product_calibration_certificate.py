@@ -348,6 +348,15 @@ class ProductCalibrationCertificateTests(unittest.TestCase):
         self.assertIn('certificate_number', source)
         self.assertIn('calibration_date', source)
 
+    def test_products_markup_uses_cards_for_laptop_sized_viewports(self):
+        source = (ROOT / 'templates' / 'products.html').read_text(encoding='utf-8')
+
+        self.assertIn('@media screen and (max-width: 1600px)', source)
+        self.assertIn('.table-responsive {\n            display: none;', source)
+        self.assertIn('.product-mobile-list {\n            display: block;', source)
+        self.assertIn('@media screen and (min-width: 1100px) and (max-width: 1600px)', source)
+        self.assertIn('@media screen and (max-width: 768px)', source)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -2,6 +2,8 @@
 
 codex changes - 2026-09-02
 
+- Updated the Products page responsive layout in `templates/products.html` so laptop-sized screen viewports up to 1600px show the complete product cards instead of clipping the wide inventory table; certificate status/link, dates, and actions remain visible, while wider screens retain the desktop table and print output remains unchanged.
+- Added focused markup coverage in `tests/test_product_calibration_certificate.py` for the laptop breakpoint, card fallback, two-column intermediate layout, and screen-only responsive media queries.
 - Recorded the approved implementation plan for exposing current approved signed Calibration Certificates on the Products page in `plans.md`; implementation is authorized for this task and remains local until separately published.
 - Added the focused `tests/test_product_calibration_certificate.py` coverage and ran it fail-first against the unchanged application: **7 tests ran, with 2 failures and 4 errors**, confirming the missing Product API field, preview authorization, and Products markup before implementation.
 - Added a batch Product-to-Shift-to-Calibration Certificate lookup in `app.py` that exposes only the newest current approved signed certificate per Product, with the requested minimal metadata and a stable embedded-preview URL; pending, returned, superseded, unsigned, and historical approvals remain `null`.
