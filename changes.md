@@ -2,6 +2,13 @@
 
 codex changes - 2026-09-02
 
+- Published the Products Inventory usability package as commit `0505a4c` to `origin/main` after
+  staging only `changes.md`, `plans.md`, `static/changelog/releases.json`, `templates/products.html`,
+  and `tests/test_product_calibration_certificate.py`. `git ls-remote origin refs/heads/main`
+  verified the remote at the same commit; the handoff, `scheduler.db`, `.claude/`, output/tmp,
+  and other untracked artifacts were excluded. Railway deployment metadata was unavailable
+  because the Railway CLI/connector is not installed, and no manual redeploy or setting change
+  was performed.
 - Tightened the remaining compactness issue in `templates/products.html`: S/N, BSID, Start Date,
   and End Date now use smaller preferred widths, and the desktop table uses intrinsic
   `max-content` sizing with a 100% minimum instead of an artificial 90rem minimum. Short values

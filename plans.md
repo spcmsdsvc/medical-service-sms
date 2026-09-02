@@ -55,9 +55,12 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Products Inventory — Identity-First List Usability Pass
 
-**Status:** In progress
+**Status:** Executed — 0505a4c
 **Approved:** 2026-09-02
 **Detailed:** 2026-09-02
+**Finished:** 2026-09-02; committed as `0505a4c` and pushed to `origin/main`. Railway deployment
+metadata could not be independently queried because the Railway CLI/connector is unavailable in
+this environment.
 **Execution authorization:** The owner separately authorized implementation on 2026-09-02 with
 `PLEASE IMPLEMENT THIS PLAN:` followed by the complete approved package. This authorizes the
 scoped local implementation and verification only. Commit, push, Railway, deployment, production,
@@ -388,6 +391,19 @@ updates, authorization, and print output remain compatible.
 - The prior isolated full-suite verification remains **807 tests with 12 unrelated failures and
   0 errors**; this CSS-only refinement did not rerun that suite. Protected dirty artifacts remain
   preserved and the plan remains `In progress` pending any separate owner-authorized publication.
+
+### Publication results — 2026-09-02
+
+- The owner separately authorized publication with `commit and push this changes only`. Only
+  `changes.md`, `plans.md`, `static/changelog/releases.json`, `templates/products.html`, and
+  `tests/test_product_calibration_certificate.py` were staged and committed as `0505a4c`
+  (`Improve Products inventory list usability`).
+- Local `main` and `origin/main` now point to `0505a4c`; `git ls-remote origin refs/heads/main`
+  verified the same commit. The modified handoff, `scheduler.db`, `.claude/`, output/tmp, and
+  other untracked artifacts were not staged or pushed.
+- Railway deployment metadata could not be independently verified because the Railway
+  CLI/connector is unavailable in this environment. No manual redeploy or Railway setting change
+  was performed.
 
 ### Adaptive spacing amendment results — local, uncommitted (2026-09-02)
 
