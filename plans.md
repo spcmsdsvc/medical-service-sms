@@ -55,9 +55,12 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Approval Center — Calibration Report Link
 
-**Status:** In progress
+**Status:** Executed — c52d742
 **Approved:** 2026-09-02
 **Detailed:** 2026-09-02
+**Finished:** 2026-09-02; implementation committed as `c52d742` after the focused, related,
+static, and disposable-database verification recorded below. The documentation closeout is
+isolated to this feature worktree; publication is separately verified against `origin/main`.
 **Execution authorization:** The owner separately authorized implementation, commit, and push on
 2026-09-02 with `PLEASE IMPLEMENT THIS PLAN:` followed by the complete approved package. Work must
 remain isolated from the shared root worktree, whose dirty files belong to another task.
@@ -162,6 +165,25 @@ release JSON parsing, and `git diff --check` must pass. The full suite must run 
 external SQLite database only. The browser sequence is intentionally not run under the project
 Codex-app safety rule; the server/client source contracts provide the proportional verification
 for this additive link.
+
+### Execution outcome
+
+1. The fail-first controls ran against the unchanged application and produced two failures and one
+   error for the missing serializer, approval-scoped authorization, and modal behavior.
+2. The post-fix focused workflow plus Approval Center wording suite passed **21/21**. The related
+   workflow, wording, and TSR archive suite passed **39/39**. Timeline TSR download coverage passed
+   **7/7** with an in-process test-only bypass for the pre-existing reimbursement-receipt DDL lock;
+   no project source was changed for that bypass.
+3. Python compilation, Jinja parsing, inline JavaScript parsing, release JSON validation, and
+   `git diff --check` passed. The full discovered suite ran against a fresh disposable external
+   SQLite database with **811 tests run, 796 passed, 15 unrelated baseline/environment failures,
+   0 errors, and 1 skip**. No approval-link test failed. The existing failures are limited to
+   admin-capability, approval-notification, purchase-order, staff-creation, and Calibration Report
+   runtime/contract coverage.
+4. The functional change is confined to `app.py`, `templates/approvals.html`, the two focused test
+   files, `static/changelog/releases.json`, `changes.md`, and this plan record in commit
+   `c52d742`. The service-worker version was not changed because the download route is already
+   network-only. Browser automation and production state changes were not performed.
 
 ### Risks
 
