@@ -198,12 +198,16 @@ link. No schema, cache, or generated-document compatibility risk is introduced.
 
 ## Selectable Service Files and Per-File Sent Status
 
-**Status:** In progress
+**Status:** Executed — fabf2bb
 **Approved:** 2026-09-02
 **Detailed:** 2026-09-02
+**Finished:** 2026-09-02; implementation committed as `fabf2bb` from an isolated worktree based
+on the already-published Approval Center calibration-report work. The focused merged-branch
+verification and publication boundaries are recorded below.
 **Execution authorization:** 2026-09-02; the owner separately said `PLEASE IMPLEMENT THIS PLAN` after
-reviewing and approving this complete package. This authorizes only the scoped local implementation
-and verification below. Commit, push, Railway/deployment, production data, browser automation, and
+reviewing and approving this complete package, then separately said `go and proceed` after the
+other active task had published. This authorizes the scoped implementation, isolated commit, and
+push only. Railway variables/manual redeployment, production data, browser automation, and
 protected-artifact actions remain separately gated.
 
 ### Context and intended outcome
@@ -342,7 +346,7 @@ delivery summary without exposing file details to HR schedule-only users.
   successful send reloads the existing Timeline data. Lite/HR payload assertions protect offline
   performance and privacy.
 
-### Execution outcome (2026-09-02; local and uncommitted)
+### Execution outcome (2026-09-02; committed as `fabf2bb`)
 
 - Implemented the approved package in `app.py`, `templates/timeline.html`,
   `templates/settings.html`, `static/changelog/releases.json`, and the new focused
@@ -357,9 +361,10 @@ delivery summary without exposing file details to HR schedule-only users.
   service-worker parsing, release JSON validation, and `git diff --check` pass. Full discovery
   on a fresh disposable test database ran **824 tests with 12 pre-existing failures and 1 skip**
   (purchase-order, staff-creation, and stale v114 Calibration Report cache assertions).
-- Browser verification was not run under the owner rule. Commit, push, deployment, production
-  database/storage actions, and protected-artifact edits remain out of scope; status stays
-  `In progress` until the owner separately authorizes publication and a commit exists.
+- Browser verification was not run under the owner rule. The implementation was reconciled onto
+  published `origin/main` commit `e730a05` in a separate `codex/service-file-delivery` worktree;
+  only the seven authorized feature files were committed as `fabf2bb`. Production database/storage,
+  Railway-variable/manual-redeploy, browser, and protected-artifact actions remain out of scope.
 
 ## Products Inventory — Identity-First List Usability Pass
 

@@ -2,6 +2,14 @@
 
 codex changes - 2026-09-02
 
+- Reconciled the completed Service Files package onto published `origin/main` commit `e730a05`
+  in the isolated `codex/service-file-delivery` worktree, preserving the Approval Center report-link
+  implementation and both tasks' plan/release records. Committed only `app.py`, `changes.md`,
+  `plans.md`, `static/changelog/releases.json`, `templates/settings.html`,
+  `templates/timeline.html`, and `tests/test_service_file_delivery.py` as `fabf2bb`; protected
+  root-worktree database, handoff, `.claude`, output/tmp, and unrelated untracked artifacts were
+  excluded. The merged branch passed the 17 focused Service Files tests, 8 attachment/email tests,
+  release JSON validation, Python compilation, and staged diff checks before authorized publication.
 - Implemented selectable Service Files delivery in `app.py`: added the nullable
   `ShiftFile.last_emailed_at` marker with additive SQLite migration and conservative
   historical TSR-only backfill, exposed `was_sent`/`last_emailed_at` in attachment payloads,
