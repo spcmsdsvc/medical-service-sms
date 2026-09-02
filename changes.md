@@ -2,6 +2,7 @@
 
 codex changes - 2026-09-02
 
+- The laptop-sized Products layout follow-up was committed as `dde9cdc` and pushed to `origin/main`; the remote branch was verified at `dde9cdc94b8cc7e0301ae91f620ca90f7559ef0e`. Railway deployment metadata could not be queried because the Railway CLI/connector is unavailable in this environment, and no manual redeploy or Railway-variable change was performed.
 - Updated the Products page responsive layout in `templates/products.html` so laptop-sized screen viewports up to 1600px show the complete product cards instead of clipping the wide inventory table; certificate status/link, dates, and actions remain visible, while wider screens retain the desktop table and print output remains unchanged.
 - Added focused markup coverage in `tests/test_product_calibration_certificate.py` for the laptop breakpoint, card fallback, two-column intermediate layout, and screen-only responsive media queries.
 - Recorded the approved implementation plan for exposing current approved signed Calibration Certificates on the Products page in `plans.md`; implementation is authorized for this task and remains local until separately published.
