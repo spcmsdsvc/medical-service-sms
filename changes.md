@@ -145,6 +145,9 @@ codex changes - 2026-09-02
   passed. A fresh external-DB full discovery retry was stopped after approximately ten minutes
   without a unittest summary because the existing reimbursement-receipt DDL initializer continued
   repeating SQLite-lock retries; no preview-specific failure appeared before it was stopped.
+- Committed the isolated preview implementation as `e79c5ca` with only the eight approved feature
+  files staged; publication to `origin/main` remains the separately authorized next step after the
+  remote-head recheck. The shared dirty root and all protected artifacts remain excluded.
 
 codex changes - 2026-09-01
 

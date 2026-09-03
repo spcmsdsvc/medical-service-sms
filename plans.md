@@ -55,7 +55,7 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Approval Center — In-Modal Calibration Report DOCX Preview
 
-**Status:** In progress
+**Status:** Executed — e79c5ca
 **Approved:** 2026-09-02
 **Detailed:** 2026-09-02
 **Execution authorization:** The owner separately authorized implementation on 2026-09-02 by
@@ -231,8 +231,10 @@ unittest summary because the existing reimbursement-receipt DDL initializer repe
 SQLite locks; this is an environment/test-suite limitation, not a preview assertion failure. The
 shared dirty root and its scheduler database, handoff, `.claude/`, output, and tmp artifacts were
 not modified; no browser, production, Railway, service-worker, or database action was performed.
-The parent performs only the separately authorized scoped commit/push and remote-head verification
-next; post-implementation review and production/Railway actions remain separate gates.
+The implementation was committed in the isolated worktree as `e79c5ca`, containing only the
+approved preview, vendor, test, release, change-log, and plan files. The separately authorized
+push and remote-head verification remain the next publication step; post-implementation review and
+production/Railway actions remain separate gates.
 
 ### Risks
 
