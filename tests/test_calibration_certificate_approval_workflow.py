@@ -22,6 +22,20 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 TEST_DB = pathlib.Path(tempfile.gettempdir()) / f"medical_service_calibration_certificate_{uuid.uuid4().hex}.db"
 os.environ.setdefault("MEDICAL_SERVICE_TEST_DB", str(TEST_DB))
 os.environ.setdefault("SECRET_KEY", "calibration-certificate-test-only")
+MOBILE_DART_MODELS = [
+    'MobileDart Evolution MX9 Premium',
+    'MobileDart Evolution MX9c Premium',
+    'MobileDart Evolution MX9v Premium',
+    'MobileDart Evolution MX9k Premium',
+    'MobileDart Evolution MX9',
+    'MobileDart Evolution MX9c',
+    'MobileDart Evolution MX9v',
+    'MobileDart Evolution MX9k',
+    'MobileDart Evolution MX8',
+    'MobileDart Evolution MX8c',
+    'MobileDart Evolution MX8v',
+    'MobileDart Evolution MX8k',
+]
 
 import app as app_module  # noqa: E402
 
@@ -66,10 +80,12 @@ class CalibrationCertificateCatalogTests(unittest.TestCase):
         catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
         self.assertEqual(catalog['source_sha256'], '1AAB589266A30E6E70FE93E951C86C997D23B1EA1332373EE756E989A97A21BA')
         self.assertEqual(len(catalog['equipment_names']), 6)
-        self.assertEqual(len(catalog['models']), 38)
+        self.assertEqual(len(catalog['models']), 47)
+        self.assertEqual(catalog['models'][27:39], MOBILE_DART_MODELS)
+        self.assertEqual(len(set(catalog['models'])), 47)
         self.assertEqual(catalog['models'][9], 'Sonialvision G4 with CH-200M')
         self.assertEqual(catalog['models'][10], 'Flexavision HB')
-        self.assertEqual(len({app_module.calibration_certificate_model_normalize(value) for value in catalog['equipment_names'] + catalog['models']}), 44)
+        self.assertEqual(len({app_module.calibration_certificate_model_normalize(value) for value in catalog['equipment_names'] + catalog['models']}), 53)
         self.assertEqual(app_module.calibration_certificate_catalog(), {'equipment_names': catalog['equipment_names'], 'models': catalog['models']})
         payload = json.dumps(
             {'equipment_names': catalog['equipment_names'], 'models': catalog['models']},
@@ -79,8 +95,23 @@ class CalibrationCertificateCatalogTests(unittest.TestCase):
         ).encode('utf-8')
         self.assertEqual(
             hashlib.sha256(payload).hexdigest().upper(),
-            app_module.CALIBRATION_CERTIFICATE_CATALOG_PAYLOAD_SHA256,
+            'A3B0DF1616AC5DDAB53F3B6C142294D1ECDB2928AA7E85121A98C7BCA6FC969E',
         )
+        self.assertEqual(app_module.CALIBRATION_CERTIFICATE_CATALOG_PAYLOAD_SHA256, 'A3B0DF1616AC5DDAB53F3B6C142294D1ECDB2928AA7E85121A98C7BCA6FC969E')
+
+    def test_mobile_dart_evolution_models_match_exact_and_map_certificate(self):
+        payload = complete_payload()
+        report = payload['calibration_report']
+        for model in MOBILE_DART_MODELS:
+            report['machine']['model'] = model
+            match = app_module.calibration_certificate_model_match(model)
+            self.assertEqual(match['status'], 'exact', model)
+            self.assertEqual(match['value'], model)
+            values, missing, returned_report = app_module.calibration_certificate_values(payload)
+            self.assertIs(returned_report, report)
+            self.assertEqual(returned_report['machine']['model'], model)
+            self.assertEqual(values['Text2'], model)
+            self.assertNotIn('Equipment Model', missing)
 
     def test_catalog_loader_rejects_non_string_raw_entry(self):
         self._assert_catalog_loader_rejects(

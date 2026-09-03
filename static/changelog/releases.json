@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-03-calibration-report-machine-details",
+      "release_date": "2026-09-03",
+      "title": "Calibration Report Machine Details",
+      "summary": "Calibration Reports now start with an editable Shimadzu manufacturer value and recognize MobileDart Evolution variants exactly.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-03-calibration-report-machine-details-engineers",
+          "category": "Create TSR",
+          "description": "New or blank Calibration Reports prefill the editable Manufacturer field with Shimadzu while preserving a saved custom manufacturer. The shared certificate catalog now includes the twelve MobileDart Evolution MX8/MX9 and Premium/suffix models as exact selectable matches, so generated reports retain the entered model and certificates use the same canonical model value.",
+          "audiences": [
+            "engineers",
+            "approvers"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-02-product-calibration-certificates",
       "release_date": "2026-09-02",
       "title": "Product Calibration Certificate Links",

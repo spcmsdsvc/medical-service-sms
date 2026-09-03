@@ -53,6 +53,119 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Calibration Report Machine Details and MobileDart Catalog
+
+**Status:** In progress
+**Approved:** 2026-09-03
+**Execution authorized:** 2026-09-03 — the owner explicitly requested: “PLEASE IMPLEMENT THIS PLAN”.
+
+### Context
+
+The Calibration Report Machine Details editor currently starts a blank report with an empty Manufacturer value, while the report’s shared certificate-model catalog contains only the base MobileDart Evolution MX8/MX9 values and relies on fuzzy matching for suffix variants. The attached screenshot is reference data only; it is not an artifact to import or modify. The requested behavior is an editable `Shimadzu` default for blank reports and exact catalog support for the twelve specified MobileDart Evolution model values. The same catalog feeds the report datalist and final Calibration Certificate validation, so this is a shared validation/data-contract change rather than a report-only display change.
+
+### Decisions and scope
+
+1. Add the following twelve ordered catalog values, preserving the catalog’s existing source metadata and matching algorithm:
+   - `MobileDart Evolution MX9 Premium`
+   - `MobileDart Evolution MX9c Premium`
+   - `MobileDart Evolution MX9v Premium`
+   - `MobileDart Evolution MX9k Premium`
+   - `MobileDart Evolution MX9`
+   - `MobileDart Evolution MX9c`
+   - `MobileDart Evolution MX9v`
+   - `MobileDart Evolution MX9k`
+   - `MobileDart Evolution MX8`
+   - `MobileDart Evolution MX8c`
+   - `MobileDart Evolution MX8v`
+   - `MobileDart Evolution MX8k`
+2. Use an explicit default-manufacturer constant in `static/js/app-calibration-report.js`. `blankState()` and blank/legacy value normalization receive `Shimadzu`; any existing nonblank manufacturer remains unchanged. The rendered Manufacturer control remains a normal editable text input and must not gain `readonly` or `disabled`.
+3. Keep Calibration Report schema version 3, the raw report model, and the canonical certificate-model separation unchanged. No HTTP API or database schema change is authorized.
+4. Update the catalog guards from 38 to 47 models and use canonical payload hash `A3B0DF1616AC5DDAB53F3B6C142294D1ECDB2928AA7E85121A98C7BCA6FC969E`; retain source hash and source metadata.
+5. Bump only the requested delivery references: offline report script `v=20` to `v=21`, service-worker shell reference to `v=21`, and the app-shell cache label to monotonic `v120`. Do not modify official DOCX/PDF templates or CSS.
+6. Preserve unrelated dirty files and protected artifacts. Do not run browser automation, database migrations or destructive database operations, production/Railway actions, commit, or push.
+
+### Investigation evidence and source anchors
+
+- `static/js/app-calibration-report.js`: `blankState()`, `normalizeState()`, `fieldMarkup()`, `modelMarkup()`, `applyDomFromState()`, `onEditorInput()`, and certificate-model matching/export APIs.
+- `static/templates/calibration-certificate/calibration-certificate-catalog.json`: shared source catalog currently containing 38 models and the existing source metadata.
+- `app.py`: catalog constants/guards in `calibration_certificate_catalog()` and `_calibration_certificate_catalog_for_matching()`, model matching, and the service-worker shell/cache constants.
+- `templates/offline_tsr.html`: embedded catalog and Calibration Report script query version.
+- `tests/test_tsr_calibration_report.py`: report runtime, editor markup, catalog contract, cache/script checks, and Node behavior checks.
+- `tests/test_calibration_certificate_approval_workflow.py`: Python catalog shape/hash and final certificate approval/mapping checks.
+- `static/changelog/releases.json`, `changes.md`, and the active handoff record: required user-facing and project-control updates.
+
+### Numbered execution steps
+
+1. **Fail-first coverage.** Update `tests/test_tsr_calibration_report.py` and `tests/test_calibration_certificate_approval_workflow.py` to assert the editable `Shimadzu` blank default, preservation of custom manufacturers, all twelve exact model matches, exact certificate mapping, catalog length/count/uniqueness, and script/cache versions. Run the focused report and certificate suites before source edits; record the expected failures in the implementation evidence/change record without weakening assertions.
+2. **Report editor behavior.** In `static/js/app-calibration-report.js`, add the default manufacturer constant, apply it in `blankState()` and blank-value normalization for legacy/new reports, preserve nonblank values, and verify the Manufacturer markup remains an editable text input with no `readonly` or `disabled` attribute. Do not alter raw model storage, canonical certificate mapping, schema version, or unrelated autofill behavior.
+3. **Shared catalog and guards.** Replace the MobileDart section in `static/templates/calibration-certificate/calibration-certificate-catalog.json` with the twelve ordered values. Update the JavaScript/Python catalog shape guards from 38 to 47 and the canonical payload hash to the approved value. Keep source metadata and existing matching behavior intact so exact suffix values win over fuzzy base matches.
+4. **Cache delivery.** Update `templates/offline_tsr.html` from report script `v=20` to `v=21`; update `app.py` service-worker shell reference to `v=21` and cache label to `v120`, preserving the unrelated service-file delivery work already present in the dirty tree. Leave CSS and official templates untouched.
+5. **Project records.** Add a 2026-09-03 user-facing entry to `static/changelog/releases.json` following its existing schema and item-key conventions. Add a newest `codex changes - 2026-09-03` section to `changes.md` documenting the behavior, catalog/validation impact, cache version, tests, and exclusions. Amend the current plan status/evidence and append a factual continuation to the active handoff only if required by its record workflow; do not rewrite historical records or protected artifacts.
+6. **Self-review and verification.** Inspect the diff for scope/dirty-work protection and run, as applicable: fail-first then passing focused suites; Node checks using the real report runtime/template; Python compilation; Jinja parsing; catalog JSON, count, uniqueness, and hash checks; service-worker/cache checks; `git diff --check`; related TSR draft, approval, archive, Product Certificate, and offline suites; and full discovery against a fresh disposable SQLite database where feasible. Record exact pass/fail/skip results and known pre-existing failures. No browser verification, migration, production action, commit, or push.
+
+### Done criteria
+
+- A new or blank legacy report displays `Shimadzu` in an editable Manufacturer control, while a stored nonblank manufacturer is preserved.
+- `window.CalibrationReportConfig.certificateCatalog.models` contains exactly 47 unique ordered models, including all twelve requested exact MobileDart Evolution values; final certificate validation maps each exact value to itself rather than a fuzzy base variant.
+- The requested script/cache references, release record, change log, plan evidence, and any required handoff continuation are accurate, tests and static checks are recorded, and no unrelated/protected work is changed.
+
+### Deliberately excluded
+
+No database/API/schema migration, official DOCX/PDF template change, CSS change, browser automation, deployment/Railway change, production data/storage operation, commit, push, or unrelated cleanup is part of this plan.
+
+### Verification
+
+- Positive controls must fail before the source/catalog/cache fixes: blank report manufacturer must be asserted as `Shimadzu`, custom manufacturer preservation must be asserted, each of the twelve exact models must match itself, and the old 38-model/catalog-version expectations must be replaced by assertions for 47 models and the approved payload hash.
+- Run the focused fail-first and passing suites for `tests/test_tsr_calibration_report.py` and `tests/test_calibration_certificate_approval_workflow.py`, then the real report-runtime/template Node checks and the related TSR draft, approval, archive, Product Certificate, and offline suites. Run Python compilation, Jinja parsing, JSON/count/uniqueness/hash checks, service-worker/cache checks, and `git diff --check`.
+- Use a fresh disposable SQLite database for full discovery where feasible; never use or modify protected `scheduler.db` and do not run migrations. Report exact pass/fail/skip results and distinguish pre-existing failures from this change.
+- Browser sequence: none. Browser/Codex UI automation is explicitly excluded by the project instructions; the product behavior is covered through the real JavaScript runtime/template and source-level/static checks. The 375 px/tap-target/console standing bar is not applicable because this request changes no CSS or layout, but console/runtime errors must still be checked by the Node verification.
+
+### After implementation
+
+The Builder records the fail-first checkpoint, implementation evidence, exact verification results, and any deviation in the plan/change/handoff records, then stops with one consolidated implementation report. The main thread checks the resulting diff against this approved scope and protects unrelated dirty work. A separate post-implementation review stage is not authorized by this plan; it begins only if the owner later says `Review the implementation.` No commit, push, merge, deploy, or Railway action follows automatically.
+
+### Risks
+
+- **Catalog regression:** changing the shared list or payload hash incorrectly could reject valid certificates or alter fuzzy matching. Safety net: exact ordered-value/count/uniqueness/hash assertions plus Python and Node mapping tests.
+- **Legacy data regression:** applying the default too broadly could overwrite a user’s manufacturer. Safety net: normalization tests for blank legacy values and a nonblank custom manufacturer, with the raw report state preserved.
+- **Cache inconsistency:** mismatched query/cache versions could serve stale report code. Safety net: source-level service-worker and offline-template version checks and the monotonic `v120` cache assertion.
+- **Dirty-work disturbance:** `app.py`, journals, release records, handoff files, and protected artifacts already contain owner work. Safety net: inspect status/diff before and after, edit only the authorized lines/records, and do not reset, clean, stage, commit, or push.
+
+### Execution evidence (2026-09-03; local and uncommitted)
+
+- The fail-first checkpoint ran after the two test files were updated and before application,
+  catalog, template, or cache edits: `venv\Scripts\python.exe -m unittest
+  tests.test_tsr_calibration_report tests.test_calibration_certificate_approval_workflow`
+  ran 37 tests with 8 expected failures and 0 errors. The failures covered the old 38-model
+  contract/hash, v20/v119 delivery expectations, blank Manufacturer normalization, and missing
+  exact MobileDart suffix matches.
+- The implementation then added the editable `Shimadzu` default and blank/legacy normalization
+  in `static/js/app-calibration-report.js`, replaced the shared catalog's MobileDart section with
+  the exact ordered twelve values, updated the 47-model guards and approved payload hash in
+  `app.py`, and advanced the requested report/service-worker/cache references to v21/v120.
+  Schema v3, raw report models, canonical certificate mapping, source metadata, matching
+  algorithm, CSS, official templates, and unrelated dirty work were preserved.
+- Passing focused verification: the same two suites ran 37 tests with 37 passes, 0 failures,
+  0 errors, and 0 skips. Passing related verification:
+  `tests.test_tsr_draft_sync tests.test_tsr_sync_reliability tests.test_reports_archive_pagination
+  tests.test_product_calibration_certificate tests.test_offline_tsr_pending_schedule
+  tests.test_offline_resilience tests.test_approval_notifications` ran 114 tests with 114 passes,
+  0 failures, 0 errors, and 0 skips.
+- Fresh disposable-SQLite full discovery ran 825 tests with 814 passes, 10 failures, 0 errors,
+  and 1 skip. The failures were confined to unrelated purchase-order setup rate limits (429)
+  and staff-creation test-data/initials collisions; the package's focused and related suites
+  passed. This full-suite limitation is recorded rather than attributed to the catalog/report
+  change.
+- Manual/static verification passed: real report-runtime and offline-template Node checks,
+  Python compilation, Jinja parsing, catalog JSON count/uniqueness/hash checks, release-key
+  uniqueness, embedded service-worker syntax, v21 references, and v120 monotonic cache checks.
+  `git diff --check` is clean for owned implementation files; the repository-wide check still
+  reports the two pre-existing Markdown line-break whitespace lines in this approved plan.
+- `static/changelog/releases.json`, `changes.md`, and this plan were updated; the active handoff
+  received a factual continuation. No browser, database/schema/migration, official DOCX/PDF,
+  CSS, production/Railway, staging, Git publication, or protected-artifact action was performed.
+  The plan remains `In progress` because the work is intentionally uncommitted and unreviewed.
+
 ## Approval Center — In-Modal Calibration Report DOCX Preview
 
 **Status:** Executed — e79c5ca

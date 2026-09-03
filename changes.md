@@ -1,5 +1,37 @@
 # Project Change Log
 
+codex changes - 2026-09-03
+
+- Added fail-first Calibration Report and Calibration Certificate regression coverage for the
+  editable `Shimadzu` default, blank/legacy normalization, custom Manufacturer preservation,
+  all twelve ordered MobileDart Evolution model matches and certificate mappings, the 47-model
+  catalog contract and approved payload hash, and the v21/v120 delivery references.
+- Ran `venv\Scripts\python.exe -m unittest tests.test_tsr_calibration_report tests.test_calibration_certificate_approval_workflow`
+  against the unchanged application/catalog/cache immediately after the test edits: **37 tests
+  ran with 8 expected failures and 0 errors**. The failures were the old 38-model catalog and
+  payload/cache/script contracts, blank Manufacturer normalization/editability, and missing exact
+  suffix matches; no application source, catalog, template, database, or production state had
+  been edited at that checkpoint.
+- Implemented the scoped Calibration Report editor change in `static/js/app-calibration-report.js`:
+  blank/new/legacy Manufacturer values default to editable `Shimadzu`, while nonblank custom
+  values are preserved. Raw report model storage, schema v3, and canonical certificate-model
+  separation remain unchanged.
+- Replaced the shared catalog's three MobileDart entries with the exact ordered twelve-value
+  Evolution MX8/MX9 Premium and suffix list, updated JavaScript/Python guards to 47 models, and
+  set the approved payload hash `A3B0DF1616AC5DDAB53F3B6C142294D1ECDB2928AA7E85121A98C7BCA6FC969E`.
+  Updated the offline report and service-worker shell references to v21 and the cache label to
+  monotonic v120.
+- Added the required 2026-09-03 release entry and updated the approved plan and active handoff
+  with implementation evidence. Focused report/certificate verification passed 37/37; related
+  TSR draft/sync, archive, Product Certificate, offline, and approval verification passed 114/114.
+  Full fresh-disposable-SQLite discovery ran 825 tests with 814 passes, 10 unrelated
+  purchase-order/staff-creation failures, 0 errors, and 1 skip.
+- Manual/static checks passed for the real report runtime/template, Python compile, Jinja parse,
+  catalog JSON/count/uniqueness/hash, release keys, embedded service-worker syntax, v21/v120
+  delivery references, and owned-file diff whitespace. No browser, database/schema/migration,
+  official DOCX/PDF template, CSS, production/Railway, Git publication, or protected-artifact
+  action was performed.
+
 codex changes - 2026-09-02
 
 - Reconciled the completed Service Files package onto published `origin/main` commit `e730a05`

@@ -15638,7 +15638,7 @@ CALIBRATION_CERTIFICATE_DATA_FIELD_PADDING = 6.0
 CALIBRATION_CERTIFICATE_HUMANIST_FONT_NAME = 'CalibrationCertificateHumanist777Light'
 _calibration_certificate_humanist_metrics_cache = None
 CALIBRATION_CERTIFICATE_CATALOG_SOURCE_SHA256 = '1AAB589266A30E6E70FE93E951C86C997D23B1EA1332373EE756E989A97A21BA'
-CALIBRATION_CERTIFICATE_CATALOG_PAYLOAD_SHA256 = 'C1E0B81BD9C49CECFE05274225FCC7D973292C77C77B1084F518C0D545151C32'
+CALIBRATION_CERTIFICATE_CATALOG_PAYLOAD_SHA256 = 'A3B0DF1616AC5DDAB53F3B6C142294D1ECDB2928AA7E85121A98C7BCA6FC969E'
 CALIBRATION_CERTIFICATE_CATALOG_PATH = os.path.join(
     basedir, 'static', 'templates', 'calibration-certificate',
     'calibration-certificate-catalog.json'
@@ -15675,8 +15675,8 @@ def calibration_certificate_catalog():
     models = catalog.get('models')
     if not isinstance(equipment_names, list) or len(equipment_names) != 6:
         raise RuntimeError('Calibration Certificate catalog must contain exactly six equipment names.')
-    if not isinstance(models, list) or len(models) != 38:
-        raise RuntimeError('Calibration Certificate catalog must contain exactly 38 equipment models.')
+    if not isinstance(models, list) or len(models) != 47:
+        raise RuntimeError('Calibration Certificate catalog must contain exactly 47 equipment models.')
     raw_values = equipment_names + models
     if any(not isinstance(value, str) for value in raw_values):
         raise RuntimeError('Calibration Certificate catalog names and models must be strings.')
@@ -15710,8 +15710,8 @@ def _calibration_certificate_catalog_for_matching(catalog=None):
     models = catalog.get('models')
     if not isinstance(equipment_names, list) or len(equipment_names) != 6:
         raise RuntimeError('Calibration Certificate catalog must contain exactly six equipment names.')
-    if not isinstance(models, list) or len(models) != 38:
-        raise RuntimeError('Calibration Certificate catalog must contain exactly 38 equipment models.')
+    if not isinstance(models, list) or len(models) != 47:
+        raise RuntimeError('Calibration Certificate catalog must contain exactly 47 equipment models.')
     values = equipment_names + models
     if any(not isinstance(value, str) or not _calibration_certificate_catalog_text(value) for value in values):
         raise RuntimeError('Calibration Certificate catalog contains a blank or invalid value.')
@@ -17677,7 +17677,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v119-service-file-delivery';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v120-calibration-report-machine-catalog';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -17701,7 +17701,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=20',
+  '/static/js/app-calibration-report.js?v=21',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',

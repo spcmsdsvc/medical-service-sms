@@ -23,6 +23,7 @@
     exposureHeadersLarge: ['Nominal kVP Settings', 'Measured kVP', 'mA / mAs', 'Dose (mGy)', 'Dose Rate (mGy/s)', 'Time Settings (msec)', 'Measured Exposure Time (msec)']
   };
   var EXPOSURE_KEYS = ['nominal_kvp','measured_kvp','ma_mas','dose_mgy','dose_rate','time_msec','measured_time'];
+  var DEFAULT_MANUFACTURER = 'Shimadzu';
   var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   var EXACT_FIT_CAPACITIES = {
     page1_value: { name:'page1_value', maxLength:40, label:'Page 1 identity/value' },
@@ -78,7 +79,7 @@
     if(!catalog || typeof catalog !== 'object' || catalog.available === false) return 'The Calibration Certificate catalog is unavailable.';
     var names = catalog.equipment_names; var models = catalog.models;
     if(!Array.isArray(names) || names.length !== 6) return 'The Calibration Certificate catalog has an invalid Equipment Name list.';
-    if(!Array.isArray(models) || models.length !== 38) return 'The Calibration Certificate catalog has an invalid Equipment Model list.';
+    if(!Array.isArray(models) || models.length !== 47) return 'The Calibration Certificate catalog has an invalid Equipment Model list.';
     var values = names.concat(models);
     if(values.some(function(value){ return typeof value !== 'string' || !normalizeCatalogText(value) || normalizeCatalogText(value) !== value; })) return 'The Calibration Certificate catalog contains an invalid value.';
     var normalized = values.map(normalizeCertificateModel);
@@ -154,7 +155,7 @@
       status: 'not_started',
       updated_at: '',
       facility: { name:'', address:'', telephone:'', email:'', location:'' },
-      machine: { manufacturer:'', modality:'', model:'', serial_number:'', console_model:'', console_serial:'', tube1_model:'', tube1_serial:'', tube2_model:'', tube2_serial:'', installation_date:'' },
+      machine: { manufacturer:DEFAULT_MANUFACTURER, modality:'', model:'', serial_number:'', console_model:'', console_serial:'', tube1_model:'', tube1_serial:'', tube2_model:'', tube2_serial:'', installation_date:'' },
       technical: { max_tube_current_ma:'', max_tube_voltage_kv:'', tube_current_mas_range:'', tube_voltage_kvp_range:'', exposure_time_range:'', max_rated_power_kw:'', power_supply:'', total_inherent_filtration:'' },
       mechanical_checks: SOURCE.mechanical.map(function(item){ return { label:item.label, criteria:item.criteria, result:'' }; }),
       generator_checks: SOURCE.generator.map(function(item){ return { label:item.label, criteria:item.criteria, result:'' }; }),
@@ -179,6 +180,7 @@
     ['facility','machine','technical','calibration','generated'].forEach(function(key){
       base[key] = Object.assign({}, base[key], raw[key] && typeof raw[key] === 'object' ? raw[key] : {});
     });
+    if(!String(base.machine.manufacturer || '').trim()) base.machine.manufacturer = DEFAULT_MANUFACTURER;
     var rawCertificate = raw.certificate && typeof raw.certificate === 'object' ? raw.certificate : {};
     base.certificate = { bsid:String(rawCertificate.bsid || '').replace(/[\r\n]/g,'').trim().slice(0,40), equipment_model:'' };
     var rawApproval = raw.certificate_approval && typeof raw.certificate_approval === 'object' ? raw.certificate_approval : {};

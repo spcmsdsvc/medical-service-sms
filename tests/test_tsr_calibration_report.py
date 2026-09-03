@@ -26,6 +26,20 @@ EXPECTED_CERT_TEMPLATE_SHA256 = 'C06F43E221C297229D5108E0F3BA0348FF0C1C6F299A791
 EXPECTED_CERT_RUNTIME_SHA256 = '20C84569CB120F90E9F9998D68021E99ABCBD65E3C9085C7640754C6F0EBE2D8'
 DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 NODE = pathlib.Path(r'C:\Users\Jonamar\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe')
+MOBILE_DART_MODELS = [
+    'MobileDart Evolution MX9 Premium',
+    'MobileDart Evolution MX9c Premium',
+    'MobileDart Evolution MX9v Premium',
+    'MobileDart Evolution MX9k Premium',
+    'MobileDart Evolution MX9',
+    'MobileDart Evolution MX9c',
+    'MobileDart Evolution MX9v',
+    'MobileDart Evolution MX9k',
+    'MobileDart Evolution MX8',
+    'MobileDart Evolution MX8c',
+    'MobileDart Evolution MX8v',
+    'MobileDart Evolution MX8k',
+]
 
 
 NODE_BEHAVIOR_SCRIPT = r'''
@@ -151,7 +165,14 @@ const legacy = {
 api.apply(legacy);
 const migrated = api.collect();
 if (migrated.signature.image !== png || Object.prototype.hasOwnProperty.call(migrated.signature, 'data_url')) throw new Error('legacy signature migration failed');
+if (migrated.machine.manufacturer !== 'Shimadzu') throw new Error('legacy blank manufacturer was not normalized to Shimadzu');
 if (api.getSource().performance.length !== 2) throw new Error('performance criteria count is not two');
+api.apply({ status:'draft', machine:{ manufacturer:' \t ' } });
+if (api.collect().machine.manufacturer !== 'Shimadzu') throw new Error('blank manufacturer was not normalized to Shimadzu');
+const customManufacturer = '  Custom Imaging  ';
+api.apply({ status:'draft', machine:{ manufacturer:customManufacturer } });
+const customManufacturerPreserved = api.collect().machine.manufacturer === customManufacturer;
+if (!customManufacturerPreserved) throw new Error('custom manufacturer was not preserved');
 
 currentTSR = {
   'tsr-contact-no': '0917-current',
@@ -180,7 +201,7 @@ if (filled.facility.telephone !== '0917-current' || filled.facility.email !== 'c
 if (filled.facility.location !== 'Radiology') throw new Error('department-to-location autofill failed');
 if (filled.machine.model !== 'Scheduled Model' || filled.machine.serial_number !== 'SCHEDULED-SERIAL') throw new Error('schedule product autofill failed');
 if (filled.calibration.machine_calibration_date !== '2026-08-19' || filled.calibration.engineer_name !== 'Scheduled Engineer') throw new Error('schedule date/engineer autofill failed');
-if (filled.machine.manufacturer) throw new Error('manual fields were autofilled');
+if (filled.machine.manufacturer !== 'Shimadzu') throw new Error('blank report did not default the manufacturer');
 
 const complete = {
   status: 'draft',
@@ -345,6 +366,8 @@ if (process.env.CALIBRATION_REPORT_BOUNDARY_DIR) {
 
 console.log(JSON.stringify({
   migratedSignature: migrated.signature.image === png,
+  manufacturerDefault: migrated.machine.manufacturer === 'Shimadzu' && filled.machine.manufacturer === 'Shimadzu',
+  manufacturerCustomPreserved: customManufacturerPreserved,
   performanceCriteria: api.getSource().performance.length,
   autofill: { client: filled.facility.name, phone: filled.facility.telephone, email: filled.facility.email, location: filled.facility.location, model: filled.machine.model, serial: filled.machine.serial_number, engineer: filled.calibration.engineer_name },
   docxMime: generatedRecord.type,
@@ -514,8 +537,15 @@ function setReadyFields(report) {
   api.create();
   if(entryLabel.textContent !== "Continue Calibration Report" || status.textContent !== "Draft") fail("draft card state is wrong");
   if(!overlay.classList.contains("is-open")) fail("create did not open the editor");
-  const draft = api.collect(); if(draft.facility.name !== "Scheduled Client" || draft.machine.model !== "Scheduled Model") fail("create did not autofill the schedule");
-  const backInput = editorControl("facility.name"); if(!backInput) fail("Back persistence field was not built");
+const draft = api.collect(); if(draft.facility.name !== "Scheduled Client" || draft.machine.model !== "Scheduled Model") fail("create did not autofill the schedule");
+if(draft.machine.manufacturer !== "Shimadzu") fail("blank report did not default the manufacturer");
+const manufacturerInput = editorControl("machine.manufacturer");
+if(!manufacturerInput || String(manufacturerInput.tagName).toLowerCase() !== "input" || manufacturerInput.getAttribute("type") !== "text" || manufacturerInput.getAttribute("readonly") !== null || manufacturerInput.getAttribute("disabled") !== null || manufacturerInput.value !== "Shimadzu") fail("Manufacturer control is not an editable Shimadzu text input");
+const customManufacturer = "  Custom Imaging  ";
+api.apply({ status:"draft", machine:{ manufacturer:customManufacturer } });
+if(api.collect().machine.manufacturer !== customManufacturer) fail("custom manufacturer was not preserved");
+api.apply(draft);
+const backInput = editorControl("facility.name"); if(!backInput) fail("Back persistence field was not built");
   const backValue = "Back Persisted Facility"; backInput.value = backValue; editor.dispatch("input", { target:backInput });
   workspace.scrollTop = 321; closeButton.dispatch("click");
   const backState = api.collect();
@@ -586,7 +616,7 @@ class CalibrationReportContractTests(unittest.TestCase):
     def test_local_docx_runtime_license_and_cache_are_present(self):
         self.assertGreater(RUNTIME.stat().st_size, 90_000)
         self.assertIn('MIT License', LICENSE.read_text(encoding='utf-8'))
-        self.assertIn("CACHE_VERSION = 'medical-service-pwa-offline-navigation-v114-calibration-certificate-no-signature'", self.app_source)
+        assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn("'/static/templates/calibration-report/calibration-report-template.docx'", self.app_source)
         self.assertIn("'/static/vendor/jszip/jszip.min.js'", self.app_source)
         self.assertIn("'/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2'", self.app_source)
@@ -666,8 +696,18 @@ class CalibrationReportContractTests(unittest.TestCase):
         catalog_path = ROOT / 'static' / 'templates' / 'calibration-certificate' / 'calibration-certificate-catalog.json'
         catalog = json.loads(catalog_path.read_text(encoding='utf-8'))
         self.assertEqual(len(catalog['equipment_names']), 6)
-        self.assertEqual(len(catalog['models']), 38)
+        self.assertEqual(len(catalog['models']), 47)
+        self.assertEqual(catalog['models'][27:39], MOBILE_DART_MODELS)
+        self.assertEqual(len(set(catalog['models'])), 47)
+        payload = json.dumps(
+            {'equipment_names': catalog['equipment_names'], 'models': catalog['models']},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(',', ':'),
+        ).encode('utf-8')
+        self.assertEqual(hashlib.sha256(payload).hexdigest().upper(), 'A3B0DF1616AC5DDAB53F3B6C142294D1ECDB2928AA7E85121A98C7BCA6FC969E')
         self.assertIn('certificateCatalog', self.template_source)
+        self.assertIn("var DEFAULT_MANUFACTURER = 'Shimadzu';", self.script_source)
         self.assertIn('equipmentNameMarkup', self.script_source)
         self.assertIn('modelMarkup', self.script_source)
         self.assertIn('certificateModelMatch', self.script_source)
@@ -715,8 +755,9 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=7", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=20", self.template_source)
-        self.assertIn("CACHE_VERSION = 'medical-service-pwa-offline-navigation-v114-calibration-certificate-no-signature'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=21", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=21'", self.app_source)
+        assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
     def test_node_behavior_covers_entry_page_state_focus_scroll_toolbar_and_cleanup(self):
@@ -773,7 +814,7 @@ class CalibrationReportContractTests(unittest.TestCase):
             result = subprocess.run([str(NODE), '-e', NODE_CERTIFICATE_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False, env=env)
             self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
             payload = json.loads(result.stdout.strip().splitlines()[-1])
-            for key in ('legacyDefaults', 'normalizedBsid', 'mapping', 'embeddedDataAsset', 'embeddedTemplateExact', 'noRawPdfFetch', 'bsidPreservesFinal', 'completeSample', 'exactlyOneSampleBlobDownload', 'noRawTemplateDownload', 'incompleteSample', 'missingRuntimeNoDownload', 'missingEncodedNoDownload', 'corruptEncodedNoDownload', 'missingFieldsNoDownload'):
+            for key in ('legacyDefaults', 'mobileDartCatalog', 'mobileDartMatches', 'mobileDartCertificateMappings', 'normalizedBsid', 'mapping', 'embeddedDataAsset', 'embeddedTemplateExact', 'noRawPdfFetch', 'bsidPreservesFinal', 'completeSample', 'exactlyOneSampleBlobDownload', 'noRawTemplateDownload', 'incompleteSample', 'missingRuntimeNoDownload', 'missingEncodedNoDownload', 'corruptEncodedNoDownload', 'missingFieldsNoDownload'):
                 self.assertTrue(payload[key], key)
             self.assertEqual(payload['composed'], '2026-0820-B-42')
             self.assertTrue(proof.is_file())
@@ -792,6 +833,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
         payload = json.loads(result.stdout.strip().splitlines()[-1])
         self.assertTrue(payload['migratedSignature'])
+        self.assertTrue(payload['manufacturerDefault'])
+        self.assertTrue(payload['manufacturerCustomPreserved'])
         self.assertEqual(payload['performanceCriteria'], 2)
         self.assertEqual(payload['autofill'], {
             'client': 'Scheduled Client',
@@ -1223,7 +1266,22 @@ function report(overrides = {}) {
   const embeddedDataAsset = !dataSource.startsWith('%PDF-') && dataSource.includes('certificateTemplateData') && !dataSource.includes('calibration-certificate-template.bin') && !dataSource.includes('calibration-certificate-template.pdf');
   const embeddedTemplateExact = embeddedTemplateBytes.equals(fs.readFileSync(canonicalTemplatePath)) && embeddedTemplateBytes.length === 517516 && embeddedTemplateData.sha256 === '20C84569CB120F90E9F9998D68021E99ABCBD65E3C9085C7640754C6F0EBE2D8';
   context.calibrationReport.apply({ status:'draft', facility:{ name:'Legacy' } });
-  const legacyDefaults = context.calibrationReport.collect().certificate.bsid === '';
+  const legacyReport = context.calibrationReport.collect();
+  const legacyDefaults = legacyReport.certificate.bsid === '' && legacyReport.machine.manufacturer === 'Shimadzu';
+  const mobileDartModels = [
+    'MobileDart Evolution MX9 Premium', 'MobileDart Evolution MX9c Premium',
+    'MobileDart Evolution MX9v Premium', 'MobileDart Evolution MX9k Premium',
+    'MobileDart Evolution MX9', 'MobileDart Evolution MX9c',
+    'MobileDart Evolution MX9v', 'MobileDart Evolution MX9k',
+    'MobileDart Evolution MX8', 'MobileDart Evolution MX8c',
+    'MobileDart Evolution MX8v', 'MobileDart Evolution MX8k'
+  ];
+  const catalogModels = context.calibrationReport.getCertificateCatalog().models;
+  const mobileDartCatalog = catalogModels.length === 47 && JSON.stringify(catalogModels.slice(27, 39)) === JSON.stringify(mobileDartModels) && new Set(catalogModels).size === 47;
+  const mobileDartMatches = mobileDartModels.every(model => {
+    const match = context.calibrationReport.getCertificateModelMatch(model);
+    return match.status === 'exact' && match.value === model;
+  });
   const complete = report();
   context.calibrationReport.apply(complete);
   const bsidInput = elements.get('#calibration-report-bsid');
@@ -1233,6 +1291,11 @@ function report(overrides = {}) {
   const composed = context.calibrationReport.getCertificateNumber(normalized);
   const fields = context.calibrationReport.getCertificateFields({ 'tsr-number':'TSR-77' }, normalized);
   const mapping = JSON.stringify(fields.values) === JSON.stringify({ Textfield:'2026-0820-B-42', Text1:'Digital Angiography System', Text2:'MobileDart Evolution MX9', Text3:'SN-42', Text4:'2026/08/20', Text5:'2027/08/20', Text6:"St. Mary's & Niño Clinic", 'Textfield-0':'TSR-77' });
+  const mobileDartCertificateMappings = mobileDartModels.every(model => {
+    const rawReport = report({ machine:Object.assign({}, complete.machine, { model }) });
+    const mapped = context.calibrationReport.getCertificateFields({ 'tsr-number':'TSR-77' }, rawReport);
+    return rawReport.machine.model === model && mapped.values.Text2 === model;
+  });
   const finalized = Object.assign({}, normalized, { certificate:{ bsid:'B-43' }, generated:{ fingerprint:'kept', attachment_id:'kept', blob_id:'calibration-report-kept', filename:'kept.docx', size:1 } });
   context.calibrationReport.apply(finalized);
   bsidInput.value = 'B-43';
@@ -1271,7 +1334,7 @@ function report(overrides = {}) {
   context.PDFLib.PDFDocument.load = originalLoad;
 
   const noRawTemplateDownload = downloads.every(name => !String(name).includes('calibration-certificate-template') && /^SAMPLE_Calibration_Certificate(?:_.*)?\.pdf$/.test(name));
-  console.log(JSON.stringify({ legacyDefaults, normalizedBsid:normalized.certificate.bsid === 'B-42', composed, mapping, embeddedDataAsset, embeddedTemplateExact, noRawPdfFetch, bsidPreservesFinal, completeSample, exactlyOneSampleBlobDownload, noRawTemplateDownload, incompleteSample, missingRuntimeNoDownload, missingEncodedNoDownload, corruptEncodedNoDownload, missingFieldsNoDownload }));
+  console.log(JSON.stringify({ legacyDefaults, mobileDartCatalog, mobileDartMatches, mobileDartCertificateMappings, normalizedBsid:normalized.certificate.bsid === 'B-42', composed, mapping, embeddedDataAsset, embeddedTemplateExact, noRawPdfFetch, bsidPreservesFinal, completeSample, exactlyOneSampleBlobDownload, noRawTemplateDownload, incompleteSample, missingRuntimeNoDownload, missingEncodedNoDownload, corruptEncodedNoDownload, missingFieldsNoDownload }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 '''
 
@@ -1321,7 +1384,7 @@ function run(catalog){
 
 (async () => {
   const missing = run({});
-  const malformed = run({ equipment_names:['Raw Equipment'], models:Array(38).fill('Raw Model') });
+  const malformed = run({ equipment_names:['Raw Equipment'], models:Array(47).fill('Raw Model') });
   const sampleFailure = await missing.samplePromise;
   console.log(JSON.stringify({
     missingCatalogRejected:missing.match.status !== 'exact' && !missing.match.value && !missing.validation.ok,
