@@ -93,6 +93,77 @@
     </div>
     <div id="offline-schedule-notice" class="offline-schedule-notice d-none no-print"></div>
 
+    <div class="timeline-intro-toggle-row no-print" id="timeline-intro-toggle-row">
+        <div class="timeline-collapsed-utility-rail" id="timeline-collapsed-utility-rail" hidden aria-hidden="true">
+            <button
+                type="button"
+                class="timeline-collapsed-rail-button timeline-collapsed-rail-icon"
+                id="timeline-collapsed-prev-week"
+                aria-label="Previous week"
+                title="Previous week"
+                onclick="changeWeek(-1)"
+            >
+                <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+            </button>
+            <span
+                class="timeline-collapsed-week-range"
+                id="timeline-collapsed-week-range"
+                aria-live="polite"
+                aria-atomic="true"
+            ></span>
+            <button
+                type="button"
+                class="timeline-collapsed-rail-button timeline-collapsed-rail-today"
+                id="timeline-collapsed-today"
+                aria-label="Today"
+                title="Today"
+                onclick="changeWeek(0)"
+            >
+                <i class="fa-solid fa-calendar-day" aria-hidden="true"></i>
+                <span class="timeline-collapsed-rail-label">Today</span>
+            </button>
+            <button
+                type="button"
+                class="timeline-collapsed-rail-button timeline-collapsed-rail-icon"
+                id="timeline-collapsed-next-week"
+                aria-label="Next week"
+                title="Next week"
+                onclick="changeWeek(1)"
+            >
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+            </button>
+            <button
+                type="button"
+                class="timeline-collapsed-rail-button timeline-collapsed-rail-find"
+                id="timeline-collapsed-find-row"
+                aria-label="Find My Row"
+                title="Find My Row"
+                aria-hidden="true"
+                tabindex="-1"
+                hidden
+                onclick="focusLoggedInEngineerRow(true)"
+            >
+                <i class="fa-solid fa-location-crosshairs" aria-hidden="true"></i>
+                <span class="timeline-collapsed-rail-label">Find My Row</span>
+            </button>
+        </div>
+        <button
+            type="button"
+            class="timeline-intro-toggle"
+            id="timeline-intro-toggle"
+            aria-controls="timeline-collapsible-intro"
+            aria-expanded="true"
+            aria-label="Collapse calendar header"
+            title="Collapse calendar header"
+            onclick="toggleTimelineIntro()"
+        >
+            <i class="fa-solid fa-chevron-up me-1" id="timeline-intro-toggle-icon" aria-hidden="true"></i>
+            <span id="timeline-intro-toggle-label">Collapse calendar header</span>
+        </button>
+    </div>
+
+    <div id="timeline-collapsible-intro" class="timeline-intro-panel" aria-labelledby="timeline-intro-toggle" aria-hidden="false">
+
     <!--
         TIMELINE NAVIGATION BAR
         Manages the current view window and data export actions.
@@ -346,6 +417,8 @@
     <div class="timeline-scroll-hint no-print">
         <i class="fa-solid fa-arrows-left-right me-1"></i>
         Scroll horizontally to view all days and crowded schedule columns.
+    </div>
+
     </div>
 
 
@@ -1970,6 +2043,146 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     padding: 0.35rem 0.6rem;
     margin-bottom: 0.45rem;
     width: fit-content;
+}
+
+/* CALENDAR DESKTOP COLLAPSIBLE INTRO */
+.timeline-intro-toggle-row {
+    display: flex;
+    justify-content: flex-end;
+    margin: -0.15rem 0 0.25rem;
+}
+
+.timeline-intro-toggle {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #334155;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.68rem;
+    font-weight: 850;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.timeline-intro-toggle:hover {
+    background: #eef2f7;
+    color: #0f172a;
+}
+
+.timeline-intro-toggle:focus-visible {
+    outline: 3px solid rgba(13, 110, 253, 0.35);
+    outline-offset: 2px;
+}
+
+.timeline-collapsed-utility-rail {
+    display: none;
+    align-items: center;
+    flex: 1 1 auto;
+    gap: 0.3rem;
+    min-width: 0;
+}
+
+.timeline-collapsed-utility-rail[hidden] {
+    display: none !important;
+}
+
+.timeline-collapsed-rail-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    min-height: 30px;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.55rem;
+    background: #ffffff;
+    color: #334155;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 850;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.timeline-collapsed-rail-button:hover {
+    background: #eef2f7;
+    color: #0f172a;
+}
+
+.timeline-collapsed-rail-button:focus-visible {
+    outline: 3px solid rgba(13, 110, 253, 0.35);
+    outline-offset: 2px;
+}
+
+.timeline-collapsed-week-range {
+    flex: 1 1 auto;
+    min-width: 4rem;
+    overflow: hidden;
+    color: #1e3a8a;
+    font-size: 0.74rem;
+    font-weight: 850;
+    line-height: 1.2;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (min-width: 769px) {
+    .timeline-intro-panel.timeline-intro-collapsed {
+        display: none !important;
+    }
+
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed {
+        position: sticky;
+        top: 0;
+        z-index: 75;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0.35rem;
+        width: 100%;
+        height: 42px;
+        min-height: 42px;
+        margin: 0 0 0.35rem;
+        padding: 0.25rem 0.35rem;
+        box-sizing: border-box;
+        border: 1px solid #dbe3ee;
+        border-radius: 0.7rem;
+        background: rgba(255, 255, 255, 0.98);
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+        backdrop-filter: blur(8px);
+    }
+
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed .timeline-collapsed-utility-rail {
+        display: flex;
+    }
+
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed .timeline-collapsed-utility-rail[hidden] {
+        display: none !important;
+    }
+
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed .timeline-intro-toggle {
+        flex: 0 0 auto;
+        min-height: 30px;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 980px) {
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed .timeline-collapsed-rail-label,
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed #timeline-intro-toggle-label {
+        display: none;
+    }
+
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed .timeline-collapsed-rail-button,
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed .timeline-intro-toggle {
+        width: 30px;
+        min-width: 30px;
+        padding: 0.2rem;
+    }
+
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed .timeline-collapsed-week-range {
+        font-size: 0.68rem;
+    }
 }
 
 .legend-dot-holiday {
@@ -5166,6 +5379,24 @@ body.pwa-reconnected .mobile-offline-readiness {
 }
 
 @media (max-width: 768px) {
+    .timeline-intro-toggle-row {
+        display: none !important;
+    }
+
+    .timeline-collapsed-utility-rail {
+        display: none !important;
+    }
+
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed {
+        position: static !important;
+        height: auto;
+        min-height: 0;
+    }
+
+    .timeline-intro-panel.timeline-intro-collapsed {
+        display: block !important;
+    }
+
     .timeline-freeze-toolbar {
         position: static;
         margin: 0 0 0.75rem;
@@ -5190,6 +5421,24 @@ body.pwa-reconnected .mobile-offline-readiness {
 }
 
 @media print {
+    .timeline-intro-toggle-row {
+        display: none !important;
+    }
+
+    .timeline-collapsed-utility-rail {
+        display: none !important;
+    }
+
+    .timeline-intro-toggle-row.timeline-intro-row-collapsed {
+        position: static !important;
+        height: auto;
+        min-height: 0;
+    }
+
+    .timeline-intro-panel.timeline-intro-collapsed {
+        display: block !important;
+    }
+
     .timeline-freeze-toolbar,
     .timeline-sticky-h-scroll { position: static !important; display: none !important; }
 
@@ -8420,6 +8669,7 @@ async function fetchTimelineDataWithOfflineTimeout(url){
     const TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY = 'timelineOfflineSnapshots';
     const TIMELINE_OFFLINE_LAST_SYNC_KEY = 'timelineOfflineLastSync';
     const TIMELINE_VIEW_STATE_KEY = 'timelineViewState';
+    const TIMELINE_INTRO_COLLAPSED_STORAGE_KEY = 'timelineDesktopIntroCollapsed';
     let masterClients = [];
     let masterProducts = [];
     let nameCounts = {}; // Key index to detect shared customer naming frequencies
@@ -9067,9 +9317,20 @@ async function fetchTimelineDataWithOfflineTimeout(url){
         );
     }
 
+    function syncTimelineCollapsedFindRow(){
+        const findRow = document.getElementById('timeline-collapsed-find-row');
+        if(!findRow) return;
+
+        const available = isDesktopEngineerTimelineFocusAvailable();
+        findRow.hidden = !available;
+        findRow.setAttribute('aria-hidden', String(!available));
+        findRow.tabIndex = available ? 0 : -1;
+    }
+
     function updateTimelineEngineerFocusStrip(){
         const strip = document.getElementById('timeline-engineer-focus-strip');
         const sub = document.getElementById('timeline-engineer-focus-sub');
+        syncTimelineCollapsedFindRow();
         if(!strip) return;
 
         const shouldShow = isDesktopEngineerTimelineFocusAvailable();
@@ -13007,9 +13268,12 @@ if (selectedVal === "Leave") {
     function updateTimelineRangeLabels(data){
         const weekDisplay = document.getElementById('week-display');
         const printWeekLabel = document.getElementById('print-week-label');
+        const collapsedWeekDisplay = document.getElementById('timeline-collapsed-week-range');
+        const currentRange = data?.current_range || '';
 
-        if(weekDisplay) weekDisplay.innerText = data?.current_range || '';
-        if(printWeekLabel) printWeekLabel.innerText = data?.current_range || '';
+        if(weekDisplay) weekDisplay.innerText = currentRange;
+        if(printWeekLabel) printWeekLabel.innerText = currentRange;
+        if(collapsedWeekDisplay) collapsedWeekDisplay.innerText = currentRange;
     }
 
     function syncMobileTimelineData(data){
@@ -19468,15 +19732,110 @@ window.addEventListener('offline', function(){
     const shiftId = String(safeOfflineTSRValue('offline-tsr-shift-id') || '');
     updateOfflineTSRSaveNote(getOfflineTSRDraft(shiftId));
 });
+
+function getTimelineIntroCollapsedPreference(){
+    const isDesktop = window.matchMedia('(min-width: 769px)').matches;
+    const isPrint = window.matchMedia('print').matches;
+    if(!isDesktop || isPrint) return false;
+
+    try{
+        return localStorage.getItem(TIMELINE_INTRO_COLLAPSED_STORAGE_KEY) === 'true';
+    }catch(err){
+        return false;
+    }
+}
+
+function saveTimelineIntroCollapsedPreference(collapsed){
+    try{
+        localStorage.setItem(
+            TIMELINE_INTRO_COLLAPSED_STORAGE_KEY,
+            collapsed ? 'true' : 'false'
+        );
+    }catch(err){
+        console.warn('[PWA] Unable to save timeline intro preference', err);
+    }
+}
+
+function setTimelineIntroCollapsed(collapsed, refreshSticky=false, persistPreference=false){
+    const panel = document.getElementById('timeline-collapsible-intro');
+    const row = document.getElementById('timeline-intro-toggle-row');
+    const rail = document.getElementById('timeline-collapsed-utility-rail');
+    const toggle = document.getElementById('timeline-intro-toggle');
+    const label = document.getElementById('timeline-intro-toggle-label');
+    const icon = document.getElementById('timeline-intro-toggle-icon');
+    const collapsedWeekDisplay = document.getElementById('timeline-collapsed-week-range');
+    const weekDisplay = document.getElementById('week-display');
+    if(!panel || !toggle) return;
+
+    const isDesktop = window.matchMedia('(min-width: 769px)').matches;
+    const isPrint = window.matchMedia('print').matches;
+    const shouldCollapse = Boolean(collapsed) && isDesktop && !isPrint;
+    const buttonLabel = shouldCollapse ? 'Expand calendar header' : 'Collapse calendar header';
+
+    panel.classList.toggle('timeline-intro-collapsed', shouldCollapse);
+    panel.setAttribute('aria-hidden', String(shouldCollapse));
+    if(row) row.classList.toggle('timeline-intro-row-collapsed', shouldCollapse);
+    if(rail){
+        rail.hidden = !shouldCollapse;
+        rail.setAttribute('aria-hidden', String(!shouldCollapse));
+    }
+    toggle.setAttribute('aria-expanded', String(!shouldCollapse));
+    toggle.setAttribute('aria-label', buttonLabel);
+    toggle.title = buttonLabel;
+    if(label) label.textContent = buttonLabel;
+    if(collapsedWeekDisplay) collapsedWeekDisplay.innerText = weekDisplay ? weekDisplay.innerText : '';
+    if(icon){
+        icon.classList.toggle('fa-chevron-up', !shouldCollapse);
+        icon.classList.toggle('fa-chevron-down', shouldCollapse);
+    }
+
+    if(persistPreference && isDesktop && !isPrint){
+        saveTimelineIntroCollapsedPreference(shouldCollapse);
+    }
+
+    if(refreshSticky){
+        window.dispatchEvent(new Event('resize'));
+    }
+}
+
+function toggleTimelineIntro(){
+    const toggle = document.getElementById('timeline-intro-toggle');
+    if(!toggle) return;
+    const shouldCollapse = toggle.getAttribute('aria-expanded') === 'true';
+    setTimelineIntroCollapsed(shouldCollapse, true, true);
+}
+
+function syncTimelineIntroViewport(){
+    if(!window.matchMedia('(min-width: 769px)').matches){
+        const panel = document.getElementById('timeline-collapsible-intro');
+        const wasCollapsed = Boolean(panel && panel.classList.contains('timeline-intro-collapsed'));
+        if(wasCollapsed){
+            setTimelineIntroCollapsed(false, true);
+        }else{
+            setTimelineIntroCollapsed(false);
+        }
+    }
+    syncTimelineCollapsedFindRow();
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+    setTimelineIntroCollapsed(getTimelineIntroCollapsedPreference());
+});
+window.addEventListener('resize', syncTimelineIntroViewport, { passive: true });
+
 function initTimelineStickyHeaderPolish(){
     if(window.__timelineStickyHeaderPolishBound) return;
     window.__timelineStickyHeaderPolishBound = true;
 
     const updateStickyState = () => {
         const toolbar = document.getElementById('timeline-freeze-toolbar');
+        const collapsedRail = document.getElementById('timeline-intro-toggle-row');
         const topScrollbar = document.getElementById('timeline-sticky-h-scroll');
         const legend = document.querySelector('.calendar-legend');
         const toolbarHeight = toolbar ? Math.ceil(toolbar.getBoundingClientRect().height) : 0;
+        const collapsedRailHeight = collapsedRail && collapsedRail.classList.contains('timeline-intro-row-collapsed')
+            ? Math.ceil(collapsedRail.getBoundingClientRect().height)
+            : 0;
         const scrollbarHeight = topScrollbar ? Math.ceil(topScrollbar.getBoundingClientRect().height) : 0;
         const legendHeight = legend ? Math.min(Math.ceil(legend.getBoundingClientRect().height), 34) : 0;
 
@@ -19486,7 +19845,7 @@ function initTimelineStickyHeaderPolish(){
         // Mobile keeps the larger safety buffer because it uses the card-based view.
         const schedulerAutoHidden = false;
 
-        const effectiveToolbarHeight = toolbarHeight;
+        const effectiveToolbarHeight = toolbarHeight + collapsedRailHeight;
         const effectiveScrollbarHeight = scrollbarHeight;
         const buffer = isDesktop ? 34 : 96;
         const maxHeightOffset = effectiveToolbarHeight + effectiveScrollbarHeight + buffer;

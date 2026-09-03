@@ -53,6 +53,473 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Calendar Collapsed Utility Rail
+
+**Status:** In progress
+**Approved:** 2026-09-03
+**Detailed:** 2026-09-03
+**Execution authorized:** 2026-09-03 — the owner explicitly requested implementation of this
+approved plan in the current repository workspace.
+
+### Context
+
+The preceding Calendar desktop collapsible-intro change already hides the large introductory
+panel while leaving the weekly grid visible. Once collapsed, however, the user loses the compact
+week navigation and engineer-row shortcut that were previously in that panel. This enhancement
+adds one horizontal utility rail in the existing toggle row so a collapsed desktop Calendar still
+supports the common previous/Today/next navigation, the logged-in engineer row focus action when
+that action is genuinely available, and the existing expand-header control. The rail must recover
+the panel's vertical space without changing the schedule data path, table geometry, or mobile and
+print shells.
+
+### Decisions taken
+
+1. The rail lives inside `#timeline-intro-toggle-row`, outside
+   `#timeline-collapsible-intro`, and before `#timeline-sticky-h-scroll`. It is visible only
+   while the existing desktop intro state is collapsed.
+2. The control order is previous week icon, current-week range mirror, Today, next week icon,
+   conditional Find My Row, and the existing expand-header control. The rail controls call only
+   `changeWeek(-1)`, `changeWeek(0)`, `changeWeek(1)`, and `focusLoggedInEngineerRow(true)`;
+   no parallel navigation, fetch, or focus logic is introduced.
+3. The mirrored range is populated by the existing `updateTimelineRangeLabels(data)` flow and
+   is also synchronized when `setTimelineIntroCollapsed()` updates the rail state. It is a
+   polite live region so a week change is announced without moving focus.
+4. The collapsed rail is one compact 42px desktop row and is sticky only in the collapsed state.
+   The existing expanded toolbar and collapse button behavior remain unchanged. Narrow desktop
+   widths may hide secondary Today/Find/expand labels because every control retains a descriptive
+   `title` and `aria-label`.
+5. Find My Row is initially hidden and out of the tab order. A small synchronization helper uses
+   `isDesktopEngineerTimelineFocusAvailable()` to reveal it and restore `tabIndex=0` only when a
+   logged-in engineer and desktop viewport make the action valid; it is not rendered as a dead
+   disabled button.
+6. `setTimelineIntroCollapsed()` continues to be the only state controller. It toggles the row
+   and rail state, preserves the mobile reset, and dispatches the existing resize event for a
+   sticky-layout refresh. The existing sticky initializer measures the collapsed rail and adds
+   that height to the sticky-scrollbar and grid-height offsets; table widths and inner sticky
+   layout rules are not changed.
+7. The rail is hidden and the state is reset to expanded below 769px and in print. Offline
+   schedule panels, filters, permissions, schedule payloads, table DOM, sticky/bottom scrollbars,
+   legend, mobile shells, and the scheduler S1.9 rollback are preserved.
+8. The embedded app-shell cache advances monotonically from v123 to v124 with the explicit
+   `timeline-collapsed-navigation` label. A new published 2026-09-03 everyone-facing release
+   record documents the utility rail while preserving the prior collapsible-intro release.
+9. The desktop collapsed/expanded choice is persisted per browser under the dedicated
+   `timelineDesktopIntroCollapsed` localStorage key. Only the manual desktop toggle writes it;
+   missing, invalid, unavailable, mobile, and print contexts default to the expanded presentation
+   without overwriting the saved desktop preference. Week, branch, and filter state remain
+   separate.
+
+### Investigation
+
+- `templates/timeline.html:96-112` contains the existing toggle row and
+  `#timeline-collapsible-intro`; `:118-369` contains the intro content that must remain inside
+  the panel, while `:372-425` contains the sticky scrollbar, table wrapper, bottom scrollbar,
+  and legend that must remain outside it.
+- `templates/timeline.html:1830-1895` and `:2904-2922` define the existing sticky toolbar,
+  sticky horizontal scrollbar, and CSS variables; `:1995-2030` contains the current desktop
+  collapse styles. The mobile/print overrides at `:5225-5283` must explicitly hide/reset the new
+  rail without changing the existing mobile table behavior.
+- `templates/timeline.html:9136-9158` defines
+  `isDesktopEngineerTimelineFocusAvailable()` and the existing focus-strip synchronization;
+  `:13080-13086` defines `updateTimelineRangeLabels(data)`; `:17483-17488` defines
+  `changeWeek(direction)`; and `:19544-19648` contains the existing collapse controller and
+  `initTimelineStickyHeaderPolish()` resize path to extend.
+- `templates/timeline.html:8980-9001` is the explicit scheduler S1.9 stability rollback and
+  must remain byte-for-byte behaviorally unchanged. The scheduler, offline, permission, and
+  mobile mode functions around it are not part of this enhancement.
+- `app.py:17677-17700` emits the service worker and currently has
+  `medical-service-pwa-offline-navigation-v123-timeline-collapsible-header`; this template
+  change requires v124.
+- `static/changelog/releases.json:3-20` is the preserved prior collapsible-intro release and
+  uses a dated release object with audience-specific items. The new rail needs its own unique
+  2026-09-03 release key and `everyone` item.
+- `tests/test_timeline_desktop_collapse.py:1-189` already protects the preceding panel boundary,
+  desktop-only collapse, v123, and prior release. It is the focused location for the new rail
+  source contracts; no browser/Codex UI automation is permitted.
+
+### Execution steps
+
+1. **Preflight and protected-work confirmation.** Re-read `AGENTS.md`, the complete
+   `changes.md`, the top of `plans.md`, current Git status, and the affected template, test,
+   service-worker, and release sections. Confirm that existing edits to the earlier collapse
+   feature are owner work, do not open or alter `scheduler.db`, and leave `Handoffs/`, `.claude/`,
+   `output/`, `tmp/`, the handoff artifact, and unrelated tests untouched. Done means the current
+   scope and protected paths are recorded before edits.
+2. **Extend fail-first focused coverage.** Update
+   `tests/test_timeline_desktop_collapse.py` with source-level contracts for rail placement and
+   order, existing handler reuse, live range mirroring, conditional Find My Row visibility and
+   tab order, accessible names, compact desktop/sticky CSS, sticky-height measurement, mobile
+   and print reset, v124, and the new everyone release. Run the focused module against the
+   current source and record the expected failures before application-source edits.
+3. **Add the rail markup.** In `templates/timeline.html`, add the rail as a child of the
+   existing `timeline-intro-toggle-row`, before the intro panel and therefore before the sticky
+   calendar surface. Add native buttons with stable IDs, exact existing handlers, title/ARIA
+   names, a polite live current-range mirror, initial hidden/non-tabbable Find My Row state, and
+   leave the existing expand-header button as the final control in the row.
+4. **Add desktop-only rail styling.** In the existing Timeline CSS section of
+   `templates/timeline.html`, keep the rail hidden by default, display it only for the collapsed
+   desktop row, set the row to a 40-44px compact height with sticky positioning only in that
+   state, and allow secondary labels to collapse at narrower desktop widths. Add explicit mobile
+   and print hide/static-reset rules. Do not change table width, inner sticky-header, scrollbar,
+   legend, mobile-shell, or scheduler rollback selectors.
+5. **Extend the existing controllers.** Update `updateTimelineRangeLabels(data)` to write the
+   mirror, add the narrow Find My Row visibility/tab-order synchronization beside the existing
+   focus-strip helper, and extend `setTimelineIntroCollapsed()` to toggle the row/rail state,
+   synchronize the current range, and preserve the existing resize dispatch. Update
+   `initTimelineStickyHeaderPolish()` to measure the collapsed row only when active and include
+   that height in its existing offset variables. Keep `changeWeek()`,
+   `focusLoggedInEngineerRow()`, scheduler rollback, and all data loading unchanged.
+6. **Refresh delivery records.** Change only the embedded service-worker cache label in `app.py`
+   to `medical-service-pwa-offline-navigation-v124-timeline-collapsed-navigation`. Add a unique
+   published 2026-09-03 utility-rail release object for `everyone` in
+   `static/changelog/releases.json`, preserving the earlier release. Append factual
+   implementation and verification bullets to the current dated section of `changes.md`.
+7. **Self-review and verification.** Inspect the owned diff and run the new focused tests,
+   directly related Timeline/print/theme/offline/changelog tests, the isolated full discovery,
+   Python compilation, Jinja parsing, inline JavaScript parsing, release and service-worker
+   checks, and `git diff --check`. Record exact pass/fail/skip counts, known baseline failures,
+   the no-browser limitation, and confirmation that protected/unrelated work was preserved.
+8. **Stop at the publication boundary.** Do not commit, push, deploy, modify Railway,
+   production, databases, protected artifacts, or unrelated files. Leave this plan `In progress`
+   with truthful local evidence and no invented commit hash.
+
+### Deliberately excluded
+
+- Mobile or print utility rails, mobile layout changes, forced-desktop redesign, or changes to
+  engineer/admin/scheduler mobile shells.
+- New navigation/data/fetch/focus implementations, week-state persistence, auto-collapse,
+  scroll/hover/inactivity behavior, or a second week-label update path.
+- Changes to the expanded toolbar, filters, export/print actions, role banners, schedule cards,
+  table markup/widths, inner sticky headers, top/bottom scrollbar dimensions, legend semantics,
+  offline panels, permissions, schedule APIs, or data payloads.
+- Any revival or rewrite of scheduler S1.9/S1.9 rollback, backend/API/database/schema/migration,
+  Railway/production action, browser/Codex UI automation, commit, push, merge, or rebase.
+- Edits to existing dirty owner work outside the six authorized files:
+  `templates/timeline.html`, `tests/test_timeline_desktop_collapse.py`, `app.py`,
+  `static/changelog/releases.json`, `changes.md`, and `plans.md`.
+
+### Verification
+
+- The expanded focused tests must fail before the rail implementation for the missing markup,
+  handler order, mirror flow, conditional focus control, accessibility, desktop/sticky/mobile/
+  print contracts, v124 label, and new release key. This is the positive control; no test-of-the-
+  test loop is required.
+- Run `venv\Scripts\python.exe -B -m unittest tests.test_timeline_desktop_collapse
+  tests.test_timeline_product_coverage tests.test_timeline_print_layout
+  tests.test_appearance_themes tests.test_offline_schedule tests.test_offline_api_status
+  tests.test_changelog_coverage` and report exact totals.
+- Run the repository's full isolated `venv\Scripts\python.exe -B -m unittest discover -s tests`
+  with the disposable test database setup. Report pass/fail/skip counts and separate known
+  purchase-order/staff-fixture baseline failures from any new rail failure.
+- Directly validate `app.py` with `compile()`, parse `templates/timeline.html` with the project's
+  Jinja environment, parse every inline script and the embedded service worker as JavaScript,
+  validate release JSON/schema and monotonic v124, check the wrapper/order and unchanged table
+  surface with source inspection, and run `git diff --check`.
+- Browser and Codex UI verification are intentionally not performed under the project safety
+  rule. The source contracts and non-browser checks are the standing verification bar for this
+  task; visual browser verification would require separate owner authorization.
+
+### After implementation
+
+- Amend this record with the actual owned files, focused/related/full test results, static checks,
+  fail-first evidence, limitations, and protected-worktree confirmation. Keep `Status: In progress`
+  because no commit hash is authorized or available.
+- Keep the v125 cache label, release description, `changes.md`, and test expectations aligned with
+  the implemented behavior. Do not alter the prior collapsible-intro plan or release history.
+- Do not begin a review or correction cycle unless the owner explicitly asks for review. Any later
+  correction requires a new focused plan and fresh implementation authorization.
+
+### Risks
+
+- A misplaced wrapper or row boundary could hide the grid, scrollbar, offline notice, or legend;
+  position/order contracts and diff inspection protect the existing surface.
+- A stale sticky offset could cover the top scrollbar or reduce usable grid height; measuring the
+  active 42px row in the existing resize path and checking CSS variables addresses this risk.
+- A Find My Row control exposed without a valid engineer target would be a dead or misleading
+  action; initial hidden state, `isDesktopEngineerTimelineFocusAvailable()`, and tab-index tests
+  cover it.
+- State leaking to mobile or print could hide the original intro or add an unwanted sticky row;
+  match-media reset plus explicit mobile/print rules prevent that regression.
+- A missing monotonic cache bump would leave installed clients on the old template; exact v124
+  service-worker and release checks cover delivery without any production action.
+
+### Scope amendment — browser-local collapsed-header preference
+
+**Authorized:** 2026-09-03 — the owner explicitly requested that the collapsed-header choice be
+remembered per browser.
+
+- Extend the existing Timeline controller with guarded `localStorage` read/write helpers using
+  `timelineDesktopIntroCollapsed`; manual desktop toggles save `true` or `false`, while the initial
+  load reads the value and defaults expanded when absent or unavailable.
+- Keep mobile and print expanded/unchanged and do not write the preference from viewport-reset
+  paths. Do not combine this preference with the existing week/branch `timelineViewState`.
+- Bump the embedded cache from v124 to
+  `medical-service-pwa-offline-navigation-v125-timeline-collapsed-preference` and add a dated
+  everyone-facing release entry. Extend `tests/test_timeline_desktop_collapse.py` for the storage
+  key, guarded read/write, manual-save path, load path, v125, and release coverage.
+- Verify the focused/related tests, full isolated suite, Python/Jinja/JavaScript/JSON/service-worker
+  checks, and `git diff --check`; retain the existing no-browser, no-commit, no-deployment, and
+  protected-worktree boundaries.
+
+### Implementation evidence (updated 2026-09-03)
+
+- Preflight completed before edits: the only applicable instruction file is the root
+  `AGENTS.md`; the existing dirty changes in the earlier collapsible-intro files are preserved;
+  protected artifacts and unrelated modifications are out of scope. The current v123-focused
+  test module passed **7 tests, 0 failures, 0 errors** before the new rail contracts were added.
+- Rail-specific fail-first checkpoint after extending the test file and before application-source
+  edits: `venv\Scripts\python.exe -B -m unittest tests.test_timeline_desktop_collapse` ran
+  **13 tests with 6 passes, 5 failures, and 2 errors**. The failures/errors were the intentionally
+  absent rail markup, handler/mirror/controller, focus-control, compact desktop/mobile/print,
+  v124, and release contracts; the prior seven collapsible-intro contracts passed.
+- Implemented the authorized utility rail in `templates/timeline.html`, extended its focused
+  contracts in `tests/test_timeline_desktop_collapse.py`, changed the embedded cache in `app.py`
+  from the pre-edit v123 label to v124, added the everyone release in
+  `static/changelog/releases.json`, and updated `changes.md` and this plan. The rail is a 42px
+  collapsed desktop row with the approved control order, existing handler reuse, live range
+  mirror, conditional tab-safe Find My Row, sticky offset measurement, and mobile/print reset.
+  No table/data/offline/permission/mobile-shell/scheduler-rollback logic was changed.
+- Final focused verification passed: `venv\Scripts\python.exe -B -m unittest
+  tests.test_timeline_desktop_collapse` completed **13 tests, 13 passes, 0 failures, 0 errors**.
+  The related Timeline/print/theme/offline/changelog command completed **189 tests, 189 passes,
+  0 failures, 0 errors**.
+- Parent-side rerun after the v124 compatibility correction completed **183 focused/related
+  Timeline, sidebar, print, theme, offline, TSR, and changelog-coverage tests with 183 passes**;
+  the separate changelog workflow suite completed **41 tests with 41 passes**.
+- Static verification passed: `app.py` compile, Timeline Jinja parse, release JSON validation
+  (**56 releases, 218 unique items**), two inline Timeline JavaScript blocks, the embedded
+  service-worker JavaScript and exact v124 label, source wrapper/order/Find-My-Row/cache/release
+  audit, and `git diff --check`. The final diff check returned **OK**; no browser or Codex UI
+  verification was performed under the explicit project rule.
+- Browser-local preference verification passed: the focused module completed **14 tests, 14
+  passes, 0 failures, 0 errors**, and the related Timeline/sidebar/print/theme/offline/changelog
+  command completed **225 tests, 225 passes, 0 failures, 0 errors**. Static checks confirmed the
+  v125 cache label, release manifest, Jinja/Python/inline-JavaScript parsing, and diff hygiene.
+- Parent-side final isolated discovery after the v125 preference implementation completed **851
+  tests with 841 passes, 10 known baseline failures, and 0 errors**. The failures remain limited
+  to eight purchase-order rate-limit/setup cases and two staff-fixture cases; no Timeline,
+  sidebar-cache, rail, print, theme, offline, changelog, or browser-local preference contract
+  failed. The final release manifest contains **57 releases and 219 unique items**.
+- Final isolated discovery completed **850 tests with 840 passes, 10 known baseline failures, and
+  0 errors** after updating the directly affected dirty `tests/test_layout_sidebar.py` cache
+  contract from v123 to the required v124 label/minimum. The remaining failures are eight
+  purchase-order rate-limit/setup cases and two staff-fixture cases; no rail, Timeline, print,
+  theme, offline, changelog, or v124 focused contract failed.
+- Protected-worktree audit remains clean for this task: the authorized Timeline/template/test/cache/
+  release/journal changes were applied, and the existing sidebar test was changed only to keep its
+  directly affected cache contract aligned with v124. Existing `Handoffs/`, `scheduler.db`,
+  `.claude/`, `output/`, `tmp/`, handoff artifact, and other unrelated work were preserved. Status
+  remains `In progress` with no invented commit hash; no commit, push, deployment, Railway,
+  production, database, or browser action was performed.
+
+## Calendar Desktop Collapsible Intro
+
+**Status:** In progress
+**Approved:** 2026-09-03
+**Detailed:** 2026-09-03
+**Execution authorized:** 2026-09-03 — the owner explicitly said `PLEASE IMPLEMENT THIS PLAN`.
+
+### Context
+
+The Calendar page's desktop shell spends substantial vertical space above the weekly grid on
+the title, filters, export/print actions, week navigation, role-specific guidance, and the
+horizontal-scroll hint. On a 13- or 14-inch laptop this reduces the number of schedule rows that
+are visible at once. The attached screenshot is visual reference for that crowded top area only;
+it is not an additional instruction source. The intended result is a reversible desktop-only
+collapse control that gives the user more grid height without changing calendar data, permissions,
+or the existing sticky-grid layout.
+
+### Decisions taken
+
+1. The collapsible area is the complete calendar intro: the main `timeline-freeze-toolbar`, the
+   scheduler toolbar handle, the visible engineer/hybrid/scheduler focus banners, the approver
+   banner, and the horizontal-scroll hint.
+2. The offline schedule queue and notice remain outside the collapsible area so pending offline
+   work cannot be hidden by the layout control.
+3. The actual calendar surface remains outside the panel: `timeline-sticky-h-scroll`,
+   `timeline-scroll-wrapper`/`#main-grid-table`, `timeline-bottom-scroll`, and the legend are not
+   moved or hidden by this feature.
+4. The control is a native accessible button outside the panel, with `aria-controls` and
+   `aria-expanded`, and changes between `Collapse calendar header` and `Expand calendar header`.
+5. The feature is enabled only at the existing desktop breakpoint (`min-width: 769px`). Mobile
+   calendar shells and the narrow forced-desktop mode remain unchanged.
+6. The calendar is expanded on every page load. The state is manual and session-local: no
+   auto-collapse, inactivity timer, or `localStorage` preference is added.
+7. Toggling triggers the existing sticky-header resize path so the CSS height variables and
+   scrollbar offsets are recalculated after the intro panel changes height.
+8. The collapse is immediate rather than animated to minimize interaction with the existing
+   sticky and overflow calculations.
+9. This is a frontend-only behavior change. No backend route, API, database, migration, schema,
+   permission, schedule payload, or table-column behavior changes.
+
+### Investigation
+
+- `templates/timeline.html:61-385` contains the desktop calendar shell. The offline queue and
+  notice precede the main toolbar; the role-specific banners and scroll hint follow it; the
+  sticky horizontal scrollbar, grid wrapper/table, bottom scrollbar, and legend follow the intro.
+- `templates/timeline.html:1811-1924` defines the base sticky toolbar and desktop grid-height
+  rules; `:5169-5205` defines mobile/print toolbar and grid overrides. The scheduler auto-hide
+  sections at `:5213-5580` include a stability rollback that must not be revived or rewritten.
+- `templates/timeline.html:7436-7500` defines the approver banner and its role display rules.
+  Role-specific desktop banners are controlled by the existing body classes around
+  `:5948-6460` and must remain functionally unchanged.
+- `templates/timeline.html:19471-19520` contains `initTimelineStickyHeaderPolish()`, which
+  measures the toolbar and scrollbar and updates `--timeline-sticky-*` and
+  `--timeline-grid-maxheight-offset`; the new toggle will reuse its existing resize listener.
+- `app.py:17677-17705` emits the embedded service worker and precaches `/timeline`; the current
+  cache is v122, so this template change requires monotonic v123 delivery.
+- `static/changelog/releases.json` uses dated release objects with audience-specific items; the
+  current 2026-09-03 release can remain historical while this feature receives its own dated
+  Timeline release entry.
+- Existing Timeline source-contract tests are in `tests/test_timeline_product_coverage.py` and
+  `tests/test_timeline_print_layout.py`; no focused collapsible-intro test currently exists.
+
+### Execution steps
+
+1. **Preflight and fail-first coverage.** Re-read the full current `changes.md`, confirm the
+   current Git status, and preserve `Handoffs/`, `scheduler.db`, `.claude/`, `output/`, `tmp/`,
+   and unrelated worktree changes. Add `tests/test_timeline_desktop_collapse.py` with positive
+   contract assertions for the button/panel markup, required intro membership, grid elements
+   remaining outside the panel, desktop-only CSS, toggle state and viewport-reset hooks, print
+   and mobile boundaries, v123, and the release key. Run the focused test module before source
+   edits and record its expected failures in the current change evidence.
+2. **Add the accessible panel structure.** In `templates/timeline.html`, add a compact toggle
+   row immediately before a new intro panel. Give the button a stable id, native button type,
+   `aria-controls`, initial `aria-expanded="true"`, visible accessible label, and expand/collapse
+   icon. Wrap the main toolbar through the scroll hint, including the existing scheduler handle
+   and role-specific banners, while keeping offline status and every grid/scroll/legend element
+   in its current order outside the panel.
+3. **Add desktop-only styling.** In `templates/timeline.html`, style the toggle as a small
+   right-aligned control that does not materially reduce the expanded grid height. Hide the intro
+   panel only when the desktop toggle state is collapsed; hide the toggle below 769px and in
+   print. Do not alter table sizing, sticky positions, scrollbar dimensions, mobile shells, or
+   the scheduler rollback selectors.
+4. **Add the manual controller.** Near the existing sticky-header JavaScript, add
+   `setTimelineIntroCollapsed`, `toggleTimelineIntro`, and viewport synchronization. Gate
+   collapse to `window.matchMedia('(min-width: 769px)')`, reset to expanded when entering the
+   mobile breakpoint, update `aria-expanded`, button text, icon state, and panel visibility, and
+   dispatch the existing resize event after a desktop toggle. Do not store the state or attach
+   auto-hide/inactivity listeners.
+5. **Refresh delivery records.** In `app.py`, change the embedded cache label to
+   `medical-service-pwa-offline-navigation-v123-timeline-collapsible-header`. Add a
+   `2026-09-03-timeline-collapsible-intro` release object for everyone in
+   `static/changelog/releases.json`. Append factual implementation and verification bullets to
+   the current dated section of `changes.md`. Keep this plan marked `In progress` until the
+   implementation is complete; do not rewrite historical plan records.
+6. **Self-review and verification.** Inspect the owned diff for incorrect wrapper nesting,
+   hidden focusable descendants, mobile/print regressions, accidental scheduler auto-hide changes,
+   line-ending damage, protected-artifact disturbance, and unrelated scope. Run the focused and
+   related tests, the full isolated suite, Python/Jinja/JavaScript/JSON/service-worker checks,
+   and `git diff --check`. Record exact results and any pre-existing failures.
+7. **Release/commit boundary.** Do not commit, push, deploy, alter Railway, modify production or
+   database state, or change protected artifacts. A future commit checklist must stage only the
+   intended template, test, service-worker, release, plan, and change-log files; publication
+   requires a separate direct owner instruction.
+
+### Deliberately excluded
+
+- Mobile collapse controls or changes to mobile engineer/admin/scheduler shells.
+- Auto-collapse on scroll, hover, inactivity, or a persisted browser preference.
+- Any redesign of filters, week navigation, export/print actions, role banners, schedule cards,
+  table columns, sticky headers, horizontal scrollbars, or legend semantics.
+- Changes to the existing scheduler auto-hide experiment or its S1.9 stability rollback.
+- Backend/API/database/schema/migration/permission changes, browser automation, Codex navigation,
+  Railway actions, production operations, commit, push, merge, or rebase.
+
+### Verification
+
+- The new focused tests must fail before implementation for the absent toggle/panel structure,
+  missing desktop/mobile/print contracts, missing sticky-refresh hooks, old service-worker cache,
+  and missing release entry. This is the required positive control; no test-of-the-test loop is
+  needed.
+- Run `venv\\Scripts\\python.exe -B -m unittest tests.test_timeline_desktop_collapse
+  tests.test_timeline_product_coverage tests.test_timeline_print_layout
+  tests.test_appearance_themes` and the directly related Timeline/offline suites.
+- Run the full isolated discovery suite using the repository's disposable test database setup;
+  report pass/fail/skip counts and distinguish pre-existing failures from new failures.
+- Run direct `compile()`/Python syntax validation, Jinja parsing for `templates/timeline.html`,
+  inline JavaScript syntax checks, release JSON validation, embedded service-worker syntax/version
+  checks, and `git diff --check`.
+- Source-level assertions must confirm the table surface remains outside the panel, the button
+  remains outside it, offline status remains visible, and the mobile/print paths do not inherit
+  the desktop collapse.
+- Browser/Codex UI verification is explicitly not performed under the project safety rule. If
+  visual browser verification becomes essential, stop and request separate owner authorization.
+
+### After implementation
+
+- Update this plan with the actual files, test commands/results, deviations, limitations, and
+  protected-worktree confirmation. If no commit occurs, retain `In progress` or use the project's
+  truthful local-completion status rather than inventing a commit hash.
+- Keep the dated release entry and `changes.md` evidence aligned with the implemented behavior and
+  exact verification results.
+- Do not start a separate review or correction cycle unless the owner explicitly requests review;
+  any later correction requires a new focused plan and fresh authorization.
+
+### Risks
+
+- Hiding the wrong ancestor could remove the grid or its horizontal scrollbar. The wrapper
+  boundary tests and unchanged element order protect against this.
+- Failing to refresh the sticky calculations could leave stale offsets or a reduced grid height.
+  The controller dispatches the existing resize path, and focused tests require that hook.
+- A desktop state leaking into mobile or print could hide required content. Match-media gating,
+  breakpoint reset, print CSS, and source assertions cover those paths.
+- The template is precached as an app-shell entry; omitting v123 would leave existing PWA clients
+  on the old layout. The service-worker version and release tests cover delivery.
+
+### Implementation evidence (updated 2026-09-03)
+
+- Added `tests/test_timeline_desktop_collapse.py` before editing application source. The focused
+  source-level contracts cover the accessible button/panel boundary, required collapsible intro
+  members, offline and calendar-surface placement, desktop/mobile/print CSS, manual controller
+  state and sticky refresh, the exact v123 cache label, and the everyone-facing release entry.
+- Fail-first checkpoint: `venv\Scripts\python.exe -B -m unittest
+  tests.test_timeline_desktop_collapse` against the unchanged implementation ran **7 tests with
+  7 expected failures and 0 errors**. The expected failures were the missing toggle/panel and
+  controller, missing desktop/mobile/print contracts, old cache label, and missing release key.
+  Only the new focused test file was added at that checkpoint; the protected artifacts and
+  unrelated dirty work remain preserved.
+- Implemented the approved behavior in `templates/timeline.html`: the native button starts
+  expanded, controls the new intro panel with `aria-controls`/`aria-expanded`, switches the
+  exact collapse/expand labels and chevron icons, gates collapse to min-width 769px, resets
+  expanded on mobile resize, hides the control in mobile/print, and dispatches the existing
+  resize path after toggling. The offline schedule panel/notice and calendar surface remain
+  outside the panel in their existing order; no scheduler rollback, mobile shell, table sizing,
+  sticky selector, permission, API, route, or data logic was changed.
+- Updated `app.py` to the exact
+  `medical-service-pwa-offline-navigation-v123-timeline-collapsible-header` cache label and
+  added the published `2026-09-03-timeline-collapsible-intro` release object for `everyone` in
+  `static/changelog/releases.json`. Updated the current dated section of `changes.md` with the
+  implementation, fail-first, verification, and limitation evidence.
+- Passing focused verification: `venv\Scripts\python.exe -B -m unittest
+  tests.test_timeline_desktop_collapse` (**7 tests, 0 failures, 0 errors**) and the related
+  Timeline/print/theme/offline suite (**139 tests, 0 failures, 0 errors**). Changelog coverage
+  also passed (**3 tests, 0 failures, 0 errors**).
+- Passing static verification: `app.py` compile, Timeline Jinja parse, release JSON/schema
+  validation, inline controller JavaScript syntax, embedded service-worker JavaScript syntax and
+  exact cache-label check, the wrapper/order/mobile-print/sticky self-review, and `git diff
+  --check`.
+- Full isolated discovery ran **844 tests with 833 passes, 11 failures, and 0 errors**. Ten
+  failures are the already-recorded purchase-order rate-limit and staff-fixture failures. The
+  remaining failure at the worker checkpoint was the directly affected stale
+  `tests/test_layout_sidebar.py` assertion for the old v122 cache string. The parent audit
+  updated that cache assertion and its minimum-version contracts to the required v123 label;
+  this was a compatibility test correction caused by the approved monotonic cache bump, not a
+  product-scope expansion. No browser/Codex UI verification was performed under the project
+  safety rule.
+- Parent-side verification reran the affected sidebar cache contract after that correction; the
+  focused/related suites were re-run after that correction: **177 tests passed with 0 failures
+  and 0 errors**. The final isolated discovery completed **844 tests with 834 passes, 10 known
+  baseline failures, and 0 errors**; the failures are limited to eight purchase-order
+  rate-limit/setup cases and two staff-fixture cases. No Calendar, sidebar-cache, Timeline,
+  print, theme, offline, or changelog test failed.
+- The owned diff contains only the approved template, new focused test, app cache label, release,
+  change log, and current plan evidence. Existing dirty `Handoffs/`, `scheduler.db`, `.claude/`,
+  `output/`, `tmp/`, and unrelated worktree changes were preserved. Status remains `In progress`
+  because no commit, push, deployment, Railway, production, or Git-state action was authorized;
+  isolated test databases were used only by the repository test suite, and no commit hash is
+  recorded.
+
 ## Desktop Sidebar Resize and Single-Line Labels
 
 **Status:** In progress

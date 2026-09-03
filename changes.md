@@ -2,6 +2,128 @@
 
 codex changes - 2026-09-03
 
+- Implemented the collapsed Calendar utility rail in `templates/timeline.html` inside the
+  existing `timeline-intro-toggle-row`, before the intro panel and sticky calendar surface. The
+  42px desktop-only row orders Previous Week, the live current-range mirror, Today, Next Week,
+  conditional Find My Row, and the existing expand-header control; it reuses the existing week and
+  engineer-focus handlers without adding navigation or data logic.
+- Extended the Timeline range-label flow and `setTimelineIntroCollapsed()` so the mirror and rail
+  visibility/state stay synchronized. Find My Row starts hidden and non-tabbable and is revealed
+  only when `isDesktopEngineerTimelineFocusAvailable()` is true. The collapsed row is sticky only
+  on desktop, secondary labels collapse at narrower desktop widths, and mobile/print hide/reset
+  rules remain explicit.
+- Extended `initTimelineStickyHeaderPolish()` to measure the active collapsed rail and include its
+  height in the existing sticky-scrollbar and grid-height offsets, without changing table widths,
+  inner sticky layout, scrollbar DOM, offline panels, mobile shells, or scheduler S1.9 rollback.
+- Bumped the embedded service-worker cache in `app.py` from v123 to
+  `medical-service-pwa-offline-navigation-v124-timeline-collapsed-navigation` and added the
+  published `2026-09-03-timeline-collapsed-utility-rail` release for the `everyone` audience in
+  `static/changelog/releases.json`; the earlier collapsible-intro release remains intact.
+- Updated the already-dirty `tests/test_layout_sidebar.py` cache compatibility assertions to the
+  required v124 label and minimum after the monotonic service-worker bump; sidebar behavior and
+  unrelated test contracts were not changed.
+- Added guarded browser-local persistence for the Timeline desktop header preference in
+  `templates/timeline.html` using `timelineDesktopIntroCollapsed`. Manual desktop toggles save the
+  collapsed/expanded value, the next desktop load restores it, and storage failures or mobile/
+  print contexts remain expanded without changing week, branch, filter, or permission state.
+- Bumped the embedded service-worker cache in `app.py` from v124 to
+  `medical-service-pwa-offline-navigation-v125-timeline-collapsed-preference` and added the
+  published `2026-09-03-timeline-collapsed-preference` release for `everyone`; the prior rail and
+  collapsible-intro release entries remain intact.
+- Corrected the new rail-order test's absolute-versus-relative source offset comparison after the
+  first post-edit focused run exposed a test-only assertion error; no application behavior or
+  scope changed.
+- Hardened the mobile viewport reset during self-review so the existing sticky resize event is
+  dispatched only when a collapsed panel actually needs resetting, avoiding recursive resize
+  dispatches on ordinary mobile resizes.
+- Final focused verification passed: `venv\Scripts\python.exe -B -m unittest
+  tests.test_timeline_desktop_collapse` completed **13 tests, 13 passes, 0 failures, 0 errors**;
+  the related Timeline/print/theme/offline/changelog suites completed **189 tests, 189 passes,
+  0 failures, 0 errors**.
+- Parent-side rerun after the v124 compatibility correction completed **183 focused/related
+  Timeline, sidebar, print, theme, offline, TSR, and changelog-coverage tests with 183 passes**;
+  the separate changelog workflow suite completed **41 tests with 41 passes**.
+- Preference-focused verification passed: `venv\Scripts\python.exe -B -m unittest -b
+  tests.test_timeline_desktop_collapse` completed **14 tests, 14 passes, 0 failures, 0 errors**.
+- Parent-side final isolated discovery after the v125 preference implementation completed **851
+  tests with 841 passes, 10 known baseline failures, and 0 errors**. The failures remain limited
+  to eight purchase-order rate-limit/setup cases and two staff-fixture cases; no Timeline,
+  sidebar-cache, rail, print, theme, offline, changelog, or browser-local preference contract
+  failed.
+- Static verification passed for `app.py` compilation, Timeline Jinja parsing, release JSON/schema
+  and uniqueness validation (**57 releases, 219 unique items**), two inline Timeline JavaScript
+  blocks, embedded service-worker JavaScript and exact v125 cache validation, source wrapper/order/
+  conditional-focus/cache/release review, and `git diff --check`.
+- Final isolated discovery completed **850 tests with 840 passes, 10 known baseline failures, and
+  0 errors** after updating the directly affected dirty `tests/test_layout_sidebar.py` cache
+  contract from v123 to the required v124 label/minimum. The remaining failures are eight
+  purchase-order rate-limit/setup cases and two staff-fixture cases; no rail, Timeline, print,
+  theme, offline, changelog, or cache-version test failed. No browser/Codex UI, commit, push,
+  deployment, Railway, production, database, or protected-artifact action was performed; existing
+  unrelated worktree changes were preserved.
+- Recorded the approved/in-progress `Calendar Collapsed Utility Rail` plan at the top of
+  `plans.md`, preserving the historical collapsible-intro plan and existing owner work. The
+  authorized file scope remains limited to the Timeline template, focused test, embedded cache,
+  release manifest, and the two project journals; no commit or publication is authorized.
+- Extended `tests/test_timeline_desktop_collapse.py` with rail-specific source contracts before
+  editing the Timeline implementation. The new contracts cover boundary/order and handler reuse,
+  range mirroring, conditional non-tabbable Find My Row, accessible names/live-region behavior,
+  compact desktop/sticky refresh, mobile/print reset, v124 delivery, and the new release entry.
+- Fail-first checkpoint after extending the focused tests and before application-source edits:
+  `venv\Scripts\python.exe -B -m unittest tests.test_timeline_desktop_collapse` ran **13 tests
+  with 5 failures, 2 errors, and 6 passes**. The failures/errors were the intentionally missing
+  utility-rail markup, handler/mirror/controller contracts, conditional focus control, compact
+  desktop/mobile/print contracts, v124 cache label, and new release entry; the prior seven
+  collapsible-intro contracts continued to pass.
+- Added the focused source-level regression module `tests/test_timeline_desktop_collapse.py`
+  before changing the Calendar implementation. Its seven contracts cover the accessible
+  desktop toggle and panel boundary, required intro membership, offline/grid/legend placement,
+  desktop-only/mobile-reset/print CSS, manual sticky-refresh hooks, and v123/release delivery.
+- Ran `venv\Scripts\python.exe -B -m unittest tests.test_timeline_desktop_collapse` against
+  the unchanged source: **7 tests ran with 7 expected failures and 0 errors**. The failures
+  were the intentionally absent toggle/panel/controller, desktop/mobile/print contracts, exact
+  v123 cache label, and `2026-09-03-timeline-collapsible-intro` release; no source, manifest,
+  database, protected artifact, production, browser, or Git publication state was changed at
+  that checkpoint.
+- Implemented the Calendar desktop collapsible intro in `templates/timeline.html` with a native
+  accessible toggle outside `#timeline-collapsible-intro`. The panel now contains the existing
+  calendar toolbar, scheduler handle, visible role banners, approver banner, and scroll hint;
+  offline schedule status panels remain outside, and the sticky scrollbar, grid/table, bottom
+  scrollbar, and legend remain outside in their existing order. The control starts expanded on
+  every load, uses no persistence or auto-collapse, updates exact labels/icons and ARIA state,
+  resets expanded below 769px, is hidden below 769px and in print, and dispatches the existing
+  sticky-header resize path after a desktop toggle.
+- Bumped the embedded service-worker cache in `app.py` to
+  `medical-service-pwa-offline-navigation-v123-timeline-collapsible-header` and added the
+  published `2026-09-03-timeline-collapsible-intro` release object for the `everyone` audience
+  to `static/changelog/releases.json`.
+- Focused verification passed: `venv\Scripts\python.exe -B -m unittest
+  tests.test_timeline_desktop_collapse` (**7 tests, 0 failures, 0 errors**). The related
+  Timeline/print/theme/offline suites passed (**139 tests, 0 failures, 0 errors**), and
+  `tests.test_changelog_coverage` passed (**3 tests, 0 failures, 0 errors**).
+- Static verification passed for `app.py` compilation, Timeline Jinja parsing, release
+  JSON/schema validation, inline controller JavaScript syntax, embedded service-worker syntax
+  and exact cache-label validation, wrapper/order/mobile-print/sticky self-review, and
+  `git diff --check`.
+- Full isolated discovery ran **844 tests with 833 passes, 11 failures, and 0 errors**: ten are
+  the already-recorded purchase-order rate-limit and staff-fixture failures; one is the
+  directly affected stale `tests/test_layout_sidebar.py` assertion for the old v122 cache string,
+  which was subsequently updated to require the approved v123 cache label. No browser/Codex UI,
+  commit, push, deployment, Railway, production, or protected-artifact action was performed;
+  isolated test databases were used only by the repository test suite, and existing unrelated
+  worktree changes were preserved.
+- Updated the directly affected `tests/test_layout_sidebar.py` cache assertions from the previous
+  v122 sidebar label/minimum to the current v123 Timeline shell cache. This is a compatibility
+  test-contract correction for the required monotonic service-worker bump; no sidebar behavior
+  or unrelated test scope changed.
+- Parent-side final focused verification passed: the new collapse tests, updated sidebar cache
+  contract, Timeline/print/theme/offline/TSR suites, and changelog coverage completed **177 tests
+  with 177 passes, 0 failures, and 0 errors** after the v123 compatibility correction.
+- Parent-side final isolated discovery completed **844 tests with 834 passes, 10 failures, and
+  0 errors**. The remaining failures are the known baseline purchase-order rate-limit/setup
+  failures (8) and staff-fixture failures (2); no Calendar collapsible-intro, sidebar-cache,
+  Timeline, print, theme, offline, or changelog test failed. No browser/Codex UI, commit, push,
+  deployment, Railway, production, or protected-artifact action was performed.
 - Renamed the Field Operations sidebar link from `Liquidation` to `Reimburse / Liquidation`
   and both Reports sidebar links from `TSR files` to `Service Documents` in
   `templates/layout.html`; internal routes, permission checks, and TSR/liquidation identifiers

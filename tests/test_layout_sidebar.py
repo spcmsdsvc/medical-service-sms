@@ -177,8 +177,8 @@ class SidebarSourceTests(unittest.TestCase):
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
         self.assertIn("app-shell.css') }}?v=3", self.layout)
-        self.assertIn("medical-service-pwa-offline-navigation-v122-sidebar-resize", self.app_source)
-        assert_cache_version_at_least(self, 122, self.app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v125-timeline-collapsed-preference", self.app_source)
+        assert_cache_version_at_least(self, 125, self.app_source)
 
     def test_pending_summary_endpoint_is_lightweight(self):
         self.assertIn("@app.route('/api/nav/pending-summary')", self.app_source)
@@ -190,7 +190,7 @@ class SidebarSourceTests(unittest.TestCase):
 
     def test_shell_css_is_cached_and_version_bumped(self):
         self.assertIn("'/static/css/app-shell.css',", self.app_source)
-        assert_cache_version_at_least(self, 122, self.app_source)
+        assert_cache_version_at_least(self, 125, self.app_source)
 
 
 class SidebarRenderTests(unittest.TestCase):

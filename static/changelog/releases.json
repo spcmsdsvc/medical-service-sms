@@ -1,6 +1,60 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-03-timeline-collapsed-preference",
+      "release_date": "2026-09-03",
+      "title": "Remembered Calendar Header Preference",
+      "summary": "Calendar remembers each browser's desktop header visibility preference.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-03-timeline-collapsed-preference-everyone",
+          "category": "Calendar",
+          "description": "Calendar now remembers whether the desktop introductory header is collapsed or expanded in this browser. The preference is local to the browser, does not change week or filter state, and is ignored on mobile and print.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-03-timeline-collapsed-utility-rail",
+      "release_date": "2026-09-03",
+      "title": "Calendar Collapsed Utility Rail",
+      "summary": "Desktop Calendar keeps essential week navigation and engineer-row focus available after the introductory header is collapsed.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-03-timeline-collapsed-utility-rail-everyone",
+          "category": "Calendar",
+          "description": "When the desktop Calendar header is collapsed, a compact utility rail keeps Previous Week, the current week range, Today, Next Week, and Find My Row available when applicable, alongside the expand-header control. The rail is hidden on mobile and print, while the schedule grid and offline status remain unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-03-timeline-collapsible-intro",
+      "release_date": "2026-09-03",
+      "title": "Calendar Desktop Collapsible Intro",
+      "summary": "Desktop Calendar can now reclaim vertical space by collapsing its introductory controls while keeping the schedule grid visible.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-03-timeline-collapsible-intro-everyone",
+          "category": "Calendar",
+          "description": "On desktop Calendar, a manual control collapses the title, calendar controls, role guidance, and horizontal-scroll hint so more schedule rows are visible. The control starts expanded on each load, stays hidden on mobile and print, and leaves offline sync status and the schedule grid available.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-03-calibration-report-machine-details",
       "release_date": "2026-09-03",
       "title": "Calibration Report Machine Details",
