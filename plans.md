@@ -55,14 +55,15 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Stock Inventory Search Across Items and Movement History
 
-**Status:** In progress
+**Status:** Executed — b8cb4c7
 **Approved:** 2026-09-03
 **Detailed:** 2026-09-03
 **Execution authorized:** 2026-09-03 — the owner explicitly requested implementation of this
 plan in the current repository workspace.
-**Local execution state:** Implementation and verification are complete in the working tree;
-the owner has separately authorized commit and push of this Stock Inventory change only. Other
-dirty work remains outside this execution scope.
+**Local execution state:** Implementation, verification, commit, and push are complete. The
+Stock Inventory change was published as `b8cb4c7` (`b8cb4c7742d962a2042975ed986ed2a5d3ae9ada`)
+to `origin/main`; Railway's production deployment metadata reports success. Other dirty work
+remains outside this execution scope.
 
 ### Context
 
@@ -166,16 +167,22 @@ movement controls, mobile cards, and mutation guards unchanged.
    Run isolated full test discovery and report exact pass/fail/skip counts, distinguishing
    any pre-existing baseline failures. Use Flask test-client and source-level checks only;
    browser automation is excluded by project instruction.
-8. **Close the execution record without publishing.** Leave this plan marked `In progress`
-   or update it to `Executed` only if a separately authorized commit exists. No commit, push,
-   Railway action, deployment, or production/database operation is authorized by this plan.
+8. **Close the execution record and publish only the authorized change.** After the owner
+   separately authorizes commit and push, commit only the six intended Stock Inventory source,
+   test, manifest, plan, and change-record files; verify the remote `main` SHA and Railway
+   deployment metadata; and update this plan to `Executed` with the feature commit hash. Do not
+   stage or publish the pre-existing dirty Calendar work, database, Handoffs, `.claude/`,
+   `output/`, `tmp/`, or unrelated tests. Done: the feature commit is `b8cb4c7`, remote `main`
+   matches it, and Railway reports a successful production deployment.
 
 ### Deliberately excluded
 
 * Currently Borrowed Items search, exports, pagination, fuzzy/ranked matching, structured
   date/direction/engineer filters, new API totals, and changes to movement mutation behavior.
 * Schema or migration work, ledger/data repair, permission/authentication changes, service
-  worker/cache changes, production/Railway changes, and any commit or push.
+  worker/cache changes, and unrequested production/Railway configuration or database changes.
+  Commit/push was absent from the initial plan and required separate owner authorization; that
+  authorization was later given for this change only.
 * Browser or in-app Codex verification. The Flask test client, source contracts, template
   parsing, and static checks are the required verification surface for this task.
 
@@ -200,8 +207,9 @@ movement controls, mobile cards, and mutation guards unchanged.
   existing 2026-09-03 `changes.md` section. Do not claim browser verification because project
   instructions prohibit it for this task.
 * A later user instruction `Review the implementation.` is required before any post-
-  implementation review classification. A later user instruction to commit and push is a
-  separate authorization and is not implied here.
+  implementation review classification. Commit/push was a separate authorization from the
+  implementation request; the owner later authorized publication of this change only, and the
+  remote/Railway outcome is recorded in `changes.md`.
 
 ### Risks
 

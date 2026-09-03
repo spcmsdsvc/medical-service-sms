@@ -41,11 +41,20 @@ codex changes - 2026-09-03
 - Isolated full discovery completed **861 tests with 851 passes, 10 failures, and 0 errors**.
   The ten failures remain the known baseline cluster: eight purchase-order rate-limit/setup
   cases and two staff-fixture cases. No Stock Inventory, changelog, Calendar, or service-worker
-  cache test failed. No browser/Codex UI, database, protected artifact, commit, push,
-  deployment, Railway, or production action was performed.
+  cache test failed. The discovery run used no browser/Codex UI, database, protected artifact,
+  deployment, Railway, or production action; publication was a later separately authorized
+  step recorded below.
 - The owner subsequently authorized commit and push of this Stock Inventory search change only.
   The pre-existing dirty Calendar work, database, Handoffs, `.claude/`, `output/`, `tmp/`, and
   unrelated tests remain outside the publication scope and must stay unstaged.
+- Committed the six intended Stock Inventory implementation, test, release-manifest, plan, and
+  change-record files as `b8cb4c7742d962a2042975ed986ed2a5d3ae9ada` (`Improve Stock Inventory
+  search`) and pushed `main` to `origin`. `git ls-remote origin refs/heads/main` confirmed the
+  same production SHA. GitHub's Railway integration reported status `success` for context
+  `empowering-integrity - web` with description `Success - web-production-e2085.up.railway.app`;
+  deployment metadata recorded Railway environment `empowering-integrity / production` as
+  successfully deployed (deployment id `6238193858`, updated 2026-09-03 06:20:58 UTC). No
+  Railway variable change or manual redeploy was performed.
 - Implemented the collapsed Calendar utility rail in `templates/timeline.html` inside the
   existing `timeline-intro-toggle-row`, before the intro panel and sticky calendar surface. The
   42px desktop-only row orders Previous Week, the live current-range mirror, Today, Next Week,
