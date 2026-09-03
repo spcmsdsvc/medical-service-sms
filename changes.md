@@ -146,8 +146,12 @@ codex changes - 2026-09-02
   without a unittest summary because the existing reimbursement-receipt DDL initializer continued
   repeating SQLite-lock retries; no preview-specific failure appeared before it was stopped.
 - Committed the isolated preview implementation as `e79c5ca` with only the eight approved feature
-  files staged; publication to `origin/main` remains the separately authorized next step after the
-  remote-head recheck. The shared dirty root and all protected artifacts remain excluded.
+  files staged, then published the implementation and documentation closeout commits `e79c5ca`
+  and `6aa85fd` to `origin/main` after the remote-head recheck. Final verification returned
+  `6aa85fd95e50836307d9f102e18b5ea1a03e055a` for `refs/heads/main`; Railway deployment metadata was
+  unavailable because the Railway CLI/connector is not installed. No manual redeploy, Railway
+  variable, production database, or production storage action was performed, and the shared dirty
+  root and all protected artifacts remain excluded.
 
 codex changes - 2026-09-01
 

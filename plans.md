@@ -232,9 +232,12 @@ SQLite locks; this is an environment/test-suite limitation, not a preview assert
 shared dirty root and its scheduler database, handoff, `.claude/`, output, and tmp artifacts were
 not modified; no browser, production, Railway, service-worker, or database action was performed.
 The implementation was committed in the isolated worktree as `e79c5ca`, containing only the
-approved preview, vendor, test, release, change-log, and plan files. The separately authorized
-push and remote-head verification remain the next publication step; post-implementation review and
-production/Railway actions remain separate gates.
+approved preview, vendor, test, release, change-log, and plan files. The documentation closeout
+was committed as `6aa85fd`; both feature-only commits were pushed to `origin/main` after the final
+remote-head recheck, which returned `6aa85fd95e50836307d9f102e18b5ea1a03e055a`. Railway deployment
+metadata was unavailable because the Railway CLI/connector is not installed, and no manual redeploy,
+Railway-variable, production database, or production storage action was performed. Post-
+implementation review and production/Railway actions remain separate gates.
 
 ### Risks
 
