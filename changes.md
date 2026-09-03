@@ -36,9 +36,12 @@ codex changes - 2026-09-03
 - Isolated full discovery completed **867 tests with 857 passes, 10 failures, 0 errors, and 1
   skip**. The ten failures remain the known baseline purchase-order rate-limit/setup and
   staff-fixture cluster; no Stock Inventory or changelog regression was observed. Verification
-  used Flask test-client/source checks only. No commit, push, Railway/deployment, database,
-  service-worker, or production action was performed, and the protected unrelated worktree
-  changes remain untouched.
+  used Flask test-client/source checks only. The implementation was committed as `ba8597b`
+  (`ba8597baaabcd8d13f289e84a7e4a0383d8d7e07`) and pushed to `origin/main`; `git ls-remote`
+  confirmed that exact production-branch commit, and the Railway commit status reported
+  successful deployment for `web-production-e2085.up.railway.app`. No manual redeploy, Railway
+  variable change, database, service-worker, or production-data action was performed, and the
+  protected unrelated worktree changes remain untouched.
 - Recorded the owner-authorized `Stock Inventory Search Across Items and Movement History`
   plan at the top of `plans.md` with its bounded file scope, fail-first tests, verification
   requirements, deliberate exclusions, and the explicit decision not to bump the existing

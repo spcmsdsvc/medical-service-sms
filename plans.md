@@ -55,11 +55,13 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Stock Inventory Borrowed Items Pagination and Collapse
 
-**Status:** In progress
+**Status:** Executed — ba8597b
 **Approved:** 2026-09-03
 **Detailed:** 2026-09-03
 **Execution authorized:** 2026-09-03 — the owner explicitly requested implementation with
 `PLEASE IMPLEMENT THIS PLAN`.
+**Finished:** 2026-09-03 — implementation committed as `ba8597b`, pushed to `origin/main`, and
+Railway reported a successful production deployment.
 **Scope:** Extend the existing Currently Borrowed Items panel only. The earlier shared search
 scope remains Items and Movement History; this plan does not add borrowed rows to that search.
 
@@ -198,15 +200,17 @@ bounded page contract without changing how outstanding loans are derived.
 * Append factual red/green evidence and static-check results to the current-date `changes.md`
   section, including protected-worktree confirmation and the deliberate no-cache/no-schema
   outcome.
-* Current execution evidence (2026-09-03, before separate publication): the fail-first checkpoint
+* Current execution evidence (2026-09-03, including publication): the fail-first checkpoint
   ran 40 tests with 35 passes, 1 failure, and 4 errors; the post-implementation Stock Inventory
   run ran 40 tests with 40 passes; the focused changelog run ran 44 tests with 44 passes and 1
   skip; and isolated full discovery ran 867 tests with 857 passes, 10 failures, 0 errors, and 1
   skip. The ten full-suite failures are the known baseline purchase-order rate-limit/setup and
   staff-fixture cluster. Python, Jinja, inline JavaScript, release-manifest, v125-cache, and
-  `git diff --check` verification passed. No browser, database, protected-artifact, Railway,
-  deployment, or production action was performed. Because commit/push remains separately gated,
-  this plan intentionally remains `In progress` rather than receiving an execution commit hash.
+  `git diff --check` verification passed. No browser, database, or protected-artifact action was
+  performed. The implementation was then committed as `ba8597b`, pushed to `origin/main`, and
+  verified by `git ls-remote`; the Railway commit status for the pushed production commit reported
+  successful deployment. No manual redeploy or Railway variable change was made. This plan is now
+  `Executed — ba8597b`.
 * Mark this plan `Executed — <commit>` only when a separately authorized commit exists; otherwise
   leave it `In progress` with implementation evidence. A separate `Review the implementation.`
   instruction is required before post-implementation review classification.
