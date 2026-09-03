@@ -62,6 +62,36 @@ class StockInventorySourceTests(unittest.TestCase):
         self.assertIn('loadStockBorrowed()', self.page_source)
         self.assertIn('renderStockBorrowed()', self.page_source)
 
+    def test_borrowed_pagination_and_collapse_contracts_are_present(self):
+        for marker in (
+            'id="stockBorrowedToggle"',
+            'aria-controls="stockBorrowedContent"',
+            'id="stockBorrowedContent"',
+            'id="stockBorrowedPagination"',
+            'id="stockBorrowedPrev"',
+            'id="stockBorrowedNext"',
+            'function toggleStockBorrowed',
+            'function changeStockBorrowedPage',
+            'function renderStockBorrowedPagination',
+            'STOCK_BORROWED_COLLAPSED_STORAGE_KEY',
+            'localStorage.getItem(STOCK_BORROWED_COLLAPSED_STORAGE_KEY)',
+            'localStorage.setItem(STOCK_BORROWED_COLLAPSED_STORAGE_KEY',
+            'borrowedPage',
+            'borrowedRequestId',
+            'data.total',
+            'data.total_pages',
+            'aria-expanded',
+        ):
+            self.assertIn(marker, self.page_source)
+        for marker in (
+            "request.args.get('page')",
+            "'total_pages'",
+            "'per_page'",
+            "'total'",
+        ):
+            self.assertIn(marker, self.app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v125-timeline-collapsed-preference', self.app_source)
+
     def test_read_only_ui_has_no_mutation_controls(self):
         self.assertIn('id="stockAddItemButton"', self.page_source)
         self.assertIn('addButton.hidden=stockState.readOnly', self.page_source)
@@ -207,6 +237,16 @@ class StockInventorySourceTests(unittest.TestCase):
         self.assertTrue(release['is_published'])
         self.assertTrue(any(
             item['item_key'] == '2026-09-03-stock-inventory-search-everyone'
+            and 'everyone' in item['audiences']
+            for item in release['items']
+        ))
+
+    def test_release_manifest_contains_borrowed_pagination(self):
+        manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
+        release = next(item for item in manifest['releases'] if item['release_key'] == '2026-09-03-stock-inventory-borrowed-pagination')
+        self.assertTrue(release['is_published'])
+        self.assertTrue(any(
+            item['item_key'] == '2026-09-03-stock-inventory-borrowed-pagination-everyone'
             and 'everyone' in item['audiences']
             for item in release['items']
         ))
@@ -516,6 +556,7 @@ class StockInventorySearchEndpointTests(unittest.TestCase):
         cls.tag = uuid.uuid4().hex[:10]
         cls.item_ids = []
         cls.movement_ids = []
+        cls.borrowed_page_item_ids = []
 
         with cls.app.app_context():
             app_module.db.create_all()
@@ -630,6 +671,42 @@ class StockInventorySearchEndpointTests(unittest.TestCase):
                 remarks=f'BranchMovement{cls.tag}',
                 created_at=now - timedelta(hours=4),
             )
+            cls.branch_borrowed_item = cls._create_item(
+                branch_code='BC02',
+                scan_barcode=f'BRANCH-BORROWED-{cls.tag}',
+                item_name=f'Branch Borrowed {cls.tag}',
+                category=f'Branch Borrowed Category {cls.tag}',
+                storage_location=f'Cebu Borrowed Shelf {cls.tag}',
+                notes=f'Branch borrowed note {cls.tag}',
+            )
+            cls.branch_borrowed_movement = cls._create_movement(
+                cls.branch_borrowed_item,
+                direction='OUT',
+                reason='Issue',
+                purpose=f'Branch Borrowed Purpose {cls.tag}',
+                engineer_id=cls.engineer.id,
+                engineer_name_snapshot=f'EngineerSnapshot{cls.tag}',
+                created_at=now - timedelta(minutes=90),
+            )
+            for index in range(11):
+                page_item = cls._create_item(
+                    branch_code='BC01',
+                    scan_barcode=f'BORROWED-PAGE-{cls.tag}-{index:02d}',
+                    item_name=f'Borrowed Page {index:02d} {cls.tag}',
+                    category=f'Borrowed Page Category {cls.tag}',
+                    storage_location=f'Borrowed Page Shelf {index:02d}',
+                    notes=f'Borrowed page note {cls.tag}',
+                )
+                cls._create_movement(
+                    page_item,
+                    direction='OUT',
+                    reason='Issue',
+                    purpose=f'Borrowed Page Purpose {cls.tag}',
+                    engineer_id=cls.engineer.id,
+                    engineer_name_snapshot=f'EngineerSnapshot{cls.tag}',
+                    created_at=now - timedelta(minutes=index + 1),
+                )
+                cls.borrowed_page_item_ids.append(page_item.id)
             cls.limit_match = cls._create_movement(
                 cls.limit_item,
                 direction='IN',
@@ -649,12 +726,14 @@ class StockInventorySearchEndpointTests(unittest.TestCase):
             cls.wildcard_decoy_id = cls.wildcard_decoy.id
             cls.inactive_item_id = cls.inactive_item.id
             cls.branch_item_id = cls.branch_item.id
+            cls.branch_borrowed_item_id = cls.branch_borrowed_item.id
             cls.history_item_id = cls.history_item.id
             cls.limit_item_id = cls.limit_item.id
             cls.main_movement_id = cls.main_movement.id
             cls.history_match_id = cls.history_match.id
             cls.history_other_direction_id = cls.history_other_direction.id
             cls.branch_movement_id = cls.branch_movement.id
+            cls.branch_borrowed_movement_id = cls.branch_borrowed_movement.id
             cls.limit_match_id = cls.limit_match.id
             app_module.db.session.commit()
             cls.manager_id = cls.manager.id
@@ -750,6 +829,72 @@ class StockInventorySearchEndpointTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()['movements']
+
+    def _borrowed(self, **query):
+        response = self._client().get('/api/stock-inventory/borrowed', query_string={
+            'branch': 'BC01',
+            **query,
+        })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response.get_json()
+
+    def test_borrowed_pagination_returns_metadata_and_newest_first_pages(self):
+        first = self._borrowed(page=1)
+        first_ids = [row['item_id'] for row in first['borrowed']]
+        self.assertEqual(first['page'], 1)
+        self.assertEqual(first['per_page'], 10)
+        self.assertEqual(first['total'], 13)
+        self.assertEqual(first['total_pages'], 2)
+        self.assertEqual(first_ids, self.borrowed_page_item_ids[:10])
+
+        second = self._borrowed(page=2)
+        self.assertEqual(second['page'], 2)
+        self.assertEqual(
+            [row['item_id'] for row in second['borrowed']],
+            [self.borrowed_page_item_ids[10], self.main_item_id, self.history_item_id],
+        )
+
+    def test_borrowed_pagination_clamps_invalid_and_out_of_range_pages(self):
+        invalid = self._borrowed(page='not-a-number')
+        self.assertEqual(invalid['page'], 1)
+        self.assertEqual(len(invalid['borrowed']), 10)
+
+        out_of_range = self._borrowed(page=999)
+        self.assertEqual(out_of_range['page'], 2)
+        self.assertEqual(len(out_of_range['borrowed']), 3)
+
+        empty = self._borrowed(q=f'No current loan {self.tag}')
+        self.assertEqual(empty['borrowed'], [])
+        self.assertEqual(empty['total'], 0)
+        self.assertEqual(empty['total_pages'], 1)
+        self.assertEqual(empty['page'], 1)
+
+    def test_borrowed_query_filters_before_pagination_and_branch_isolation_remains(self):
+        filtered = self._borrowed(q=f'Branch Borrowed Purpose {self.tag}', page=1)
+        self.assertEqual(filtered['total'], 0)
+        self.assertEqual(filtered['borrowed'], [])
+
+        matching = self._borrowed(q=f'Borrowed Page Purpose {self.tag}', page=1)
+        self.assertEqual(matching['total'], 11)
+        self.assertEqual(matching['total_pages'], 2)
+        self.assertEqual(
+            [row['item_id'] for row in matching['borrowed']],
+            self.borrowed_page_item_ids[:10],
+        )
+
+        branch_rows = self._borrowed(page=1)
+        self.assertTrue(all(row['branch_code'] == 'BC01' for row in branch_rows['borrowed']))
+        self.assertNotIn(self.branch_borrowed_item_id, {
+            row['item_id'] for row in branch_rows['borrowed']
+        })
+
+    def test_borrowed_endpoint_requires_stock_inventory_view_access(self):
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session.pop('_user_id', None)
+            session['_fresh'] = True
+        response = client.get('/api/stock-inventory/borrowed')
+        self.assertIn(response.status_code, (302, 401, 403))
 
     def test_search_helper_splits_terms_and_escapes_sql_wildcards(self):
         self.assertEqual(

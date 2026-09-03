@@ -2,6 +2,43 @@
 
 codex changes - 2026-09-03
 
+- Recorded the owner-authorized `Stock Inventory Borrowed Items Pagination and Collapse` plan at
+  the top of `plans.md`, locking server-side ten-row pages, independent borrowed filtering,
+  expanded-by-default browser-local collapse persistence, fail-first coverage, v125 cache
+  preservation, and the separate publication gate before application edits.
+- Added the borrowed pagination/collapse source contracts and isolated Flask-client positive
+  controls to `tests/test_stock_inventory.py` before application edits. The unchanged-source
+  fail-first checkpoint ran **40 tests with 35 passes, 1 failure, and 4 errors**: the expected
+  missing pagination response metadata, page slicing, collapse/pagination controls, and release
+  entry were red while the existing Stock Inventory contracts continued to run.
+- Implemented fixed server-side ten-row pagination for the Currently Borrowed Items endpoint in
+  `app.py`. The endpoint now derives and filters the complete branch-authorized borrowed
+  projection before newest-first ordering and slicing, clamps invalid/out-of-range pages, and
+  returns `page`, `per_page`, `total`, and `total_pages` without changing the ledger replay,
+  authorization, mutation, schema, or database behavior.
+- Updated `templates/stock_inventory.html` with borrowed Previous/Next controls, page/range
+  status, page state, branch-reset and refresh-preserving loading, and request-generation checks
+  that prevent stale page or branch responses from replacing current rows. Added the accessible
+  Collapse/Expand control and guarded browser-local preference, defaulting to expanded when the
+  preference is absent, invalid, or unavailable. The borrowed query remains separate from the
+  shared Items/Movement History search and existing row renderers, scanner, movement controls,
+  read-only behavior, and mobile layout remain intact.
+- Added the published `everyone` release entry for the borrowed pagination/collapse improvement
+  to `static/changelog/releases.json`; no service-worker cache was changed and the exact v125
+  Calendar cache entry remains intact.
+- After implementation, the focused `tests.test_stock_inventory` module completed **40 tests
+  with 40 passes, 0 failures, and 0 errors**. The focused changelog coverage/workflow run
+  completed **44 tests with 44 passes, 0 failures, 0 errors, and 1 skip**.
+- Static verification passed: direct Python compilation of `app.py` and
+  `tests/test_stock_inventory.py`, Jinja parsing of `stock_inventory.html`, extracted inline
+  JavaScript syntax validation, release-manifest validation (**59 releases, 221 unique items**),
+  exact v125 Calendar cache preservation, and `git diff --check`.
+- Isolated full discovery completed **867 tests with 857 passes, 10 failures, 0 errors, and 1
+  skip**. The ten failures remain the known baseline purchase-order rate-limit/setup and
+  staff-fixture cluster; no Stock Inventory or changelog regression was observed. Verification
+  used Flask test-client/source checks only. No commit, push, Railway/deployment, database,
+  service-worker, or production action was performed, and the protected unrelated worktree
+  changes remain untouched.
 - Recorded the owner-authorized `Stock Inventory Search Across Items and Movement History`
   plan at the top of `plans.md` with its bounded file scope, fail-first tests, verification
   requirements, deliberate exclusions, and the explicit decision not to bump the existing

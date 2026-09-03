@@ -59735,6 +59735,7 @@ STOCK_INVENTORY_SORT_FIELDS = {
     'quantity': StockInventoryItem.current_quantity,
     'updated': StockInventoryItem.updated_at,
 }
+STOCK_INVENTORY_BORROWED_PER_PAGE = 10
 
 
 def stock_inventory_search_terms(value):
@@ -59902,7 +59903,7 @@ def apply_stock_inventory_balance(item_id, direction, quantity):
     return db.session.get(StockInventoryItem, item_id)
 
 
-def stock_inventory_current_borrowings(branch_code, search='', limit=200):
+def stock_inventory_current_borrowings(branch_code, search=''):
     """Replay the immutable branch ledger into outstanding borrowings.
 
     A Return reduces the selected engineer's open loan first and then the
@@ -59965,7 +59966,7 @@ def stock_inventory_current_borrowings(branch_code, search='', limit=200):
             loan['branch_code'], loan['branch_name'],
         )).lower()]
     rows.sort(key=lambda loan: (loan['borrowed_at'] or '', loan['item_id']), reverse=True)
-    return rows[:max(1, min(int(limit or 200), 500))]
+    return rows
 
 
 @app.route('/api/stock-inventory/borrowed')
@@ -59979,19 +59980,27 @@ def get_stock_inventory_borrowed():
     except PermissionError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 403
     try:
-        limit = int(request.args.get('limit') or 200)
+        page = max(int(request.args.get('page') or 1), 1)
     except (TypeError, ValueError):
-        limit = 200
+        page = 1
     rows = stock_inventory_current_borrowings(
         branch_code,
         search=request.args.get('q'),
-        limit=limit,
     )
+    total = len(rows)
+    per_page = STOCK_INVENTORY_BORROWED_PER_PAGE
+    total_pages = max((total + per_page - 1) // per_page, 1)
+    page = min(page, total_pages)
+    start_index = (page - 1) * per_page
     return jsonify({
         'success': True,
         'branch_code': branch_code,
         'branch_name': STOCK_INVENTORY_BRANCHES[branch_code],
-        'borrowed': rows,
+        'borrowed': rows[start_index:start_index + per_page],
+        'page': page,
+        'per_page': per_page,
+        'total': total,
+        'total_pages': total_pages,
     })
 
 

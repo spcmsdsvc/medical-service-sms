@@ -71,6 +71,8 @@
     .stock-alert-success { background:#ebfbee; border-color:#8ce99a; color:#087f5b; }
     .stock-borrowed-panel { margin-top:14px; background:var(--app-surface); border:1px solid var(--app-border); border-left:5px solid #c92a3b; border-radius:8px; overflow:hidden; }
     .stock-borrowed-header { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--app-border); }
+    .stock-borrowed-header-actions { display:flex; align-items:center; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+    .stock-borrowed-toggle { min-height:40px; padding:7px 11px; }
     .stock-borrowed-title { margin:0; font-size:1.05rem; font-weight:900; color:var(--app-text); }
     .stock-borrowed-subtitle { margin:3px 0 0; color:var(--app-muted); font-size:.88rem; }
     .stock-borrowed-table-wrap { overflow:auto; overscroll-behavior:contain; }
@@ -82,6 +84,11 @@
     .stock-borrowed-card { padding:13px; margin-bottom:9px; border:1px solid var(--app-border); border-left:4px solid #c92a3b; border-radius:8px; background:var(--app-surface-raised); }
     .stock-borrowed-card:last-child { margin-bottom:0; }
     .stock-borrowed-card strong { color:var(--app-text); }
+    .stock-borrowed-pagination { display:flex; align-items:center; justify-content:space-between; gap:14px; border-top:1px solid var(--app-border); padding:12px 16px; }
+    .stock-borrowed-page-summary { color:var(--app-muted); font-size:.82rem; font-weight:800; }
+    .stock-borrowed-page-controls { display:flex; align-items:center; gap:10px; }
+    .stock-borrowed-page-controls .stock-btn { min-height:40px; padding:7px 11px; }
+    .stock-borrowed-page-indicator { min-width:100px; text-align:center; color:var(--app-text); font-weight:900; }
     .stock-read-only-note { margin:7px 0 0; color:var(--app-muted); font-size:.86rem; }
     .stock-engineer-wrap { position:relative; }
     .stock-engineer-options { position:absolute; z-index:1080; left:0; right:0; top:calc(100% + 4px); max-height:220px; overflow:auto; background:var(--app-surface-raised); border:1px solid var(--app-border); border-radius:6px; box-shadow:var(--app-shadow); }
@@ -106,6 +113,12 @@
         .stock-borrowed-mobile { display:block; }
     }
     @media (max-width:560px) {
+        .stock-borrowed-header { align-items:flex-start; }
+        .stock-borrowed-header-actions { width:100%; justify-content:space-between; }
+        .stock-borrowed-pagination { align-items:stretch; flex-direction:column; }
+        .stock-borrowed-page-summary { text-align:center; }
+        .stock-borrowed-page-controls { display:grid; grid-template-columns:1fr auto 1fr; }
+        .stock-borrowed-page-controls .stock-btn { width:100%; }
         .stock-header { flex-direction:column; align-items:stretch; }
         .stock-header > .stock-btn { width:100%; }
         .stock-title h1 { font-size:1.35rem; }
@@ -145,16 +158,29 @@
                 <p class="stock-borrowed-subtitle">See who currently has an item, when it was borrowed, and what it is being used for.</p>
                 <p id="stockReadOnlyNote" class="stock-read-only-note" {% if not stock_read_only %}hidden{% endif %}><i class="fa-solid fa-eye me-1"></i> View-only access for <span id="stockReadOnlyBranchLabel">{{ stock_branch_code }} - {{ stock_branch_name }}</span>.</p>
             </div>
-            <span id="stockBorrowedCount" class="stock-badge">0 items</span>
+            <div class="stock-borrowed-header-actions">
+                <span id="stockBorrowedCount" class="stock-badge">0 items</span>
+                <button id="stockBorrowedToggle" class="stock-btn stock-btn-neutral stock-borrowed-toggle" type="button" aria-expanded="true" aria-controls="stockBorrowedContent" onclick="toggleStockBorrowed()"><i class="fa-solid fa-chevron-up"></i> Collapse</button>
+            </div>
         </div>
-        <div class="stock-borrowed-table-wrap">
-            <table class="stock-borrowed-table">
-                <thead><tr><th>Borrowed By</th><th>Item</th><th>Qty</th><th>Borrowed At</th><th>Purpose</th><th>Branch</th></tr></thead>
-                <tbody id="stockBorrowedBody"></tbody>
-            </table>
+        <div id="stockBorrowedContent">
+            <div class="stock-borrowed-table-wrap">
+                <table class="stock-borrowed-table">
+                    <thead><tr><th>Borrowed By</th><th>Item</th><th>Qty</th><th>Borrowed At</th><th>Purpose</th><th>Branch</th></tr></thead>
+                    <tbody id="stockBorrowedBody"></tbody>
+                </table>
+            </div>
+            <div id="stockBorrowedMobile" class="stock-borrowed-mobile"></div>
+            <div id="stockBorrowedEmpty" class="stock-empty" hidden><i class="fa-solid fa-box-open fa-2x mb-2"></i><div>No items are currently marked as borrowed.</div></div>
+            <nav id="stockBorrowedPagination" class="stock-borrowed-pagination" aria-label="Currently borrowed item pages" hidden>
+                <span id="stockBorrowedPageSummary" class="stock-borrowed-page-summary" role="status" aria-live="polite"></span>
+                <div class="stock-borrowed-page-controls">
+                    <button id="stockBorrowedPrev" class="stock-btn stock-btn-neutral" type="button" onclick="changeStockBorrowedPage(-1)"><i class="fa-solid fa-chevron-left"></i> Previous</button>
+                    <span id="stockBorrowedPageIndicator" class="stock-borrowed-page-indicator">Page 1 of 1</span>
+                    <button id="stockBorrowedNext" class="stock-btn stock-btn-neutral" type="button" onclick="changeStockBorrowedPage(1)">Next <i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+            </nav>
         </div>
-        <div id="stockBorrowedMobile" class="stock-borrowed-mobile"></div>
-        <div id="stockBorrowedEmpty" class="stock-empty" hidden><i class="fa-solid fa-box-open fa-2x mb-2"></i><div>No items are currently marked as borrowed.</div></div>
     </section>
 
     <section class="stock-scan-band" aria-label="Barcode scanner">
@@ -284,8 +310,9 @@
 </div>
 
 <script>
-const stockState = { items: [], movements: [], borrowed: [], activeTab: 'items', historyItemId: null, itemRequestId: 0, movementRequestId: 0, sort: 'name', direction: 'asc', currentItem: null, editItem: null, reverseMovement: null, scanBusy: false, lastScan: '', lastScanAt: 0, branch: {{ stock_branch_code|tojson }}, readOnly: {{ stock_read_only|tojson }}, manageBranches: {{ stock_manage_branches|tojson }}, canAdminister: {{ stock_can_administer|tojson }}, engineers: [] };
+const stockState = { items: [], movements: [], borrowed: [], borrowedPage: 1, borrowedPerPage: 10, borrowedTotal: 0, borrowedTotalPages: 1, borrowedRequestId: 0, borrowedCollapsed: false, activeTab: 'items', historyItemId: null, itemRequestId: 0, movementRequestId: 0, sort: 'name', direction: 'asc', currentItem: null, editItem: null, reverseMovement: null, scanBusy: false, lastScan: '', lastScanAt: 0, branch: {{ stock_branch_code|tojson }}, readOnly: {{ stock_read_only|tojson }}, manageBranches: {{ stock_manage_branches|tojson }}, canAdminister: {{ stock_can_administer|tojson }}, engineers: [] };
 const stockModals = {};
+const STOCK_BORROWED_COLLAPSED_STORAGE_KEY = 'stockInventoryBorrowedCollapsed';
 
 function stockEscape(value){ const node=document.createElement('div'); node.textContent=String(value ?? ''); return node.innerHTML; }
 function stockHeaders(){ return {'Content-Type':'application/json','X-CSRFToken':getCSRFToken(),'Accept':'application/json'}; }
@@ -320,7 +347,7 @@ function updateStockBranchMode(){
     if(note)note.hidden=!stockState.readOnly;
     if(addButton)addButton.hidden=stockState.readOnly;
 }
-function changeStockBranch(branch){ stockState.branch=branch; stockState.historyItemId=null; updateStockBranchMode(); const url=new URL(location.href); url.searchParams.set('branch',branch); history.replaceState({},'',url); document.querySelectorAll('.stock-branch-label').forEach(el=>el.textContent=branch); refreshStockInventory(); }
+function changeStockBranch(branch){ stockState.branch=branch; stockState.historyItemId=null; stockState.borrowedPage=1; updateStockBranchMode(); const url=new URL(location.href); url.searchParams.set('branch',branch); history.replaceState({},'',url); document.querySelectorAll('.stock-branch-label').forEach(el=>el.textContent=branch); refreshStockInventory(); }
 async function stockJson(url, options={}){
     const response=await fetch(url,{credentials:'same-origin',cache:'no-store',...options});
     let data={}; try{ data=await response.json(); }catch(_){ data={error:`Request failed (${response.status}).`}; }
@@ -337,7 +364,25 @@ function refocusScanner(){ setTimeout(()=>{ const input=document.getElementById(
 function setBusy(button,busy,label){ if(!button)return; if(!button.dataset.original)button.dataset.original=button.innerHTML; button.disabled=busy; button.innerHTML=busy?`<i class="fa-solid fa-spinner fa-spin"></i> ${label}`:button.dataset.original; }
 
 async function loadStockSummary(){ const data=await stockJson(`/api/stock-inventory/summary?${stockBranchParams()}`); const s=data.summary; stockKpiActive.textContent=s.active_items; stockKpiPieces.textContent=s.total_pieces; stockKpiOut.textContent=s.out_of_stock_items; stockKpiToday.textContent=s.movements_today; }
-async function loadStockBorrowed(){ const params=stockBranchParams({limit:'500'}); const data=await stockJson(`/api/stock-inventory/borrowed?${params}`); stockState.borrowed=data.borrowed||[]; renderStockBorrowed(); }
+async function loadStockBorrowed(page=stockState.borrowedPage){
+    const requestId=++stockState.borrowedRequestId;
+    const requestedPage=Math.max(Number(page)||1,1);
+    const requestedBranch=stockState.branch;
+    const params=stockBranchParams({page:String(requestedPage)});
+    try{
+        const data=await stockJson(`/api/stock-inventory/borrowed?${params}`);
+        if(requestId!==stockState.borrowedRequestId || requestedBranch!==stockState.branch)return;
+        stockState.borrowed=data.borrowed||[];
+        stockState.borrowedPage=Math.max(Number(data.page)||requestedPage,1);
+        stockState.borrowedPerPage=Math.max(Number(data.per_page)||10,1);
+        stockState.borrowedTotal=Math.max(Number(data.total)||0,0);
+        stockState.borrowedTotalPages=Math.max(Number(data.total_pages)||1,1);
+        renderStockBorrowed(); renderStockBorrowedPagination();
+    }catch(error){
+        if(requestId!==stockState.borrowedRequestId || requestedBranch!==stockState.branch)return;
+        throw error;
+    }
+}
 async function loadStockItems(){
     const requestId=++stockState.itemRequestId;
     const query=stockSearchValue();
@@ -384,11 +429,42 @@ function renderStockItems(){
     document.querySelectorAll('[data-sort]').forEach(el=>el.textContent=el.dataset.sort===stockState.sort?(stockState.direction==='asc'?'▲':'▼'):'');
 }
 function renderStockBorrowed(){
-    stockBorrowedCount.textContent=`${stockState.borrowed.length} item${stockState.borrowed.length===1?'':'s'}`;
+    stockBorrowedCount.textContent=`${stockState.borrowedTotal} item${stockState.borrowedTotal===1?'':'s'}`;
     stockBorrowedBody.innerHTML=stockState.borrowed.map(row=>`<tr><td><strong>${stockEscape(row.engineer_name)}</strong></td><td><strong>${stockEscape(row.item_name)}</strong><div class="stock-barcode">${stockEscape(row.barcode)}</div></td><td class="stock-quantity">${row.quantity}</td><td>${stockEscape(row.borrowed_at_display)}</td><td>${stockEscape(row.purpose||'-')}</td><td>${stockEscape(row.branch_code)} - ${stockEscape(row.branch_name)}</td></tr>`).join('');
     stockBorrowedMobile.innerHTML=stockState.borrowed.map(row=>`<article class="stock-borrowed-card"><div class="stock-mobile-top"><div><strong>${stockEscape(row.item_name)}</strong><div class="stock-barcode">${stockEscape(row.barcode)}</div></div><span class="stock-badge stock-badge-out">OUT ${row.quantity}</span></div><div class="stock-mobile-meta"><strong>Borrowed by:</strong> ${stockEscape(row.engineer_name)}<br><strong>When:</strong> ${stockEscape(row.borrowed_at_display)}<br><strong>Purpose:</strong> ${stockEscape(row.purpose||'-')}<br><strong>Branch:</strong> ${stockEscape(row.branch_code)} - ${stockEscape(row.branch_name)}</div></article>`).join('');
     stockBorrowedEmpty.hidden=stockState.borrowed.length>0;
 }
+function renderStockBorrowedPagination(){
+    const total=stockState.borrowedTotal, page=stockState.borrowedPage, perPage=stockState.borrowedPerPage, totalPages=stockState.borrowedTotalPages;
+    const first=total?((page-1)*perPage)+1:0;
+    const last=total?Math.min(first+perPage-1,total):0;
+    stockBorrowedPageSummary.textContent=total?`Showing ${first}-${last} of ${total} borrowed item${total===1?'':'s'}`:'No borrowed items';
+    stockBorrowedPageIndicator.textContent=`Page ${page} of ${totalPages}`;
+    stockBorrowedPrev.disabled=page<=1;
+    stockBorrowedNext.disabled=page>=totalPages;
+    stockBorrowedPagination.hidden=total===0 || totalPages<=1;
+}
+function changeStockBorrowedPage(delta){
+    const nextPage=stockState.borrowedPage+delta;
+    if(nextPage<1 || nextPage>stockState.borrowedTotalPages)return;
+    loadStockBorrowed(nextPage).catch(e=>showStockAlert('stockPageAlert',e.message));
+}
+function readStockBorrowedCollapsed(){
+    try{ return localStorage.getItem(STOCK_BORROWED_COLLAPSED_STORAGE_KEY)==='true'; }
+    catch(_){ return false; }
+}
+function updateStockBorrowedCollapseControl(){
+    const collapsed=stockState.borrowedCollapsed;
+    stockBorrowedContent.hidden=collapsed;
+    stockBorrowedToggle.setAttribute('aria-expanded',String(!collapsed));
+    stockBorrowedToggle.innerHTML=collapsed?'<i class="fa-solid fa-chevron-down"></i> Expand':'<i class="fa-solid fa-chevron-up"></i> Collapse';
+}
+function setStockBorrowedCollapsed(collapsed,persist=true){
+    stockState.borrowedCollapsed=Boolean(collapsed);
+    updateStockBorrowedCollapseControl();
+    if(persist){ try{ localStorage.setItem(STOCK_BORROWED_COLLAPSED_STORAGE_KEY,stockState.borrowedCollapsed?'true':'false'); }catch(_){} }
+}
+function toggleStockBorrowed(){ setStockBorrowedCollapsed(!stockState.borrowedCollapsed); }
 function movementAccountability(m){ const engineer=m.engineer_name?`<strong>${stockEscape(m.engineer_name)}</strong>`:'<span class="text-muted">No engineer assigned</span>'; const context=m.direction==='OUT'&&m.purpose?`<br><span class="text-muted">${stockEscape(m.purpose)}</span>`:(m.source_or_returned_by?`<br><span class="text-muted">${stockEscape(m.source_or_returned_by)}</span>`:''); return engineer+context; }
 function reversalButton(m){ if(m.reversal_of_id)return '<span class="stock-badge">Correction</span>'; if(m.reversed_by_movement_id)return '<span class="stock-badge">Reversed</span>'; if(!m.can_reverse)return ''; return `<button class="stock-icon-btn" title="Reverse transaction" aria-label="Reverse movement ${m.id}" onclick="openReverseModal(${m.id})"><i class="fa-solid fa-rotate-left"></i></button>`; }
 function renderStockMovements(){
@@ -449,6 +525,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     movementEngineerOptions.addEventListener('click',event=>{const button=event.target.closest('[data-engineer-id]');if(button)selectMovementEngineer(button.dataset.engineerId);});
     document.addEventListener('click',event=>{if(!event.target.closest('.stock-engineer-wrap'))movementEngineerOptions.hidden=true;});
     document.querySelectorAll('.stock-branch-label').forEach(el=>el.textContent=stockState.branch);
+    setStockBorrowedCollapsed(readStockBorrowedCollapsed(),false);
     updateStockSearchControls();
     const initialBarcode=new URL(location.href).searchParams.get('barcode'); if(initialBarcode){stockBarcodeInput.value=initialBarcode;setTimeout(lookupScannedBarcode,150);}
     refreshStockInventory();

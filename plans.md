@@ -53,6 +53,175 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Stock Inventory Borrowed Items Pagination and Collapse
+
+**Status:** In progress
+**Approved:** 2026-09-03
+**Detailed:** 2026-09-03
+**Execution authorized:** 2026-09-03 — the owner explicitly requested implementation with
+`PLEASE IMPLEMENT THIS PLAN`.
+**Scope:** Extend the existing Currently Borrowed Items panel only. The earlier shared search
+scope remains Items and Movement History; this plan does not add borrowed rows to that search.
+
+### Context
+
+The Stock Inventory page currently requests up to 500 outstanding borrowed rows and renders them
+all in one table/mobile list. The section has no paging controls and no way to reclaim its vertical
+space. The backend already replays the immutable movement ledger, applies its existing optional
+borrowed-row query, sorts newest first, and truncates the returned list; the change will expose a
+bounded page contract without changing how outstanding loans are derived.
+
+### Decisions taken
+
+1. Use server-side pagination. `GET /api/stock-inventory/borrowed` accepts a one-based `page`
+   request, uses a fixed UI page size of 10, and returns `page`, `per_page`, `total`, and
+   `total_pages` alongside the existing branch and `borrowed` fields. The existing borrowed `q`
+   filter remains independent from the shared Items/Movement search and is applied before total
+   counting and page slicing. Invalid pages default to 1; pages beyond the last page resolve to
+   the last page; zero rows still report one logical page.
+2. Keep the borrowed projection newest-first and preserve branch authorization, branch isolation,
+   ledger replay, return matching, and all existing row fields. The new frontend replaces its
+   `limit=500` request with page requests. Any compatibility handling for the existing `limit`
+   query must not change the new UI's fixed ten-row behavior.
+3. Add Previous/Next controls, a page indicator, and a `Showing X–Y of Z` status. The total count
+   describes the rows returned by the selected branch and existing borrowed query; pagination is
+   hidden when it is not needed, and empty state remains explicit when no rows exist.
+4. Add an accessible Collapse/Expand button controlling a named content wrapper with
+   `aria-expanded` and `aria-controls`. The panel is expanded by default, and a guarded browser
+   `localStorage` preference remembers the user choice across loads, branches, and sessions.
+   Storage failures or invalid values fall back to expanded without preventing a current-page
+   toggle.
+5. Track borrowed page state and request generations in the existing Stock Inventory script.
+   Branch changes reset to page 1; ordinary refreshes retain the current page when possible, with
+   the server's clamped page reflected back into state. Stale page or branch responses must not
+   overwrite newer rows or metadata.
+6. Do not change the shared search input behavior, Items/Movement History loaders, scanner,
+   movement controls, mutation guards, read-only behavior, mobile card content, borrowed ledger
+   semantics, schema, migrations, permissions, database contents, or service-worker cache.
+
+### Investigation
+
+* `app.py:59905-59995` defines `stock_inventory_current_borrowings()` and
+  `get_stock_inventory_borrowed()`. The helper replays all branch movements into open loans,
+  applies the existing single-string borrowed search, sorts newest first, and currently returns
+  a capped slice; the route currently parses `limit` and returns only `borrowed`.
+* `templates/stock_inventory.html:141-158` contains the borrowed panel markup and
+  `:339-340,386-390` load/render the list. The page currently requests `limit=500`, displays the
+  full response in both existing desktop and mobile renderers, and has no borrowed pagination or
+  collapse state.
+* `templates/stock_inventory.html:287-328,439-454` contains the shared state, branch changes,
+  request helper, and initialization path. Existing Items/Movement History request-generation
+  protection is separate and must remain intact while borrowed requests gain the same protection.
+* `tests/test_stock_inventory.py:58-63` has the existing borrowed source contract and
+  `:508-735` has the isolated Flask-client fixture and endpoint helpers. Existing page-level
+  pagination conventions in `templates/activity.html` and `templates/reports.html` use total/page
+  metadata with Previous/Next controls; the borrowed implementation will use the same plain
+  pattern without importing shared UI code.
+* The current service-worker contract is
+  `medical-service-pwa-offline-navigation-v125-timeline-collapsed-preference`; Stock Inventory
+  is not an app-shell precached route, so no cache version change is required.
+
+### Execution steps
+
+1. **Record the approved plan and preserve owner work.** Touch `plans.md` and the existing
+   `2026-09-03` section of `changes.md`. Done when this plan is newest with `In progress` status,
+   the separate implementation authorization is recorded, and the existing Handoff, database,
+   `.claude/`, loose handoff, `output/`, `tmp/`, and unrelated changes remain untouched.
+2. **Add fail-first tests before application edits.** Touch `tests/test_stock_inventory.py` with
+   source contracts for the borrowed pagination markup/state/loaders, accessible collapse control,
+   local-storage preference, request-generation guard, page metadata, and unchanged v125 cache.
+   Add isolated Flask-client positive-control fixtures/tests for ten-row pages, total/page
+   metadata, newest-first page 1/page 2 results, invalid and out-of-range pages, empty results,
+   existing borrowed `q` filtering, branch isolation, and unauthorized access. Run the focused
+   module against the unchanged source and record the expected failures in `changes.md`.
+3. **Implement the paginated borrowed API.** Touch `app.py` in
+   `stock_inventory_current_borrowings()` and `get_stock_inventory_borrowed()`. Replay and filter
+   the complete derived outstanding-loan list first, preserve newest-first ordering, calculate
+   total/page bounds, and return only the requested page plus `page`, `per_page`, `total`, and
+   `total_pages`. Keep the existing `q` behavior and view/branch guard unchanged; do not add
+   persistence or alter ledger/mutation logic.
+4. **Implement the borrowed panel controls and state.** Touch
+   `templates/stock_inventory.html`. Wrap the existing table/mobile/empty content in a controlled
+   panel, add the collapse button and pagination/status controls, load ten-row pages, render total
+   counts and page ranges, disable Previous/Next at boundaries, reset branch pagination, and
+   protect page/branch responses with a borrowed request generation. Preserve existing row markup,
+   desktop/mobile breakpoints, scanner focus, and all other Stock Inventory flows.
+5. **Add remembered collapse behavior.** In the same template, add one dedicated storage key and
+   guarded read/write helpers. Initialize expanded unless a valid saved collapsed value exists;
+   update button text/icon and ARIA state on every toggle; keep the header/count visible while the
+   content wrapper is hidden. Storage exceptions must be harmless and must not create a new API or
+   account preference.
+6. **Update release and execution records.** Touch `static/changelog/releases.json` with one
+   published `everyone` entry for the borrowed pagination/collapse improvement. Append factual
+   implementation and verification results to the existing `2026-09-03` section of `changes.md`.
+   Update this plan with final test evidence and `Executed` status only after a separately
+   authorized commit exists. Do not bump the service-worker cache; verify the exact v125 entry.
+7. **Run proportional verification and self-review.** Run focused Stock Inventory and changelog
+   tests, Python compilation (using the repository's in-memory fallback if the pre-existing
+   read-only `__pycache__` blocks direct `py_compile`), Jinja/template parsing, inline JavaScript
+   syntax/source checks, release-manifest validation, exact v125 cache validation, and
+   `git diff --check`. Run isolated full discovery and report exact pass/fail/skip counts with
+   known baseline failures. Use Flask test-client and source-level checks only; browser automation
+   is excluded by project instruction.
+8. **Keep publication separately gated.** Do not commit, push, change Railway, redeploy, alter
+   production data, or stage protected/unrelated files as part of implementation unless the owner
+   gives a separate publication instruction. If later authorized, stage only the intended
+   implementation, test, release, plan, and change-record files and verify the remote/deployment
+   outcome.
+
+### Deliberately excluded
+
+* Adding Currently Borrowed Items to the shared Items/Movement History search; the existing
+  borrowed endpoint `q` remains independent and is not wired to the shared input.
+* Page-size selection, exports, new filters, changed sorting, client-side-only pagination, or a
+  new account/server preference for collapse state.
+* Schema/migration work, ledger repair, mutation behavior, permission changes, database changes,
+  service-worker/cache changes, production/Railway configuration, and browser/Codex UI testing.
+* Changes to the borrowed table columns, mobile-card content, scanner, movement controls,
+  read-only restrictions, or the earlier Items/Movement History search implementation.
+
+### Verification
+
+* The fail-first module run must show the new pagination/collapse source contracts and API metadata
+  are absent on the current source while existing borrowed projection contracts still run.
+* Endpoint tests must use positive controls: at least 11 current loans in one branch for page
+  navigation, a separately timestamped newest-first ordering, a query-matching and nonmatching
+  borrowed row, a second-branch row, and a denied account.
+* Source checks must protect the fixed ten-row request, page metadata rendering, boundary button
+  state, branch/page generation checks, ARIA relationships, guarded localStorage, unchanged
+  borrowed row renderers, and the v125 cache label.
+* Final reporting must distinguish focused green results from any pre-existing full-suite
+  failures; no browser or production verification may be claimed.
+
+### After implementation
+
+* Append factual red/green evidence and static-check results to the current-date `changes.md`
+  section, including protected-worktree confirmation and the deliberate no-cache/no-schema
+  outcome.
+* Current execution evidence (2026-09-03, before separate publication): the fail-first checkpoint
+  ran 40 tests with 35 passes, 1 failure, and 4 errors; the post-implementation Stock Inventory
+  run ran 40 tests with 40 passes; the focused changelog run ran 44 tests with 44 passes and 1
+  skip; and isolated full discovery ran 867 tests with 857 passes, 10 failures, 0 errors, and 1
+  skip. The ten full-suite failures are the known baseline purchase-order rate-limit/setup and
+  staff-fixture cluster. Python, Jinja, inline JavaScript, release-manifest, v125-cache, and
+  `git diff --check` verification passed. No browser, database, protected-artifact, Railway,
+  deployment, or production action was performed. Because commit/push remains separately gated,
+  this plan intentionally remains `In progress` rather than receiving an execution commit hash.
+* Mark this plan `Executed — <commit>` only when a separately authorized commit exists; otherwise
+  leave it `In progress` with implementation evidence. A separate `Review the implementation.`
+  instruction is required before post-implementation review classification.
+
+### Risks
+
+* Slicing before deriving open loans or before applying the existing query could hide or miscount
+  current loans; endpoint tests prove filtering, ordering, totals, and page boundaries.
+* A page response from an earlier branch/page request could overwrite newer rows; captured branch,
+  page, and generation checks cover that race.
+* Incorrect collapse persistence could hide the panel unexpectedly or throw when storage is blocked;
+  expanded default, guarded storage, and ARIA/source contracts cover the fallback.
+* Changing the projection or branch guard could expose or lose loans; existing ledger/authorization
+  behavior remains untouched and branch-isolation/denial tests remain positive controls.
+
 ## Stock Inventory Search Across Items and Movement History
 
 **Status:** Executed — b8cb4c7

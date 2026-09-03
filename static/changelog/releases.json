@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-03-stock-inventory-borrowed-pagination",
+      "release_date": "2026-09-03",
+      "title": "Currently Borrowed Items Pagination",
+      "summary": "Stock Inventory currently borrowed items are easier to browse and collapse.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-03-stock-inventory-borrowed-pagination-everyone",
+          "category": "Stock Inventory",
+          "description": "Currently Borrowed Items now load in newest-first pages of ten with total-count and page controls. The section can be collapsed or expanded, and the choice is remembered in this browser.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-03-stock-inventory-search",
       "release_date": "2026-09-03",
       "title": "Stock Inventory Search Improvements",
