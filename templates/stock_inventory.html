@@ -32,7 +32,12 @@
     .stock-tab:last-child { border-right:0; }
     .stock-tab.active { background:var(--app-primary); color:#fff; }
     .stock-tools { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    .stock-search { min-width:260px; }
+    .stock-search-wrap { position:relative; flex:1 1 300px; min-width:260px; }
+    .stock-search-wrap .stock-search { min-width:0; padding-right:42px; }
+    .stock-search-clear { position:absolute; top:50%; right:5px; width:34px; height:34px; transform:translateY(-50%); border:0; border-radius:5px; background:transparent; color:var(--app-muted); cursor:pointer; }
+    .stock-search-clear:hover { background:rgba(var(--app-primary-rgb),.1); color:var(--app-text); }
+    .stock-search-clear:focus-visible { outline:3px solid var(--app-focus); outline-offset:1px; }
+    .stock-search-count { color:var(--app-muted); font-size:.82rem; font-weight:800; white-space:nowrap; }
     .stock-table-wrap { overflow:auto; overscroll-behavior:contain; max-height:58vh; }
     .stock-table { width:100%; border-collapse:separate; border-spacing:0; min-width:1050px; }
     .stock-table th { position:sticky; top:0; z-index:2; background:var(--app-surface-raised); color:var(--app-text); padding:11px 12px; border-bottom:1px solid var(--app-border); text-align:left; font-size:.78rem; text-transform:uppercase; }
@@ -93,7 +98,8 @@
         .stock-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
         .stock-toolbar { align-items:stretch; flex-direction:column; }
         .stock-tools { width:100%; }
-        .stock-search { flex:1; min-width:180px; }
+        .stock-search-wrap { flex:1; min-width:180px; }
+        .stock-search { flex:1; min-width:0; }
         .stock-table-wrap { display:none; }
         .stock-mobile-list { display:block; }
         .stock-borrowed-table-wrap { display:none; }
@@ -111,6 +117,7 @@
         .stock-kpi-icon { display:none; }
         .stock-modal-grid { grid-template-columns:1fr; }
         .stock-field-wide { grid-column:auto; }
+        .stock-search-wrap, .stock-search-count { width:100%; }
         .stock-tools > * { width:100%; }
     }
 </style>
@@ -174,8 +181,12 @@
                 <button id="stockMovementsTab" class="stock-tab" type="button" onclick="switchStockTab('movements')"><i class="fa-solid fa-clock-rotate-left me-1"></i> Movement History</button>
             </div>
             <div class="stock-tools">
-                <input id="stockSearchInput" class="stock-input stock-search" type="search" placeholder="Search barcode, item, category, location">
-                <label class="d-flex align-items-center gap-2 mb-0"><input id="stockIncludeInactive" type="checkbox"> Include inactive</label>
+                <div class="stock-search-wrap">
+                    <input id="stockSearchInput" class="stock-input stock-search" type="search" aria-label="Search stock inventory" placeholder="Search barcode, item, category, location, or notes">
+                    <button id="stockClearSearch" class="stock-search-clear" type="button" title="Clear search" aria-label="Clear search" hidden><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <span id="stockSearchCount" class="stock-search-count" role="status" aria-live="polite" hidden></span>
+                <span id="stockIncludeInactiveWrap"><label class="d-flex align-items-center gap-2 mb-0"><input id="stockIncludeInactive" type="checkbox"> Include inactive</label></span>
             </div>
         </div>
 
@@ -194,7 +205,7 @@
                 </table>
             </div>
             <div id="stockItemsMobile" class="stock-mobile-list"></div>
-            <div id="stockItemsEmpty" class="stock-empty" hidden><i class="fa-solid fa-box-open fa-2x mb-2"></i><div>No stock items found.</div></div>
+            <div id="stockItemsEmpty" class="stock-empty" hidden><i class="fa-solid fa-box-open fa-2x mb-2"></i><div id="stockItemsEmptyText">No stock items found.</div></div>
         </div>
 
         <div id="stockMovementsView" hidden>
@@ -205,7 +216,7 @@
                 </table>
             </div>
             <div id="stockMovementsMobile" class="stock-mobile-list"></div>
-            <div id="stockMovementsEmpty" class="stock-empty" hidden><i class="fa-solid fa-clock-rotate-left fa-2x mb-2"></i><div>No stock movements found.</div></div>
+            <div id="stockMovementsEmpty" class="stock-empty" hidden><i class="fa-solid fa-clock-rotate-left fa-2x mb-2"></i><div id="stockMovementsEmptyText">No stock movements found.</div></div>
         </div>
     </section>
 </div>
@@ -273,13 +284,35 @@
 </div>
 
 <script>
-const stockState = { items: [], movements: [], borrowed: [], activeTab: 'items', sort: 'name', direction: 'asc', currentItem: null, editItem: null, reverseMovement: null, scanBusy: false, lastScan: '', lastScanAt: 0, branch: {{ stock_branch_code|tojson }}, readOnly: {{ stock_read_only|tojson }}, manageBranches: {{ stock_manage_branches|tojson }}, canAdminister: {{ stock_can_administer|tojson }}, engineers: [] };
+const stockState = { items: [], movements: [], borrowed: [], activeTab: 'items', historyItemId: null, itemRequestId: 0, movementRequestId: 0, sort: 'name', direction: 'asc', currentItem: null, editItem: null, reverseMovement: null, scanBusy: false, lastScan: '', lastScanAt: 0, branch: {{ stock_branch_code|tojson }}, readOnly: {{ stock_read_only|tojson }}, manageBranches: {{ stock_manage_branches|tojson }}, canAdminister: {{ stock_can_administer|tojson }}, engineers: [] };
 const stockModals = {};
 
 function stockEscape(value){ const node=document.createElement('div'); node.textContent=String(value ?? ''); return node.innerHTML; }
 function stockHeaders(){ return {'Content-Type':'application/json','X-CSRFToken':getCSRFToken(),'Accept':'application/json'}; }
 function stockBranchParams(extra={}){ return new URLSearchParams({branch:stockState.branch,...extra}); }
 function stockPayload(extra={}){ return {branch_code:stockState.branch,...extra}; }
+function stockSearchValue(){ return stockSearchInput.value.trim(); }
+function updateStockSearchControls(){
+    const movementsActive=stockState.activeTab==='movements';
+    stockSearchInput.placeholder=movementsActive?'Search item, barcode, direction, reason, engineer, purpose, remarks, or admin':'Search barcode, item, category, location, or notes';
+    stockIncludeInactiveWrap.hidden=movementsActive;
+    stockClearSearch.hidden=!stockSearchValue();
+}
+function updateStockSearchCount(kind,count){
+    const query=stockSearchValue();
+    if(!query){ stockSearchCount.textContent=''; stockSearchCount.hidden=true; return; }
+    const label=kind==='movements'?'movement':'item';
+    stockSearchCount.textContent=`${count} matching ${label}${count===1?'':'s'}`;
+    stockSearchCount.hidden=false;
+}
+function updateStockEmptyState(kind){
+    const query=stockSearchValue();
+    const emptyText=document.getElementById(kind==='movements'?'stockMovementsEmptyText':'stockItemsEmptyText');
+    if(emptyText)emptyText.textContent=query
+        ?(kind==='movements'?'No stock movements match your search.':'No stock items match your search.')
+        :(kind==='movements'?'No stock movements found.':'No stock items found.');
+}
+function loadStockSearchResults(){ return stockState.activeTab==='movements'?loadStockMovements():loadStockItems(); }
 function updateStockBranchMode(){
     stockState.readOnly=!stockState.manageBranches.includes(stockState.branch);
     const note=document.getElementById('stockReadOnlyNote'), label=document.getElementById('stockReadOnlyBranchLabel'), addButton=document.getElementById('stockAddItemButton'), select=document.getElementById('stockBranchSelect');
@@ -287,7 +320,7 @@ function updateStockBranchMode(){
     if(note)note.hidden=!stockState.readOnly;
     if(addButton)addButton.hidden=stockState.readOnly;
 }
-function changeStockBranch(branch){ stockState.branch=branch; updateStockBranchMode(); const url=new URL(location.href); url.searchParams.set('branch',branch); history.replaceState({},'',url); document.querySelectorAll('.stock-branch-label').forEach(el=>el.textContent=branch); refreshStockInventory(); }
+function changeStockBranch(branch){ stockState.branch=branch; stockState.historyItemId=null; updateStockBranchMode(); const url=new URL(location.href); url.searchParams.set('branch',branch); history.replaceState({},'',url); document.querySelectorAll('.stock-branch-label').forEach(el=>el.textContent=branch); refreshStockInventory(); }
 async function stockJson(url, options={}){
     const response=await fetch(url,{credentials:'same-origin',cache:'no-store',...options});
     let data={}; try{ data=await response.json(); }catch(_){ data={error:`Request failed (${response.status}).`}; }
@@ -306,10 +339,35 @@ function setBusy(button,busy,label){ if(!button)return; if(!button.dataset.origi
 async function loadStockSummary(){ const data=await stockJson(`/api/stock-inventory/summary?${stockBranchParams()}`); const s=data.summary; stockKpiActive.textContent=s.active_items; stockKpiPieces.textContent=s.total_pieces; stockKpiOut.textContent=s.out_of_stock_items; stockKpiToday.textContent=s.movements_today; }
 async function loadStockBorrowed(){ const params=stockBranchParams({limit:'500'}); const data=await stockJson(`/api/stock-inventory/borrowed?${params}`); stockState.borrowed=data.borrowed||[]; renderStockBorrowed(); }
 async function loadStockItems(){
-    const params=stockBranchParams({q:stockSearchInput.value.trim(),sort:stockState.sort,direction:stockState.direction,include_inactive:stockIncludeInactive.checked?'1':'0'});
-    const data=await stockJson(`/api/stock-inventory/items?${params}`); stockState.items=data.items || []; renderStockItems();
+    const requestId=++stockState.itemRequestId;
+    const query=stockSearchValue();
+    const params=stockBranchParams({q:query,sort:stockState.sort,direction:stockState.direction,include_inactive:stockIncludeInactive.checked?'1':'0'});
+    try{
+        const data=await stockJson(`/api/stock-inventory/items?${params}`);
+        if(requestId!==stockState.itemRequestId || query!==stockSearchValue())return;
+        stockState.items=data.items || []; renderStockItems(); updateStockEmptyState('items');
+        if(stockState.activeTab==='items')updateStockSearchCount('items',stockState.items.length);
+    }catch(error){
+        if(requestId!==stockState.itemRequestId || query!==stockSearchValue())return;
+        throw error;
+    }
 }
-async function loadStockMovements(itemId=null){ const params=stockBranchParams({limit:'300'}); if(itemId)params.set('item_id',itemId); const data=await stockJson(`/api/stock-inventory/movements?${params}`); stockState.movements=data.movements || []; renderStockMovements(); }
+async function loadStockMovements(itemId=stockState.historyItemId){
+    const requestId=++stockState.movementRequestId;
+    const scopedItemId=itemId || null;
+    const query=stockSearchValue();
+    const params=stockBranchParams({q:query,limit:'300'});
+    if(scopedItemId)params.set('item_id',scopedItemId);
+    try{
+        const data=await stockJson(`/api/stock-inventory/movements?${params}`);
+        if(requestId!==stockState.movementRequestId || query!==stockSearchValue() || scopedItemId!==(stockState.historyItemId || null))return;
+        stockState.movements=data.movements || []; renderStockMovements(); updateStockEmptyState('movements');
+        if(stockState.activeTab==='movements')updateStockSearchCount('movements',stockState.movements.length);
+    }catch(error){
+        if(requestId!==stockState.movementRequestId || query!==stockSearchValue() || scopedItemId!==(stockState.historyItemId || null))return;
+        throw error;
+    }
+}
 async function refreshStockInventory(){ try{ await Promise.all([loadStockSummary(),loadStockBorrowed(),loadStockItems(),loadStockMovements()]); }catch(error){ showStockAlert('stockPageAlert',error.message); } finally{ refocusScanner(); } }
 
 function itemActionButtons(item){
@@ -338,9 +396,16 @@ function renderStockMovements(){
     stockMovementsMobile.innerHTML=stockState.movements.map(m=>`<article class="stock-mobile-card"><div class="stock-mobile-top"><div><strong>${stockEscape(m.item_name)}</strong><div class="stock-barcode">${stockEscape(m.barcode)}</div></div><span class="stock-badge stock-badge-${m.direction.toLowerCase()}">${m.direction} ${m.quantity}</span></div><div class="stock-mobile-meta">${stockEscape(m.created_at_display)} &middot; ${stockEscape(m.reason)} &middot; Balance ${m.resulting_quantity}</div><div class="mt-2 d-flex justify-content-between align-items-end"><div>${movementAccountability(m)}</div>${reversalButton(m)}</div></article>`).join('');
     stockMovementsEmpty.hidden=stockState.movements.length>0;
 }
+function clearStockSearch(){
+    stockSearchInput.value='';
+    updateStockSearchControls();
+    updateStockSearchCount(stockState.activeTab,0);
+    loadStockSearchResults().catch(e=>showStockAlert('stockPageAlert',e.message));
+    stockSearchInput.focus();
+}
 function setStockSort(key){ stockState.direction=stockState.sort===key&&stockState.direction==='asc'?'desc':'asc'; stockState.sort=key; loadStockItems().catch(e=>showStockAlert('stockPageAlert',e.message)); }
-function switchStockTab(tab){ stockState.activeTab=tab; stockItemsView.hidden=tab!=='items'; stockMovementsView.hidden=tab!=='movements'; stockItemsTab.classList.toggle('active',tab==='items'); stockMovementsTab.classList.toggle('active',tab==='movements'); if(tab==='movements')loadStockMovements().catch(e=>showStockAlert('stockPageAlert',e.message)); }
-function showItemHistory(itemId){ stockState.activeTab='movements'; stockItemsView.hidden=true; stockMovementsView.hidden=false; stockItemsTab.classList.remove('active'); stockMovementsTab.classList.add('active'); const item=stockState.items.find(x=>x.id===itemId); loadStockMovements(itemId).then(()=>showStockAlert('stockPageAlert',`Showing recent movements for ${item?.item_name || 'item'}.`,'success')).catch(e=>showStockAlert('stockPageAlert',e.message)); }
+function switchStockTab(tab){ stockState.historyItemId=null; stockState.activeTab=tab; stockItemsView.hidden=tab!=='items'; stockMovementsView.hidden=tab!=='movements'; stockItemsTab.classList.toggle('active',tab==='items'); stockMovementsTab.classList.toggle('active',tab==='movements'); stockSearchCount.textContent=''; stockSearchCount.hidden=true; updateStockSearchControls(); loadStockSearchResults().catch(e=>showStockAlert('stockPageAlert',e.message)); }
+function showItemHistory(itemId){ stockState.historyItemId=itemId; stockState.activeTab='movements'; stockSearchInput.value=''; stockItemsView.hidden=true; stockMovementsView.hidden=false; stockItemsTab.classList.remove('active'); stockMovementsTab.classList.add('active'); stockSearchCount.textContent=''; stockSearchCount.hidden=true; updateStockSearchControls(); const item=stockState.items.find(x=>x.id===itemId); loadStockMovements(itemId).then(()=>showStockAlert('stockPageAlert',`Showing recent movements for ${item?.item_name || 'item'}.`,'success')).catch(e=>showStockAlert('stockPageAlert',e.message)); }
 
 async function lookupScannedBarcode(){
     const input=stockBarcodeInput, barcode=input.value.trim(); if(!barcode){ showStockAlert('stockPageAlert','Scan or enter a barcode first.'); refocusScanner(); return; }
@@ -375,14 +440,16 @@ document.addEventListener('DOMContentLoaded',()=>{
     stockModals.register=new bootstrap.Modal(stockRegisterModal); stockModals.movement=new bootstrap.Modal(stockMovementModal); stockModals.edit=new bootstrap.Modal(stockEditModal); stockModals.reverse=new bootstrap.Modal(stockReverseModal);
     document.querySelectorAll('.stock-modal').forEach(modal=>modal.addEventListener('hidden.bs.modal',refocusScanner));
     stockBarcodeInput.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();lookupScannedBarcode();}});
-    let searchTimer; stockSearchInput.addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadStockItems().catch(e=>showStockAlert('stockPageAlert',e.message)),250);});
-    stockIncludeInactive.addEventListener('change',()=>loadStockItems().catch(e=>showStockAlert('stockPageAlert',e.message)));
+    let searchTimer; stockSearchInput.addEventListener('input',()=>{updateStockSearchControls();clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadStockSearchResults().catch(e=>showStockAlert('stockPageAlert',e.message)),250);});
+    stockClearSearch.addEventListener('click',clearStockSearch);
+    stockIncludeInactive.addEventListener('change',()=>{if(stockState.activeTab==='items')loadStockItems().catch(e=>showStockAlert('stockPageAlert',e.message));});
     movementReason.addEventListener('change',()=>{clearMovementEngineer();updateMovementEngineerRule();});
     let engineerTimer; movementEngineerSearch.addEventListener('input',()=>{movementEngineerId.value='';clearTimeout(engineerTimer);engineerTimer=setTimeout(()=>searchMovementEngineers(movementEngineerSearch.value).catch(e=>showStockAlert('stockMovementAlert',e.message)),200);});
     movementEngineerSearch.addEventListener('focus',()=>searchMovementEngineers(movementEngineerSearch.value).catch(e=>showStockAlert('stockMovementAlert',e.message)));
     movementEngineerOptions.addEventListener('click',event=>{const button=event.target.closest('[data-engineer-id]');if(button)selectMovementEngineer(button.dataset.engineerId);});
     document.addEventListener('click',event=>{if(!event.target.closest('.stock-engineer-wrap'))movementEngineerOptions.hidden=true;});
     document.querySelectorAll('.stock-branch-label').forEach(el=>el.textContent=stockState.branch);
+    updateStockSearchControls();
     const initialBarcode=new URL(location.href).searchParams.get('barcode'); if(initialBarcode){stockBarcodeInput.value=initialBarcode;setTimeout(lookupScannedBarcode,150);}
     refreshStockInventory();
 });

@@ -53,6 +53,170 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Stock Inventory Search Across Items and Movement History
+
+**Status:** In progress
+**Approved:** 2026-09-03
+**Detailed:** 2026-09-03
+**Execution authorized:** 2026-09-03 — the owner explicitly requested implementation of this
+plan in the current repository workspace.
+**Local execution state:** Implementation and verification are complete in the working tree;
+the owner has separately authorized commit and push of this Stock Inventory change only. Other
+dirty work remains outside this execution scope.
+
+### Context
+
+The Stock Inventory page has one search field, but it currently searches only the Items
+endpoint and only a subset of item fields. Selecting Movement History leaves the field
+visually present without applying its query to the movement loader. The result is a
+misleading shared control and makes the history list difficult to use once it grows.
+
+The intended outcome is one consistent, responsive search experience for the Items and
+Movement History tabs. Search must remain branch-scoped and read-only, preserve the existing
+item filters and sorting, and leave the Currently Borrowed Items panel, barcode scanner,
+movement controls, mobile cards, and mutation guards unchanged.
+
+### Decisions taken
+
+1. Use one shared search input. Its current value is sent to the loader for the active tab;
+   the query is retained when switching normally between Items and full Movement History.
+2. Search has AND semantics across whitespace-separated terms and OR semantics across the
+   searchable fields. Input is trimmed, case-insensitive, and treats `%`, `_`, and `\` as
+   literal characters rather than SQL wildcards.
+3. Items search barcode, name, category, storage location, and notes. Movement History
+   search covers item barcode/name/category/location, direction, reason, recipient, engineer
+   name and employee ID, purpose, source/returned-by, remarks, and administrator username.
+4. Search filtering happens before Movement History's existing newest-first ordering and
+   300-row limit. `item_id`, direction, branch isolation, `item_id`, authorization, and all
+   mutation guards remain unchanged.
+5. The Items-only Include inactive control is hidden while Movement History is active. The
+   page shows a clear-search control, contextual placeholder, matching-row status, and
+   query-aware empty-state text. Counts describe rows returned by the current endpoint; no
+   pagination or total-count API is added.
+6. Item-history drill-down is separate state: View history clears the previous query and
+   scopes the history request to that item; typing then searches only that item's history;
+   selecting full Movement History clears the item scope while retaining the shared query.
+7. Protect the UI from stale asynchronous responses with request-generation checks. Keep
+   the barcode scanner, movement modal, read-only behavior, borrowed-items search/data path,
+   and existing branch/access behavior unchanged.
+8. Do not change schema, migrations, ledger behavior, permissions, service-worker cache
+   version, database contents, deployment, or production state. Stock Inventory is not an
+   app-shell precached route, and the existing v125 Calendar cache entry must remain intact.
+
+### Investigation
+
+* `app.py:59726-60236` contains the shared Stock Inventory constants, serializers, Items GET
+  endpoint, and Movement History GET endpoint. Items currently builds one `%q%` pattern for
+  barcode/name/category/location and does not include notes. Movements currently joins the
+  item, applies optional `item_id` and direction filters, then orders and limits without a
+  query parameter.
+* `app.py:2600-2700` confirms the existing item and movement columns needed for the search;
+  `Engineer.employee_id`/`Engineer.name` and `User.username` are available through existing
+  relationships. No new persistence is required.
+* `templates/stock_inventory.html:170-390` has one toolbar search input but its debounced
+  listener always calls `loadStockItems()`. `loadStockMovements()` accepts only an optional
+  item id, and `showItemHistory()` switches tabs without clearing or separately retaining a
+  history scope. The borrowed panel has its own loader and is not coupled to this control.
+* The existing Flask test package pins an isolated `MEDICAL_SERVICE_TEST_DB`; endpoint tests
+  can use the test client and direct fixture rows without opening `scheduler.db`. Existing
+  Calendar changes already leave the embedded service-worker cache at v125.
+
+### Execution steps
+
+1. **Record this authorized plan and preserve the owner work.** Touch `plans.md` and the
+   existing 2026-09-03 section of `changes.md`. Done when this plan is at the top with status
+   `In progress`, the execution authorization is explicit, and no unrelated dirty files are
+   changed.
+2. **Add fail-first contracts and isolated endpoint tests.** Touch
+   `tests/test_stock_inventory.py`. Add source contracts for the shared controls, active-tab
+   loaders, request-generation protection, item-history scope, literal escaping, notes and
+   movement searchable fields, release entry, and the unchanged v125 cache contract. Add
+   Flask-client coverage with positive controls for item fields/notes, movement fields
+   including engineer employee ID and administrator, item-specific history plus text search,
+   direction and item filters, branch isolation, inactive-item behavior, literal wildcard
+   handling, and filtering before the 300-row movement limit. Run the focused module against
+   the unchanged source and record the intentional failures before application edits.
+3. **Add reusable backend search handling.** Touch `app.py` near the Stock Inventory helpers
+   and GET endpoints. Implement trimmed whitespace term splitting, case-insensitive partial
+   matching, SQL wildcard escaping for `%`, `_`, and `\`, and AND-across-terms/OR-across-fields
+   filtering. Apply it to item barcode/name/category/location/notes while retaining the
+   current branch, inactive-item, sort, and authorization behavior. Add optional `q` to the
+   movements endpoint, join only the existing Engineer/User data needed for search, apply
+   the movement field set, and leave item/direction filters before the existing order and
+   limit.
+4. **Make the shared frontend control live and contextual.** Touch
+   `templates/stock_inventory.html`. Add the clear button, status text, contextual
+   placeholders, dynamic empty-state text, and a wrapper for the Items-only inactive toggle.
+   Route the debounced input to the active loader, retain the normal tab query, reset item
+   scope on the full Movement History tab, and clear query plus set item scope on View
+   history. Preserve existing renderers and mutation/scanner behavior. Add generation checks
+   so older item or movement responses cannot replace newer results.
+5. **Publish the user-visible release record without changing cache delivery.** Touch
+   `static/changelog/releases.json` with a published `everyone` entry for the Stock Inventory
+   search improvement. Verify the existing v125 Calendar cache entry is still present and do
+   not edit the service-worker constant or cache list.
+6. **Self-review the diff and records.** Check only the intended source/template/test/manifest/
+   journal files changed for this task; verify branch and mutation guards are unchanged,
+   borrowed-items code is unchanged, and there is no schema, migration, ledger, permission,
+   database, deployment, or protected-artifact modification. Update the current-date
+   `changes.md` section with factual implementation details and any deviations.
+7. **Run proportional verification.** Run the focused Stock Inventory tests and changelog
+   tests; Python compilation; template/Jinja validation; inline JavaScript/source checks;
+   release-manifest validation; exact v125 Calendar cache validation; and `git diff --check`.
+   Run isolated full test discovery and report exact pass/fail/skip counts, distinguishing
+   any pre-existing baseline failures. Use Flask test-client and source-level checks only;
+   browser automation is excluded by project instruction.
+8. **Close the execution record without publishing.** Leave this plan marked `In progress`
+   or update it to `Executed` only if a separately authorized commit exists. No commit, push,
+   Railway action, deployment, or production/database operation is authorized by this plan.
+
+### Deliberately excluded
+
+* Currently Borrowed Items search, exports, pagination, fuzzy/ranked matching, structured
+  date/direction/engineer filters, new API totals, and changes to movement mutation behavior.
+* Schema or migration work, ledger/data repair, permission/authentication changes, service
+  worker/cache changes, production/Railway changes, and any commit or push.
+* Browser or in-app Codex verification. The Flask test client, source contracts, template
+  parsing, and static checks are the required verification surface for this task.
+
+### Verification
+
+* The fail-first focused tests must demonstrate that the new contracts are absent before the
+  implementation and that existing Stock Inventory contracts still pass.
+* Endpoint tests must include positive controls so a search assertion cannot pass on an empty
+  fixture: matching item fields and notes, all selected movement fields, a branch-excluded
+  row, an inactive row, an item/direction-filtered row, an escaped wildcard row, and a
+  matching movement older than 300 newer nonmatching rows.
+* Static checks must prove the helper/field coverage, frontend controls/loaders/generation
+  guards, release manifest uniqueness/schema, and the unchanged
+  `medical-service-pwa-offline-navigation-v125-timeline-collapsed-preference` cache entry.
+* Run the focused module, related changelog tests, isolated full discovery, Python compile,
+  Jinja/template validation, inline JavaScript/source checks, and `git diff --check`; report
+  exact results and known baseline failures.
+
+### After implementation
+
+* Perform the self-review and verification listed above, then append factual results to the
+  existing 2026-09-03 `changes.md` section. Do not claim browser verification because project
+  instructions prohibit it for this task.
+* A later user instruction `Review the implementation.` is required before any post-
+  implementation review classification. A later user instruction to commit and push is a
+  separate authorization and is not implied here.
+
+### Risks
+
+* Incorrect SQL escaping could turn user text into wildcard matching or miss literal `%`/
+  `_` values; the helper-level/source contract and Flask-client wildcard cases cover this.
+* Applying the movement limit before the query would hide older matching history; the
+  300-row fixture proves the operation order.
+* A response from an older debounced request could overwrite newer results or a changed item
+  scope; captured query/scope checks plus generation counters prevent that regression.
+* Broad joins could alter branch visibility or duplicate rows; the endpoint retains its
+  existing branch/item/direction predicates, uses explicit search joins only, and tests
+  branch isolation and result identity.
+* The page is shared by managers and read-only users; mutation guards and scanner/read-only
+  contracts remain covered and are deliberately not refactored.
+
 ## Calendar Collapsed Utility Rail
 
 **Status:** In progress

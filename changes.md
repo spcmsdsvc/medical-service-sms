@@ -2,6 +2,50 @@
 
 codex changes - 2026-09-03
 
+- Recorded the owner-authorized `Stock Inventory Search Across Items and Movement History`
+  plan at the top of `plans.md` with its bounded file scope, fail-first tests, verification
+  requirements, deliberate exclusions, and the explicit decision not to bump the existing
+  v125 service-worker cache.
+- Added the Stock Inventory search source contracts and isolated Flask-client fixtures to
+  `tests/test_stock_inventory.py` before changing application code. The unchanged-source
+  fail-first checkpoint ran **34 tests with 26 passes, 6 intentional failures, and 2
+  intentional errors**: the new backend helper/escaping and movement-search behavior, item
+  history state, shared frontend controls/loaders, wildcard handling, and release entry were
+  not present yet; the existing Stock Inventory contracts continued to execute.
+- Implemented reusable trimmed, case-insensitive, partial Stock Inventory search in `app.py`
+  with AND semantics across whitespace terms, OR semantics across item/movement fields, and
+  literal escaping for `%`, `_`, and `\\`. Items now include notes; Movement History accepts
+  `q` and searches item details, direction/reason/accountability, engineer name and employee
+  ID, purpose/source, remarks, and administrator username before its existing newest-first
+  ordering and limit, while preserving branch, inactive-item, item, direction, and mutation
+  guards.
+- Updated `templates/stock_inventory.html` so the shared search input follows the active Items
+  or Movement History loader, with debounced live search, clear control, contextual
+  placeholder, returned-row status, dynamic empty states, Items-only inactive visibility,
+  item-history scope/reset behavior, and generation/query/scope checks that ignore stale
+  responses. The borrowed-items panel, scanner, movement controls, mobile cards, and
+  read-only behavior remain unchanged. Branch changes also clear an old item-history scope.
+- Added the published `everyone` Stock Inventory search release entry to
+  `static/changelog/releases.json`; the service-worker cache was intentionally not bumped and
+  the existing v125 Calendar cache entry remains the delivery baseline.
+- After the implementation and a stale-response/branch-scope self-review, the focused
+  `tests.test_stock_inventory` module completed **34 tests with 34 passes, 0 failures, and 0
+  errors**.
+- Static and release verification passed: the in-memory Python compilation of `app.py` and
+  `tests/test_stock_inventory.py`, Jinja parsing of `stock_inventory.html`, the extracted
+  inline JavaScript syntax check, release-manifest schema/uniqueness checks (**58 releases,
+  220 unique items**), exact v125 Calendar cache preservation, and `git diff --check`. The
+  direct `py_compile` invocation was also attempted but could not write the repository's
+  pre-existing read-only `__pycache__`; the source compilation fallback passed without
+  generating files.
+- Isolated full discovery completed **861 tests with 851 passes, 10 failures, and 0 errors**.
+  The ten failures remain the known baseline cluster: eight purchase-order rate-limit/setup
+  cases and two staff-fixture cases. No Stock Inventory, changelog, Calendar, or service-worker
+  cache test failed. No browser/Codex UI, database, protected artifact, commit, push,
+  deployment, Railway, or production action was performed.
+- The owner subsequently authorized commit and push of this Stock Inventory search change only.
+  The pre-existing dirty Calendar work, database, Handoffs, `.claude/`, `output/`, `tmp/`, and
+  unrelated tests remain outside the publication scope and must stay unstaged.
 - Implemented the collapsed Calendar utility rail in `templates/timeline.html` inside the
   existing `timeline-intro-toggle-row`, before the intro panel and sticky calendar surface. The
   42px desktop-only row orders Previous Week, the live current-range mirror, Today, Next Week,

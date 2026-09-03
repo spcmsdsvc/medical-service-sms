@@ -59737,6 +59737,29 @@ STOCK_INVENTORY_SORT_FIELDS = {
 }
 
 
+def stock_inventory_search_terms(value):
+    """Return trimmed, whitespace-separated terms for stock searches."""
+    text = clean_str(value) or ''
+    return [term for term in re.split(r'\s+', text.strip()) if term]
+
+
+def stock_inventory_search_pattern(term):
+    """Build a case-insensitive partial-match pattern with literal user input."""
+    escaped = str(term).replace('\\', '\\\\')
+    escaped = escaped.replace('%', '\\%').replace('_', '\\_')
+    return '%' + escaped + '%'
+
+
+def stock_inventory_apply_search(query, columns, value):
+    """Apply AND-across-terms/OR-across-fields stock search predicates."""
+    for term in stock_inventory_search_terms(value):
+        pattern = stock_inventory_search_pattern(term)
+        query = query.filter(or_(*(
+            column.ilike(pattern, escape='\\') for column in columns
+        )))
+    return query
+
+
 def stock_inventory_view_api_guard():
     if not stock_inventory_can_view():
         return jsonify({'success': False, 'error': 'Stock Inventory view access is not enabled for this account.'}), 403
@@ -60019,15 +60042,14 @@ def get_stock_inventory_items():
     except PermissionError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 403
     query = StockInventoryItem.query.filter_by(branch_code=branch_code)
-    search = (clean_str(request.args.get('q')) or '').strip()
-    if search:
-        pattern = f'%{search}%'
-        query = query.filter(or_(
-            StockInventoryItem.scan_barcode.ilike(pattern),
-            StockInventoryItem.item_name.ilike(pattern),
-            StockInventoryItem.category.ilike(pattern),
-            StockInventoryItem.storage_location.ilike(pattern),
-        ))
+    search = clean_str(request.args.get('q')) or ''
+    query = stock_inventory_apply_search(query, (
+        StockInventoryItem.scan_barcode,
+        StockInventoryItem.item_name,
+        StockInventoryItem.category,
+        StockInventoryItem.storage_location,
+        StockInventoryItem.notes,
+    ), search)
     if (request.args.get('include_inactive') or '').lower() not in {'1', 'true', 'yes'}:
         query = query.filter(StockInventoryItem.is_active.is_(True))
     sort_key = (request.args.get('sort') or 'name').lower()
@@ -60228,6 +60250,29 @@ def get_stock_inventory_movements():
         query = query.filter(StockInventoryMovement.item_id == item_id)
     if direction in {'IN', 'OUT'}:
         query = query.filter(StockInventoryMovement.direction == direction)
+    search = clean_str(request.args.get('q')) or ''
+    if stock_inventory_search_terms(search):
+        query = (
+            query
+            .outerjoin(Engineer, StockInventoryMovement.engineer_id == Engineer.id)
+            .outerjoin(User, StockInventoryMovement.created_by_id == User.id)
+        )
+        query = stock_inventory_apply_search(query, (
+            StockInventoryItem.scan_barcode,
+            StockInventoryItem.item_name,
+            StockInventoryItem.category,
+            StockInventoryItem.storage_location,
+            StockInventoryMovement.direction,
+            StockInventoryMovement.reason,
+            StockInventoryMovement.recipient,
+            StockInventoryMovement.purpose,
+            StockInventoryMovement.source_or_returned_by,
+            StockInventoryMovement.engineer_name_snapshot,
+            Engineer.name,
+            Engineer.employee_id,
+            StockInventoryMovement.remarks,
+            User.username,
+        ), search)
     try:
         limit = min(max(int(request.args.get('limit') or 200), 1), 500)
     except ValueError:

@@ -1,6 +1,8 @@
 import json
 import pathlib
 import unittest
+import uuid
+from datetime import timedelta
 from types import SimpleNamespace
 
 
@@ -144,6 +146,70 @@ class StockInventorySourceTests(unittest.TestCase):
         manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
         release = next(item for item in manifest['releases'] if item['release_key'] == '2026-08-03')
         self.assertTrue(any(item['item_key'] == '2026-08-03-engineer-stock-inventory-view' for item in release['items']))
+
+    def test_search_contracts_cover_backend_fields_and_literal_terms(self):
+        for marker in (
+            'def stock_inventory_search_terms',
+            'def stock_inventory_search_pattern',
+            'def stock_inventory_apply_search',
+            "StockInventoryItem.notes",
+            "escape='\\\\'",
+        ):
+            self.assertIn(marker, self.app_source)
+        movement_source = self.app_source.split('def get_stock_inventory_movements():', 1)[1].split(
+            "@app.route('/api/stock-inventory/engineers')", 1
+        )[0]
+        for marker in (
+            "request.args.get('q')",
+            'Engineer.employee_id',
+            'User.username',
+            'StockInventoryMovement.remarks',
+            'StockInventoryMovement.source_or_returned_by',
+        ):
+            self.assertIn(marker, movement_source)
+
+    def test_shared_search_controls_and_loaders_are_present(self):
+        for marker in (
+            'id="stockClearSearch"',
+            'id="stockSearchCount"',
+            'id="stockIncludeInactiveWrap"',
+            'historyItemId',
+            'itemRequestId',
+            'movementRequestId',
+            'function updateStockSearchControls',
+            'function loadStockSearchResults',
+            'loadStockSearchResults()',
+            'requestId!==stockState.itemRequestId',
+            'requestId!==stockState.movementRequestId',
+            'scopedItemId!==(stockState.historyItemId || null)',
+            'No stock items match your search.',
+            'No stock movements match your search.',
+        ):
+            self.assertIn(marker, self.page_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v125-timeline-collapsed-preference', self.app_source)
+
+    def test_item_history_scope_and_clear_search_contracts_are_explicit(self):
+        show_history = self.page_source.split('function showItemHistory(', 1)[1].split(
+            '\n\nasync function lookupScannedBarcode', 1
+        )[0]
+        switch_tab = self.page_source.split('function switchStockTab(', 1)[1].split(
+            'function showItemHistory(', 1
+        )[0]
+        self.assertIn('stockState.historyItemId=itemId', show_history)
+        self.assertIn('stockSearchInput.value=\'\'', show_history)
+        self.assertIn('loadStockMovements(itemId)', show_history)
+        self.assertIn('stockState.historyItemId=null', switch_tab)
+        self.assertIn('function clearStockSearch', self.page_source)
+
+    def test_release_manifest_contains_stock_inventory_search(self):
+        manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
+        release = next(item for item in manifest['releases'] if item['release_key'] == '2026-09-03-stock-inventory-search')
+        self.assertTrue(release['is_published'])
+        self.assertTrue(any(
+            item['item_key'] == '2026-09-03-stock-inventory-search-everyone'
+            and 'everyone' in item['audiences']
+            for item in release['items']
+        ))
 
 
 class StockInventoryBranchResolutionTests(unittest.TestCase):
@@ -437,6 +503,334 @@ class StockInventorySettingsSwitchTests(unittest.TestCase):
         self.assertNotIn('approver_only', app_module.User.__table__.columns.keys())
         for stored_column in ('can_manage_stock_inventory', 'stock_inventory_only'):
             self.assertIn(stored_column, app_module.User.__table__.columns.keys())
+
+
+class StockInventorySearchEndpointTests(unittest.TestCase):
+    """Exercise search through the isolated Flask client, not only source contracts."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+        cls.app.config['TESTING'] = True
+        cls.app.config['WTF_CSRF_ENABLED'] = False
+        cls.tag = uuid.uuid4().hex[:10]
+        cls.item_ids = []
+        cls.movement_ids = []
+
+        with cls.app.app_context():
+            app_module.db.create_all()
+            cls.manager = app_module.User(
+                username=f'stock-search-admin-{cls.tag}',
+                password=app_module.generate_password_hash('test-password'),
+                role='staff',
+                is_active=True,
+                can_manage_stock_inventory=True,
+                stock_inventory_branch_code='BC01',
+            )
+            cls.engineer = app_module.Engineer(
+                employee_id=f'ENG-{cls.tag}',
+                name=f'EngineerName{cls.tag}',
+                initials='ES',
+                branch='Manila',
+            )
+            app_module.db.session.add_all([cls.manager, cls.engineer])
+            app_module.db.session.flush()
+
+            cls.main_item = cls._create_item(
+                branch_code='BC01',
+                scan_barcode=f'STOCK-{cls.tag}-100%_LITERAL',
+                item_name=f'Thermal Pump Kit {cls.tag}',
+                category=f'Surgical Supplies {cls.tag}',
+                storage_location=f'Manila Cold Room {cls.tag}',
+                notes=f'Internal note token {cls.tag}',
+            )
+            cls.wildcard_decoy = cls._create_item(
+                branch_code='BC01',
+                scan_barcode=f'STOCK-{cls.tag}-100XXLITERAL',
+                item_name=f'Wildcard Decoy {cls.tag}',
+                category=f'General {cls.tag}',
+                storage_location=f'Decoy Shelf {cls.tag}',
+                notes=f'Decoy note {cls.tag}',
+            )
+            cls.inactive_item = cls._create_item(
+                branch_code='BC01',
+                scan_barcode=f'INACTIVE-{cls.tag}',
+                item_name=f'Inactive Filter {cls.tag}',
+                category=f'Inactive Category {cls.tag}',
+                storage_location=f'Inactive Shelf {cls.tag}',
+                notes=f'Inactive note {cls.tag}',
+                is_active=False,
+            )
+            cls.branch_item = cls._create_item(
+                branch_code='BC02',
+                scan_barcode=f'BRANCH-{cls.tag}',
+                item_name=f'Branch Only {cls.tag}',
+                category=f'Branch Category {cls.tag}',
+                storage_location=f'Cebu Shelf {cls.tag}',
+                notes=f'Branch note {cls.tag}',
+            )
+            cls.history_item = cls._create_item(
+                branch_code='BC01',
+                scan_barcode=f'HISTORY-{cls.tag}',
+                item_name=f'History Valve {cls.tag}',
+                category=f'History Category {cls.tag}',
+                storage_location=f'History Shelf {cls.tag}',
+                notes=f'History note {cls.tag}',
+            )
+            cls.limit_item = cls._create_item(
+                branch_code='BC01',
+                scan_barcode=f'LIMIT-{cls.tag}',
+                item_name=f'Limit Device {cls.tag}',
+                category=f'Limit Category {cls.tag}',
+                storage_location=f'Limit Shelf {cls.tag}',
+                notes=f'Limit note {cls.tag}',
+            )
+
+            now = app_module.get_manila_time()
+            cls.main_movement = cls._create_movement(
+                cls.main_item,
+                direction='OUT',
+                reason='Issue',
+                recipient=f'RecipientToken{cls.tag}',
+                purpose=f'PurposeToken{cls.tag}',
+                source_or_returned_by=f'SourceToken{cls.tag}',
+                remarks=f'RemarksToken{cls.tag}',
+                engineer_id=cls.engineer.id,
+                engineer_name_snapshot=f'EngineerSnapshot{cls.tag}',
+                created_at=now - timedelta(hours=1),
+            )
+            cls.history_match = cls._create_movement(
+                cls.history_item,
+                direction='OUT',
+                reason='Issue',
+                recipient=f'HistoryRecipient{cls.tag}',
+                purpose=f'HistoryPurpose{cls.tag}',
+                source_or_returned_by=f'HistorySource{cls.tag}',
+                remarks=f'HistoryMatch{cls.tag}',
+                engineer_id=cls.engineer.id,
+                engineer_name_snapshot=f'EngineerSnapshot{cls.tag}',
+                created_at=now - timedelta(hours=2),
+            )
+            cls.history_other_direction = cls._create_movement(
+                cls.history_item,
+                direction='IN',
+                reason='Return',
+                recipient=f'HistoryOtherRecipient{cls.tag}',
+                purpose=f'HistoryOtherPurpose{cls.tag}',
+                source_or_returned_by=f'HistoryOtherSource{cls.tag}',
+                remarks=f'HistoryMatch{cls.tag}',
+                engineer_id=cls.engineer.id,
+                engineer_name_snapshot=f'EngineerSnapshot{cls.tag}',
+                created_at=now - timedelta(hours=3),
+            )
+            cls.branch_movement = cls._create_movement(
+                cls.branch_item,
+                direction='OUT',
+                reason='Issue',
+                remarks=f'BranchMovement{cls.tag}',
+                created_at=now - timedelta(hours=4),
+            )
+            cls.limit_match = cls._create_movement(
+                cls.limit_item,
+                direction='IN',
+                reason=f'LimitMatch{cls.tag}',
+                remarks=f'LimitMatch{cls.tag}',
+                created_at=now - timedelta(days=2),
+            )
+            for index in range(300):
+                cls._create_movement(
+                    cls.limit_item,
+                    direction='IN',
+                    reason=f'LimitNoise{cls.tag}{index}',
+                    remarks=f'LimitNoise{cls.tag}{index}',
+                    created_at=now - timedelta(minutes=index),
+                )
+            cls.main_item_id = cls.main_item.id
+            cls.wildcard_decoy_id = cls.wildcard_decoy.id
+            cls.inactive_item_id = cls.inactive_item.id
+            cls.branch_item_id = cls.branch_item.id
+            cls.history_item_id = cls.history_item.id
+            cls.limit_item_id = cls.limit_item.id
+            cls.main_movement_id = cls.main_movement.id
+            cls.history_match_id = cls.history_match.id
+            cls.history_other_direction_id = cls.history_other_direction.id
+            cls.branch_movement_id = cls.branch_movement.id
+            cls.limit_match_id = cls.limit_match.id
+            app_module.db.session.commit()
+            cls.manager_id = cls.manager.id
+            cls.engineer_id = cls.engineer.id
+
+    @classmethod
+    def _create_item(cls, branch_code, scan_barcode, item_name, category, storage_location, notes, is_active=True):
+        item = app_module.StockInventoryItem(
+            barcode=app_module.stock_inventory_storage_barcode(branch_code, scan_barcode),
+            scan_barcode=scan_barcode,
+            item_name=item_name,
+            category=category,
+            storage_location=storage_location,
+            notes=notes,
+            branch_code=branch_code,
+            is_active=is_active,
+            current_quantity=10,
+            created_by_id=cls.manager.id,
+            updated_by_id=cls.manager.id,
+        )
+        app_module.db.session.add(item)
+        app_module.db.session.flush()
+        cls.item_ids.append(item.id)
+        return item
+
+    @classmethod
+    def _create_movement(cls, item, **values):
+        movement = app_module.StockInventoryMovement(
+            item_id=item.id,
+            direction=values.pop('direction'),
+            quantity=1,
+            reason=values.pop('reason'),
+            resulting_quantity=10,
+            created_by_id=cls.manager.id,
+            **values,
+        )
+        app_module.db.session.add(movement)
+        app_module.db.session.flush()
+        cls.movement_ids.append(movement.id)
+        return movement
+
+    @classmethod
+    def tearDownClass(cls):
+        with cls.app.app_context():
+            movement_ids = getattr(cls, 'movement_ids', [])
+            item_ids = getattr(cls, 'item_ids', [])
+            engineer_id = getattr(cls, 'engineer_id', None)
+            manager_id = getattr(cls, 'manager_id', None)
+            if movement_ids:
+                app_module.db.session.query(app_module.StockInventoryMovement).filter(
+                    app_module.StockInventoryMovement.id.in_(movement_ids)
+                ).delete(synchronize_session=False)
+            if item_ids:
+                app_module.db.session.query(app_module.StockInventoryItem).filter(
+                    app_module.StockInventoryItem.id.in_(item_ids)
+                ).delete(synchronize_session=False)
+            if engineer_id:
+                app_module.db.session.query(app_module.Engineer).filter_by(id=engineer_id).delete(
+                    synchronize_session=False
+                )
+            if manager_id:
+                app_module.db.session.query(app_module.ApprovalRouting).filter(
+                    app_module.or_(
+                        app_module.ApprovalRouting.requester_user_id == manager_id,
+                        app_module.ApprovalRouting.approver_user_id == manager_id,
+                    )
+                ).delete(synchronize_session=False)
+                app_module.db.session.query(app_module.User).filter_by(id=manager_id).delete(
+                    synchronize_session=False
+                )
+            app_module.db.session.commit()
+            app_module.db.session.remove()
+
+    def _client(self):
+        client = self.app.test_client()
+        with client.session_transaction() as session:
+            session['_user_id'] = str(self.manager_id)
+            session['_fresh'] = True
+        return client
+
+    def _items(self, **query):
+        response = self._client().get('/api/stock-inventory/items', query_string={
+            'branch': 'BC01',
+            **query,
+        })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response.get_json()['items']
+
+    def _movements(self, **query):
+        response = self._client().get('/api/stock-inventory/movements', query_string={
+            'branch': 'BC01',
+            **query,
+        })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response.get_json()['movements']
+
+    def test_search_helper_splits_terms_and_escapes_sql_wildcards(self):
+        self.assertEqual(
+            app_module.stock_inventory_search_terms('  Alpha   beta  '),
+            ['Alpha', 'beta'],
+        )
+        self.assertEqual(
+            app_module.stock_inventory_search_pattern(r'100%_\token'),
+            r'%100\%\_\\token%',
+        )
+
+    def test_items_search_matches_fields_notes_and_and_terms(self):
+        rows = self._items(q=f'  thermal   cold  ')
+        self.assertEqual([row['id'] for row in rows], [self.main_item_id])
+
+        for term in (
+            f'STOCK-{self.tag}',
+            f'Surgical',
+            f'Manila',
+            f'Internal note token',
+        ):
+            self.assertIn(self.main_item_id, {row['id'] for row in self._items(q=term)})
+
+    def test_items_inactive_behavior_literal_wildcards_and_branch_isolation(self):
+        inactive_query = f'Inactive Filter {self.tag}'
+        self.assertIn(self.inactive_item_id, self.item_ids)
+        self.assertNotIn(self.inactive_item_id, {row['id'] for row in self._items(q=inactive_query)})
+        self.assertIn(
+            self.inactive_item_id,
+            {row['id'] for row in self._items(q=inactive_query, include_inactive='true')},
+        )
+
+        literal_rows = self._items(q=f'100%_LITERAL')
+        literal_ids = {row['id'] for row in literal_rows}
+        self.assertIn(self.main_item_id, literal_ids)
+        self.assertNotIn(self.wildcard_decoy_id, literal_ids)
+
+        branch_rows = self._items(q=f'Branch Only {self.tag}')
+        self.assertEqual(branch_rows, [])
+
+    def test_movements_search_matches_item_movement_engineer_and_admin_fields(self):
+        for term in (
+            f'Thermal',
+            f'STOCK-{self.tag}',
+            f'Surgical',
+            f'Cold',
+            'OUT',
+            'Issue',
+            f'RecipientToken{self.tag}',
+            f'PurposeToken{self.tag}',
+            f'SourceToken{self.tag}',
+            f'RemarksToken{self.tag}',
+            f'ENG-{self.tag}',
+            f'EngineerName{self.tag}',
+            f'EngineerSnapshot{self.tag}',
+            f'stock-search-admin-{self.tag}',
+        ):
+            movement_ids = {row['id'] for row in self._movements(q=term)}
+            self.assertIn(self.main_movement_id, movement_ids, term)
+
+    def test_item_history_text_search_preserves_item_and_direction_filters(self):
+        rows = self._movements(
+            item_id=self.history_item_id,
+            direction='OUT',
+            q=f'HistoryMatch{self.tag}',
+        )
+        self.assertEqual([row['id'] for row in rows], [self.history_match_id])
+        self.assertTrue(all(row['item_id'] == self.history_item_id for row in rows))
+
+        all_history_rows = self._movements(item_id=self.history_item_id, q=f'HistoryMatch{self.tag}')
+        self.assertEqual(
+            {row['id'] for row in all_history_rows},
+            {self.history_match_id, self.history_other_direction_id},
+        )
+
+    def test_movement_branch_isolation_and_search_before_limit(self):
+        self.assertIn(self.branch_movement_id, self.movement_ids)
+        self.assertEqual(self._movements(q=f'BranchMovement{self.tag}'), [])
+
+        rows = self._movements(q=f'LimitMatch{self.tag}', limit=300)
+        self.assertEqual([row['id'] for row in rows], [self.limit_match_id])
 
 
 if __name__ == '__main__':
