@@ -120,6 +120,31 @@ codex changes - 2026-09-02
 - Python compilation, Jinja parsing, inline JavaScript parsing, release JSON validation, and `git diff --check` passed. The full discovered suite ran against a fresh disposable external SQLite database: **811 tests ran, 796 passed, 15 unrelated baseline/environment failures, 0 errors, and 1 skip**. The failures are confined to existing admin-capability, approval-notification, purchase-order, staff-creation, and Calibration Report runtime/contract tests; no approval-link test failed.
 - Browser automation, service-worker changes, production database/storage changes, Railway-variable changes, and manual redeploys remain excluded. The shared root still retains the other task's dirty files and was not edited by this implementation.
 - Published only the isolated feature commits `c52d742` and `77804cb` to `origin/main`; final `git ls-remote origin refs/heads/main` verification returned `77804cb4273b329a0463dd29a1a6580162c4b831`. Railway deployment metadata was unavailable because the Railway CLI/connector is not installed, and no manual redeploy or production setting change was performed.
+- Added an in-modal, read-only Calibration Report DOCX preview to `templates/approvals.html`. The
+  certificate approval detail keeps the existing escaped approval-scoped download link and now
+  offers a nested accessible preview dialog with loading, error, fallback, scrollable rendered
+  content, Escape/backdrop close, focus restoration, and cleanup when the approval modal changes.
+- Added lazy local loading of the official `docx-preview` 0.4.0 UMD bundle and reused the existing
+  JSZip vendor. The preview fetches the already-authorized report URL with same-origin credentials
+  and no-store caching, renders the in-memory DOCX `ArrayBuffer` with headers, footers, footnotes,
+  endnotes, page breaks, and alternate HTML chunks disabled, then sanitizes rendered content and
+  styles before display. No external viewer, new route, backend/schema/auth change, or persistent
+  report copy was introduced.
+- Added `static/vendor/docx-preview/docx-preview.min.js` and its Apache-2.0 `LICENSE`, updated the
+  Approval Center wording and calibration approval workflow contract tests, and added the release
+  manifest item. The service-worker source and cache version remain unchanged because the runtime is
+  lazy-loaded from the Approval Center and the report endpoint remains network-only.
+- The preview positive controls ran fail-first before the implementation with **3 tests and 17
+  assertion failures**, covering the missing dialog/runtime contract; the existing report-link
+  backend behavior remained the comparison baseline. The shared dirty root and protected database,
+  handoff, `.claude/`, output, and tmp artifacts were not modified.
+- Final isolated verification on 2026-09-03 passed the focused Approval Center/exact-report set
+  **13/13** and the related Approval Center, Calibration Report, TSR archive, Timeline, and
+  appearance source set **50/50**. Python compilation, Jinja parsing, inline JavaScript parsing,
+  both vendored JavaScript syntax checks, release JSON validation, and `git diff --check` also
+  passed. A fresh external-DB full discovery retry was stopped after approximately ten minutes
+  without a unittest summary because the existing reimbursement-receipt DDL initializer continued
+  repeating SQLite-lock retries; no preview-specific failure appeared before it was stopped.
 
 codex changes - 2026-09-01
 

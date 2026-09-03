@@ -53,6 +53,198 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Approval Center — In-Modal Calibration Report DOCX Preview
+
+**Status:** In progress
+**Approved:** 2026-09-02
+**Detailed:** 2026-09-02
+**Execution authorization:** The owner separately authorized implementation on 2026-09-02 by
+directing implementation, commit, and push of this approved package. The work is being completed in
+the clean isolated worktree `C:\Users\Jonamar\AppData\Local\Temp\medical-service-sms-calibration-report-preview-20260902`;
+the shared dirty root remains protected. One implementation-worker attempt stalled during preflight
+and was stopped without source edits; the parent then completed the package in this same isolated
+worktree. Commit and publication remain limited to the intended feature files.
+
+### Context and intended outcome
+
+Approval Center already exposes the exact generated Calibration Report DOCX through the
+approval-scoped `calibration_report_download_url`, and the certificate detail modal retains the
+existing embedded certificate preview plus Approve/Return controls. Approvers still have to leave
+the modal or download the DOCX to inspect the report. Add an in-modal, accessible DOCX preview that
+fetches that existing authenticated URL into memory and renders it locally. Keep the download link
+as the reliable fallback and do not broaden the backend report identity or authorization policy.
+
+### Decisions taken
+
+1. This is a frontend/template and vendored-runtime change only. Do not change `app.py`, the
+   approval-scoped URL/authentication, schema, routes, service worker, or app-shell cache.
+2. Keep the existing escaped `Download Calibration Report (DOCX)` link alongside a new
+   `Preview Calibration Report` button. The preview control is available only when the existing
+   approval-scoped download URL is present; missing metadata remains an unavailable state.
+3. The preview is a nested dialog within the existing certificate detail modal. It must expose
+   accessible dialog labelling, loading, error, unavailable, and scrollable rendered-content states;
+   support Escape close; and restore focus to the button that opened it.
+4. Fetch the existing URL with `credentials: 'same-origin'` and `cache: 'no-store'`. Do not create
+   a second route, external viewer, conversion service, Python dependency, or persisted download.
+5. Lazy-load the local JSZip runtime already present at
+   `static/vendor/jszip/jszip.min.js` and a pinned local `docx-preview` UMD bundle at
+   `static/vendor/docx-preview/docx-preview.min.js`. The new bundle must be the official
+   `docx-preview` 0.4.0 package, accompanied by its Apache-2.0 license text. Render the fetched
+   in-memory `ArrayBuffer` via `docx.renderAsync` with headers, footers, footnotes, endnotes, page
+   breaks, `useBase64URL`, and `renderAltChunks: false` enabled as specified.
+6. The renderer owns its lifecycle: remove old rendered nodes, abort the active fetch on close or
+   replacement, ignore stale loader/fetch/render completions, revoke any object URLs it creates,
+   and leave the certificate modal usable after success, error, unavailable, or close.
+7. Treat the DOCX as untrusted input. Sanitize the rendered subtree by removing active elements,
+   event-handler attributes, unsafe navigation schemes, and unsafe resource/navigation attributes.
+   New controls use escaped data attributes and event listeners; do not interpolate the URL into an
+   inline event handler.
+8. Do not change the existing certificate preview, optional no-signature print-copy controls,
+   return remarks, Approve/Return controls, generic archive behavior, or service-worker cache.
+
+### Investigation
+
+1. `templates/approvals.html:2117-2180` contains the existing Approval Center detail modal and
+   receipt-preview dialog. Its certificate branch starts at approximately `:5769` and currently
+   renders the escaped approval-scoped download link or unavailable message.
+2. `templates/approvals.html:2248-2295` provides the shared approval-modal load sequence guard;
+   `beginApprovalModalLoad()` and `closeApprovalModal()` are the relevant lifecycle seams. The
+   existing global Escape listener closes receipt preview only, so the nested report dialog needs a
+   separate guarded handler and focus state.
+3. `app.py:16469-16525` already serializes `calibration_report_filename` and
+   `calibration_report_download_url`; `app.py:16725-16750` authorizes the exact generated report
+   for the requester, assigned approver, or authorized administrator. The download route at
+   `app.py:41500-41525` calls that resolver with `approval_id` and already sends no-store headers.
+4. `app.py:17680-17715` and the existing `static/vendor/jszip/jszip.min.js` show that JSZip is
+   already a local project runtime. The app-shell list and cache version are deliberately outside
+   this plan; the new preview loader is lazy and network-only at page-runtime level.
+5. `tests/test_approval_center_wording.py` already guards certificate preview-only URLs and the
+   escaped download fallback. `tests/test_calibration_certificate_approval_workflow.py` already
+   exercises the serializer's exact scoped URL and requester/approver/admin success plus
+   unauthorized/mismatched-file denial against disposable storage. Those backend contracts are
+   retained; this task adds the frontend/runtime contract coverage around them.
+6. Browser automation is prohibited by the project instructions. Source/runtime contracts, Node
+   parsing of the rendered inline script, vendored JavaScript syntax validation, Flask-client
+   backend checks, and the existing exact-file tests are the authorized proportional verification.
+
+### Numbered execution steps
+
+1. Record this complete approved plan at the top of `plans.md` with `Status: In progress`; verify
+   `git status`, `HEAD`, and the isolated worktree path before any application edit. Done means
+   the shared root is not read or modified and protected artifacts remain untouched.
+2. Extend `tests/test_approval_center_wording.py` with focused source/runtime-contract assertions
+   for the Preview button, escaped `data-*` URL, absence of a URL-bearing inline handler, nested
+   dialog role/name/close controls, loading/error/unavailable/scrollable states, focus restoration,
+   Escape handling, same-origin/no-store fetch, lazy local runtime loading, renderer options,
+   cleanup/stale protection, DOM sanitization, and the preserved download link/certificate and
+   decision controls. Keep the existing preview-only URL assertions.
+3. Extend `tests/test_calibration_certificate_approval_workflow.py` with a small local-runtime and
+   release/cache-boundary contract covering `docx-preview` 0.4.0, Apache-2.0 licensing, reuse of
+   the existing JSZip asset, the unchanged approval-scoped URL shape, and the existing exact-file
+   successful/unauthorized/mismatched download behavior. Add no browser automation and no new
+   backend route. Add a separate renderer-contract execution test only if source assertions cannot
+   materially establish the required renderer call/options and fallback behavior.
+4. Run the new focused tests against the unchanged application immediately after adding them and
+   before adding the preview markup/behavior or vendored bundle. Record the expected fail-first
+   result; do not weaken assertions to make the baseline pass.
+5. In `templates/approvals.html`, add the escaped-data-attribute Preview button beside the existing
+   download link. Add the dedicated nested report-preview dialog with an accessible title,
+   description/status region, close button, loading/error/unavailable states, a scrollable render
+   container, and a download fallback. Wire it with event listeners and the existing approval
+   modal's lifecycle without changing certificate iframe, print-copy, remarks, or Approve/Return
+   behavior.
+6. In the Approval Center inline script, implement the report preview controller. Load
+   `static/vendor/jszip/jszip.min.js` and
+   `static/vendor/docx-preview/docx-preview.min.js` once on demand; fetch the escaped data URL
+   with same-origin credentials and no-store cache; render the response ArrayBuffer through
+   `docx.renderAsync` using the approved headers/footers/footnotes/endnotes/page-breaks,
+   `useBase64URL`, and `renderAltChunks:false` options. Abort and clean up on close/replacement,
+   guard every async completion with a current token, and return to the download-only/unavailable
+   state when the runtime or render fails.
+7. Sanitize the rendered preview subtree after every successful render. Remove scripts, forms,
+   iframes, embeds, objects, active controls, event attributes, unsafe `href`/`src`/`action`/
+   `formaction`/`xlink:href` values, and unsafe navigation/resource attributes while preserving
+   the DOCX's readable text, images, headers, footers, footnotes, endnotes, page breaks, and
+   scrollable pages. Avoid URL interpolation in any inline handler.
+8. Add `static/vendor/docx-preview/docx-preview.min.js` from the official `docx-preview` 0.4.0
+   package and `static/vendor/docx-preview/LICENSE` containing the package's Apache-2.0 license.
+   Reuse the checked-in `static/vendor/jszip/jszip.min.js`; do not add Python/system conversion
+   dependencies or a new app-shell entry/cache bump.
+9. Update the existing 2026-09-02 release object in `static/changelog/releases.json` with one
+   approver-facing item describing the in-modal local Calibration Report DOCX preview and the
+   retained approval-scoped download fallback. Append detailed factual implementation, vendor,
+   test, compatibility, and no-service-worker bullets to the 2026-09-02 section at the top of
+   `changes.md`. Keep secrets and protected artifacts out of both records.
+10. Self-review the final diff and run fail-first evidence, focused and related approval/report
+    tests, Python compilation, Jinja parsing, inline JavaScript parsing, vendored JS syntax
+    validation, release JSON validation, and `git diff --check`. Run the full discovered suite
+    against a fresh disposable external SQLite database if practical, clearly separating
+    pre-existing failures. Do not open `scheduler.db`, run browser automation, change the service
+    worker/app-shell cache, or touch the shared root. The parent handles the separately authorized
+    scoped commit and push only after the final diff and remote-head checks.
+
+### Deliberately excluded
+
+- No changes to `app.py`, schema, migrations, routes, storage/auth policy, approval-scoped URL,
+  generic archive behavior, certificate PDF/iframe preview, no-signature print copy, report
+  generation, or Approve/Return workflow.
+- No external viewer, server/Python/system conversion dependency, PDF conversion, persisted
+  client-side report copy, or new download/preview endpoint.
+- No service-worker source or cache-version bump and no app-shell addition for `docx-preview`;
+  the runtimes are lazy-loaded locally from the page.
+- No changes to `static/vendor/jszip/jszip.min.js`, protected `scheduler.db`, handoffs, output,
+  tmp artifacts, production state, Railway settings, or Git history beyond the separately authorized
+  feature commit and fast-forward publication of `origin/main`.
+- No browser automation or Codex app navigation/termination, and no additional implementation
+  workers after the stalled preflight attempt.
+
+### Verification
+
+The new positive controls must fail on the unchanged template/runtime contract before implementation
+and pass after it. The focused tests must prove the existing approval-scoped URL remains the same,
+exact generated-file success remains 200 with DOCX bytes, and unauthorized/mismatched files remain
+403. Markup checks must prove the Preview button and nested dialog are accessible, the URL is escaped
+and data-bound, the download fallback and certificate/decision controls remain, and there is no new
+URL-bearing inline handler. Renderer checks must cover lazy local JSZip/docx-preview loading,
+`renderAsync` options, ArrayBuffer input, cleanup/abort/stale protection, sanitizer behavior, and
+loading/error/unavailable/download-only fallback paths. Static checks must include Jinja compilation,
+Node parsing of the inline script after template substitution, `node --check` for both vendored
+JavaScript assets, release JSON parse/unique keys, Python compile, and `git diff --check`. Full
+discovery, when practical, uses only an external disposable `MEDICAL_SERVICE_TEST_DB`.
+
+### After implementation
+
+Execution evidence through 2026-09-03 is recorded here before publication. The changed files are
+`templates/approvals.html`, `tests/test_approval_center_wording.py`,
+`tests/test_calibration_certificate_approval_workflow.py`,
+`static/vendor/docx-preview/docx-preview.min.js`, `static/vendor/docx-preview/LICENSE`,
+`static/changelog/releases.json`, `changes.md`, and `plans.md`; `app.py`, the service worker, and
+the existing JSZip vendor are unchanged. The fail-first positive controls ran against the unchanged
+template/runtime with **3 tests and 17 assertion failures**. Post-implementation focused coverage
+passed **13/13**, and related Approval Center, Calibration Report, TSR archive, Timeline, and
+appearance source coverage passed **50/50**. Python compilation, Jinja parsing, inline JavaScript
+parsing, `node --check` for JSZip and docx-preview, release JSON validation, and `git diff --check`
+passed. The vendored runtime is the official `docx-preview` **0.4.0** bundle with its Apache-2.0
+license file, and the Flask/test-client exact-report authorization/download contracts remain green.
+A fresh external-DB full discovery retry was stopped after approximately ten minutes without a
+unittest summary because the existing reimbursement-receipt DDL initializer repeatedly encountered
+SQLite locks; this is an environment/test-suite limitation, not a preview assertion failure. The
+shared dirty root and its scheduler database, handoff, `.claude/`, output, and tmp artifacts were
+not modified; no browser, production, Railway, service-worker, or database action was performed.
+The parent performs only the separately authorized scoped commit/push and remote-head verification
+next; post-implementation review and production/Railway actions remain separate gates.
+
+### Risks
+
+The main risk is treating DOCX-rendered HTML as trusted and allowing an embedded active element or
+unsafe navigation to run inside an authenticated approval page; strict post-render sanitization and
+source/runtime tests limit that blast radius. A second risk is stale asynchronous output replacing
+the current approval's preview; aborts, cleanup, and token checks prevent cross-request display. A
+third risk is changing the existing download/approval path; the implementation reuses the exact
+serialized URL, leaves `app.py` untouched, and retains the existing success/denial tests. Lazy local
+runtime loading and download-only fallback limit failure to preview availability without blocking
+approval decisions.
+
 ## Approval Center — Calibration Report Link
 
 **Status:** Executed — c52d742

@@ -462,6 +462,26 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
             {'scope': ['all'], 'approval_id': [str(fixture['approval_id'])]},
         )
 
+    def test_approval_report_preview_uses_local_pinned_runtime_without_new_server_surface(self):
+        template = (ROOT / 'templates' / 'approvals.html').read_text(encoding='utf-8')
+        renderer = ROOT / 'static' / 'vendor' / 'docx-preview' / 'docx-preview.min.js'
+        license_path = ROOT / 'static' / 'vendor' / 'docx-preview' / 'LICENSE'
+        self.assertTrue(renderer.is_file())
+        self.assertTrue(license_path.is_file())
+        renderer_source = renderer.read_text(encoding='utf-8')
+        license_source = license_path.read_text(encoding='utf-8')
+        self.assertIn('docx-preview <https://github.com/VolodymyrBaydalka/docxjs>', renderer_source)
+        self.assertIn('renderAsync', renderer_source)
+        self.assertIn('Apache License', license_source)
+        self.assertIn('Version 2.0', license_source)
+        self.assertIn('vendor/jszip/jszip.min.js', template)
+        self.assertIn('vendor/docx-preview/docx-preview.min.js', template)
+        self.assertIn('0.4.0', template)
+        self.assertIn('calibration_report_download_url', template)
+        app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        self.assertNotIn('vendor/docx-preview/docx-preview.min.js', app_source)
+        self.assertIn('NETWORK_ONLY_DOWNLOAD_PREFIXES', app_source)
+
     def test_approval_scoped_download_allows_requester_approver_and_admin(self):
         fixture = self._create_fixture()
         app = app_module.app

@@ -100,6 +100,48 @@ class ApprovalCenterWordingTests(unittest.TestCase):
         self.assertIn('target="_blank" rel="noopener"', self.source)
         self.assertIn("The finalized Calibration Report is unavailable for this submission.", self.source)
 
+    def test_calibration_report_preview_has_accessible_nested_dialog_and_safe_data_binding(self):
+        self.assertIn("Preview Calibration Report", self.source)
+        self.assertIn('id="approvalCalibrationReportPreviewBackdrop"', self.source)
+        self.assertIn('role="dialog" aria-modal="true"', self.source)
+        self.assertIn('aria-labelledby="approvalCalibrationReportPreviewTitle"', self.source)
+        self.assertIn('id="approvalCalibrationReportPreviewStatus"', self.source)
+        self.assertIn('role="status" aria-live="polite"', self.source)
+        self.assertIn('id="approvalCalibrationReportPreviewError"', self.source)
+        self.assertIn('id="approvalCalibrationReportPreviewContent"', self.source)
+        self.assertIn('data-calibration-report-preview-url="${approvalEscape(data.calibration_report_download_url)}"', self.source)
+        self.assertIn('data-calibration-report-preview-filename="${approvalEscape(data.calibration_report_filename || \'Calibration Report.docx\')}"', self.source)
+        self.assertNotIn('onclick="openCalibrationReportPreview', self.source)
+        self.assertNotIn("onclick='openCalibrationReportPreview", self.source)
+        self.assertIn("id=\"approvalCalibrationReportPreviewClose\"", self.source)
+        self.assertIn("id=\"approvalCalibrationReportPreviewFooterClose\"", self.source)
+
+    def test_calibration_report_preview_uses_local_renderer_with_authenticated_fetch_and_cleanup(self):
+        for expected in (
+            "vendor/jszip/jszip.min.js",
+            "vendor/docx-preview/docx-preview.min.js",
+            "credentials: 'same-origin'",
+            "cache: 'no-store'",
+            "response.arrayBuffer()",
+            "docx.renderAsync",
+            "renderHeaders: true",
+            "renderFooters: true",
+            "renderFootnotes: true",
+            "renderEndnotes: true",
+            "breakPages: true",
+            "useBase64URL: true",
+            "renderAltChunks: false",
+            "AbortController",
+            "sanitizeCalibrationReportPreview",
+            "closeCalibrationReportPreview",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, self.source)
+        self.assertIn("calibrationReportPreviewRuntimePromise", self.source)
+        self.assertIn("calibrationReportPreviewSequence", self.source)
+        self.assertIn("removeAttribute('href')", self.source)
+        self.assertIn("<script", self.source)
+
 
 if __name__ == "__main__":
     unittest.main()

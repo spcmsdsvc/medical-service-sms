@@ -54,6 +54,16 @@
           "sort_order": 50
         },
         {
+          "item_key": "2026-09-02-approval-center-calibration-report-preview",
+          "category": "Approval Center",
+          "description": "Calibration Certificate approvers can now preview the exact generated Calibration Report DOCX inside the certificate review modal without downloading it. The local browser renderer uses the existing approval-scoped authenticated report URL, with the DOCX download retained as a fallback.",
+          "audiences": [
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 55
+        },
+        {
           "item_key": "2026-09-02-service-file-delivery",
           "category": "Timeline",
           "description": "Timeline cards now show whether the linked service files have not been sent, are partially sent, or are all sent. Send Service Files lets you choose unsent or intentionally resend selected TSR, calibration, and supporting files, then refreshes the delivery status after a successful send.",
