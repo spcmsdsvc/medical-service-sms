@@ -53,6 +53,192 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Desktop Sidebar Resize and Single-Line Labels
+
+**Status:** In progress
+**Approved:** 2026-09-03
+**Detailed:** 2026-09-03
+**Execution authorized:** 2026-09-03 — the owner explicitly said `PLEASE IMPLEMENT THIS PLAN`.
+
+### Context
+
+The sidebar label `Reimburse / Liquidation` was changed from the former `Liquidation` label and
+then allowed to wrap when the submenu became too narrow. The resulting two-line presentation was
+visually undesirable in the attached screenshot. The intended result is to restore the compact
+single-line sidebar labels with the existing ellipsis fallback, while giving desktop users a
+controlled way to widen the sidebar when they need to read a longer label in full.
+
+The screenshot is visual evidence of the truncation only; it is not an artifact to import or an
+additional instruction source. The requested resize behavior is a shell-only frontend change. No
+route, permission, database, API, or workflow semantics change.
+
+### Decisions and scope
+
+1. Restore submenu links to the original single-line/ellipsis behavior. Keep the current label
+   text `Reimburse / Liquidation`, the `Service Documents` label, and the existing submenu font
+   size (`0.84rem`) unchanged.
+2. Add a draggable resize handle on the persistent desktop sidebar's right edge. The default
+   width remains `240px`; the permitted range is `200px` through `360px`.
+3. Persist the selected width in browser `localStorage`. Invalid, missing, or unavailable stored
+   values fall back to `240px`; values are always clamped to the permitted range.
+4. Make the resize handle keyboard accessible: Arrow Left/Down decrease by `20px`, Arrow
+   Right/Up increase by `20px`, Home restores `240px`, and double-click restores `240px`. Expose
+   `role="separator"`, vertical orientation, and the current min/max/value ARIA attributes.
+5. Apply resizing only at desktop widths (`min-width: 993px`). Mobile keeps the responsive
+   drawer capped at the existing `240px` maximum and does not use the persisted desktop width.
+6. Bump the app-shell stylesheet query from `v=2` to `v=3` and the current service-worker cache
+   from v121 to v122 so cached shell CSS is refreshed. Preserve the existing collapse/open,
+   mobile drawer, navigation labels, routes, permissions, and user footer.
+7. Preserve unrelated dirty work and protected artifacts. Do not change databases, Railway,
+   production state, or Git history; do not commit or push.
+
+### Investigation evidence and source anchors
+
+- `static/css/app-shell.css:12` defines `--sidebar-width: 240px`; `:85` uses it for the fixed
+  sidebar; `:154-229` defines shared rows and the ellipsis label spans; `:290-305` contains the
+  current wrapping override; `:409` uses the same variable for the main-content margin; and
+  `:487-510` defines the mobile drawer behavior.
+- `templates/layout.html:36` loads `app-shell.css?v=2`; `:78-104` contains the sidebar shell and
+  desktop toggle; `:105-323` contains navigation and footer markup; `:339-376` contains the
+  existing desktop/mobile sidebar functions.
+- `tests/test_layout_sidebar.py:17-107` contains source-level shell/CSS/cache assertions and
+  `:110-190` renders the real layout through the Flask test client using an isolated database.
+- `app.py:17677-17695` emits the embedded service worker and registers
+  `/static/css/app-shell.css` in `APP_SHELL`; the current cache constant is v121.
+- `static/changelog/README.md` requires a release-manifest entry before a user-facing commit or
+  push. `changes.md` must be read before and updated after every project change.
+
+### Numbered execution steps
+
+1. **Preflight and fail-first coverage.** Confirm the approved plan and current dirty paths,
+   preserving `Handoffs/`, `scheduler.db`, `.claude/`, `output/`, `tmp/`, and all unrelated
+   changes. Extend `tests/test_layout_sidebar.py` before source edits to assert the restored
+   single-line submenu contract; resize-handle markup and ARIA attributes; 200/360/240 bounds;
+   localStorage restore/fallback; pointer-drag and pointer-capture hooks; Arrow/Home/double-click
+   controls; synchronized sidebar/main-content width; desktop-only handling; mobile's fixed
+   responsive cap; stylesheet v3; and service-worker v122. Run the focused test module before
+   implementation and record expected failures in the change evidence.
+2. **Restore compact label layout.** In `static/css/app-shell.css`, restore submenu padding to
+   `0 20px 0 48px`, remove the submenu `white-space: normal` and label overflow overrides, and
+   rely on the shared `white-space: nowrap`, `overflow: hidden`, and `text-overflow: ellipsis`
+   rules. Do not change the submenu font size, font weight, or label text.
+3. **Add width and handle styling.** In `static/css/app-shell.css`, retain the runtime
+   `--sidebar-width` default of `240px`, add the documented min/max/step/default tokens, style a
+   narrow right-edge desktop resize handle with an `ew-resize` cursor and visible hover/focus
+   state, and suppress shell transitions/user selection while dragging. Keep `.main-content`
+   driven by the same width variable. Change the mobile rule to use a separate fixed `240px`
+   cap so desktop persistence cannot widen the mobile drawer; hide the handle below the desktop
+   breakpoint.
+4. **Add accessible runtime resizing.** In `templates/layout.html`, add the focused,
+   keyboard-accessible separator handle inside the sidebar and update the shell link to
+   `app-shell.css?v=3`. Add a small sidebar-resize controller beside the existing toggle
+   functions that validates and clamps widths, reads/writes a namespaced localStorage key,
+   applies `--sidebar-width`, updates `aria-valuenow`, starts pointer capture on `pointerdown`,
+   updates from the fixed sidebar's `clientX` during `pointermove`, and cleans up on pointerup,
+   pointercancel, or lost pointer capture. Gate pointer/keyboard handling to desktop widths.
+   Preserve all existing collapse, mobile focus restoration, Escape handling, navigation click,
+   pending badge, and changelog behavior.
+5. **Refresh delivery and project records.** In `app.py`, advance the embedded cache constant
+   from v121 to v122 with a sidebar-resize label. Add a dated user-facing sidebar-navigation item
+   to `static/changelog/releases.json` using its existing schema and audience conventions. Append
+   factual implementation and verification bullets to the current `changes.md` section. Update
+   this plan's evidence/status as implementation progresses; do not rewrite historical records.
+6. **Self-review and verification.** Inspect the owned diff for scope creep, accidental line-ending
+   or indentation damage, stale wrap rules, incorrect mobile behavior, and protected-artifact
+   disturbance. Run the focused and related shell/service-worker/theme tests, direct Python
+   syntax compilation, Jinja parsing, cache/version and CSS source checks, and `git diff --check`.
+   Record exact results and any environment limitation. Browser/Codex UI automation is excluded by
+   the project safety rule, so no browser verification, commit, push, deployment, or production
+   action is performed.
+
+### Done criteria
+
+- Submenu labels remain one line at the default width and use ellipsis rather than word wrapping;
+  `Reimburse / Liquidation` and `Service Documents` remain unchanged in the navigation.
+- Desktop users can drag the sidebar edge between 200px and 360px; the main content tracks the
+  same width; the value persists and restores safely; keyboard and double-click reset behavior
+  works; the handle exposes the required separator semantics.
+- Mobile drawer width remains responsive and capped at 240px regardless of the saved desktop
+  width, and existing collapse/mobile navigation behavior remains intact.
+- Tests, static checks, cache delivery, release record, change log, and plan evidence are truthful;
+  no protected or unrelated dirty work is modified.
+
+### Deliberately excluded
+
+No mobile resize control, plus/minus buttons, server-side preference, database/API/schema change,
+route or permission change, navigation-label redesign, font-size change, browser automation,
+official artifact change, Railway/production action, commit, push, merge, rebase, or destructive
+Git/database operation is part of this package.
+
+### Verification
+
+- The positive controls must fail before implementation: tests must require restored nowrap/ellipsis
+  CSS, the new separator markup and ARIA attributes, width constants, persistence and event hooks,
+  mobile-width isolation, stylesheet v3, and service-worker v122.
+- Run `venv\Scripts\python.exe -m unittest tests.test_layout_sidebar tests.test_offline_api_status
+  tests.test_appearance_themes` plus any directly related shell test modules. Run direct
+  `compile()` validation for `app.py`, Jinja parsing for `layout.html`, cache/version assertions,
+  source checks for pointer/keyboard/reset behavior, and scoped `git diff --check`.
+- No browser sequence is authorized under the project instructions. Confirm mobile protection and
+  desktop resize contracts through source/static tests; do not close, navigate, or otherwise
+  terminate the Codex app or task.
+- Use no real `scheduler.db` operations; the Flask tests must continue to use their isolated
+  temporary database. Report any unrelated existing test failures separately.
+
+### After implementation
+
+The Builder records fail-first evidence, implementation details, exact verification results, and
+any deviations in `plans.md` and `changes.md`, then stops with one consolidated report. The parent
+checks the final diff against this approved scope and protects all unrelated dirty paths. A separate
+post-implementation review begins only if the owner later says `Review the implementation.` No
+commit, push, merge, deployment, or Railway action follows automatically.
+
+### Risks
+
+- **Mobile leakage:** applying the saved desktop variable directly to the mobile rule could make
+  the drawer too wide. A separate mobile cap and source assertion prevent this.
+- **Layout drift:** updating only the sidebar width would leave the content margin behind. Both use
+  `--sidebar-width`, with a focused check for synchronized layout behavior.
+- **Unusable resize control:** pointer-only handling would exclude keyboard users. The separator
+  role, ARIA values, arrow/Home controls, focus styling, and reset path provide the accessible
+  fallback.
+- **Stale cached CSS:** keeping v121 or `?v=2` could preserve the previous shell. The v122 worker
+  and v3 asset query are checked together.
+- **Dirty-work disturbance:** the root contains protected database, handoff, and generated paths.
+  Pre/post status and scoped diff checks prevent resets, staging, or unrelated edits.
+
+### Execution evidence (2026-09-03; local and uncommitted)
+
+- Preflight confirmed this plan was current and actionable. The pre-existing modifications to
+  `Handoffs/08-11-26 handoff.md`, `app.py`, `changes.md`, `plans.md`, `scheduler.db`, the prior
+  sidebar-label work in `static/css/app-shell.css`, `templates/layout.html`, and
+  `tests/test_layout_sidebar.py`, plus untracked `.claude/`, output/tmp, and the detailed handoff
+  were preserved; no protected path was reset, staged, or otherwise altered.
+- The fail-first checkpoint extended `tests/test_layout_sidebar.py` before production edits and
+  ran `venv\Scripts\python.exe -B -m unittest tests.test_layout_sidebar`: **18 tests ran with
+  6 expected failures, 0 errors**. The failures covered the absent nowrap/ellipsis CSS, resize
+  handle/controller, stylesheet v3, and v122 cache contracts.
+- Implemented the approved shell-only package: submenu labels now use shared single-line
+  ellipsis behavior; the desktop `#sidebar-resize-handle` supports 200-360px clamped pointer
+  resizing, pointer capture, localStorage restore/persistence, ARIA updates, 20px Arrow keys,
+  Home, and double-click reset; `.main-content` shares the runtime width variable; mobile uses
+  `min(82vw, 240px)` and hides the handle; the shell query is v3 and the embedded cache is v122.
+  The dated everyone-facing navigation release item was added without changing routes,
+  permissions, database/API behavior, or the owner’s navigation labels.
+- Passing focused verification ran `venv\Scripts\python.exe -B -m unittest
+  tests.test_layout_sidebar tests.test_offline_api_status tests.test_appearance_themes`: **46
+  tests passed, 0 failures, 0 errors, 0 skips**. Related changelog coverage passed **3/3**.
+- Manual/static verification passed: direct `compile()` for `app.py`, Jinja parsing for
+  `templates/layout.html`, release JSON parsing with **54 releases and 216 unique items**,
+  embedded service-worker JavaScript parsing, all five non-Jinja inline layout script blocks,
+  and a Node smoke check for stored-value clamping/restoration, keyboard and pointer behavior,
+  cleanup, persistence, double-click reset, and mobile gating. Scoped `git diff --check` passed;
+  only Git’s existing LF-to-CRLF conversion notices were emitted.
+- No browser/Codex UI automation, full repository discovery, real `scheduler.db` operation,
+  migration, production/Railway action, staging, commit, push, or protected-artifact action was
+  performed. No deviations from the approved implementation scope were identified. The plan
+  remains `In progress` because the work is intentionally local, uncommitted, and unreviewed.
+
 ## Calibration Report Machine Details and MobileDart Catalog
 
 **Status:** In progress

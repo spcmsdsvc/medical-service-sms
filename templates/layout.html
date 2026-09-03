@@ -33,7 +33,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app-themes.css') }}?v=19">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=2">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app-shell.css') }}?v=3">
 
     {# Page-specific stylesheets. Loaded after the shell so a page can override it,
        and before the dark-page overrides at the end of body so dark mode still wins. #}
@@ -102,6 +102,17 @@
                 </button>
             </div>
         </div>
+
+        <div id="sidebar-resize-handle"
+             class="sidebar-resize-handle"
+             role="separator"
+             tabindex="0"
+             aria-label="Resize navigation sidebar"
+             aria-orientation="vertical"
+             aria-valuemin="200"
+             aria-valuemax="360"
+             aria-valuenow="240"
+             title="Resize navigation sidebar"></div>
         
         {#- One place that renders a nav link, so the active class and aria-current can
             never drift apart. Cash Advance previously had neither. -#}
@@ -197,7 +208,7 @@
                 </button>
                 <div id="field-operations-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in field_ops_paths }}">
                     {{ nav_link('/travel_request', 'fa-plane-departure', 'Travel Request') }}
-                    {{ nav_link('/reimbursement', 'fa-file-invoice-dollar', 'Liquidation') }}
+                    {{ nav_link('/reimbursement', 'fa-file-invoice-dollar', 'Reimburse / Liquidation') }}
                     {{ nav_link('/cash_advance', 'fa-money-bill-transfer', 'Cash Advance') }}
                     {{ nav_link('/leave_request', 'fa-calendar-check', 'Leave Request') }}
                     {% if lpr_enabled %}{{ nav_link('/lpr', 'fa-file-invoice', 'LPR') }}{% endif %}
@@ -217,10 +228,11 @@
             {% endif %}
 
             {# A collapsible group only earns its click when it holds more than one
-               destination. Management accounts get Analytics alongside TSR files, so the
-               group stays. Everyone else has TSR files and nothing else, and wrapping one
-               link in a collapsed group named after that same link meant clicking
-               "TSR files" to reveal "TSR files". They get the link directly. #}
+               destination. Management accounts get Analytics alongside Service Documents,
+               so the group stays. Everyone else has Service Documents and nothing else,
+               and wrapping one link in a collapsed group named after that same link meant
+               clicking "Service Documents" to reveal "Service Documents". They get the
+               link directly. #}
             {% if is_reports_admin_user %}
                 <button
                     type="button"
@@ -236,12 +248,12 @@
                 </button>
                 <div id="reports-insights-sidebar-section" class="collapse sidebar-subnav {{ 'show' if request.path in reports_paths }}">
                     {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
-                    {{ nav_link('/reports_page', 'fa-file-lines', 'TSR files') }}
+                    {{ nav_link('/reports_page', 'fa-file-lines', 'Service Documents') }}
                 </div>
             {% elif can_manage_purchase_orders %}
                 {{ nav_link('/analytics_page', 'fa-chart-pie', 'Analytics') }}
             {% elif is_reports_sidebar_user %}
-                {{ nav_link('/reports_page', 'fa-file-lines', 'TSR files') }}
+                {{ nav_link('/reports_page', 'fa-file-lines', 'Service Documents') }}
             {% endif %}
 
             {% if current_user.is_authenticated and not is_approver_only_user %}
@@ -373,6 +385,127 @@
             const sidebar = document.getElementById('sidebar');
             setMobileSidebar(!(sidebar && sidebar.classList.contains('active')));
         }
+
+        (function initSidebarResize() {
+            const sidebar = document.getElementById('sidebar');
+            const handle = document.getElementById('sidebar-resize-handle');
+            if (!sidebar || !handle) return;
+
+            const SIDEBAR_RESIZE_STORAGE_KEY = 'medical_service_sidebar_width';
+            const SIDEBAR_WIDTH_MIN = 200;
+            const SIDEBAR_WIDTH_MAX = 360;
+            const SIDEBAR_WIDTH_STEP = 20;
+            const SIDEBAR_WIDTH_DEFAULT = 240;
+
+            let currentWidth = SIDEBAR_WIDTH_DEFAULT;
+            let activePointerId = null;
+            let isDragging = false;
+
+            const isDesktop = () => window.innerWidth >= 993;
+
+            function clampSidebarWidth(value) {
+                const numeric = Number(value);
+                if (!Number.isFinite(numeric)) return SIDEBAR_WIDTH_DEFAULT;
+                return Math.min(
+                    SIDEBAR_WIDTH_MAX,
+                    Math.max(SIDEBAR_WIDTH_MIN, Math.round(numeric))
+                );
+            }
+
+            function readStoredSidebarWidth() {
+                let stored;
+                try {
+                    stored = localStorage.getItem(SIDEBAR_RESIZE_STORAGE_KEY);
+                } catch (_) {
+                    return SIDEBAR_WIDTH_DEFAULT;
+                }
+
+                if (stored === null || String(stored).trim() === '') return SIDEBAR_WIDTH_DEFAULT;
+                const parsed = Number(stored);
+                if (!Number.isFinite(parsed)) return SIDEBAR_WIDTH_DEFAULT;
+                return clampSidebarWidth(parsed);
+            }
+
+            function setSidebarWidth(value, persist = true) {
+                const normalized = clampSidebarWidth(value);
+                currentWidth = normalized;
+                document.documentElement.style.setProperty('--sidebar-width', `${normalized}px`);
+                handle.setAttribute('aria-valuenow', String(normalized));
+
+                if (persist) {
+                    try {
+                        localStorage.setItem(SIDEBAR_RESIZE_STORAGE_KEY, String(normalized));
+                    } catch (_) {
+                        // A blocked or unavailable localStorage must not break navigation.
+                    }
+                }
+                return normalized;
+            }
+
+            function stopPointerResize() {
+                if (!isDragging) return;
+                if (activePointerId !== null && handle.hasPointerCapture(activePointerId)) {
+                    handle.releasePointerCapture(activePointerId);
+                }
+                isDragging = false;
+                activePointerId = null;
+                document.body.classList.remove('sidebar-resizing');
+            }
+
+            handle.addEventListener('pointerdown', function(event) {
+                if (!isDesktop() || event.button !== 0) return;
+                isDragging = true;
+                activePointerId = event.pointerId;
+                document.body.classList.add('sidebar-resizing');
+                handle.setPointerCapture(event.pointerId);
+                event.preventDefault();
+            });
+
+            handle.addEventListener('pointermove', function(event) {
+                if (!isDragging || event.pointerId !== activePointerId) return;
+                if (!isDesktop()) {
+                    stopPointerResize();
+                    return;
+                }
+                setSidebarWidth(event.clientX - sidebar.getBoundingClientRect().left);
+            });
+
+            handle.addEventListener('pointerup', stopPointerResize);
+            handle.addEventListener('pointercancel', stopPointerResize);
+            handle.addEventListener('lostpointercapture', stopPointerResize);
+
+            handle.addEventListener('keydown', function(event) {
+                if (!isDesktop()) return;
+
+                let nextWidth = null;
+                switch (event.key) {
+                    case 'ArrowLeft':
+                    case 'ArrowDown':
+                        nextWidth = currentWidth - SIDEBAR_WIDTH_STEP;
+                        break;
+                    case 'ArrowRight':
+                    case 'ArrowUp':
+                        nextWidth = currentWidth + SIDEBAR_WIDTH_STEP;
+                        break;
+                    case 'Home':
+                        nextWidth = SIDEBAR_WIDTH_DEFAULT;
+                        break;
+                    default:
+                        return;
+                }
+
+                event.preventDefault();
+                setSidebarWidth(nextWidth);
+            });
+
+            handle.addEventListener('dblclick', function(event) {
+                if (!isDesktop()) return;
+                event.preventDefault();
+                setSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+            });
+
+            setSidebarWidth(readStoredSidebarWidth(), false);
+        })();
 
         // Global Helper for CSRF Header
         function getCSRFToken() {

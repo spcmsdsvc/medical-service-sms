@@ -2,6 +2,22 @@
 
 codex changes - 2026-09-03
 
+- Renamed the Field Operations sidebar link from `Liquidation` to `Reimburse / Liquidation`
+  and both Reports sidebar links from `TSR files` to `Service Documents` in
+  `templates/layout.html`; internal routes, permission checks, and TSR/liquidation identifiers
+  remain unchanged.
+- Verified the change with `venv\Scripts\python.exe -m unittest tests.test_layout_sidebar`
+  (**13 tests passed**) plus scoped `git diff --check`; no browser, database, deployment, or
+  production action was performed.
+- Updated `static/css/app-shell.css` so long submenu labels wrap across lines instead of being
+  ellipsized, with flexible vertical padding preserving the sidebar touch targets. Added the
+  focused regression assertion in `tests/test_layout_sidebar.py` and bumped the precached
+  service-worker shell from v120 to v121 (`sidebar-label-wrap`) so the fix reaches existing PWA
+  clients.
+- Post-change verification passed: `venv\Scripts\python.exe -m unittest tests.test_layout_sidebar
+  tests.test_offline_api_status tests.test_appearance_themes` (**42 tests, 0 failures**), direct
+  Python `compile()` validation, and scoped `git diff --check`. Browser and production checks
+  were not performed; the environment's `py_compile` cache write was permission-blocked.
 - Added fail-first Calibration Report and Calibration Certificate regression coverage for the
   editable `Shimadzu` default, blank/legacy normalization, custom Manufacturer preservation,
   all twelve ordered MobileDart Evolution model matches and certificate mappings, the 47-model
@@ -31,6 +47,43 @@ codex changes - 2026-09-03
   delivery references, and owned-file diff whitespace. No browser, database/schema/migration,
   official DOCX/PDF template, CSS, production/Railway, Git publication, or protected-artifact
   action was performed.
+- Added fail-first Desktop Sidebar Resize and Single-Line Labels coverage in
+  `tests/test_layout_sidebar.py` for the shared nowrap/ellipsis contract, accessible resize
+  separator, 200/360/240 width bounds, localStorage fallback/persistence, pointer capture and
+  drag hooks, keyboard/reset controls, desktop gating, mobile cap, synchronized layout width,
+  stylesheet query v3, and service-worker v122.
+- Ran `venv\Scripts\python.exe -B -m unittest tests.test_layout_sidebar` against the unchanged
+  sidebar implementation immediately after the test edits: **18 tests ran with 6 expected
+  failures and 0 errors**. Failures covered the missing single-line CSS, resize handle/runtime
+  contracts, stylesheet query, and v122 cache requirement; no application source, database,
+  protected artifact, production, browser, or Git publication state was edited at that checkpoint.
+- Restored the sidebar submenu links in `static/css/app-shell.css` to the shared single-line
+  `nowrap`/hidden/ellipsis behavior with the approved `0.84rem` font and `0 20px 0 48px` padding;
+  the owner-provided `Reimburse / Liquidation` and `Service Documents` labels remain unchanged.
+- Added the desktop-only `#sidebar-resize-handle` separator in `templates/layout.html` with
+  200px/360px/240px ARIA values, a namespaced localStorage-backed controller, clamped pointer
+  resizing with pointer capture, 20px Arrow-key changes, Home and double-click reset to 240px,
+  and shared `--sidebar-width` synchronization with `.main-content`. Mobile remains
+  `min(82vw, 240px)` and hides the handle; the shell asset query is now v3.
+- Added resize tokens, hover/focus styling, `ew-resize` affordance, and drag-state transition and
+  selection suppression to `static/css/app-shell.css`; advanced the embedded service-worker shell
+  from v121 to v122 (`sidebar-resize`) in `app.py` and added the dated everyone-facing navigation
+  item to `static/changelog/releases.json`.
+- Post-implementation focused verification passed: `venv\Scripts\python.exe -B -m unittest
+  tests.test_layout_sidebar` (**18 tests, 0 failures**). Browser, database/migration, Railway,
+  production, Git publication, and protected-artifact actions remain excluded.
+- Related shell verification passed: `venv\Scripts\python.exe -B -m unittest
+  tests.test_layout_sidebar tests.test_offline_api_status tests.test_appearance_themes` (**46
+  tests, 0 failures, 0 errors, 0 skips**) and `tests.test_changelog_coverage` (**3/3**).
+- Final static verification passed for direct `compile()` of `app.py`, Jinja parsing of
+  `templates/layout.html`, release JSON integrity (**54 releases, 216 unique items**), embedded
+  service-worker and five non-Jinja inline layout script blocks, the controller runtime smoke
+  check, and scoped `git diff --check`; no browser or full-repository suite was run because the
+  approved shell-only verification is covered by the focused/related checks and browser/UI use is
+  explicitly excluded.
+- Updated the Desktop Sidebar Resize plan with the fail-first checkpoint, implementation details,
+  exact passing results, limitations, and protected-worktree confirmation. No deviations or new
+  risks were identified; the implementation remains local, uncommitted, unpushed, and unreviewed.
 
 codex changes - 2026-09-02
 

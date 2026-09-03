@@ -10,6 +10,10 @@
 
 :root {
     --sidebar-width: 240px;
+    --sidebar-width-min: 200px;
+    --sidebar-width-max: 360px;
+    --sidebar-width-step: 20px;
+    --sidebar-width-default: 240px;
     --sidebar-row-height: 46px;
     --sidebar-subrow-height: 38px;
     --mobile-safe-top: env(safe-area-inset-top);
@@ -54,6 +58,18 @@ body {
     transition: background-color 0.3s ease, color 0.3s ease;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
+}
+
+body.sidebar-resizing,
+body.sidebar-resizing * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+}
+
+body.sidebar-resizing .sidebar,
+body.sidebar-resizing .sidebar *,
+body.sidebar-resizing .main-content {
+    transition: none !important;
 }
 
 /* --- Skip link ------------------------------------------------------------ */
@@ -112,6 +128,49 @@ body {
     font-size: 1.05rem;
     line-height: 1.15;
     letter-spacing: 0.02em;
+}
+
+.sidebar-resize-handle {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 10px;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: ew-resize;
+    touch-action: none;
+    z-index: 3;
+}
+
+.sidebar-resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 3px;
+    width: 2px;
+    height: 48px;
+    border-radius: 999px;
+    background: transparent;
+    transform: translateY(-50%);
+    transition: background-color 0.16s ease;
+}
+
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:focus-visible {
+    background: rgba(255, 255, 255, 0.06);
+    outline: none;
+}
+
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle:focus-visible::after {
+    background: var(--app-primary);
+}
+
+.sidebar-resize-handle:focus-visible {
+    outline: 2px solid var(--app-primary);
+    outline-offset: -2px;
 }
 
 .sidebar-nav {
@@ -479,8 +538,12 @@ body.sidebar-collapsed .main-content {
 @media (max-width: 992px) {
     .sidebar {
         left: -100%;
-        width: min(82vw, var(--sidebar-width));
+        width: min(82vw, 240px);
         box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+    }
+
+    .sidebar-resize-handle {
+        display: none;
     }
 
     .sidebar.active {

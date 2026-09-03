@@ -94,6 +94,92 @@ class SidebarSourceTests(unittest.TestCase):
         self.assertNotIn('\n    transition: all', self.shell_css)
         self.assertIn('transition: background-color 0.3s ease, color 0.3s ease;', self.shell_css)
 
+    def test_long_subnav_labels_are_single_line_with_ellipsis(self):
+        subnav = self.shell_css.split('\n.sidebar-subnav a {', 1)[1].split('\n}', 1)[0]
+        shared_rows = self.shell_css.split('\n.sidebar a,', 1)[1].split('\n}', 1)[0]
+        label = self.shell_css.split('\n.sidebar a span,', 1)[1].split('\n}', 1)[0]
+        self.assertIn('padding: 0 20px 0 48px;', subnav)
+        self.assertNotIn('white-space: normal;', subnav)
+        self.assertNotIn('\n.sidebar-subnav a span {', self.shell_css)
+        self.assertIn('white-space: nowrap;', shared_rows)
+        self.assertIn('overflow: hidden;', label)
+        self.assertIn('text-overflow: ellipsis;', label)
+        self.assertIn("'Reimburse / Liquidation'", self.layout)
+        self.assertIn("'Service Documents'", self.layout)
+        self.assertIn('font-size: 0.84rem;', subnav)
+
+    def test_sidebar_resize_handle_has_accessible_separator_contract(self):
+        self.assertIn('id="sidebar-resize-handle"', self.layout)
+        self.assertIn('class="sidebar-resize-handle"', self.layout)
+        self.assertIn('role="separator"', self.layout)
+        self.assertIn('tabindex="0"', self.layout)
+        self.assertIn('aria-orientation="vertical"', self.layout)
+        self.assertIn('aria-valuemin="200"', self.layout)
+        self.assertIn('aria-valuemax="360"', self.layout)
+        self.assertIn('aria-valuenow="240"', self.layout)
+
+    def test_sidebar_resize_css_preserves_desktop_layout_and_mobile_cap(self):
+        for token in (
+            '--sidebar-width: 240px;',
+            '--sidebar-width-min: 200px;',
+            '--sidebar-width-max: 360px;',
+            '--sidebar-width-step: 20px;',
+            '--sidebar-width-default: 240px;',
+        ):
+            self.assertIn(token, self.shell_css)
+        self.assertIn('.sidebar-resize-handle {', self.shell_css)
+        self.assertIn('cursor: ew-resize;', self.shell_css)
+        self.assertIn('.sidebar-resize-handle:hover', self.shell_css)
+        self.assertIn('.sidebar-resize-handle:focus-visible', self.shell_css)
+        self.assertIn('body.sidebar-resizing', self.shell_css)
+        self.assertIn('transition: none !important;', self.shell_css)
+        self.assertIn('user-select: none !important;', self.shell_css)
+        self.assertIn('margin-left: var(--sidebar-width);', self.shell_css)
+
+        mobile = self.shell_css.split('@media (max-width: 992px)', 1)[1]
+        self.assertIn('width: min(82vw, 240px);', mobile)
+        self.assertIn('.sidebar-resize-handle {', mobile)
+        self.assertIn('display: none;', mobile)
+
+    def test_sidebar_resize_controller_handles_bounds_persistence_and_inputs(self):
+        for token in (
+            "const SIDEBAR_RESIZE_STORAGE_KEY = 'medical_service_sidebar_width';",
+            'const SIDEBAR_WIDTH_MIN = 200;',
+            'const SIDEBAR_WIDTH_MAX = 360;',
+            'const SIDEBAR_WIDTH_STEP = 20;',
+            'const SIDEBAR_WIDTH_DEFAULT = 240;',
+            'function clampSidebarWidth(value)',
+            'Number.isFinite(parsed)',
+            'localStorage.getItem(SIDEBAR_RESIZE_STORAGE_KEY)',
+            'localStorage.setItem(SIDEBAR_RESIZE_STORAGE_KEY, String(normalized))',
+            "setProperty('--sidebar-width', `${normalized}px`)",
+            "setAttribute('aria-valuenow', String(normalized))",
+            'window.innerWidth >= 993',
+            "event.clientX - sidebar.getBoundingClientRect().left",
+            "handle.setPointerCapture(event.pointerId)",
+            'handle.releasePointerCapture(activePointerId)',
+            "addEventListener('pointerdown'",
+            "addEventListener('pointermove'",
+            "addEventListener('pointerup'",
+            "addEventListener('pointercancel'",
+            "addEventListener('lostpointercapture'",
+            "case 'ArrowLeft':",
+            "case 'ArrowDown':",
+            "case 'ArrowRight':",
+            "case 'ArrowUp':",
+            "case 'Home':",
+            "addEventListener('dblclick'",
+        ):
+            self.assertIn(token, self.layout)
+        self.assertIn('Math.min(', self.layout)
+        self.assertIn('Math.max(SIDEBAR_WIDTH_MIN, Math.round(numeric))', self.layout)
+        self.assertIn('return SIDEBAR_WIDTH_DEFAULT;', self.layout)
+
+    def test_shell_asset_and_service_worker_versions_are_bumped(self):
+        self.assertIn("app-shell.css') }}?v=3", self.layout)
+        self.assertIn("medical-service-pwa-offline-navigation-v122-sidebar-resize", self.app_source)
+        assert_cache_version_at_least(self, 122, self.app_source)
+
     def test_pending_summary_endpoint_is_lightweight(self):
         self.assertIn("@app.route('/api/nav/pending-summary')", self.app_source)
         endpoint = self.app_source.split('def get_nav_pending_summary(')[1].split('@app.route')[0]
@@ -104,7 +190,7 @@ class SidebarSourceTests(unittest.TestCase):
 
     def test_shell_css_is_cached_and_version_bumped(self):
         self.assertIn("'/static/css/app-shell.css',", self.app_source)
-        assert_cache_version_at_least(self, 40, self.app_source)
+        assert_cache_version_at_least(self, 122, self.app_source)
 
 
 class SidebarRenderTests(unittest.TestCase):

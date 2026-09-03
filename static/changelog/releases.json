@@ -16,6 +16,15 @@
             "approvers"
           ],
           "sort_order": 10
+        },
+        {
+          "item_key": "2026-09-03-sidebar-resize-single-line-labels",
+          "category": "Navigation",
+          "description": "Sidebar submenu labels now stay on one line with an ellipsis when needed, and desktop users can resize the navigation sidebar from 200px to 360px with keyboard or pointer controls. The selected desktop width is remembered, while the mobile drawer remains capped at 240px.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 20
         }
       ]
     },
