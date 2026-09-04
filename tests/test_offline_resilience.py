@@ -423,6 +423,156 @@ class ScheduleOptionIdentityTests(unittest.TestCase):
         self.assertIn('selectedStandaloneScheduleId = String(getStandaloneScheduleRuntimeId(matchedOption))', apply_draft)
 
 
+class TSRAddressRehydrationTests(unittest.TestCase):
+    """A matched live schedule may refresh only the editable TSR address."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tsr = (ROOT / 'templates' / 'offline_tsr.html').read_text(encoding='utf-8')
+
+    def test_matched_draft_hydration_replaces_blank_or_stale_address(self):
+        saved_blank = {'selectedScheduleId': '17', 'tsr-address': ''}
+        saved_stale = {'selectedScheduleId': '17', 'tsr-address': 'Old client address'}
+        live = {'id': 17, 'client_address': 'Current client address'}
+        self.assertEqual(saved_blank['selectedScheduleId'], str(live['id']))
+        self.assertEqual(saved_stale['selectedScheduleId'], str(live['id']))
+        self.assertNotEqual(saved_stale['tsr-address'], live['client_address'])
+
+        self.assertIn('function syncStandaloneTSRAddressFromSchedule(', self.tsr)
+        helper = self.tsr.split('function syncStandaloneTSRAddressFromSchedule(')[1].split('\nfunction ')[0]
+        apply_draft = self.tsr.split('function applyStandaloneTSRDraftData(')[1].split('\nfunction ')[0]
+
+        self.assertIn('standaloneScheduleOptions.find(item =>', helper)
+        self.assertIn('isSameScheduleSelection(selectedStandaloneScheduleId, item)', helper)
+        self.assertIn('item === schedule', helper)
+        self.assertIn('schedule.client_address', helper)
+        self.assertIn("String(schedule.client_address || '')", helper)
+        self.assertIn('addressField.value = nextAddress;', helper)
+        self.assertIn('selectedStandaloneScheduleSnapshot = Object.assign({}, matchedSchedule);', helper)
+        self.assertIn('syncStandaloneTSRAddressFromSchedule(matchedOption);', apply_draft)
+
+        identity_at = apply_draft.find('selectedStandaloneScheduleId = String(getStandaloneScheduleRuntimeId(matchedOption));')
+        sync_at = apply_draft.find('syncStandaloneTSRAddressFromSchedule(matchedOption);')
+        self.assertGreaterEqual(identity_at, 0, 'the matched draft identity is missing')
+        self.assertGreaterEqual(sync_at, 0, 'matched draft address sync is missing')
+        self.assertLess(identity_at, sync_at, 'address sync must follow matched selection restoration')
+
+    def test_address_sync_refreshes_only_snapshot_and_address_while_draft_work_survives(self):
+        """Complaints, actions, signatures, attachments, dates, and other fields remain payload-owned."""
+        helper = self.tsr.split('function syncStandaloneTSRAddressFromSchedule(')[1].split('\nfunction ')[0]
+        apply_draft = self.tsr.split('function applyStandaloneTSRDraftData(')[1].split('\nfunction ')[0]
+
+        # Positive controls: this fixture represents meaningful TSR work that the hydration path
+        # must continue to restore rather than silently replacing with the schedule defaults.
+        for marker in (
+            "data['tsr-actions-taken']",
+            'signatureData=data.signatures',
+            'offlineTSRAttachments=normalizeQueuedAttachments(data.attachments||[])',
+            'data.parts',
+            'data[el.id]!==undefined',
+            'renderDocs();',
+        ):
+            self.assertIn(marker, apply_draft, marker)
+        self.assertIn('id="tsr-service-date"', self.tsr)
+
+        self.assertIn("document.getElementById('tsr-address')", helper)
+        self.assertNotIn('setFieldValue(', helper, 'address hydration must not use the broad field setter')
+        self.assertNotIn('dispatchEvent(', helper, 'address hydration must not dispatch input')
+        self.assertNotIn('saveStandaloneTSRDraft', helper, 'address hydration must not background-save')
+        self.assertNotIn('clearStandaloneTSRWorkFieldsForScheduleChange', helper)
+        self.assertNotIn('applyScheduleToStandaloneTSR', helper)
+        self.assertIn('selectedStandaloneScheduleSnapshot = Object.assign({}, matchedSchedule);', helper)
+
+        matched_branch = apply_draft.split('if(matchedOption){', 1)[1].split('}else if', 1)[0]
+        self.assertIn('syncStandaloneTSRAddressFromSchedule(matchedOption);', matched_branch)
+        self.assertNotIn('clearStandaloneTSRWorkFieldsForScheduleChange', apply_draft)
+        self.assertNotIn('applyScheduleToStandaloneTSR', apply_draft)
+
+    def test_open_draft_refreshes_schedules_before_applying_saved_payload(self):
+        open_draft = self.tsr.split('async function openStandaloneTSRDraft(')[1].split('\nasync function ')[0]
+
+        # Positive controls prove this is the existing valid-record open path, not a new
+        # unrelated loader that could satisfy the ordering assertion.
+        self.assertIn('loadStandaloneTSRDraftRecordById(id)', open_draft)
+        self.assertIn("if(!record?.payload)", open_draft)
+        self.assertIn('applyStandaloneTSRDraftData(', open_draft)
+        self.assertIn('await refreshStandaloneScheduleOptions(false);', open_draft)
+        self.assertIn('catch(err)', open_draft)
+        self.assertIn('console.warn', open_draft)
+
+        refresh_at = open_draft.find('await refreshStandaloneScheduleOptions(false);')
+        apply_at = open_draft.find('applyStandaloneTSRDraftData(')
+        self.assertGreaterEqual(refresh_at, 0)
+        self.assertGreaterEqual(apply_at, 0)
+        self.assertLess(refresh_at, apply_at, 'schedule refresh must finish before draft payload hydration')
+        self.assertNotIn('saveStandaloneTSRDraft(', open_draft, 'opening a draft must not background-save it')
+
+    def test_schedule_refresh_updates_the_selected_address_from_the_rendered_live_option(self):
+        refresh = self.tsr.split('async function refreshStandaloneScheduleOptions(')[1].split('\nfunction clearStandaloneTSRWorkFieldsForScheduleChange')[0]
+
+        # Positive controls prove the refresh still renders and has both live and offline sources.
+        self.assertIn('renderStandaloneScheduleOptions(schedules, source);', refresh)
+        self.assertIn("fetch('/get_offline_tsr_schedule_options'", refresh)
+        self.assertIn('readCachedStandaloneScheduleOptions()', refresh)
+        self.assertIn('standaloneScheduleOptions.find(item =>', refresh)
+        self.assertIn('isSameScheduleSelection(selectedStandaloneScheduleId, item)', refresh)
+        self.assertIn('syncStandaloneTSRAddressFromSchedule(selectedLiveSchedule);', refresh)
+        self.assertNotIn('getSelectedStandaloneSchedule()', refresh,
+                         'refresh must not use the stale selected-snapshot fallback')
+
+        render_at = refresh.find('renderStandaloneScheduleOptions(schedules, source);')
+        sync_at = refresh.find('syncStandaloneTSRAddressFromSchedule(selectedLiveSchedule);')
+        self.assertGreaterEqual(render_at, 0)
+        self.assertGreaterEqual(sync_at, 0)
+        self.assertLess(render_at, sync_at, 'selected live address sync must follow option rendering')
+
+    def test_unmatched_or_offline_refresh_preserves_saved_work_and_requests_repick(self):
+        apply_draft = self.tsr.split('function applyStandaloneTSRDraftData(')[1].split('\nfunction ')[0]
+        refresh = self.tsr.split('async function refreshStandaloneScheduleOptions(')[1].split('\nfunction clearStandaloneTSRWorkFieldsForScheduleChange')[0]
+
+        saved = {'selectedScheduleId': '17', 'tsr-complaint': 'Keep this work'}
+        unmatched = {'id': 99, 'client_address': 'Other visit'}
+        self.assertNotEqual(saved['selectedScheduleId'], str(unmatched['id']))
+        self.assertEqual(saved['tsr-complaint'], 'Keep this work')
+
+        # Existing fallback/repick controls are intentionally retained; the new consumer must be
+        # conditional so neither an offline cache miss nor an unmatched selection clears the draft.
+        self.assertIn('readCachedStandaloneScheduleOptions()', refresh)
+        self.assertIn('readTimelineSnapshotSchedules()', refresh)
+        self.assertIn('const selectedLiveSchedule =', refresh)
+        self.assertIn('if(selectedLiveSchedule)', refresh)
+        self.assertIn("selectedStandaloneScheduleId = '';", apply_draft)
+        self.assertIn('awaitingScheduleRepick = true', apply_draft)
+        self.assertNotIn('clearStandaloneTSRWorkFieldsForScheduleChange', apply_draft)
+        self.assertNotIn('selectedStandaloneScheduleSnapshot = null', refresh)
+        self.assertNotIn('clearStandaloneScheduleSelection(', refresh)
+
+        guard_at = refresh.find('if(selectedLiveSchedule)')
+        sync_at = refresh.find('syncStandaloneTSRAddressFromSchedule(selectedLiveSchedule);')
+        self.assertGreaterEqual(guard_at, 0)
+        self.assertGreaterEqual(sync_at, 0)
+        self.assertLess(guard_at, sync_at, 'unmatched refreshes must not invoke the address consumer')
+
+    def test_online_correction_syncs_address_after_existing_load_without_mutating_history(self):
+        correction = self.tsr.split('async function loadOnlineTSRRevisionFromUrl(')[1].split('\nasync function ')[0]
+
+        # Positive controls pin the historical load and the existing correction application path.
+        self.assertIn('const submission = result.submission;', correction)
+        self.assertIn('const payload = submission.payload || {};', correction)
+        self.assertIn('setOnlineTSRRevisionContext({', correction)
+        self.assertIn('applyScheduleToStandaloneTSR(schedule, false);', correction)
+        self.assertIn('syncStandaloneTSRAddressFromSchedule(schedule);', correction)
+        self.assertIn('Editing saved TSR REV', correction)
+
+        apply_at = correction.find('applyScheduleToStandaloneTSR(schedule, false);')
+        sync_at = correction.find('syncStandaloneTSRAddressFromSchedule(schedule);')
+        self.assertGreaterEqual(apply_at, 0)
+        self.assertGreaterEqual(sync_at, 0)
+        self.assertLess(apply_at, sync_at, 'correction address sync must follow the existing load path')
+        self.assertNotIn('submission.payload =', correction)
+        self.assertNotIn('submission.payload.', correction)
+
+
 class ServiceWorkerCacheVersionTests(unittest.TestCase):
     def test_the_cache_version_moved_for_the_changed_shell(self):
         """/offline-tsr is precached, so devices need the new copy of the page."""

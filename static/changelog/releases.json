@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-04-tsr-address-rehydration",
+      "release_date": "2026-09-04",
+      "title": "Create TSR Address Refresh",
+      "summary": "Editable Create TSR drafts now pick up current client addresses.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-04-tsr-address-rehydration-everyone",
+          "category": "Create TSR",
+          "description": "Editable Create TSR drafts now pick up a client address added to the client record when the schedule still matches. Submitted TSR history and its original PDF remain unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-03-stock-inventory-borrowed-pagination",
       "release_date": "2026-09-03",
       "title": "Currently Borrowed Items Pagination",

@@ -1,5 +1,59 @@
 # Project Change Log
 
+codex changes - 2026-09-04
+
+- Recorded the owner-authorized `TSR Editable Draft Address Rehydration After Client Updates`
+  plan at the top of `plans.md`, marked it `In progress`, and began the implementation within
+  the explicitly limited `/offline-tsr` draft/correction workflow. The plan preserves submitted
+  TSR history, forbids background saves and broad hydration resets, requires fail-first and
+  proportional verification, and excludes commit, push, deploy, Railway, database, and protected
+  dirty-artifact changes.
+- Added six focused source-contract regression tests to `tests/test_offline_resilience.py` for
+  matched blank/stale address hydration, matched snapshot refresh with preservation of TSR work,
+  `openStandaloneTSRDraft()` refresh ordering, post-render selected-address refresh, offline and
+  unmatched preservation/repick, and online correction without submitted-history mutation. The
+  tests use matched/unmatched positive controls, consumer/order assertions, and retain the guard
+  against broad schedule-reset hydration.
+- Ran the required unchanged-source fail-first checkpoint immediately after adding those tests and
+  before changing `app.py`, `templates/offline_tsr.html`, `releases.json`, or cache assertions:
+  **48 tests ran with 42 passes, 5 intentional failures, and 1 test-contract error**. The failures
+  identified the absent helper, draft-open refresh, post-render live-option consumer, offline /
+  unmatched guard, and correction consumer; the error was the dependent narrow-helper test before
+  that helper existed.
+- Implemented the narrow `syncStandaloneTSRAddressFromSchedule(schedule)` path in
+  `templates/offline_tsr.html`. A non-empty successful live schedule response is marked live; the
+  helper matches the supplied option through `isSameScheduleSelection()`, writes only the locked
+  `#tsr-address` value directly (including clearing a now-blank authoritative address), and
+  refreshes `selectedStandaloneScheduleSnapshot` without dispatching input or saving. Draft
+  hydration, best-effort draft open refresh, post-render live-option refresh, and online correction
+  now use that helper; cached/offline options leave the saved address and snapshot intact.
+- Bumped the embedded app-shell worker from v125 to
+  `medical-service-pwa-offline-navigation-v126-tsr-address-rehydration`, updated the exact current
+  cache compatibility assertions in the three approved layout/Stock/Timeline tests, and added one
+  published `2026-09-04` `Create TSR` item to `static/changelog/releases.json` describing current
+  client-address pickup for editable drafts while submitted TSR history and its original PDF stay
+  unchanged.
+- Final affected-suite verification completed with **136 tests: 135 passes, 0 failures, 0 errors,
+  and 1 skip**. The broader TSR-pattern discovery completed **128 tests with 128 passes, 0
+  failures, and 0 errors**. The isolated full discovery used a unique external temporary test
+  database and completed **873 tests with 862 passes, 10 failures, 0 errors, and 1 skip**. The ten
+  failures are the known baseline cluster: eight Purchase Order rate-limit/setup cases and two
+  Staff Creation fixture/initials cases; no touched TSR, offline, cache, release, Stock, or
+  Timeline contract failed.
+- Static verification passed for in-memory Python compilation of `app.py` and all four modified
+  test files, Jinja parsing of `templates/offline_tsr.html`, syntax checks for all eight extracted
+  inline TSR JavaScript blocks, embedded service-worker JavaScript and exact v126 cache validation,
+  release-manifest integrity (**60 releases, 222 unique items, exactly one published 2026-09-04
+  Create TSR item**), and `git diff --check`. A supplemental strict global date-sort probe exposed
+  pre-existing out-of-order historical manifest blocks; the repository's existing manifest
+  validation passed and no unrelated historical entries were reordered.
+- Final main-thread rerun of all touched verification modules (`offline_resilience`, `tsr_draft_sync`,
+  `tsr_address_layout`, `online_tsr_numbering`, `changelog_coverage`, `layout_sidebar`,
+  `stock_inventory`, and `timeline_desktop_collapse`) completed **149 tests with 148 passes,
+  0 failures, 0 errors, and 1 skip**.
+- No browser/Codex UI automation, commit, push, deployment, Railway, production, database, or
+  protected-artifact action occurred. The TSR plan remains `In progress` because there is no commit.
+
 codex changes - 2026-09-03
 
 - Recorded the owner-authorized `Stock Inventory Borrowed Items Pagination and Collapse` plan at

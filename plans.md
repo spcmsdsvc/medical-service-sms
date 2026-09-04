@@ -53,6 +53,230 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## TSR Editable Draft Address Rehydration After Client Updates
+
+**Status:** In progress
+**Approved:** 2026-09-04
+**Detailed:** 2026-09-04
+**Execution authorized:** 2026-09-04 — the owner explicitly requested implementation with
+`PLEASE IMPLEMENT THIS PLAN`.
+**Finished:** focused and full verification completed 2026-09-04; pending commit. No commit,
+push, deployment, Railway, database, or production action is authorized by this plan.
+
+### Context
+
+An engineer can create and save a TSR draft for a scheduled visit before the client has an
+address. If the client record is then updated with an address, reopening the existing draft
+still restores the draft's blank or stale `tsr-address` value. The live schedule endpoint already
+returns the current `client_address`; the defect is in the `/offline-tsr` frontend draft
+rehydration path, which writes the saved payload and old schedule snapshot without reconciling
+the matched live schedule.
+
+The intended result is that an editable saved draft, and an online TSR opened for correction,
+show the current client address when their schedule selection still matches a live schedule.
+The existing TSR work remains intact, and submitted TSR history and its original PDF remain
+historical snapshots.
+
+### Decisions taken
+
+1. Refresh the address when a saved draft or correction form loads, and when the existing
+   `Refresh Schedules` control is used.
+2. Treat the current address on a matched live client schedule as authoritative for the locked
+   `#tsr-address` field, including clearing a stale value if the current authoritative value is
+   blank.
+3. Change only the address field and the in-memory selected schedule snapshot. Preserve
+   complaints, actions, signatures, attachments, dates, technician data, and every other TSR
+   edit.
+4. If the schedule refresh is offline, retain the saved address and saved snapshot rather than
+   clearing them. An unmatched selection continues to request schedule repick using the existing
+   behavior.
+5. Opening a draft may update the in-memory form but must not perform a background save. The
+   refreshed address is persisted by the next normal Save Draft or Save TSR action.
+6. Submitted TSRs and their original PDFs remain immutable. Saving a correction creates a new
+   revision through the existing revision workflow.
+7. No database migration, new database field, or public API contract change is needed.
+
+### Investigation
+
+* `app.py:11012-11105` serves `/get_offline_tsr_schedule_options` and builds each option from
+  the fresh related client; `app.py:11099` already returns `client_address` from `client.address`.
+* `templates/dashboard.html` links the active Create/Edit TSR flow to `/offline-tsr`, and the
+  timeline schedule actions redirect there; the legacy timeline TSR modal has no active caller
+  and is deliberately outside this fix.
+* `templates/offline_tsr.html:1373-1384` defines `isSameScheduleSelection()` and the runtime
+  schedule identity used to distinguish a matched live schedule from an unmatched or stale
+  snapshot. `:1800-2022` renders and refreshes schedule options, including cached fallback data
+  when offline.
+* `templates/offline_tsr.html:2085-2148` contains the broad
+  `applyScheduleToStandaloneTSR()` path. It resets schedule-dependent work for a genuinely
+  different selection and fills several locked fields, so it must not be used for draft
+  hydration.
+* `templates/offline_tsr.html:3587-3647` contains `applyStandaloneTSRDraftData()`. It writes the
+  saved `.tsr-field` values and old schedule snapshot, then canonicalizes a matched selection,
+  but it does not replace the saved address or snapshot with the live matched option. This is
+  the defect.
+* `templates/offline_tsr.html:3676-3735` loads an online TSR revision for correction and
+  currently relies on the broad schedule application path; a narrow address sync is needed so a
+  nonblank stale historical payload is not overwritten in the correction form while the
+  submitted record stays unchanged.
+* `templates/offline_tsr.html:3895-3925` loads an IndexedDB/localStorage draft without first
+  requesting current schedule options. The open path will perform a best-effort refresh before
+  applying the saved payload.
+* `templates/offline_tsr.html:2613-2616` lets `getSelectedStandaloneSchedule()` fall back to
+  the saved snapshot. The refresh-time sync must instead find a live option with
+  `isSameScheduleSelection()` so an offline/stale snapshot cannot masquerade as current data.
+* `templates/offline_tsr.html:6433-6455` saves collected form data. Directly updating the
+  address during hydration avoids triggering an autosave; the next normal save collects and
+  persists it.
+* `app.py:17680` embeds the app-shell service worker at cache version
+  `medical-service-pwa-offline-navigation-v125-timeline-collapsed-preference`; `/offline-tsr`
+  is an app-shell route, so the inline-JavaScript change requires a v126 cache bump.
+* Exact v125 cache assertions are present in `tests/test_layout_sidebar.py`,
+  `tests/test_stock_inventory.py`, and `tests/test_timeline_desktop_collapse.py`; they must be
+  updated to the v126 compatibility value. Other feature floors are intentionally not changed.
+* `static/changelog/releases.json` is newest-first and its latest entry is dated 2026-09-03;
+  this user-visible Create TSR fix needs one published 2026-09-04 item.
+* The focused baseline `tests.test_offline_resilience` and `tests.test_tsr_draft_sync` modules
+  currently pass on the unchanged source. The new regression assertions must be added and run
+  fail-first before the template/app implementation.
+
+### Execution steps
+
+1. **Record and preserve the execution record.** Update this plan at the top of `plans.md` with
+   the complete approved scope, `In progress` status, owner authorization, exclusions, and
+   verification bar. Add the corresponding 2026-09-04 entry to the top section of `changes.md`.
+   Done means both journals contain a factual, executable record before application edits and
+   the existing dirty `scheduler.db`, handoff, `.claude/`, `output/`, and `tmp/` paths remain
+   untouched.
+
+2. **Add fail-first regression coverage.** In `tests/test_offline_resilience.py`, extend the
+   schedule identity/source-contract coverage so it proves the consumer behavior and ordering,
+   not only the existence of a producer string:
+   * a saved draft with a blank or stale address receives the matched live schedule's
+     `client_address`;
+   * the matched selected schedule snapshot is replaced while complaints, actions, signatures,
+     attachments, dates, and other TSR fields remain untouched;
+   * `openStandaloneTSRDraft()` awaits a best-effort schedule refresh before applying the saved
+     payload;
+   * the existing schedule-refresh path updates the selected TSR address from a matched live
+     option after rendering; and
+   * unmatched or offline options preserve the saved draft and continue requesting repick.
+   Include positive controls so the tests cannot pass vacuously, and retain the existing guard
+   that draft hydration does not call the broad schedule reset path. Done means the new tests
+   fail against the unchanged template for the missing behavior while existing controls still
+   pass.
+
+3. **Implement the narrow address reconciliation.** In `templates/offline_tsr.html`, add an
+   internal `syncStandaloneTSRAddressFromSchedule(schedule)` helper. It must return unless the
+   supplied schedule is a live option matched by `isSameScheduleSelection()`, assign only the
+   locked `#tsr-address` value from `schedule.client_address` when different, and refresh
+   `selectedStandaloneScheduleSnapshot` from that matched schedule. It must not dispatch a form
+   event or save while draft hydration is paused. Call it from the matched branch of
+   `applyStandaloneTSRDraftData()` after the saved payload and selection identity have been
+   restored, without invoking `applyScheduleToStandaloneTSR()` or clearing other work. Done means
+   blank and stale saved addresses are corrected, matched snapshots become current, and all other
+   draft fields remain governed by the existing payload restore path.
+
+4. **Refresh before draft open and after manual schedule refresh.** In `openStandaloneTSRDraft()`,
+   perform `await refreshStandaloneScheduleOptions(false)` after loading a valid saved record and
+   before applying its payload. Catch/log refresh failures so cached/current options still permit
+   the existing best-effort open behavior. In `refreshStandaloneScheduleOptions()`, after options
+   render, locate the currently selected live option directly from `standaloneScheduleOptions`
+   using `isSameScheduleSelection()` and call the narrow helper; do not use the stale-snapshot
+   fallback from `getSelectedStandaloneSchedule()`. Done means an online open gets current
+   schedule data first, a manual refresh updates the selected address, and offline fallback
+   retains saved data without clearing or silently repicking it.
+
+5. **Cover online correction without changing history.** In
+   `loadOnlineTSRRevisionFromUrl()`, apply the narrow helper to the current matched live schedule
+   after the existing correction load path, while preserving the submitted payload as the
+   historical source and leaving the original PDF/submission unchanged. Done means a correction
+   form can show the current client address even when the submitted payload has an old nonblank
+   address, and saving still follows the existing new-revision flow.
+
+6. **Invalidate the app shell and publish the user-facing note.** In `app.py`, change the embedded
+   worker cache from v125 to v126 with a TSR-address-specific label. Update the exact current-cache
+   compatibility assertions in `tests/test_layout_sidebar.py`, `tests/test_stock_inventory.py`,
+   and `tests/test_timeline_desktop_collapse.py` to v126. Prepend one published Create TSR item
+   dated `2026-09-04` to `static/changelog/releases.json`, explaining that editable TSR drafts
+   now pick up client addresses added to their client record while submitted TSR history remains
+   unchanged. Done means no migration or public API change exists and manifest/cache validation
+   accepts the new values.
+
+7. **Verify and update records.** Run the fail-first checkpoint from step 2 before the source
+   implementation, then after implementation run the focused TSR/offline/address/changelog test
+   modules. Run Python compilation, Jinja parsing, extracted inline-JavaScript syntax checks,
+   service-worker validation, release-manifest validation, and `git diff --check`. Run isolated
+   full test discovery and report exact pass/fail/skip counts, including known baseline failures.
+   Perform a source-level self-review against this plan and inspect the final diff for accidental
+   changes or protected-file modifications. Append factual implementation and verification results
+   to the same 2026-09-04 `changes.md` section and update this plan's verification/status notes.
+   Done means the repository records the actual results, no test is claimed without running, and
+   no commit, push, deploy, Railway change, database operation, or browser automation occurred.
+
+### Deliberately excluded
+
+* No backfill of address data into submitted TSR rows, original PDFs, or any database record;
+  historical submissions are immutable by decision.
+* No new TSR or Client database column, migration, public API, or server-side mutation.
+* No broad schedule re-application during hydration, because it could erase legitimate TSR work
+  or clear a draft for a selection that is still the same visit.
+* No background save on opening or refreshing a draft; persistence remains on the next normal
+  Save Draft/Save TSR action.
+* No change to the legacy timeline TSR modal, unrelated schedule fields, attachments, signatures,
+  complaints, actions, dates, service history, or offline storage schema.
+* No browser automation, commit, push, deployment, Railway operation, production data action, or
+  cleanup/modification of the existing dirty protected artifacts.
+
+### Verification
+
+The regression tests must first demonstrate the missing consumer behavior on unchanged source,
+with positive controls proving that the test fixtures contain a matched schedule and meaningful
+TSR work to preserve. After implementation, focused coverage includes
+`tests.test_offline_resilience`, `tests.test_tsr_draft_sync`, the TSR address-layout tests, the
+relevant TSR/changelog validation modules, and the exact v126 compatibility checks. Static checks
+must cover Python syntax, Jinja parsing, extracted inline JavaScript syntax, the embedded service
+worker cache, the release manifest, and whitespace errors. Full discovery is isolated from the
+owner's database and its exact result is recorded, including pre-existing failures if present.
+
+**Execution verification (2026-09-04):** The unchanged-source fail-first checkpoint ran immediately
+after the six new regression tests and before application, manifest, or cache edits: **48 tests,
+42 passes, 5 failures, 1 test-contract error**. After implementation, the affected suite ran **136
+tests with 135 passes, 0 failures, 0 errors, and 1 skip**; the broader TSR-pattern set ran **128/128
+with no failures or errors**. Isolated full discovery ran **873 tests with 862 passes, 10 known
+baseline failures, 0 errors, and 1 skip**. Static checks passed for Python compilation, Jinja
+parsing, eight inline JavaScript blocks, the embedded v126 service worker, release-manifest
+integrity (60 releases / 222 unique items), and `git diff --check`. No browser automation or
+protected/production action occurred. Status remains `In progress` because no commit was made.
+The final main-thread rerun of all touched verification modules completed **149 tests with 148
+passes, 0 failures, 0 errors, and 1 skip**.
+
+Codex browser automation is excluded by project instruction. The owner's manual acceptance
+sequence remains: create a TSR with no client address, save it, add the client address, reopen the
+draft, confirm the address appears while TSR details remain intact, then correct a submitted TSR
+and verify that a new revision is created without changing the original.
+
+### After implementation
+
+The implementation receives a local self-review against every numbered step and a final diff
+check. No post-implementation review agent or publication is implied by this plan. A separate
+owner instruction would be required for commit/push/deploy; if later authorized, the normal
+release checklist must verify only intended files are staged, protected dirty artifacts are not
+staged, `origin/main` and Railway metadata are checked, and this plan is updated with the commit.
+
+### Risks
+
+The main risk is overwriting a legitimate edited address or other TSR work during rehydration.
+The helper is therefore limited to a selection matched by the existing schedule identity, writes
+only the locked address and in-memory snapshot, and avoids the broad reset path. The offline risk
+is stale or missing schedule data; the existing cached/snapshot fallback remains authoritative when
+no live match exists, so the draft is not cleared. The cache risk is field devices retaining the
+old inline script; v126 and exact assertion updates cover app-shell invalidation. The historical
+data risk is changing submitted TSRs; only the correction form's in-memory editable payload is
+updated, while submitted rows and PDFs remain untouched. Focused tests, positive controls, static
+validation, isolated full discovery, and the owner's manual sequence provide proportional safety
+coverage.
+
 ## Stock Inventory Borrowed Items Pagination and Collapse
 
 **Status:** Executed — ba8597b

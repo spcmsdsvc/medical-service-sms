@@ -698,6 +698,7 @@ let selectedStandaloneScheduleId = '';
 // call to applyScheduleToStandaloneTSR so the engineer's re-pick does not clear their work.
 let awaitingScheduleRepick = false;
 let selectedStandaloneScheduleSnapshot = null;
+let standaloneScheduleOptionsAreLive = false;
 let standaloneScheduleQuickFilter = 'week';
 let signatureData = { serviced: '', acknowledged: '' };
 let mySavedSignatureData = '';
@@ -1975,6 +1976,7 @@ function selectStandaloneScheduleFromModal(id){
 async function refreshStandaloneScheduleOptions(manual=false){
   let schedules = [];
   let source = 'saved offline cache';
+  standaloneScheduleOptionsAreLive = false;
 
   if(navigator.onLine){
     try{
@@ -1982,6 +1984,7 @@ async function refreshStandaloneScheduleOptions(manual=false){
       if(res.ok){
         const data = await res.json();
         schedules = Array.isArray(data.schedules) ? data.schedules : [];
+        standaloneScheduleOptionsAreLive = schedules.length > 0;
         source = 'live system data';
         cacheTSRFilenameTemplate(data.tsr_filename_template);
         cacheStandaloneScheduleOptions(schedules);
@@ -2015,6 +2018,12 @@ async function refreshStandaloneScheduleOptions(manual=false){
   }
 
   renderStandaloneScheduleOptions(schedules, source);
+  const selectedLiveSchedule = standaloneScheduleOptionsAreLive && selectedStandaloneScheduleId
+    ? standaloneScheduleOptions.find(item =>
+        isSameScheduleSelection(selectedStandaloneScheduleId, item)
+      )
+    : null;
+  if(selectedLiveSchedule) syncStandaloneTSRAddressFromSchedule(selectedLiveSchedule);
   updateCreateTSRScheduleGate({ showMessage: manual && !hasStandaloneScheduleSelection() });
   if(manual){
     showTSRStatus(schedules.length ? 'Offline schedules loaded from saved cache.' : 'No saved schedules found. Open Calendar once while online to prepare offline mode.', schedules.length ? 'success' : 'info');
@@ -3584,6 +3593,22 @@ function loadStandaloneTSRDraftFromLocalStorageFallback(){
   }
 }
 
+function syncStandaloneTSRAddressFromSchedule(schedule){
+  if(!standaloneScheduleOptionsAreLive) return false;
+  const matchedSchedule = standaloneScheduleOptions.find(item =>
+    item === schedule && isSameScheduleSelection(selectedStandaloneScheduleId, item)
+  );
+  if(!matchedSchedule) return false;
+
+  const addressField = document.getElementById('tsr-address');
+  const nextAddress = String(schedule.client_address || '');
+  if(addressField && addressField.value !== nextAddress){
+    addressField.value = nextAddress;
+  }
+  selectedStandaloneScheduleSnapshot = Object.assign({}, matchedSchedule);
+  return true;
+}
+
 function applyStandaloneTSRDraftData(data){
   if(!data){
     initializeBlankStandaloneTSR();
@@ -3608,6 +3633,7 @@ function applyStandaloneTSRDraftData(data){
     if(matchedOption){
       selectedStandaloneScheduleId = String(getStandaloneScheduleRuntimeId(matchedOption));
       awaitingScheduleRepick = false;
+      syncStandaloneTSRAddressFromSchedule(matchedOption);
     }else if(storedScheduleId && selectedStandaloneScheduleSnapshot){
       // Nothing in the current list matches. Keep every field the engineer typed, drop the
       // dead selection, and ask them to pick the schedule again rather than guessing.
@@ -3719,6 +3745,7 @@ async function loadOnlineTSRRevisionFromUrl(){
       );
       if(schedule){
         applyScheduleToStandaloneTSR(schedule, false);
+        syncStandaloneTSRAddressFromSchedule(schedule);
       }else{
         selectedStandaloneScheduleId = scheduleId;
       }
@@ -3911,6 +3938,11 @@ async function openStandaloneTSRDraft(id){
     return;
   }
   try{
+    try{
+      await refreshStandaloneScheduleOptions(false);
+    }catch(err){
+      console.warn('[Offline TSR] Schedule refresh before draft open failed', err);
+    }
     applyStandaloneTSRDraftData(Object.assign({}, record.payload, { _draft_id: record.id }));
     const draftMessage = hasStandaloneScheduleSelection()
       ? (record.source === 'server_draft' ? 'Loaded saved TSR draft from your account backup.' : 'Loaded saved TSR draft from this device.')
