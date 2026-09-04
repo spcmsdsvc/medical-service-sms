@@ -55,13 +55,15 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## TSR Editable Draft Address Rehydration After Client Updates
 
-**Status:** In progress
+**Status:** Executed — 7aa7f8a
 **Approved:** 2026-09-04
 **Detailed:** 2026-09-04
 **Execution authorized:** 2026-09-04 — the owner explicitly requested implementation with
 `PLEASE IMPLEMENT THIS PLAN`.
-**Finished:** focused and full verification completed 2026-09-04; pending commit. No commit,
-push, deployment, Railway, database, or production action is authorized by this plan.
+**Finished:** 2026-09-04 — implementation committed as `7aa7f8a`, pushed to `origin/main`, and
+accepted successfully by Railway production. The required post-publication journal closeout is
+being recorded separately; no manual redeploy, Railway variable, database, or production-data
+action was performed.
 
 ### Context
 
@@ -247,7 +249,8 @@ with no failures or errors**. Isolated full discovery ran **873 tests with 862 p
 baseline failures, 0 errors, and 1 skip**. Static checks passed for Python compilation, Jinja
 parsing, eight inline JavaScript blocks, the embedded v126 service worker, release-manifest
 integrity (60 releases / 222 unique items), and `git diff --check`. No browser automation or
-protected/production action occurred. Status remains `In progress` because no commit was made.
+ protected/production action occurred. The implementation is committed as `7aa7f8a` and the
+ plan is now `Executed`; the owner-authorized push and Railway status are recorded in `changes.md`.
 The final main-thread rerun of all touched verification modules completed **149 tests with 148
 passes, 0 failures, 0 errors, and 1 skip**.
 

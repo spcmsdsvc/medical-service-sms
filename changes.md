@@ -51,8 +51,13 @@ codex changes - 2026-09-04
   `tsr_address_layout`, `online_tsr_numbering`, `changelog_coverage`, `layout_sidebar`,
   `stock_inventory`, and `timeline_desktop_collapse`) completed **149 tests with 148 passes,
   0 failures, 0 errors, and 1 skip**.
-- No browser/Codex UI automation, commit, push, deployment, Railway, production, database, or
-  protected-artifact action occurred. The TSR plan remains `In progress` because there is no commit.
+- No browser/Codex UI automation, manual redeploy, Railway-variable change, production-data,
+  database, or protected-artifact action occurred. The nine intended files were committed as
+  `7aa7f8a` (`7aa7f8ac3fc849f6352bef7b09051ae9cbdcdc16`) and pushed to `origin/main`; the remote
+  ref was verified at that exact SHA. GitHub's Railway integration for `empowering-integrity - web`
+  then reported `success` with description `Success - web-production-e2085.up.railway.app` at
+  `2026-09-04T10:31:09Z`, confirming successful production deployment. The plan is now
+  `Executed — 7aa7f8a`.
 
 codex changes - 2026-09-03
 
