@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-05-tsr-contact-suggestions",
+      "release_date": "2026-09-05",
+      "title": "Create TSR Client Contact Suggestions",
+      "summary": "Create TSR now suggests saved client contacts and keeps client signing per TSR.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-05-tsr-contact-suggestions-everyone",
+          "category": "Create TSR",
+          "description": "Create TSR now suggests the selected client's saved contact name, number, and email, while the client acknowledgement signature remains per-TSR client signing and must be captured again for every new TSR or correction. Existing contact auto-capture and legacy queued PDFs remain compatible.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-04-tsr-address-rehydration",
       "release_date": "2026-09-04",
       "title": "Create TSR Address Refresh",

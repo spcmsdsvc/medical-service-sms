@@ -350,7 +350,7 @@ class TimelineDesktopCollapsibleIntroTests(unittest.TestCase):
 
     def test_cache_version_and_everyone_release_are_present(self):
         self.assertIn(
-            "medical-service-pwa-offline-navigation-v126-tsr-address-rehydration",
+            "medical-service-pwa-offline-navigation-v127-tsr-contact-suggestions",
             self.app,
         )
 

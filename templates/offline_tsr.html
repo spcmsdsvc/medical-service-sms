@@ -353,6 +353,7 @@ window.CalibrationReportConfig = {
         <input id="tsr-contact-no" class="form-control tsr-field mb-2" placeholder="Contact number">
         <label class="small fw-bold text-muted text-uppercase">Email Add.</label>
         <input id="tsr-email-add" class="form-control tsr-field mb-3" placeholder="Email address">
+        <div id="tsr-client-contact-suggestions" class="tsr-inline-suggestions no-print mb-3 d-none" role="region" aria-live="polite" aria-labelledby="tsr-client-contact-suggestions-title"></div>
 
         <label class="small fw-bold text-muted text-uppercase">Billing Statement</label>
         <input id="tsr-billing-statement" class="form-control tsr-field mb-2">
@@ -701,6 +702,7 @@ let selectedStandaloneScheduleSnapshot = null;
 let standaloneScheduleOptionsAreLive = false;
 let standaloneScheduleQuickFilter = 'week';
 let signatureData = { serviced: '', acknowledged: '' };
+let standaloneTSRClientContactSuggestions = [];
 let mySavedSignatureData = '';
 let mySavedSignatureLoaded = false;
 let mySavedSignatureLoadingPromise = null;
@@ -952,6 +954,74 @@ function setFieldValue(id, value, overwrite=false){
   }
 }
 
+function normalizeTSRClientContacts(schedule){
+  if(!schedule) return [];
+  const plural = Array.isArray(schedule.client_contacts) ? schedule.client_contacts : [];
+  const singular = schedule.client_contact && typeof schedule.client_contact === 'object'
+    ? [schedule.client_contact]
+    : [];
+  const rawContacts = plural.length ? plural : singular;
+  const contacts = [];
+  const addContact = raw => {
+    const contact = {
+      name: String(raw?.name || '').trim(),
+      phone: String(raw?.phone || raw?.number || '').trim(),
+      email: String(raw?.email || '').trim()
+    };
+    if(!contact.name && !contact.phone && !contact.email) return;
+    const emailKey = contact.email.toLowerCase();
+    const nameKey = contact.name.toLowerCase();
+    const phoneKey = contact.phone.toLowerCase();
+    const existing = contacts.find(item => (
+      Boolean(emailKey && item.email && item.email.toLowerCase() === emailKey) ||
+      Boolean((nameKey || phoneKey) && item.name.toLowerCase() === nameKey && item.phone.toLowerCase() === phoneKey)
+    ));
+    if(existing){
+      existing.name = existing.name || contact.name;
+      existing.phone = existing.phone || contact.phone;
+      existing.email = existing.email || contact.email;
+      return;
+    }
+    contacts.push(contact);
+  };
+  rawContacts.forEach(addContact);
+  if(!contacts.length && plural.length) singular.forEach(addContact);
+  return contacts;
+}
+
+function renderTSRClientContactSuggestions(schedule){
+  const panel = document.getElementById('tsr-client-contact-suggestions');
+  standaloneTSRClientContactSuggestions = normalizeTSRClientContacts(schedule);
+  if(!panel) return;
+  if(!standaloneTSRClientContactSuggestions.length){
+    panel.classList.add('d-none');
+    panel.innerHTML = '';
+    return;
+  }
+  panel.classList.remove('d-none');
+  panel.innerHTML = `<div id="tsr-client-contact-suggestions-title" class="small fw-bold text-primary text-uppercase">Saved contacts for this client</div>` +
+    standaloneTSRClientContactSuggestions.map((contact, index) => {
+      const detail = [contact.phone, contact.email].filter(Boolean).join(' · ');
+      return `<button type="button" class="btn btn-outline-primary text-start tsr-contact-suggestion" data-contact-index="${index}" onclick="applySuggestedTSRClientContact(${index})" aria-label="Use saved contact ${escapeAttr(contact.name || contact.phone || contact.email || `number ${index + 1}`)}">
+        <span class="d-block fw-bold">${escapeHTML(contact.name || 'Unnamed contact')}</span>
+        ${detail ? `<span class="d-block small text-muted">${escapeHTML(detail)}</span>` : ''}
+      </button>`;
+    }).join('');
+}
+
+function applySuggestedTSRClientContact(index){
+  const contact = standaloneTSRClientContactSuggestions[Number(index)];
+  if(!contact) return false;
+  signatureData.acknowledged = '';
+  setFieldValue('tsr-acknowledged-by', contact.name, true);
+  setFieldValue('tsr-contact-no', contact.phone, true);
+  setFieldValue('tsr-email-add', contact.email, true);
+  updateSignatureStatuses();
+  saveStandaloneTSRDraft(true);
+  showTSRStatus('Saved client contact applied. The client must sign this TSR again before final saving.', 'info');
+  return true;
+}
+
 const TSR_SCHEDULE_LOCKED_FIELD_IDS = [
   'tsr-customer-name',
   'tsr-address',
@@ -1103,6 +1173,7 @@ function initializeBlankStandaloneTSR(){
     });
     selectedStandaloneScheduleId = '';
     selectedStandaloneScheduleSnapshot = null;
+    standaloneTSRClientContactSuggestions = [];
     standaloneDocuments = [];
     window.calibrationReport?.reset({ removeAutoDocument:true });
     signatureData = { serviced: '', acknowledged: '' };
@@ -1129,6 +1200,7 @@ function initializeBlankStandaloneTSR(){
     addTSRPartRow();
     renderDocs();
     renderTSRAttachments();
+    renderTSRClientContactSuggestions(null);
     updateSignatureStatuses();
     toggleTSROtherCategory();
     updateCreateTSRScheduleGate();
@@ -2023,7 +2095,11 @@ async function refreshStandaloneScheduleOptions(manual=false){
         isSameScheduleSelection(selectedStandaloneScheduleId, item)
       )
     : null;
+  const selectedContactSchedule = selectedLiveSchedule || (selectedStandaloneScheduleId
+    ? standaloneScheduleOptions.find(item => isSameScheduleSelection(selectedStandaloneScheduleId, item))
+    : null) || selectedStandaloneScheduleSnapshot;
   if(selectedLiveSchedule) syncStandaloneTSRAddressFromSchedule(selectedLiveSchedule);
+  renderTSRClientContactSuggestions(selectedContactSchedule);
   updateCreateTSRScheduleGate({ showMessage: manual && !hasStandaloneScheduleSelection() });
   if(manual){
     showTSRStatus(schedules.length ? 'Offline schedules loaded from saved cache.' : 'No saved schedules found. Open Calendar once while online to prepare offline mode.', schedules.length ? 'success' : 'info');
@@ -2052,6 +2128,7 @@ function clearStandaloneTSRWorkFieldsForScheduleChange(){
   standaloneDocuments = [];
   window.calibrationReport?.clearForScheduleChange();
   signatureData = { serviced: '', acknowledged: '' };
+  renderTSRClientContactSuggestions(null);
   offlineTSRAttachments = [];
   const actionsList = document.getElementById('tsr-actions-list');
   if(actionsList) actionsList.innerHTML = '';
@@ -2149,6 +2226,7 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
           : 'Client/equipment fields are locked. Start and finish time may be adjusted before saving.')}</div>`;
   }
   renderTSRScheduleCoveragePanel(schedule);
+  renderTSRClientContactSuggestions(schedule);
   setStandaloneScheduleLockedFields(true);
   updateCreateTSRScheduleGate();
   renderStandaloneTSRDraftPanel();
@@ -3643,6 +3721,7 @@ function applyStandaloneTSRDraftData(data){
       selectedStandaloneScheduleId = storedScheduleId;
       awaitingScheduleRepick = false;
     }
+    renderTSRClientContactSuggestions(matchedOption || selectedStandaloneScheduleSnapshot);
     standaloneDocuments=data.documents||[];
     offlineTSRAttachments=normalizeQueuedAttachments(data.attachments||[]);
     window.calibrationReport?.apply(data.calibration_report || null);
@@ -3736,6 +3815,7 @@ async function loadOnlineTSRRevisionFromUrl(){
     }
 
     const scheduleId = String(submission.shift_id || payload.schedule_id || payload.selectedScheduleId || '');
+    let correctionSchedule = null;
     if(scheduleId){
       // payload.selectedScheduleId comes back out of the server's payload_json, so it can be
       // an old-format id written months ago.
@@ -3743,6 +3823,9 @@ async function loadOnlineTSRRevisionFromUrl(){
         String(getStandaloneScheduleRealId(item)) === scheduleId ||
         isSameScheduleSelection(scheduleId, item)
       );
+      correctionSchedule = schedule || (payload.selectedSchedule && typeof payload.selectedSchedule === 'object'
+        ? payload.selectedSchedule
+        : null);
       if(schedule){
         applyScheduleToStandaloneTSR(schedule, false);
         syncStandaloneTSRAddressFromSchedule(schedule);
@@ -3750,10 +3833,13 @@ async function loadOnlineTSRRevisionFromUrl(){
         selectedStandaloneScheduleId = scheduleId;
       }
     }
+    renderTSRClientContactSuggestions(correctionSchedule);
+    signatureData.acknowledged = '';
+    updateSignatureStatuses();
     setStandaloneScheduleLockedFields(Boolean(selectedStandaloneScheduleId));
     updateCreateTSRScheduleGate({ showMessage: !hasStandaloneScheduleSelection() });
 
-    showTSRStatus(`Editing saved TSR REV${submission.revision_no || 1}. Saving will create a corrected new revision and keep the original in history.`, 'warning');
+    showTSRStatus(`Editing saved TSR REV${submission.revision_no || 1}. The client must sign this corrected TSR again before final saving. The original remains in history.`, 'warning');
     return true;
   }catch(err){
     console.warn('[Offline TSR] Unable to load TSR revision context', err);
@@ -6672,6 +6758,7 @@ async function applyMySavedSignatureToTSR(){
 }
 
 function hasRequiredServicedSignature(data){ const signatures=data?.signatures || signatureData || {}; return Boolean(String(signatures.serviced || '').trim()); }
+function hasRequiredAcknowledgedSignature(data){ const signatures=data?.signatures || signatureData || {}; return Boolean(String(signatures.acknowledged || '').trim()); }
 function getMissingTSRCoreDetails(data){
   const selectedSchedule = data?.selectedSchedule || getSelectedStandaloneSchedule() || {};
   const missing = [];
@@ -6738,16 +6825,26 @@ async function validateTSRFinalSaveRequirements(data){
         updateSignatureStatuses();
         await saveStandaloneTSRDraft(true);
         showTSRStatus('Saved Settings signature applied to Serviced By. Preparing final TSR preview...', 'success');
-        return true;
+      }else{
+        if(choice === 'draw'){
+          openSignatureModal('serviced');
+        }
+        return false;
       }
-      if(choice === 'draw'){
-        openSignatureModal('serviced');
-      }
+    }
+    if(!hasRequiredServicedSignature(data)){
+      showTSRStatus('Serviced By signature is required before saving the TSR. Please tap Add Serviced By Signature, draw or upload your signature, then save again.', 'danger');
+      document.getElementById('serviced-signature-status')?.classList.add('text-danger','fw-bold');
+      const signatureButton = Array.from(document.querySelectorAll('button')).find(btn => (btn.getAttribute('onclick') || '').includes("openSignatureModal('serviced')"));
+      try{ signatureButton?.focus({ preventScroll:true }); }
+      catch(err){ signatureButton?.focus(); }
       return false;
     }
-    showTSRStatus('Serviced By signature is required before saving the TSR. Please tap Add Serviced By Signature, draw or upload your signature, then save again.', 'danger');
-    document.getElementById('serviced-signature-status')?.classList.add('text-danger','fw-bold');
-    const signatureButton = Array.from(document.querySelectorAll('button')).find(btn => (btn.getAttribute('onclick') || '').includes("openSignatureModal('serviced')"));
+  }
+  if(!hasRequiredAcknowledgedSignature(data)){
+    showTSRStatus('Acknowledged By client signature is required before saving the TSR. Please ask the client to sign this TSR, then save again.', 'danger');
+    document.getElementById('acknowledged-signature-status')?.classList.add('text-danger','fw-bold');
+    const signatureButton = Array.from(document.querySelectorAll('button')).find(btn => (btn.getAttribute('onclick') || '').includes("openSignatureModal('acknowledged')"));
     try{ signatureButton?.focus({ preventScroll:true }); }
     catch(err){ signatureButton?.focus(); }
     return false;
@@ -6815,7 +6912,13 @@ async function confirmTSRRecommendedDetailsBeforeSave(data){
   return false;
 }
 async function saveSignatureFromModal(){ const target=document.getElementById('signature-target').value; if(!signaturePadHasInk()){ showTSRStatus('Please draw or upload a signature before saving it.', 'danger'); return; } signatureData[target]=await normalizeTSRSignatureDataURL(signatureCanvas.toDataURL('image/png', 1.0)); updateSignatureStatuses(); await saveStandaloneTSRDraft(true); bootstrap.Modal.getInstance(document.getElementById('standaloneSignatureModal')).hide(); }
-function updateSignatureStatuses(){ const servicedStatus=document.getElementById('serviced-signature-status'); const acknowledgedStatus=document.getElementById('acknowledged-signature-status'); if(servicedStatus){ servicedStatus.textContent=signatureData.serviced?'Signature saved locally.':'No signature saved.'; servicedStatus.classList.toggle('text-danger', !signatureData.serviced); servicedStatus.classList.toggle('fw-bold', !signatureData.serviced); } if(acknowledgedStatus) acknowledgedStatus.textContent=signatureData.acknowledged?'Signature saved locally.':'No signature saved.'; }
+function invalidateAcknowledgedTSRSignature(){
+  if(!signatureData.acknowledged) return false;
+  signatureData.acknowledged = '';
+  updateSignatureStatuses();
+  return true;
+}
+function updateSignatureStatuses(){ const servicedStatus=document.getElementById('serviced-signature-status'); const acknowledgedStatus=document.getElementById('acknowledged-signature-status'); if(servicedStatus){ servicedStatus.textContent=signatureData.serviced?'Signature saved locally.':'No signature saved.'; servicedStatus.classList.toggle('text-danger', !signatureData.serviced); servicedStatus.classList.toggle('fw-bold', !signatureData.serviced); } if(acknowledgedStatus){ acknowledgedStatus.textContent=signatureData.acknowledged?'Signature saved locally.':'No signature saved.'; acknowledgedStatus.classList.toggle('text-danger', !signatureData.acknowledged); acknowledgedStatus.classList.toggle('fw-bold', !signatureData.acknowledged); } }
 function escapeHTML(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));} function escapeAttr(s){return escapeHTML(s).replace(/`/g,'&#96;');}
 
 function getTSRServiceCategoryText(data){
@@ -7948,7 +8051,12 @@ document.addEventListener('DOMContentLoaded',()=>{
   }).finally(()=>{
     updateCreateTSRScheduleGate({ showMessage: !hasStandaloneScheduleSelection() });
   });
-  document.querySelectorAll('.tsr-field').forEach(el=>el.addEventListener('input',()=>saveStandaloneTSRDraft(true)));
+  document.querySelectorAll('.tsr-field').forEach(el=>el.addEventListener('input',()=>{
+    if(['tsr-acknowledged-by','tsr-contact-no','tsr-email-add'].includes(el.id)){
+      invalidateAcknowledgedTSRSignature();
+    }
+    saveStandaloneTSRDraft(true);
+  }));
   const serviceDateField=document.getElementById('tsr-service-date');
   if(serviceDateField){
     serviceDateField.addEventListener('change',()=>generateTSRNumber());

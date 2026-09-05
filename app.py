@@ -11009,6 +11009,79 @@ def offline_tsr_client_contact_payload(client):
     return contact
 
 
+def offline_tsr_client_contacts_payload(client):
+    """Return all usable contacts for one assigned TSR client, in stable order.
+
+    Dynamic Contact rows are authoritative once a client has usable rows. Older
+    client records still using the legacy three-slot matrix fall back to those
+    slots. The returned projection deliberately excludes contact ids,
+    designations, and every other client's data because it is embedded in a
+    schedule option cached on the engineer's device.
+    """
+    if not client:
+        return []
+
+    def normalized_contact(name='', phone='', email=''):
+        return {
+            'name': clean_str(name) or '',
+            'phone': clean_str(phone) or '',
+            'email': clean_str(email) or '',
+        }
+
+    def add_contact(rows, candidate):
+        if not any(candidate.values()):
+            return
+
+        candidate_email = candidate['email'].lower()
+        candidate_name = candidate['name'].lower()
+        candidate_phone = candidate['phone'].lower()
+        for index, existing in enumerate(rows):
+            same_email = bool(
+                candidate_email and existing['email'] and
+                existing['email'].lower() == candidate_email
+            )
+            same_name_phone = bool(
+                (candidate_name or candidate_phone) and
+                existing['name'].lower() == candidate_name and
+                existing['phone'].lower() == candidate_phone
+            )
+            if not (same_email or same_name_phone):
+                continue
+
+            rows[index] = {
+                key: existing[key] or candidate[key]
+                for key in ('name', 'phone', 'email')
+            }
+            return
+
+        rows.append(candidate)
+
+    dynamic_contacts = (
+        Contact.query
+        .filter_by(client_id=client.id)
+        .order_by(Contact.id.asc())
+        .all()
+    )
+    contacts = []
+    for dynamic_contact in dynamic_contacts:
+        add_contact(contacts, normalized_contact(
+            getattr(dynamic_contact, 'name', None),
+            getattr(dynamic_contact, 'phone', None),
+            getattr(dynamic_contact, 'email', None),
+        ))
+
+    if contacts:
+        return contacts
+
+    for index in range(1, 4):
+        add_contact(contacts, normalized_contact(
+            getattr(client, f'contact_person_{index}', None),
+            getattr(client, f'contact_number_{index}', None),
+            getattr(client, f'email_address_{index}', None),
+        ))
+    return contacts
+
+
 @app.route('/get_offline_tsr_schedule_options')
 @login_required
 def get_offline_tsr_schedule_options():
@@ -11078,6 +11151,7 @@ def get_offline_tsr_schedule_options():
         client = shift.client
         product = shift.product
         client_contact = offline_tsr_client_contact_payload(client)
+        client_contacts = offline_tsr_client_contacts_payload(client)
         linked_shifts = get_tsr_completion_linked_shifts(shift)
         schedule_coverage = get_tsr_schedule_coverage_rows(shift, linked_shifts=linked_shifts)
         coverage_engineer_names = list(dict.fromkeys(
@@ -11098,6 +11172,7 @@ def get_offline_tsr_schedule_options():
             'client_name': client.name if client else '',
             'client_address': client.address if client else '',
             'client_contact': client_contact,
+            'client_contacts': client_contacts,
             'client_id': shift.client_id,
             'product_name': product.name if product else '',
             'product_id': shift.product_id or '',
@@ -14949,6 +15024,17 @@ def online_tsr_has_serviced_signature(payload):
     return signature_value.startswith('data:image/') and ',' in signature_value
 
 
+def online_tsr_has_acknowledged_signature(payload):
+    """Return True when a current Create TSR payload includes the client signature."""
+    if not isinstance(payload, dict):
+        return False
+    signatures = payload.get('signatures')
+    if not isinstance(signatures, dict):
+        return False
+    signature_value = clean_str(signatures.get('acknowledged')) or ''
+    return signature_value.startswith('data:image/') and ',' in signature_value
+
+
 TSR_SUPPORTING_ATTACHMENT_MAX_BYTES = 35 * 1024 * 1024
 TSR_SUPPORTING_ATTACHMENT_MAX_COUNT = 10
 
@@ -15330,10 +15416,18 @@ def save_offline_tsr_online():
         payload['selectedSchedule'] = dict(payload['selectedSchedule'])
         payload['selectedSchedule']['schedule_coverage'] = authoritative_coverage
 
+    preserve_uploaded_pdf = str(payload.get('_offline_queue_preserve_pdf') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+    is_legacy_offline_queue = preserve_uploaded_pdf and not clean_str(payload.get('_tsr_form_version'))
+
     if not online_tsr_has_serviced_signature(payload):
         return jsonify({
             'status': 'error',
             'message': 'Serviced By signature is required before saving the TSR.'
+        }), 400
+    if not is_legacy_offline_queue and not online_tsr_has_acknowledged_signature(payload):
+        return jsonify({
+            'status': 'error',
+            'message': 'Acknowledged By client signature is required before saving the TSR.'
         }), 400
 
     submission_token = normalize_online_tsr_submission_token(
@@ -15368,8 +15462,6 @@ def save_offline_tsr_online():
         submission_token = f"legacy-{secrets.token_hex(16)}"
     payload['submission_token'] = submission_token
 
-    preserve_uploaded_pdf = str(payload.get('_offline_queue_preserve_pdf') or '').strip().lower() in {'1', 'true', 'yes', 'on'}
-    is_legacy_offline_queue = preserve_uploaded_pdf and not clean_str(payload.get('_tsr_form_version'))
     missing_core_details = get_online_tsr_missing_core_details(shift, payload)
     if missing_core_details and not is_legacy_offline_queue:
         return jsonify({
@@ -17677,7 +17769,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v126-tsr-address-rehydration';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v127-tsr-contact-suggestions';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

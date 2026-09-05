@@ -1,5 +1,69 @@
 # Project Change Log
 
+codex changes - 2026-09-05
+
+- Recorded the owner-authorized `TSR Client Contact Suggestions and Required Client Signatures`
+  implementation plan at the top of `plans.md` and began only the explicitly scoped
+  `/offline-tsr`, schedule-projection, draft, cache, release, and focused-test work. Commit,
+  push, deploy, Railway, database, production, browser/Codex UI, and protected dirty-artifact
+  actions remain excluded.
+- Preserved the pre-existing owner-modified `scheduler.db` and handoff/untracked artifact paths;
+  no protected dirty file was edited, reset, staged, or deleted.
+- Added `tests/test_tsr_contact_suggestions.py` with fail-first backend, frontend, signature,
+  draft-projection, cache, and release contracts covering client scoping, stable contact
+  suggestions, acknowledgement-signature lifecycle, and legacy queue compatibility. The
+  application source has not yet been changed for those contracts; the missing-helper contract
+  was tightened to report a normal fail rather than an incidental test-slicing error, and the
+  database-query unit controls were placed inside an application context for the implementation
+  run.
+- Added `offline_tsr_client_contacts_payload()` in `app.py` and exposed its client-scoped,
+  stable, trimmed, deduplicated `client_contacts` projection beside the unchanged singular
+  `client_contact` in `/get_offline_tsr_schedule_options`; legacy three-slot Client contacts
+  remain the fallback for older records.
+- Added current vector TSR acknowledgement-signature validation in `save_offline_tsr_online`.
+  Legacy uploaded-PDF queue payloads marked for PDF preservation without `_tsr_form_version`
+  retain their prior compatibility path; existing name/phone/email contact auto-capture remains
+  signature-free.
+- Added the accessible saved-contact panel, contact-only field application, signature invalidation
+  on acknowledgement/contact edits, same-draft signature recovery, fresh correction signing, and
+  both-signature final-save gating to `templates/offline_tsr.html`. The engineer-only Settings
+  signature path remains restricted to `Serviced By`.
+- Bumped the embedded service-worker shell to
+  `medical-service-pwa-offline-navigation-v127-tsr-contact-suggestions`, updated the current
+  cache compatibility assertions, and added the published `2026-09-05` Create TSR release entry
+  to `static/changelog/releases.json`.
+- Tightened the focused contracts to inspect the complete backend projection helper and the
+  existing `setFieldValue`-based contact application path, and made correction loading explicitly
+  re-render the selected client's contact suggestions after the historical payload is applied.
+  The fallback contract now matches the helper's indexed legacy-slot loop rather than assuming
+  three literal field names.
+- Added an isolated Flask-client route fixture to `tests/test_tsr_contact_suggestions.py`; it
+  verifies the schedule response carries both singular/plural contact projections, deduplicates
+  the selected client's dynamic rows, and excludes another client's contact data.
+- Extended that route fixture to verify a current vector TSR save fails closed when the engineer
+  signature exists but the client acknowledgement signature is missing; legacy queue compatibility
+  remains covered by the server source-order contract.
+- Added Node-backed frontend behavior coverage to the focused test file. It executes the actual
+  contact normalization/application helpers and proves duplicate suggestions collapse, only
+  acknowledgement/name/number/email fields change, the requester field survives, the old client
+  signature is invalidated, and the draft autosave path is invoked.
+- Focused verification against a fresh disposable database passed **215 tests with 214 passes,
+  0 failures, 0 errors, and 1 skip** across contact suggestions, offline resilience/pending
+  schedules, TSR draft/sync/calibration/numbering, cache compatibility, Stock, Timeline, and
+  changelog coverage. No browser/Codex UI automation or protected database/artifact action was
+  used.
+- Full isolated discovery completed with **887 tests: 877 passes, 10 unrelated existing
+  failures, 0 errors, and 1 skip**. The failures were eight purchase-order setup requests
+  receiving the existing 429 rate-limit response and two staff-creation fixture/initials
+  conflicts; no contact-suggestion, offline-TSR, draft, cache, or release test failed.
+- Tightened cached-draft and correction restoration so suggestions use the preserved schedule
+  snapshot or historical selected schedule when the current live schedule list cannot resolve it,
+  retaining singular `client_contact` fallback behavior for older cached payloads. Also restored
+  the existing calibration-report indentation while making this scoped adjustment.
+- Final post-adjustment verification again passed the 215-test focused suite with 214 passes,
+  0 failures, 0 errors, and 1 skip. In-memory Python compilation, Jinja parsing, extracted
+  inline TSR JavaScript syntax, release JSON validation, and `git diff --check` also passed.
+
 codex changes - 2026-09-04
 
 - Recorded the owner-authorized `TSR Editable Draft Address Rehydration After Client Updates`

@@ -177,7 +177,7 @@ class SidebarSourceTests(unittest.TestCase):
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
         self.assertIn("app-shell.css') }}?v=3", self.layout)
-        self.assertIn("medical-service-pwa-offline-navigation-v126-tsr-address-rehydration", self.app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v127-tsr-contact-suggestions", self.app_source)
         assert_cache_version_at_least(self, 126, self.app_source)
 
     def test_pending_summary_endpoint_is_lightweight(self):

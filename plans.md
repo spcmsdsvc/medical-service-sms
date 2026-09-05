@@ -53,6 +53,202 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## TSR Client Contact Suggestions and Required Client Signatures
+
+**Status:** In progress — local implementation and verification complete; commit/publication
+pending separate authorization
+**Approved:** 2026-09-05
+**Detailed:** 2026-09-05
+**Execution authorized:** 2026-09-05 — the owner explicitly requested implementation with
+`PLEASE IMPLEMENT THIS PLAN`.
+**Finished:** 2026-09-05 — local implementation and verification completed without commit,
+push, deployment, Railway, database, or protected-artifact actions. The worktree remains
+uncommitted pending separate owner authorization.
+
+### Context
+
+The active `/offline-tsr` flow already captures the selected client's singular contact into the
+TSR and already requires an engineer signature for current submissions. Clients can, however,
+have several saved end-user contacts, and selecting the right one currently requires manual
+entry. The same end user may also appear on multiple scheduled visits, so the schedule response
+must expose only contacts belonging to the selected client. Client signatures are personal to a
+completed TSR and must never become reusable Settings or contact data.
+
+The intended result is that selecting a schedule shows a stable, deduplicated list of that
+client's saved contacts. Selecting a suggestion fills only `Acknowledged By`, contact number,
+and email. Draft recovery may retain the acknowledgement signature inside that same draft, but
+a new TSR and every correction revision must obtain a fresh client signature before final preview,
+save, or offline queueing. Existing legacy uploaded-PDF queue records remain upload-compatible.
+
+### Decisions taken
+
+1. Add `client_contacts` to the existing `/get_offline_tsr_schedule_options` projection. Keep
+   `client_contact` unchanged for calibration-report and older-cache compatibility.
+2. Read dynamic `Contact` rows only for the selected client, in ascending database id order. Use
+   the dynamic list as authoritative when usable rows exist, deduplicate trimmed values, and use
+   legacy `Client` contact slots only when no usable dynamic contact exists.
+3. Do not add a global contact search, endpoint, schema migration, contact identifiers, or a
+   reusable client-signature field.
+4. A suggestion replaces only `Acknowledged By`, contact number, and email. It never changes
+   `Service Requested By`, signatures other than invalidating the acknowledgement signature,
+   schedule data, or other TSR fields.
+5. Manual acknowledgement-signer/contact edits and suggestion selection invalidate the current
+   acknowledgement signature. The signature remains in a saved/in-flight draft only when the
+   same draft is being recovered.
+6. Current vector TSR submissions require both `serviced` and `acknowledged` signatures. Legacy
+   uploaded-PDF offline queue payloads without `_tsr_form_version` retain the existing
+   compatibility path.
+7. The engineer may use the saved Settings signature through the existing engineer-only action;
+   the client acknowledgement signature always uses the current TSR signing modal.
+8. Bump the embedded app-shell cache to
+   `medical-service-pwa-offline-navigation-v127-tsr-contact-suggestions`, update the three exact
+   current-cache assertions, and add one `2026-09-05` Create TSR release item.
+
+### Investigation
+
+- `app.py:1836-1880` defines legacy `Client` contact slots and `app.py:2052-2064` defines the
+  client-scoped dynamic `Contact` rows (`name`, `designation`, `phone`, `email`).
+- `app.py:10976-11080` contains `offline_tsr_client_contact_payload()` and
+  `/get_offline_tsr_schedule_options`; the singular projection is consumed by existing
+  calibration/report behavior and must remain intact.
+- `app.py:12088-12470` contains TSR contact auto-capture. It persists name, phone, and email
+  only; no signature persistence is added.
+- `app.py:14941-15020` contains the current serviced-signature helper and
+  `app.py:15251-15480` contains `save_offline_tsr_online`, including the legacy uploaded-PDF
+  queue marker and `_tsr_form_version` distinction.
+- `app.py:15037-15110` projects draft payloads while preserving typed TSR fields and signatures;
+  the acknowledgement signature must remain available for same-draft recovery.
+- `templates/offline_tsr.html:348-385` contains the acknowledgement/contact fields;
+  `:703-710` owns `signatureData`; `:1096-1160`, `:1976-2190`, and `:3612-3760` cover blank
+  initialization, schedule selection/refresh, and draft/correction restoration;
+  `:6656-6745` owns saved-signature and final-save validation.
+- The embedded worker cache is in `app.py:17680`; exact current-cache assertions are in
+  `tests/test_layout_sidebar.py`, `tests/test_stock_inventory.py`, and
+  `tests/test_timeline_desktop_collapse.py`. The release manifest is
+  `static/changelog/releases.json`.
+- Existing protected dirty work is limited to the owner-modified handoff/database and untracked
+  handoff, `.claude/`, `output/`, and `tmp/` artifacts. None will be touched.
+
+### Execution steps
+
+1. **Record control state.** Update the current `2026-09-05` section of `changes.md` with the
+   authorized scope and preserve the protected dirty paths. Done when the plan and change log
+   contain this package before source/test edits.
+2. **Add fail-first backend and contract tests.** Create or extend the focused TSR tests under
+   `tests/` to exercise dynamic contact ordering, trimming/deduplication, client scoping, legacy
+   fallback, plural response projection, current missing-ack rejection, legacy queued-PDF
+   compatibility, and same-draft signature projection. Add frontend/source contracts for field
+   isolation, refresh/draft/correction rendering, invalidation, no Settings reuse, cache, and
+   release markers. Run them against unchanged source and record the expected failures before
+   implementation. Done when positive controls pass and the new contracts fail for the absent
+   behavior.
+3. **Implement backend contact projection.** In `app.py`, add the smallest helper or extension
+   needed to build a trimmed stable `client_contacts` list from client-scoped `Contact` rows,
+   deduplicating equivalent email contacts and otherwise equivalent name/phone contacts, then
+   falling back to legacy slots only when dynamic rows are absent/unusable. Add the plural field
+   beside the unchanged `client_contact` in `/get_offline_tsr_schedule_options`, with no new
+   endpoint or schema change. Done when route tests prove contacts from another client never
+   appear and old singular consumers still receive their original shape.
+4. **Implement current submission validation.** In `app.py`, add an acknowledgement-signature
+   helper and require both signatures in `save_offline_tsr_online` for current vector payloads.
+   Determine the legacy uploaded-PDF queue path before applying the new check so payloads with
+   `_offline_queue_preserve_pdf` and no `_tsr_form_version` retain compatibility. Leave
+   `auto_capture_tsr_client_contact_from_payload` and its name/phone/email-only behavior
+   unchanged. Done when current missing-ack requests reject with a focused error and legacy
+   queued-PDF requests retain their prior validation path.
+5. **Implement accessible frontend suggestions.** In `templates/offline_tsr.html`, add the
+   suggestion panel below the contact fields and helpers to normalize plural contacts, fall back
+   to cached singular `client_contact`, render escaped accessible buttons/cards, and apply only
+   the three intended fields. Invoke rendering after schedule selection, live refresh, draft
+   restoration, and correction loading; hide it when no selected schedule/contact exists. Done
+   when selecting a card never changes `Service Requested By`, and old cached schedule objects
+   still produce a suggestion from the singular contact.
+6. **Implement signature lifecycle rules.** Clear `signatureData.acknowledged` when the
+   acknowledgement signer or contact values change, update its status, and preserve the value
+   only through same-draft save/recovery. Ensure blank/new schedule initialization clears it and
+   correction loading clears the old revision's acknowledgement signature after restoring the
+   other TSR fields. Keep `applyMySavedSignatureToTSR()` engineer-only. Done when Node/source
+   contracts prove no client signature is loaded from Settings and a new/correction TSR cannot
+   reuse the previous client signature.
+7. **Gate final actions while preserving drafts.** Extend
+   `validateTSRFinalSaveRequirements()` so preview/save/offline queueing requires both current
+   signatures, while the existing Save Draft path remains available unsigned. Done when current
+   final actions fail closed for a missing client signature and draft persistence still works.
+8. **Update release/cache records.** Change the embedded worker cache string and only the three
+   approved exact compatibility assertions to v127. Add the dated Create TSR release item to
+   `static/changelog/releases.json` without reordering unrelated history. Done when syntax and
+   manifest validation pass and no protected artifact changes appear in the diff.
+9. **Self-review and verification.** Run focused TSR/offline/draft/sync tests, isolated full
+   discovery against a unique disposable test database, Python compilation, Jinja parsing,
+   extracted inline JavaScript syntax checks, service-worker/cache assertions, release JSON
+   validation, and `git diff --check`. Browser/Codex UI verification is intentionally not run by
+   repository instruction; report that limitation. Update this plan's status/verification and
+   append factual results to the `2026-09-05` `changes.md` section. Done when all material
+   requirements are covered, failures are explained, and commit/push/deploy remain untouched.
+
+### Deliberately excluded
+
+- No database migration, schema change, destructive data operation, seed, production mutation,
+  Railway variable change, deploy, redeploy, commit, push, or merge.
+- No global contact search, contact management redesign, contact IDs in the TSR payload, or
+  reusable client signature storage in `Contact`, `Client`, `Engineer`, or Settings.
+- No change to the existing singular `client_contact` contract, calibration report behavior,
+  legacy queue PDF preservation, submitted TSR historical artifacts, or engineer signature reuse.
+- No browser/Codex UI automation because the repository explicitly forbids it for this project;
+  source-level and Flask/Node checks are the permitted verification boundary.
+
+### Verification
+
+- Fail-first: the new focused tests must be run once against unchanged source and show the missing
+  plural projection/signature/frontend contracts before implementation.
+- Backend: contact stable-order/deduplication/fallback/scoping route tests; current versus legacy
+  signature validation tests; draft projection retention test.
+- Frontend: Node/source contracts for suggestion field isolation, cached singular fallback,
+  refresh/draft/correction rendering, acknowledgement invalidation, fresh new/correction
+  signatures, engineer-only Settings signature use, and unsigned draft versus signed final gate.
+- Static: Python in-memory compilation, Jinja parse, extracted inline JS `node --check`, worker
+  syntax/exact v127 assertions, release JSON validation, and `git diff --check`.
+- Suite: focused TSR/offline/draft/sync modules first, then isolated full discovery with the
+  repository's disposable external test database. Report exact counts and distinguish known
+  baseline failures from touched behavior. Browser verification is not performed under the
+  project safety rule.
+
+### After implementation
+
+- Perform a local self-review against this plan and protected dirty-work rules.
+- Keep the plan and `changes.md` truthful about files, tests, limitations, and any deviation.
+- Leave the worktree uncommitted and unpublished because this request separately excludes commit,
+  push, deployment, Railway, and production actions. A later owner instruction may authorize
+  review or publication independently.
+
+### Local implementation result (2026-09-05)
+
+- Implemented the scoped backend projection, current-signature validation, accessible frontend
+  suggestion lifecycle, cache/release updates, and focused regression test file. Cached-draft and
+  correction restoration now also use the preserved selected-schedule snapshot or historical
+  selected schedule when the live schedule list cannot resolve it, so the singular legacy contact
+  fallback remains available after recovery.
+- Focused verification passed 215 tests with 214 passes, 0 failures, 0 errors, and 1 skip on a
+  fresh disposable database. Static verification passed Python compilation (5 files), Jinja
+  parsing, extracted inline TSR JavaScript syntax, release JSON validation, and `git diff --check`.
+- Isolated full discovery ran 887 tests with 877 passes, 10 unrelated existing failures, 0 errors,
+  and 1 skip. The failures were eight purchase-order setup 429 rate-limit responses and two
+  staff-creation fixture/initials conflicts; no touched TSR/contact/cache/release test failed.
+- Browser/Codex UI verification was not run because the repository explicitly forbids it. The
+  protected owner-modified handoff, `scheduler.db`, and untracked artifact paths remain present
+  and were not reset, staged, deleted, or otherwise intentionally changed.
+
+### Risks
+
+- Incorrect contact scoping or deduplication could expose another client's contact data; route
+  tests assert client filtering and the backend derives contacts from the selected client only.
+- Clearing a signature too broadly could frustrate draft recovery; invalidation is limited to
+  acknowledgement/contact edits, while direct same-draft projection keeps signatures.
+- Requiring the new signature on legacy queues could strand stored offline work; the server keeps
+  the no-form-version uploaded-PDF compatibility path and tests it explicitly.
+- A stale service-worker cache could hide the new UI; the exact v127 bump and three current-cache
+  assertions provide the release guard.
+
 ## TSR Editable Draft Address Rehydration After Client Updates
 
 **Status:** Executed — 7aa7f8a
