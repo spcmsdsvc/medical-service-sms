@@ -53,6 +53,156 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 | **After implementation** | The review and release workflow below, made concrete for this plan. |
 | **Risks** | What could go wrong, what the blast radius is, and what the safety net is. |
 
+## Create TSR notifications and scrolling
+
+**Status:** In progress — implementation and local verification complete; no commit was created
+and formal post-implementation review remains separately authorized.
+**Approved:** 2026-09-05
+**Detailed:** 2026-09-05
+**Execution authorized:** 2026-09-05 — the owner explicitly requested implementation with
+`PLEASE IMPLEMENT THIS PLAN`.
+**Locally finished:** 2026-09-05 — source, focused tests, related suite, isolated full discovery,
+static checks, release records, and protected-work self-check completed. Browser verification,
+commit, push, deployment, and formal review remain pending by authorization.
+
+### Context
+
+Create TSR action feedback currently replaces a top-of-page alert and scrolls the document to
+that alert. Required-field validation and calibration validation also move the page smoothly,
+which makes ordinary saves and background updates disorienting. The intended result is a stable
+reading position with accessible floating notifications, persistent recovery actions, and explicit
+navigation choices for fields that need attention.
+
+### Decisions taken
+
+1. Keep notifications local to Create TSR: bottom-right on desktop and bottom-positioned on
+   mobile, with safe-area spacing, readable wrapping, dismiss buttons, and no movement animation.
+2. Success and information notifications dismiss after eight seconds unless they have an action;
+   warnings, errors, and action-bearing messages remain until dismissed. Repeated messages are
+   coalesced and keyed progress messages replace only their own predecessor.
+3. Keep the connection and offline queue panels as contextual page content. Action feedback moves
+   out of the changing top status banner.
+4. Required-field and calibration navigation occurs only after an explicit notification action.
+   Explicit navigation uses an immediate, unanimated jump followed by focus with
+   `preventScroll`; Escape and backdrop dismissal never navigate.
+5. Scope is Create TSR, its schedule/preview/signature dialogs, and the calibration report. TSR
+   save, sync, draft, attachment, database, and API behavior remains unchanged.
+6. Bump the embedded app-shell cache from v127 to
+   `medical-service-pwa-offline-navigation-v128-tsr-notifications`, update current-cache and
+   changed Calibration Report script URL assertions to v22, and add one dated Create TSR release
+   item.
+
+### Investigation
+
+- `templates/offline_tsr.html:41` owns the changing top status banner; `:6380-6406` owns final
+  save recovery and currently scrolls it; `:6633-6643` owns `showTSRStatus()` and currently
+  scrolls every action message.
+- `templates/offline_tsr.html:6781-6912` contains required and recommended detail validation;
+  both focus helpers currently smooth-scroll, and validation invokes them before the user chooses
+  where to go. Signature validation also focuses a signature button automatically.
+- `templates/offline_tsr.html:388-430` contains the calibration overlay and signature/preview
+  dialogs that need local notification hosts so messages stay above their modal surfaces.
+- `static/js/app-calibration-report.js:283-288` mirrors status into the calibration modal;
+  `:688-690` owns `focusMissing()` and currently smooth-scrolls after validation failures.
+- `app.py:17772` embeds the v127 worker cache string. Current exact cache assertions are in
+  `tests/test_layout_sidebar.py`, `tests/test_stock_inventory.py`, and
+  `tests/test_timeline_desktop_collapse.py`; the release manifest is
+  `static/changelog/releases.json`.
+
+### Execution steps
+
+1. **Record control state and tests.** Append the owner-authorized scope to the current
+   `2026-09-05` section of `changes.md`, create focused notification/navigation contracts under
+   `tests/`, and run them against the unchanged source. The fail-first checkpoint must identify
+   the absent notification host, dismissal/coalescing behavior, explicit-only navigation, and
+   calibration no-smooth-scroll behavior while preserving existing positive controls.
+2. **Add page-local notification hosts and styles.** In `templates/offline_tsr.html`, replace the
+   changing top status feedback with a fixed page-local notification region and add modal-local
+   regions for the schedule picker, TSR preview, signature dialog, and custom dialog. Add light,
+   dark, desktop, mobile safe-area, keyboard, wrapping, and print-safe styles without animation.
+3. **Implement notification behavior.** Route `showTSRStatus()` through the active modal host or
+   page host. Render escaped text, tone-aware icons, dismiss buttons, optional action buttons,
+   accessible live/status roles, eight-second success/info timers, hover/focus pause, exact-message
+   coalescing, and keyed progress replacement. Preserve unresolved warning/error notifications
+   and recovery actions. Rewrite `showTSRFinalSaveRecovery()` to use the notification action
+   path and retain a working `Download PDF now` action without scrolling.
+4. **Make navigation explicit.** Remove validation-time focus/scroll calls. Add `Go to field`,
+   `Go to signature`, and `Review calibration report` actions to the relevant notifications.
+   Update `focusTSRCoreDetail()` and `focusTSRRecommendedDetail()` to require an explicit action,
+   use immediate scrolling, then `focus({preventScroll:true})`; change Escape/backdrop behavior so
+   it cannot navigate. Update `static/js/app-calibration-report.js` so `focusMissing()` requires
+   explicit navigation, uses no smooth behavior, and validation failure notifications offer the
+   review action.
+5. **Audit status tones and regression coverage.** Mark save, attachment, PDF, knowledge-base,
+   and queue failures as warning/error tones instead of relying on the success default. Extend
+   focused tests to execute the notification and navigation helpers, checking position/focus
+   stability, timer/dismiss behavior, persistent recovery actions, modal routing, explicit jumps,
+   signature-dialog errors, calibration review navigation, and existing save-blocking behavior.
+6. **Update release/cache records.** Change the embedded worker cache and only the approved current
+   cache assertions to v128. Add the dated Create TSR release item to
+   `static/changelog/releases.json` without reordering unrelated history.
+7. **Self-review and verification.** Run fail-first then focused TSR/calibration/offline tests,
+   isolated full discovery using a fresh disposable database, Python compilation, Jinja parsing,
+   extracted inline JavaScript syntax checks, worker/cache assertions, release JSON validation,
+   and `git diff --check`. Browser/Codex UI verification is not performed under project safety
+   rules; report it as pending. Update this plan and `changes.md` with truthful results. Leave
+   commit, push, deploy, Railway, database, and protected-artifact actions untouched.
+
+### Deliberately excluded
+
+- No backend/API, database/schema, draft format, queue/sync, attachment, signature, PDF template,
+  or app-wide notification redesign.
+- No automatic browser or Codex UI verification; repository-level Flask/Node/source checks are
+  the permitted boundary.
+- No commit, push, merge, deployment, Railway variable change, production data/storage action, or
+  edits to protected dirty artifacts. `pending-work.md` remains unchanged.
+
+### Verification
+
+- Fail-first focused contracts with positive controls for the old scroll behavior and missing
+  notification implementation.
+- Node-backed helper execution for notification creation, timer pause/resume, dismissal,
+  coalescing, action persistence, modal routing, explicit field/signature navigation, and
+  calibration review navigation.
+- Related TSR/calibration/offline tests followed by isolated full discovery; report exact counts
+  and distinguish known unrelated baseline failures.
+- Static Python/Jinja/JavaScript/service-worker/release checks and `git diff --check`.
+- Manual desktop/mobile, light/dark, long-message, modal, and PDF-recovery checks remain pending
+  because browser automation is prohibited by project instructions.
+
+### Verification outcome
+
+- The unchanged-source fail-first run was **8 tests with 8 intentional failures and 0 errors**.
+- The focused TSR/calibration/contact suite passed **38 tests with 38 passes, 0 failures, and 0
+  errors**. The related offline/TSR/cache/layout/Stock/Timeline/changelog run passed **193 tests
+  with 193 passes, 0 failures, and 0 errors**.
+- Isolated full discovery used a unique temporary database and completed **895 tests with 885
+  passes, 10 failures, 0 errors, and 0 skips**. All ten failures are the pre-existing Purchase
+  Order rate-limit/setup and Staff Creation fixture/initials cluster; no Create TSR, calibration,
+  offline, cache, layout, Stock, Timeline, or changelog test failed.
+- In-memory Python compilation, Jinja parsing, extracted inline JavaScript syntax validation (8
+  blocks), calibration JavaScript `node --check`, release manifest validation (**62 releases,
+  224 unique items**), cache/changelog tests (8 passes), and `git diff --check` passed.
+- `pending-work.md` and protected dirty paths were unchanged. Browser visual checks at desktop,
+  375px mobile, light/dark themes, modal layering, and PDF recovery remain pending because the
+  project safety instructions prohibit browser/Codex UI automation.
+
+### After implementation
+
+- Perform a local self-review against this plan, the protected dirty-work rules, and the actual
+  diff. The local package self-review and truthful verification record are complete; keep the plan
+  `In progress` because no commit was authorized or created. Commit, push, deployment, and formal
+  post-implementation review require separate owner instructions.
+
+### Risks
+
+- A notification could be hidden behind a modal or a recovery action could be lost during routine
+  updates; modal-local hosts, persistent keyed notices, and action tests cover this.
+- Removing automatic focus could make missing fields harder to find; explicit action buttons keep
+  a clear path while preserving the user’s current reading position.
+- A stale service-worker shell could hide the UI; the exact v128 cache bump and release checks
+  ensure updated assets are delivered.
+
 ## TSR Client Contact Suggestions and Required Client Signatures
 
 **Status:** In progress — local implementation and verification complete; commit/publication

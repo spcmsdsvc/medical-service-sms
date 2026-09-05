@@ -2,6 +2,53 @@
 
 codex changes - 2026-09-05
 
+- Recorded the owner-authorized `Create TSR notifications and scrolling` implementation package
+  in `plans.md` with explicit-only field navigation, modal-local notification hosts, persistent
+  final-save recovery actions, v128 cache delivery, proportional test coverage, and no commit,
+  push, deploy, database, browser, or protected-artifact actions.
+- Preserved the existing protected dirty work (`scheduler.db`, the handoff artifact, untracked
+  handoff, `.claude/`, `output/`, and `tmp/`) before beginning the notification implementation.
+- Added `tests/test_tsr_notifications.py` with source contracts and a Node harness for actual
+  notification-helper execution. The unchanged-source fail-first run completed **8 tests with
+  8 intentional failures and 0 errors**, identifying the missing notification hosts/timer path,
+  smooth-scrolling status and recovery calls, implicit required/calibration navigation, v128
+  cache bump, and release entry.
+- Replaced the Create TSR changing top status banner in `templates/offline_tsr.html` with a
+  bottom-right desktop and bottom-safe-area mobile notification region, plus local notification
+  hosts for the custom confirmation dialog, schedule picker, TSR preview, and signature dialog.
+  Notifications use escaped text, readable wrapping, theme-compatible tones, accessible live
+  announcements, dismiss controls, no movement animation, and no page scrolling or focus theft.
+- Routed `showTSRStatus()` through modal-local or page-local hosts with eight-second success/info
+  dismissal, hover/focus timer pausing, persistent warnings/errors/action messages, exact-message
+  coalescing, and keyed progress replacement. Final-save recovery now preserves the complete
+  device-save/backup/attachment message and a working **Download PDF now** action without moving
+  the page; knowledge-base, attachment, queue, sync, and PDF failures now use warning/error tones.
+- Removed implicit required-field, signature, recommended-detail, and Calibration Report
+  navigation. Added explicit `Go to field`, `Go to signature`, `Review details`, and `Review
+  calibration report` actions; explicit jumps use immediate scrolling followed by
+  `focus({preventScroll:true})`. Escape/backdrop dismissal leaves the reading position unchanged.
+  `static/js/app-calibration-report.js` now follows the same notification and explicit-review path
+  while preserving modal focus and internal scroll restoration.
+- Updated the focused TSR contact-signature source assertion to require the new explicit
+  acknowledgement-signature action, added the notification/navigation behavior contracts, bumped
+  the embedded service-worker shell to `medical-service-pwa-offline-navigation-v128-tsr-notifications`,
+  updated exact current-cache assertions and the changed Calibration Report script URL to v22,
+  and added the published `2026-09-05` Create TSR release item to `static/changelog/releases.json`.
+- Final focused TSR/calibration/contact verification passed **38 tests with 38 passes, 0 failures,
+  and 0 errors**. The related offline/TSR/cache/layout/Stock/Timeline/changelog run passed **193
+  tests with 193 passes, 0 failures, and 0 errors**.
+- Isolated full discovery used a unique temporary database and completed **895 tests with 885
+  passes, 10 failures, 0 errors, and 0 skips**. All ten failures are the pre-existing Purchase
+  Order rate-limit/setup and Staff Creation fixture/initials cluster; no Create TSR, calibration,
+  offline, cache, layout, Stock, Timeline, or changelog test failed. In-memory Python compilation,
+  Jinja parsing, 8 extracted inline JavaScript syntax checks, calibration JavaScript `node
+  --check`, release validation (**62 releases, 224 unique items**), cache/changelog tests (**8
+  passes**), and `git diff --check` passed.
+- Browser visual checks at desktop and 375px mobile widths, light/dark themes, long messages,
+  modal layering, and PDF recovery remain pending under the project's browser/Codex UI safety
+  instructions. No commit, push, deploy, database, or protected-artifact action was performed;
+  `pending-work.md` remains unchanged and protected dirty paths remain preserved.
+
 - Recorded the owner-authorized `TSR Client Contact Suggestions and Required Client Signatures`
   implementation plan at the top of `plans.md` and began only the explicitly scoped
   `/offline-tsr`, schedule-projection, draft, cache, release, and focused-test work. Commit,

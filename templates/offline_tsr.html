@@ -20,7 +20,7 @@ window.CalibrationReportConfig = {
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
 <script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=21"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=22"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 <div class="offline-tsr-page">
   <div class="offline-tsr-hero no-print">
@@ -38,10 +38,7 @@ window.CalibrationReportConfig = {
     </div>
   </div>
 
-  <div class="alert alert-info border-0 shadow-sm no-print" id="standalone-tsr-status">
-    <i class="fa-solid fa-circle-info me-1"></i>
-    This page is automatically cached after the app loads online. You can also open it once to confirm offline readiness.
-  </div>
+  <div id="offline-tsr-notifications" class="offline-tsr-notifications no-print" role="region" aria-label="Create TSR notifications" aria-live="polite" aria-atomic="false"></div>
   <div id="offline-tsr-connection-banner" class="offline-tsr-connection-banner online no-print">
     <i class="fa-solid fa-wifi"></i>
     <span id="offline-tsr-connection-text">Checking connection...</span>
@@ -54,6 +51,7 @@ window.CalibrationReportConfig = {
         <div class="offline-tsr-dialog-text">
           <h3 id="offline-tsr-dialog-title" class="offline-tsr-dialog-title">Confirm Action</h3>
           <div id="offline-tsr-dialog-message" class="offline-tsr-dialog-message"></div>
+          <div id="offline-tsr-dialog-notifications" class="offline-tsr-modal-notifications" data-tsr-notification-host role="region" aria-label="Dialog notifications" aria-live="polite" aria-atomic="false"></div>
           <input id="offline-tsr-dialog-input" class="form-control mt-3 d-none" autocomplete="off">
         </div>
       </div>
@@ -410,6 +408,7 @@ window.CalibrationReportConfig = {
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body bg-light">
+        <div id="schedule-picker-modal-notifications" class="offline-tsr-modal-notifications" data-tsr-notification-host role="region" aria-label="Schedule picker notifications" aria-live="polite" aria-atomic="false"></div>
         <div class="schedule-picker-search-panel bg-white rounded-4 shadow-sm p-3 mb-3">
           <label class="small fw-bold text-muted text-uppercase mb-1">Search Schedule</label>
           <div class="input-group">
@@ -443,6 +442,7 @@ window.CalibrationReportConfig = {
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body bg-secondary-subtle p-3 p-md-4">
+        <div id="tsr-preview-notifications" class="offline-tsr-modal-notifications" data-tsr-notification-host role="region" aria-label="TSR preview notifications" aria-live="polite" aria-atomic="false"></div>
         <div class="d-flex flex-wrap gap-2 justify-content-end mb-3 no-print">
           <button class="btn btn-outline-secondary fw-bold" type="button" data-bs-dismiss="modal" id="tsr-preview-back-btn">Back to Form</button>
           <button class="btn btn-success fw-bold offline-tsr-pdf-action" type="button" onclick="downloadTSRPDF()" id="tsr-preview-download-btn"><i class="fa-solid fa-file-arrow-down me-1"></i>Download PDF</button>
@@ -465,6 +465,7 @@ window.CalibrationReportConfig = {
       </div>
       <div class="modal-body">
         <input type="hidden" id="signature-target">
+        <div id="signature-modal-notifications" class="offline-tsr-modal-notifications" data-tsr-notification-host role="region" aria-label="Signature notifications" aria-live="polite" aria-atomic="false"></div>
         <div class="small text-muted fw-bold mb-2" id="signature-modal-helper">Draw in the larger box or upload a signature image.</div>
         <div class="tsr-saved-signature-panel d-none mb-3" id="tsr-saved-signature-panel">
           <div class="tsr-saved-signature-copy">
@@ -490,6 +491,27 @@ window.CalibrationReportConfig = {
 </div>
 
 <style>
+.offline-tsr-notifications{position:fixed;right:clamp(12px,2vw,28px);bottom:clamp(12px,2vw,24px);z-index:5000;width:min(430px,calc(100vw - 24px));display:flex;flex-direction:column;gap:10px;pointer-events:none;}
+.offline-tsr-modal-notifications{display:grid;gap:8px;margin:0 0 12px;}
+.offline-tsr-notification{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;margin:0;padding:12px 14px;border:1px solid #cbd5e1;border-radius:14px;box-shadow:0 14px 36px rgba(15,23,42,.18);font-weight:700;line-height:1.4;overflow-wrap:anywhere;word-break:break-word;}
+.offline-tsr-modal-notifications .offline-tsr-notification{box-shadow:none;}
+.offline-tsr-notification-icon{flex:0 0 auto;margin-top:2px;}
+.offline-tsr-notification-body{min-width:0;flex:1;}
+.offline-tsr-notification-message{white-space:pre-wrap;overflow-wrap:anywhere;}
+.offline-tsr-notification-action{margin-top:9px;white-space:normal;}
+.offline-tsr-notification-close{flex:0 0 auto;border:0;background:transparent;color:inherit;opacity:.72;border-radius:8px;padding:2px 6px;font-size:1.05rem;line-height:1;}
+.offline-tsr-notification-close:hover,.offline-tsr-notification-close:focus-visible{opacity:1;background:rgba(15,23,42,.1);outline:2px solid currentColor;outline-offset:1px;}
+.offline-tsr-notification.alert-success{background:#ecfdf5;color:#166534;border-color:#86efac;}
+.offline-tsr-notification.alert-info{background:#eff6ff;color:#1d4ed8;border-color:#93c5fd;}
+.offline-tsr-notification.alert-warning{background:#fffbeb;color:#92400e;border-color:#fcd34d;}
+.offline-tsr-notification.alert-danger{background:#fef2f2;color:#b91c1c;border-color:#fca5a5;}
+@media(max-width:768px){.offline-tsr-notifications{right:12px;bottom:calc(12px + env(safe-area-inset-bottom));width:calc(100vw - 24px);}.offline-tsr-notification{padding:12px;}}
+:root[data-app-theme="dark"] .offline-tsr-notification{box-shadow:0 14px 36px rgba(0,0,0,.38);}
+:root[data-app-theme="dark"] .offline-tsr-notification.alert-success{background:#123524;color:#bbf7d0;border-color:#2d6a4f;}
+:root[data-app-theme="dark"] .offline-tsr-notification.alert-info{background:#172554;color:#bfdbfe;border-color:#315f8f;}
+:root[data-app-theme="dark"] .offline-tsr-notification.alert-warning{background:#3a3019;color:#fde68a;border-color:#7c6420;}
+:root[data-app-theme="dark"] .offline-tsr-notification.alert-danger{background:#451a1a;color:#fecaca;border-color:#8f3b3b;}
+@media print{.offline-tsr-notifications,.offline-tsr-modal-notifications{display:none!important;}}
 .offline-tsr-dialog-backdrop{position:fixed;inset:0;z-index:4100;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px}.offline-tsr-dialog-backdrop.show{display:flex}.offline-tsr-dialog-box{width:min(470px,100%);background:#fff;border-radius:22px;box-shadow:0 28px 90px rgba(15,23,42,.38);border:1px solid #dbeafe;overflow:hidden;animation:offlineTSRDialogIn .18s ease-out}.offline-tsr-dialog-header{padding:18px 18px 10px;display:flex;gap:12px;align-items:flex-start}.offline-tsr-dialog-icon{width:42px;height:42px;border-radius:16px;background:#eff6ff;color:#0d6efd;display:inline-flex;align-items:center;justify-content:center;font-size:1.05rem;flex:0 0 auto}.offline-tsr-dialog-box.danger .offline-tsr-dialog-icon{background:#fee2e2;color:#b91c1c}.offline-tsr-dialog-box.warning .offline-tsr-dialog-icon{background:#fffbeb;color:#b45309}.offline-tsr-dialog-box.success .offline-tsr-dialog-icon{background:#dcfce7;color:#166534}.offline-tsr-dialog-text{min-width:0;flex:1}.offline-tsr-dialog-title{margin:0;color:#0f172a;font-weight:950;font-size:1.08rem}.offline-tsr-dialog-message{margin-top:5px;color:#475569;font-weight:800;line-height:1.45;white-space:pre-wrap}.offline-tsr-dialog-actions{padding:12px 18px 18px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}.tsr-recommended-highlight{outline:3px solid rgba(245,158,11,.8)!important;box-shadow:0 0 0 6px rgba(245,158,11,.18)!important;border-radius:12px;transition:outline .18s ease,box-shadow .18s ease}@keyframes offlineTSRDialogIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}@media(max-width:768px){.offline-tsr-dialog-backdrop{align-items:flex-end;padding:12px}.offline-tsr-dialog-box{width:100%;border-radius:20px}}
 .offline-tsr-page{max-width:1180px;margin:0 auto}.offline-tsr-hero{display:flex;justify-content:space-between;gap:16px;align-items:center;background:#fff;border-radius:22px;padding:18px 20px;margin-bottom:16px;box-shadow:0 8px 28px rgba(15,23,42,.07)}.offline-tsr-eyebrow{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.08em}.offline-tsr-hero-actions{display:flex;gap:8px;flex-wrap:wrap}.offline-tsr-schedule-picker-card{border-left:5px solid #0d6efd}.schedule-picker-selected{border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.schedule-picker-title{font-weight:900;color:#0f172a}.schedule-picker-meta{font-size:.82rem;color:#475569}.tsr-schedule-coverage-panel{border:1px solid #bfdbfe;background:#f8fbff;border-radius:16px;padding:12px}.tsr-schedule-coverage-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.05em}.tsr-schedule-coverage-table{width:100%;border-collapse:collapse;font-size:.78rem}.tsr-schedule-coverage-table th,.tsr-schedule-coverage-table td{border:1px solid #bfdbfe;padding:6px 8px;text-align:left;vertical-align:top}.tsr-schedule-coverage-table th{background:#e7f1ff;color:#334155;font-weight:900}.standalone-pill{display:inline-flex;align-items:center;background:#e7f5ff;color:#0d6efd;border:1px solid #bfdbfe;border-radius:999px;padding:10px 14px;font-weight:900}.tsr-list-box{border:1px solid #e5e7eb;border-radius:14px;min-height:46px;padding:8px;background:#f8fafc}.tsr-list-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 10px;margin-bottom:6px}.tsr-action-text{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}.tsr-action-controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}.tsr-action-controls .btn{font-weight:800}.tsr-chip-box{display:flex;gap:6px;flex-wrap:wrap}.tsr-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#e7f1ff;border:1px solid #bfdbfe;color:#0d6efd;padding:6px 10px;font-size:.82rem;font-weight:800}.tsr-chip button{border:0;background:transparent;color:#0d6efd;font-weight:900}.tsr-parts-grid{display:grid;grid-template-columns:80px 1fr 1.5fr 70px 1fr;gap:6px;align-items:center}.tsr-parts-header{font-size:.72rem;text-transform:uppercase;font-weight:900;color:#64748b;margin-bottom:6px}.tsr-part-row{margin-bottom:6px}.signature-canvas{display:block;width:100%;height:min(48vh,430px);min-height:340px;border:2px dashed #94a3b8;border-radius:18px;background:#fff;touch-action:none}.tsr-saved-signature-panel{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.tsr-saved-signature-copy{min-width:0}.schedule-picker-open-btn{text-align:left;justify-content:flex-start;display:flex;align-items:center}.standalone-schedule-card-list{display:grid;gap:10px}.standalone-schedule-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:12px;box-shadow:0 6px 18px rgba(15,23,42,.05);cursor:pointer;transition:.15s ease}.standalone-schedule-card:hover{border-color:#0d6efd;transform:translateY(-1px);box-shadow:0 10px 24px rgba(13,110,253,.12)}.standalone-schedule-card.active{border:2px solid #0d6efd;background:#eff6ff}.standalone-schedule-card-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.standalone-schedule-client{font-weight:900;color:#0f172a}.standalone-schedule-date{font-size:.76rem;font-weight:900;color:#0d6efd;background:#e7f1ff;border:1px solid #bfdbfe;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-date-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.standalone-schedule-date-chip{border:1px solid #bfdbfe;background:#fff;color:#0d6efd;border-radius:999px;padding:6px 10px;font-size:.78rem;font-weight:900;cursor:pointer}.standalone-schedule-date-chip.active,.standalone-schedule-date-chip:hover{background:#0d6efd;color:#fff}.standalone-schedule-count-badge{font-size:.72rem;font-weight:900;color:#475569;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-product{font-size:.88rem;font-weight:800;color:#334155;margin-top:4px}.standalone-schedule-serial{font-size:.8rem;color:#64748b;margin-top:2px}.standalone-schedule-meta{font-size:.78rem;color:#64748b;margin-top:6px}.standalone-schedule-empty{background:#fff;border:1px dashed #cbd5e1;border-radius:16px;padding:22px;text-align:center;color:#64748b;font-weight:800}.tsr-inline-suggestions{border:1px dashed #bfdbfe;background:#f8fbff;border-radius:14px;padding:8px;display:grid;gap:8px;max-height:260px;overflow:auto}.tsr-schedule-locked{background:#f1f5f9!important;color:#475569!important;border-color:#cbd5e1!important;cursor:not-allowed}.tsr-missing-equipment-entry{background:#fffbeb!important;border-color:#f59e0b!important;box-shadow:0 0 0 3px rgba(245,158,11,.08)}.tsr-schedule-locked-note{font-size:.76rem;color:#64748b;font-weight:800;margin-top:4px}.tsr-knowledge-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.tsr-knowledge-meta{font-size:.76rem;color:#64748b;font-weight:800;margin-bottom:5px}.tsr-knowledge-text{font-size:.86rem;color:#0f172a;white-space:pre-wrap}.tsr-knowledge-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tsr-knowledge-section-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.04em;margin:2px 0 4px}.tsr-knowledge-quick-header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.76rem;font-weight:900;color:#334155}.tsr-knowledge-quick-context{font-size:.72rem;color:#64748b;font-weight:800}.tsr-knowledge-badges{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}.tsr-knowledge-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:.68rem;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#334155}.tsr-knowledge-badge.primary{border-color:#bfdbfe;background:#e7f1ff;color:#0d6efd}.tsr-knowledge-badge.success{border-color:#bbf7d0;background:#ecfdf5;color:#15803d}.tsr-knowledge-badge.warning{border-color:#fde68a;background:#fffbeb;color:#92400e}.tsr-knowledge-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:12px;text-align:center;color:#64748b;font-weight:800;background:#fff}@media(max-width:768px){.offline-tsr-hero{align-items:stretch;flex-direction:column}.offline-tsr-hero-actions .btn{width:100%}.tsr-list-item{align-items:stretch;flex-direction:column}.tsr-action-controls{justify-content:flex-start}.tsr-action-controls .btn{flex:1 1 auto}.tsr-parts-grid{grid-template-columns:1fr}.tsr-parts-header{display:none}.signature-canvas{height:360px;min-height:320px}.tsr-saved-signature-panel{align-items:stretch;flex-direction:column}.tsr-saved-signature-panel .btn{width:100%}}
  .offline-tsr-drafts-card{border-left:5px solid #f59e0b}.standalone-tsr-drafts-list{display:grid;gap:10px}.standalone-tsr-draft-card{border:1px solid #e5e7eb;background:#fff;border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 6px 18px rgba(15,23,42,.05)}.standalone-tsr-draft-card.active{border-color:#0d6efd;background:#eff6ff}.standalone-tsr-draft-title{font-weight:950;color:#0f172a}.standalone-tsr-draft-meta{font-size:.82rem;color:#64748b;font-weight:800;margin-top:3px}.standalone-tsr-draft-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.standalone-tsr-draft-empty{border:1px dashed #cbd5e1;border-radius:16px;padding:16px;text-align:center;color:#64748b;font-weight:800;background:#f8fafc}@media(max-width:768px){.standalone-tsr-draft-card{align-items:stretch;flex-direction:column}.standalone-tsr-draft-actions .btn{flex:1 1 auto}}
@@ -2231,7 +2253,7 @@ function applyScheduleToStandaloneTSR(schedule, overwrite=true){
   updateCreateTSRScheduleGate();
   renderStandaloneTSRDraftPanel();
   resetAllTSRKnowledgeQuickPicks();
-  showTSRStatus('TSR fields auto-filled from selected schedule. Client/equipment fields are locked; start and finish time can be adjusted before saving.');
+  showTSRStatus('TSR fields auto-filled from selected schedule. Client/equipment fields are locked; start and finish time can be adjusted before saving.', 'info');
 }
 function applySelectedStandaloneSchedule(){
   const select = document.getElementById('tsr-schedule-select');
@@ -2678,8 +2700,8 @@ async function saveCurrentTSRKnowledge(){
   syncActionsText();
   const complaint = (document.getElementById('tsr-complaint')?.value || '').trim();
   const actionsTaken = (document.getElementById('tsr-actions-taken')?.value || '').trim();
-  if(!complaint && !actionsTaken){ showTSRStatus('Enter a complaint or action before saving to the knowledge base.'); return; }
-  if(!navigator.onLine){ showTSRStatus('Knowledge base save needs internet. Your TSR draft is still saved locally.'); return; }
+  if(!complaint && !actionsTaken){ showTSRStatus('Enter a complaint or action before saving to the knowledge base.', 'warning'); return; }
+  if(!navigator.onLine){ showTSRStatus('Knowledge base save needs internet. Your TSR draft is still saved locally.', 'warning'); return; }
   const payload = Object.assign(getCurrentTSRKnowledgeContext(), { complaint, actions_taken: actionsTaken });
   try{
     const res = await fetch('/save_tsr_knowledge_entry', {
@@ -2694,7 +2716,7 @@ async function saveCurrentTSRKnowledge(){
     refreshInlineTSRKnowledgeSuggestions(true);
   }catch(err){
     console.warn('[Offline TSR] TSR knowledge save failed', err);
-    showTSRStatus('Unable to save to knowledge base right now. Draft remains local.');
+    showTSRStatus('Unable to save to knowledge base right now. Draft remains local.', 'danger');
   }
 }
 function getSelectedStandaloneSchedule(){
@@ -2834,7 +2856,7 @@ async function handleTSRAttachmentInput(event){
       offlineTSRAttachments.push(await fileToQueuedAttachment(file));
     }catch(err){
       console.warn('[Offline TSR] Unable to add attachment', file?.name, err);
-      showTSRStatus(`Unable to add attachment ${file?.name || ''}.`);
+      showTSRStatus(`Unable to add attachment ${file?.name || ''}.`, 'danger');
     }
   }
 
@@ -4805,7 +4827,7 @@ async function warnOfflineTSRStoragePressure({ silent=false } = {}){
     const message = ratio >= 0.9
       ? 'Browser storage is almost full (' + percentage + '%). Sync or download pending TSRs before adding more files.'
       : 'Browser storage is getting full (' + percentage + '%). Sync pending TSRs and remove old drafts before adding more files.';
-    showTSRStatus(message, ratio >= 0.9 ? 'danger' : 'warning', { scroll:false });
+    showTSRStatus(message, ratio >= 0.9 ? 'danger' : 'warning');
   }
   return { available:true, usage, quota, ratio, warning:true };
 }
@@ -5854,7 +5876,10 @@ async function syncOfflineTSRQueue({ silent=false } = {}){
   });
   updateOfflineTSRStatusIntelligence();
 
-  if(!silent) showTSRStatus(`Syncing ${pending.length} pending offline TSR${pending.length === 1 ? '' : 's'}...`, 'info');
+  if(!silent) showTSRStatus(`Syncing ${pending.length} pending offline TSR${pending.length === 1 ? '' : 's'}...`, 'info', {
+    key:'offline-tsr-sync-progress',
+    replaceKey:'offline-tsr-sync-progress'
+  });
 
   let successCount = 0;
   let failureCount = 0;
@@ -5922,7 +5947,7 @@ async function retryOfflineTSRQueueItem(itemId){
   const item = queue.find(entry => entry.id === itemId);
   if(!item){
     renderOfflineTSRQueuePanel();
-    showTSRStatus('Queued TSR was not found. It may have already synced or been removed.');
+    showTSRStatus('Queued TSR was not found. It may have already synced or been removed.', 'warning');
     return;
   }
 
@@ -5943,9 +5968,9 @@ async function retryOfflineTSRQueueItem(itemId){
     const result = await uploadQueuedOfflineTSR(item);
     const updatedQueue = await removeSyncedOfflineTSRQueueItem(await loadOfflineTSRQueueStore(), item, result);
     if(isOfflineTSRDuplicateOrConflictSuccess(result)){
-      showTSRStatus(getOfflineTSRSyncResultMessage(result) || 'Selected offline TSR was already handled by the server and was removed from the pending queue.');
+      showTSRStatus(getOfflineTSRSyncResultMessage(result) || 'Selected offline TSR was already handled by the server and was removed from the pending queue.', 'success');
     }else{
-      showTSRStatus('Selected offline TSR synced successfully and was removed from the pending queue.');
+      showTSRStatus('Selected offline TSR synced successfully and was removed from the pending queue.', 'success');
     }
     await saveOfflineTSRSyncMetadata({
       last_status: 'manual_retry_success',
@@ -6379,18 +6404,11 @@ async function beginStandaloneTSRFinalPreview(data){
 }
 
 function showTSRFinalSaveRecovery(message, pdfPackage=null, variant='danger'){
-  const el = document.getElementById('standalone-tsr-status');
-  if(!el) return;
   const normalized = ['success','info','warning','danger'].includes(variant) ? variant : 'danger';
-  const icon = normalized === 'danger' ? 'fa-triangle-exclamation' : normalized === 'warning' ? 'fa-circle-exclamation' : 'fa-circle-info';
-  el.className = 'alert alert-' + normalized + ' border-0 shadow-sm no-print';
-  el.innerHTML = '<i class="fa-solid ' + icon + ' me-1"></i>' + escapeHTML(message);
-  if(pdfPackage?.blob){
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'btn btn-sm btn-outline-danger fw-bold ms-2';
-    button.innerHTML = '<i class="fa-solid fa-file-arrow-down me-1"></i>Download PDF now';
-    button.addEventListener('click', () => {
+  const action = pdfPackage?.blob ? {
+    label:'Download PDF now',
+    className: normalized === 'danger' ? 'btn-outline-danger' : 'btn-outline-warning',
+    onClick:() => {
       const url = URL.createObjectURL(pdfPackage.blob);
       const link = document.createElement('a');
       link.href = url;
@@ -6399,10 +6417,14 @@ function showTSRFinalSaveRecovery(message, pdfPackage=null, variant='danger'){
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1500);
-    });
-    el.appendChild(button);
-  }
-  requestAnimationFrame(() => el.scrollIntoView({ behavior:'smooth', block:'start' }));
+    }
+  } : null;
+  showTSRStatus(message, normalized, {
+    key:'tsr-final-save-recovery',
+    replaceKey:'tsr-final-save-recovery',
+    persist:true,
+    action
+  });
 }
 
 async function finishStandaloneTSRFinalSave(state){
@@ -6630,19 +6652,141 @@ async function resetStandaloneTSRForm(){
   await renderStandaloneTSRDraftPanel();
   showTSRStatus('Started a new TSR. Saved drafts remain available below.', 'info');
 }
-function showTSRStatus(msg, variant='success', options={}){
-  const el=document.getElementById('standalone-tsr-status');
-  if(!el) return;
+const TSR_NOTIFICATION_DISMISS_MS = 8000;
+function getTSRNotificationHost(options={}){
+  if(options.hostId){
+    const requested = document.getElementById(options.hostId);
+    if(requested) return requested;
+  }
+  const customDialogHost = document.querySelector('#offline-tsr-dialog-backdrop.show [data-tsr-notification-host]');
+  if(customDialogHost) return customDialogHost;
+  const modalHost = document.querySelector('.modal.show [data-tsr-notification-host]');
+  if(modalHost) return modalHost;
+  return document.getElementById('offline-tsr-notifications');
+}
+function findTSRNotification(host, key){
+  if(!host || !key) return null;
+  return Array.from(host.children || []).find(child => child?.dataset?.tsrNotificationKey === String(key)) || null;
+}
+function removeTSRNotification(notification){
+  if(!notification) return;
+  if(notification._notificationTimer) clearTimeout(notification._notificationTimer);
+  notification._notificationTimer = null;
+  const onDismiss = notification._onDismiss;
+  notification._onDismiss = null;
+  notification.remove?.();
+  onDismiss?.();
+}
+function renderTSRNotification(host, message, variant='success', options={}, existing=null){
+  if(!host) return null;
   const normalized = ['success','info','warning','danger'].includes(variant) ? variant : 'success';
-  const icon = normalized === 'danger' ? 'fa-triangle-exclamation' : normalized === 'warning' ? 'fa-circle-exclamation' : normalized === 'info' ? 'fa-circle-info' : 'fa-circle-check';
-  el.className=`alert alert-${normalized} border-0 shadow-sm no-print`;
-  el.innerHTML=`<i class="fa-solid ${icon} me-1"></i>${escapeHTML(msg)}`;
-  if(options.scroll !== false){
-    requestAnimationFrame(() => {
-      el.scrollIntoView({ behavior:'smooth', block:'start' });
+  const key = String(options.key || `${normalized}:${String(message || '')}`);
+  const iconName = normalized === 'danger' ? 'fa-triangle-exclamation' : normalized === 'warning' ? 'fa-circle-exclamation' : normalized === 'info' ? 'fa-circle-info' : 'fa-circle-check';
+  let notification = existing || findTSRNotification(host, key) || document.createElement('div');
+  const isNew = !notification.parentElement;
+  const wasPaused = !isNew && notification._notificationTimerPaused === true;
+  const remaining = !isNew && Number.isFinite(notification._notificationTimerRemaining) ? notification._notificationTimerRemaining : TSR_NOTIFICATION_DISMISS_MS;
+  if(notification._notificationTimer) clearTimeout(notification._notificationTimer);
+  notification._notificationTimer = null;
+  notification._notificationTimerRemaining = remaining;
+  notification._notificationTimerStarted = 0;
+  notification._notificationTimerPaused = wasPaused;
+  notification._onDismiss = typeof options.onDismiss === 'function' ? options.onDismiss : null;
+  notification.className = `offline-tsr-notification alert alert-${normalized}`;
+  notification.dataset.tsrNotification = 'true';
+  notification.dataset.tsrNotificationKey = key;
+  notification.dataset.tsrNotificationReplaceKey = String(options.replaceKey || key);
+  notification.setAttribute('role', normalized === 'danger' || normalized === 'warning' ? 'alert' : 'status');
+  notification.setAttribute('aria-live', normalized === 'danger' || normalized === 'warning' ? 'assertive' : 'polite');
+  notification.setAttribute('aria-atomic', 'true');
+  notification.innerHTML = '';
+
+  const icon = document.createElement('span');
+  icon.className = 'offline-tsr-notification-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = `<i class="fa-solid ${iconName}"></i>`;
+  notification.appendChild(icon);
+
+  const body = document.createElement('div');
+  body.className = 'offline-tsr-notification-body';
+  const text = document.createElement('div');
+  text.className = 'offline-tsr-notification-message';
+  text.textContent = String(message || '');
+  body.appendChild(text);
+
+  const action = options.action && typeof options.action.onClick === 'function' ? options.action : null;
+  if(action){
+    const actionButton = document.createElement('button');
+    actionButton.type = 'button';
+    actionButton.className = `offline-tsr-notification-action btn btn-sm fw-bold ${action.className || (normalized === 'danger' ? 'btn-outline-danger' : 'btn-outline-primary')}`;
+    actionButton.textContent = String(action.label || 'Review');
+    actionButton.addEventListener('click', event => {
+      event.preventDefault();
+      action.onClick(event);
+    });
+    body.appendChild(actionButton);
+  }
+  notification.appendChild(body);
+
+  const closeButton = document.createElement('button');
+  closeButton.type = 'button';
+  closeButton.className = 'offline-tsr-notification-close';
+  closeButton.setAttribute('aria-label', 'Dismiss notification');
+  closeButton.title = 'Dismiss notification';
+  closeButton.innerHTML = '<i class="fa-solid fa-xmark" aria-hidden="true"></i>';
+  closeButton.addEventListener('click', () => {
+    removeTSRNotification(notification);
+  });
+  notification.appendChild(closeButton);
+
+  const autoDismiss = ['success','info'].includes(normalized) && !options.persist && !action && options.timeout !== false;
+  const startTimer = () => {
+    if(!autoDismiss || notification._notificationTimerPaused || notification._notificationTimer) return;
+    notification._notificationTimerStarted = Date.now();
+    notification._notificationTimer = setTimeout(() => removeTSRNotification(notification), Math.max(0, notification._notificationTimerRemaining || TSR_NOTIFICATION_DISMISS_MS));
+  };
+  const pauseTimer = () => {
+    if(!autoDismiss || notification._notificationTimerPaused) return;
+    notification._notificationTimerPaused = true;
+    if(notification._notificationTimerStarted){
+      notification._notificationTimerRemaining = Math.max(0, notification._notificationTimerRemaining - (Date.now() - notification._notificationTimerStarted));
+    }
+    if(notification._notificationTimer) clearTimeout(notification._notificationTimer);
+    notification._notificationTimer = null;
+  };
+  const resumeTimer = () => {
+    if(!autoDismiss) return;
+    notification._notificationTimerPaused = false;
+    startTimer();
+  };
+  if(isNew){
+    notification.addEventListener('mouseenter', pauseTimer);
+    notification.addEventListener('mouseleave', resumeTimer);
+    notification.addEventListener('focusin', pauseTimer);
+    notification.addEventListener('focusout', event => {
+      if(event?.relatedTarget && notification.contains?.(event.relatedTarget)) return;
+      resumeTimer();
+    });
+    host.appendChild(notification);
+  }
+  startTimer();
+  return notification;
+}
+function showTSRStatus(msg, variant='success', options={}){
+  const normalized = ['success','info','warning','danger'].includes(variant) ? variant : 'success';
+  const host = getTSRNotificationHost(options);
+  if(!host) return null;
+  const key = String(options.key || `${normalized}:${String(msg || '')}`);
+  if(options.replaceKey){
+    Array.from(host.children || []).forEach(child => {
+      if(child?.dataset?.tsrNotificationReplaceKey === String(options.replaceKey) && child.dataset.tsrNotificationKey !== key){
+        removeTSRNotification(child);
+      }
     });
   }
+  return renderTSRNotification(host, msg, normalized, Object.assign({}, options, { key }), findTSRNotification(host, key));
 }
+showTSRStatus.isNotificationRouter = true;
 function copyStandaloneTSRText(){ if(!requireStandaloneScheduleForTSRAction()) return; const d=collectTSRData(); const text=`TSR No.: ${d['tsr-number']||''}\nCustomer: ${d['tsr-customer-name']||''}\nAddress: ${d['tsr-address']||''}\nEquipment/Model: ${d['tsr-equipment-model']||''}\nSerial No.: ${d['tsr-serial-no']||''}\nService Category: ${getTSRServiceCategoryText(d)}\nComplaint:\n${d['tsr-complaint']||''}\nActions Taken:\n${d['tsr-actions-taken']||''}\nRemarks:\n${d['tsr-remarks']||''}`; navigator.clipboard?.writeText(text); showTSRStatus('Draft text copied.'); }
 async function loadMySavedSignatureForTSR(force=false){
   if(mySavedSignatureLoaded && !force) return mySavedSignatureData;
@@ -6778,29 +6922,41 @@ function getMissingTSRCoreDetails(data){
   }
   return missing;
 }
-function focusTSRCoreDetail(item){
+function focusTSRCoreDetail(item, options={}){
+  if(options.explicit !== true) return false;
   const target = document.querySelector(item?.selector || '');
-  if(!target) return;
+  if(!target) return false;
   const highlightTarget = target.closest('.card') || target;
   highlightTarget.classList.add('tsr-recommended-highlight');
-  target.scrollIntoView({ behavior:'smooth', block:'center' });
-  setTimeout(() => {
-    try{ target.focus({ preventScroll:true }); }
-    catch(err){ target.focus(); }
-  }, 300);
+  target.scrollIntoView({ behavior:'auto', block:'center' });
+  try{ target.focus({ preventScroll:true }); }
+  catch(err){ target.focus(); }
   setTimeout(() => highlightTarget.classList.remove('tsr-recommended-highlight'), 2600);
+  return true;
+}
+function focusTSRSignature(target){
+  const signatureButton = Array.from(document.querySelectorAll('button')).find(btn => (btn.getAttribute('onclick') || '').includes(`openSignatureModal('${target}')`));
+  if(!signatureButton) return false;
+  signatureButton.scrollIntoView({ behavior:'auto', block:'center' });
+  try{ signatureButton.focus({ preventScroll:true }); }
+  catch(err){ signatureButton.focus(); }
+  return true;
 }
 async function validateTSRFinalSaveRequirements(data){
   const missingCoreDetails = getMissingTSRCoreDetails(data);
   if(missingCoreDetails.length){
-    focusTSRCoreDetail(missingCoreDetails[0]);
-    showTSRStatus(`Complete these required TSR details before saving: ${missingCoreDetails.map(item => item.label).join(', ')}.`, 'danger');
+    showTSRStatus(`Complete these required TSR details before saving: ${missingCoreDetails.map(item => item.label).join(', ')}.`, 'danger', {
+      key:'tsr-required-core-details',
+      action:{ label:'Go to field', onClick:() => focusTSRCoreDetail(missingCoreDetails[0], { explicit:true }) }
+    });
     return false;
   }
   const calibrationReportCheck = window.calibrationReport?.validateForFinalSave?.(data);
   if(calibrationReportCheck && !calibrationReportCheck.ok){
-    window.calibrationReport?.focusMissing?.(calibrationReportCheck.missing);
-    showTSRStatus(calibrationReportCheck.message || 'Complete the Calibration Report or remove it before saving.', 'danger');
+    showTSRStatus(calibrationReportCheck.message || 'Complete the Calibration Report or remove it before saving.', 'danger', {
+      key:'tsr-calibration-validation',
+      action:{ label:'Review calibration report', onClick:() => window.calibrationReport?.focusMissing?.(calibrationReportCheck.missing, { explicit:true }) }
+    });
     return false;
   }
   if(!validateTSRAttachmentCapacity(data)) return false;
@@ -6833,20 +6989,20 @@ async function validateTSRFinalSaveRequirements(data){
       }
     }
     if(!hasRequiredServicedSignature(data)){
-      showTSRStatus('Serviced By signature is required before saving the TSR. Please tap Add Serviced By Signature, draw or upload your signature, then save again.', 'danger');
+      showTSRStatus('Serviced By signature is required before saving the TSR. Please tap Add Serviced By Signature, draw or upload your signature, then save again.', 'danger', {
+        key:'tsr-serviced-signature-required',
+        action:{ label:'Go to signature', onClick:() => focusTSRSignature('serviced') }
+      });
       document.getElementById('serviced-signature-status')?.classList.add('text-danger','fw-bold');
-      const signatureButton = Array.from(document.querySelectorAll('button')).find(btn => (btn.getAttribute('onclick') || '').includes("openSignatureModal('serviced')"));
-      try{ signatureButton?.focus({ preventScroll:true }); }
-      catch(err){ signatureButton?.focus(); }
       return false;
     }
   }
   if(!hasRequiredAcknowledgedSignature(data)){
-    showTSRStatus('Acknowledged By client signature is required before saving the TSR. Please ask the client to sign this TSR, then save again.', 'danger');
+    showTSRStatus('Acknowledged By client signature is required before saving the TSR. Please ask the client to sign this TSR, then save again.', 'danger', {
+      key:'tsr-acknowledged-signature-required',
+      action:{ label:'Go to signature', onClick:() => focusTSRSignature('acknowledged') }
+    });
     document.getElementById('acknowledged-signature-status')?.classList.add('text-danger','fw-bold');
-    const signatureButton = Array.from(document.querySelectorAll('button')).find(btn => (btn.getAttribute('onclick') || '').includes("openSignatureModal('acknowledged')"));
-    try{ signatureButton?.focus({ preventScroll:true }); }
-    catch(err){ signatureButton?.focus(); }
     return false;
   }
   return true;
@@ -6871,17 +7027,17 @@ function getMissingTSRRecommendedDetails(data){
   });
 }
 
-function focusTSRRecommendedDetail(item){
+function focusTSRRecommendedDetail(item, options={}){
+  if(options.explicit !== true) return false;
   const target = document.querySelector(item?.selector || '');
-  if(!target) return;
+  if(!target) return false;
   const highlightTarget = target.closest('.card') || target;
   highlightTarget.classList.add('tsr-recommended-highlight');
-  target.scrollIntoView({ behavior:'smooth', block:'center' });
-  setTimeout(() => {
-    try{ target.focus({ preventScroll:true }); }
-    catch(err){ target.focus(); }
-  }, 350);
+  target.scrollIntoView({ behavior:'auto', block:'center' });
+  try{ target.focus({ preventScroll:true }); }
+  catch(err){ target.focus(); }
   setTimeout(() => highlightTarget.classList.remove('tsr-recommended-highlight'), 2600);
+  return true;
 }
 
 async function confirmTSRRecommendedDetailsBeforeSave(data){
@@ -6902,13 +7058,15 @@ async function confirmTSRRecommendedDetailsBeforeSave(data){
     icon:'triangle-exclamation',
     confirmValue:'review',
     cancelValue:'save_anyway',
-    escapeValue:'review',
-    backdropValue:'review'
+    escapeValue:'dismiss',
+    backdropValue:'dismiss'
   });
 
   if(result === 'save_anyway') return true;
-  focusTSRRecommendedDetail(missing[0]);
-  showTSRStatus(`Please review: ${missing.map(item => item.label).join(', ')}. You can still Save TSR again and choose Save Anyway if not applicable.`, 'warning', { scroll:false });
+  showTSRStatus(`Please review: ${missing.map(item => item.label).join(', ')}. You can still Save TSR again and choose Save Anyway if not applicable.`, 'warning', {
+    key:'tsr-recommended-details',
+    action:{ label:'Review details', onClick:() => focusTSRRecommendedDetail(missing[0], { explicit:true }) }
+  });
   return false;
 }
 async function saveSignatureFromModal(){ const target=document.getElementById('signature-target').value; if(!signaturePadHasInk()){ showTSRStatus('Please draw or upload a signature before saving it.', 'danger'); return; } signatureData[target]=await normalizeTSRSignatureDataURL(signatureCanvas.toDataURL('image/png', 1.0)); updateSignatureStatuses(); await saveStandaloneTSRDraft(true); bootstrap.Modal.getInstance(document.getElementById('standaloneSignatureModal')).hide(); }
@@ -7939,10 +8097,10 @@ async function downloadTSRPDF(){
     link.click();
     link.remove();
     setTimeout(()=>URL.revokeObjectURL(url), 1500);
-    showTSRStatus(`PDF generated: ${filename}`);
+    showTSRStatus(`PDF generated: ${filename}`, 'success');
   }catch(err){
     console.error('[Offline TSR] PDF export failed', err);
-    showTSRStatus('PDF export could not complete. Use Preview TSR as backup.');
+    showTSRStatus('PDF export could not complete. Use Preview TSR as backup.', 'danger');
   }finally{
     setOfflineTSRPDFBusy(false);
   }
@@ -7983,7 +8141,7 @@ async function openTSRPrintPreview(){
     if(target){
       target.innerHTML = '<div class="alert alert-danger fw-bold mb-0">PDF preview could not complete. Please use Download PDF as backup.</div>';
     }
-    showTSRStatus('PDF preview could not complete. Use Download PDF as backup.');
+    showTSRStatus('PDF preview could not complete. Use Download PDF as backup.', 'danger');
   }finally{
     setOfflineTSRPDFBusy(false);
   }

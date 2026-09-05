@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-05-tsr-notifications",
+      "release_date": "2026-09-05",
+      "title": "Create TSR Notification Improvements",
+      "summary": "Create TSR keeps the page position stable while showing clearer action feedback.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-05-tsr-notifications-everyone",
+          "category": "Create TSR",
+          "description": "Create TSR action feedback now appears in accessible floating notifications with dismiss controls and persistent recovery actions. Required fields, signatures, and Calibration Reports offer explicit review actions without automatically moving the page.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-05-tsr-contact-suggestions",
       "release_date": "2026-09-05",
       "title": "Create TSR Client Contact Suggestions",

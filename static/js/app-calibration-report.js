@@ -280,11 +280,32 @@
   }
   function currentTSRData(){ try{ return typeof window.collectTSRData === 'function' ? window.collectTSRData() : {}; }catch(err){ return {}; } }
   function currentSchedule(){ try{ return typeof window.getSelectedStandaloneSchedule === 'function' ? window.getSelectedStandaloneSchedule() : null; }catch(err){ return null; } }
-  function showStatus(message, tone){
+  function showStatus(message, tone, options){
     var normalized = ['success','info','warning','danger'].indexOf(tone || 'info') >= 0 ? (tone || 'info') : 'info';
-    if(typeof window.showTSRStatus === 'function') window.showTSRStatus(message, normalized);
+    var suppliedDismiss = options?.onDismiss;
+    var statusOptions = Object.assign({}, options || {}, {
+      hostId:'calibration-report-modal-status',
+      onDismiss:function(){
+        if(typeof suppliedDismiss === 'function') suppliedDismiss();
+        var current = q('#calibration-report-modal-status');
+        if(current && window.showTSRStatus?.isNotificationRouter === true){ current.textContent = ''; current.className = 'calibration-report-modal-status'; }
+      }
+    });
+    if(typeof window.showTSRStatus === 'function') window.showTSRStatus(message, normalized, statusOptions);
     var modalStatus = q('#calibration-report-modal-status');
-    if(modalStatus){ modalStatus.textContent = String(message || ''); modalStatus.className = 'calibration-report-modal-status is-visible tone-' + normalized; }
+    if(modalStatus){
+      if(window.showTSRStatus?.isNotificationRouter !== true) modalStatus.textContent = String(message || '');
+      modalStatus.className = 'calibration-report-modal-status is-visible tone-' + normalized;
+      var action = options?.action;
+      if(window.showTSRStatus?.isNotificationRouter !== true && action && typeof action.onClick === 'function' && typeof document.createElement === 'function' && typeof modalStatus.appendChild === 'function'){
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-sm fw-bold ' + (action.className || (normalized === 'danger' ? 'btn-outline-danger' : 'btn-outline-primary'));
+        button.textContent = String(action.label || 'Review');
+        button.addEventListener('click', function(event){ event.preventDefault(); action.onClick(event); });
+        modalStatus.appendChild(button);
+      }
+    }
   }
 
   function fieldMarkup(path, label, type, placeholder){
@@ -685,9 +706,11 @@
     }
     return { ok:true, missing:[], match:match };
   }
-  function focusMissing(missing){
-    var first = missing?.[0]; if(!first) return; open(); if(first.path.indexOf('mechanical_checks') === 0 || first.path.indexOf('generator_checks') === 0 || first.path.indexOf('calibration.') === 0) setEditorPage(2); else if(first.path.indexOf('exposure') === 0 || first.path.indexOf('performance_results') === 0) setEditorPage(3); else setEditorPage(1);
-    setTimeout(function(){ var element = first.path.indexOf('mechanical_checks') === 0 ? q('[data-cr-check="mechanical:' + first.path.split('.')[1] + '"]') : (first.path.indexOf('generator_checks') === 0 ? q('[data-cr-check="generator:' + first.path.split('.')[1] + '"]') : fieldElement(first.path)); if(!element && first.path.indexOf('exposure') === 0){ var parts = first.path.split('.'); element = q('[data-cr-exposure="' + parts[1] + ':' + parts[2] + ':0"]'); } if(!element && first.path.indexOf('performance_results') === 0) element = q('[data-cr-performance="' + first.path.split('.')[1] + '"]'); element?.focus(); element?.scrollIntoView({ behavior:'smooth', block:'center' }); }, 50);
+  function focusMissing(missing, options){
+    if(options?.explicit !== true) return false;
+    var first = missing?.[0]; if(!first) return false; open(); if(first.path.indexOf('mechanical_checks') === 0 || first.path.indexOf('generator_checks') === 0 || first.path.indexOf('calibration.') === 0) setEditorPage(2); else if(first.path.indexOf('exposure') === 0 || first.path.indexOf('performance_results') === 0) setEditorPage(3); else setEditorPage(1);
+    setTimeout(function(){ var element = first.path.indexOf('mechanical_checks') === 0 ? q('[data-cr-check="mechanical:' + first.path.split('.')[1] + '"]') : (first.path.indexOf('generator_checks') === 0 ? q('[data-cr-check="generator:' + first.path.split('.')[1] + '"]') : fieldElement(first.path)); if(!element && first.path.indexOf('exposure') === 0){ var parts = first.path.split('.'); element = q('[data-cr-exposure="' + parts[1] + ':' + parts[2] + ':0"]'); } if(!element && first.path.indexOf('performance_results') === 0) element = q('[data-cr-performance="' + first.path.split('.')[1] + '"]'); element?.scrollIntoView({ behavior:'auto', block:'center' }); try{ element?.focus({ preventScroll:true }); }catch(err){ element?.focus(); } }, 50);
+    return true;
   }
 
   function stableText(value){ return JSON.stringify(value, function(key, current){ if(['status','updated_at','auto_fill','generated','generated_cleanup','auto_document','certificate','certificate_approval'].includes(key)) return undefined; return current; }); }
@@ -1001,7 +1024,7 @@
       var missing = missingFields(report);
       var filename = 'SAMPLE_' + filenameFor(payload, report); var built = await buildDocx(payload, report, filename); downloadBlob(built.blob, filename); showStatus('Sample Calibration Report DOCX downloaded. It is not attached to the TSR.', 'success');
       if(missing.length){ showStatus('Sample Calibration Report DOCX downloaded. It is not attached. Some required fields are still missing: ' + missing.slice(0,4).map(function(item){ return item.label; }).join(', ') + (missing.length > 4 ? ', and more.' : '.'), 'warning'); }
-    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ focusMissing(err.missing); showStatus(err.message,'danger'); } else { console.error('[Calibration Report] Sample DOCX generation failed',err); showStatus(err?.message || 'Calibration Report sample DOCX could not be generated.','danger'); } }
+    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else { console.error('[Calibration Report] Sample DOCX generation failed',err); showStatus(err?.message || 'Calibration Report sample DOCX could not be generated.','danger'); } }
   }
   async function saveFinalReport(){
     try{
@@ -1013,7 +1036,7 @@
       var durableIndexedDB = persistenceSource === 'offline_tsr_page' || persistenceSource === 'indexeddb';
       if(!durableIndexedDB || persisted.attachments_not_durable){ var storageError = new Error('Calibration Report final attachment was created, but it was not saved durably in IndexedDB. Keep this editor open and try Save Final Report again when durable browser storage is available.'); storageError.code = 'calibration_report_attachment_not_durable'; throw storageError; }
       showStatus('Final Calibration Report saved and attached to the TSR draft. The certificate will queue after TSR sync.', 'success'); renderCard(); close();
-    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ focusMissing(err.missing); showStatus(err.message,'danger'); } else { console.error('[Calibration Report] Final save failed',err); showStatus(err?.message || 'Final Calibration Report could not be saved. Try again.','danger'); } }
+    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else { console.error('[Calibration Report] Final save failed',err); showStatus(err?.message || 'Final Calibration Report could not be saved. Try again.','danger'); } }
   }
   async function download(){
     try{
@@ -1021,7 +1044,7 @@
       if(!attachment || !hasGeneratedMetadata(report)){ throw notFinalizedError(); }
       var blob = await resolveAttachmentBlob(attachment); if(!blob){ generatedBlobState = 'missing'; renderCard(); syncAutoDocument(); throw missingGeneratedBlobError(); }
       downloadBlob(blob, attachment.filename || report.generated.filename || 'Calibration_Report.docx'); showStatus('Final Calibration Report DOCX downloaded.', 'success');
-    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ focusMissing(err.missing); showStatus(err.message,'danger'); } else showStatus(err?.message || 'Save Final Report before downloading the final DOCX.','danger'); }
+    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else showStatus(err?.message || 'Save Final Report before downloading the final DOCX.','danger'); }
   }
 
   function renderCard(){

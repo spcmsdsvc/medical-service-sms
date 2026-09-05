@@ -90,7 +90,7 @@ class StockInventorySourceTests(unittest.TestCase):
             "'total'",
         ):
             self.assertIn(marker, self.app_source)
-        self.assertIn('medical-service-pwa-offline-navigation-v127-tsr-contact-suggestions', self.app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v128-tsr-notifications', self.app_source)
 
     def test_read_only_ui_has_no_mutation_controls(self):
         self.assertIn('id="stockAddItemButton"', self.page_source)
@@ -216,7 +216,7 @@ class StockInventorySourceTests(unittest.TestCase):
             'No stock movements match your search.',
         ):
             self.assertIn(marker, self.page_source)
-        self.assertIn('medical-service-pwa-offline-navigation-v127-tsr-contact-suggestions', self.app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v128-tsr-notifications', self.app_source)
 
     def test_item_history_scope_and_clear_search_contracts_are_explicit(self):
         show_history = self.page_source.split('function showItemHistory(', 1)[1].split(
