@@ -8,7 +8,9 @@ codex changes - 2026-09-06
   release metadata, focused reimbursement tests, and these project journals; protected dirty
   `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`, the loose root handoff, and
   unrelated worktree changes remain excluded. Local verification and the known baseline
-  failures are recorded below; formal review and browser visual checks remain pending.
+  failures are recorded below; formal review and browser visual checks remain pending. The
+  allowlisted implementation was committed locally as `c2279da`; the journal closeout is being
+  recorded before the authorized push.
 
 - Recorded and implemented the owner-authorized Add Another Item category package in
   `plans.md`. The manual-item form now requires one of the ten existing worksheet categories

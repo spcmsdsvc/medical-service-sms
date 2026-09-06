@@ -2,9 +2,9 @@
 
 ## Reimbursement manual item category selector
 
-**Status:** In progress — owner-authorized local implementation and verification complete; no
-commit, push, deployment, browser automation, production/database operation, or formal post-
-implementation review is authorized by this package.
+**Status:** Executed — c2279da. Owner-authorized implementation and local verification are
+complete; formal post-implementation review and browser visual checks remain separately
+authorized actions.
 **Approved:** 2026-09-06 — owner explicitly said `go ahead and implement that` after the
 manual-item category proposal.
 **Detailed:** 2026-09-06
@@ -145,9 +145,9 @@ separately says to start. See `AGENTS.md`, "Approved Plans", for the full statem
 
 ## Reimbursement worksheet — table-first focus refinement
 
-**Status:** In progress — owner-authorized local implementation and verification; no commit,
-push, deployment, browser automation, or formal post-implementation review is authorized by
-this refinement.
+**Status:** Executed — c2279da. Owner-authorized implementation and local verification are
+complete; formal post-implementation review and browser visual checks remain separately
+authorized actions.
 **Approved:** 2026-09-06 — owner feedback on the first expanded-view screenshot
 **Detailed:** 2026-09-06
 **Execution authorized:** 2026-09-06 — the owner said the expanded view was not the expected
@@ -299,8 +299,9 @@ owner visual-check handoff here; preserve prior plans rather than rewriting thei
 
 ## Reimbursement worksheet — focus view and remembered sidebar
 
-**Status:** In progress — owner-authorized local implementation and verification; no commit,
-push, deployment, or formal post-implementation review is authorized by this package.
+**Status:** Executed — c2279da. Owner-authorized implementation and local verification are
+complete; formal post-implementation review and browser visual checks remain separately
+authorized actions.
 **Approved:** 2026-09-06
 **Detailed:** 2026-09-06
 **Execution authorized:** 2026-09-06 — the owner explicitly said `PLEASE IMPLEMENT THIS PLAN`
@@ -477,8 +478,9 @@ separate owner instructions.
 
 ## Reimbursement worksheet — nearby row actions and desktop table zoom
 
-**Status:** In progress — owner-authorized local implementation and verification; no commit,
-push, deployment, or formal post-implementation review is authorized by this package.
+**Status:** Executed — c2279da. Owner-authorized implementation and local verification are
+complete; formal post-implementation review and browser visual checks remain separately
+authorized actions.
 **Approved:** 2026-09-05
 **Detailed:** 2026-09-05
 **Execution authorized:** 2026-09-05 — the owner explicitly said `i think you should go ahead and
@@ -640,8 +642,9 @@ owner instructions.
 
 ## Reimbursement worksheet — user-selectable desktop column views
 
-**Status:** In progress — owner-authorized local implementation and verification; no commit,
-push, deployment, or formal post-implementation review is authorized by this package.
+**Status:** Executed — c2279da. Owner-authorized implementation and local verification are
+complete; formal post-implementation review and browser visual checks remain separately
+authorized actions.
 **Approved:** 2026-09-05
 **Detailed:** 2026-09-05
 **Execution authorized:** 2026-09-05 — the owner explicitly requested `go and implement the
@@ -906,8 +909,9 @@ ticked off, and the plan must say what happens *after* the code is written, not 
 
 ## Reimbursement page design improvements — Part 2 (items 7–10)
 
-**Status:** In progress — owner-authorized implementation and local verification are complete;
-no commit was created and formal post-implementation review remains separately authorized.
+**Status:** Executed — c2279da. Owner-authorized implementation and local verification are
+complete; formal post-implementation review and browser visual checks remain separately
+authorized actions.
 **Approved:** 2026-09-05
 **Detailed:** 2026-09-05
 **Execution authorized:** 2026-09-05 — the owner explicitly requested implementation with
@@ -1083,8 +1087,9 @@ semantics, and responsive modes while making those four presentation improvement
 
 ## Reimbursement page design improvements — Part 1 (items 1–6)
 
-**Status:** In progress — implementation and local verification complete; no commit was created
-and formal post-implementation review remains separately authorized.
+**Status:** Executed — c2279da. Owner-authorized implementation and local verification are
+complete; formal post-implementation review and browser visual checks remain separately
+authorized actions.
 **Approved:** 2026-09-05
 **Detailed:** 2026-09-05
 **Execution authorized:** 2026-09-05 — the owner explicitly requested implementation with
