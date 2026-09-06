@@ -7,6 +7,8 @@ codex changes - 2026-09-06
   assertions, release metadata, and project records. Protected database, handoff, `.claude/`,
   `output/`, `tmp/`, and unrelated files remain excluded. Existing local verification results
   apply; desktop/mobile visual checks and formal review remain pending.
+  The allowlisted AMOLED implementation was committed as `02fe9cf`; this record closes its
+  commit status before the authorized push. Remote and Railway status are verified after push.
 
 - The owner explicitly authorized committing and pushing the accumulated Reimbursement
   worksheet packages. The publication allowlist is limited to the reimbursement source and

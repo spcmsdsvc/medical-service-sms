@@ -2,7 +2,7 @@
 
 ## Replace existing dark mode with AMOLED
 
-**Status:** Executed — local verification complete; formal review and owner visual checks remain
+**Status:** Executed — 02fe9cf. Local verification complete; formal review and owner visual checks remain
 separately authorized actions.
 **Approved:** 2026-09-06 — owner explicitly said `PLEASE IMPLEMENT THIS PLAN`.
 **Detailed:** 2026-09-06
