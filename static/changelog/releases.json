@@ -1,6 +1,132 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-06-reimbursement-manual-categories",
+      "release_date": "2026-09-06",
+      "title": "Reimbursement Manual Item Categories",
+      "summary": "Manual reimbursement items can be entered under the correct worksheet category.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-06-reimbursement-manual-categories-everyone",
+          "category": "Reimbursement",
+          "description": "Add Another Item now requires an expense category and places the amount in the matching worksheet column. Existing Others items remain compatible, and editable manual rows can be recategorized while preserving their amount and receipt attachments.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-06-reimbursement-focus-toolbar",
+      "release_date": "2026-09-06",
+      "title": "Reimbursement Focus Toolbar",
+      "summary": "The expanded worksheet keeps the table central while supporting tools stay one click away.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-06-reimbursement-focus-toolbar-everyone",
+          "category": "Reimbursement",
+          "description": "The desktop Reimbursement focus view now uses a compact toolbar and summary above the worksheet. Date controls, status, history, notifications, receipts, LPR, and removed rows open on demand, while the existing save, submit, manual-item, column, zoom, and row workflows remain available without shrinking the table.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-06-reimbursement-focus-sidebar",
+      "release_date": "2026-09-06",
+      "title": "Reimbursement Worksheet Focus View",
+      "summary": "Reimbursement users can focus on the worksheet and keep their navigation preference.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-06-reimbursement-focus-sidebar-everyone",
+          "category": "Reimbursement",
+          "description": "The desktop Reimbursement worksheet now offers an Expand worksheet focus view that keeps the date range, manual-item entry, totals, zoom, column views, and save/submit controls available while the table gets the remaining content area. Desktop navigation remembers its expanded or collapsed setting across pages, while mobile navigation remains independent.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-05-reimbursement-worksheet-zoom-actions",
+      "release_date": "2026-09-05",
+      "title": "Reimbursement Worksheet Actions and Zoom",
+      "summary": "Reimbursement expense entry keeps row actions nearby and lets desktop users adjust worksheet density.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-05-reimbursement-worksheet-zoom-actions-everyone",
+          "category": "Reimbursement",
+          "description": "The desktop Reimbursement worksheet now keeps View details and Delete beneath each row's date and offers 60%, 70%, 80%, 90%, 100%, and 110% worksheet zoom controls. The page shell and mobile cards remain unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-05-reimbursement-column-views",
+      "release_date": "2026-09-05",
+      "title": "Reimbursement Worksheet Column Views",
+      "summary": "Reimbursement users can choose how much schedule context stays visible while entering expenses.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-05-reimbursement-column-views-everyone",
+          "category": "Reimbursement",
+          "description": "The desktop Reimbursement worksheet now offers Pinned, Unpinned, and Compact column views. Compact keeps the date visible, makes more room for expense entry, and provides View details access to the selected row's schedule, client, product, and engineer context; mobile cards remain unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-05-reimbursement-design-polish",
+      "release_date": "2026-09-05",
+      "title": "Reimbursement Worksheet Visual Polish",
+      "summary": "Reimbursement entry, history, and locked states are easier to scan and use on mobile.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-05-reimbursement-design-polish-everyone",
+          "category": "Reimbursement",
+          "description": "The Reimbursement page now uses a calmer visual hierarchy, places mobile expense fields before remarks, presents history totals and reviewer remarks more clearly, and gives mobile controls and locked fields clearer interaction states.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-05-reimbursement-design",
+      "release_date": "2026-09-05",
+      "title": "Reimbursement Worksheet Design Improvements",
+      "summary": "Reimbursement claims are easier to scan, review, and complete.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-05-reimbursement-design-everyone",
+          "category": "Reimbursement",
+          "description": "The Reimbursement worksheet now keeps the active work area first, uses clearer action hierarchy and compact editable fields, separates worksheet groups, and shows the current date range, active row count, and claim total above the table.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-05-tsr-notifications",
       "release_date": "2026-09-05",
       "title": "Create TSR Notification Improvements",

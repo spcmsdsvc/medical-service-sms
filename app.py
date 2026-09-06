@@ -17769,7 +17769,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v128-tsr-notifications';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v135-reimbursement-manual-categories';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -24659,6 +24659,185 @@ REIMBURSEMENT_EXPENSE_LABELS = {
     'others_misc': 'Others / Misc',
 }
 
+# Manual reimbursement rows use the same ten visible worksheet categories while
+# continuing to persist into the existing component columns.  Keep this map
+# local to reimbursement so the other expense workflows retain their own
+# payload conventions.
+REIMBURSEMENT_MANUAL_CATEGORY_FIELDS = {
+    'representation': 'representation',
+    'car_repair': 'car_repair',
+    'toll_fee': 'toll_fee',
+    'gasoline': 'gasoline',
+    'transpo': 'transpo',
+    'office_supplies': 'office_supplies',
+    'parking': 'parking',
+    'per_diem': 'per_diem',
+    'coding': 'parking_coding',
+    'others': 'others_misc',
+}
+
+REIMBURSEMENT_MANUAL_CATEGORY_LABELS = {
+    'representation': 'Representation',
+    'car_repair': 'Car Repair',
+    'toll_fee': 'Toll Fee',
+    'gasoline': 'Gasoline',
+    'transpo': 'Transpo',
+    'office_supplies': 'Office/Field Items',
+    'parking': 'Parking',
+    'per_diem': 'Per Diem',
+    'coding': 'Coding',
+    'others': 'Others',
+}
+
+REIMBURSEMENT_MANUAL_CATEGORY_ALIASES = {
+    **{key: key for key in REIMBURSEMENT_MANUAL_CATEGORY_FIELDS},
+    **{field: key for key, field in REIMBURSEMENT_MANUAL_CATEGORY_FIELDS.items()},
+    'office/field items': 'office_supplies',
+    'office field items': 'office_supplies',
+    'car repair': 'car_repair',
+    'toll fee': 'toll_fee',
+    'per diem': 'per_diem',
+    'parking coding': 'coding',
+    'others / misc': 'others',
+    'others/misc': 'others',
+}
+
+
+class ReimbursementManualPayloadError(ValueError):
+    """A manual reimbursement payload is unsafe to apply to a draft."""
+
+
+def reimbursement_normalize_manual_category(value):
+    """Return the canonical frontend key for one manual category."""
+    if not isinstance(value, str):
+        return None
+    normalized = re.sub(r'\s+', ' ', value.strip().lower())
+    return REIMBURSEMENT_MANUAL_CATEGORY_ALIASES.get(normalized)
+
+
+def reimbursement_manual_category_from_amounts(amounts, row_total=0):
+    """Infer a manual category from saved component amounts without mutation."""
+    amounts = amounts if isinstance(amounts, dict) else {}
+    positive = []
+    for category, field in REIMBURSEMENT_MANUAL_CATEGORY_FIELDS.items():
+        amount = reimbursement_money_value(amounts.get(field))
+        if category == 'coding' and amount <= 0:
+            amount = reimbursement_money_value(amounts.get('coding'))
+        if category == 'others' and amount <= 0:
+            amount = reimbursement_money_value(amounts.get('others'))
+        if amount > 0:
+            positive.append((category, amount))
+
+    if len(positive) == 1:
+        return positive[0][0]
+    # Legacy manual rows were always written to Others/Misc. Prefer that
+    # component when it exists, preserving the historical UI on reload.
+    if reimbursement_money_value(amounts.get('others_misc')) > 0 or reimbursement_money_value(amounts.get('others')) > 0:
+        return 'others'
+    if reimbursement_money_value(row_total) > 0:
+        return 'others'
+    return 'others'
+
+
+def reimbursement_strict_manual_amount(value, label='amount', allow_blank=True):
+    """Parse one manual amount without converting malformed values to zero."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        if allow_blank:
+            return 0.0
+        raise ReimbursementManualPayloadError(f'Please enter a valid {label}.')
+    if isinstance(value, bool):
+        raise ReimbursementManualPayloadError(f'Please enter a valid {label}.')
+    cleaned = str(value).replace(',', '').replace('₱', '').strip()
+    try:
+        parsed = Decimal(cleaned)
+    except (InvalidOperation, ValueError, TypeError):
+        raise ReimbursementManualPayloadError(f'Please enter a valid {label}.')
+    if not parsed.is_finite() or parsed < 0:
+        raise ReimbursementManualPayloadError(f'Please enter a valid non-negative {label}.')
+    try:
+        return float(parsed.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ValueError, OverflowError):
+        raise ReimbursementManualPayloadError(f'Please enter a valid non-negative {label}.')
+
+
+def reimbursement_manual_payload_amounts(row_payload, category, explicit_category):
+    """Validate and return canonical component amounts for one manual payload."""
+    if not isinstance(row_payload, dict):
+        raise ReimbursementManualPayloadError('Manual reimbursement item is invalid.')
+
+    amounts_payload = row_payload.get('amounts')
+    if not isinstance(amounts_payload, dict):
+        amounts_payload = {}
+
+    canonical_amounts = {}
+    for category_key, field in REIMBURSEMENT_MANUAL_CATEGORY_FIELDS.items():
+        raw_values = []
+        if category_key in amounts_payload:
+            raw_values.append(amounts_payload.get(category_key))
+        if field in amounts_payload and field != category_key:
+            raw_values.append(amounts_payload.get(field))
+        if category_key in row_payload:
+            raw_values.append(row_payload.get(category_key))
+        if field in row_payload and field != category_key:
+            raw_values.append(row_payload.get(field))
+
+        values = [reimbursement_strict_manual_amount(value, f'{REIMBURSEMENT_MANUAL_CATEGORY_LABELS[category_key]} amount') for value in raw_values]
+        nonblank_values = [value for value, raw in zip(values, raw_values) if raw is not None and not (isinstance(raw, str) and not raw.strip())]
+        if nonblank_values and any(abs(value - nonblank_values[0]) > 0.005 for value in nonblank_values[1:]):
+            raise ReimbursementManualPayloadError(
+                f'{REIMBURSEMENT_MANUAL_CATEGORY_LABELS[category_key]} has conflicting amounts.'
+            )
+        canonical_amounts[field] = nonblank_values[0] if nonblank_values else 0.0
+
+    explicit_amount_raw = None
+    for amount_key in ('amount', 'price'):
+        if amount_key in row_payload:
+            if explicit_amount_raw is not None:
+                first = reimbursement_strict_manual_amount(explicit_amount_raw, 'price')
+                second = reimbursement_strict_manual_amount(row_payload.get(amount_key), 'price')
+                if abs(first - second) > 0.005:
+                    raise ReimbursementManualPayloadError('Manual item has conflicting price values.')
+            explicit_amount_raw = row_payload.get(amount_key)
+    explicit_amount = reimbursement_strict_manual_amount(explicit_amount_raw, 'price') if explicit_amount_raw is not None else None
+
+    positive_fields = [field for field, amount in canonical_amounts.items() if amount > 0]
+    selected_field = REIMBURSEMENT_MANUAL_CATEGORY_FIELDS.get(category or '')
+    if explicit_category:
+        if not selected_field:
+            raise ReimbursementManualPayloadError('Please select a valid expense category.')
+        other_positive = [field for field in positive_fields if field != selected_field]
+        if other_positive:
+            labels = ', '.join(REIMBURSEMENT_EXPENSE_LABELS.get(field, field) for field in other_positive)
+            raise ReimbursementManualPayloadError(f'Manual item has multiple expense categories: {labels}.')
+        selected_amount = canonical_amounts.get(selected_field, 0.0)
+        if explicit_amount is not None:
+            if selected_amount > 0 and abs(selected_amount - explicit_amount) > 0.005:
+                raise ReimbursementManualPayloadError('Selected category amount does not match the price.')
+            selected_amount = explicit_amount
+        if selected_amount <= 0:
+            raise ReimbursementManualPayloadError('Please enter a valid price.')
+        canonical_amounts = {field: 0.0 for field in REIMBURSEMENT_EXPENSE_FIELDS}
+        canonical_amounts[selected_field] = selected_amount
+        return canonical_amounts, round(selected_amount, 2)
+
+    # Compatibility for the original UI: a missing category means Others only
+    # when the payload is shaped like the historical Others-only row.
+    non_others_positive = [
+        field for field in positive_fields
+        if field != REIMBURSEMENT_MANUAL_CATEGORY_FIELDS['others']
+    ]
+    others_amount = canonical_amounts.get(REIMBURSEMENT_MANUAL_CATEGORY_FIELDS['others'], 0.0)
+    if non_others_positive:
+        raise ReimbursementManualPayloadError('Manual item category is required for non-Others expenses.')
+    legacy_amount = explicit_amount if explicit_amount is not None else others_amount
+    if others_amount > 0 and explicit_amount is not None and abs(others_amount - explicit_amount) > 0.005:
+        raise ReimbursementManualPayloadError('Others amount does not match the price.')
+    if legacy_amount <= 0:
+        raise ReimbursementManualPayloadError('Please enter a valid price.')
+    canonical_amounts = {field: 0.0 for field in REIMBURSEMENT_EXPENSE_FIELDS}
+    canonical_amounts['others_misc'] = legacy_amount
+    return canonical_amounts, round(legacy_amount, 2)
+
 
 def reimbursement_money_value(value):
     """Normalize reimbursement amount values from the frontend."""
@@ -26887,6 +27066,7 @@ def reimbursement_row_to_dict(row, receipts_by_shift=None):
         'serial_number': row.serial_number or '',
         'task': row.task_name or '',
         'engineers': [row.engineer_name] if row.engineer_name else [],
+        'category': reimbursement_manual_category_from_amounts(amounts, effective_total) if is_manual else None,
         'remarks': reimbursement_excel_row_remarks(row),
         'amounts': amounts,
         'row_total': effective_total,
@@ -26972,6 +27152,28 @@ def reimbursement_sanitize_excluded_rows(rows_payload, profile, start_date, end_
                 continue
             if row_date < start_date or row_date > end_date:
                 continue
+            category_present = any(key in raw_row for key in ('category', 'manual_category'))
+            raw_category = raw_row.get('category') if 'category' in raw_row else raw_row.get('manual_category')
+            manual_category = reimbursement_normalize_manual_category(raw_category) if category_present else 'others'
+            if category_present and not manual_category:
+                raise ReimbursementManualPayloadError('Please select a valid expense category.')
+            canonical_amounts, manual_amount = reimbursement_manual_payload_amounts(
+                raw_row,
+                manual_category,
+                explicit_category=category_present
+            )
+            frontend_amounts = {
+                'representation': canonical_amounts.get('representation', 0.0),
+                'car_repair': canonical_amounts.get('car_repair', 0.0),
+                'toll_fee': canonical_amounts.get('toll_fee', 0.0),
+                'gasoline': canonical_amounts.get('gasoline', 0.0),
+                'transpo': canonical_amounts.get('transpo', 0.0),
+                'office_supplies': canonical_amounts.get('office_supplies', 0.0),
+                'parking': canonical_amounts.get('parking', 0.0),
+                'per_diem': canonical_amounts.get('per_diem', 0.0),
+                'coding': canonical_amounts.get('parking_coding', 0.0),
+                'others': canonical_amounts.get('others_misc', 0.0)
+            }
             manual_key = (
                 clean_str(raw_row.get('manual_key')) or
                 clean_str(raw_row.get('local_manual_key')) or
@@ -26995,9 +27197,10 @@ def reimbursement_sanitize_excluded_rows(rows_payload, profile, start_date, end_
                 'serial_number': '',
                 'task': task_name,
                 'engineers': [getattr(profile, 'name', '')] if getattr(profile, 'name', '') else [],
+                'category': manual_category,
                 'amounts': frontend_amounts,
                 'remarks': (clean_str(raw_row.get('remarks')) or '')[:4000],
-                'row_total': round(sum(frontend_amounts.values()), 2)
+                'row_total': round(manual_amount, 2)
             }
 
         row_key = reimbursement_excluded_row_key(row)
@@ -27019,7 +27222,8 @@ def reimbursement_apply_manual_row_payload(header, row_payload, profile, start_d
     """Create one manual reimbursement row not linked to a schedule.
 
     Manual rows are for weekend/day-off purchases and are intentionally stored
-    without a Shift link. The amount is placed under Others/Misc.
+    without a Shift link. The selected category is persisted in the existing
+    component column for that category.
     """
     try:
         row_date = reimbursement_parse_date(row_payload.get('date') or row_payload.get('row_date'), 'date')
@@ -27037,19 +27241,17 @@ def reimbursement_apply_manual_row_payload(header, row_payload, profile, start_d
     )
     item_name = str(item_name).strip()[:150] or 'Manual reimbursement item'
 
-    amounts_payload = row_payload.get('amounts') if isinstance(row_payload.get('amounts'), dict) else {}
-    manual_amount = reimbursement_money_value(
-        row_payload.get('amount') or
-        row_payload.get('price') or
-        amounts_payload.get('others_misc') or
-        row_payload.get('others_misc') or
-        0
-    )
-    if manual_amount <= 0:
-        return None
+    category_present = any(key in row_payload for key in ('category', 'manual_category'))
+    raw_category = row_payload.get('category') if 'category' in row_payload else row_payload.get('manual_category')
+    category = reimbursement_normalize_manual_category(raw_category) if category_present else 'others'
+    if category_present and not category:
+        raise ReimbursementManualPayloadError('Please select a valid expense category.')
 
-    amounts = {field: 0.0 for field in REIMBURSEMENT_EXPENSE_FIELDS}
-    amounts['others_misc'] = manual_amount
+    amounts, manual_amount = reimbursement_manual_payload_amounts(
+        row_payload,
+        category,
+        explicit_category=category_present
+    )
 
     row = ReimbursementRow(
         reimbursement_id=header.id,
@@ -27135,10 +27337,14 @@ def reimbursement_manual_receipt_match_key_from_values(row_date, item_name, amou
 def reimbursement_manual_receipt_match_key_from_row(row):
     if not row:
         return None
+    row_amounts = reimbursement_row_expense_amounts(row)
+    row_total = reimbursement_money_value(getattr(row, 'row_total', 0))
+    if row_total <= 0:
+        row_total = round(sum(row_amounts.values()), 2)
     return reimbursement_manual_receipt_match_key_from_values(
         getattr(row, 'row_date', None),
         getattr(row, 'task_name', None) or getattr(row, 'remarks', None) or '',
-        getattr(row, 'others_misc', None) or getattr(row, 'row_total', None) or 0
+        row_total
     )
 
 
@@ -27146,15 +27352,15 @@ def reimbursement_manual_receipt_match_key_from_payload(row_payload):
     if not isinstance(row_payload, dict):
         return None
     amounts_payload = row_payload.get('amounts') if isinstance(row_payload.get('amounts'), dict) else {}
-    amount = (
-        row_payload.get('amount') or
-        row_payload.get('price') or
-        amounts_payload.get('others') or
-        amounts_payload.get('others_misc') or
-        row_payload.get('others') or
-        row_payload.get('others_misc') or
-        0
-    )
+    amount = row_payload.get('amount') or row_payload.get('price')
+    if amount is None:
+        canonical_values = []
+        for category, field in REIMBURSEMENT_MANUAL_CATEGORY_FIELDS.items():
+            value = amounts_payload.get(field)
+            if value is None:
+                value = amounts_payload.get(category)
+            canonical_values.append(reimbursement_money_value(value))
+        amount = round(sum(canonical_values), 2)
     return reimbursement_manual_receipt_match_key_from_values(
         row_payload.get('date') or row_payload.get('row_date'),
         row_payload.get('item_name') or row_payload.get('description') or row_payload.get('task') or row_payload.get('remarks') or '',
@@ -28531,6 +28737,11 @@ def save_reimbursement_draft():
         return jsonify({'success': False, 'error': 'Removed rows must be a list.'}), 400
 
     try:
+        # The first LPR table lookup may perform an additive schema setup that
+        # rolls back the current session. Complete that setup before creating
+        # or replacing draft rows so category changes cannot be discarded.
+        if embedded_lpr_enabled():
+            ensure_lpr_tables()
         requested_header_id = clean_int(payload.get('id') or payload.get('reimbursement_id'))
         header = reimbursement_resolve_editable_header(
             start_date,
@@ -28570,20 +28781,32 @@ def save_reimbursement_draft():
             if sanitized_excluded_rows else None
         )
 
+        manual_receipts_by_id = {}
         manual_receipts_by_key = {}
         for existing_row in ReimbursementRow.query.filter_by(reimbursement_id=header.id, shift_id=None).all():
             manual_key = reimbursement_manual_receipt_match_key_from_row(existing_row)
-            if not manual_key:
-                continue
             manual_receipts = ReimbursementReceipt.query.filter_by(
                 reimbursement_id=header.id,
                 shift_id=-existing_row.id
             ).all()
-            if manual_receipts:
-                manual_receipts_by_key.setdefault(manual_key, []).extend(manual_receipts)
+            if not manual_receipts:
+                continue
+            # Prefer the saved manual row id so same-date/name/amount rows
+            # cannot exchange receipts during a category change or save.
+            manual_receipts_by_id[str(existing_row.id)] = manual_receipts
+            if manual_key:
+                manual_receipts_by_key.setdefault(manual_key, []).append(manual_receipts)
 
-        # Replace draft rows with the latest worksheet state.
-        ReimbursementRow.query.filter_by(reimbursement_id=header.id).delete()
+        # Replace draft rows with the latest worksheet state. Delete through the
+        # ORM so a reused SQLite primary key cannot leave a stale row object in
+        # the identity map and overwrite a newly categorized manual row.
+        existing_rows = ReimbursementRow.query.filter_by(reimbursement_id=header.id).all()
+        for existing_row in existing_rows:
+            db.session.delete(existing_row)
+        db.session.flush()
+        # Expire the cached collection after the explicit deletes so LPR and
+        # total helpers see only the replacement rows.
+        db.session.expire(header, ['rows'])
 
         saved_count = 0
         seen_schedule_ids = set()
@@ -28597,20 +28820,22 @@ def save_reimbursement_draft():
             # the submitted payload. De-dupe here so totals do not double after
             # Save Draft.
             if reimbursement_is_manual_row_payload(row_payload):
-                amounts_payload = row_payload.get('amounts') if isinstance(row_payload.get('amounts'), dict) else {}
-                manual_amount = reimbursement_money_value(
-                    row_payload.get('amount') or
-                    row_payload.get('price') or
-                    amounts_payload.get('others_misc') or
-                    row_payload.get('others_misc') or
-                    0
+                stable_manual_key = clean_str(
+                    row_payload.get('manual_key') or row_payload.get('local_manual_key')
                 )
-                manual_key = (
-                    'manual',
-                    str(row_payload.get('date') or row_payload.get('row_date') or '').strip(),
-                    str(row_payload.get('item_name') or row_payload.get('description') or row_payload.get('remarks') or '').strip().lower(),
-                    round(manual_amount, 2)
-                )
+                if stable_manual_key:
+                    manual_key = ('manual_key', stable_manual_key)
+                else:
+                    receipt_match_key = reimbursement_manual_receipt_match_key_from_payload(row_payload)
+                    manual_key = (
+                        'manual',
+                        str(row_payload.get('date') or row_payload.get('row_date') or '').strip(),
+                        str(row_payload.get('item_name') or row_payload.get('description') or row_payload.get('remarks') or '').strip().lower(),
+                        receipt_match_key[2] if receipt_match_key else 0.0,
+                        reimbursement_normalize_manual_category(
+                            row_payload.get('category') or row_payload.get('manual_category')
+                        ) or 'others'
+                    )
                 if manual_key in seen_manual_keys:
                     continue
                 seen_manual_keys.add(manual_key)
@@ -28625,9 +28850,33 @@ def save_reimbursement_draft():
             if saved_row:
                 db.session.flush()
                 if reimbursement_is_manual_row_payload(row_payload) and not saved_row.shift_id:
-                    manual_key = reimbursement_manual_receipt_match_key_from_payload(row_payload)
-                    for receipt in manual_receipts_by_key.pop(manual_key, []):
-                        receipt.shift_id = -saved_row.id
+                    payload_manual_key = clean_str(
+                        row_payload.get('manual_key') or row_payload.get('local_manual_key')
+                    ) or ''
+                    receipt_groups = []
+                    saved_id_match = re.match(r'^manual_(\d+)$', payload_manual_key)
+                    if saved_id_match:
+                        identity_group = manual_receipts_by_id.pop(saved_id_match.group(1), [])
+                        if identity_group:
+                            receipt_groups = [identity_group]
+                            for key, groups in list(manual_receipts_by_key.items()):
+                                remaining_groups = [group for group in groups if group is not identity_group]
+                                if remaining_groups:
+                                    manual_receipts_by_key[key] = remaining_groups
+                                else:
+                                    manual_receipts_by_key.pop(key, None)
+                    if not receipt_groups:
+                        manual_key = reimbursement_manual_receipt_match_key_from_payload(row_payload)
+                        receipt_groups = manual_receipts_by_key.get(manual_key) or []
+                        if receipt_groups:
+                            receipt_groups.pop(0)
+                            if receipt_groups:
+                                manual_receipts_by_key[manual_key] = receipt_groups
+                            else:
+                                manual_receipts_by_key.pop(manual_key, None)
+                    for receipt_group in receipt_groups:
+                        for receipt in receipt_group:
+                            receipt.shift_id = -saved_row.id
                 saved_count += 1
 
         if rows_payload and saved_count <= 0:
@@ -28719,6 +28968,10 @@ def save_reimbursement_draft():
             **reimbursement_header_approval_meta(header)
         })
 
+    except ReimbursementManualPayloadError as exc:
+        db.session.rollback()
+        print(f"[Reimbursement] Manual row validation failed: {exc}")
+        return jsonify({'success': False, 'error': str(exc), 'category_error': True}), 400
     except Exception as exc:
         db.session.rollback()
         print(f"[Reimbursement] Save draft failed: {exc}")

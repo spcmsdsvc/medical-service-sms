@@ -466,6 +466,22 @@ body.sidebar-resizing .main-content {
     outline: none;
 }
 
+/* The head preference attribute is available before the body controller runs,
+   so a saved desktop collapse state does not flash expanded on navigation. */
+@media (min-width: 993px) {
+    html[data-sidebar-collapsed="true"] .sidebar {
+        width: 0;
+    }
+
+    html[data-sidebar-collapsed="true"] .main-content {
+        margin-left: 0;
+    }
+
+    html[data-sidebar-collapsed="true"] #show-sidebar-btn {
+        display: inline-block !important;
+    }
+}
+
 body.sidebar-collapsed .sidebar {
     width: 0;
 }

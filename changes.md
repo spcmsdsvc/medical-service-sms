@@ -1,6 +1,255 @@
 # Project Change Log
 
+codex changes - 2026-09-06
+
+- The owner explicitly authorized committing and pushing the accumulated Reimbursement
+  worksheet packages. The publication allowlist is limited to the reimbursement source and
+  template changes, desktop shell/sidebar styling, exact service-worker cache assertions,
+  release metadata, focused reimbursement tests, and these project journals; protected dirty
+  `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`, the loose root handoff, and
+  unrelated worktree changes remain excluded. Local verification and the known baseline
+  failures are recorded below; formal review and browser visual checks remain pending.
+
+- Recorded and implemented the owner-authorized Add Another Item category package in
+  `plans.md`. The manual-item form now requires one of the ten existing worksheet categories
+  (Representation, Car Repair, Toll Fee, Gasoline, Transpo, Office/Field Items, Parking, Per
+  Diem, Coding, or Others), writes the amount to that existing component column, and keeps
+  legacy category-less Others payloads compatible without a schema migration or new dependency.
+- Updated `app.py` and `templates/reimbursement.html` so editable manual rows expose a compact
+  category selector in both desktop and mobile worksheet views. Changing a category moves the
+  current amount exactly once, preserves the row's date, description, remarks, and receipt key,
+  keeps non-selected manual inputs read-only, and leaves locked Submitted/Approved/Paid rows
+  protected. Strict backend validation rejects invalid categories, malformed/non-finite/negative
+  prices, conflicting aliases, and multiple positive manual components before replacing a draft;
+  the existing Office/Field LPR source and reconciliation gates continue to read the canonical
+  component column.
+- Preserved manual receipt associations across ordinary saves and category changes by preferring
+  the saved manual row identity and retaining the existing date/description/amount fallback for
+  legacy rows. Explicit ORM replacement also prevents a stale SQLite row object from restoring an
+  old Others value over a newly categorized row; duplicate same-date/name/amount manual rows are
+  covered by identity-first reassociation. Existing package-level receipt uploads and duplicate-
+  file protections remain unchanged.
+- Added `tests/test_reimbursement_manual_categories.py` with ten-category component contracts,
+  legacy Others compatibility, strict invalid/ambiguous validation, category serialization, and
+  isolated save/reload/category-change/receipt-collision/rollback coverage. Bumped the embedded
+  service-worker cache to
+  `medical-service-pwa-offline-navigation-v135-reimbursement-manual-categories`, updated exact
+  current-cache assertions, and added the published `2026-09-06-reimbursement-manual-categories`
+  Reimbursement release entry.
+- Verification completed: focused reimbursement/layout/cache set **126/126 passed**; related
+  TSR/Timeline/Stock set **76/76 passed**; isolated full discovery **949 tests: 939 passed, 10
+  known baseline failures, 0 errors, 0 skips** using a unique disposable database outside the
+  repository. The known failures remain eight Purchase Order 429 setup cases and two Staff
+  Creation fixture/initials cases. In-memory Python compilation, Jinja parsing, extracted inline
+  JavaScript syntax, release JSON parsing, and `git diff --check` passed; no browser automation,
+  commit, push, deployment, Railway, production/database operation, or protected-artifact action
+  was performed. Browser visual checks remain for the owner.
+
+- Recorded the owner-authorized Reimbursement focus-view refinement after the owner reported
+  that the first expanded layout left the table too small. The refinement keeps the existing
+  browser-content-area focus behavior and 60–110% worksheet zoom, but makes the table dominant:
+  compact focus controls stay above it, secondary date/status/receipt/LPR/removed-row panels are
+  on demand, and actionable validation/errors remain visible without changing calculations or
+  saved data. Implementation is limited to the existing Reimbursement template/tests plus the
+  required cache, release, plan, and change records; no browser automation, sidebar changes,
+  backend/database, production, or Git publication actions are authorized.
+
+- Implemented the table-first focus refinement in `templates/reimbursement.html`. Desktop focus now
+  uses a compact topbar, live date/active-row/claim-total summary, worksheet toolbar, and flex-filled
+  table surface with sticky totals and horizontal scrolling. Focus-only controls use compact desktop
+  heights; the 821–992px mobile shell header is reserved so the focus surface remains within view.
+- Reused existing live nodes and workflows through on-demand Dates, Status, History, Notices,
+  Receipts, LPR, Removed, and More actions. More contains the existing Download Form, Delete Draft,
+  and Clear Form controls. Only one utility panel opens at a time; Close/Escape restores focus and
+  closes the panel before focus Escape exits, while existing reimbursement dialogs retain priority.
+  LPR/Removed availability and the existing editable/locked state gate their focus actions, and
+  shown validation/signature/delete notices remain compact and actionable.
+- Preserved amount/remarks inputs, loaded schedules, totals, receipts/LPR semantics, calculations,
+  zoom, column modes, mobile cards, sidebar visibility/width preferences, backend/API behavior, and
+  protected dirty artifacts. Added source/runtime contracts in `tests/test_reimbursement_design.py`
+  for the table-dominant layout, panel state, Escape ordering, live values, locked actions, notices,
+  mobile isolation, cache, and release record.
+- Verification completed: focused Reimbursement **42/42 passed**; related reimbursement/layout/
+  theme/cache/changelog modules **170/170 passed**; isolated full discovery **940 tests: 930 passed,
+  10 known baseline failures, 0 errors, 0 skips** using a unique disposable database outside the
+  repository. The known failures remain eight Purchase Order 429 setup cases and two Staff Creation
+  fixture/initials cases. Python/Jinja/inline-JS/CSS/release validation and `git diff --check`
+  passed; cache is `medical-service-pwa-offline-navigation-v134-reimbursement-focus-toolbar` and
+  release `2026-09-06-reimbursement-focus-toolbar` is published. Browser visual checks remain for
+  the owner; no commit, push, deployment, Railway, database, production, Codex UI, or protected-
+  artifact action was performed.
+
+- Recorded the owner-authorized `Reimbursement worksheet — focus view and remembered sidebar`
+  package after the owner explicitly said `PLEASE IMPLEMENT THIS PLAN`. The package adds a
+  reversible desktop content-area worksheet focus view and a guarded app-wide desktop sidebar
+  expanded/collapsed preference while preserving the prior reimbursement design, column modes,
+  zoom, live values, dialogs, mobile cards, sidebar width setting, and protected dirty artifacts;
+  implementation and verification are now proceeding autonomously without browser automation,
+  production, database, or Git publication actions.
+- Implemented the desktop Reimbursement `Expand worksheet` focus view in
+  `templates/reimbursement.html` using the existing worksheet DOM. The focus layout fills the
+  browser content area, hides the page hero/navigation/notifications/status history, keeps the
+  date-range card, manual-item entry, active-row/claim-total summary, zoom, column views,
+  Save/Submit controls, lifecycle validation, removed-row restoration, receipts, and embedded LPR
+  reachable, and leaves mobile cards unchanged.
+- Added reversible focus entry/exit behavior with a sticky Exit focus view action, desktop
+  viewport guard, dialog-aware Escape precedence, scroll/focus restoration, safe mobile-transition
+  cleanup, and repeated horizontal-scroll measurement after focus/resize layout changes. Existing
+  amount and remarks inputs, loaded records, totals, zoom, column mode, dialogs, receipts, and
+  save/submit collection remain live and class-preserved; focus restoration uses a
+  `preventScroll` call with a compatibility fallback.
+- Added guarded desktop sidebar visibility persistence under the
+  `medical_service_sidebar_visibility` browser key in `templates/layout.html`, with an early
+  `data-sidebar-collapsed` state and matching `static/css/app-shell.css` selectors to avoid an
+  expanded flash. Missing/invalid/unavailable values default to expanded; desktop controls and
+  aria state synchronize; sidebar width storage remains separate; mobile drawer state and focus
+  view remain independent.
+- Added focused runtime/source contracts for worksheet focus and sidebar persistence in
+  `tests/test_reimbursement_design.py` and `tests/test_layout_sidebar.py`. Corrected one
+  malformed indentation in the already-dirty affected cache assertion in
+  `tests/test_tsr_contact_suggestions.py` so the full related suite remains importable.
+- Bumped the embedded service-worker cache to
+  `medical-service-pwa-offline-navigation-v133-reimbursement-focus-sidebar`, updated the exact
+  affected cache assertions, and added the published `2026-09-06-reimbursement-focus-sidebar`
+  Reimbursement release item to `static/changelog/releases.json`.
+- Verification completed: corrected focused suites **57/57 passed**; related reimbursement,
+  layout/theme/cache/TSR/changelog modules **215/215 passed**; isolated full discovery **934
+  tests: 924 passed, 10 known baseline failures, 0 errors, 0 skips** (eight Purchase Order 429
+  setup failures and two Staff Creation fixture/initials failures); Python/Jinja/inline-JS/CSS/
+  release validation and `git diff --check` passed. Browser visual checks remain for the owner;
+  no commit, push, deployment, Railway, database, production, Codex UI, or protected-artifact
+  action was performed.
+
+- Resumed the owner-authorized `Reimbursement worksheet — nearby row actions and desktop table
+  zoom` package after the interrupted implementation turn. Preserved the partial source/test
+  work already present and rechecked the shared dirty tree, journals, current worker cache, release
+  record, and protected paths before continuing; no browser, database, production, or Git
+  publication action was performed.
+- Kept the requested simple implementation boundary: desktop row actions remain under Date,
+  desktop worksheet zoom remains 60–110% in ten-point steps with a 100% default and guarded browser
+  preference, mobile cards and all reimbursement data flows remain outside the feature.
+- Moved the existing desktop View details/Delete controls beneath each row's Date value in
+  `templates/reimbursement.html` and removed the separate final Actions column. Updated the
+  worksheet to 15 semantic columns, empty-state colspan, Remarks/group separators, footer totals,
+  and existing Pinned/Unpinned/Compact geometry while preserving handlers, locked behavior, live
+  save collection, receipts, exports/PDFs, and mobile row actions.
+- Added desktop-only Worksheet zoom controls with exactly 60%, 70%, 80%, 90%, 100%, and 110%
+  presets, disabled boundary buttons, Reset to 100%, guarded `reimbursementWorksheetZoom`
+  localStorage persistence, and class-only layout-aware table scaling. The page shell,
+  controls/dialogs/summary, and mobile cards remain at normal size; mode/row-load/reload/resize
+  paths reapply zoom without rebuilding live input nodes.
+- Added focused source contracts plus a small Node helper harness for zoom defaults/limits/storage
+  failure, action placement, mode composition, live input preservation, footer geometry, and cache
+  delivery. The unchanged-source fail-first checkpoint completed **31 tests: 23 passes, 7
+  intentional failures, 1 expected error, and 0 skips**; post-change focused reimbursement design
+  verification completed **32/32 passes**.
+- Related reimbursement, appearance/theme, layout, Stock, Timeline, TSR, service-worker cache,
+  and changelog modules completed **329/329 passes**. Isolated full discovery used a unique
+  disposable database and completed **927 tests: 917 passes, 10 known baseline failures, 0 errors,
+  and 0 skips**. The failures remain the eight Purchase Order 429 setup cases and two Staff
+  Creation fixture/initials cases; no touched Reimbursement, cache, release, or layout test failed.
+- In-memory Python AST/compile, Jinja parsing, extracted inline-JavaScript syntax, CSS brace
+  balance (**294 pairs**), release validation (**66 releases, 228 unique items**), and
+  `git diff --check` passed. Bumped the embedded worker cache to
+  `medical-service-pwa-offline-navigation-v132-reimbursement-worksheet-zoom-actions` and added
+  the published `2026-09-05-reimbursement-worksheet-zoom-actions` Reimbursement release item.
+- Browser desktop/mobile/light-dark/60% readability, sticky-column, action-button, and scrollbar
+  checks remain pending for the owner; no commit, push, deployment, Railway, database, or
+  protected-artifact action was performed.
+
 codex changes - 2026-09-05
+
+- Recorded the owner-authorized `Reimbursement worksheet — nearby row actions and desktop table
+  zoom` implementation package in `plans.md` after the owner said to go ahead and implement the
+  plan, with the lower zoom bound explicitly extended to 60%. The package keeps row actions under
+  Date, removes the separate final Actions column, adds guarded 60–110% desktop worksheet zoom,
+  and leaves manual categories, backend behavior, mobile cards, browser verification, commit,
+  push, deployment, and protected dirty artifacts outside scope.
+- Preserved the previous Reimbursement design and column-view work plus protected dirty paths
+  (`scheduler.db`, handoff files, `.claude/`, `output/`, and `tmp/`) before implementation. The
+  Builder was instructed to keep the solution simple and work autonomously without interim checks.
+
+- Recorded the owner-authorized `Reimbursement page design improvements — Part 2 (items 7–10)`
+  package in `plans.md` after the owner explicitly said `now do 7-10`; the package covers only
+  page-local visual hierarchy, mobile-card presentation order, history-card presentation, and
+  scoped interaction styling. The Builder was instructed to keep the implementation simple and
+  work autonomously without intermediate check-ins.
+- Preserved the existing Reimbursement items 1–6 implementation and all protected dirty work
+  (`scheduler.db`, handoff files, `.claude/`, `output/`, and `tmp/`) before starting this package.
+- Added four focused 7–10 source contracts to `tests/test_reimbursement_design.py` before the
+  application edits. The unchanged-source fail-first run completed **15 tests with 9 passes,
+  6 intentional failures, 0 errors, and 0 skips**, covering the missing visual hierarchy,
+  mobile-card order, history regions, interaction styling, v130 cache, and polish release record;
+  the existing items 1–6 controls remained green.
+- Implemented the authorized page-local visual hierarchy in `templates/reimbursement.html`:
+  neutral theme-token surfaces, lighter shadows, regular body copy, semibold headings, preserved
+  semantic status colors, and preserved green primary/claim-total emphasis.
+- Kept the existing unread notification item styling outside the neutral inner-surface layer so
+  its meaningful green unread state remains visible.
+- Reordered only the mobile reimbursement cards so date/client identity is followed by every
+  existing expense category, the row total, and the existing three-line remarks field. History
+  cards now separate period/status, prominent amount, secondary timestamp metadata, reviewer
+  remarks, and aligned Open Record/Withdraw actions while retaining IDs, escaping, handlers,
+  status semantics, and withdraw behavior.
+- Added reimbursement-scoped focus rings, consistent input heights, token-based locked-field
+  appearance, and approximately 44px mobile targets for row-delete and small controls. Desktop's
+  compact 64px Actions column, existing categories, read-only behavior, and theme support remain
+  intact; no functionality-list, backend, API, schema, or calculation work was added.
+- Bumped the embedded worker cache from the verified v129 value to
+  `medical-service-pwa-offline-navigation-v130-reimbursement-design-polish`, updated the exact
+  current-cache assertions, and added the published `2026-09-05-reimbursement-design-polish`
+  release item in `static/changelog/releases.json`.
+- Post-change focused reimbursement design verification passed **15/15**; the related suite
+  passed **194/194**. Isolated full discovery used a unique disposable database and completed
+  **910 tests: 900 passes, 10 known baseline failures, 0 errors, and 0 skips** (eight Purchase
+  Order 429 setup failures and two Staff Creation fixture/initials failures). Python/Jinja/
+  extracted-inline-JavaScript syntax checks, CSS brace balance, release validation (**64 releases,
+  226 unique items**), and the final `git diff --check` all passed. Browser checks remain pending
+  under the project instructions; no commit, push, deployment, database, or protected-artifact
+  action was performed.
+
+- Recorded the owner-authorized `Reimbursement worksheet — user-selectable desktop column views`
+  implementation package in `plans.md` after the owner said `go and implement the first package`.
+  The package is deliberately limited to Pinned, Unpinned, and Compact desktop table views,
+  browser-local preference handling, and escaped Compact row details; the manual expense category
+  selector and other functionality ideas remain a separate package.
+- Preserved the existing Reimbursement design items 1–10, live unsaved work, and protected dirty
+  paths (`scheduler.db`, handoff files, `.claude/`, `output/`, and `tmp/`) before implementation.
+- Added fail-first column-view contracts to `tests/test_reimbursement_design.py` before changing
+  the template, worker cache, or release manifest; the unchanged-source run and exact failures
+  completed **23 tests: 14 passes, 6 intentional failures, 3 expected errors, and 0 skips**.
+  The red contracts were limited to the absent selector/controller/CSS/footer/details, v131 cache
+  label, and release entry; the existing Reimbursement items 1–10 and workflow controls stayed
+  green.
+- Implemented a desktop-only `Schedule columns` selector in `templates/reimbursement.html` with
+  Pinned (existing Date/Schedule/Client-Product frozen behavior), Unpinned (all columns scroll
+  horizontally while the header and totals remain vertically sticky), and Compact (Date frozen,
+  Schedule and Client-Product hidden) modes. Mobile cards and values remain unchanged.
+- Added a guarded `reimbursementColumnView` localStorage preference with Pinned fallback for
+  invalid or unavailable storage. Mode changes switch table classes in place, reapply on reload,
+  row loads, and viewport changes, resynchronize the horizontal scrollbar, and preserve live
+  amount and remarks inputs without rebuilding rows.
+- Scoped the mobile hide rule after the existing design media layer so the desktop-only selector
+  stays hidden at the 820px breakpoint despite the page's later base control styling.
+- Added Compact View details row access and an escaped, keyboard-accessible details dialog for
+  the clicked row's existing date, task, schedule time, client, product, serial, and engineer
+  context. Locked rows remain viewable; no financial data or backend/API/schema behavior changed.
+- Replaced the totals footer's three-column colspan with explicit Date, Schedule, and
+  Client-Product cells and mode-scoped sticky/hidden rules so category totals and the grand total
+  retain their correct geometry in every desktop view. Existing delete width intent, IDs,
+  handlers, receipts, save/submit, export, and totals paths remain intact.
+- Bumped the embedded worker cache to
+  `medical-service-pwa-offline-navigation-v131-reimbursement-column-views`, updated exact current
+  cache compatibility assertions in the related layout/Stock/Timeline/TSR tests, and published
+  `2026-09-05-reimbursement-column-views` for everyone in `static/changelog/releases.json`.
+- Post-change focused design verification passed **23/23**; related modules passed **206/206**.
+  Isolated full discovery used a unique disposable database and completed **918 tests: 908
+  passes, 10 known baseline failures, 0 errors, and 0 skips** (eight Purchase Order 429 setup
+  failures and two Staff Creation fixture/initials failures). In-memory Python compile/AST,
+  Jinja parse, extracted inline JavaScript syntax, CSS brace balance, release validation (**65
+  releases, 227 unique items**), a lightweight mode/details runtime harness, and `git diff --check`
+  passed. Browser verification remains pending under project rules; no commit, push, deployment,
+  database, or protected-artifact action was performed.
 
 - Recorded the owner-authorized `Create TSR notifications and scrolling` implementation package
   in `plans.md` with explicit-only field navigation, modal-local notification hosts, persistent
@@ -48,6 +297,37 @@ codex changes - 2026-09-05
   modal layering, and PDF recovery remain pending under the project's browser/Codex UI safety
   instructions. No commit, push, deploy, database, or protected-artifact action was performed;
   `pending-work.md` remains unchanged and protected dirty paths remain preserved.
+
+- Recorded the owner-authorized `Reimbursement page design improvements — Part 1 (items 1–6)`
+  implementation package in `plans.md`: compact Actions/Remarks columns, active worksheet-first
+  hierarchy, clearer action hierarchy, concise resizable remarks, worksheet group separators and
+  tabular amounts, and a synchronized date/row-count/grand-total summary. Backend/API, database,
+  approval, receipt, LPR, signature, status semantics, recommendations 7–10, browser/Codex UI,
+  commit, push, deployment, Railway, and protected-artifact actions remain excluded.
+- Added `tests/test_reimbursement_design.py` before implementation and ran its unchanged-source
+  fail-first checkpoint: **10 tests ran with 8 intentional failures, 1 expected missing-summary
+  error, and 1 pass**. The contracts identified all six absent design behaviors plus the v129 cache
+  and release record while retaining positive controls for the existing worksheet handlers and
+  totals; the dependent summary lookup was then tightened to fail normally.
+- Updated `templates/reimbursement.html` for the authorized Reimbursement items 1–6: explicit
+  390px Remarks and 64px Actions columns, worksheet-first layout with lifecycle notices kept
+  adjacent to the work area, Submit/Save/Download action hierarchy and grouped destructive
+  controls, three-line resizable remarks on desktop/mobile, worksheet group separators with
+  tabular numeric fields and focus-row highlighting, and a date-range/active-row/claim-total
+  summary driven by the existing displayed grand total. Existing approval, save, upload,
+  withdrawal, receipt, LPR, signature, locked-record, frozen-column, sticky-total, and horizontal
+  scroll behavior was preserved.
+- Added `tests/test_reimbursement_design.py` source contracts and updated the exact current cache
+  assertions in the affected layout/Stock/Timeline/TSR tests. Bumped the embedded worker cache to
+  `medical-service-pwa-offline-navigation-v129-reimbursement-design` and added the published
+  `2026-09-05-reimbursement-design` release item in `static/changelog/releases.json`.
+- Post-change reimbursement design checks passed **10/10**, the related reimbursement/layout/
+  accounting/theme/TSR/changelog command passed **189/189**, and the standalone cache helper
+  passed **5/5**. Full isolated discovery ran **905 tests: 895 passes, 10 pre-existing failures,
+  0 errors, 0 skips** (8 Purchase Order 429 setup failures and 2 Staff Creation fixture/initials
+  failures). Python AST, Jinja, extracted inline JavaScript, release JSON (**63 releases, 225
+  unique items**), and `git diff --check` validations passed. Browser verification remains pending
+  under `AGENTS.md`; no commit, push, deployment, database, or protected-artifact action was done.
 
 - Recorded the owner-authorized `TSR Client Contact Suggestions and Required Client Signatures`
   implementation plan at the top of `plans.md` and began only the explicitly scoped

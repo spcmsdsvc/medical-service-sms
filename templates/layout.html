@@ -24,6 +24,18 @@
         window.__initialAppearance = { mode, accent, pending: !!(cached && cached.pending), userId };
     })();
     </script>
+    <script>
+    // Read the desktop sidebar preference before the body is painted. The body
+    // controller below copies this state to its class and controls once they exist.
+    (function(){
+        const SIDEBAR_VISIBILITY_STORAGE_KEY = 'medical_service_sidebar_visibility';
+        let stored = null;
+        try {
+            stored = localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE_KEY);
+        } catch (_) {}
+        document.documentElement.dataset.sidebarCollapsed = stored === 'collapsed' ? 'true' : 'false';
+    })();
+    </script>
     <title>MEDICAL SERVICE - Management System</title>
     <!-- Performance: warm CDN connections before Bootstrap/FontAwesome load. -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
@@ -338,6 +350,7 @@
                 class="btn btn-dark btn-sm mb-3 d-none no-print"
                 onclick="toggleSidebarDesktop()"
                 aria-label="Show navigation"
+                aria-expanded="false"
                 aria-controls="sidebar"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
         {% block content %}{% endblock %}
     </div>
@@ -347,15 +360,78 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        function toggleSidebarDesktop() {
-            const collapsed = document.body.classList.toggle('sidebar-collapsed');
-            document.getElementById('show-sidebar-btn').classList.toggle('d-none');
+        const SIDEBAR_VISIBILITY_STORAGE_KEY = 'medical_service_sidebar_visibility';
+        const SIDEBAR_DESKTOP_BREAKPOINT = 993;
 
+        function readStoredSidebarVisibility() {
+            try {
+                return localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE_KEY) === 'collapsed'
+                    ? 'collapsed'
+                    : 'expanded';
+            } catch (_) {
+                return 'expanded';
+            }
+        }
+
+        function syncSidebarVisibilityControls(collapsed) {
             const toggle = document.getElementById('sidebar-toggle-desktop');
+            const showButton = document.getElementById('show-sidebar-btn');
+            const expanded = collapsed ? 'false' : 'true';
+
             if (toggle) {
-                toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+                toggle.setAttribute('aria-expanded', expanded);
                 toggle.setAttribute('aria-label', collapsed ? 'Show navigation' : 'Hide navigation');
             }
+            if (showButton) {
+                showButton.classList.toggle('d-none', !collapsed);
+                showButton.setAttribute('aria-expanded', expanded);
+                showButton.setAttribute('aria-label', collapsed ? 'Show navigation' : 'Hide navigation');
+            }
+        }
+
+        function applySidebarVisibility(collapsed, persist = false) {
+            const isDesktop = window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT;
+            const shouldCollapse = isDesktop && !!collapsed;
+            document.body.classList.toggle('sidebar-collapsed', shouldCollapse);
+            document.documentElement.dataset.sidebarCollapsed = shouldCollapse ? 'true' : 'false';
+            syncSidebarVisibilityControls(shouldCollapse);
+
+            if (persist && isDesktop) {
+                try {
+                    localStorage.setItem(
+                        SIDEBAR_VISIBILITY_STORAGE_KEY,
+                        shouldCollapse ? 'collapsed' : 'expanded'
+                    );
+                } catch (_) {
+                    // A blocked or unavailable localStorage must not break navigation.
+                }
+            }
+            return shouldCollapse;
+        }
+
+        function syncSidebarVisibilityForViewport() {
+            if (window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT) {
+                applySidebarVisibility(readStoredSidebarVisibility() === 'collapsed', false);
+                return;
+            }
+
+            // Mobile navigation is an independent drawer. Keep it closed and do
+            // not overwrite the desktop preference while crossing the breakpoint.
+            document.body.classList.remove('sidebar-collapsed');
+            document.documentElement.dataset.sidebarCollapsed = 'false';
+            syncSidebarVisibilityControls(false);
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar && sidebar.classList.contains('active')) {
+                setMobileSidebar(false);
+            }
+        }
+
+        window.syncSidebarVisibilityForViewport = syncSidebarVisibilityForViewport;
+
+        function toggleSidebarDesktop() {
+            if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) return;
+            const collapsed = !document.body.classList.contains('sidebar-collapsed');
+            applySidebarVisibility(collapsed, true);
         }
 
         function setMobileSidebar(open) {
@@ -385,6 +461,10 @@
             const sidebar = document.getElementById('sidebar');
             setMobileSidebar(!(sidebar && sidebar.classList.contains('active')));
         }
+
+        // The head script has already applied the visual attribute; synchronize
+        // the live body/control state as soon as the shell exists.
+        syncSidebarVisibilityForViewport();
 
         (function initSidebarResize() {
             const sidebar = document.getElementById('sidebar');
@@ -643,6 +723,10 @@
             const isMobile = window.innerWidth <= 768;
 
             body.classList.toggle('mobile-device', isMobile);
+
+            if(window.syncSidebarVisibilityForViewport){
+                window.syncSidebarVisibilityForViewport();
+            }
 
             if(!isMobile && sidebar && sidebar.classList.contains('active')){
                 window.setMobileSidebar ? window.setMobileSidebar(false) : sidebar.classList.remove('active');

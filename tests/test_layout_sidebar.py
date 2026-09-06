@@ -1,6 +1,8 @@
 import os
 import pathlib
+import subprocess
 import tempfile
+import textwrap
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -177,8 +179,126 @@ class SidebarSourceTests(unittest.TestCase):
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
         self.assertIn("app-shell.css') }}?v=3", self.layout)
-        self.assertIn("medical-service-pwa-offline-navigation-v128-tsr-notifications", self.app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v135-reimbursement-manual-categories", self.app_source)
         assert_cache_version_at_least(self, 126, self.app_source)
+
+    def test_sidebar_visibility_preference_is_early_guarded_and_desktop_only(self):
+        self.assertIn("medical_service_sidebar_visibility", self.layout)
+        self.assertIn("document.documentElement.dataset.sidebarCollapsed", self.layout)
+        self.assertIn("localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE_KEY)", self.layout)
+        self.assertIn("localStorage.setItem(", self.layout)
+        self.assertIn("function readStoredSidebarVisibility()", self.layout)
+        self.assertIn("function applySidebarVisibility(", self.layout)
+        self.assertIn("function syncSidebarVisibilityForViewport()", self.layout)
+        self.assertIn("window.innerWidth >= 993", self.layout)
+        self.assertIn("return 'expanded';", self.layout)
+        self.assertIn('catch (_) {', self.layout)
+        self.assertIn('aria-expanded', self.layout)
+        self.assertIn('sidebar-collapsed', self.shell_css)
+        self.assertIn('html[data-sidebar-collapsed="true"]', self.shell_css)
+
+    def test_sidebar_visibility_storage_is_independent_of_width_and_mobile_focus(self):
+        self.assertIn("SIDEBAR_RESIZE_STORAGE_KEY = 'medical_service_sidebar_width'", self.layout)
+        self.assertIn("SIDEBAR_VISIBILITY_STORAGE_KEY = 'medical_service_sidebar_visibility'", self.layout)
+        self.assertIn("reim-focus-active", (ROOT / 'templates' / 'reimbursement.html').read_text(encoding='utf-8'))
+        self.assertIn("setMobileSidebar(false)", self.layout)
+        self.assertIn("applySidebarVisibility(readStoredSidebarVisibility() === 'collapsed', false)", self.layout)
+        self.assertNotIn("localStorage.setItem(SIDEBAR_VISIBILITY_STORAGE_KEY, 'collapsed')", self.layout)
+
+    def test_sidebar_visibility_runtime_persists_desktop_and_ignores_mobile(self):
+        helpers_start = self.layout.index(
+            "const SIDEBAR_VISIBILITY_STORAGE_KEY = 'medical_service_sidebar_visibility';",
+            self.layout.index('bootstrap.bundle'),
+        )
+        helpers_end = self.layout.index('\n        function setMobileSidebar(open)', helpers_start)
+        helpers = self.layout[helpers_start:helpers_end]
+        node_script = textwrap.dedent(f"""
+            const assert = require('assert');
+            const stored = new Map();
+            let storageUnavailable = false;
+            const localStorage = {{
+                getItem(key) {{
+                    if (storageUnavailable) throw new Error('storage unavailable');
+                    return stored.has(key) ? stored.get(key) : null;
+                }},
+                setItem(key, value) {{
+                    if (storageUnavailable) throw new Error('storage unavailable');
+                    stored.set(key, String(value));
+                }}
+            }};
+            function makeClassList() {{
+                const names = new Set();
+                return {{
+                    add(name) {{ names.add(name); }},
+                    remove(name) {{ names.delete(name); }},
+                    contains(name) {{ return names.has(name); }},
+                    toggle(name, enabled) {{
+                        if (enabled) names.add(name); else names.delete(name);
+                    }}
+                }};
+            }}
+            const body = {{ classList: makeClassList() }};
+            const sidebar = {{ classList: makeClassList() }};
+            const controls = {{
+                sidebar,
+                'sidebar-toggle-desktop': {{ classList: makeClassList(), attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }} }},
+                'show-sidebar-btn': {{ classList: makeClassList(), attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }} }},
+                'mobile-menu-button': {{ setAttribute() {{}} }}
+            }};
+            const document = {{
+                body,
+                documentElement: {{ dataset: {{}} }},
+                getElementById(id) {{ return controls[id] || null; }}
+            }};
+            const window = {{ innerWidth: 1200 }};
+            let mobileCloseCalls = 0;
+            function setMobileSidebar(open) {{
+                if (!open) {{ mobileCloseCalls += 1; sidebar.classList.remove('active'); }}
+            }}
+            {helpers}
+
+            assert.strictEqual(readStoredSidebarVisibility(), 'expanded');
+            syncSidebarVisibilityForViewport();
+            assert.strictEqual(body.classList.contains('sidebar-collapsed'), false);
+            toggleSidebarDesktop();
+            assert.strictEqual(body.classList.contains('sidebar-collapsed'), true);
+            assert.strictEqual(stored.get(SIDEBAR_VISIBILITY_STORAGE_KEY), 'collapsed');
+            toggleSidebarDesktop();
+            assert.strictEqual(body.classList.contains('sidebar-collapsed'), false);
+            assert.strictEqual(stored.get(SIDEBAR_VISIBILITY_STORAGE_KEY), 'expanded');
+
+            stored.set(SIDEBAR_VISIBILITY_STORAGE_KEY, 'invalid');
+            syncSidebarVisibilityForViewport();
+            assert.strictEqual(body.classList.contains('sidebar-collapsed'), false);
+            storageUnavailable = true;
+            assert.strictEqual(readStoredSidebarVisibility(), 'expanded');
+            applySidebarVisibility(true, true);
+            storageUnavailable = false;
+
+            stored.set(SIDEBAR_VISIBILITY_STORAGE_KEY, 'collapsed');
+            const preferenceBeforeMobile = stored.get(SIDEBAR_VISIBILITY_STORAGE_KEY);
+            window.innerWidth = 800;
+            body.classList.add('sidebar-collapsed');
+            sidebar.classList.add('active');
+            syncSidebarVisibilityForViewport();
+            assert.strictEqual(body.classList.contains('sidebar-collapsed'), false);
+            assert.strictEqual(document.documentElement.dataset.sidebarCollapsed, 'false');
+            assert.strictEqual(stored.get(SIDEBAR_VISIBILITY_STORAGE_KEY), preferenceBeforeMobile);
+            assert.strictEqual(mobileCloseCalls, 1);
+
+            window.innerWidth = 1200;
+            syncSidebarVisibilityForViewport();
+            assert.strictEqual(body.classList.contains('sidebar-collapsed'), true);
+            assert.strictEqual(document.documentElement.dataset.sidebarCollapsed, 'true');
+        """)
+        result = subprocess.run(
+            ['node', '-e', node_script],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
     def test_pending_summary_endpoint_is_lightweight(self):
         self.assertIn("@app.route('/api/nav/pending-summary')", self.app_source)
