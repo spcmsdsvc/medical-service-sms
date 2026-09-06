@@ -50,16 +50,16 @@
 }
 
 :root[data-app-theme="dark"] {
-    --app-bg: #0f1722;
-    --app-surface: #182231;
-    --app-surface-raised: #202c3c;
-    --app-text: #f2f5f8;
-    --app-muted: #a8b4c4;
-    --app-border: #3a485b;
-    --app-input: #111a27;
-    --app-sidebar: #172333;
-    --app-sidebar-deep: #101925;
-    --app-shadow: 0 10px 28px rgba(0, 0, 0, .28);
+    --app-bg: #000000;
+    --app-surface: #101010;
+    --app-surface-raised: #191919;
+    --app-text: #ededed;
+    --app-muted: #b0b0b0;
+    --app-border: #626262;
+    --app-input: #0b0b0b;
+    --app-sidebar: #080808;
+    --app-sidebar-deep: #000000;
+    --app-shadow: 0 10px 28px rgba(0, 0, 0, .5);
     color-scheme: dark;
 }
 
@@ -154,10 +154,10 @@ a:not(.btn):not(.sidebar a) { color: var(--app-primary); }
     color: var(--app-text) !important;
     border-color: var(--app-border) !important;
 }
-:root[data-app-theme="dark"] :is(.form-control, .form-select, textarea, input)::placeholder { color: #8290a3; opacity: 1; }
+:root[data-app-theme="dark"] :is(.form-control, .form-select, textarea, input)::placeholder { color: #8c8c8c; opacity: 1; }
 :root[data-app-theme="dark"] :is(.form-control:disabled, .form-control[readonly], .form-select:disabled, input:disabled, textarea:disabled) {
-    background-color: #263344 !important;
-    color: #aab5c3 !important;
+    background-color: var(--app-surface-raised) !important;
+    color: var(--app-muted) !important;
     opacity: 1;
 }
 :root[data-app-theme="dark"] .table { --bs-table-bg: var(--app-surface); --bs-table-color: var(--app-text); --bs-table-border-color: var(--app-border); }
@@ -167,7 +167,7 @@ a:not(.btn):not(.sidebar a) { color: var(--app-primary); }
 :root[data-app-theme="dark"] .dropdown-item:hover,
 :root[data-app-theme="dark"] .dropdown-item:focus { background: var(--app-surface-raised); color: var(--app-text); }
 :root[data-app-theme="dark"] .btn-close { filter: invert(1) grayscale(1) brightness(1.8); }
-:root[data-app-theme="dark"] .login-card { background: rgba(24, 34, 49, .98) !important; color: var(--app-text); border-color: var(--app-border); }
+:root[data-app-theme="dark"] .login-card { background: var(--app-surface) !important; color: var(--app-text); border-color: var(--app-border); }
 :root[data-app-theme="dark"] .login-card :is(h1,h2,h3,h4,h5,h6,label) { color: var(--app-text) !important; }
 :root[data-app-theme="dark"] .shadow-sm,
 :root[data-app-theme="dark"] .shadow { box-shadow: var(--app-shadow) !important; }

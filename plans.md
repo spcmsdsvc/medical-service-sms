@@ -1,5 +1,122 @@
 # Medical Service SMS — Approved Plans
 
+## Replace existing dark mode with AMOLED
+
+**Status:** Executed — local verification complete; formal review and owner visual checks remain
+separately authorized actions.
+**Approved:** 2026-09-06 — owner explicitly said `PLEASE IMPLEMENT THIS PLAN`.
+**Detailed:** 2026-09-06
+**Execution authorized:** 2026-09-06 — the owner authorized implementation of this package.
+The Builder must keep the change simple and avoid overengineering: use existing theme variables
+and selectors, with no new theme engine, dependency, separate AMOLED preference, or unrelated
+redesign.
+
+### Outcome and decisions
+
+Replace the existing navy dark theme with the approved black-and-charcoal treatment. Keep Light,
+Dark, and System settings, the moon/sun shortcut, saved preferences, and existing accent choices.
+Existing users with Dark selected automatically receive AMOLED. Use pure black backgrounds,
+near-black sections, charcoal raised surfaces, soft white text, and readable muted labels.
+Preserve current page layouts and font families while correcting inconsistent text colors and
+weights where dark-mode readability needs it. The design preview is a styling reference, not a
+request to rebuild Settings. Document previews retain their white paper appearance.
+
+### Files and exclusions
+
+- Touch `static/css/app-themes.css` and `static/css/app-dark-pages.css` for the shared AMOLED
+  palette and page-specific neutral/component overrides; retain semantic status colors.
+- Touch `static/css/app-auth.css` only to align the signed-out authentication page background
+  with the shared true-black dark treatment.
+- Touch `static/js/app-appearance.js` for the dark browser theme color; keep the existing `dark`
+  stored mode and appearance API unchanged.
+- Update shared/authentication template asset versions in `templates/layout.html`,
+  `templates/login.html`, `templates/forgot_password.html`, and `templates/reset_password.html`.
+- Extend `tests/test_appearance_themes.py` with focused palette and contrast contracts, update
+  exact service-worker cache assertions, bump the embedded worker in `app.py`, add one published
+  `2026-09-06` appearance release item to `static/changelog/releases.json`, and update this plan
+  and `changes.md`.
+- Do not add a theme engine, dependency, separate AMOLED preference, database migration,
+  production/Railway/database change, browser automation, commit, push, deployment, or changes
+  to official document/signature/print output. Preserve `scheduler.db`, handoffs, `.claude/`,
+  `output/`, `outputs/`, `tmp/`, and unrelated owner work.
+
+### Numbered execution steps
+
+1. **Preflight and record.** Read all applicable instructions, `changes.md` in full, current
+   plans/control records, affected theme/runtime/template sources, and test isolation rules.
+   Inspect the dirty tree and preserve protected artifacts. Record this approved package here
+   before implementation; done when the current palette, asset versions, worker cache, and
+   appearance tests are identified.
+2. **Fail-first contracts.** Add focused tests for the exact AMOLED base values in both theme
+   layers, text and control contrast, dark browser theme color, versioned theme assets, and the
+   absence of old navy neutral values in the late-loaded page layer. Run those tests against the
+   unchanged source and retain the intentional failures as evidence.
+3. **Replace shared dark colors.** Set the dark shared variables to background `#000000`,
+   surface `#101010`, raised surface `#191919`, text `#ededed`, muted text `#b0b0b0`, and a
+   control border meeting the 3:1 non-text contrast floor. Align the page-layer variables to the
+   same tonal system, tokenizing neutral calendar, workflow, table, disabled, dropdown, button,
+   and scrollbar surfaces while leaving semantic status/category colors intact.
+4. **Adapt components.** Ensure headings, labels, links, sections, tables, inputs, buttons,
+   menus, dialogs, notifications, disabled/read-only states, dashboard panels, calendar cells,
+   analytics/reports, settings cards, authentication cards, reimbursement controls, purchasing
+   surfaces, and service-report/TSR surfaces inherit the AMOLED variables. Keep existing layouts,
+   responsive behavior, icon fonts, accent choices, status meanings, and fixed white document/
+   signature/print canvases unchanged.
+5. **Preserve activation and persistence.** Keep quick-toggle, System resolution, account
+   synchronization, offline preference behavior, and the current `dark` mode wire value. Set the
+   dark browser `theme-color` to `#000000` and version the changed shared/auth asset URLs so the
+   deployed browser receives them. Do not change the appearance API or add a database migration.
+6. **Deliver and verify locally.** Bump the embedded service-worker cache once to the next
+   appearance label and update all exact current-cache assertions. Add a published release item.
+   Run focused appearance/theme/cache/changelog checks, relevant page regressions, and full
+   unittest discovery with a unique fresh disposable database outside the repository. Run Python,
+   Jinja, extracted inline-JavaScript, CSS-brace, release JSON, and `git diff --check` validation.
+   Browser automation is prohibited by project instructions, so leave desktop and 375px visual
+   inspection for the owner.
+7. **Complete records and report.** Update `changes.md` during the same task with factual files,
+   behavior, cache/release, test counts, baseline failures, protected-state preservation, and
+   visual limitations. Update this plan with the actual outcome and exact pass/fail/skip results.
+   Perform Builder self-review and stop without formal post-implementation review, commit, push,
+   deployment, Railway, production, or database operations.
+
+### Acceptance criteria
+
+- Dark and System-dark resolve to the AMOLED palette; Light retains its existing appearance.
+- Saved preferences, reload, quick toggle, System resolution, and offline synchronization remain
+  compatible with the existing `dark` mode and API.
+- Normal text and actionable accent text target at least 4.5:1 contrast; essential control
+  boundaries and focus indicators target 3:1.
+- Existing semantic/status colors remain distinguishable, and document previews/signatures/print
+  output remain white and unchanged.
+- Shared and late-loaded page styles do not restore the old navy neutral backgrounds.
+- Source tests and isolated suite provide reasonable confidence; browser visual checks remain the
+  owner's final desktop and 375px confirmation.
+
+### Implementation outcome (2026-09-06)
+
+- Implemented the package in `static/css/app-themes.css`, `static/css/app-dark-pages.css`,
+  `static/css/app-auth.css`, `static/js/app-appearance.js`, the shared/authentication templates,
+  cache/release metadata, and the appearance contracts. The existing `dark` mode now uses `#000000` page background,
+  `#101010` surfaces, `#191919` raised surfaces, `#ededed` text, `#b0b0b0` muted text, and
+  tokenized neutral component treatments; semantic calendar/status colors, accents, layouts,
+  fixed document/signature/print canvases, activation, persistence, and API behavior remain.
+- Added the published `2026-09-06-amoled-dark-mode` release, bumped the embedded worker once to
+  `medical-service-pwa-offline-navigation-v136-amoled-dark`, updated exact current-cache
+  assertions, and versioned shared/auth assets to themes v20, dark-page v25, auth CSS v3, and
+  appearance JS v17.
+- Unchanged-source fail-first: four new test cases produced **13 intentional failures, 0 passes,
+  0 errors**. Final focused AMOLED contracts passed **4/4**; related appearance/cache/changelog
+  tests ran **26 total with 25 passes, 0 failures, 0 errors, and 1 expected skip**; isolated full discovery on a unique external
+  database completed **953 tests: 942 passed, 10 known baseline failures, 1 expected skip, 0
+  errors**. Baseline failures are eight Purchase Order 429 setup cases and two Staff Creation
+  fixture/initials cases.
+- Static checks passed: external-cache `py_compile`, Jinja parsing of 32 templates, extracted
+  appearance JavaScript syntax, release JSON/uniqueness validation (**70 releases, 232 unique
+  items**), CSS brace balance (**60 / 237**), and `git diff --check`. No database/schema,
+  production/Railway, browser/Codex UI, official artifact, commit, push, deployment, or protected
+  artifact action was performed. Owner visual inspection at desktop and 375px remains pending.
+
+
 ## Reimbursement manual item category selector
 
 **Status:** Executed — c2279da. Owner-authorized implementation and local verification are

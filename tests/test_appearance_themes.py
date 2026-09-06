@@ -159,6 +159,104 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         assert_cache_version_at_least(self, 35, app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
 
+    def test_amoled_palette_is_shared_by_theme_layers(self):
+        """Dark mode uses the approved true-black palette in both CSS layers."""
+        theme_css = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
+        dark_css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+
+        expected = {
+            '--app-bg': '#000000',
+            '--app-surface': '#101010',
+            '--app-surface-raised': '#191919',
+            '--app-text': '#ededed',
+            '--app-muted': '#b0b0b0',
+        }
+        for token, colour in expected.items():
+            with self.subTest(token=token):
+                self.assertRegex(
+                    theme_css,
+                    rf':root\[data-app-theme="dark"\][\s\S]*?{re.escape(token)}:\s*{re.escape(colour)}\b',
+                )
+
+        dark_expected = {
+            '--dark-page': '#000000',
+            '--dark-panel': '#101010',
+            '--dark-card': '#191919',
+            '--dark-text': '#ededed',
+            '--dark-muted': '#b0b0b0',
+        }
+        for token, colour in dark_expected.items():
+            with self.subTest(token=token):
+                self.assertRegex(
+                    dark_css,
+                    rf':root\[data-app-theme="dark"\][\s\S]*?{re.escape(token)}:\s*{re.escape(colour)}\b',
+                )
+
+    def test_amoled_text_and_control_contrast_contract(self):
+        """The core text and control colors remain legible on AMOLED surfaces."""
+        theme_css = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
+
+        def relative_luminance(value):
+            channels = [int(value.lstrip('#')[index:index + 2], 16) / 255 for index in (0, 2, 4)]
+            linear = [
+                channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4
+                for channel in channels
+            ]
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+        def contrast(first, second):
+            lighter, darker = sorted(
+                (relative_luminance(first), relative_luminance(second)), reverse=True
+            )
+            return (lighter + 0.05) / (darker + 0.05)
+
+        dark_block = theme_css.split(':root[data-app-theme="dark"]', 1)[1]
+        values = dict(re.findall(
+            r'(--app-(?:bg|surface|surface-raised|text|muted|border)):\s*(#[0-9a-fA-F]{6})',
+            dark_block,
+        ))
+        self.assertEqual(
+            values,
+            {
+                '--app-bg': '#000000',
+                '--app-surface': '#101010',
+                '--app-surface-raised': '#191919',
+                '--app-text': '#ededed',
+                '--app-muted': '#b0b0b0',
+                '--app-border': '#626262',
+            },
+        )
+        for surface in ('#000000', '#101010', '#191919'):
+            self.assertGreaterEqual(contrast('#ededed', surface), 4.5)
+            self.assertGreaterEqual(contrast('#b0b0b0', surface), 4.5)
+        self.assertGreaterEqual(contrast('#626262', '#101010'), 3.0)
+
+    def test_amoled_runtime_and_asset_versions_are_present(self):
+        runtime = (ROOT / 'static' / 'js' / 'app-appearance.js').read_text(encoding='utf-8')
+        layout = (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8')
+        auth_styles = (ROOT / 'static' / 'css' / 'app-auth.css').read_text(encoding='utf-8')
+        auth = [
+            (ROOT / name).read_text(encoding='utf-8')
+            for name in ('templates/login.html', 'templates/forgot_password.html', 'templates/reset_password.html')
+        ]
+        self.assertIn("resolved === 'dark' ? '#000000'", runtime)
+        self.assertIn('--login-page-bg: #000000;', auth_styles)
+        self.assertIn("filename='css/app-themes.css') }}?v=20", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=25", layout)
+        self.assertIn("filename='js/app-appearance.js') }}?v=17", layout)
+        for source in auth:
+            self.assertIn("filename='css/app-themes.css') }}?v=20", source)
+            self.assertIn("filename='css/app-auth.css') }}?v=3", source)
+
+    def test_amoled_dark_page_layer_does_not_restore_navy_neutrals(self):
+        dark_css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+        for old_colour in (
+            '#0f1722', '#182333', '#202d3e', '#263549', '#111b29', '#3b4a5e', '#101925',
+        ):
+            self.assertNotIn(old_colour, dark_css.lower(), f'old dark neutral remains: {old_colour}')
+        self.assertIn('background: var(--dark-panel) !important;', dark_css)
+        self.assertIn('background: var(--dark-card) !important;', dark_css)
+
     def test_additional_accent_themes_are_available_across_the_app(self):
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
         settings = (ROOT / 'templates' / 'settings.html').read_text(encoding='utf-8')
@@ -235,7 +333,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '[class*="-stat-value"]',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=24", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=25", layout)
 
     def test_dark_mode_covers_native_and_custom_dropdowns(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
@@ -271,7 +369,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '.receipt-pill, .reim-receipt-pill',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-themes.css') }}?v=19", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=20", layout)
 
     def test_dark_mode_covers_system_neutral_surfaces(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')

@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-06-amoled-dark-mode",
+      "release_date": "2026-09-06",
+      "title": "AMOLED Dark Mode",
+      "summary": "Dark mode now uses a true-black interface with readable charcoal surfaces and controls.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-06-amoled-dark-mode-everyone",
+          "category": "Appearance",
+          "description": "The existing Dark and System-dark settings now use an AMOLED palette across shared sections, text, tables, forms, buttons, menus, dialogs, notifications, dashboard, calendar, settings, purchasing, reimbursement, and service-report surfaces while Light mode, saved preferences, accents, and document previews remain compatible.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-06-reimbursement-manual-categories",
       "release_date": "2026-09-06",
       "title": "Reimbursement Manual Item Categories",

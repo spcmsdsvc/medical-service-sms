@@ -24,7 +24,7 @@
 }
 
 :root[data-app-theme="dark"] {
-    --login-page-bg: #080d16;
+    --login-page-bg: #000000;
 }
 
 .auth-page * {

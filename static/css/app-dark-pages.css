@@ -1,13 +1,15 @@
 /* Late-loaded page-aware dark mode repairs. Generated documents are excluded below. */
 :root[data-app-theme="dark"] {
-    --dark-page: #0f1722;
-    --dark-panel: #182333;
-    --dark-card: #202d3e;
-    --dark-card-hover: #263549;
-    --dark-input: #111b29;
-    --dark-border: #3b4a5e;
-    --dark-text: #f1f5f9;
-    --dark-muted: #a8b5c6;
+    --dark-page: #000000;
+    --dark-panel: #101010;
+    --dark-card: #191919;
+    --dark-card-hover: #242424;
+    --dark-control-hover: #303030;
+    --dark-input: #0b0b0b;
+    --dark-border: #626262;
+    --dark-border-strong: #7a7a7a;
+    --dark-text: #ededed;
+    --dark-muted: #b0b0b0;
     --calendar-client: #38bdf8;
     --calendar-client-bg: #172d3d;
     --calendar-office: #f472b6;
@@ -74,9 +76,9 @@
 }
 :root[data-app-theme="dark"] select:disabled,
 :root[data-app-theme="dark"] .form-select:disabled {
-    background-color: #263344 !important;
-    color: #b7c3d1 !important;
-    border-color: #46566b !important;
+    background-color: var(--dark-card-hover) !important;
+    color: var(--dark-muted) !important;
+    border-color: var(--dark-border) !important;
     opacity: .78;
 }
 :root[data-app-theme="dark"] :is(
@@ -117,8 +119,8 @@
     color: #fff !important;
 }
 :root[data-app-theme="dark"] .travel-equipment-toggle:disabled {
-    background: #263344 !important;
-    color: #b7c3d1 !important;
+    background: var(--dark-card-hover) !important;
+    color: var(--dark-muted) !important;
 }
 :root[data-app-theme="dark"] .tsr-category-menu input[type="checkbox"]:checked + span {
     color: #86efac !important;
@@ -142,9 +144,9 @@
 :root[data-app-theme="dark"] .timeline-travel-suggestion-chip-meta { color: var(--dark-muted) !important; }
 :root[data-app-theme="dark"] .btn-outline-dark {
     color: var(--dark-text);
-    border-color: #7c8ba0;
+    border-color: var(--dark-border-strong);
 }
-:root[data-app-theme="dark"] .btn-outline-dark:hover { background: #35445a; color: #fff; }
+:root[data-app-theme="dark"] .btn-outline-dark:hover { background: var(--dark-control-hover); color: #fff; }
 :root[data-app-theme="dark"] :is(.table-light, .table-light > *) {
     --bs-table-bg: var(--dark-card) !important;
     --bs-table-color: var(--dark-text) !important;
@@ -155,9 +157,9 @@
     color: var(--dark-text);
     border-color: var(--dark-border);
 }
-:root[data-app-theme="dark"] ::-webkit-scrollbar-track { background: #101925; }
-:root[data-app-theme="dark"] ::-webkit-scrollbar-thumb { background: #536176; border-color: #101925; }
-:root[data-app-theme="dark"] { scrollbar-color: #536176 #101925; }
+:root[data-app-theme="dark"] ::-webkit-scrollbar-track { background: var(--dark-page); }
+:root[data-app-theme="dark"] ::-webkit-scrollbar-thumb { background: #626262; border-color: var(--dark-page); }
+:root[data-app-theme="dark"] { scrollbar-color: #626262 var(--dark-page); }
 
 /* Activity Logs */
 :root[data-app-theme="dark"] .activity-summary-card,
@@ -181,7 +183,7 @@
     border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] .quick-filter:hover { background: var(--dark-card-hover) !important; color: #fff !important; }
-:root[data-app-theme="dark"] .branch-chip { background: #2a394c; color: #d9e2ec; border-color: #526177; }
+:root[data-app-theme="dark"] .branch-chip { background: var(--dark-card-hover); color: var(--dark-text); border-color: var(--dark-border); }
 :root[data-app-theme="dark"] .activity-table-wrap { background: var(--dark-panel) !important; }
 :root[data-app-theme="dark"] .activity-log-row:hover > * { background: var(--dark-card-hover) !important; }
 
@@ -207,74 +209,74 @@
     .timeline-engineer-focus-icon, .timeline-engineer-hero-icon, .timeline-hybrid-hero-icon,
     .timeline-scheduler-hero-icon, .timeline-engineer-mini-badge
 ) {
-    background: #26374b !important;
-    color: #dce8f5 !important;
-    border-color: #526177 !important;
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] .timeline-scroll-hint {
     background: var(--dark-panel) !important;
     color: var(--dark-muted) !important;
-    border-color: #55657a !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] :is(.timeline-sticky-h-scroll, .timeline-bottom-scroll) {
-    background: #111b28 !important;
+    background: var(--dark-panel) !important;
     border-color: var(--dark-border) !important;
 }
-:root[data-app-theme="dark"] :is(.timeline-sticky-h-scroll, .timeline-bottom-scroll)::-webkit-scrollbar-track { background: #111b28 !important; }
-:root[data-app-theme="dark"] :is(.timeline-sticky-h-scroll, .timeline-bottom-scroll)::-webkit-scrollbar-thumb { background: #607087 !important; border-color: #111b28 !important; }
+:root[data-app-theme="dark"] :is(.timeline-sticky-h-scroll, .timeline-bottom-scroll)::-webkit-scrollbar-track { background: var(--dark-panel) !important; }
+:root[data-app-theme="dark"] :is(.timeline-sticky-h-scroll, .timeline-bottom-scroll)::-webkit-scrollbar-thumb { background: var(--dark-border-strong) !important; border-color: var(--dark-panel) !important; }
 :root[data-app-theme="dark"] .timeline-scroll-wrapper {
-    background: #111b28 !important;
+    background: var(--dark-panel) !important;
     border-color: var(--dark-border) !important;
 }
-:root[data-app-theme="dark"] .timeline-scroll-wrapper::-webkit-scrollbar-track { background: #111b28 !important; }
-:root[data-app-theme="dark"] .timeline-scroll-wrapper::-webkit-scrollbar-thumb { background: #607087 !important; border-color: #111b28 !important; }
+:root[data-app-theme="dark"] .timeline-scroll-wrapper::-webkit-scrollbar-track { background: var(--dark-panel) !important; }
+:root[data-app-theme="dark"] .timeline-scroll-wrapper::-webkit-scrollbar-thumb { background: var(--dark-border-strong) !important; border-color: var(--dark-panel) !important; }
 :root[data-app-theme="dark"] .timeline-grid-table > thead th {
-    background: #161f2b !important;
-    color: #f8fafc !important;
-    border-color: #465569 !important;
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] .timeline-grid-table > tbody > tr:not(.branch-divider) > td {
-    background: #172231 !important;
+    background: var(--dark-panel) !important;
     color: var(--dark-text) !important;
-    border-color: #3d4c60 !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] .timeline-grid-table > tbody > tr:not(.branch-divider):nth-child(even) > td {
-    background: #1a2636 !important;
+    background: var(--dark-card) !important;
 }
 :root[data-app-theme="dark"] .timeline-grid-table > tbody > tr > td:first-child {
-    background: #202d3e !important;
+    background: var(--dark-card) !important;
     color: var(--dark-text) !important;
-    border-right-color: #526177 !important;
+    border-right-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] .timeline-grid-table .row-me > td:first-child {
-    background: color-mix(in srgb, #202d3e 84%, var(--app-primary) 16%) !important;
+    background: color-mix(in srgb, var(--dark-card) 84%, var(--app-primary) 16%) !important;
 }
 :root[data-app-theme="dark"] .timeline-grid-table .row-me > td {
     border-top-color: color-mix(in srgb, var(--app-primary) 70%, #fff) !important;
     border-bottom-color: color-mix(in srgb, var(--app-primary) 70%, #fff) !important;
 }
 :root[data-app-theme="dark"] .timeline-grid-table .branch-divider > td {
-    background: #111a27 !important;
-    color: #cbd5e1 !important;
-    border-color: #465569 !important;
+    background: var(--dark-input) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] .timeline-freeze-toolbar :is(.form-select, .form-control, .input-group-text) {
-    background: #111b29 !important;
+    background: var(--dark-input) !important;
     color: var(--dark-text) !important;
-    border-color: #526177 !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] .timeline-freeze-toolbar :is(.btn-light, .btn-outline-secondary, .btn-outline-dark) {
-    background: #202d3e !important;
+    background: var(--dark-card) !important;
     color: var(--dark-text) !important;
-    border-color: #526177 !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] .timeline-freeze-toolbar :is(.btn-light, .btn-outline-secondary, .btn-outline-dark):hover,
 :root[data-app-theme="dark"] .timeline-freeze-toolbar :is(.btn-light, .btn-outline-secondary, .btn-outline-dark):focus-visible {
-    background: #2a394d !important;
+    background: var(--dark-control-hover) !important;
     border-color: var(--app-primary) !important;
 }
 :root[data-app-theme="dark"] .calendar-drop-cell:is(.workload-free, .workload-normal, .workload-busy, .workload-heavy) {
-    background: #172231 !important;
+    background: var(--dark-panel) !important;
 }
 :root[data-app-theme="dark"] .calendar-drop-cell.workload-busy { box-shadow: inset 0 0 0 1px rgba(245,158,11,.25); }
 :root[data-app-theme="dark"] .calendar-drop-cell.workload-heavy { box-shadow: inset 0 0 0 1px rgba(239,68,68,.32); }
@@ -289,9 +291,9 @@
     background: linear-gradient(180deg, color-mix(in srgb, var(--calendar-card-bg) 82%, #fff 4%) 0%, var(--calendar-card-bg) 100%) !important;
     color: var(--dark-text) !important;
     border-left-color: var(--calendar-card-accent) !important;
-    border-top-color: color-mix(in srgb, var(--calendar-card-accent) 38%, #3f4d61) !important;
-    border-right-color: #425168 !important;
-    border-bottom-color: #425168 !important;
+    border-top-color: color-mix(in srgb, var(--calendar-card-accent) 38%, var(--dark-border)) !important;
+    border-right-color: var(--dark-border) !important;
+    border-bottom-color: var(--dark-border) !important;
     box-shadow: 0 6px 16px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.035) !important;
 }
 :root[data-app-theme="dark"] .schedule-card.schedule-office { --calendar-card-accent: var(--calendar-office); --calendar-card-bg: var(--calendar-office-bg); }
@@ -303,7 +305,7 @@
 :root[data-app-theme="dark"] .schedule-card.border-success { --calendar-card-accent: #4ade80; --calendar-card-bg: #173426; }
 :root[data-app-theme="dark"] .schedule-card.border-warning { --calendar-card-accent: #fbbf24; --calendar-card-bg: #382f1c; }
 :root[data-app-theme="dark"] .schedule-card.border-info { --calendar-card-accent: #22d3ee; --calendar-card-bg: #17333a; }
-:root[data-app-theme="dark"] .schedule-card.border-dark { --calendar-card-accent: #cbd5e1; --calendar-card-bg: #263142; }
+:root[data-app-theme="dark"] .schedule-card.border-dark { --calendar-card-accent: #cbd5e1; --calendar-card-bg: var(--dark-card); }
 :root[data-app-theme="dark"] .schedule-card:hover,
 :root[data-app-theme="dark"] .schedule-card:focus-within {
     background: linear-gradient(180deg, color-mix(in srgb, var(--calendar-card-bg) 82%, #fff 10%) 0%, color-mix(in srgb, var(--calendar-card-bg) 92%, #fff 4%) 100%) !important;
@@ -316,15 +318,15 @@
 :root[data-app-theme="dark"] .schedule-card :is(.schedule-title, .schedule-client, .schedule-client-primary, .schedule-task-secondary) { color: var(--dark-text) !important; }
 :root[data-app-theme="dark"] .schedule-card :is(.schedule-product, .schedule-product-tertiary) { color: color-mix(in srgb, var(--calendar-card-accent) 72%, #fff) !important; }
 :root[data-app-theme="dark"] .schedule-card .schedule-type-icon { color: var(--calendar-card-accent) !important; }
-:root[data-app-theme="dark"] .schedule-card .schedule-time { color: #b7c3d1 !important; }
+:root[data-app-theme="dark"] .schedule-card .schedule-time { color: var(--dark-muted) !important; }
 :root[data-app-theme="dark"] .schedule-card :is(.schedule-footer, .schedule-card-actions) { border-color: rgba(203,213,225,.18); }
 :root[data-app-theme="dark"] .schedule-card :is(.text-primary, .schedule-files .text-primary) { color: var(--calendar-card-accent) !important; }
 :root[data-app-theme="dark"] .schedule-card-action-btn {
-    background: #172231 !important;
-    color: #dce5ef !important;
-    border-color: #526177 !important;
+    background: var(--dark-panel) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
 }
-:root[data-app-theme="dark"] .schedule-card-action-details:hover { background: #38485d !important; color: #fff !important; }
+:root[data-app-theme="dark"] .schedule-card-action-details:hover { background: var(--dark-control-hover) !important; color: #fff !important; }
 :root[data-app-theme="dark"] .schedule-card-action-edit:hover { background: #173e68 !important; color: #93c5fd !important; }
 :root[data-app-theme="dark"] .schedule-card-action-tsr:hover { background: #4a351c !important; color: #fbbf24 !important; }
 :root[data-app-theme="dark"] .schedule-card-action-send:hover { background: #163c30 !important; color: #6ee7b7 !important; }
@@ -335,15 +337,15 @@
 :root[data-app-theme="dark"] .schedule-travel-reference { color: #ddd6fe !important; }
 
 :root[data-app-theme="dark"] .calendar-legend { color: var(--dark-muted); }
-:root[data-app-theme="dark"] .legend-pill { background: #202d3e !important; color: var(--dark-text); border-color: #526177; box-shadow: 0 2px 8px rgba(0,0,0,.18); }
+:root[data-app-theme="dark"] .legend-pill { background: var(--dark-card) !important; color: var(--dark-text); border-color: var(--dark-border); box-shadow: 0 2px 8px rgba(0,0,0,.18); }
 :root[data-app-theme="dark"] :is(.timeline-schedule-hover-summary, .timeline-summary-close-btn) {
     background: var(--dark-card) !important;
     color: var(--dark-text) !important;
     border-color: var(--dark-border) !important;
 }
-:root[data-app-theme="dark"] .timeline-hover-summary-head { background: #25344a !important; border-color: var(--dark-border); }
+:root[data-app-theme="dark"] .timeline-hover-summary-head { background: var(--dark-card-hover) !important; border-color: var(--dark-border); }
 :root[data-app-theme="dark"] :is(.timeline-hover-summary-title, .timeline-hover-summary-sub) { color: inherit !important; }
-:root[data-app-theme="dark"] .timeline-summary-action-close { background: #35445a; color: #fff; border-color: #607087; }
+:root[data-app-theme="dark"] .timeline-summary-action-close { background: var(--dark-control-hover); color: #fff; border-color: var(--dark-border-strong); }
 
 /* Calendar edit modal: page-owned inner panels must match the modal surface. */
 :root[data-app-theme="dark"] #shiftModal :is(
@@ -356,9 +358,9 @@
     border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] #shiftModal .time-preset-btn {
-    background: #26374b !important;
+    background: var(--dark-card) !important;
     color: #bfdbfe !important;
-    border-color: #526c8a !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] #shiftModal .time-preset-btn:hover,
 :root[data-app-theme="dark"] #shiftModal .time-preset-btn:focus-visible {
@@ -390,7 +392,7 @@
     --calendar-card-bg: var(--calendar-client-bg);
     background: linear-gradient(145deg, color-mix(in srgb, var(--calendar-card-bg) 88%, #fff 5%), var(--calendar-card-bg)) !important;
     color: var(--dark-text) !important;
-    border-color: color-mix(in srgb, var(--calendar-card-accent) 50%, #46566c) !important;
+    border-color: color-mix(in srgb, var(--calendar-card-accent) 50%, var(--dark-border)) !important;
     border-left: 4px solid var(--calendar-card-accent) !important;
 }
 :root[data-app-theme="dark"] :is(.mobile-schedule-card, .mobile-full-calendar-lite-chip).schedule-office { --calendar-card-accent: var(--calendar-office); --calendar-card-bg: var(--calendar-office-bg); }
@@ -411,9 +413,9 @@
 :root[data-app-theme="dark"] .mobile-schedule-card .mobile-meta-row > span { color: var(--dark-muted) !important; }
 :root[data-app-theme="dark"] .mobile-schedule-card .mobile-card-detail-label { color: var(--dark-muted) !important; }
 :root[data-app-theme="dark"] .mobile-schedule-card .mobile-engineer-chip {
-    background: #2a394c !important;
-    color: #dce5ef !important;
-    border-color: #526177 !important;
+    background: var(--dark-card-hover) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] :is(.mobile-day-step-btn, .mobile-selected-day-label, .mobile-hybrid-team-add-btn) { background: var(--dark-card) !important; color: var(--dark-text) !important; border-color: var(--dark-border) !important; }
 :root[data-app-theme="dark"] :is(.mobile-pill, .mobile-desktop-toggle) {
@@ -422,7 +424,7 @@
     border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] .mobile-pill.active { background: var(--app-primary) !important; color: #fff !important; }
-:root[data-app-theme="dark"] .mobile-sticky-actions { background: #111b28 !important; border-color: var(--dark-border) !important; }
+:root[data-app-theme="dark"] .mobile-sticky-actions { background: var(--dark-panel) !important; border-color: var(--dark-border) !important; }
 
 /* Workflow surfaces */
 :root[data-app-theme="dark"] :is(
@@ -488,7 +490,7 @@
     color: var(--dark-text) !important;
     border-color: var(--dark-border) !important;
 }
-:root[data-app-theme="dark"] .embedded-lpr-items th { background: #24344a !important; color: #dbeafe !important; }
+:root[data-app-theme="dark"] .embedded-lpr-items th { background: var(--dark-card) !important; color: var(--dark-text) !important; }
 :root[data-app-theme="dark"] .embedded-lpr-items td { border-color: var(--dark-border) !important; }
 :root[data-app-theme="dark"] .embedded-lpr-muted { color: var(--dark-muted) !important; }
 :root[data-app-theme="dark"] .embedded-lpr-notice { background: #18395f !important; color: #bfdbfe !important; }
@@ -518,16 +520,16 @@
     color: var(--dark-text) !important;
 }
 :root[data-app-theme="dark"] :is(.changelog-subtitle, .changelog-summary) {
-    color: #b7c3d1 !important;
+    color: var(--dark-muted) !important;
 }
 :root[data-app-theme="dark"] .changelog-date span {
-    color: #9fb0c4 !important;
+    color: var(--dark-muted) !important;
 }
 :root[data-app-theme="dark"] .changelog-category-title {
-    color: #dbe7f4 !important;
+    color: var(--dark-text) !important;
 }
 :root[data-app-theme="dark"] .changelog-item {
-    color: #c8d3e0 !important;
+    color: var(--dark-text) !important;
     border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] .changelog-release-head {
@@ -574,8 +576,8 @@
     color: var(--dark-muted) !important;
 }
 :root[data-app-theme="dark"] :is(.btn:disabled, .form-control:disabled, .form-select:disabled) {
-    color: #b7c3d1 !important;
-    border-color: #46566b !important;
+    color: var(--dark-muted) !important;
+    border-color: var(--dark-border) !important;
     opacity: .78;
 }
 
@@ -589,12 +591,12 @@
 :root[data-app-theme="dark"] .accounting-shell .module-tab:hover,
 :root[data-app-theme="dark"] .accounting-shell .module-tab:focus-visible {
     background: var(--dark-card-hover) !important;
-    border-color: #607087 !important;
+    border-color: var(--dark-border-strong) !important;
     box-shadow: 0 12px 28px rgba(0,0,0,.3) !important;
 }
 :root[data-app-theme="dark"] .accounting-shell .module-tab.active {
-    background: color-mix(in srgb, var(--app-primary) 24%, #111b29) !important;
-    border-color: color-mix(in srgb, var(--app-primary) 72%, #8ba0ba) !important;
+    background: color-mix(in srgb, var(--app-primary) 24%, var(--dark-input)) !important;
+    border-color: color-mix(in srgb, var(--app-primary) 72%, var(--dark-border-strong)) !important;
 }
 :root[data-app-theme="dark"] .accounting-shell .module-tab .module-title {
     color: var(--dark-text) !important;
@@ -603,12 +605,12 @@
     color: var(--dark-muted) !important;
 }
 :root[data-app-theme="dark"] .accounting-shell .module-tab.active .module-desc {
-    color: #c8d3e0 !important;
+    color: var(--dark-text) !important;
 }
 :root[data-app-theme="dark"] .accounting-shell .module-badge {
-    background: #33445a !important;
-    color: #f8fafc !important;
-    border: 1px solid #53657d;
+    background: var(--dark-card-hover) !important;
+    color: var(--dark-text) !important;
+    border: 1px solid var(--dark-border);
 }
 :root[data-app-theme="dark"] .accounting-shell .module-tab.active .module-badge {
     background: #e8eef6 !important;
@@ -627,8 +629,8 @@
     color: var(--dark-muted) !important;
 }
 :root[data-app-theme="dark"] .accounting-shell .table-accounting th {
-    background: #202d3e !important;
-    color: #d9e2ec !important;
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
     border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] .accounting-shell .liquidation-row td {
@@ -674,9 +676,9 @@
     color: var(--dark-muted) !important;
 }
 :root[data-app-theme="dark"] :is(.cash-btn-secondary, .travel-btn-secondary) {
-    background: #2a394c !important;
-    color: #edf2f7 !important;
-    border-color: #53657d !important;
+    background: var(--dark-card-hover) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] :is(.cash-notification-action-btn, .travel-notification-close) {
     background: var(--dark-card) !important;
@@ -723,24 +725,24 @@
     color: var(--dark-muted) !important;
 }
 :root[data-app-theme="dark"] :is(.lpr-btn-secondary, .embedded-lpr-btn.secondary) {
-    background: #2a394c !important;
-    color: #edf2f7 !important;
-    border-color: #53657d !important;
+    background: var(--dark-card-hover) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] :is(.lpr-btn-secondary, .embedded-lpr-btn.secondary):hover {
-    background: #35475d !important;
+    background: var(--dark-control-hover) !important;
     color: #fff !important;
 }
 :root[data-app-theme="dark"] :is(.lpr-btn:disabled, .embedded-lpr-btn:disabled) {
-    background: #263344 !important;
-    color: #aebccc !important;
-    border-color: #46566b !important;
+    background: var(--dark-card-hover) !important;
+    color: var(--dark-muted) !important;
+    border-color: var(--dark-border) !important;
     opacity: .72;
 }
 :root[data-app-theme="dark"] :is(.receipt-pill, .reim-receipt-pill) {
-    background: #273654 !important;
+    background: var(--dark-card) !important;
     color: #c7d2fe !important;
-    border-color: #53657d !important;
+    border-color: var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] :is(.receipt-delete-btn, .reim-receipt-btn.danger) {
     background: #4a2029 !important;
@@ -814,7 +816,7 @@
 }
 :root[data-app-theme="dark"] .travel-signature-line {
     color: var(--dark-text) !important;
-    border-color: #7c8ba0 !important;
+    border-color: var(--dark-border-strong) !important;
 }
 :root[data-app-theme="dark"] :is(
     .travel-approval-signed-name, .reim-notification-title,
@@ -957,7 +959,7 @@
     .email-template-placeholder-muted
 ) { color: var(--dark-muted) !important; }
 :root[data-app-theme="dark"] .settings-section-tab:not(.active) {
-    color: #aebdd0 !important;
+    color: var(--dark-muted) !important;
 }
 :root[data-app-theme="dark"] .settings-section-tab:not(.active):hover,
 :root[data-app-theme="dark"] .settings-section-tab:not(.active):focus-visible {
@@ -982,7 +984,7 @@
 }
 :root[data-app-theme="dark"] .reim-table thead th,
 :root[data-app-theme="dark"] .reim-table thead th:nth-child(-n+3) {
-    background: #24344a !important;
+    background: var(--dark-card) !important;
     color: #dbeafe !important;
 }
 :root[data-app-theme="dark"] .reim-table tbody tr:hover td,
@@ -995,13 +997,13 @@
     border-color: #2d6a4f !important;
 }
 :root[data-app-theme="dark"] :is(.reim-btn-secondary, .reim-btn-danger-outline) {
-    background: #2a394c !important;
-    color: #edf2f7 !important;
-    border: 1px solid #53657d !important;
+    background: var(--dark-card-hover) !important;
+    color: var(--dark-text) !important;
+    border: 1px solid var(--dark-border) !important;
 }
 :root[data-app-theme="dark"] :is(.reim-btn-secondary, .reim-btn-danger-outline):hover,
 :root[data-app-theme="dark"] :is(.reim-btn-secondary, .reim-btn-danger-outline):focus-visible {
-    background: #35475d !important;
+    background: var(--dark-control-hover) !important;
     color: #fff !important;
 }
 

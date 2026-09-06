@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-06
 
+- The owner authorized committing and pushing only the AMOLED package to `origin/main`.
+  Publication includes its theme/template/runtime changes, appearance tests, exact cache
+  assertions, release metadata, and project records. Protected database, handoff, `.claude/`,
+  `output/`, `tmp/`, and unrelated files remain excluded. Existing local verification results
+  apply; desktop/mobile visual checks and formal review remain pending.
+
 - The owner explicitly authorized committing and pushing the accumulated Reimbursement
   worksheet packages. The publication allowlist is limited to the reimbursement source and
   template changes, desktop shell/sidebar styling, exact service-worker cache assertions,
@@ -158,6 +164,40 @@ codex changes - 2026-09-06
 - Browser desktop/mobile/light-dark/60% readability, sticky-column, action-button, and scrollbar
   checks remain pending for the owner; no commit, push, deployment, Railway, database, or
   protected-artifact action was performed.
+
+- Recorded and implemented the owner-authorized `Replace existing dark mode with AMOLED`
+  package. The existing `dark` appearance mode now resolves to a true-black `#000000` page,
+  `#101010` surfaces, `#191919` raised surfaces, `#ededed` primary text, and `#b0b0b0` muted
+  text across the shared theme and late-loaded page repair layer. Neutral calendar, workflow,
+  table, dropdown, disabled, button, and scrollbar treatments use the new tonal variables while
+  semantic status/category colors remain distinct.
+- Updated `static/js/app-appearance.js` so dark browser chrome uses `#000000`; preserved the
+  existing Light/Dark/System activation, quick toggle, account synchronization, offline cache,
+  accent selection, and appearance API. Set the signed-out auth page background in
+  `static/css/app-auth.css` to true black, and versioned shared and authentication theme assets
+  in `templates/layout.html`, `templates/login.html`, `templates/forgot_password.html`, and
+  `templates/reset_password.html` (auth CSS v3).
+- Added focused AMOLED source contracts to `tests/test_appearance_themes.py`, bumped the embedded
+  worker to `medical-service-pwa-offline-navigation-v136-amoled-dark`, updated exact current-cache
+  assertions, and added the published `2026-09-06-amoled-dark-mode` Appearance release entry in
+  `static/changelog/releases.json`.
+- The unchanged-source fail-first checkpoint ran the four new AMOLED tests with **13 intentional
+  failures, 0 passes, and 0 errors** (subtests reported individually). After implementation, the
+  focused AMOLED contracts passed **4/4**; the related appearance/cache/changelog set passed
+  **26 tests with 25 passes, 0 failures, 0 errors, and 1 expected skip**. Isolated full discovery
+  on a unique external disposable database completed **953 tests: 942 passed, 10 known baseline
+  failures, 1 expected skip, and 0 errors**. The baseline failures remain eight Purchase Order
+  429 setup cases and two Staff Creation fixture/initials cases.
+- Python compilation passed with `py_compile` using an external temporary cache after the normal
+  repository `__pycache__` target rejected a write due to a locked pre-existing bytecode file;
+  Jinja parsing of all 32 templates, `node --check` for `app-appearance.js`, release validation
+  (**70 releases, 232 unique items**), CSS brace balance (**60 themes / 237 dark-page pairs**),
+  and `git diff --check` all passed. No source test failed in the AMOLED or affected theme/cache/
+  release paths.
+- No database/schema, production/Railway, browser/Codex UI, official document/signature/print,
+  commit, push, deployment, or protected-artifact action was performed; `scheduler.db`, handoffs,
+  `.claude/`, `output/`, `outputs/`, `tmp/`, and unrelated dirty work remain preserved. Owner
+  visual checks at desktop and 375px remain pending under project instructions.
 
 codex changes - 2026-09-05
 

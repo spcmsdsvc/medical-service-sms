@@ -30,7 +30,7 @@
         root.dataset.bsTheme = resolved;
         root.dataset.accentTheme = state.accent;
         const themeMeta = document.querySelector('meta[name="theme-color"]');
-        if (themeMeta) themeMeta.content = resolved === 'dark' ? '#101925' : '#2c3e50';
+        if (themeMeta) themeMeta.content = resolved === 'dark' ? '#000000' : '#2c3e50';
         cache(state, state.pending);
         refreshButtons();
         window.dispatchEvent(new CustomEvent('app-theme-changed', { detail: { ...state, effectiveMode: resolved } }));
