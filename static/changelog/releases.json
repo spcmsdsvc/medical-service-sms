@@ -19,6 +19,24 @@
       ]
     },
     {
+      "release_key": "2026-09-07-reimbursement-autosave",
+      "release_date": "2026-09-07",
+      "title": "Reimbursement Autosave Protection",
+      "summary": "Reimbursement entries now save automatically and stay protected during worksheet changes.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-07-reimbursement-autosave-everyone",
+          "category": "Reimbursement",
+          "description": "Reimbursement drafts now autosave after a short pause, show Saving/Saved/Unsaved state, serialize manual/save/download/submit writes, and protect entered values when changing ranges or opening another record.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-07-timeline-calendar-controls",
       "release_date": "2026-09-07",
       "title": "Calendar Controls and Grid Height",

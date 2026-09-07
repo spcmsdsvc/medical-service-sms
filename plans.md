@@ -174,6 +174,142 @@ baseline, preserving the reimbursement edits and protected database, handoff, `.
 `output/`, and `tmp/` state.
 
 
+## Reimbursement Package 1 — Protect entered work
+
+**Status:** Executed — local verification complete on 2026-09-07; formal review and owner visual
+checks remain separately authorized.
+**Approved:** 2026-09-07 — this execution covers Package 1 only from the six-package
+Reimbursement roadmap. Packages 2–6 remain planned and are not authorized by this execution.
+
+### Outcome and decisions
+
+Protect editable Reimbursement worksheet entries while an engineer types, saves, downloads, or
+submits. The browser will debounce online autosaves after a short editing pause, expose clear
+Saving / Saved / Unsaved states, and route manual Save, Download Form, and Submit through the same
+single-flight save queue. Date-range changes and opening another reimbursement record will use the
+existing project confirmation dialog with Save and continue, Discard, and Stay choices when the
+current worksheet has unsaved edits.
+
+The implementation stays page-local and uses the existing `/save_reimbursement_draft` endpoint and
+`collectReimbursementRowsForSave()` collector. Each save request carries a worksheet context and
+monotonic edit version in browser state; stale responses cannot mark newer edits saved, change the
+current claim identity, or update a newly selected range. Failed saves keep the live values and
+Unsaved state. Autosaves are online-only. Clear Form, Delete Draft, row deletion/restoration, and
+claim/range transitions cancel or drain pending autosaves before changing context so a late request
+cannot resurrect deleted or unrelated work.
+
+### Files, exclusions, and verification
+
+- Touch `templates/reimbursement.html` for the save coordinator, autosave hooks, status indicator,
+  transition guard, and integration with existing load/clear/delete/download/submit handlers.
+- Add focused source/runtime contracts in `tests/test_reimbursement_autosave.py`; use a small
+  JavaScript harness for debounce, serialization, stale-response, failed-save, and transition
+  behavior without browser automation. Preserve existing reimbursement tests and test-database
+  isolation.
+- Bump the embedded service-worker cache in `app.py` once to the next reimbursement autosave label,
+  update exact current-cache assertions, add one published 2026-09-07 Reimbursement release item in
+  `static/changelog/releases.json`, and update `changes.md` and this plan with truthful results.
+- Do not add a database migration, API endpoint, dependency, offline recovery, cross-device
+  concurrency system, readiness panel, persistent action bar, compact/filter worksheet, bulk entry,
+  presets, history search/progress, receipt workspace, browser automation, commit, push, deploy,
+  Railway or production action. Preserve `scheduler.db`, handoffs, `.claude/`, `output/`, `outputs/`,
+  `tmp/`, and unrelated dirty work.
+
+### Numbered execution steps
+
+1. **Preflight and record.** Re-read applicable instructions, current `changes.md` and plans,
+   inspect the dirty tree, reimbursement DOM/controllers, existing endpoint contract, test isolation,
+   worker cache, release format, and protected paths. Confirm the current save, load, clear, delete,
+   download, submit, row-change, and manual-item flows before editing.
+2. **Fail-first contracts.** Add focused tests for the status markup, debounce scheduling, one active
+   save request with queued latest data, context/edit-version checks, failed-save preservation,
+   transition Save/Discard/Stay choices, and pending-save cancellation around clear/delete. Run the
+   new contracts against unchanged source and retain the intentional failures as the fail-first
+   checkpoint.
+3. **Implement save coordination.** In `templates/reimbursement.html`, add page-local state for the
+   current worksheet context, edit version, pending autosave timer, active save promise, queued save
+   request, and transition/clear guards. Make `markReimbursementDirty()` increment the edit version,
+   render Unsaved changes, and schedule a debounced autosave only for editable loaded work. Coalesce
+   edits while a request is active and serialize saves; capture rows, excluded rows, date range, claim
+   id, and version at request creation. Apply a successful response only when its context and version
+   still match; otherwise leave the newer state queued/Unsaved. Keep values in the existing live input
+   nodes and preserve mobile/desktop synchronization, totals, manual categories, row identity,
+   receipts, LPR, and locked-state behavior.
+4. **Integrate dependent actions and transitions.** Route explicit Save, Download Form, and Submit
+   preflight saves through the coordinator and await the relevant version before generating or
+   submitting. Add an existing-dialog confirmation helper for range changes and opening another
+   record: Save and continue waits for a successful save, Discard cancels pending autosave and resets
+   context, and Stay leaves the inputs and current claim untouched. Suspend autosave while clearing,
+   deleting, removing/restoring rows, or loading a new context; drain or invalidate pending work before
+   the destructive/context mutation and restore the Unsaved state after an error.
+5. **Deliver and verify locally.** Bump the worker and exact assertions, add the published release,
+   run focused fail-first/final tests, related Reimbursement/design/cache/changelog tests, and the
+   isolated full unittest discovery using a unique disposable database outside the repository. Run
+   Python/Jinja/extracted inline-JavaScript/release/whitespace checks and Builder self-review. Browser
+   visual checks remain owner-only; report them pending. Stop without formal review, commit, push,
+   deployment, Railway, database, or production operations.
+6. **Complete records and report.** Update `changes.md` during this task and amend this plan with
+   actual files, behavior, exact pass/fail/error/skip totals, baseline failures, deviations, and
+   preserved protected state. Mark the plan Executed only after implementation and local verification
+   are complete; later package plans remain unauthorized.
+
+### Acceptance criteria
+
+- After editable field changes, the worksheet shows Unsaved changes immediately, autosaves once after
+  the debounce window, and shows Saving then Saved with the server-calculated total when successful.
+- Manual Save, Download Form, and Submit never overlap a save; they wait for the latest edit to save
+  and stop with a visible error when saving fails. A failed request leaves the current values and
+  Unsaved state intact.
+- A slow response for an older edit or claim cannot mark a newer edit Saved, overwrite the current
+  reimbursement id/status, or resurrect data after clear/delete/transition.
+- Changing date range or opening another record while dirty offers Save and continue, Discard, or
+  Stay; each action has the stated result and locked records remain protected.
+- Existing totals, row collection, receipts, LPR, manual category, deleted-row restoration, locked
+  state, and mobile/desktop value synchronization remain compatible. No offline or Packages 2–6
+  behavior is introduced.
+
+### Implementation outcome (2026-09-07)
+
+Package 1 was implemented in the authorized working tree. `templates/reimbursement.html` now uses
+one page-local coordinator for automatic, manual, download-before-save, row-change, and
+submit-before-submit saves. It debounces online edits for 900 ms, displays explicit state on
+`#reimDraftStatus`, captures the current range/claim/edit version with each request, queues only the
+latest edit behind an active request, and rebases a newly-created draft to the server-assigned
+claim ID before reporting Saved. A response whose context, revision, or edit version no longer
+matches leaves the newer worksheet Unsaved. Failed saves preserve the live values.
+
+The existing dialog now supports Save and continue, Discard, and Stay for date-range changes,
+This Week/This Month changes, status-record opens, and notification range opens. Pending autosaves
+are suspended and drained before clear/delete or row remove/restore mutations; context invalidation
+prevents late responses from updating the new worksheet. Failed row changes and failed context loads
+restore the previous worksheet. Submit performs a final context/version check after its LPR,
+signature, and confirmation waits and locks worksheet controls while the submit request runs.
+
+Files changed for this package are `templates/reimbursement.html`, `tests/test_reimbursement_autosave.py`,
+the existing exact-cache assertion tests, `app.py`, `static/changelog/releases.json`, `changes.md`,
+and this plan. No API/schema/dependency change was needed. Packages 2–6 remain planned and
+unauthorized; offline recovery, cross-device editing, browser automation, commit/push/deploy,
+Railway, database, and production actions were excluded.
+
+Verification completed:
+
+1. The unchanged-source fail-first checkpoint ran **7 tests: 0 passed, 6 failed, 1 error**.
+2. The final Package 1 contracts ran **9 tests: 9 passed, 0 failed, 0 errors, 0 skipped**, including
+   the Node runtime queue/debounce/stale-response/failed-save harness.
+3. Reimbursement/design/cache/changelog related tests ran **276 tests: 275 passed, 0 failed, 0
+   errors, 1 skipped**; the reimbursement group itself was **109/109 passed**.
+4. Isolated full unittest discovery used a unique disposable database outside the repository and
+   ran **965 tests: 955 passed, 10 failed, 0 errors, 1 skipped**. The ten known baseline failures
+   are eight Purchase Order setup/rate-limit cases and two Staff Creation fixture/initials cases.
+5. Python compilation with temporary bytecode output, Jinja parsing for 32 templates, extracted
+   reimbursement inline-JavaScript syntax, reimbursement CSS brace balance, release JSON parsing
+   and duplicate-key checks, and `git diff --check` passed.
+
+Protected dirty artifacts (`scheduler.db`, handoffs, `.claude/`, `output/`, `outputs/`, `tmp/`, and
+unrelated worktree changes) were preserved. Browser visual checks remain owner-only. No commit,
+push, formal review, deployment, Railway, database, or production operation was performed.
+
+
 ## Calendar AMOLED controls and larger visible grid
 
 **Status:** Executed — c6d8a05. Local verification complete on 2026-09-07; the owner authorized

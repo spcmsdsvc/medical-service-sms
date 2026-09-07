@@ -1,5 +1,17 @@
 # Project Change Log
 
+codex changes - 2026-09-08
+
+- The owner authorized committing and pushing Reimbursement Package 1 only to `origin/main`.
+  Publication includes the autosave template, focused autosave and row-deletion tests, release
+  entry, and plan/change records. Local and remote main were both `0dee991` before publication,
+  preserving the already-published Graphite package and its v139 service-worker cache. The earlier
+  Package 1 v138 cache entry below describes its implementation checkpoint, not the current cache.
+  The latest focused autosave check passed 9/9 tests; whitespace checks passed. Database, handoffs,
+  `.claude/`, `output/`, `tmp/`, and unrelated files remain excluded. Remote main and Railway
+  deployment metadata will be verified after the authorized push; no manual redeploy or variable
+  change is included.
+
 codex changes - 2026-09-07
 
 - Committed only the Graphite Dark package and effective-mode correction as `06c5a2b`.
@@ -47,6 +59,45 @@ codex changes - 2026-09-07
   No cache bump or reimbursement implementation/protected-artifact change was made; the refreshed
   22-file Graphite package allowlist includes the existing autosave test's exact v139 cache
   assertion and is ready for parent staging.
+
+- Implemented the owner-authorized Reimbursement Package 1 protect-entered-work behavior in
+  `templates/reimbursement.html`. Editable worksheet amount, remarks, manual-category, row,
+  download, and submit flows now share a page-local save coordinator with a 900 ms online
+  autosave debounce, explicit Saving/Saved/Unsaved state, one active request plus a coalesced
+  latest snapshot, and context/edit-version checks. A newly-created draft response is rebased to
+  its server-assigned reimbursement ID before it can report Saved; older responses cannot update a
+  newer edit or selected claim. Failed saves leave live inputs in place and keep Unsaved state.
+- Added Save and continue / Discard / Stay protection to date-range loads, This Week/This Month
+  changes, status-record opens, and notification range opens. Clear Form, Delete Draft, and row
+  remove/restore operations suspend autosave, drain pending requests, invalidate the old context,
+  and restore prior worksheet values after a failed row save or failed load. Submit rechecks the
+  range and edit version after LPR/signature/confirmation waits and locks worksheet controls while
+  the final submit request is in flight. Existing draft endpoint, row collector, totals, receipts,
+  manual categories, LPR, locked-state behavior, and desktop/mobile synchronization remain the
+  authoritative data paths; no schema, endpoint, dependency, offline-recovery, or Package 2–6
+  behavior was added.
+- Added `tests/test_reimbursement_autosave.py` with source contracts and a Node runtime harness for
+  debounce reset/online gating, serialized latest-snapshot saves, stale-response protection,
+  server-assigned draft identity, failed-save value preservation, and status/transition wiring.
+  Updated exact current service-worker assertions for the next cache label and adjusted the
+  existing row-deletion source contract to recognize the coordinator's captured exclusion array.
+- Bumped the embedded worker in `app.py` to
+  `medical-service-pwa-offline-navigation-v138-reimbursement-autosave` and added the published
+  `2026-09-07-reimbursement-autosave` entry in `static/changelog/releases.json`.
+- Package 1 fail-first checkpoint: **7 tests, 0 passed, 6 failed, 1 error** against the unchanged
+  source before the implementation contracts were satisfied. Final Package 1 focused suite:
+  **9 tests, 9 passed, 0 failed, 0 errors, 0 skipped**; all reimbursement/design/cache/changelog
+  related tests: **276 tests, 275 passed, 0 failed, 0 errors, 1 skipped** (the overlap-free
+  reimbursement group had 109 tests, all passed). Isolated full unittest discovery with a unique
+  disposable database outside the repository: **965 tests, 955 passed, 10 failed, 0 errors, 1
+  skipped**. The ten failures are the existing eight Purchase Order setup/rate-limit cases and
+  two Staff Creation fixture/initials cases; no new Package 1 failure was identified.
+- Python compilation with a temporary bytecode cache, Jinja parsing for 32 templates, extracted
+  reimbursement inline-JavaScript syntax, reimbursement CSS brace balance, release JSON parsing
+  and duplicate-key checks, and `git diff --check` passed. Browser visual checks remain owner-only
+  under project instructions. No commit, push, deployment, Railway, database, or production
+  operation was performed; protected `scheduler.db`, handoffs, `.claude/`, `output/`, `outputs/`,
+  `tmp/`, and unrelated worktree changes remain preserved.
 
 - The owner authorized committing and pushing only the Calendar AMOLED controls and grid-height
   package to `origin/main`, including its related tests, asset/cache versions, release metadata,

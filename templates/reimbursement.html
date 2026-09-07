@@ -2668,6 +2668,7 @@
             </div>
             <div class="reim-dialog-actions">
                 <button type="button" id="reim-dialog-cancel" class="reim-btn reim-btn-secondary">Cancel</button>
+                <button type="button" id="reim-dialog-discard" class="reim-btn reim-btn-danger-outline" hidden>Discard</button>
                 <button type="button" id="reim-dialog-confirm" class="reim-btn reim-btn-primary">Continue</button>
             </div>
         </div>
@@ -2745,7 +2746,7 @@
                 <div class="reim-muted" id="reimStatusText">Select a date range to begin.</div>
             </div>
             <div class="reim-top-actions">
-                <span class="reim-save-status" id="reimDraftStatus">Not saved yet.</span>
+                <span class="reim-save-status" id="reimDraftStatus" data-save-state="idle" aria-live="polite">Not saved yet.</span>
                 <button type="button" class="reim-btn reim-btn-secondary" id="reimSaveDraftBtn" onclick="saveReimbursementDraft()">Save Draft</button>
                 <button type="button" class="reim-btn reim-btn-primary" id="reimSubmitBtn" onclick="submitReimbursement()">Submit</button>
                 <div class="reim-focus-secondary-actions">
@@ -3140,6 +3141,37 @@
     let reimbursementReceiptsByShift = {};
     let reimbursementAdditionalReceipts = [];
     let reimbursementReceiptUploadBusy = false;
+
+    // Package 1: keep worksheet edits durable without allowing an older request
+    // to claim that a newer edit (or a different reimbursement) was saved.
+    const REIMBURSEMENT_AUTOSAVE_DELAY_MS = 900;
+    let reimbursementEditVersion = 0;
+    let reimbursementSavedEditVersion = 0;
+    let reimbursementContextRevision = 0;
+    let reimbursementActiveContext = { start: '', end: '', id: 0, key: '' };
+    let reimbursementAutosaveTimer = null;
+    let reimbursementAutosaveSuspended = 0;
+    let reimbursementSaveInFlight = null;
+    let reimbursementSaveQueued = null;
+    let reimbursementTransitionBusy = false;
+    let reimbursementTransitionPromptBusy = false;
+    let reimbursementSubmitBusy = false;
+
+    function reimbursementContextKey(context) {
+        context = context || {};
+        return JSON.stringify([
+            String(context.start || ''),
+            String(context.end || ''),
+            Number(context.id || 0)
+        ]);
+    }
+
+    function reimbursementSaveEntryMatches(entry, current) {
+        return !!entry && !!current
+            && Number(entry.contextRevision) === Number(current.revision)
+            && String(entry.contextKey || '') === String(current.contextKey || '')
+            && Number(entry.version) === Number(current.version);
+    }
 
     function reimEscape(value) {
         return String(value || '').replace(/[&<>"']/g, function(match) {
@@ -3609,6 +3641,65 @@
         }
     }
 
+    function reimContextTransitionDialog(options) {
+        options = options || {};
+        return new Promise(function(resolve) {
+            const backdrop = document.getElementById('reim-dialog-backdrop');
+            const dialog = document.getElementById('reim-dialog-box');
+            const icon = document.getElementById('reim-dialog-icon');
+            const title = document.getElementById('reim-dialog-title');
+            const message = document.getElementById('reim-dialog-message');
+            const cancelBtn = document.getElementById('reim-dialog-cancel');
+            const discardBtn = document.getElementById('reim-dialog-discard');
+            const confirmBtn = document.getElementById('reim-dialog-confirm');
+
+            if (!backdrop || !dialog || !title || !message || !cancelBtn || !discardBtn || !confirmBtn) {
+                resolve('stay');
+                return;
+            }
+
+            dialog.className = 'reim-dialog warning';
+            title.textContent = options.title || 'Unsaved reimbursement changes';
+            message.textContent = options.message || 'Save your entered reimbursement values before continuing?';
+            cancelBtn.textContent = 'Stay';
+            discardBtn.textContent = 'Discard';
+            confirmBtn.textContent = 'Save and continue';
+            cancelBtn.className = 'reim-btn reim-btn-secondary';
+            discardBtn.className = 'reim-btn reim-btn-danger-outline';
+            confirmBtn.className = 'reim-btn reim-btn-primary';
+            discardBtn.hidden = false;
+            if (icon) icon.innerHTML = '<i class="fa-solid fa-floppy-disk"></i>';
+
+            let resolved = false;
+            const cleanup = function(value) {
+                if (resolved) return;
+                resolved = true;
+                backdrop.classList.remove('show');
+                cancelBtn.onclick = null;
+                discardBtn.onclick = null;
+                confirmBtn.onclick = null;
+                backdrop.onclick = null;
+                discardBtn.hidden = true;
+                document.removeEventListener('keydown', keyHandler);
+                resolve(value);
+            };
+
+            const keyHandler = function(event) {
+                if (event.key === 'Escape') cleanup('stay');
+            };
+
+            cancelBtn.onclick = function() { cleanup('stay'); };
+            discardBtn.onclick = function() { cleanup('discard'); };
+            confirmBtn.onclick = function() { cleanup('save'); };
+            backdrop.onclick = function(event) {
+                if (event.target === backdrop) cleanup('stay');
+            };
+            document.addEventListener('keydown', keyHandler);
+            backdrop.classList.add('show');
+            window.setTimeout(function() { confirmBtn.focus(); }, 60);
+        });
+    }
+
     function reimConfirmDialog(options) {
         options = options || {};
         return new Promise(function(resolve) {
@@ -3618,6 +3709,7 @@
             const title = document.getElementById('reim-dialog-title');
             const message = document.getElementById('reim-dialog-message');
             const cancelBtn = document.getElementById('reim-dialog-cancel');
+            const discardBtn = document.getElementById('reim-dialog-discard');
             const confirmBtn = document.getElementById('reim-dialog-confirm');
 
             if (!backdrop || !dialog || !title || !message || !cancelBtn || !confirmBtn) {
@@ -3632,6 +3724,10 @@
             cancelBtn.textContent = options.cancelText || 'Cancel';
             confirmBtn.textContent = options.confirmText || 'Continue';
             confirmBtn.className = 'reim-btn ' + (options.confirmClass || (tone === 'danger' ? 'reim-btn-danger' : 'reim-btn-primary'));
+            if (discardBtn) {
+                discardBtn.hidden = true;
+                discardBtn.onclick = null;
+            }
 
             if (icon) {
                 const iconName = options.icon || (tone === 'danger' ? 'trash' : (tone === 'warning' ? 'triangle-exclamation' : 'circle-question'));
@@ -3645,6 +3741,10 @@
                 backdrop.classList.remove('show');
                 confirmBtn.onclick = null;
                 cancelBtn.onclick = null;
+                if (discardBtn) {
+                    discardBtn.onclick = null;
+                    discardBtn.hidden = true;
+                }
                 backdrop.onclick = null;
                 document.removeEventListener('keydown', keyHandler);
                 resolve(value);
@@ -3821,7 +3921,7 @@
         });
     }
 
-    function setReimbursementThisWeek() {
+    async function setReimbursementThisWeek() {
         const today = new Date();
         const day = today.getDay() || 7;
         const monday = new Date(today);
@@ -3829,19 +3929,27 @@
         const sunday = new Date(monday);
         sunday.setDate(monday.getDate() + 6);
 
+        const start = toDateInputValue(monday);
+        const end = toDateInputValue(sunday);
+        if (!await reimbursementPrepareContextTransition({ start, end, id: 0 })) return false;
         document.getElementById('reimStartDate').value = toDateInputValue(monday);
         document.getElementById('reimEndDate').value = toDateInputValue(sunday);
         syncReimbursementWorksheetSummary();
+        return true;
     }
 
-    function setReimbursementThisMonth() {
+    async function setReimbursementThisMonth() {
         const today = new Date();
         const first = new Date(today.getFullYear(), today.getMonth(), 1);
         const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
+        const start = toDateInputValue(first);
+        const end = toDateInputValue(last);
+        if (!await reimbursementPrepareContextTransition({ start, end, id: 0 })) return false;
         document.getElementById('reimStartDate').value = toDateInputValue(first);
         document.getElementById('reimEndDate').value = toDateInputValue(last);
         syncReimbursementWorksheetSummary();
+        return true;
     }
 
     function toDateInputValue(dateObj) {
@@ -4828,15 +4936,34 @@ function renderReimbursementRows(rows) {
         }
     }
 
-    function setReimbursementDraftStatus(message, tone) {
+    function setReimbursementDraftStatus(message, tone, saveState) {
         const el = document.getElementById('reimDraftStatus');
         if (!el) return;
-        el.textContent = message || '';
+        const text = String(message || '');
+        let state = String(saveState || '').trim().toLowerCase();
+        if (!state) {
+            const normalized = text.toLowerCase();
+            if (/saving|uploading|deleting|clearing|preparing|submitting/.test(normalized)) {
+                state = 'saving';
+            } else if (tone === 'ok' && /saved|added|uploaded|removed|restored|started|found|cleared/.test(normalized)) {
+                state = 'saved';
+            } else if (tone === 'error' || /unsaved|unable|failed|could not|not saved|error/.test(normalized)) {
+                state = 'unsaved';
+            } else {
+                state = el.dataset.saveState || 'idle';
+            }
+        }
+        if (!['idle', 'saving', 'saved', 'unsaved'].includes(state)) state = 'idle';
+        el.dataset.saveState = state;
+        el.classList.toggle('reim-save-status-saving', state === 'saving');
+        el.classList.toggle('reim-save-status-saved', state === 'saved');
+        el.classList.toggle('reim-save-status-unsaved', state === 'unsaved');
+        el.textContent = text;
         el.style.color = tone === 'error'
             ? '#b91c1c'
             : (tone === 'ok' ? '#0f5132' : (tone === 'warn' ? '#b45309' : '#64748b'));
-        if (message && (tone === 'error' || tone === 'ok')) {
-            reimToast(message, tone);
+        if (text && (tone === 'error' || tone === 'ok')) {
+            reimToast(text, tone);
         }
     }
 
@@ -4940,13 +5067,368 @@ function renderReimbursementRows(rows) {
             applyReimbursementStatusUi();
             return;
         }
-        setReimbursementDraftStatus('Unsaved changes', 'warn');
+        reimbursementEditVersion += 1;
+        setReimbursementDraftStatus('Unsaved changes', 'warn', 'unsaved');
+        scheduleReimbursementAutosave();
     }
 
     function getReimbursementCsrfToken() {
         return document.querySelector('meta[name="csrf-token"]')?.content
             || document.querySelector('input[name="csrf_token"]')?.value
             || '';
+    }
+
+    function reimbursementCurrentContext() {
+        const startInput = document.getElementById('reimStartDate');
+        const endInput = document.getElementById('reimEndDate');
+        const context = {
+            start: startInput ? String(startInput.value || '') : '',
+            end: endInput ? String(endInput.value || '') : '',
+            id: Number(currentReimbursementId || 0)
+        };
+        context.key = reimbursementContextKey(context);
+        return context;
+    }
+
+    function reimbursementCurrentSaveContext() {
+        const context = reimbursementCurrentContext();
+        return {
+            revision: reimbursementContextRevision,
+            contextKey: context.key,
+            version: reimbursementEditVersion
+        };
+    }
+
+    function reimbursementSaveContextMatches(entry) {
+        if (!entry) return false;
+        const current = reimbursementCurrentContext();
+        return Number(entry.contextRevision) === Number(reimbursementContextRevision)
+            && String(entry.contextKey || '') === String(current.key || '');
+    }
+
+    function reimbursementHasUnsavedEdits() {
+        return Number(reimbursementEditVersion) !== Number(reimbursementSavedEditVersion);
+    }
+
+    function reimbursementHasPendingSave() {
+        return !!(reimbursementAutosaveTimer || reimbursementSaveInFlight || reimbursementSaveQueued);
+    }
+
+    function reimbursementIsOnline() {
+        return typeof navigator === 'undefined' || navigator.onLine !== false;
+    }
+
+    function reimbursementClearAutosaveTimer() {
+        if (reimbursementAutosaveTimer) {
+            window.clearTimeout(reimbursementAutosaveTimer);
+            reimbursementAutosaveTimer = null;
+        }
+    }
+
+    function reimbursementResolveQueuedSave(result) {
+        const queued = reimbursementSaveQueued;
+        reimbursementSaveQueued = null;
+        if (queued && typeof queued.resolve === 'function') {
+            queued.resolve(result || { ok: false, cancelled: true });
+        }
+    }
+
+    function reimbursementCurrentWorksheetHasRows() {
+        return !!(
+            (currentReimbursementRows && currentReimbursementRows.length)
+            || (currentReimbursementExcludedRows && currentReimbursementExcludedRows.length)
+        );
+    }
+
+    function reimbursementCaptureSaveEntry(silent, options) {
+        const context = reimbursementCurrentContext();
+        const rows = collectReimbursementRowsForSave();
+        let resolveEntry;
+        const entry = {
+            contextRevision: reimbursementContextRevision,
+            contextKey: context.key,
+            version: reimbursementEditVersion,
+            payload: {
+                start: context.start,
+                end: context.end,
+                reimbursement_id: context.id || null,
+                rows,
+                excluded_rows: Array.isArray(currentReimbursementExcludedRows)
+                    ? currentReimbursementExcludedRows.slice()
+                    : []
+            },
+            silent: !!silent,
+            autosave: !!(options && options.autosave),
+            promise: null,
+            resolve: null,
+            controller: typeof AbortController === 'function' ? new AbortController() : null
+        };
+        entry.promise = new Promise(function(resolve) {
+            resolveEntry = resolve;
+        });
+        entry.resolve = resolveEntry;
+        return entry;
+    }
+
+    async function executeReimbursementSaveEntry(entry) {
+        if (!reimbursementSaveContextMatches(entry)) {
+            return { ok: false, cancelled: true, stale: true };
+        }
+
+        setReimbursementDraftStatus(
+            entry.silent ? 'Saving changes...' : 'Saving draft...',
+            '',
+            'saving'
+        );
+
+        try {
+            const response = await fetch('/save_reimbursement_draft', {
+                method: 'POST',
+                credentials: 'same-origin',
+                cache: 'no-store',
+                signal: entry.controller ? entry.controller.signal : undefined,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getReimbursementCsrfToken()
+                },
+                body: JSON.stringify(entry.payload)
+            });
+
+            const payload = await parseReimbursementJsonResponse(response, 'Unable to save reimbursement draft.');
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.error || 'Unable to save reimbursement draft.');
+            }
+
+            // A response is allowed to update the page only when both the
+            // worksheet context and the edit version are still the same as the
+            // request snapshot. In particular, do not let an older response
+            // assign a newly-created reimbursement id after a range switch.
+            if (!reimbursementSaveEntryMatches(entry, reimbursementCurrentSaveContext())) {
+                if (reimbursementSaveContextMatches(entry)) {
+                    setReimbursementDraftStatus('Unsaved changes', 'warn', 'unsaved');
+                }
+                return { ok: true, applied: false, stale: true };
+            }
+
+            currentReimbursementExcludedRows = Array.isArray(payload.excluded_rows)
+                ? payload.excluded_rows
+                : currentReimbursementExcludedRows;
+            updateReimbursementLifecycleFromPayload(payload);
+            // A first save can create the draft and return its new ID. Rebase
+            // the accepted entry to that ID before the post-refresh guard;
+            // otherwise a valid first save would look stale solely because
+            // the server assigned the claim identity.
+            if (!entry.payload.reimbursement_id && Number(currentReimbursementId || 0)) {
+                entry.contextKey = reimbursementCurrentContext().key;
+            }
+            const totalSummary = applyReimbursementTotalSummary(payload);
+            reimbursementActiveContext = reimbursementCurrentContext();
+            applyReimbursementStatusUi();
+            await refreshReimbursementLprPanel();
+
+            // The LPR refresh is asynchronous. Re-check the request snapshot
+            // before reporting Saved so a date/claim change made while that
+            // request was pending cannot receive the older save result.
+            if (!reimbursementSaveEntryMatches(entry, reimbursementCurrentSaveContext())) {
+                if (reimbursementSaveContextMatches(entry)) {
+                    setReimbursementDraftStatus('Unsaved changes', 'warn', 'unsaved');
+                }
+                return { ok: true, applied: false, stale: true };
+            }
+
+            const warning = String(totalSummary && totalSummary.warning || '').trim();
+            const saveStatus = [
+                `Draft saved (${Number(payload.rows_saved ?? entry.payload.rows.length)} active, ${currentReimbursementExcludedRows.length} removed)`,
+                totalSummary ? reimbursementServerTotalLabel(totalSummary) : '',
+                warning ? `Review: ${warning}` : ''
+            ].filter(Boolean).join(' | ');
+            reimbursementSavedEditVersion = entry.version;
+            if (reimbursementEditVersion === entry.version && reimbursementSaveContextMatches(entry)) {
+                setReimbursementDraftStatus(saveStatus, warning ? 'warn' : 'ok', 'saved');
+            } else {
+                setReimbursementDraftStatus('Unsaved changes', 'warn', 'unsaved');
+            }
+            return { ok: true, applied: true, payload };
+        } catch (error) {
+            if (!reimbursementSaveContextMatches(entry)) {
+                return { ok: false, cancelled: true, stale: true, error };
+            }
+            const message = error && error.name === 'AbortError'
+                ? 'Save cancelled before it could finish.'
+                : ((error && error.message) || 'Unable to save draft.');
+            setReimbursementDraftStatus(message, entry.silent ? 'warn' : 'error', 'unsaved');
+            if (!entry.silent && error && error.name !== 'AbortError') reimAlert(message);
+            return { ok: false, error };
+        }
+    }
+
+    function startReimbursementSaveEntry(entry) {
+        reimbursementSaveInFlight = entry;
+        setReimbursementButtonsBusy(true);
+
+        (async function() {
+            let result;
+            try {
+                result = await executeReimbursementSaveEntry(entry);
+            } catch (error) {
+                result = { ok: false, error };
+            }
+
+            if (reimbursementSaveInFlight === entry) reimbursementSaveInFlight = null;
+            const next = reimbursementSaveQueued;
+            reimbursementSaveQueued = null;
+            if (next) {
+                if (reimbursementSaveContextMatches(next)) {
+                    startReimbursementSaveEntry(next);
+                } else if (typeof next.resolve === 'function') {
+                    next.resolve({ ok: false, cancelled: true, stale: true });
+                }
+            } else {
+                setReimbursementButtonsBusy(false);
+            }
+            result = result || { ok: false };
+            result.contextRevision = entry.contextRevision;
+            result.contextKey = entry.contextKey;
+            result.version = entry.version;
+            if (typeof entry.resolve === 'function') entry.resolve(result);
+        })();
+
+        return entry.promise;
+    }
+
+    function enqueueReimbursementSave(silent, options) {
+        const context = reimbursementCurrentContext();
+        const version = reimbursementEditVersion;
+        const active = reimbursementSaveInFlight;
+
+        if (active) {
+            const sameContext = Number(active.contextRevision) === Number(reimbursementContextRevision)
+                && String(active.contextKey || '') === String(context.key || '');
+            if (!sameContext) return Promise.resolve({ ok: false, cancelled: true, stale: true });
+            if (version <= Number(active.version || 0) && !reimbursementSaveQueued) {
+                return active.promise;
+            }
+            if (reimbursementSaveQueued) {
+                if (version >= Number(reimbursementSaveQueued.version || 0)) {
+                    const replacement = reimbursementCaptureSaveEntry(silent, options);
+                    reimbursementSaveQueued.payload = replacement.payload;
+                    reimbursementSaveQueued.version = replacement.version;
+                    reimbursementSaveQueued.silent = reimbursementSaveQueued.silent && replacement.silent;
+                    reimbursementSaveQueued.autosave = reimbursementSaveQueued.autosave || replacement.autosave;
+                }
+                return reimbursementSaveQueued.promise;
+            }
+            const queued = reimbursementCaptureSaveEntry(silent, options);
+            reimbursementSaveQueued = queued;
+            return queued.promise;
+        }
+
+        const entry = reimbursementCaptureSaveEntry(silent, options);
+        return startReimbursementSaveEntry(entry);
+    }
+
+    function scheduleReimbursementAutosave() {
+        reimbursementClearAutosaveTimer();
+        if (reimbursementAutosaveSuspended || !reimbursementIsEditable() || !reimbursementIsOnline()) return;
+        if (!reimbursementCurrentWorksheetHasRows() || !reimbursementHasUnsavedEdits()) return;
+
+        reimbursementAutosaveTimer = window.setTimeout(function() {
+            reimbursementAutosaveTimer = null;
+            if (reimbursementAutosaveSuspended || !reimbursementHasUnsavedEdits()) return;
+            saveReimbursementDraft(true, { autosave: true });
+        }, REIMBURSEMENT_AUTOSAVE_DELAY_MS);
+    }
+
+    async function waitForReimbursementPendingSaves() {
+        while (reimbursementSaveInFlight || reimbursementSaveQueued) {
+            const pending = reimbursementSaveInFlight || reimbursementSaveQueued;
+            const result = await pending.promise;
+            if (!result || !result.ok) return false;
+        }
+        return true;
+    }
+
+    async function reimbursementBeginDestructiveMutation(markDirty) {
+        reimbursementAutosaveSuspended += 1;
+        reimbursementClearAutosaveTimer();
+        if (markDirty) markReimbursementDirty();
+
+        const drained = await waitForReimbursementPendingSaves();
+        if (!drained) {
+            reimbursementAutosaveSuspended = Math.max(0, reimbursementAutosaveSuspended - 1);
+            if (reimbursementHasUnsavedEdits()) {
+                setReimbursementDraftStatus('Unsaved changes', 'warn', 'unsaved');
+            }
+            return false;
+        }
+
+        reimbursementInvalidatePendingSaves();
+        return true;
+    }
+
+    function reimbursementEndDestructiveMutation() {
+        reimbursementAutosaveSuspended = Math.max(0, reimbursementAutosaveSuspended - 1);
+        if (!reimbursementAutosaveSuspended && reimbursementHasUnsavedEdits()) {
+            scheduleReimbursementAutosave();
+        }
+    }
+
+    function reimbursementInvalidatePendingSaves() {
+        reimbursementClearAutosaveTimer();
+        reimbursementResolveQueuedSave({ ok: false, cancelled: true, stale: true });
+        reimbursementContextRevision += 1;
+    }
+
+    function reimbursementRestoreActiveContextInputs() {
+        const startInput = document.getElementById('reimStartDate');
+        const endInput = document.getElementById('reimEndDate');
+        if (startInput) startInput.value = reimbursementActiveContext.start || '';
+        if (endInput) endInput.value = reimbursementActiveContext.end || '';
+        currentReimbursementId = Number(reimbursementActiveContext.id || 0) || null;
+        window.currentReimbursementId = currentReimbursementId;
+        syncReimbursementWorksheetSummary();
+    }
+
+    async function reimbursementPrepareContextTransition(target) {
+        target = target || {};
+        if (reimbursementTransitionBusy || reimbursementTransitionPromptBusy) return false;
+
+        if (!reimbursementHasUnsavedEdits() && reimbursementHasPendingSave()) {
+            return waitForReimbursementPendingSaves();
+        }
+        if (!reimbursementHasUnsavedEdits()) return true;
+
+        reimbursementTransitionPromptBusy = true;
+        try {
+            const choice = await reimContextTransitionDialog({
+                title: 'Unsaved reimbursement changes',
+                message: 'Your entered reimbursement values have not been saved. Choose Save and continue, Discard, or Stay.',
+            });
+
+            if (choice === 'stay') {
+                reimbursementRestoreActiveContextInputs();
+                return false;
+            }
+
+            if (choice === 'discard') {
+                const drained = await waitForReimbursementPendingSaves();
+                if (!drained) return false;
+                reimbursementInvalidatePendingSaves();
+                reimbursementEditVersion = 0;
+                reimbursementSavedEditVersion = 0;
+                return true;
+            }
+
+            // The date inputs may already contain the destination range. Restore
+            // the active worksheet context before saving so the old rows can never
+            // be written under the destination dates.
+            reimbursementRestoreActiveContextInputs();
+            const saved = await saveReimbursementDraft(false, { transition: true });
+            if (!saved) return false;
+            return true;
+        } finally {
+            reimbursementTransitionPromptBusy = false;
+        }
     }
 
     function mergeReimbursementDraftRows(scheduleRows, draftRows) {
@@ -5126,23 +5608,57 @@ function renderReimbursementRows(rows) {
     async function persistReimbursementRowChange(previousRows, previousExcludedRows, successMessage) {
         if (reimbursementRowChangeBusy) return false;
         reimbursementRowChangeBusy = true;
-        renderReimbursementRows(currentReimbursementRows);
-        const saved = await saveReimbursementDraft(true);
-        if (!saved) {
+
+        const previousEditVersion = reimbursementEditVersion;
+        const previousSavedEditVersion = reimbursementSavedEditVersion;
+        const mutationReady = await reimbursementBeginDestructiveMutation(true);
+        if (!mutationReady) {
             currentReimbursementRows = previousRows;
             currentReimbursementExcludedRows = previousExcludedRows;
+            reimbursementEditVersion = previousEditVersion;
+            reimbursementSavedEditVersion = previousSavedEditVersion;
             renderReimbursementRows(currentReimbursementRows);
+            setReimbursementDraftStatus(
+                previousEditVersion === previousSavedEditVersion
+                    ? 'Row change was not saved. Previous saved values were restored.'
+                    : 'Row change was not saved. Previous unsaved values were restored.',
+                'warn',
+                previousEditVersion === previousSavedEditVersion ? 'saved' : 'unsaved'
+            );
             reimbursementRowChangeBusy = false;
             applyReimbursementStatusUi();
             reimAlert('The row change was not saved. Your worksheet has been restored.', 'error');
             return false;
         }
-        await refreshReimbursementLprPanel();
-        setReimbursementDraftStatus(successMessage, 'ok');
-        reimAlert(successMessage, 'success');
-        reimbursementRowChangeBusy = false;
-        applyReimbursementStatusUi();
-        return true;
+
+        try {
+            renderReimbursementRows(currentReimbursementRows);
+            const saved = await saveReimbursementDraft(true);
+            if (!saved) {
+                currentReimbursementRows = previousRows;
+                currentReimbursementExcludedRows = previousExcludedRows;
+                reimbursementEditVersion = previousEditVersion;
+                reimbursementSavedEditVersion = previousSavedEditVersion;
+                renderReimbursementRows(currentReimbursementRows);
+                setReimbursementDraftStatus(
+                    previousEditVersion === previousSavedEditVersion
+                        ? 'Row change was not saved. Previous saved values were restored.'
+                        : 'Row change was not saved. Previous unsaved values were restored.',
+                    'warn',
+                    previousEditVersion === previousSavedEditVersion ? 'saved' : 'unsaved'
+                );
+                reimAlert('The row change was not saved. Your worksheet has been restored.', 'error');
+                return false;
+            }
+            await refreshReimbursementLprPanel();
+            setReimbursementDraftStatus(successMessage, 'ok');
+            reimAlert(successMessage, 'success');
+            return true;
+        } finally {
+            reimbursementEndDestructiveMutation();
+            reimbursementRowChangeBusy = false;
+            applyReimbursementStatusUi();
+        }
     }
 
     async function removeReimbursementRow(rowKey) {
@@ -5262,6 +5778,34 @@ function renderReimbursementRows(rows) {
         }
     }
 
+    function setReimbursementSubmitInputsBusy(isBusy) {
+        const controls = document.querySelectorAll(
+            '#reimStartDate, #reimEndDate, .reim-amount, .reim-remarks, '
+            + '.reim-manual-category, .reim-row-delete-btn'
+        );
+        controls.forEach(function(control) {
+            if (isBusy) {
+                if (control.dataset.reimSubmitBusy === '1') return;
+                control.dataset.reimSubmitBusy = '1';
+                control.dataset.reimSubmitWasDisabled = control.disabled ? '1' : '0';
+                control.dataset.reimSubmitWasReadonly = control.readOnly ? '1' : '0';
+                if (control.matches('select, button, input[type="date"]')) {
+                    control.disabled = true;
+                } else {
+                    control.readOnly = true;
+                    control.disabled = false;
+                }
+                return;
+            }
+            if (control.dataset.reimSubmitBusy !== '1') return;
+            control.disabled = control.dataset.reimSubmitWasDisabled === '1';
+            control.readOnly = control.dataset.reimSubmitWasReadonly === '1';
+            delete control.dataset.reimSubmitBusy;
+            delete control.dataset.reimSubmitWasDisabled;
+            delete control.dataset.reimSubmitWasReadonly;
+        });
+    }
+
     
 
 function showReimbursementDeleteDraftConfirm() {
@@ -5312,6 +5856,7 @@ function showReimbursementDeleteDraftConfirm() {
         const button = document.getElementById('reimConfirmDeleteDraftBtn');
         const oldText = button ? button.textContent : '';
 
+        let mutationStarted = false;
         try {
             if (button) {
                 button.disabled = true;
@@ -5319,6 +5864,10 @@ function showReimbursementDeleteDraftConfirm() {
             }
 
             setReimbursementDraftStatus('Deleting reimbursement draft...', '');
+            mutationStarted = await reimbursementBeginDestructiveMutation(false);
+            if (!mutationStarted) {
+                throw new Error('The draft could not be safely deleted because its latest changes were not saved.');
+            }
 
             const response = await fetch('/delete_reimbursement_draft', {
                 method: 'POST',
@@ -5349,7 +5898,7 @@ function showReimbursementDeleteDraftConfirm() {
             setReimbursementDraftStatus(payload.message || 'Reimbursement draft deleted.', 'ok');
             setReimbursementSubmitNotice('', '');
 
-            await loadReimbursementRows();
+            await loadReimbursementRows({ skipTransition: true });
             await loadMyReimbursementStatuses();
             await loadReimbursementNotifications();
         } catch (error) {
@@ -5357,6 +5906,7 @@ function showReimbursementDeleteDraftConfirm() {
             setReimbursementDraftStatus(error.message || 'Unable to delete reimbursement draft.', 'error');
             reimAlert(error.message || 'Unable to delete reimbursement draft.');
         } finally {
+            if (mutationStarted) reimbursementEndDestructiveMutation();
             if (button) {
                 button.disabled = false;
                 button.textContent = oldText || 'Yes, Delete Draft';
@@ -5389,7 +5939,12 @@ function showReimbursementDeleteDraftConfirm() {
         setReimbursementButtonsBusy(true);
         setReimbursementDraftStatus('Clearing reimbursement form...', '');
 
+        let mutationStarted = false;
         try {
+            mutationStarted = await reimbursementBeginDestructiveMutation(false);
+            if (!mutationStarted) {
+                throw new Error('The form could not be safely cleared because its latest changes were not saved.');
+            }
             const response = await fetch('/clear_reimbursement_draft', {
                 method: 'POST',
                 headers: {
@@ -5417,12 +5972,13 @@ function showReimbursementDeleteDraftConfirm() {
             currentReimbursementTotalSummary = null;
             setReimbursementDraftStatus('Form cleared.', 'ok');
 
-            await loadReimbursementRows();
+            await loadReimbursementRows({ skipTransition: true });
         } catch (error) {
             console.error(error);
             setReimbursementDraftStatus(error.message || 'Unable to clear reimbursement form.', 'error');
             reimAlert(error.message || 'Unable to clear reimbursement form.');
         } finally {
+            if (mutationStarted) reimbursementEndDestructiveMutation();
             setReimbursementButtonsBusy(false);
         }
     }
@@ -5491,10 +6047,11 @@ async function downloadReimbursementExcel() {
         }
 }
 
-async function saveReimbursementDraft(silent) {
+async function saveReimbursementDraft(silent, options) {
+        options = options || {};
         if (!reimbursementIsEditable()) {
             const message = `This reimbursement is ${currentReimbursementStatus} and cannot be edited.`;
-            setReimbursementDraftStatus(message, 'error');
+            setReimbursementDraftStatus(message, 'error', 'unsaved');
             if (!silent) reimAlert(message);
             return false;
         }
@@ -5512,53 +6069,45 @@ async function saveReimbursementDraft(silent) {
             return false;
         }
 
-        setReimbursementButtonsBusy(true);
-        if (!silent) setReimbursementDraftStatus('Saving draft...', '');
+        if (options.autosave && !reimbursementHasUnsavedEdits()) return true;
+        if (options.autosave && !reimbursementIsOnline()) {
+            setReimbursementDraftStatus('Unsaved changes — waiting for a connection.', 'warn', 'unsaved');
+            return false;
+        }
 
-        try {
-            const response = await fetch('/save_reimbursement_draft', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getReimbursementCsrfToken()
-                },
-                body: JSON.stringify({
-                    start,
-                    end,
-                    reimbursement_id: currentReimbursementId || null,
-                    rows,
-                    excluded_rows: currentReimbursementExcludedRows
-                })
-            });
-
-            const payload = await parseReimbursementJsonResponse(response, 'Unable to save reimbursement draft.');
-            if (!response.ok || !payload.success) {
-                throw new Error(payload.error || 'Unable to save reimbursement draft.');
+        reimbursementClearAutosaveTimer();
+        let attempts = 0;
+        while (attempts < 20) {
+            attempts += 1;
+            const result = await enqueueReimbursementSave(silent, options);
+            if (!result || !result.ok) {
+                // If an older request failed while a newer snapshot was
+                // already queued, let the dependent action wait for that
+                // latest request instead of stopping on the obsolete error.
+                if (reimbursementHasPendingSave() && reimbursementHasUnsavedEdits()) continue;
+                return false;
             }
 
-            currentReimbursementExcludedRows = Array.isArray(payload.excluded_rows)
-                ? payload.excluded_rows
-                : currentReimbursementExcludedRows;
-            updateReimbursementLifecycleFromPayload(payload);
-            const totalSummary = applyReimbursementTotalSummary(payload);
-            applyReimbursementStatusUi();
-            await refreshReimbursementLprPanel();
-            const warning = String(totalSummary && totalSummary.warning || '').trim();
-            const saveStatus = [
-                `Draft saved (${Number(payload.rows_saved ?? rows.length)} active, ${currentReimbursementExcludedRows.length} removed)`,
-                totalSummary ? reimbursementServerTotalLabel(totalSummary) : '',
-                warning ? `Review: ${warning}` : ''
-            ].filter(Boolean).join(' | ');
-            setReimbursementDraftStatus(saveStatus, warning ? 'warn' : 'ok');
-            return true;
-        } catch (error) {
-            console.error(error);
-            setReimbursementDraftStatus(error.message || 'Unable to save draft.', 'error');
-            if (!silent) reimAlert(error.message || 'Unable to save draft.');
-            return false;
-        } finally {
-            setReimbursementButtonsBusy(false);
+            const context = reimbursementCurrentContext();
+            const stillCurrent = Number(result.contextRevision ?? reimbursementContextRevision) === Number(reimbursementContextRevision)
+                && String(result.contextKey || context.key) === String(context.key || '');
+            if (!stillCurrent) return false;
+            if (!reimbursementHasUnsavedEdits()) return true;
+
+            // An edit arrived while the previous request was in flight. The
+            // coordinator deliberately leaves it Unsaved and this loop waits
+            // for the queued latest snapshot before resolving the action.
+            if (!reimbursementIsOnline()) {
+                setReimbursementDraftStatus('Unsaved changes — waiting for a connection.', 'warn', 'unsaved');
+                return false;
+            }
+            if (!document.getElementById('reimStartDate').value
+                || !document.getElementById('reimEndDate').value) return false;
+            continue;
         }
+
+        setReimbursementDraftStatus('Unsaved changes — please save again.', 'warn', 'unsaved');
+        return false;
     }
 
     function reimbursementOfficeFieldTotal(rows) {
@@ -5641,6 +6190,7 @@ async function saveReimbursementDraft(silent) {
     }
 
     async function submitReimbursement() {
+        if (reimbursementSubmitBusy) return;
         if (!reimbursementIsEditable()) {
             const message = `This reimbursement is ${currentReimbursementStatus} and cannot be submitted again.`;
             setReimbursementSubmitNotice(message, 'warn');
@@ -5668,6 +6218,9 @@ async function saveReimbursementDraft(silent) {
             setReimbursementSubmitNotice('Submit stopped because the draft could not be saved. Please check the message beside the buttons.', 'error');
             return;
         }
+
+        const submitContextKey = reimbursementCurrentContext().key;
+        const submitEditVersion = reimbursementEditVersion;
 
         const rowsForSubmit = collectReimbursementRowsForSave();
         const zeroRowCount = countZeroTotalReimbursementRows(rowsForSubmit);
@@ -5712,6 +6265,27 @@ async function saveReimbursementDraft(silent) {
             return;
         }
 
+        // LPR/signature dialogs and the confirmation itself can stay open long
+        // enough for a user to edit a field. Save that newer version before the
+        // irreversible submit request, and stop if the worksheet context moved.
+        if (reimbursementCurrentContext().key !== submitContextKey) {
+            const message = 'Submit stopped because the reimbursement range changed. Review the worksheet and submit again.';
+            setReimbursementSubmitNotice(message, 'error');
+            setReimbursementDraftStatus(message, 'error', 'unsaved');
+            reimAlert(message);
+            return;
+        }
+        if (reimbursementEditVersion !== submitEditVersion || reimbursementHasUnsavedEdits()) {
+            setReimbursementSubmitNotice('Saving the latest reimbursement values before submit...', 'warn');
+            const latestSaved = await saveReimbursementDraft(false);
+            if (!latestSaved) {
+                setReimbursementSubmitNotice('Submit stopped because the latest reimbursement values could not be saved.', 'error');
+                return;
+            }
+        }
+
+        reimbursementSubmitBusy = true;
+        setReimbursementSubmitInputsBusy(true);
         setReimbursementButtonsBusy(true);
         setReimbursementDraftStatus('Submitting reimbursement...', '');
         setReimbursementSubmitNotice('Submitting reimbursement to manager queue...', 'warn');
@@ -5761,6 +6335,8 @@ async function saveReimbursementDraft(silent) {
             setReimbursementSubmitNotice(message, 'error');
             reimAlert(message);
         } finally {
+            setReimbursementSubmitInputsBusy(false);
+            reimbursementSubmitBusy = false;
             setReimbursementButtonsBusy(false);
         }
     }
@@ -5970,22 +6546,58 @@ async function saveReimbursementDraft(silent) {
 
 
     async function loadReimbursementRows(options) {
+        options = options || {};
         hideReimbursementDeleteDraftConfirm();
-        const requestedReimbursementId = Number(options && options.reimbursementId || 0);
+        const requestedReimbursementId = Number(options.reimbursementId || 0);
         const startInput = document.getElementById('reimStartDate');
         const endInput = document.getElementById('reimEndDate');
+        const requestedStart = startInput.value;
+        const requestedEnd = endInput.value;
         let start = startInput.value;
         let end = endInput.value;
         const status = document.getElementById('reimStatusText');
+        const previousLoadState = {
+            context: Object.assign({}, reimbursementActiveContext || {}),
+            rows: Array.isArray(currentReimbursementRows) ? currentReimbursementRows.slice() : [],
+            excludedRows: Array.isArray(currentReimbursementExcludedRows) ? currentReimbursementExcludedRows.slice() : [],
+            id: currentReimbursementId,
+            totalSummary: currentReimbursementTotalSummary,
+            lifecycle: currentReimbursementLifecycle,
+            receiptsByShift: Object.assign({}, reimbursementReceiptsByShift || {}),
+            additionalReceipts: Array.isArray(reimbursementAdditionalReceipts) ? reimbursementAdditionalReceipts.slice() : [],
+            editVersion: reimbursementEditVersion,
+            savedEditVersion: reimbursementSavedEditVersion
+        };
 
         if (!requestedReimbursementId && (!start || !end)) {
             reimAlert('Please select start and end date.');
-            return;
+            return false;
         }
 
+        if (!options.skipTransition) {
+            const canContinue = await reimbursementPrepareContextTransition({
+                start: requestedStart,
+                end: requestedEnd,
+                id: requestedReimbursementId
+            });
+            if (!canContinue) return false;
+            // Save and continue restores the old inputs while it writes the
+            // current worksheet. Put the requested destination back only after
+            // that save has completed.
+            if (requestedStart) startInput.value = requestedStart;
+            if (requestedEnd) endInput.value = requestedEnd;
+        }
+
+        if (reimbursementTransitionBusy) return false;
+        reimbursementTransitionBusy = true;
+        reimbursementInvalidatePendingSaves();
+        reimbursementEditVersion = 0;
+        reimbursementSavedEditVersion = 0;
+        currentReimbursementId = requestedReimbursementId || null;
+        window.currentReimbursementId = currentReimbursementId;
+        reimbursementActiveContext = reimbursementCurrentContext();
+
         if (!requestedReimbursementId) {
-            currentReimbursementId = null;
-            window.currentReimbursementId = null;
             currentReimbursementTotalSummary = null;
             currentReimbursementExcludedRows = [];
             setCurrentReimbursementLifecycle({ status: 'Draft', editable: true, locked: false });
@@ -6101,12 +6713,53 @@ async function saveReimbursementDraft(silent) {
             } else {
                 status.textContent = `Loaded eligible schedules from ${payload.start} to ${payload.end}. Available: ${availableCount}. Excluded as previously claimed: ${excludedCount}.${draftMessage}${warningMessage}${receiptWarningMessage}`;
             }
+            reimbursementActiveContext = reimbursementCurrentContext();
+            reimbursementEditVersion = 0;
+            reimbursementSavedEditVersion = 0;
+            const loadedStatus = document.getElementById('reimDraftStatus');
+            setReimbursementDraftStatus(
+                loadedStatus ? loadedStatus.textContent : 'Reimbursement worksheet ready.',
+                '',
+                draft.exists ? 'saved' : 'idle'
+            );
             applyReimbursementStatusUi();
+            return true;
         } catch (error) {
             console.error(error);
-            status.textContent = error.message || 'Unable to load reimbursement rows.';
-            currentReimbursementExcludedRows = [];
-            renderReimbursementRows([]);
+            const previousContext = previousLoadState.context || {};
+            const canRestorePreviousWorksheet = !!(
+                previousContext.start || previousContext.end || previousLoadState.id
+                || previousLoadState.rows.length || previousLoadState.excludedRows.length
+            );
+            const message = error.message || 'Unable to load reimbursement rows.';
+            if (canRestorePreviousWorksheet) {
+                if (startInput) startInput.value = previousContext.start || '';
+                if (endInput) endInput.value = previousContext.end || '';
+                currentReimbursementId = previousLoadState.id || null;
+                window.currentReimbursementId = currentReimbursementId;
+                currentReimbursementRows = previousLoadState.rows;
+                currentReimbursementExcludedRows = previousLoadState.excludedRows;
+                currentReimbursementTotalSummary = previousLoadState.totalSummary;
+                reimbursementReceiptsByShift = previousLoadState.receiptsByShift;
+                reimbursementAdditionalReceipts = previousLoadState.additionalReceipts;
+                reimbursementEditVersion = previousLoadState.editVersion;
+                reimbursementSavedEditVersion = previousLoadState.savedEditVersion;
+                reimbursementActiveContext = reimbursementCurrentContext();
+                setCurrentReimbursementLifecycle(previousLoadState.lifecycle || { status: 'Draft', editable: true, locked: false });
+                renderReimbursementRows(currentReimbursementRows);
+                syncReimbursementWorksheetSummary();
+                setReimbursementDraftStatus(`${message} Previous worksheet remains open.`, 'error',
+                    previousLoadState.editVersion === previousLoadState.savedEditVersion ? 'saved' : 'unsaved');
+                status.textContent = `${message} Previous worksheet remains open.`;
+            } else {
+                status.textContent = message;
+                currentReimbursementExcludedRows = [];
+                renderReimbursementRows([]);
+                setReimbursementDraftStatus(message, 'error', 'unsaved');
+            }
+            return false;
+        } finally {
+            reimbursementTransitionBusy = false;
         }
     }
 
@@ -6197,15 +6850,24 @@ async function saveReimbursementDraft(silent) {
     async function openReimbursementStatusRecord(reimbursementId, start, end) {
         if (!Number(reimbursementId || 0)) {
             reimAlert('This reimbursement record has no valid record ID.');
-            return;
+            return false;
         }
 
         const startInput = document.getElementById('reimStartDate');
         const endInput = document.getElementById('reimEndDate');
+        const requestedStart = start || startInput.value;
+        const requestedEnd = end || endInput.value;
+        const canContinue = await reimbursementPrepareContextTransition({
+            start: requestedStart,
+            end: requestedEnd,
+            id: Number(reimbursementId)
+        });
+        if (!canContinue) return false;
         if (startInput && start) startInput.value = start;
         if (endInput && end) endInput.value = end;
 
-        await loadReimbursementRows({ reimbursementId: Number(reimbursementId) });
+        const loaded = await loadReimbursementRows({ reimbursementId: Number(reimbursementId), skipTransition: true });
+        if (!loaded) return false;
 
         const worksheet = document.querySelector('.reim-table-card');
         if (worksheet) {
@@ -6215,16 +6877,18 @@ async function saveReimbursementDraft(silent) {
                 worksheet.scrollIntoView();
             }
         }
+        return true;
     }
 
     async function openLegacyReimbursementRange(start, end) {
         if (!start || !end) return false;
         const startInput = document.getElementById('reimStartDate');
         const endInput = document.getElementById('reimEndDate');
+        const canContinue = await reimbursementPrepareContextTransition({ start, end, id: 0 });
+        if (!canContinue) return false;
         if (startInput) startInput.value = start;
         if (endInput) endInput.value = end;
-        await loadReimbursementRows();
-        return true;
+        return loadReimbursementRows({ skipTransition: true });
     }
 
 
@@ -6747,7 +7411,11 @@ async function dismissReimbursementNotification(event, notificationId) {
                 return;
             }
 
-            if (await openLegacyReimbursementRange(start, end)) {
+            if (start && end) {
+                // A declined transition means Stay. Do not fall through to
+                // a notification target URL and navigate away from the live
+                // worksheet after the user chose to keep entered values.
+                await openLegacyReimbursementRange(start, end);
                 return;
             }
 

@@ -35,7 +35,8 @@ class ReimbursementLiquidationRowDeletionTests(unittest.TestCase):
             'restoreReimbursementRow',
             'restoreAllReimbursementRows',
             'reimRemovedRowsPanel',
-            'excluded_rows: currentReimbursementExcludedRows',
+            'excluded_rows:',
+            'currentReimbursementExcludedRows.slice()',
         ):
             self.assertIn(expected, REIMBURSEMENT_TEMPLATE)
         self.assertIn('Calendar schedules and package receipts will not be deleted.', REIMBURSEMENT_TEMPLATE)
