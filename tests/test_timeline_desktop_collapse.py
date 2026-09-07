@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 TIMELINE = ROOT / "templates" / "timeline.html"
 APP = ROOT / "app.py"
+APP_DARK = ROOT / "static" / "css" / "app-dark-pages.css"
 RELEASES = ROOT / "static" / "changelog" / "releases.json"
 
 
@@ -15,6 +16,7 @@ class TimelineDesktopCollapsibleIntroTests(unittest.TestCase):
     def setUpClass(cls):
         cls.timeline = TIMELINE.read_text(encoding="utf-8")
         cls.app = APP.read_text(encoding="utf-8")
+        cls.dark_css = APP_DARK.read_text(encoding="utf-8")
         cls.releases = json.loads(RELEASES.read_text(encoding="utf-8"))
 
     def _intro_panel(self):
@@ -213,6 +215,60 @@ class TimelineDesktopCollapsibleIntroTests(unittest.TestCase):
             self.assertIn('aria-live="polite"', range_match.group(0))
             self.assertIn('aria-atomic="true"', range_match.group(0))
 
+    def test_collapsed_rail_controls_have_amoled_overrides(self):
+        for selector in (
+            '.timeline-intro-toggle-row.timeline-intro-row-collapsed',
+            '.timeline-intro-toggle',
+            '.timeline-collapsed-rail-button',
+            '.timeline-collapsed-week-range',
+        ):
+            self.assertIn(selector, self.dark_css, selector)
+
+        self.assertIn('background: var(--dark-panel) !important', self.dark_css)
+        self.assertIn('background: var(--dark-card) !important', self.dark_css)
+        self.assertIn('color: var(--dark-text) !important', self.dark_css)
+        self.assertIn('border-color: var(--dark-border) !important', self.dark_css)
+        self.assertIn('timeline-collapsed-rail-button:hover', self.dark_css)
+        self.assertIn('timeline-intro-toggle:focus-visible', self.dark_css)
+        self.assertIn('timeline-collapsed-rail-button:disabled', self.dark_css)
+
+    def test_week_navigation_has_loading_guard_and_failure_recovery(self):
+        self.assertGreaterEqual(
+            self.timeline.count('data-timeline-week-nav'),
+            7,
+            'all desktop week controls need an explicit navigation hook',
+        )
+        for marker in (
+            'let timelineWeekNavigationBusy = false;',
+            'function setTimelineWeekNavigationBusy',
+            'async function changeWeek(direction)',
+            'if(timelineWeekNavigationBusy) return false;',
+            'Loading calendar...',
+            'await refreshTimelineGrid();',
+            'const previousWeekOffset = weekOffset;',
+            'weekOffset = previousWeekOffset;',
+            'timelineAlert(',
+            'finally{',
+        ):
+            self.assertIn(marker, self.timeline, marker)
+
+    def test_desktop_grid_height_uses_actual_top_and_footer_reserve(self):
+        sticky_start = self.timeline.index('function initTimelineStickyHeaderPolish')
+        sticky = self.timeline[sticky_start:]
+        for marker in (
+            "const wrapper = document.getElementById('timeline-scroll-wrapper')",
+            'wrapper.getBoundingClientRect().top',
+            "const bottomScroll = document.getElementById('timeline-bottom-scroll')",
+            'const gridTop = Math.max(0',
+            'const availableHeight = Math.max(',
+            "'--timeline-grid-height'",
+        ):
+            self.assertIn(marker, sticky, marker)
+
+        self.assertIn('height: var(--timeline-grid-height', self.timeline)
+        self.assertIn('max-height: var(--timeline-grid-height', self.timeline)
+        self.assertNotIn('max-height: calc(100vh - 68px) !important;', self.timeline)
+
     def test_collapsed_rail_is_compact_desktop_only_and_sticky_only_when_active(self):
         self.assertIn('.timeline-collapsed-utility-rail {', self.timeline)
         self.assertRegex(
@@ -350,9 +406,22 @@ class TimelineDesktopCollapsibleIntroTests(unittest.TestCase):
 
     def test_cache_version_and_everyone_release_are_present(self):
         self.assertIn(
-            "medical-service-pwa-offline-navigation-v136-amoled-dark",
+            "medical-service-pwa-offline-navigation-v137-timeline-calendar-controls",
             self.app,
         )
+
+        release = next(
+            (
+                item
+                for item in self.releases["releases"]
+                if item.get("release_key") == "2026-09-07-timeline-calendar-controls"
+            ),
+            None,
+        )
+        self.assertIsNotNone(release, "calendar controls release is missing")
+        if release is not None:
+            self.assertEqual(release["release_date"], "2026-09-07")
+            self.assertTrue(release["is_published"])
 
         release = next(
             (

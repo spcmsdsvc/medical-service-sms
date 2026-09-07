@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-07-timeline-calendar-controls",
+      "release_date": "2026-09-07",
+      "title": "Calendar Controls and Grid Height",
+      "summary": "Calendar controls now stay readable in AMOLED mode while the desktop grid uses more available height.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-07-timeline-calendar-controls-everyone",
+          "category": "Calendar",
+          "description": "The collapsed Calendar header now matches AMOLED dark mode, Previous/Today/Next navigation provides immediate loading feedback and safe recovery, and the desktop schedule grid grows to the available viewport while keeping sticky headers, frozen engineer names, and synchronized scroll controls intact.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-06-amoled-dark-mode",
       "release_date": "2026-09-06",
       "title": "AMOLED Dark Mode",

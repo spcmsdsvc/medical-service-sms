@@ -1,5 +1,130 @@
 # Medical Service SMS — Approved Plans
 
+## Calendar AMOLED controls and larger visible grid
+
+**Status:** Executed — local verification complete on 2026-09-07; formal review, owner visual
+checks, commit, push, and deployment remain separately authorized actions.
+**Approved:** 2026-09-07 — owner said `implement the plan partner` after approving the calendar
+controls/grid-height proposal. **Execution authorized:** 2026-09-07. The Builder must keep this
+small and must not overengineer: reuse the existing calendar controls, `changeWeek()`/
+`refreshTimelineGrid()` flow, theme variables, scroll synchronization, and notification system;
+do not add a new request manager, dependency, backend/API change, or speculative rewrite.
+
+### Outcome and decisions
+
+Fix the desktop Calendar (`templates/timeline.html`) so the collapsed header rail and its
+collapse/expand control use the existing AMOLED palette. The Previous Week, Today, Next Week,
+and Find My Row controls must remain readable, focusable, and visibly responsive. Keep the
+existing `dark`/AMOLED activation, Light behavior, collapsed-header preference, accessible names,
+icon fonts, branch filters, mobile/offline behavior, and print behavior.
+
+Make desktop week navigation show immediate loading feedback, prevent duplicate navigation clicks
+while the current refresh is pending, preserve the current grid until a successful refresh, and
+restore the prior week/view state with an error toast if the refresh genuinely fails. The existing
+offline fallback remains authoritative when it can provide a saved snapshot; no new API surface
+or request queue is introduced.
+
+Increase the desktop calendar table's usable vertical area by deriving its height from the
+calendar surface's actual viewport position and the space needed for its bottom scrollbar and
+legend. Recalculate after collapse/expand, resize, and relevant layout changes. Preserve table
+row/card sizes, sticky date headings, frozen engineer column, synchronized horizontal scroll,
+mobile layout, and print output. Remove only conflicting desktop height overrides.
+
+### Files, exclusions, and verification
+
+- Touch `templates/timeline.html` for navigation button hooks, the existing week-navigation and
+  sticky-height controllers, and the desktop grid-height rules; touch `static/css/app-dark-pages.css`
+  for collapsed rail/toggle/range/control AMOLED overrides.
+- Extend `tests/test_timeline_desktop_collapse.py` with fail-first source/runtime contracts for
+  dark rail controls, loading/disabled/error recovery, and viewport-derived height behavior.
+- Bump the embedded service-worker cache in `app.py` once, update exact current-cache assertions,
+  add a published `2026-09-07` Calendar release in `static/changelog/releases.json`, and update
+  this plan and `changes.md` with truthful exact test totals.
+- Do not change schema/API/database/production/Railway state, commit/push/deploy, browser/Codex
+  UI state, official document/signature/print surfaces, mobile-specific navigation, or protected
+  dirty files (`scheduler.db`, handoffs, `.claude/`, `output/`, `outputs/`, and `tmp/`).
+
+### Numbered execution steps
+
+1. **Preflight and record.** Read the applicable instructions, current journals, affected
+   timeline/CSS/controller sources, and test isolation rules; inspect the dirty tree and preserve
+   protected artifacts. Done when the current navigation handlers, height overrides, cache value,
+   and timeline tests are identified.
+2. **Fail-first contracts.** Add focused source/runtime tests for the AMOLED collapsed controls,
+   explicit navigation hooks, loading/disabled state, failure rollback, and actual-top/footer-based
+   desktop height calculation. Run the unchanged-source checkpoint and retain its intentional
+   failures as evidence.
+3. **Theme the collapsed header.** Add dark overrides in `static/css/app-dark-pages.css` for the
+   row, rail, toggle, range, arrow/Today/Find My Row buttons, hover/focus/disabled states, and
+   any required icon/text descendants. Use the existing `--dark-*` and `--app-*` tokens. Keep
+   Light CSS as the base and preserve mobile/print hiding rules.
+4. **Harden existing week navigation.** Add the explicit data hooks to every desktop
+   `changeWeek()` control. Update `changeWeek()` to guard duplicate actions, show an immediate
+   `Loading calendar…` state, await the existing refresh, and disable/re-enable all hooks. On a
+   real failure, restore the previous week offset and saved view state, retain the displayed
+   grid, and send a concise error through `timelineAlert()`. Do not alter the mobile-specific
+   navigation functions or the offline snapshot fallback.
+5. **Fit the desktop grid.** Update `initTimelineStickyHeaderPolish()` to calculate the available
+   viewport height from `timeline-scroll-wrapper.getBoundingClientRect().top`, subtract the
+   bottom-scrollbar and legend/footer space plus small shell spacing, clamp to a usable minimum,
+   and set the existing `--timeline-grid-maxheight-offset`/height variable consumed by the
+   wrapper. Re-run after resize and collapse/expand; remove/override only stale desktop role
+   `max-height` rules that defeat the computed value. Keep sticky offsets and horizontal-scroll
+   synchronization intact.
+6. **Deliver and verify locally.** Bump the worker once and update assertions, add the Calendar
+   release entry, and run focused timeline/appearance/cache/changelog tests, the required full
+   isolated unittest discovery, Python/Jinja/inline-JavaScript/CSS/release/whitespace checks, and
+   Builder self-review. Browser visual checks are owner-only under project instructions; report
+   them as pending. Stop without formal review, commit, push, deployment, Railway, database, or
+   production operations.
+
+### Acceptance criteria
+
+- In dark mode, expanded and collapsed calendar-header controls use the AMOLED surface/text/border
+  treatment and remain readable in normal, hover, focus, and disabled states.
+- Previous, Next, and Today show a loading state, cannot launch duplicate desktop refreshes, resolve
+  to the correct week when successful, and recover to the prior view with an error notification on
+  a genuine failure. Saved branch/week state and offline fallback remain compatible.
+- Desktop grid height uses the real top position and required bottom scrollbar/legend space, grows
+  into available viewport room, and remains usable at short and tall desktop heights. Sticky headers,
+  frozen names, horizontal mirrors, rows/cards, mobile, and print remain intact.
+- Focused and isolated tests provide reasonable confidence; no browser automation is claimed or
+  performed by the Builder.
+
+### Implementation outcome (2026-09-07)
+
+- Updated `templates/timeline.html` to give every desktop Previous/Today/Next control an explicit
+  navigation hook, show a loading range while `refreshTimelineGrid()` is pending, block duplicate
+  clicks, and restore the prior week/view state with `timelineAlert()` after a genuine refresh
+  failure. The existing offline snapshot fallback, mobile navigation paths, saved branch/week
+  state, and notification flow remain in place.
+- Added `static/css/app-dark-pages.css` overrides for the collapsed AMOLED rail, toggle, range,
+  Previous/Today/Next/Find My Row controls, hover/focus/disabled states, and loading state. The
+  desktop wrapper now derives its height from the real viewport top and reserves the bottom
+  scrollbar, legend, and shell spacing; the later scheduler auto-hide override now consumes the
+  same computed height. Mobile, print, sticky headings, frozen names, cards, and synchronized
+  scroll controls retain their existing rules.
+- Bumped `app-dark-pages.css` to `v=26`, the embedded service-worker cache to
+  `medical-service-pwa-offline-navigation-v137-timeline-calendar-controls`, updated exact cache
+  assertions, and added the published `2026-09-07-timeline-calendar-controls` release entry.
+  No API, schema, database, production, or dependency change was made.
+- Fail-first checkpoint against unchanged source: **17 tests, 13 passed, 4 intentional failures**
+  for the new cache/release, AMOLED collapsed-control, navigation, and height contracts.
+- Final focused timeline/appearance/cache/changelog/layout/offline set: **178 tests, 177 passed,
+  0 failed, 0 errors, 1 skipped**. The focused Timeline collapse suite was **17/17 passed**.
+  The direct inline JavaScript runtime checks passed: navigation failure rollback/duplicate-click
+  recovery and desktop viewport-height calculation (`692px` for the exercised fixture).
+- Required isolated full discovery with a new disposable database outside the repository: **956
+  tests, 945 passed, 10 failed, 0 errors, 1 skipped**. The ten failures are the existing eight
+  Purchase Order setup/rate-limit cases and two Staff Creation fixture/initials cases; none touch
+  the Calendar package. Python AST, Jinja parsing for 32 templates, CSS brace balance, appearance
+  JavaScript syntax, release JSON parsing, and `git diff --check` passed.
+- Protected dirty artifacts (`scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`, and the
+  loose root handoff) were preserved. Browser/Codex UI visual verification was not run under the
+  project prohibition and remains for owner checks at desktop and 375px widths. No commit, push,
+  deployment, formal review, or production operation was performed.
+
+
 ## Replace existing dark mode with AMOLED
 
 **Status:** Executed — 02fe9cf. Local verification complete; formal review and owner visual checks remain

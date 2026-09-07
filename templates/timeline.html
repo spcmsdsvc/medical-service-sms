@@ -99,6 +99,7 @@
                 type="button"
                 class="timeline-collapsed-rail-button timeline-collapsed-rail-icon"
                 id="timeline-collapsed-prev-week"
+                data-timeline-week-nav="previous"
                 aria-label="Previous week"
                 title="Previous week"
                 onclick="changeWeek(-1)"
@@ -115,6 +116,7 @@
                 type="button"
                 class="timeline-collapsed-rail-button timeline-collapsed-rail-today"
                 id="timeline-collapsed-today"
+                data-timeline-week-nav="today"
                 aria-label="Today"
                 title="Today"
                 onclick="changeWeek(0)"
@@ -126,6 +128,7 @@
                 type="button"
                 class="timeline-collapsed-rail-button timeline-collapsed-rail-icon"
                 id="timeline-collapsed-next-week"
+                data-timeline-week-nav="next"
                 aria-label="Next week"
                 title="Next week"
                 onclick="changeWeek(1)"
@@ -252,6 +255,7 @@
 
                 <button
                     class="btn btn-outline-secondary btn-sm px-3"
+                    data-timeline-week-nav="previous"
                     onclick="changeWeek(-1)"
                     title="Previous Week"
                 >
@@ -260,6 +264,7 @@
 
                 <button
                     class="btn btn-outline-primary btn-sm px-4 fw-bold"
+                    data-timeline-week-nav="today"
                     onclick="changeWeek(0)"
                     title="Reset to current date"
                 >
@@ -268,6 +273,7 @@
 
                 <button
                     class="btn btn-outline-secondary btn-sm px-3"
+                    data-timeline-week-nav="next"
                     onclick="changeWeek(1)"
                     title="Next Week"
                 >
@@ -373,7 +379,7 @@
             <button type="button" class="btn btn-sm btn-primary fw-bold" onclick="openSchedulerQuickAddFromToolbar()">
                 <i class="fa-solid fa-calendar-plus me-1"></i>Add Schedule
             </button>
-            <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" onclick="changeWeek(0)">
+            <button type="button" class="btn btn-sm btn-outline-secondary fw-bold" data-timeline-week-nav="today" onclick="changeWeek(0)">
                 <i class="fa-solid fa-calendar-day me-1"></i>Today
             </button>
         </div>
@@ -1902,7 +1908,8 @@ body.timeline-dev-preview-manager .timeline-engineer-focus-strip {
    Best UI approach: the real table header stays inside the table and sticks
    within the timeline scroll container. No cloned/floating header. */
 .timeline-scroll-wrapper {
-    max-height: calc(100vh - var(--timeline-grid-maxheight-offset, 190px));
+    height: var(--timeline-grid-height, auto);
+    max-height: var(--timeline-grid-height, calc(100vh - var(--timeline-grid-maxheight-offset, 190px)));
     overflow: auto;
     overscroll-behavior: contain;
     background: #ffffff;
@@ -1985,6 +1992,11 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 
     body.timeline-expanded-desktop-grid .timeline-bottom-scroll {
         height: 15px;
+    }
+
+    body.timeline-expanded-desktop-grid .timeline-scroll-wrapper {
+        height: var(--timeline-grid-height, auto);
+        max-height: var(--timeline-grid-height, calc(100vh - var(--timeline-grid-maxheight-offset, 190px))) !important;
     }
 
     body.timeline-expanded-desktop-grid .calendar-legend {
@@ -2074,6 +2086,14 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 .timeline-intro-toggle:focus-visible {
     outline: 3px solid rgba(13, 110, 253, 0.35);
     outline-offset: 2px;
+}
+
+.timeline-week-nav-loading {
+    cursor: wait !important;
+}
+
+.timeline-week-nav-loading i {
+    opacity: 0.72;
 }
 
 .timeline-collapsed-utility-rail {
@@ -4555,6 +4575,7 @@ body.mobile-engineer-mode.mobile-desktop-grid-skipped .timeline-desktop-shell {
 
 @media (max-width: 768px) {
     .timeline-scroll-wrapper {
+        height: auto;
         max-height: none;
         overflow-x: auto;
         overflow-y: visible;
@@ -5447,6 +5468,8 @@ body.pwa-reconnected .mobile-offline-readiness {
     }
 
     .timeline-scroll-wrapper {
+        height: auto !important;
+        max-height: none !important;
         overflow: visible !important;
         border: none !important;
         box-shadow: none !important;
@@ -5611,7 +5634,8 @@ body.timeline-scheduler-toolbar-pinned .timeline-scheduler-toolbar-pin-btn {
         display: block !important;
         visibility: visible !important;
         opacity: 1 !important;
-        max-height: calc(100vh - var(--timeline-grid-maxheight-offset, 120px)) !important;
+        height: var(--timeline-grid-height, auto) !important;
+        max-height: var(--timeline-grid-height, calc(100vh - var(--timeline-grid-maxheight-offset, 120px))) !important;
         overflow: auto !important;
     }
 
@@ -5805,7 +5829,8 @@ body.timeline-scheduler-toolbar-pinned .timeline-scheduler-hover-pin {
     }
 
     body.timeline-scheduler-desktop.timeline-scheduler-toolbar-autohide:not(.timeline-scheduler-toolbar-expanded):not(.timeline-scheduler-toolbar-pinned) .timeline-scroll-wrapper {
-        max-height: calc(100vh - 68px) !important;
+        height: var(--timeline-grid-height, auto) !important;
+        max-height: var(--timeline-grid-height, calc(100vh - var(--timeline-grid-maxheight-offset, 68px))) !important;
     }
 }
 
@@ -17671,11 +17696,77 @@ window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true
 
 // --- NAVIGATION & INIT ---
 
-    function changeWeek(direction) {
+    let timelineWeekNavigationBusy = false;
+    let timelineWeekNavigationPreviousLabels = null;
+
+    function setTimelineWeekNavigationBusy(isBusy, restoreLabels=false){
+        const busy = Boolean(isBusy);
+        document.querySelectorAll('[data-timeline-week-nav]').forEach(control => {
+            control.disabled = busy;
+            control.setAttribute('aria-busy', String(busy));
+            control.classList.toggle('timeline-week-nav-loading', busy);
+        });
+
+        const rangeLabels = [
+            document.getElementById('week-display'),
+            document.getElementById('timeline-collapsed-week-range')
+        ].filter(Boolean);
+
+        if(busy){
+            if(!timelineWeekNavigationPreviousLabels){
+                timelineWeekNavigationPreviousLabels = rangeLabels.map(element => ({
+                    element,
+                    text: element.textContent
+                }));
+            }
+            rangeLabels.forEach(element => { element.textContent = 'Loading calendar...'; });
+            return;
+        }
+
+        if(restoreLabels && timelineWeekNavigationPreviousLabels){
+            timelineWeekNavigationPreviousLabels.forEach(({element, text}) => {
+                if(element) element.textContent = text;
+            });
+        }
+        timelineWeekNavigationPreviousLabels = null;
+    }
+
+    async function changeWeek(direction) {
+        const numericDirection = Number(direction);
+        if(timelineWeekNavigationBusy) return false;
+        if(!Number.isFinite(numericDirection)) return false;
+
+        const previousWeekOffset = weekOffset;
+        const branchFilter = document.getElementById('branch-filter');
+        const previousViewState = loadTimelineViewState();
+
         pendingMobileFilterAfterLoad = '';
-        weekOffset = (direction === 0) ? 0 : weekOffset + direction;
+        timelineWeekNavigationBusy = true;
+        setTimelineWeekNavigationBusy(true);
+        weekOffset = (numericDirection === 0) ? 0 : weekOffset + numericDirection;
         saveTimelineViewState();
-        refreshTimelineGrid();
+
+        try{
+            await refreshTimelineGrid();
+            return true;
+        }catch(error){
+            console.error('[Timeline] Week navigation failed:', error);
+            if(previousViewState && Number.isFinite(Number(previousViewState.weekOffset))){
+                weekOffset = Number(previousViewState.weekOffset);
+            }else{
+                weekOffset = previousWeekOffset;
+            }
+            if(branchFilter && previousViewState?.branch){
+                branchFilter.value = previousViewState.branch;
+            }
+            saveTimelineViewState();
+            setTimelineWeekNavigationBusy(false, true);
+            timelineAlert('Unable to load the selected calendar week. The previous week remains displayed.', 'error');
+            return false;
+        }finally{
+            timelineWeekNavigationBusy = false;
+            setTimelineWeekNavigationBusy(false);
+        }
     }
 
     function exportToExcel() {
@@ -19831,15 +19922,24 @@ function initTimelineStickyHeaderPolish(){
         const toolbar = document.getElementById('timeline-freeze-toolbar');
         const collapsedRail = document.getElementById('timeline-intro-toggle-row');
         const topScrollbar = document.getElementById('timeline-sticky-h-scroll');
+        const wrapper = document.getElementById('timeline-scroll-wrapper');
+        const bottomScroll = document.getElementById('timeline-bottom-scroll');
+        const shell = document.getElementById('timeline-desktop-shell');
         const legend = document.querySelector('.calendar-legend');
         const toolbarHeight = toolbar ? Math.ceil(toolbar.getBoundingClientRect().height) : 0;
         const collapsedRailHeight = collapsedRail && collapsedRail.classList.contains('timeline-intro-row-collapsed')
             ? Math.ceil(collapsedRail.getBoundingClientRect().height)
             : 0;
         const scrollbarHeight = topScrollbar ? Math.ceil(topScrollbar.getBoundingClientRect().height) : 0;
-        const legendHeight = legend ? Math.min(Math.ceil(legend.getBoundingClientRect().height), 34) : 0;
+        const legendHeight = legend ? Math.ceil(legend.getBoundingClientRect().height) : 0;
 
         const isDesktop = window.matchMedia('(min-width: 769px)').matches;
+        document.body.classList.toggle('timeline-expanded-desktop-grid', isDesktop);
+
+        if(!isDesktop){
+            document.documentElement.style.removeProperty('--timeline-grid-height');
+            document.documentElement.style.removeProperty('--timeline-grid-maxheight-offset');
+        }
 
         // Keep sticky top row, but give every desktop role more visible table height.
         // Mobile keeps the larger safety buffer because it uses the card-based view.
@@ -19852,9 +19952,37 @@ function initTimelineStickyHeaderPolish(){
 
         document.documentElement.style.setProperty('--timeline-sticky-scrollbar-offset', `${effectiveToolbarHeight}px`);
         document.documentElement.style.setProperty('--timeline-sticky-offset', `${effectiveToolbarHeight + effectiveScrollbarHeight}px`);
-        document.documentElement.style.setProperty('--timeline-grid-maxheight-offset', `${maxHeightOffset}px`);
+        if(isDesktop){
+            const viewportHeight = Math.max(
+                Number(window.innerHeight || document.documentElement.clientHeight || 0),
+                320
+            );
+            const gridTop = Math.max(0, Math.ceil(wrapper ? wrapper.getBoundingClientRect().top : 0));
+            const bottomScrollbarHeight = bottomScroll
+                ? Math.ceil(bottomScroll.getBoundingClientRect().height)
+                : 18;
+            const legendParent = legend ? legend.closest('.mt-3') : null;
+            const legendMarginTop = legendParent
+                ? (parseFloat(window.getComputedStyle(legendParent).marginTop) || 0)
+                : 0;
+            const shellPaddingBottom = shell
+                ? (parseFloat(window.getComputedStyle(shell).paddingBottom) || 0)
+                : 0;
+            const footerReserve = bottomScrollbarHeight + legendHeight +
+                Math.max(8, legendMarginTop) + shellPaddingBottom + 12;
+            const minimumGridHeight = Math.min(320, Math.max(220, viewportHeight - 32));
+            const availableHeight = Math.max(
+                minimumGridHeight,
+                viewportHeight - gridTop - footerReserve
+            );
+            const computedMaxHeightOffset = Math.max(0, viewportHeight - availableHeight);
+
+            document.documentElement.style.setProperty('--timeline-grid-height', `${Math.round(availableHeight)}px`);
+            document.documentElement.style.setProperty('--timeline-grid-maxheight-offset', `${Math.round(computedMaxHeightOffset)}px`);
+        }else{
+            document.documentElement.style.setProperty('--timeline-grid-maxheight-offset', `${maxHeightOffset}px`);
+        }
         document.body.classList.toggle('timeline-toolbar-compact', window.scrollY > 8);
-        document.body.classList.toggle('timeline-expanded-desktop-grid', isDesktop);
     };
 
     updateStickyState();

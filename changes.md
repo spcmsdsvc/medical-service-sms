@@ -1,5 +1,42 @@
 # Project Change Log
 
+codex changes - 2026-09-07
+
+- The owner authorized committing and pushing only the Calendar AMOLED controls and grid-height
+  package to `origin/main`, including its related tests, asset/cache versions, release metadata,
+  and project records. Protected database, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated
+  files remain excluded. Prior local verification applies; formal review and visual checks remain
+  pending. Remote commit and Railway deployment metadata are checked after publication.
+
+- Recorded the owner-authorized Calendar AMOLED controls and larger visible grid package in
+-  `plans.md`; the package is implemented and locally verified. `templates/timeline.html` now
+  gives the collapsed rail and expanded toolbar Previous/Today/Next controls AMOLED-compatible
+  loading/disabled feedback, blocks duplicate refresh clicks, and restores the prior week/view
+  state with an error notification after a genuine refresh failure. `static/css/app-dark-pages.css`
+  covers the collapsed rail, toggle, date range, arrows, Today, Find My Row, focus, hover, and
+  disabled states.
+- The desktop Calendar grid now derives its height from the actual wrapper top and reserves the
+  bottom synchronized scrollbar, legend, and shell spacing. The later scheduler auto-hide rule
+  consumes the same computed height, while row/card sizing, sticky headings, frozen names,
+  horizontal-scroll sync, mobile, print, and offline fallback remain unchanged.
+- Bumped `templates/layout.html` `app-dark-pages.css` to `v=26`, bumped the embedded worker in
+  `app.py` to `medical-service-pwa-offline-navigation-v137-timeline-calendar-controls`, updated
+  exact current-cache assertions, and added the published
+  `2026-09-07-timeline-calendar-controls` release. No API, schema, database, dependency,
+  production, or Railway change was made.
+- Fail-first checkpoint: **17 tests, 13 passed, 4 intentional failures** against unchanged
+  source. Final focused timeline/appearance/cache/changelog/layout/offline set: **178 tests, 177
+  passed, 0 failed, 0 errors, 1 skipped**; the focused Timeline collapse suite was **17/17
+  passed**. Direct inline JavaScript runtime checks passed for navigation rollback/duplicate-click
+  recovery and viewport-derived desktop height.
+- Isolated full discovery with a new disposable database outside the repository: **956 tests,
+  945 passed, 10 failed, 0 errors, 1 skipped**. The ten failures are the existing eight Purchase
+  Order setup/rate-limit cases and two Staff Creation fixture/initials cases. Python AST, Jinja
+  parsing for 32 templates, CSS brace balance, appearance JavaScript syntax, release JSON parsing,
+  and `git diff --check` passed. Browser visual checks remain owner-only; no browser automation,
+  commit, push, deployment, formal review, or production operation was performed. Protected dirty
+  artifacts remain preserved.
+
 codex changes - 2026-09-06
 
 - The owner authorized committing and pushing only the AMOLED package to `origin/main`.
