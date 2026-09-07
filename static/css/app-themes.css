@@ -63,6 +63,21 @@
     color-scheme: dark;
 }
 
+/* Graphite is the comfortable middle palette between the light and AMOLED modes. */
+:root[data-app-theme="dark"][data-app-palette="graphite"] {
+    --app-bg: #202124;
+    --app-surface: #292a2d;
+    --app-surface-raised: #333438;
+    --app-text: #ededed;
+    --app-muted: #b8bbc2;
+    --app-border: #85888d;
+    --app-input: #202124;
+    --app-sidebar: #202124;
+    --app-sidebar-deep: #1a1b1e;
+    --app-shadow: 0 10px 28px rgba(0, 0, 0, .38);
+    color-scheme: dark;
+}
+
 html, body { background: var(--app-bg); color: var(--app-text); }
 body, .main-content { background-color: var(--app-bg) !important; }
 .sidebar { background: var(--app-sidebar) !important; }
@@ -199,7 +214,7 @@ a:not(.btn):not(.sidebar a) { color: var(--app-primary); }
 }
 
 .appearance-panel { background: var(--app-surface); border: 1px solid var(--app-border); color: var(--app-text); }
-.appearance-mode-control { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.appearance-mode-control { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .appearance-mode-button {
     min-height: 46px;
     border: 1px solid var(--app-border);
@@ -221,6 +236,7 @@ a:not(.btn):not(.sidebar a) { color: var(--app-primary); }
 }
 .appearance-accent-button.active { border-color: var(--app-primary); box-shadow: inset 0 0 0 2px var(--app-primary); }
 .appearance-swatch { width: 26px; height: 26px; border-radius: 50%; display: block; margin: 0 auto 6px; border: 2px solid rgba(255,255,255,.7); box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
+@media (max-width: 760px) { .appearance-mode-control { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .appearance-accent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 @media print {

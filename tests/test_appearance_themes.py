@@ -1,12 +1,24 @@
 import json
+import os
 import re
+import subprocess
+import tempfile
+import textwrap
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from tests.sw_cache_version import assert_cache_version_at_least
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Pin app imports to a disposable database outside the repository. This test module only
+# exercises the appearance payload helper, but importing app.py must never open scheduler.db.
+_TEST_DB_PATH = Path(tempfile.gettempdir()) / f'medical_service_appearance_tests_{os.getpid()}.db'
+os.environ.setdefault('MEDICAL_SERVICE_TEST_DB', str(_TEST_DB_PATH))
+
+import app as app_module  # noqa: E402
 
 # Tokens deliberately left undefined in app-themes.css. Every entry is a fixed brand
 # colour whose fallback renders the same in both themes rather than inverting:
@@ -79,13 +91,13 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         )
 
     def test_toast_tone_colours_clear_the_non_text_contrast_floor_in_both_themes(self):
-        """A fixed colour on a themed surface has two contrast ratios, not one.
+        """A fixed colour on a themed surface has a contrast ratio per palette.
 
         The register toasts carry their tone on a left border and an icon rather than a
         tinted background -- deliberately, because an unresolved or fixed-light background
         inverts under themed text, which is the defect class this repo has shipped twice.
         But a fixed tone colour still sits on a surface that changes, so it must clear the
-        WCAG 1.4.11 non-text floor of 3:1 against BOTH `--app-surface-raised` values.
+        WCAG 1.4.11 non-text floor of 3:1 against each `--app-surface-raised` value.
 
         It did not. The warning tone shipped as `#fd7e14`: 5.50:1 on the dark surface and
         **2.46:1 on the light one**. Nothing was unreadable -- the message text is
@@ -95,14 +107,14 @@ class AppearanceThemeSourceTests(unittest.TestCase):
 
         This asserts the class rather than the three current values, so it also fails if
         someone later retunes `--app-surface-raised` underneath colours that pass today.
-        Success and danger clear the floor by only ~0.12 on the dark surface, so that is
-        not a hypothetical.
+        Graphite uses lighter success and danger tones from the late-loaded page override
+        because its raised surface is intentionally brighter than the AMOLED surface.
         """
         themes = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
         surfaces = re.findall(r'--app-surface-raised:\s*(#[0-9a-fA-F]{6})', themes)
         self.assertEqual(
-            len(surfaces), 2,
-            f'expected one light and one dark --app-surface-raised, found {surfaces}',
+            len(surfaces), 3,
+            f'expected one light, AMOLED, and Graphite --app-surface-raised, found {surfaces}',
         )
 
         def relative_luminance(value):
@@ -129,12 +141,14 @@ class AppearanceThemeSourceTests(unittest.TestCase):
                 set(tones), {'success', 'warning', 'danger'},
                 f'{name}: expected three toast tones, found {sorted(tones)}',
             )
+            graphite_tones = {'success': '#4ade80', 'danger': '#f87171'}
             for tone, colour in sorted(tones.items()):
-                for surface in surfaces:
-                    ratio = contrast(colour, surface)
+                for surface_index, surface in enumerate(surfaces):
+                    effective_colour = graphite_tones.get(tone, colour) if surface_index == 2 else colour
+                    ratio = contrast(effective_colour, surface)
                     self.assertGreaterEqual(
                         round(ratio, 2), 3.0,
-                        f'{name}: the {tone} toast tone {colour} measures {ratio:.2f}:1 on '
+                        f'{name}: the {tone} toast tone {effective_colour} measures {ratio:.2f}:1 on '
                         f'{surface}, below the 3:1 floor for a border and icon',
                     )
 
@@ -158,6 +172,223 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
         assert_cache_version_at_least(self, 35, app_source)
         self.assertIn("'/static/css/app-dark-pages.css'", app_source)
+
+    def test_graphite_palette_is_shared_by_theme_layers(self):
+        """Graphite has one neutral palette in both theme layers."""
+        theme_css = (ROOT / 'static' / 'css' / 'app-themes.css').read_text(encoding='utf-8')
+        dark_css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
+
+        theme_match = re.search(
+            r':root\[data-app-theme="dark"\]\[data-app-palette="graphite"\]\s*\{([^}]*)\}',
+            theme_css,
+            re.IGNORECASE,
+        )
+        dark_match = re.search(
+            r':root\[data-app-theme="dark"\]\[data-app-palette="graphite"\]\s*\{([^}]*)\}',
+            dark_css,
+            re.IGNORECASE,
+        )
+        self.assertIsNotNone(theme_match, 'shared theme is missing the Graphite palette block')
+        self.assertIsNotNone(dark_match, 'late-loaded page theme is missing the Graphite palette block')
+
+        expected_theme = {
+            '--app-bg': '#202124',
+            '--app-surface': '#292a2d',
+            '--app-surface-raised': '#333438',
+            '--app-input': '#202124',
+            '--app-text': '#ededed',
+            '--app-muted': '#b8bbc2',
+            '--app-border': '#85888d',
+            '--app-sidebar': '#202124',
+        }
+        expected_page = {
+            '--dark-page': '#202124',
+            '--dark-panel': '#292a2d',
+            '--dark-card': '#333438',
+            '--dark-input': '#202124',
+            '--dark-text': '#ededed',
+            '--dark-muted': '#b8bbc2',
+            '--dark-border': '#85888d',
+        }
+        for token, colour in expected_theme.items():
+            with self.subTest(layer='shared', token=token):
+                self.assertRegex(theme_match.group(1).lower(), rf'{re.escape(token)}\s*:\s*{re.escape(colour)}\b')
+        for token, colour in expected_page.items():
+            with self.subTest(layer='late', token=token):
+                self.assertRegex(dark_match.group(1).lower(), rf'{re.escape(token)}\s*:\s*{re.escape(colour)}\b')
+
+    def test_graphite_text_and_control_contrast_contract(self):
+        """Graphite text and essential boundaries clear the approved contrast floors."""
+        def relative_luminance(value):
+            channels = [int(value.lstrip('#')[index:index + 2], 16) / 255 for index in (0, 2, 4)]
+            linear = [
+                channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4
+                for channel in channels
+            ]
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+        def contrast(first, second):
+            lighter, darker = sorted(
+                (relative_luminance(first), relative_luminance(second)), reverse=True
+            )
+            return (lighter + 0.05) / (darker + 0.05)
+
+        for surface in ('#202124', '#292a2d', '#333438'):
+            self.assertGreaterEqual(contrast('#ededed', surface), 4.5)
+            self.assertGreaterEqual(contrast('#b8bbc2', surface), 4.5)
+        self.assertGreaterEqual(contrast('#85888d', '#292a2d'), 3.0)
+        self.assertGreaterEqual(contrast('#85888d', '#333438'), 3.0)
+
+    def test_graphite_preference_api_and_settings_contract(self):
+        app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        settings = (ROOT / 'templates' / 'settings.html').read_text(encoding='utf-8')
+
+        self.assertIn("APPEARANCE_THEME_MODES = {'light', 'dark', 'graphite', 'system'}", app_source)
+        self.assertIn("'graphite'", app_source)
+        self.assertIn("effective_mode = 'dark' if mode == 'graphite'", app_source)
+        self.assertIn('data-appearance-mode="graphite"', settings)
+        self.assertIn("setAppearanceMode('graphite')", settings)
+        self.assertIn('Graphite Dark', settings)
+        self.assertIn('AMOLED Black', settings)
+
+    def test_appearance_payload_resolves_graphite_to_bootstrap_dark(self):
+        """The wire mode stays Graphite while the effective Bootstrap theme stays dark."""
+        expected_effective_modes = {
+            'light': 'light',
+            'dark': 'dark',
+            'graphite': 'dark',
+            'system': 'system',
+        }
+        for mode, expected_effective in expected_effective_modes.items():
+            with self.subTest(mode=mode):
+                user = SimpleNamespace(
+                    ui_theme_mode=mode,
+                    ui_accent_theme='classic',
+                    ui_theme_updated_at=None,
+                )
+                payload = app_module.appearance_preference_payload(user)
+                self.assertEqual(payload['mode'], mode)
+                self.assertEqual(payload['effective_mode'], expected_effective)
+
+    def test_graphite_runtime_cycle_and_busy_guard(self):
+        runtime = (ROOT / 'static' / 'js' / 'app-appearance.js').read_text(encoding='utf-8')
+
+        self.assertIn("const QUICK_MODE_CYCLE = ['light', 'graphite', 'dark'];", runtime)
+        self.assertIn('function nextQuickMode(mode)', runtime)
+        self.assertIn("root.dataset.appPalette = paletteFor(state.mode);", runtime)
+        self.assertIn("normalized === 'graphite'", runtime)
+        self.assertIn('let quickToggleBusy = false;', runtime)
+        self.assertIn('if (quickToggleBusy || state.pending)', runtime)
+        self.assertIn("'Switch to Graphite Dark'", runtime)
+        self.assertIn("'Switch to AMOLED Black'", runtime)
+        self.assertIn("'Switch to Light'", runtime)
+        self.assertIn('button.disabled = quickToggleBusy || state.pending;', runtime)
+
+    def test_graphite_runtime_cycle_executes_in_node(self):
+        runtime = (ROOT / 'static' / 'js' / 'app-appearance.js').read_text(encoding='utf-8')
+        harness = textwrap.dedent(
+            """
+            const fs = require('fs');
+            const vm = require('vm');
+            const root = {dataset: {}};
+            const meta = {content: ''};
+            const buttons = [{title: '', disabled: false, attrs: {}, setAttribute(key, value) { this.attrs[key] = value; }}];
+            global.document = {
+                documentElement: root,
+                querySelector(selector) {
+                    return selector === 'meta[name="theme-color"]' || selector === 'meta[name="csrf-token"]' ? meta : null;
+                },
+                querySelectorAll(selector) {
+                    return selector === '.appearance-header-button' ? buttons : [];
+                },
+                addEventListener() {},
+            };
+            Object.defineProperty(globalThis, 'navigator', {value: {onLine: true}, configurable: true});
+            global.CustomEvent = class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } };
+            const media = {matches: false, addEventListener() {}};
+            global.window = {
+                __initialAppearance: {mode: 'light', accent: 'classic', userId: 42},
+                matchMedia() { return media; },
+                addEventListener() {},
+                dispatchEvent() {},
+            };
+            global.fetch = async function(url, options) {
+                const payload = JSON.parse(options.body);
+                return {ok: true, async json() { return {success: true, mode: payload.mode, accent: payload.accent}; }};
+            };
+            vm.runInThisContext(%SOURCE%);
+            window.appAppearance.apply('light', 'classic');
+            (async function() {
+                if (window.appAppearance.getState().mode !== 'light' || root.dataset.appPalette !== 'light') throw new Error('light setup failed');
+                await window.appAppearance.toggleQuick();
+                if (window.appAppearance.getState().mode !== 'graphite' || root.dataset.appTheme !== 'dark' || root.dataset.appPalette !== 'graphite') throw new Error('graphite step failed');
+                if (buttons[0].title !== 'Switch to AMOLED Black' || meta.content !== '#202124') throw new Error(`graphite controls failed: ${buttons[0].title} / ${meta.content}`);
+                await window.appAppearance.toggleQuick();
+                if (window.appAppearance.getState().mode !== 'dark' || root.dataset.appPalette !== 'amoled') throw new Error('amoled step failed');
+                if (buttons[0].title !== 'Switch to Light' || meta.content !== '#000000') throw new Error('amoled controls failed');
+                await window.appAppearance.toggleQuick();
+                if (window.appAppearance.getState().mode !== 'light' || root.dataset.appPalette !== 'light') throw new Error('cycle reset failed');
+                if (buttons[0].title !== 'Switch to Graphite Dark' || meta.content !== '#2c3e50') throw new Error('light controls failed');
+                media.matches = true;
+                window.appAppearance.apply('system', 'classic');
+                if (window.appAppearance.getState().effectiveMode !== 'dark' || root.dataset.appPalette !== 'amoled' || buttons[0].title !== 'Switch to Light') throw new Error('system dark resolution failed');
+                media.matches = false;
+                window.appAppearance.apply('system', 'classic');
+                if (window.appAppearance.getState().effectiveMode !== 'light' || root.dataset.appPalette !== 'light' || buttons[0].title !== 'Switch to Graphite Dark') throw new Error('system light resolution failed');
+            })().catch(error => { console.error(error.stack || error); process.exit(1); });
+            """
+        ).replace('%SOURCE%', json.dumps(runtime))
+        result = subprocess.run(
+            ['node', '--input-type=commonjs', '-e', harness],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+    def test_graphite_first_paint_auth_assets_and_browser_colour(self):
+        runtime = (ROOT / 'static' / 'js' / 'app-appearance.js').read_text(encoding='utf-8')
+        layout = (ROOT / 'templates' / 'layout.html').read_text(encoding='utf-8')
+        auth_css = (ROOT / 'static' / 'css' / 'app-auth.css').read_text(encoding='utf-8')
+        sources = [
+            (ROOT / name).read_text(encoding='utf-8')
+            for name in (
+                'templates/login.html',
+                'templates/forgot_password.html',
+                'templates/reset_password.html',
+            )
+        ]
+
+        self.assertIn("['light','graphite','dark','system']", layout)
+        self.assertIn('dataset.appPalette', layout)
+        self.assertIn("['light','graphite','dark','system']", sources[0])
+        self.assertTrue(all('dataset.appPalette' in source for source in sources))
+        self.assertIn("palette === 'graphite' ? '#202124'", runtime)
+        self.assertIn("palette === 'amoled' ? '#000000'", runtime)
+        self.assertIn(':root[data-app-theme="dark"][data-app-palette="graphite"]', auth_css)
+        self.assertIn('--login-page-bg: #202124;', auth_css)
+
+        self.assertIn("filename='css/app-themes.css') }}?v=21", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=27", layout)
+        self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
+        for source in sources:
+            self.assertIn("filename='css/app-themes.css') }}?v=21", source)
+            self.assertIn("filename='css/app-auth.css') }}?v=4", source)
+
+    def test_graphite_release_and_cache_marker_are_current(self):
+        app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
+        manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
+
+        self.assertIn('medical-service-pwa-offline-navigation-v139-graphite-dark', app_source)
+        matches = [
+            item
+            for release in manifest['releases']
+            for item in release.get('items', [])
+            if item.get('item_key') == '2026-09-07-graphite-dark-everyone'
+        ]
+        self.assertEqual(len(matches), 1)
+        self.assertTrue(matches[0].get('description'))
 
     def test_amoled_palette_is_shared_by_theme_layers(self):
         """Dark mode uses the approved true-black palette in both CSS layers."""
@@ -210,7 +441,10 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             )
             return (lighter + 0.05) / (darker + 0.05)
 
-        dark_block = theme_css.split(':root[data-app-theme="dark"]', 1)[1]
+        dark_block = re.search(
+            r':root\[data-app-theme="dark"\]\s*\{([^}]*)\}',
+            theme_css,
+        ).group(1)
         values = dict(re.findall(
             r'(--app-(?:bg|surface|surface-raised|text|muted|border)):\s*(#[0-9a-fA-F]{6})',
             dark_block,
@@ -239,14 +473,14 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             (ROOT / name).read_text(encoding='utf-8')
             for name in ('templates/login.html', 'templates/forgot_password.html', 'templates/reset_password.html')
         ]
-        self.assertIn("resolved === 'dark' ? '#000000'", runtime)
+        self.assertIn("palette === 'amoled' ? '#000000'", runtime)
         self.assertIn('--login-page-bg: #000000;', auth_styles)
-        self.assertIn("filename='css/app-themes.css') }}?v=20", layout)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=26", layout)
-        self.assertIn("filename='js/app-appearance.js') }}?v=17", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=21", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=27", layout)
+        self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
         for source in auth:
-            self.assertIn("filename='css/app-themes.css') }}?v=20", source)
-            self.assertIn("filename='css/app-auth.css') }}?v=3", source)
+            self.assertIn("filename='css/app-themes.css') }}?v=21", source)
+            self.assertIn("filename='css/app-auth.css') }}?v=4", source)
 
     def test_amoled_dark_page_layer_does_not_restore_navy_neutrals(self):
         dark_css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
@@ -333,7 +567,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '[class*="-stat-value"]',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=26", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=27", layout)
 
     def test_dark_mode_covers_native_and_custom_dropdowns(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')
@@ -369,7 +603,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '.receipt-pill, .reim-receipt-pill',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-themes.css') }}?v=20", layout)
+        self.assertIn("filename='css/app-themes.css') }}?v=21", layout)
 
     def test_dark_mode_covers_system_neutral_surfaces(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')

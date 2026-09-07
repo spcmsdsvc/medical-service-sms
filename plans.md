@@ -1,5 +1,179 @@
 # Medical Service SMS — Approved Plans
 
+## Graphite effective-mode correction
+
+**Status:** Executed — correction verified locally on 2026-09-07; package-only publication remains
+for the parent. No publication has been performed by this Builder.
+**Authorization:** 2026-09-07 — owner said `yes go ahead` to correct the reported Graphite
+`effective_mode` mapping and its test before the parent publishes the already authorized package.
+
+### Scope and safety boundary
+
+Correct only `appearance_preference_payload()` in `app.py` so the stored `graphite` mode is
+returned as `mode: graphite` with `effective_mode: dark`, matching the approved Graphite plan and
+the existing Bootstrap/dark runtime contract. Replace the erroneous source-only expectation in
+`tests/test_appearance_themes.py` with a focused behavior check that exercises the payload helper
+for Graphite while retaining the existing Light, AMOLED, and System compatibility checks. Refresh
+the external Graphite package patch artifacts so the parent can stage this correction with the
+existing package safely.
+
+This correction deliberately excludes all CSS, JavaScript, templates, cache/release changes,
+database/schema work, browser checks, reimbursement files, handoffs, `.claude/`, `output/`,
+`outputs/`, `tmp/`, commits, pushes, deployments, and formal review. The current reimbursement
+work and protected dirty database remain untouched.
+
+### Numbered execution steps
+
+1. **Preflight and isolation.** Read all applicable instructions, the complete `changes.md` and
+   current plans, inspect the current API/test source and Git state, and confirm the original
+   Graphite baseline plus package artifact paths. Done when only the focused API/test/records may
+   be edited and the parent can reproduce the package-only staging boundary.
+2. **Fail-first contract.** Add a direct payload behavior test for a Graphite user object and run
+   that test against the current source. Done when the unchanged implementation fails because it
+   reports `effective_mode: graphite` instead of `dark`; retain the factual result in the records.
+3. **Surgical correction.** Change only the effective-mode mapping in `app.py` and keep the
+   existing allowlist, normalization, storage column, and Light/AMOLED/System behavior intact.
+   Done when the focused behavior and appearance source suite pass.
+4. **Verification and records.** Run the focused appearance checks, applicable syntax/whitespace
+   checks, inspect the corrected diff, update `changes.md` and this plan with exact results, and
+   refresh the external package-only patch/file list. Do not commit, push, deploy, or run browser
+   automation; return one consolidated report to the parent.
+
+### Acceptance criteria
+
+- `appearance_preference_payload()` returns `mode: graphite` and `effective_mode: dark` for a
+  Graphite preference.
+- Light, stored `dark`, and System payload compatibility remains unchanged.
+- The correction diff contains no reimbursement or protected-artifact changes and no cache bump.
+- The parent receives refreshed isolation artifacts sufficient to publish only the Graphite package.
+
+### Correction outcome (2026-09-07)
+
+The initial fail-first behavior check ran against the uncorrected Graphite source and produced
+**1 test: 0 passed, 1 failed, 0 errors, 0 skips** because `appearance_preference_payload()`
+returned `effective_mode: graphite`. `app.py` now keeps the stored wire value as `mode: graphite`
+while returning `effective_mode: dark`; Light, stored AMOLED `dark`, and System continue to map to
+their existing effective values. The corrected payload behavior passed its focused check, and the
+full appearance source suite passed **26/26** tests with **0 failures, 0 errors, 0 skips** (the
+focused payload check is included in that module total). Python compile and `git diff --check`
+passed. No cache bump, schema,
+reimbursement, protected-artifact, browser, commit, push, deployment, or formal review action was
+performed.
+
+The refreshed package allowlist contains 22 Graphite diffs, including the existing
+`tests/test_reimbursement_autosave.py` cache assertion required by the v139 shell bump; it does
+not include the Reimbursement template or implementation. The parent may use the refreshed
+package-only artifacts at
+`C:\Users\Jonamar\AppData\Local\Temp\medical-service-sms-graphite-builder-baseline-20260907\graphite-package`.
+
+
+## Graphite Dark and three-mode appearance shortcut
+
+**Status:** Executed — local verification complete 2026-09-07; package-only publication remains
+for the parent after this Builder report.
+**Approved:** 2026-09-07 — owner said `PLEASE IMPLEMENT THIS PLAN` after requesting the Graphite
+middle theme and a shared shortcut button.
+**Execution authorized:** 2026-09-07 — implementation and the subsequent package-only commit/push
+are authorized in the same request. The Builder must keep this small and must not overengineer.
+
+### Outcome and decisions
+
+Add Graphite Dark as a middle appearance palette while preserving the existing Light, AMOLED Dark
+(`dark` wire value), and System choices. The existing header shortcut cycles exactly
+Light → Graphite Dark → AMOLED Black → Light. Settings exposes Light, Graphite Dark, AMOLED Black,
+and System. Existing saved `dark` preferences remain AMOLED. System follows the device preference;
+device dark resolves to AMOLED, and the shortcut cycles from the currently resolved palette.
+
+Graphite uses `#202124` for the page and input/sidebar surfaces, `#292A2D` for application cards,
+`#333438` for raised surfaces, `#EDEDED` primary text, `#B8BBC2` muted text, and `#85888D` essential
+control boundaries. Both existing theme-variable layers select the palette through a root palette
+attribute while keeping `data-app-theme="dark"` and Bootstrap's `data-bs-theme="dark"` for both
+dark palettes. Existing status/category colors, layouts, responsive behavior, icon fonts,
+document/signature/print canvases, account sync, and offline preference behavior remain intact.
+
+### Files, exclusions, and verification
+
+- Touch `app.py` only for the existing appearance allowlist/payload and one service-worker cache
+  bump; touch `static/css/app-themes.css`, `static/css/app-dark-pages.css`, and `static/css/app-auth.css`
+  for Graphite variables and selectors; touch `static/js/app-appearance.js` for palette resolution,
+  shortcut cycling, labels, and the save busy guard.
+- Update the existing early appearance initialization and versioned assets in
+  `templates/layout.html`, `templates/settings.html`, `templates/login.html`,
+  `templates/forgot_password.html`, and `templates/reset_password.html`.
+- Extend `tests/test_appearance_themes.py` with source/API/runtime and contrast contracts; update
+  all exact current service-worker assertions, add one published `2026-09-07` appearance release,
+  and update this plan and `changes.md` with truthful results.
+- Do not add a theme engine, dependency, separate preference column, schema migration, new API,
+  unrelated redesign, reimbursement change, database/production/Railway operation, browser
+  automation, formal review, commit, or push in the Builder. Preserve `scheduler.db`, handoffs,
+  `.claude/`, `output/`, `outputs/`, `tmp/`, and all unrelated dirty work.
+
+### Numbered execution steps
+
+1. **Preflight and baseline.** Read all applicable instructions, `changes.md` and current plans in
+   full, inspect the appearance source/tests and cache/release conventions, capture HEAD and the
+   dirty state, and copy full contents plus diffs of overlapping shared files to an external temporary
+   baseline. Done when the baseline path and protected files are recorded.
+2. **Fail-first contracts.** Add focused contracts for the Graphite values in both CSS layers,
+   required contrast, API allowlist/effective mode, root palette/three-mode runtime cycle and busy
+   guard, early initialization/auth theme handling, settings labels, asset versions, and the new
+   release/cache marker. Run these against unchanged source and retain the intentional failures.
+3. **Extend preference and palette.** Accept and persist `graphite` in the existing appearance
+   endpoint, return `effective_mode: dark` for it, derive the Graphite palette attribute in the
+   existing apply path, and add the exact Graphite variable overrides while leaving semantic colors
+   and fixed document surfaces unchanged.
+4. **Update activation and controls.** Update the existing shortcut to use the exact three-mode cycle,
+   next-action icon/title/ARIA label, and a short pending guard around the existing save call. Update
+   Settings labels and all four early initializers so Graphite is applied before paint; make auth and
+   browser theme colors follow the selected palette while retaining System/AMOLED behavior.
+5. **Cache, release, and verify.** Bump the current worker once to the next Graphite label and
+   update every exact assertion. Add the release entry, run fail-first/final focused tests, related
+   appearance/layout/auth/cache tests, the required isolated full unittest discovery with an external
+   disposable DB, and Python/Jinja/JavaScript/CSS/release/whitespace checks. No browser use.
+6. **Complete records and report.** Update `changes.md` and this plan with actual files, exact test
+   totals, baseline failures/skips, protected-state preservation, and any limitation. Perform a
+   Builder self-review and return one consolidated report. Parent stages only the Graphite package,
+   commits/pushes it, and verifies remote/Railway metadata after this report.
+
+### Acceptance criteria
+
+- Light retains its existing palette; Graphite renders the specified neutral charcoal values;
+  AMOLED retains true black; System dark resolves to AMOLED.
+- The single header shortcut cycles Light → Graphite → AMOLED → Light, updates its next-action
+  icon/title/ARIA label, saves each selection, and ignores duplicate clicks while saving.
+- Settings and early first-paint/auth initialization recognize Graphite; saved/reloaded and offline
+  preferences remain compatible with existing `dark`/System values.
+- Text and control boundaries meet the approved contrast floors; semantic status colors,
+  responsive layouts, document/signature/print output, and existing APIs remain compatible.
+
+### Implementation outcome (2026-09-07)
+
+The Graphite package is implemented in the shared working tree without a commit, push, deploy,
+database operation, or browser automation. `app.py` accepts and returns the existing `graphite`
+appearance value with `effective_mode: dark`, and the worker cache is now
+`medical-service-pwa-offline-navigation-v139-graphite-dark`. The shared and late-loaded theme
+layers use the approved Graphite values; authentication and all four early initializers set the
+palette before paint; Settings exposes all four choices; and the existing header shortcut cycles
+Light → Graphite Dark → AMOLED Black → Light with matching labels, browser theme colors, and a
+duplicate-save guard. Account synchronization, offline pending preferences, existing semantic
+colors, document output, and responsive layouts remain on their existing paths.
+
+The unchanged-source fail-first checkpoint ran **6 tests: 1 passed, 5 intentional failures, 0
+errors, 0 skips**. The final appearance module passed **25/25**. The related isolated set passed
+**198/198** with no skips. Full unittest discovery used a unique disposable database outside the
+repository and ran **972 tests: 961 passed, 10 known baseline failures, 0 errors, 1 skipped**;
+the failures remain the eight Purchase Order setup/rate-limit cases and two Staff Creation
+fixture/initials cases. Python compilation, Jinja parsing of 32 templates, appearance JavaScript
+syntax, CSS brace balance, release JSON duplicate-key validation, and `git diff --check` passed.
+Browser visual verification remains owner-only under the project instructions.
+
+The pre-edit dirty-tree baseline and full overlapping-file copies are at
+`C:\Users\Jonamar\AppData\Local\Temp\medical-service-sms-graphite-builder-baseline-20260907`.
+The parent must stage only the Graphite hunks from the package diff generated alongside that
+baseline, preserving the reimbursement edits and protected database, handoff, `.claude/`,
+`output/`, and `tmp/` state.
+
+
 ## Calendar AMOLED controls and larger visible grid
 
 **Status:** Executed — c6d8a05. Local verification complete on 2026-09-07; the owner authorized

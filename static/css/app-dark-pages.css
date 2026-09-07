@@ -26,6 +26,32 @@
     --calendar-internal-bg: #253142;
 }
 
+/* Keep the late-loaded page repairs on the same neutral Graphite surfaces. */
+:root[data-app-theme="dark"][data-app-palette="graphite"] {
+    --dark-page: #202124;
+    --dark-panel: #292a2d;
+    --dark-card: #333438;
+    --dark-card-hover: #3b3c40;
+    --dark-control-hover: #44454a;
+    --dark-input: #202124;
+    --dark-border: #85888d;
+    --dark-border-strong: #a3a6ac;
+    --dark-text: #ededed;
+    --dark-muted: #b8bbc2;
+}
+
+/* Keep fixed status tones visible on the lighter raised Graphite surface. */
+:root[data-app-theme="dark"][data-app-palette="graphite"] .page-toast.success,
+:root[data-app-theme="dark"][data-app-palette="graphite"] .page-toast.success .page-toast-icon {
+    border-left-color: #4ade80 !important;
+    color: #4ade80 !important;
+}
+:root[data-app-theme="dark"][data-app-palette="graphite"] .page-toast.danger,
+:root[data-app-theme="dark"][data-app-palette="graphite"] .page-toast.danger .page-toast-icon {
+    border-left-color: #f87171 !important;
+    color: #f87171 !important;
+}
+
 :root[data-app-theme="dark"] body,
 :root[data-app-theme="dark"] .main-content {
     background: var(--dark-page) !important;

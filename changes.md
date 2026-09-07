@@ -2,6 +2,46 @@
 
 codex changes - 2026-09-07
 
+- Started the owner-authorized Graphite Dark appearance package. The implementation is constrained
+  to the existing appearance preference/API, theme variable layers, shared/auth initialization,
+  Settings labels, one service-worker cache bump, release metadata, focused appearance contracts,
+  and project records; reimbursement, database, handoff, generated-output, and production state
+  remain protected. The full dirty-tree baseline is preserved externally for package-only staging.
+- Implemented the Graphite middle palette across `static/css/app-themes.css`,
+  `static/css/app-dark-pages.css`, and `static/css/app-auth.css` using `#202124` page/input/sidebar,
+  `#292A2D` surfaces, `#333438` raised surfaces, `#EDEDED` text, `#B8BBC2` muted text, and
+  `#85888D` control boundaries. Existing `dark` storage and Bootstrap dark resolution remain the
+  AMOLED palette; Graphite is selected only through the new root palette attribute.
+- Extended `app.py`, `static/js/app-appearance.js`, `templates/layout.html`, the three
+  authentication templates, and `templates/settings.html` so Graphite saves through the existing
+  API, reports `effective_mode: dark`, paints before first render, follows authentication and
+  browser theme colors, and participates in the Light → Graphite Dark → AMOLED Black → Light
+  shortcut cycle. The shortcut keeps System resolution, account synchronization, offline pending
+  behavior, and a short busy guard against overlapping saves.
+- Bumped the embedded service-worker cache to
+  `medical-service-pwa-offline-navigation-v139-graphite-dark`, updated exact current-cache
+  assertions and shared/auth asset versions, and added the published
+  `2026-09-07-graphite-dark` Appearance release entry. No migration, dependency, new endpoint,
+  document/print change, reimbursement change, database operation, or production/Railway action
+  was made.
+- Added focused Graphite CSS contrast, API/source, first-paint, Settings, release/cache, and
+  Node runtime contracts in `tests/test_appearance_themes.py`. Unchanged-source fail-first ran
+  **6 tests: 1 passed, 5 intentional failures, 0 errors, 0 skips**; final appearance checks were
+  **25/25 passed**, related isolated checks were **198/198 passed**, and full isolated discovery
+  was **972 tests: 961 passed, 10 known baseline failures, 0 errors, 1 skipped**. The ten known
+  failures are the existing eight Purchase Order setup/rate-limit cases and two Staff Creation
+  fixture/initials cases. Python/Jinja/JavaScript/CSS/release/whitespace checks passed; browser
+  visual verification remains owner-only. No commit or push was performed by the Builder.
+- Corrected the Graphite appearance API contract in `app.py`: `appearance_preference_payload()`
+  now returns the stored `mode: graphite` with `effective_mode: dark`, while Light, stored AMOLED
+  `dark`, and System retain their existing effective values. Replaced the source-only expectation
+  in `tests/test_appearance_themes.py` with a disposable-database behavior check. The unchanged
+  correction test failed **1/1** as expected (`graphite` was returned instead of `dark`); after the
+  fix the full appearance module passed **26/26**, Python compile and `git diff --check` passed.
+  No cache bump or reimbursement implementation/protected-artifact change was made; the refreshed
+  22-file Graphite package allowlist includes the existing autosave test's exact v139 cache
+  assertion and is ready for parent staging.
+
 - The owner authorized committing and pushing only the Calendar AMOLED controls and grid-height
   package to `origin/main`, including its related tests, asset/cache versions, release metadata,
   and project records. Protected database, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated

@@ -17769,7 +17769,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v137-timeline-calendar-controls';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v139-graphite-dark';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -21468,7 +21468,7 @@ def admin_storage_bucket_migrate_batch():
     })
 
 
-APPEARANCE_THEME_MODES = {'light', 'dark', 'system'}
+APPEARANCE_THEME_MODES = {'light', 'dark', 'graphite', 'system'}
 APPEARANCE_ACCENT_THEMES = {
     'classic', 'shimadzu-red', 'clinical-green', 'corporate-blue',
     'purple', 'pink', 'teal'
@@ -21489,11 +21489,12 @@ def appearance_preference_payload(user):
     mode = normalize_appearance_mode(getattr(user, 'ui_theme_mode', None))
     accent = normalize_appearance_accent(getattr(user, 'ui_accent_theme', None))
     updated_at = getattr(user, 'ui_theme_updated_at', None)
+    effective_mode = 'dark' if mode == 'graphite' else (mode if mode in {'light', 'dark'} else 'system')
     return {
         'success': True,
         'mode': mode,
         'accent': accent,
-        'effective_mode': mode if mode in {'light', 'dark'} else 'system',
+        'effective_mode': effective_mode,
         'updated_at': updated_at.isoformat() if updated_at else None
     }
 

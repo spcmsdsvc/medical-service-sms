@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-07-graphite-dark",
+      "release_date": "2026-09-07",
+      "title": "Graphite Dark Appearance",
+      "summary": "A comfortable charcoal theme now sits between Light and AMOLED Black.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-07-graphite-dark-everyone",
+          "category": "Appearance",
+          "description": "Appearance settings now include Graphite Dark alongside Light, AMOLED Black, and System. The shared shortcut cycles through the three palettes with matching icons and labels, while saved preferences, first paint, signed-out pages, offline synchronization, and existing semantic colors remain compatible.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-07-timeline-calendar-controls",
       "release_date": "2026-09-07",
       "title": "Calendar Controls and Grid Height",
