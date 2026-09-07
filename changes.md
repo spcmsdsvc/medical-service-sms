@@ -2,6 +2,12 @@
 
 codex changes - 2026-09-07
 
+- Committed only the Graphite Dark package and effective-mode correction as `06c5a2b`.
+  The owner authorized publication to `origin/main`. Staging excluded the reimbursement autosave
+  template, test, release entry, and records, plus protected artifacts. Shared cache assertions
+  now use Graphite v139; reimbursement work remains local and uncommitted. Remote main and
+  Railway metadata are checked after publication.
+
 - Started the owner-authorized Graphite Dark appearance package. The implementation is constrained
   to the existing appearance preference/API, theme variable layers, shared/auth initialization,
   Settings labels, one service-worker cache bump, release metadata, focused appearance contracts,

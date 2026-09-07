@@ -2,8 +2,8 @@
 
 ## Graphite effective-mode correction
 
-**Status:** Executed — correction verified locally on 2026-09-07; package-only publication remains
-for the parent. No publication has been performed by this Builder.
+**Status:** Executed — committed as `06c5a2b` on 2026-09-07; owner-authorized
+publication to `origin/main` follows this record.
 **Authorization:** 2026-09-07 — owner said `yes go ahead` to correct the reported Graphite
 `effective_mode` mapping and its test before the parent publishes the already authorized package.
 
@@ -69,8 +69,8 @@ package-only artifacts at
 
 ## Graphite Dark and three-mode appearance shortcut
 
-**Status:** Executed — local verification complete 2026-09-07; package-only publication remains
-for the parent after this Builder report.
+**Status:** Executed — committed as `06c5a2b` on 2026-09-07; owner-authorized
+publication to `origin/main` follows this record.
 **Approved:** 2026-09-07 — owner said `PLEASE IMPLEMENT THIS PLAN` after requesting the Graphite
 middle theme and a shared shortcut button.
 **Execution authorized:** 2026-09-07 — implementation and the subsequent package-only commit/push
