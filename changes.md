@@ -2,6 +2,9 @@
 
 codex changes - 2026-09-08
 
+- Committed the six-file Package 1 allowlist as `378c025` and recorded that implementation hash
+  in `plans.md`. This journal-only closeout accompanies the authorized push to `origin/main`.
+
 - The owner authorized committing and pushing Reimbursement Package 1 only to `origin/main`.
   Publication includes the autosave template, focused autosave and row-deletion tests, release
   entry, and plan/change records. Local and remote main were both `0dee991` before publication,

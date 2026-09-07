@@ -176,8 +176,9 @@ baseline, preserving the reimbursement edits and protected database, handoff, `.
 
 ## Reimbursement Package 1 — Protect entered work
 
-**Status:** Executed — local verification complete on 2026-09-07; formal review and owner visual
-checks remain separately authorized.
+**Status:** Executed — committed as `378c025` on 2026-09-08; local verification complete on
+2026-09-07. The owner authorized Package 1 publication to `origin/main`; formal review and owner
+visual checks remain pending. Packages 2–6 remain outside this publication.
 **Approved:** 2026-09-07 — this execution covers Package 1 only from the six-package
 Reimbursement roadmap. Packages 2–6 remain planned and are not authorized by this execution.
 
