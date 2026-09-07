@@ -2,8 +2,8 @@
 
 ## Calendar AMOLED controls and larger visible grid
 
-**Status:** Executed — local verification complete on 2026-09-07; formal review, owner visual
-checks, commit, push, and deployment remain separately authorized actions.
+**Status:** Executed — c6d8a05. Local verification complete on 2026-09-07; the owner authorized
+publication. Formal review and owner visual checks remain pending.
 **Approved:** 2026-09-07 — owner said `implement the plan partner` after approving the calendar
 controls/grid-height proposal. **Execution authorized:** 2026-09-07. The Builder must keep this
 small and must not overengineer: reuse the existing calendar controls, `changeWeek()`/

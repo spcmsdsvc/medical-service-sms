@@ -7,6 +7,8 @@ codex changes - 2026-09-07
   and project records. Protected database, handoffs, `.claude/`, `output/`, `tmp/`, and unrelated
   files remain excluded. Prior local verification applies; formal review and visual checks remain
   pending. Remote commit and Railway deployment metadata are checked after publication.
+  The calendar implementation was committed as `c6d8a05`; this follow-up records its commit
+  status before the authorized push.
 
 - Recorded the owner-authorized Calendar AMOLED controls and larger visible grid package in
 -  `plans.md`; the package is implemented and locally verified. `templates/timeline.html` now
