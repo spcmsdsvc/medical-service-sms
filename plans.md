@@ -2,8 +2,8 @@
 
 ## Reimbursement row selection and bulk deletion
 
-**Status:** In progress — implementation and local verification complete; the owner authorized
-package-only commit and push on 2026-09-08. Execution hash will be recorded after commit.
+**Status:** Executed — `a03c1bd` on 2026-09-08. The owner separately authorized package-only
+commit and push to `origin/main`; this record accompanies that publication.
 **Approved:** 2026-09-08 — the owner approved the row-selection and bulk-deletion package.
 **Execution authorized:** 2026-09-08 — the owner separately said **“PLEASE IMPLEMENT THIS PLAN”**.
 
@@ -131,8 +131,8 @@ Verification completed:
 
 Protected dirty artifacts (`scheduler.db`, handoffs, `.claude/`, `output/`, `outputs/`, `tmp/`,
 and unrelated worktree changes) were not staged, committed, pushed, deployed, or otherwise acted
-on by this package. The plan remains **In progress** until the owner separately authorizes package
-review/publication; no commit or formal review was performed.
+on during implementation. The owner subsequently authorized package-only publication, committed
+as `a03c1bd`. Formal review and browser verification remain separate; neither was performed.
 
 
 ## Faster Calendar Week Navigation

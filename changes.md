@@ -2,6 +2,10 @@
 
 codex changes - 2026-09-08
 
+- Committed the 16-file Reimbursement bulk-selection package as `a03c1bd` and recorded its
+  execution hash in `plans.md`. Staged whitespace checks passed. This journal-only closeout
+  accompanies the authorized push to `origin/main`; protected local artifacts remain unstaged.
+
 - The owner authorized committing and pushing only the Reimbursement bulk-selection package
   to `origin/main`. Publication includes the reimbursement template, focused selection tests,
   v142 service-worker marker and exact-cache assertions, release entry, and plan/change records.
