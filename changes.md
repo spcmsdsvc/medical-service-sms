@@ -2,6 +2,11 @@
 
 codex changes - 2026-09-08
 
+- Committed the verified 18-file TSR recovery/finalization package as `e156bac` and recorded its
+  execution hash in the current and superseded recovery plans. Staged whitespace checks passed.
+  No database, handoff, generated output, or temporary artifact was included. This journal-only
+  closeout accompanies the owner-authorized push to `origin/main`.
+
 - The owner authorized committing and pushing only the TSR signature-recovery and v146
   finalization package to `origin/main`. Local and remote main matched `882ecb4` before
   publication. The allowlist includes TSR source, focused recovery/lifecycle tests, cache-only

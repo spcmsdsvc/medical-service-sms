@@ -2,8 +2,9 @@
 
 ## TSR client-signature finalization lifecycle and unfinished-only recovery
 
-**Status:** Executed — uncommitted working tree; commit, push, deployment, production/Railway,
-database repair, browser verification, and formal review remain separate and excluded.
+**Status:** Executed — `e156bac` on 2026-09-08. The owner separately authorized package-only
+commit and push to `origin/main`; this record accompanies that publication. Database repair,
+browser verification, and formal review remain separate and excluded.
 **Approved:** 2026-09-08 — the owner confirmed that a successful final TSR save may keep the
 client signature in the generated signed PDF only, remove the reusable client signature from the
 saved submission payload and completed local state, retain it through pending/offline/failed final
@@ -167,9 +168,9 @@ Verification:
 
 ## Recover available signatures for an offline TSR draft
 
-**Status:** Superseded by the v146 amendment above — the unfinished-source recovery and hydration
-  work remains in the working tree, while online completed/history traversal is no longer
-  permitted; commit/push/deployment remain explicitly excluded from this builder cycle.
+**Status:** Superseded by the v146 amendment above — the retained unfinished-source recovery and
+  hydration work was committed as `e156bac`. Online completed/history traversal is excluded from
+  the final package. The owner subsequently authorized package-only publication to `origin/main`.
 **Approved:** 2026-09-08 — the owner said **“go ahead and proceed with these”** and later
 **“resume your work now”**, authorizing this recovery package after the prior builder stopped at
 the usage limit. This implementation authorization covers the bounded package below only; commit,
