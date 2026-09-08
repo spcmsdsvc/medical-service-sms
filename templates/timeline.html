@@ -183,6 +183,11 @@
                 Example: "Feb 01 - Feb 07, 2026"
             -->
             <p id="week-display" class="text-primary fw-bold mb-0 small mt-1"></p>
+            <span id="timeline-week-nav-status"
+                  class="timeline-week-nav-status text-muted small d-none"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"></span>
         </div>
 
         <div class="d-flex align-items-center gap-2">
@@ -2099,6 +2104,17 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 
 .timeline-week-nav-loading i {
     opacity: 0.72;
+}
+
+.timeline-week-nav-status {
+    display: block;
+    min-height: 1rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.timeline-week-nav-status.text-danger {
+    color: #b42318 !important;
 }
 
 .timeline-collapsed-utility-rail {
@@ -8548,6 +8564,9 @@ async function fetchTimelineDataWithOfflineTimeout(url){
 }
     let timelineCache = {};
     const TIMELINE_CACHE_TTL_MS = 30000;
+    let timelineDataGeneration = 0;
+    const timelineDataRequests = new Map();
+    let timelineRefreshInFlightForce = false;
 
     // LOCAL DEV STABILITY: Stale scheduler page guard.
     // Long-open Timeline tabs can hold old grid/modal state. Only refresh before
@@ -8564,6 +8583,102 @@ async function fetchTimelineDataWithOfflineTimeout(url){
 
     function markTimelineSuccessfulRefresh(){
         timelineLastSuccessfulRefreshAt = Date.now();
+    }
+
+    function invalidateTimelineCache(){
+        timelineDataGeneration += 1;
+        timelineCache = {};
+        invalidateMobileRenderCache();
+    }
+
+    function timelinePayloadIsValid(data){
+        return Boolean(data && Array.isArray(data.days) && Array.isArray(data.engineers));
+    }
+
+    function buildTimelineCacheKey(offset, branch){
+        return `${Number(offset) || 0}|${branch || 'ALL'}`;
+    }
+
+    function isTimelineViewCurrent(offset, branch, requestSeq){
+        const currentBranch = document.getElementById('branch-filter')?.value || 'ALL';
+        return (
+            requestSeq === timelineLoadSeq &&
+            Number(weekOffset) === Number(offset) &&
+            currentBranch === (branch || 'ALL')
+        );
+    }
+
+    function setTimelineWeekNavigationStatus(message='', tone='muted'){
+        const status = document.getElementById('timeline-week-nav-status');
+        if(!status) return;
+
+        const hasMessage = Boolean(message);
+        status.textContent = message || '';
+        status.classList.toggle('d-none', !hasMessage);
+        status.classList.toggle('text-danger', tone === 'error');
+        status.classList.toggle('text-muted', tone !== 'error');
+        status.dataset.state = hasMessage ? tone : '';
+    }
+
+    function fetchTimelineDataForKey(offset, branch, requestGeneration=timelineDataGeneration){
+        const normalizedOffset = Number(offset) || 0;
+        const normalizedBranch = branch || 'ALL';
+        const cacheKey = buildTimelineCacheKey(normalizedOffset, normalizedBranch);
+        const generation = Number.isFinite(Number(requestGeneration))
+            ? Number(requestGeneration)
+            : timelineDataGeneration;
+        const existing = timelineDataRequests.get(cacheKey);
+
+        if(existing && existing.generation === generation){
+            return existing.promise;
+        }
+
+        const requestPromise = (async () => {
+            const response = await fetchTimelineDataWithOfflineTimeout(
+                buildFreshTimelineUrl(normalizedOffset, normalizedBranch, shouldUseTimelineLitePayload())
+            );
+            if(!response.ok){
+                throw new Error(`Timeline data request failed: ${response.status}`);
+            }
+
+            const data = await response.json();
+            if(!timelinePayloadIsValid(data)){
+                throw new Error('Timeline data response is incomplete.');
+            }
+
+            if(generation === timelineDataGeneration){
+                timelineCache[cacheKey] = { savedAt: Date.now(), data };
+                saveTimelineOfflineSnapshot(data, cacheKey, {
+                    weekOffset: normalizedOffset,
+                    branch: normalizedBranch
+                });
+            }
+
+            return {
+                data,
+                cacheKey,
+                weekOffset: normalizedOffset,
+                branch: normalizedBranch,
+                generation
+            };
+        })();
+
+        const requestEntry = { promise: requestPromise, generation };
+        timelineDataRequests.set(cacheKey, requestEntry);
+        requestPromise.then(
+            () => {
+                if(timelineDataRequests.get(cacheKey) === requestEntry){
+                    timelineDataRequests.delete(cacheKey);
+                }
+            },
+            () => {
+                if(timelineDataRequests.get(cacheKey) === requestEntry){
+                    timelineDataRequests.delete(cacheKey);
+                }
+            }
+        );
+
+        return requestPromise;
     }
 
     function isTimelineStaleForScheduleAction(){
@@ -9038,7 +9153,7 @@ async function fetchTimelineDataWithOfflineTimeout(url){
         updateEngineerMobileViewMode();
 
         // Reload grid so branch/default visibility and mobile cards refresh around the selected preview.
-        timelineCache = {};
+        invalidateTimelineCache();
         loadGrid();
     }
 
@@ -10849,7 +10964,7 @@ async function openMobileAddSchedule(){
                 return;
             }
 
-            timelineCache = {};
+            invalidateTimelineCache();
             await refreshTimelineGrid();
 
         }catch(err){
@@ -10931,7 +11046,7 @@ async function openMobileAddSchedule(){
 
         if(Number(weekOffset) !== Number(targetWeekOffset)){
             weekOffset = targetWeekOffset;
-            timelineCache = {};
+            invalidateTimelineCache();
             await refreshTimelineGrid();
             return true;
         }
@@ -11306,7 +11421,7 @@ async function openMobileAddSchedule(){
         if(firstIso && targetIso < firstIso){
             pendingMobileFilterAfterLoad = `date:${targetIso}`;
             weekOffset -= 1;
-            timelineCache = {};
+            invalidateTimelineCache();
             refreshTimelineGrid();
             return;
         }
@@ -11314,7 +11429,7 @@ async function openMobileAddSchedule(){
         if(lastIso && targetIso > lastIso){
             pendingMobileFilterAfterLoad = `date:${targetIso}`;
             weekOffset += 1;
-            timelineCache = {};
+            invalidateTimelineCache();
             refreshTimelineGrid();
             return;
         }
@@ -13272,7 +13387,7 @@ if (selectedVal === "Leave") {
     }
 
     function clearMobileSmartCache(){
-        timelineCache = {};
+        invalidateTimelineCache();
         mobileLastCacheKey = '';
         invalidateMobileRenderCache();
         setMobileCacheStatus('Offline copy cleared', 'ready');
@@ -14025,6 +14140,7 @@ if (selectedVal === "Leave") {
     async function warmTimelineOfflineScheduleWindow(centerOffset, branchFilter){
         if(!navigator.onLine || timelineOfflinePrecacheInFlight) return;
         timelineOfflinePrecacheInFlight = true;
+        const requestGeneration = timelineDataGeneration;
 
         try{
             const branch = branchFilter || document.getElementById('branch-filter')?.value || 'ALL';
@@ -14036,22 +14152,14 @@ if (selectedVal === "Leave") {
             }
 
             for(const offset of offsets){
+                if(requestGeneration !== timelineDataGeneration) break;
                 const key = `${offset}|${branch}`;
                 const existing = loadTimelineOfflineSnapshot(key);
                 const savedAt = existing?.savedAt ? new Date(existing.savedAt).getTime() : 0;
                 if(savedAt && (Date.now() - savedAt) < 30 * 60 * 1000) continue;
 
                 try{
-                    const res = await fetch(buildFreshTimelineUrl(offset, branch, shouldUseTimelineLitePayload()), {
-                        cache: 'no-store',
-                        credentials: 'same-origin'
-                    });
-                    if(!res.ok) continue;
-                    const data = await res.json();
-                    if(data && Array.isArray(data.days) && Array.isArray(data.engineers)){
-                        timelineCache[key] = { savedAt: Date.now(), data };
-                        saveTimelineOfflineSnapshot(data, key, { weekOffset: offset, branch });
-                    }
+                    await fetchTimelineDataForKey(offset, branch, requestGeneration);
                 }catch(err){
                     console.warn('[PWA] Offline schedule pre-cache skipped for week', offset, err);
                 }
@@ -14144,18 +14252,55 @@ if (selectedVal === "Leave") {
             getPWALastTimelineSyncLabel()
         );
     });
+    async function revalidateTimelineWeek(targetWeekOffset, branchFilter, cacheKey, requestSeq, requestGeneration){
+        if(!isTimelineViewCurrent(targetWeekOffset, branchFilter, requestSeq)) return;
 
+        setTimelineWeekNavigationStatus('Checking for updates...', 'checking');
 
-async function loadGrid() {
+        try{
+            const result = await fetchTimelineDataForKey(targetWeekOffset, branchFilter, requestGeneration);
+            if(result.generation !== timelineDataGeneration) return;
+            if(result.cacheKey !== cacheKey) return;
+            if(!isTimelineViewCurrent(targetWeekOffset, branchFilter, requestSeq)) return;
+
+            const rendered = renderTimelineGrid(result.data, {
+                requestSeq,
+                weekOffset: targetWeekOffset,
+                branch: branchFilter,
+                networkRefresh: true
+            });
+            if(rendered){
+                setTimelineWeekNavigationStatus('', 'muted');
+            }
+        }catch(error){
+            if(isTimelineViewCurrent(targetWeekOffset, branchFilter, requestSeq)){
+                setTimelineWeekNavigationStatus(
+                    'Unable to check for updates. Showing cached schedule.',
+                    'error'
+                );
+            }
+            console.warn('[Timeline] Cached week revalidation failed:', error);
+        }
+    }
+
+async function loadGrid(options={}) {
         syncTimelineDeveloperViewModeUI();
 
         const requestSeq = ++timelineLoadSeq;
+        const forceRefresh = options.forceRefresh !== false;
+        const navigationLoad = options.navigation === true;
+        const requestGeneration = Number.isFinite(Number(options.requestGeneration))
+            ? Number(options.requestGeneration)
+            : timelineDataGeneration;
+        const targetWeekOffset = Number(weekOffset) || 0;
         const branchFilter = document.getElementById('branch-filter').value;
         saveTimelineViewState();
-        const cacheKey = `${weekOffset}|${branchFilter}`;
+        const cacheKey = buildTimelineCacheKey(targetWeekOffset, branchFilter);
         const cached = timelineCache[cacheKey];
         mobileLastCacheKey = cacheKey;
         let data;
+        let loadedFromNetwork = false;
+        let loadedFromMemoryCache = false;
 
         const immediateOfflineSnapshot = !navigator.onLine ? getImmediateTimelineOfflineSnapshot(cacheKey) : null;
         const immediatePWACacheSnapshot = (!navigator.onLine && !immediateOfflineSnapshot?.data)
@@ -14164,8 +14309,9 @@ async function loadGrid() {
 
         if(immediateOfflineSnapshot?.data || immediatePWACacheSnapshot?.data){
             data = applyTimelineOfflineDataSnapshot(immediateOfflineSnapshot?.data ? immediateOfflineSnapshot : immediatePWACacheSnapshot, branchFilter);
-        }else if(cached && (Date.now() - cached.savedAt) < TIMELINE_CACHE_TTL_MS){
+        }else if(!forceRefresh && cached && (Date.now() - cached.savedAt) < TIMELINE_CACHE_TTL_MS){
             data = cached.data;
+            loadedFromMemoryCache = true;
             if(shouldUseRoleAwareMobileTimeline()){
                 setPWAOfflineReadinessState(
                     'pwa-offline-ready',
@@ -14179,19 +14325,16 @@ async function loadGrid() {
             }
 
             try{
-                const res = await fetchTimelineDataWithOfflineTimeout(buildFreshTimelineUrl(weekOffset, branchFilter, shouldUseTimelineLitePayload()));
-                if(!res.ok){
-                    throw new Error(`Timeline data request failed: ${res.status}`);
+                const result = await fetchTimelineDataForKey(targetWeekOffset, branchFilter, requestGeneration);
+                if(result.generation !== timelineDataGeneration){
+                    return { stale: true };
                 }
 
-                data = await res.json();
-                if(!data || !Array.isArray(data.days) || !Array.isArray(data.engineers)){
-                    throw new Error('Timeline data response is incomplete.');
+                data = result.data;
+                loadedFromNetwork = true;
+                if(!navigationLoad){
+                    setTimeout(() => warmTimelineOfflineScheduleWindow(targetWeekOffset, branchFilter), 300);
                 }
-
-                timelineCache[cacheKey] = { savedAt: Date.now(), data };
-                saveTimelineOfflineSnapshot(data, cacheKey);
-                setTimeout(() => warmTimelineOfflineScheduleWindow(weekOffset, branchFilter), 300);
 
                 if(shouldUseRoleAwareMobileTimeline()){
                     setMobileCacheStatus('Offline copy updated', 'warm');
@@ -14228,10 +14371,39 @@ async function loadGrid() {
             }
         }
 
-        if(requestSeq !== timelineLoadSeq){
-            return;
+        const rendered = renderTimelineGrid(data, {
+            requestSeq,
+            weekOffset: targetWeekOffset,
+            branch: branchFilter,
+            networkRefresh: loadedFromNetwork
+        });
+        if(!rendered){
+            return { stale: true };
         }
 
+        if(loadedFromMemoryCache && navigationLoad && navigator.onLine){
+            void revalidateTimelineWeek(
+                targetWeekOffset,
+                branchFilter,
+                cacheKey,
+                requestSeq,
+                requestGeneration
+            );
+        }
+
+        return {
+            rendered: true,
+            usedMemoryCache: loadedFromMemoryCache,
+            networkRefresh: loadedFromNetwork
+        };
+    }
+
+
+    function renderTimelineGrid(data, renderOptions={}){
+        if(!isTimelineViewCurrent(renderOptions.weekOffset, renderOptions.branch, renderOptions.requestSeq)){
+            return false;
+        }
+        const branchFilter = renderOptions.branch || document.getElementById('branch-filter')?.value || 'ALL';
 
         syncMobileTimelineData(data);
         updateTimelineRangeLabels(data);
@@ -14240,8 +14412,8 @@ async function loadGrid() {
 
         if(shouldSkipDesktopGridRenderForMobile()){
             setMobileDesktopGridSkippedState(true);
-            markTimelineSuccessfulRefresh();
-            return;
+            if(renderOptions.networkRefresh) markTimelineSuccessfulRefresh();
+            return true;
         }
 
         setMobileDesktopGridSkippedState(false);
@@ -14565,30 +14737,43 @@ async function loadGrid() {
         renderMobileStickyActionBar();
         autoFocusLoggedInEngineerRowAfterGrid();
         setTimeout(syncTimelineHorizontalScroll, 0);
-        markTimelineSuccessfulRefresh();
+        if(renderOptions.networkRefresh) markTimelineSuccessfulRefresh();
+        return true;
     }
 
 
-    async function refreshTimelineGrid(){
+    async function refreshTimelineGrid(options={}){
+        const forceRefresh = options.forceRefresh !== false;
+        const navigation = options.navigation === true;
         const branchFilter = document.getElementById('branch-filter') ? document.getElementById('branch-filter').value : 'ALL';
         const refreshKey = `${weekOffset}|${branchFilter}`;
 
         if(timelineRefreshInFlightPromise && timelineRefreshInFlightKey === refreshKey){
-            if(shouldUseRoleAwareMobileTimeline()){
-                setMobileCacheStatus('Refresh already running', 'deduped');
+            if(!forceRefresh || timelineRefreshInFlightForce){
+                if(shouldUseRoleAwareMobileTimeline()){
+                    setMobileCacheStatus('Refresh already running', 'deduped');
+                }
+                return timelineRefreshInFlightPromise;
             }
-            return timelineRefreshInFlightPromise;
         }
 
-        timelineRefreshInFlightKey = refreshKey;
-
-        if(shouldUseRoleAwareMobileTimeline() && mobileInFlightRequest){
+        if(
+            shouldUseRoleAwareMobileTimeline() &&
+            mobileInFlightRequest &&
+            timelineRefreshInFlightKey === refreshKey &&
+            (!forceRefresh || timelineRefreshInFlightForce)
+        ){
             setMobileCacheStatus('Refresh already running', 'deduped');
             return mobileInFlightRequest;
         }
 
-        timelineCache = {};
-        invalidateMobileRenderCache();
+        if(forceRefresh){
+            invalidateTimelineCache();
+            setTimelineWeekNavigationStatus('', 'muted');
+        }
+
+        timelineRefreshInFlightKey = refreshKey;
+        timelineRefreshInFlightForce = forceRefresh;
 
         const mobileFastMode = shouldUseRoleAwareMobileTimeline();
         if(mobileFastMode) setMobileTimelineLoading(true, 'Syncing schedule...');
@@ -14596,7 +14781,11 @@ async function loadGrid() {
         const requestPromise = (async () => {
             try{
                 initializeTimelineOfflineReadiness();
-                return await loadGrid();
+                return await loadGrid({
+                    forceRefresh,
+                    navigation,
+                    requestGeneration: timelineDataGeneration
+                });
             }finally{
                 if(mobileFastMode){
                     setMobileTimelineLoading(false, 'Schedule synced');
@@ -14610,6 +14799,7 @@ async function loadGrid() {
                 if(timelineRefreshInFlightPromise === requestPromise){
                     timelineRefreshInFlightPromise = null;
                     timelineRefreshInFlightKey = '';
+                    timelineRefreshInFlightForce = false;
                 }
             }
         })();
@@ -14622,7 +14812,6 @@ async function loadGrid() {
 
         return requestPromise;
     }
-
 
     function syncTimelineHorizontalScroll(){
         const wrapper = document.getElementById('timeline-scroll-wrapper');
@@ -17038,7 +17227,7 @@ async function openTSRClientEmailModal(shiftId){
             }
 
             // Keep the edit modal open. Refresh the grid quietly so the paperclip/file count updates.
-            timelineCache = {};
+            invalidateTimelineCache();
             refreshTimelineGrid();
 
         }catch(err){
@@ -17283,7 +17472,7 @@ async function openTSRClientEmailModal(shiftId){
             return;
         }
 
-        timelineCache = {};
+        invalidateTimelineCache();
         bootstrap.Modal.getInstance(document.getElementById('deleteOptionModal'))?.hide();
         shiftModal?.hide();
         await refreshTimelineGrid();
@@ -17330,7 +17519,7 @@ async function openTSRClientEmailModal(shiftId){
             body: JSON.stringify(payload)
         });
         if(response.ok){
-            timelineCache = {};
+            invalidateTimelineCache();
             batchModal?.hide();
             await refreshTimelineGrid();
         }else{
@@ -17728,7 +17917,7 @@ window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true
         saveTimelineViewState();
 
         try{
-            await refreshTimelineGrid();
+            await refreshTimelineGrid({forceRefresh: false, navigation: true});
             return true;
         }catch(error){
             console.error('[Timeline] Week navigation failed:', error);

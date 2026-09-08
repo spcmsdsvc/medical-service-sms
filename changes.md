@@ -2,6 +2,44 @@
 
 codex changes - 2026-09-08
 
+- The owner authorized committing and pushing only the Faster Calendar Week Navigation package
+  to `origin/main`. Publication includes the calendar template, v141 cache marker, release entry,
+  focused navigation tests, exact cache assertions, and plan/change records. Local and remote main
+  matched `cbdf744` before publication. Existing verification above/below applies; protected database,
+  handoffs, `.claude/`, generated output, temporary files, and unrelated work remain excluded.
+  Remote main and Railway deployment metadata will be checked after push; no manual redeploy or
+  environment-variable changes are included.
+
+- Started the separately approved Faster Calendar Week Navigation package. The implementation keeps
+  the existing 30-second per-week memory cache for week navigation, renders eligible cached weeks
+  immediately, revalidates in the background with an accessible status, preserves forced-refresh
+  semantics for existing callers, deduplicates same-week requests, and protects against stale late
+  responses. Protected database, handoffs, `.claude/`, generated output, temporary files, unrelated
+  work, browser automation, commit, push, deployment, production, and formal review remain excluded.
+- Added the focused week-navigation/cache contracts and ran the required fail-first checkpoint before
+  source edits: **7 tests: 0 passed, 5 intentional failures, 2 expected marker-extraction errors,
+  0 skips** against the unchanged implementation. The errors were only the not-yet-present helper
+  extraction anchors; no application behavior was changed by this checkpoint.
+- Implemented cache-first Calendar week navigation in `templates/timeline.html`: eligible weeks use
+  the existing 30-second memory cache for immediate rendering, then revalidate in the background with
+  an accessible “Checking for updates...” status; cache misses and expired entries retain foreground
+  loading and existing offline/PWA fallback behavior.
+- Preserved forced-refresh behavior for existing `refreshTimelineGrid()`/`loadGrid()` callers and
+  routed cached, fresh, and offline payloads through one renderer. Added generation, captured week,
+  branch, and load-sequence guards; same-key requests now share one promise, including the existing
+  surrounding-week preloader, and forced/mutation refresh invalidation blocks stale late responses.
+- Bumped the embedded service worker to
+  `medical-service-pwa-offline-navigation-v141-calendar-week-navigation`, updated all exact current
+  cache assertions, added the published `2026-09-08-calendar-week-navigation` Calendar release, and
+  added `tests/test_timeline_week_navigation_cache.py`.
+- Verification passed: focused calendar/cache/offline/changelog coverage **298 passed, 0 failed,
+  0 errors, 1 skipped**; new week-navigation contracts **7/7**; existing timeline collapse contracts
+  **20/20**. Full isolated discovery was **983 tests: 972 passed, 10 known baseline failures, 0
+  errors, 1 skipped** (eight Purchase Order 429 setup/rate-limit cases and two Staff Creation fixture/
+  initials cases). AST/Jinja/JavaScript/release/whitespace checks passed; browser verification remains
+  owner-only. Protected database, handoff, `.claude/`, generated output, and temporary files remain
+  untouched and unstaged; no commit, push, deployment, production, or formal review was performed.
+
 - Committed the 16-file Calendar package allowlist as `af190d4` and recorded its execution hash
   in `plans.md`. Staged whitespace checks passed. This journal-only closeout accompanies the
   authorized push to `origin/main`; protected local artifacts remain unstaged.

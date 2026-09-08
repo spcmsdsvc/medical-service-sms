@@ -271,7 +271,7 @@ class ReimbursementAutosaveSourceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
     def test_autosave_release_and_worker_version_are_current(self):
-        self.assertIn('medical-service-pwa-offline-navigation-v140-timeline-scroll-legend', APP_SOURCE)
+        self.assertIn('medical-service-pwa-offline-navigation-v141-calendar-week-navigation', APP_SOURCE)
         matches = [
             release for release in RELEASES.get('releases', [])
             if release.get('release_key') == '2026-09-07-reimbursement-autosave'

@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-08-calendar-week-navigation",
+      "release_date": "2026-09-08",
+      "title": "Faster Calendar Week Changes",
+      "summary": "Calendar week changes now show available schedule data sooner while checking for updates.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-08-calendar-week-navigation-everyone",
+          "category": "Calendar",
+          "description": "When you move to a recently loaded Calendar week, the available schedule appears immediately while the page checks for current updates in the background. New or expired weeks still load normally, and a short status keeps update progress visible.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-08-timeline-scroll-legend",
       "release_date": "2026-09-08",
       "title": "Cleaner Calendar Scrolling",

@@ -1,5 +1,171 @@
 # Medical Service SMS — Approved Plans
 
+## Faster Calendar Week Navigation
+
+**Status:** In progress — implementation and local verification complete; package-only commit and
+push authorized on 2026-09-08. Execution hash will be recorded after commit.
+**Approved:** 2026-09-08 — the owner accepted the proposed cache-first week-navigation approach.
+**Execution authorized:** 2026-09-08 — the owner separately said “go ahead and implement the plan,”
+asked for one Builder, and asked that the Builder work to completion without periodic check-ins.
+**Detailed:** 2026-09-08.
+
+### Context and intended outcome
+
+Calendar week changes are slower than necessary because `refreshTimelineGrid()` currently clears
+`timelineCache` before every load, even though `loadGrid()` already keeps a 30-second per-week cache
+and `warmTimelineOfflineScheduleWindow()` preloads adjacent weeks. The change makes a recently loaded
+or preloaded week appear immediately, then revalidates it in the background so users see the selected
+week without waiting for the network. First-time or expired weeks continue to use the foreground
+request path.
+
+### Decisions taken
+
+1. Week navigation opts into cache-first loading. An eligible `${weekOffset}|${branch}` entry is
+   rendered immediately, then a fresh request checks for updates. A small accessible live status
+   reports “Checking for updates...” while that request is active and reports a failure without
+   replacing a usable cached week when revalidation fails.
+2. Existing `refreshTimelineGrid()` callers remain forced-refresh by default. Manual refresh,
+   post-edit refresh, branch/developer view refresh, and other mutation paths continue to bypass or
+   invalidate cached data and request current data. The existing 30-second memory-cache eligibility
+   remains the only cache reuse window for online navigation.
+3. Shared rendering is kept in one page-local path so cached and fresh payloads preserve the complete
+   desktop grid, mobile cards, attachment details, role restrictions, workload labels, and range-label
+   behavior. Cached rendering never advances `timelineLastSuccessfulRefreshAt`; only a successful
+   network response does.
+4. Request generation and captured week/branch checks prevent a late response from painting a newer
+   view. Forced refresh invalidates older in-flight responses. Concurrent requests for the same week
+   and branch are deduplicated, including overlap with the existing surrounding-week preloader; no
+   additional preload radius or request traffic is introduced.
+5. No backend endpoint, schema, database, dependency, browser automation, deployment, or production
+   change is in scope. Bump the current embedded service-worker cache once, update exact current-cache
+   assertions, and add one published Calendar release item for the user-visible improvement.
+
+### Investigation
+
+- `templates/timeline.html` defines the 30-second `timelineCache`, `timelineLoadSeq`, existing
+  refresh deduplication, `loadGrid()`, `warmTimelineOfflineScheduleWindow()`, and `changeWeek()`.
+- `refreshTimelineGrid()` currently clears the entire memory cache before calling `loadGrid()`, which
+  prevents week navigation from using data already fetched by the preloader.
+- `loadGrid()` already has a complete rendering path and offline snapshot/PWA fallback. The intended
+  implementation will extract that rendering block without changing its schedule/card semantics.
+- The worktree contains protected owner changes in `scheduler.db`, `Handoffs/08-11-26 handoff.md`,
+  `.claude/`, `medical-service-sms-detailed-handoff-2026-07-26.md`, `output/`, and `tmp/`; they are
+  outside this package and must remain untouched and unstaged.
+
+### Numbered execution steps
+
+1. **Record authorization and baseline.** Keep this plan newest in `plans.md`, append the factual
+   2026-09-08 start entry to `changes.md`, reread protected Git status, and inspect the current
+   timeline source, cache assertions, release manifest, and related tests. Done when the separate
+   approval and go-ahead, exact scope, exclusions, and baseline are recorded before implementation.
+2. **Add fail-first contracts.** Add focused timeline week-navigation contracts and a small runtime
+   harness under `tests/` covering cache-first navigation, immediate render plus revalidation, forced
+   refresh default, request-generation/week/branch guards, same-key request deduplication, stale
+   network timestamp semantics, accessible status text, offline/error fallback, current worker marker,
+   and the published release. Run the new contracts against the unchanged source and record the
+   intentional failures in this plan and `changes.md`.
+3. **Implement cache-first navigation.** In `templates/timeline.html`, introduce the smallest
+   page-local request/cache coordinator needed by `loadGrid()`, `refreshTimelineGrid()`,
+   `warmTimelineOfflineScheduleWindow()`, and `changeWeek()`. Keep forced refresh as the default;
+   let navigation opt into an eligible in-memory entry, render it through the shared rendering
+   function, release navigation controls after that render, and continue revalidation in the
+   background. Retain foreground loading for uncached/expired weeks and preserve existing offline
+   snapshot and PWA fallback behavior.
+4. **Protect freshness and user feedback.** Capture request generation, week offset, and branch for
+   every response; cache a useful response only for its valid generation and apply it only to the
+   still-visible view. Invalidate older in-flight generations on forced refresh and mutation paths.
+   Deduplicate same-key requests with the preloader. Add the accessible live status and keep it in
+   “Checking for updates...” only while background revalidation is pending; show a concise failure
+   state when cached data remains visible. Cached draws must not call
+   `markTimelineSuccessfulRefresh()`; successful network data still does.
+5. **Refresh delivery records and assertions.** Bump `app.py`’s current embedded worker cache marker
+   once from v140 to v141 with the Calendar week-navigation label. Update every exact current-cache
+   assertion under `tests/` and add one published `2026-09-08` Calendar release entry in
+   `static/changelog/releases.json`, preserving prior history.
+6. **Self-review and verification.** Run the fail-first checkpoint, final focused timeline/cache/
+   offline/changelog tests, Python/Jinja/inline-JavaScript syntax checks, release JSON validation,
+   and `git diff --check`. Run the full unittest discovery with a unique disposable external test
+   database only; report unrelated baseline failures without expanding scope. Browser/Codex UI checks
+   remain owner-only under `AGENTS.md`, so do not use browser automation or navigate the app.
+7. **Complete records and report.** Update this plan with the exact implementation and verification
+   results, append detailed factual bullets to `changes.md`, confirm protected artifacts remain
+   untouched and unstaged, and return one consolidated Builder report. Leave the plan `In progress`
+   because commit, push, Railway/deployment, production/database operations, and formal review are
+   separately authorized actions.
+
+### Deliberately excluded
+
+- No backend/API/schema/database change, schedule payload change, new dependency, generalized cache
+  layer, larger preload window, alternate offline architecture, or redesign of grid/card rendering.
+- No changes to attachments, permissions, roles, drag/drop, branch semantics, mobile layout, print
+  behavior, status/workload meaning, or existing manual/mutation refresh intent.
+- No changes to protected handoffs, `scheduler.db`, `.claude/`, `output/`, `outputs/`, `tmp/`,
+  unrelated owner work, Railway or production state, commit/push/deployment, browser automation, or
+  post-implementation review classification.
+
+### Verification and acceptance criteria
+
+- A recently loaded or preloaded week renders before a deliberately delayed revalidation completes;
+  a cache miss or expired entry still waits for the foreground request.
+- Successful revalidation updates the displayed week and records a successful network refresh. Cached
+  drawing alone does not reset that freshness timestamp.
+- Rapid navigation, branch changes, and forced refresh prevent late responses from painting another
+  view or restoring stale pre-edit data. Same-key requests are shared, including preloader overlap.
+- Cached revalidation failure leaves the cached week coherent and announces the failed update;
+  uncached failure retains existing rollback/error and offline fallback behavior.
+- Existing full payload attachment indicators, mobile rendering, role restrictions, offline snapshots,
+  and surrounding-week preloading remain functional.
+- Focused and related tests, syntax/static checks, release/cache validation, and `git diff --check`
+  pass apart from documented unrelated baseline failures. Browser visual verification remains pending
+  for the owner.
+
+### After implementation
+
+Keep the plan `In progress`, record actual results and limitations, and return one consolidated
+Builder report. No commit, staging, push, deployment, production/database operation, or formal review
+is performed in this package.
+
+### Fail-first checkpoint (2026-09-08)
+
+The new focused `tests.test_timeline_week_navigation_cache` contracts were run against the
+unchanged source before implementation: **7 tests: 0 passed, 5 intentional failures, 2 expected
+marker-extraction errors, 0 skips**. The failures covered the missing cache-first navigation API,
+request-generation coordinator, shared renderer/timestamp contract, accessible status, v141 worker
+marker, and release entry. The two errors were the expected missing `revalidateTimelineWeek` and
+`timelinePayloadIsValid` extraction anchors. The test file will be kept and corrected only as needed
+for the final implementation contracts.
+
+### Implementation outcome (2026-09-08)
+
+- Implemented the approved package in `templates/timeline.html`. Week navigation now opts into the
+  existing 30-second `${weekOffset}|${branch}` memory cache, renders an eligible cached payload before
+  waiting on the network, and starts one background revalidation with a small `role="status"` live
+  message. Cache misses and expired entries continue to wait for the foreground request.
+- Kept `refreshTimelineGrid()` and `loadGrid()` forced-refresh by default for existing callers. Added
+  one shared `renderTimelineGrid()` path for cached, fresh, and offline payloads, and moved all cache
+  invalidation through a generation-aware helper. Successful network responses alone advance
+  `timelineLastSuccessfulRefreshAt`; cached/offline draws do not.
+- Added same-key request sharing through `fetchTimelineDataForKey()`, reused it in the unchanged
+  surrounding-week preloader, and guarded cache writes/rendering/status updates with generation,
+  week, branch, and load-sequence checks. Forced refresh and schedule mutation paths now invalidate
+  older in-flight results so a late pre-edit response cannot restore stale data.
+- Added `tests/test_timeline_week_navigation_cache.py` with source contracts and a Node runtime check;
+  updated exact current-cache assertions to
+  `medical-service-pwa-offline-navigation-v141-calendar-week-navigation` in the existing related
+  tests; added the published `2026-09-08-calendar-week-navigation` Calendar release entry.
+- Final focused calendar/cache/offline/changelog command passed **298 tests: 298 passed, 0 failed,
+  0 errors, 1 skipped**. The new week-navigation module passed **7/7** and the existing focused
+  timeline collapse module passed **20/20**.
+- Isolated full unittest discovery ran **983 tests: 972 passed, 10 known baseline failures, 0 errors,
+  1 skipped**. The ten failures are the existing eight Purchase Order setup/rate-limit cases returning
+  429 and two Staff Creation fixture/initials cases returning 400 or encountering an already-used
+  initials fixture; no new Calendar/cache failure appeared.
+- Python AST parsing for the changed Python files, Jinja parsing of `templates/timeline.html`, extracted
+  changed timeline JavaScript syntax, release JSON parsing/unique-key validation, stale-cache marker
+  checks, and `git diff --check` passed. Browser visual verification was not run because `AGENTS.md`
+  reserves it for the owner. No commit, push, deployment, Railway, production, database, or protected
+  artifact action was performed; the plan remains `In progress` without a commit hash.
+
 ## Calendar duplicate scrollbar and collapsible legend
 
 **Status:** Executed — `af190d4` on 2026-09-08. The owner separately authorized package-only
