@@ -2,6 +2,43 @@
 
 codex changes - 2026-09-08
 
+- The owner authorized committing and pushing only the Calibration Certificate approval fix
+  to `origin/main`. The six-file publication includes the PDF validator, Approval Center error
+  handlers, two focused test modules, release metadata, and this change log. Local and remote
+  main matched `d220af9` before publication. Existing isolated verification recorded below applies;
+  staged whitespace, remote main, and Railway deployment metadata are checked for publication.
+  Protected databases, handoffs, generated output, temporary files, and unrelated work are excluded.
+  No manual redeploy or Railway-variable change is included.
+
+- Post-fix read-only browser verification in the owner's local Rodito session confirmed that
+  the pending Calibration Certificate remains untouched. Reloading `/approvals` still served
+  the previous uncaught-error handler despite the updated template on disk; the running local
+  server needs restarting before interactive verification of the fix. No approval was submitted
+  and no owner server process was stopped or restarted.
+
+- Started the owner-authorized Calibration Certificate approval reliability fix. The signed-PDF
+  builder now validates the runtime template for a stale printed Rodito identity before applying
+  the acting-approver overlay, so Rodito Aretano can approve while the canonical no-signature copy
+  keeps its original printed identity. The Approval Center's Calibration Certificate approve and
+  return handlers now catch request/parser failures and route them through the existing alert and
+  signature-required prompt behavior.
+- Added focused regression coverage for Rodito's signed PDF, stale runtime identity rejection,
+  flattened PDF/no-signature invariants, and visible Calibration Certificate decision-handler
+  failures. Added the 2026-09-08 Approval Center release item. No database, production, browser,
+  commit, push, deployment, or service-worker cache change is part of this local fix; the Approval
+  Center route remains network-delivered and is not in the precached app shell.
+- The unchanged-source fail-first checkpoint reproduced the Rodito signed-PDF `ValueError` and
+  both missing Calibration Certificate decision-handler error-reporting contracts. Final focused
+  Calibration Certificate workflow plus Approval Center wording coverage passed **37/37**; the
+  related Calibration Report, Product Certificate, offline, resilience, and approval-notification
+  set passed **145/145**. Isolated full discovery against a unique external
+  `MEDICAL_SERVICE_TEST_DB` ran **1027 tests: 1016 passed, 10 known baseline failures, 0 errors,
+  and 1 skip**; the failures remain eight Purchase Order HTTP 429 setup cases and two Staff
+  Creation fixture/initials cases, with no calibration approval failure. Python AST, 32-template
+  Jinja parsing, both Approval Center inline-JavaScript syntax checks, release JSON uniqueness,
+  and scoped `git diff --check` passed. Browser, database repair, production, commit, push,
+  deployment, and formal review remain outside this package.
+
 - Committed the verified 18-file TSR recovery/finalization package as `e156bac` and recorded its
   execution hash in the current and superseded recovery plans. Staged whitespace checks passed.
   No database, handoff, generated output, or temporary artifact was included. This journal-only

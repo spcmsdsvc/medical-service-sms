@@ -824,6 +824,36 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
         self.assertIsNone(reader.get_fields())
         self.assertIsNone(reader.pages[0].get("/Annots"))
 
+    def test_signed_pdf_allows_rodito_as_the_acting_approver(self):
+        data, _, _ = app_module.build_calibration_certificate_pdf(
+            complete_payload(),
+            approver="Rodito Aretano Jr",
+            signature_data=SIGNATURE,
+            approval_title="Calibration Manager",
+        )
+        reader = PdfReader(io.BytesIO(data))
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        self.assertIn("Rodito Aretano Jr", text)
+        self.assertIn("Calibration Manager", text)
+        self.assertIsNone(reader.get_fields())
+        self.assertIsNone(reader.pages[0].get("/Annots"))
+
+    def test_runtime_builder_rejects_a_fixed_rodito_identity_before_overlay(self):
+        source_path = ROOT / "static" / "templates" / "calibration-certificate" / "calibration-certificate-template.pdf"
+        with patch.object(app_module, "calibration_certificate_template_path", return_value=str(source_path)), \
+                patch.object(
+                    app_module,
+                    "CALIBRATION_CERTIFICATE_RUNTIME_SHA256",
+                    app_module.CALIBRATION_CERTIFICATE_TEMPLATE_SHA256,
+                ):
+            with self.assertRaisesRegex(ValueError, "runtime Calibration Certificate template contains the fixed Rodito Aretano identity"):
+                app_module.build_calibration_certificate_pdf(
+                    complete_payload(),
+                    approver="Jane Approver",
+                    signature_data=SIGNATURE,
+                    approval_title="Calibration Manager",
+                )
+
     def test_no_signature_pdf_uses_canonical_rodito_identity_and_is_flattened(self):
         data, mapped, _ = app_module.build_calibration_certificate_no_signature_pdf(complete_payload())
         reader = PdfReader(io.BytesIO(data))

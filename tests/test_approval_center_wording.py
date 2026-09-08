@@ -100,6 +100,29 @@ class ApprovalCenterWordingTests(unittest.TestCase):
         self.assertIn('target="_blank" rel="noopener"', self.source)
         self.assertIn("The finalized Calibration Report is unavailable for this submission.", self.source)
 
+    def test_calibration_decision_handlers_report_failures_and_signature_requirements(self):
+        handlers = {
+            "approveSelectedCalibrationCertificate": "Unable to approve Calibration Certificate.",
+            "returnSelectedCalibrationCertificate": "Unable to return Calibration Certificate.",
+        }
+        for name, fallback in handlers.items():
+            with self.subTest(handler=name):
+                start = self.source.index(f"async function {name}()")
+                next_handler = self.source.find("\n    async function ", start + 1)
+                end = next_handler if next_handler != -1 else self.source.index(
+                    "\n    const originalBuildCalibrationCertificateApprovalItem",
+                    start,
+                )
+                body = self.source[start:end]
+                self.assertIn("try {", body)
+                self.assertIn("catch (error)", body)
+                self.assertIn("showApprovalSignatureRequiredPrompt(error)", body)
+                self.assertIn("approvalAlert(error.message ||", body)
+                self.assertIn(fallback, body)
+                self.assertIn("approvalAlert(payload.message ||", body)
+                self.assertIn("closeApprovalModal()", body)
+                self.assertIn("await refreshAllApprovalCenterLists()", body)
+
     def test_calibration_report_preview_has_accessible_nested_dialog_and_safe_data_binding(self):
         self.assertIn("Preview Calibration Report", self.source)
         self.assertIn('id="approvalCalibrationReportPreviewBackdrop"', self.source)

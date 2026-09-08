@@ -16393,6 +16393,9 @@ def build_calibration_certificate_pdf(payload, shift=None, approver=None, signat
     missing_fields = [name for name in CALIBRATION_CERTIFICATE_FIELDS if name not in fields]
     if missing_fields:
         raise ValueError(f"The official Calibration Certificate is missing field(s): {', '.join(missing_fields)}.")
+    template_text = '\n'.join(page.extract_text() or '' for page in reader.pages)
+    if not canonical and 'Rodito' in template_text:
+        raise ValueError('The runtime Calibration Certificate template contains the fixed Rodito Aretano identity.')
 
     writer = PdfWriter()
     writer.clone_document_from_reader(reader)
@@ -16425,8 +16428,6 @@ def build_calibration_certificate_pdf(payload, shift=None, approver=None, signat
     if reopened.get_fields() or reopened.pages[0].get('/Annots'):
         raise ValueError('Generated Calibration Certificate still contains form fields or annotations.')
     rendered_text = '\n'.join(page.extract_text() or '' for page in reopened.pages)
-    if not canonical and 'Rodito Aretano' in rendered_text:
-        raise ValueError('Generated Calibration Certificate contains the fixed Rodito Aretano identity.')
     if signature_data and approver and approver not in rendered_text:
         raise ValueError('Generated Calibration Certificate is missing the acting approver name.')
     return data, values, hashlib.sha256(data).hexdigest()

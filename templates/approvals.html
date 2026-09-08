@@ -6270,17 +6270,29 @@ async function dismissApprovalNotification(event, notificationId) {
     window.openCalibrationCertificateApprovalDetail = openCalibrationCertificateApprovalDetail;
     async function approveSelectedCalibrationCertificate() {
         if (!selectedCalibrationCertificateId) return;
-        const response = await fetch(`/approve_calibration_certificate/${selectedCalibrationCertificateId}`, {method:'POST', credentials:'same-origin', headers:{Accept:'application/json','X-CSRFToken':getApprovalCsrfToken()}});
-        const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to approve Calibration Certificate.');
-        approvalAlert(payload.message || 'Calibration Certificate approved.', 'success'); closeApprovalModal(); await refreshAllApprovalCenterLists();
+        try {
+            const response = await fetch(`/approve_calibration_certificate/${selectedCalibrationCertificateId}`, {method:'POST', credentials:'same-origin', headers:{Accept:'application/json','X-CSRFToken':getApprovalCsrfToken()}});
+            const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to approve Calibration Certificate.');
+            approvalAlert(payload.message || 'Calibration Certificate approved.', 'success'); closeApprovalModal(); await refreshAllApprovalCenterLists();
+        } catch (error) {
+            console.error(error);
+            if (error?.payload?.requires_signature || error?.payload?.signature_required) { showApprovalSignatureRequiredPrompt(error); return; }
+            approvalAlert(error.message || 'Unable to approve Calibration Certificate.');
+        }
     }
     async function returnSelectedCalibrationCertificate() {
         if (!selectedCalibrationCertificateId) return;
         const remarks = (document.getElementById('approvalRemarks')?.value || '').trim();
         if (!remarks) { approvalAlert('Please enter return remarks before returning this Calibration Certificate.'); return; }
-        const response = await fetch(`/return_calibration_certificate/${selectedCalibrationCertificateId}`, {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRFToken':getApprovalCsrfToken()}, body:JSON.stringify({remarks})});
-        const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to return Calibration Certificate.');
-        approvalAlert(payload.message || 'Calibration Certificate returned for correction.'); closeApprovalModal(); await refreshAllApprovalCenterLists();
+        try {
+            const response = await fetch(`/return_calibration_certificate/${selectedCalibrationCertificateId}`, {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRFToken':getApprovalCsrfToken()}, body:JSON.stringify({remarks})});
+            const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to return Calibration Certificate.');
+            approvalAlert(payload.message || 'Calibration Certificate returned for correction.'); closeApprovalModal(); await refreshAllApprovalCenterLists();
+        } catch (error) {
+            console.error(error);
+            if (error?.payload?.requires_signature || error?.payload?.signature_required) { showApprovalSignatureRequiredPrompt(error); return; }
+            approvalAlert(error.message || 'Unable to return Calibration Certificate.');
+        }
     }
     const originalBuildCalibrationCertificateApprovalItem = window.buildUnifiedApprovalItem;
     window.buildUnifiedApprovalItem = function(moduleKey, item, status) { return calibrationCertificateApprovalItem(moduleKey, item, status) || originalBuildCalibrationCertificateApprovalItem(moduleKey, item, status); };

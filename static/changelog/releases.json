@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-08-calibration-approval-reliability",
+      "release_date": "2026-09-08",
+      "title": "Calibration Certificate Approval Reliability",
+      "summary": "Calibration Certificate approvals now accept the acting approver and show request failures.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-08-calibration-approval-reliability-approvers",
+          "category": "Approval Center",
+          "description": "Calibration Certificate approvals now generate a signed PDF when Rodito Aretano is the acting approver, while the protected runtime template still rejects a stale printed identity. Approval and return failures now show an actionable message in Approval Center, including the existing signature-required guidance.",
+          "audiences": [
+            "approvers",
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-08-tsr-signature-recovery",
       "release_date": "2026-09-08",
       "title": "TSR Signature Recovery and Finalization",
