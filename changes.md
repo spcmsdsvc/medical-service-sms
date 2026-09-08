@@ -2,6 +2,11 @@
 
 codex changes - 2026-09-08
 
+- Committed the verified v147 recovery correction as `5feb5f1` and recorded its execution hash
+  in `plans.md`. Staged whitespace checks passed. No database, handoff, generated output, temporary
+  artifact, or unrelated change was included. This journal-only closeout accompanies the authorized
+  push to `origin/main`.
+
 - The owner authorized committing and pushing only the v147 same-draft client-signature recovery
   correction to `origin/main`. Local and remote main matched `bd7a415` before publication. The
   allowlist contains the recovery template, focused tests, cache-only app/test assertions, release

@@ -2,9 +2,9 @@
 
 ## TSR same-draft recovery source identity and apply-state correction
 
-**Status:** In progress — implementation and local verification complete; no commit was created,
-and commit, push, deployment, database repair, browser/Codex UI actions, and formal review remain
-separately authorized and excluded.
+**Status:** Executed — `5feb5f1` on 2026-09-08. The owner separately authorized committing and
+pushing only this correction to `origin/main`; this record accompanies that publication. Database
+repair, browser/Codex UI actions, and formal review remain separate and excluded.
 **Approved:** 2026-09-08 — the owner said **“yes implement the correction”** and reported that
 the recovery button could not be clicked. This focused correction amends the executed v146
 recovery package without promising that the historical signature is still present on the owner's
