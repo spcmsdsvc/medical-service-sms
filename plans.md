@@ -1,5 +1,348 @@
 # Medical Service SMS — Approved Plans
 
+## TSR client-signature finalization lifecycle and unfinished-only recovery
+
+**Status:** Executed — uncommitted working tree; commit, push, deployment, production/Railway,
+database repair, browser verification, and formal review remain separate and excluded.
+**Approved:** 2026-09-08 — the owner confirmed that a successful final TSR save may keep the
+client signature in the generated signed PDF only, remove the reusable client signature from the
+saved submission payload and completed local state, retain it through pending/offline/failed final
+saves, and proceed with the adjustment.
+**Amends:** the immediately preceding `Recover available signatures for an offline TSR draft`
+plan in this file. Its explicit recovery UI, matching unfinished local-source behavior, hydration
+protection, and v145 delivery records remain part of the working tree. The prior requirement to
+search a saved online TSR and traverse completed parent revisions is superseded: completed online
+TSRs and revision history are never signature-recovery sources under this amendment.
+**Detailed:** 2026-09-08.
+
+### Context and intended outcome
+
+The v145 recovery package lets a draft choose signatures from device drafts, queued TSRs, the
+localStorage fallback, a saved online TSR, and its parent revisions. The owner clarified the
+signature lifecycle: Save Draft must keep the client signature available for continued work, and a
+successful final Save TSR must embed it in the final PDF while removing the reusable client image
+from durable submission JSON and completed draft/queue state. A final save that is offline,
+pending, fails, or rolls back must keep the signature so the engineer can retry. Recovery remains
+available for unfinished local work and genuinely pending unsynced queue items, with matching
+schedule/client checks, but must never resurrect a signature from a completed online TSR or its
+revision history.
+
+The server must strip only the acknowledged/client signature after the PDF has been generated and
+the final submission is durably committed. The engineer signature and reusable engineer profile
+settings remain unchanged. Existing signed PDFs are authoritative and must remain available even
+when the corresponding payload no longer contains the client image. Existing PDF repair paths are
+file-only and must not silently regenerate an unsigned replacement; if a future regeneration path
+cannot work without the stripped client signature it must fail safely.
+
+### Decisions and boundaries
+
+1. Save Draft and all unfinished local persistence retain both signatures. Successful online final
+   saves and successful revisions persist the generated signed PDF while storing the submission
+   payload with the client signature removed; the engineer signature remains in the payload as it
+   is today. A server idempotent replay returns the existing success metadata without reintroducing
+   the client image.
+2. A final online save strips the client signature only after PDF generation/validation, attachment
+   creation, and the durable core commit can succeed. A rollback, validation refusal, network
+   failure, or queued/pending final save retains the signature in the retryable local draft or
+   queue payload until confirmed success. A queued item with a server-confirmed core submission is
+   not a recovery source while attachment work is pending.
+3. Signature recovery searches matching unfinished IndexedDB drafts, the localStorage fallback,
+   and queue entries that have not received a server submission id and remain genuinely pending.
+   It does not call `/get_latest_online_tsr_for_shift`, `/get_online_tsr_submission`, or traverse
+   parent revisions. Existing online routes remain for the correction workflow itself.
+4. Hydration must not reintroduce an acknowledged signature after a completed final save. Pending
+   server-draft deletion keys are respected before remote drafts are merged, and corrected TSR
+   loading continues to clear the client signature intentionally. No blanket historical database
+   scrub or migration is performed.
+5. Existing signed PDFs, attachments, schedule completion, contact capture, requester/acknowledger
+   independence, engineer signature profile/settings, and unrelated dirty artifacts remain in
+   place. No signature vault, versioning architecture, schema migration, production repair,
+   browser/Codex UI action, commit, push, or deployment is in scope.
+
+### Numbered execution steps
+
+1. **Record current state and amendment.** Re-read the applicable instructions, full `changes.md`,
+   current v145 plan/outcome, Git status, final-save/revision routes, PDF generation/repair
+   consumers, offline draft/queue cleanup, recovery functions, focused tests, worker assertions,
+   and release manifest. Add this approved amendment and a factual start entry to `changes.md`
+   before source edits. Protect `scheduler.db`, handoffs, `.claude/`, `output/`, `outputs/`,
+   `tmp/`, and unrelated dirty tests.
+2. **Add fail-first lifecycle contracts.** Extend focused source and controlled runtime tests for
+   the server final and revision persistence paths: the client signature reaches PDF generation,
+   the completed persisted payload has no reusable client signature, the engineer signature stays,
+   and idempotent responses stay safe. Cover failed/rolled-back saves, pending queue retention,
+   successful queue cleanup, rejection of server-confirmed queue candidates, removal of online and
+   revision recovery fetches, unfinished-only local recovery, hydration/reset compatibility, and
+   v146 cache/release records. Run the unchanged-source red checkpoint and record its totals.
+3. **Make server persistence lifecycle-safe.** In `app.py`, add a narrow payload helper that
+   removes only `signatures.acknowledged` after `generate_online_tsr_submission_pdf` or the
+   uploaded-PDF validation path has produced the signed artifact. Apply it to both
+   `/save_offline_tsr_online` and `/revise_online_tsr_submission` immediately before the durable
+   completed commit and any post-commit payload update. Keep pre-save validation requiring both
+   signatures for vector final saves/revisions, keep rollback payloads untouched, preserve the
+   attached signed PDF, and ensure idempotent response serialization does not expose a stripped
+   signature as a new recovery source.
+4. **Restrict frontend recovery and cleanup.** In `templates/offline_tsr.html`, remove online
+   completed/history candidate functions and calls, retain only matching unfinished local drafts,
+   localStorage fallback, and genuinely pending unsent queue records, and reject queue records with
+   `server_submission_id`, completed status, or completed sync phase. Preserve explicit target/source
+   selection, stale-context checks, missing-slot-only merging, and corrected-revision reset. When a
+   final online/revision save succeeds, clean the draft after the server result and retain no
+   reusable client signature in the cleared form; when a final save queues or fails, keep the signed
+   payload in the retryable queue/draft. Do not clear engineer signature settings. Ensure queued
+   success removes its durable queue/blob state only after confirmed completion and does not hydrate
+   a pending server draft back into the recovery list during deletion retries.
+5. **Refresh delivery records.** Bump the live worker marker once from v145 to
+   `medical-service-pwa-offline-navigation-v146-tsr-signature-finalization`; update every exact
+   current-cache assertion and replace the prior recovery release text with the lifecycle and
+   unfinished-only behavior while preserving release history. Do not leave misleading claims that
+   completed online or historical revisions are recovery sources.
+6. **Verify and close records.** Run focused lifecycle/recovery tests, related TSR/offline checks,
+   exact-cache assertions, Python/Jinja/inline-JavaScript/release uniqueness/whitespace checks, and
+   one isolated full discovery using a fresh disposable external `MEDICAL_SERVICE_TEST_DB`, never
+   `scheduler.db`. Record exact red and final pass/fail/error/skip counts, the known baseline eight
+   Purchase Order 429 setup failures and two Staff Creation fixture/initials failures, signed-PDF
+   preservation checks, limitations, and protected-state status here and in `changes.md`. Do not
+   perform browser verification, database repair, commit, push, deployment, or formal review.
+
+### Acceptance criteria
+
+- Save Draft retains both signatures; a successful online or revision finalization generates and
+  preserves a signed PDF while the completed submission payload has no reusable client signature
+  and still retains the engineer signature.
+- Offline, pending, failed, or rolled-back final saves retain the client signature in the retryable
+  local draft/queue until the server confirms successful completion; idempotent success does not
+  duplicate or restore it.
+- Recovery uses only same-schedule/client unfinished local drafts, fallback copies, and genuinely
+  pending unsent queue items. Completed online submissions, completed queue items, and revision
+  history are excluded, and no online-history fetch occurs.
+- Hydration and final cleanup cannot reintroduce a finalized client signature; intentional corrected
+  TSR resets remain intact, existing signed PDFs remain signed, and engineer profile/settings are
+  unchanged.
+- Focused and proportional related verification passes apart from documented unrelated baseline
+  failures; no production signature purge/restore or historical database scrub is performed.
+
+### Implementation and final verification (2026-09-08)
+
+Implemented the amendment in the existing uncommitted v145 recovery package:
+
+- app.py: added strip_persisted_online_tsr_client_signature() and applied it only after
+  signed-PDF generation/validation and attachment work in both /save_offline_tsr_online and
+  /revise_online_tsr_submission. Both final routes still require the engineer and client
+  signatures before work starts; corrected submissions now enforce the client signature too.
+  Idempotent responses remain metadata-only, and the stored engineer signature and signed PDF
+  reference remain intact.
+- templates/offline_tsr.html: removed online completed/history recovery traversal, restricted
+  candidates to matching unfinished drafts/fallbacks and unsent pending queues, rejected completed
+  and server-confirmed queue records, guarded server-draft hydration against pending deletion
+  keys, stripped the client signature from a queue payload only after a core server submission is
+  confirmed, and reset the corrected-save form after successful revision cleanup. Save Draft and
+  retryable/failed queue paths retain both signatures.
+- tests/test_tsr_signature_recovery.py: expanded source and Node contracts and added disposable
+  Flask route coverage for successful online/revision persistence, idempotent replay, rollback,
+  missing-client-signature rejection, unfinished-only recovery, server-confirmed queue rejection,
+  hydration/reset compatibility, and signed-PDF payload input.
+- Updated exact current-cache assertions and the published
+  2026-09-08-tsr-signature-recovery entry to describe signed-PDF-only client signatures and
+  unfinished-only recovery. The embedded marker is now
+  medical-service-pwa-offline-navigation-v146-tsr-signature-finalization.
+
+Verification:
+
+1. Focused recovery/lifecycle suite: **19 tests, 19 passed, 0 failed, 0 errors, 0 skipped**.
+2. Related TSR/offline/resilience suites: **103 tests, 103 passed, 0 failed, 0 errors, 0 skipped**.
+3. Isolated full discovery with a unique disposable external MEDICAL_SERVICE_TEST_DB:
+   **1024 tests, 1013 passed, 10 failed, 1 skipped**. The ten failures are unchanged unrelated
+   baseline setup/fixture failures: eight Purchase Order HTTP 429 responses and two Staff Creation
+   fixture/initials failures. All lifecycle/recovery tests passed.
+4. Python AST and Jinja parsing, release JSON/key uniqueness, targeted Node runtime execution,
+   and git diff --check passed. A full rendered inline-script node --check was not used as a
+   gate because the existing template/layout emits HTML entity escapes in script text; changed
+   functions were executed by the controlled Node contracts instead.
+5. No production signature restore/purge, database migration or repair, scheduler database
+   inspection, browser/Codex UI action, commit, push, deployment, or formal review occurred.
+   scheduler.db, handoffs, .claude/, generated output, and temporary files remain protected
+   owner work.
+
+
+## Recover available signatures for an offline TSR draft
+
+**Status:** Superseded by the v146 amendment above — the unfinished-source recovery and hydration
+  work remains in the working tree, while online completed/history traversal is no longer
+  permitted; commit/push/deployment remain explicitly excluded from this builder cycle.
+**Approved:** 2026-09-08 — the owner said **“go ahead and proceed with these”** and later
+**“resume your work now”**, authorizing this recovery package after the prior builder stopped at
+the usage limit. This implementation authorization covers the bounded package below only; commit,
+push, deployment, production/Railway operations, and formal review remain separate.
+**Detailed:** 2026-09-08.
+
+### Context and intended outcome
+
+An offline Create TSR draft can retain typed work while one or both signatures are missing. The
+page needs a clear, explicit recovery action that lets the engineer search signatures already
+available on the same schedule and client context: matching local IndexedDB drafts or queued TSRs,
+the localStorage fallback when that is the surviving copy, the saved online TSR for the schedule,
+and permitted older revisions reachable through the existing parent-submission links. The engineer
+must choose which missing signature(s) to restore and which matching source to use. The app must
+never copy an unrelated person's signature, fabricate one, or silently restore an old revision's
+signature after the engineer deliberately cleared it for a corrected TSR.
+
+The existing server draft hydration path also currently takes the remote payload wholesale while
+preserving only local attachments. If the account copy has no signatures but the device copy does,
+hydration can erase the surviving signatures. The fix keeps matching local signatures when the
+remote payload is missing them, while retaining the existing serialized local save ordering,
+queued-signature behavior, requester/acknowledger independence, schedule-change resets, and
+corrected-revision reset semantics.
+
+### Decisions and boundaries
+
+1. Recovery is explicit and user-selected. A draft card shows **Recover available signatures** only
+   when its payload has a missing engineer and/or client signature. The recovery UI lets the user
+   choose Serviced By, Acknowledged, or both, then choose one matching candidate source. Existing
+   signatures are never overwritten.
+2. Candidate matching requires the same schedule identity and the same client context. Schedule
+   identity may use the existing canonical/legacy schedule comparison and persisted schedule
+   snapshot; client matching uses the normalized client identity available in the draft/source
+   payload. Candidates from a different schedule or client are excluded and no-candidate results
+   are reported plainly.
+3. Local candidates come from current IndexedDB draft/queue stores and the localStorage fallback
+   only when it contains a surviving matching payload. Online candidates use the existing authorized
+   `get_online_tsr_submission` and `get_latest_online_tsr_for_shift` routes. Parent revisions are
+   followed through `parent_submission_id` only after the latest/source submission is authorized;
+   no new history API, direct database access, or broad storage rewrite is added.
+4. Corrected TSR mode keeps its established `signatureData.acknowledged = ''` reset and explains
+   that recovery from an explicitly chosen historical source is a separate action. Recovery writes
+   only to the current draft through the existing local-save chain and reports whether durable save
+   succeeded, fell back to localStorage, or failed.
+5. The package is limited to `templates/offline_tsr.html`, focused/new tests, the embedded worker
+   marker in `app.py`, exact current-cache assertions, `static/changelog/releases.json`,
+   `plans.md`, and `changes.md`. No schema, migration, dependency, PDF extraction, signature
+   fabrication, production, Railway, browser/Codex UI, commit, push, or deployment work is in scope.
+   Protected `scheduler.db`, handoffs, `.claude/`, `output/`, `outputs/`, `tmp/`, and unrelated
+   dirty work remain owner-owned.
+
+### Numbered execution steps
+
+1. **Preflight and control records.** Read all applicable instructions, the full change log, the
+   current plans/control records, Git status, affected draft/queue/signature/revision source and
+   tests, current v144 worker marker, exact cache assertions, and release-manifest shape. Record
+   this approved plan and the same-task change-log entry before source edits. Use a unique external
+   disposable SQLite database for any Flask runtime fixture and never use `scheduler.db`.
+2. **Fail-first regression contracts.** Add focused source and controlled Node runtime contracts
+   for draft cards exposing recovery only when a signature is missing; candidate filtering by exact
+   schedule and client; no-candidate and partial-signature selection; explicit engineer/client/both
+   selection and source selection; local draft/queue/localStorage recovery; submitted TSR and
+   permitted revision traversal through existing routes; stale current-draft context rejection;
+   truthful failed-storage reporting; preserving existing signatures; and remote-missing/local-signed
+   merge behavior. Run them against unchanged source and record the intentional red checkpoint
+   before implementing the fix.
+3. **Add explicit recovery UI and state.** In `templates/offline_tsr.html`, add accessible recovery
+   controls using the page's existing modal/notification conventions. Render the draft action with a
+   stable record id, capture the current draft/context before asynchronous lookup, show only missing
+   signature targets, list matching source candidates with source labels and schedule/client context,
+   and require the engineer to choose targets and one source. Recheck the active draft id/context
+   after every await and before applying values; abort safely if the user opened/started another
+   draft. Do not use browser alert/confirm/prompt.
+4. **Implement candidate traversal and save.** Reuse existing schedule identity/client normalizers,
+   IndexedDB queue/draft readers, localStorage fallback, and authorized online routes. Traverse
+   `parent_submission_id` with bounded de-duplication, preserving revision metadata and excluding
+   signatures intentionally cleared by the corrected-TSR loader from automatic paths. On explicit
+   confirmation, copy only selected missing `serviced`/`acknowledged` values, never overwrite a
+   current signature, save through `saveStandaloneTSRDraftLocally(..., {serverSync:'none'})`, and
+   show source-specific success or precise storage-failure status. Keep signatures stored in queued
+   payloads and keep requester/acknowledger fields independent.
+5. **Fix server-draft hydration merge.** Update `mergeServerStandaloneTSRDrafts()` so a remote
+   payload with missing signature fields cannot erase matching local signatures. Merge only when
+   schedule and client context match; preserve local signature values independently for each slot,
+   while retaining the existing attachment preservation, timestamp/newer-local upload behavior,
+   local serialized save protections, and intentionally reset corrected-revision behavior.
+6. **Delivery records.** Bump the live embedded service-worker marker from v144 to
+   `medical-service-pwa-offline-navigation-v145-tsr-signature-recovery`; update every exact current
+   cache assertion under `tests/`; add one published `2026-09-08-tsr-signature-recovery` release
+   item describing explicit same-schedule/client recovery and truthful storage reporting; preserve
+   prior release history and plan records.
+7. **Self-review and verification.** Run the unchanged-source fail-first checkpoint before edits,
+   final focused tests, related TSR/offline/cache/changelog tests, and one isolated full unittest
+   discovery with a fresh external disposable `MEDICAL_SERVICE_TEST_DB`. Run Python compilation/
+   AST, Jinja parsing, extracted inline-JavaScript syntax, release JSON and uniqueness checks, exact
+   current-cache checks, and `git diff --check`. Exercise controlled runtime cases for signed local
+   queue/fallback, submitted/revision source, mismatches, no candidate, partial selection, stale
+   draft context, failed storage, signed local/remote-missing merge, offline save/reopen/reconnect,
+   and unchanged schedule/corrected-TSR resets. Browser verification remains owner-only under
+   `AGENTS.md`; do not navigate or terminate Codex UI.
+8. **Complete records and handoff.** Amend this plan with actual files/functions, fail-first and
+   final pass/fail/skip totals, the known baseline eight Purchase Order 429 setup failures and two
+   Staff Creation fixture/initials failures plus one skip, syntax/cache/release/diff results,
+   limitations/deviations, and protected-worktree state. Append factual bullets to the current
+   `changes.md`. Leave commit/push/deploy/production/database actions and formal review for their
+   separately authorized stages; no commit checklist is executed in this builder cycle.
+
+### Acceptance criteria
+
+- A draft missing either signature exposes **Recover available signatures**, and the action requires
+  explicit target and source choices. A draft with both signatures does not offer recovery.
+- Only candidates matching both schedule and client context appear; local draft, queue, fallback,
+  submitted TSR, and permitted revision sources are labeled truthfully, and no candidate leaves a
+  wrong-schedule/client signature path.
+- Selecting one or both missing slots restores only those slots to the current draft; an existing
+  signature remains unchanged. No automatic copy or fabricated signature occurs.
+- Recovery survives the existing local save/reopen path when storage succeeds, reports fallback or
+  failed storage truthfully, rejects stale draft context, and keeps requester/acknowledger fields
+  independent.
+- Remote draft hydration cannot erase a surviving matching local signature, while schedule changes
+  and corrected TSR revisions retain their established reset behavior.
+- Focused/related checks and static checks pass apart from documented unrelated baseline failures;
+  browser visual and real-device checks remain pending for the owner.
+
+### Fail-first checkpoint (2026-09-08)
+
+Before changing the implementation, the new `tests/test_tsr_signature_recovery.py` contracts ran
+**9 tests: 0 passed, 9 intentional failures, 0 errors, 0 skips** against the v144 source. The red
+contracts covered the absent recovery action/modal, same-schedule/client candidate filtering,
+local/queue/fallback and online revision traversal, missing-slot preservation, stale/failure
+reporting, remote-missing/local-signed hydration merging, explicit historical recovery messaging,
+and the v145 worker/release records. No application source was changed for this checkpoint.
+
+### Implementation and final verification (2026-09-08)
+
+Implemented the package in the approved scope:
+
+- `templates/offline_tsr.html`: added explicit recovery modal/state, missing-slot target checkboxes,
+  one-source selection, same-schedule/client candidate filtering, IndexedDB draft and queue reads,
+  localStorage fallback reads, bounded online latest/parent revision traversal, stale context checks,
+  truthful IndexedDB/localStorage/failed-save reporting, and draft-panel recovery actions. Added
+  `mergeStandaloneTSRSignaturesFromLocal()` to preserve matching local signatures during server
+  hydration without copying across schedule/client contexts or corrected revision markers. Existing
+  corrected-TSR acknowledgement reset, schedule re-pick behavior, save chain, queue signature
+  serialization, and requester/acknowledger independence remain in place.
+- `tests/test_tsr_signature_recovery.py`: added source contracts and controlled Node runtime cases
+  for candidate filtering/partial selection, matching non-revision hydration, local queue/fallback
+  and permitted revision traversal, mismatch rejection, and delivery records.
+- `app.py` plus exact cache assertions under `tests/`: bumped the embedded service worker marker to
+  `medical-service-pwa-offline-navigation-v145-tsr-signature-recovery`.
+- `static/changelog/releases.json`: added the published
+  `2026-09-08-tsr-signature-recovery` release item. `plans.md` and `changes.md` record this run.
+
+Verification completed:
+
+1. `venv\\Scripts\\python.exe -m unittest tests.test_tsr_signature_recovery` — **11 passed,
+   0 failed, 0 errors, 0 skipped**.
+2. Related TSR/offline checks (`test_tsr_signature_recovery`, `test_tsr_offline_followup`,
+   `test_tsr_contact_suggestions`, `test_tsr_notifications`, `test_offline_resilience`) — **95
+   passed, 0 failed, 0 errors, 0 skipped**.
+3. Updated exact-cache assertion set — **218 passed, 0 failed, 0 errors, 0 skipped**.
+4. Isolated full discovery with a fresh disposable external `MEDICAL_SERVICE_TEST_DB` — **1014
+   tests, 1003 passed, 10 failed, 1 skipped**. The ten failures are the known unrelated baseline:
+   eight Purchase Order setup responses returning HTTP 429 and two Staff Creation fixture/initials
+   failures. No signature-recovery test failed.
+5. Python `compile()` checks for `app.py` and the new test, Jinja parsing with the project venv,
+   extracted inline JavaScript `node --check`, release JSON/key uniqueness, and `git diff --check`
+   all passed. Browser/Codex UI, Railway, production, commit, and push actions were not run.
+
+The protected dirty `scheduler.db`, handoff files, `.claude/`, `output/`, `outputs/`, and `tmp/`
+remain owner-owned and were not staged or intentionally modified.
+
+
 ## Keep TSR requester and acknowledger independent; serialize offline draft saves
 
 **Status:** Executed — `fad286e` on 2026-09-08. The owner separately authorized commit and push

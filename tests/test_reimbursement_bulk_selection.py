@@ -102,7 +102,7 @@ class ReimbursementBulkSelectionSourceTests(unittest.TestCase):
         self.assertIn('persistReimbursementRowChange(', TEMPLATE[restore_start:restore_end])
 
     def test_bulk_selection_cache_and_published_release_are_current(self):
-        self.assertIn('medical-service-pwa-offline-navigation-v144-tsr-offline-draft-save-order', APP_SOURCE)
+        self.assertIn('medical-service-pwa-offline-navigation-v146-tsr-signature-finalization', APP_SOURCE)
         matches = [
             release for release in RELEASES.get('releases', [])
             if release.get('release_key') == '2026-09-08-reimbursement-bulk-selection'

@@ -284,7 +284,7 @@ console.log(JSON.stringify({ activeDraftId:standaloneCurrentDraftId, attachments
 
     def test_worker_and_release_are_bumped_for_followup(self):
         self.assertIn(
-            "medical-service-pwa-offline-navigation-v144-tsr-offline-draft-save-order",
+            "medical-service-pwa-offline-navigation-v146-tsr-signature-finalization",
             self.app_source,
         )
         self.assertIn('2026-09-08-tsr-offline-draft-save-order', self.release_source)

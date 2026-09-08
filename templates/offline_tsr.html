@@ -62,6 +62,39 @@ window.CalibrationReportConfig = {
     </div>
   </div>
 
+  <div class="modal fade" id="tsrSignatureRecoveryModal" tabindex="-1" aria-hidden="true" aria-labelledby="tsr-signature-recovery-title">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+      <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+        <div class="modal-header bg-warning-subtle">
+          <div>
+            <h5 class="modal-title fw-bold" id="tsr-signature-recovery-title"><i class="fa-solid fa-signature me-2"></i>Recover available signatures</h5>
+            <div class="small text-muted fw-bold">Choose the missing signature(s) and one matching saved source. Nothing is copied automatically.</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close signature recovery"></button>
+        </div>
+        <div class="modal-body">
+          <div id="tsr-signature-recovery-notifications" class="offline-tsr-modal-notifications" data-tsr-notification-host role="region" aria-label="Signature recovery notifications" aria-live="polite" aria-atomic="false"></div>
+          <div id="tsr-signature-recovery-context" class="alert alert-info fw-bold py-2"></div>
+          <fieldset class="mb-3">
+            <legend class="small fw-bold text-muted text-uppercase mb-2">Signatures to recover</legend>
+            <div id="tsr-signature-recovery-targets" class="d-grid gap-2"></div>
+          </fieldset>
+          <fieldset>
+            <legend class="small fw-bold text-muted text-uppercase mb-2">Matching saved source</legend>
+            <div id="tsr-signature-recovery-source-list" class="d-grid gap-2">
+              <div class="text-muted small fw-bold">Searching this device and unfinished account drafts...</div>
+            </div>
+          </fieldset>
+          <div id="tsr-signature-recovery-note" class="small text-muted fw-bold mt-3"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-secondary fw-bold" type="button" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-warning fw-bold" type="button" id="tsr-signature-recovery-apply" onclick="applyStandaloneTSRSignatureRecovery()" disabled><i class="fa-solid fa-check me-1"></i>Recover selected signatures</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="offline-tsr-queue-panel" class="alert alert-warning border-0 shadow-sm no-print d-none">
     <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
       <div>
@@ -514,7 +547,7 @@ window.CalibrationReportConfig = {
 @media print{.offline-tsr-notifications,.offline-tsr-modal-notifications{display:none!important;}}
 .offline-tsr-dialog-backdrop{position:fixed;inset:0;z-index:4100;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;padding:18px}.offline-tsr-dialog-backdrop.show{display:flex}.offline-tsr-dialog-box{width:min(470px,100%);background:#fff;border-radius:22px;box-shadow:0 28px 90px rgba(15,23,42,.38);border:1px solid #dbeafe;overflow:hidden;animation:offlineTSRDialogIn .18s ease-out}.offline-tsr-dialog-header{padding:18px 18px 10px;display:flex;gap:12px;align-items:flex-start}.offline-tsr-dialog-icon{width:42px;height:42px;border-radius:16px;background:#eff6ff;color:#0d6efd;display:inline-flex;align-items:center;justify-content:center;font-size:1.05rem;flex:0 0 auto}.offline-tsr-dialog-box.danger .offline-tsr-dialog-icon{background:#fee2e2;color:#b91c1c}.offline-tsr-dialog-box.warning .offline-tsr-dialog-icon{background:#fffbeb;color:#b45309}.offline-tsr-dialog-box.success .offline-tsr-dialog-icon{background:#dcfce7;color:#166534}.offline-tsr-dialog-text{min-width:0;flex:1}.offline-tsr-dialog-title{margin:0;color:#0f172a;font-weight:950;font-size:1.08rem}.offline-tsr-dialog-message{margin-top:5px;color:#475569;font-weight:800;line-height:1.45;white-space:pre-wrap}.offline-tsr-dialog-actions{padding:12px 18px 18px;display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}.tsr-recommended-highlight{outline:3px solid rgba(245,158,11,.8)!important;box-shadow:0 0 0 6px rgba(245,158,11,.18)!important;border-radius:12px;transition:outline .18s ease,box-shadow .18s ease}@keyframes offlineTSRDialogIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}@media(max-width:768px){.offline-tsr-dialog-backdrop{align-items:flex-end;padding:12px}.offline-tsr-dialog-box{width:100%;border-radius:20px}}
 .offline-tsr-page{max-width:1180px;margin:0 auto}.offline-tsr-hero{display:flex;justify-content:space-between;gap:16px;align-items:center;background:#fff;border-radius:22px;padding:18px 20px;margin-bottom:16px;box-shadow:0 8px 28px rgba(15,23,42,.07)}.offline-tsr-eyebrow{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.08em}.offline-tsr-hero-actions{display:flex;gap:8px;flex-wrap:wrap}.offline-tsr-schedule-picker-card{border-left:5px solid #0d6efd}.schedule-picker-selected{border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.schedule-picker-title{font-weight:900;color:#0f172a}.schedule-picker-meta{font-size:.82rem;color:#475569}.tsr-schedule-coverage-panel{border:1px solid #bfdbfe;background:#f8fbff;border-radius:16px;padding:12px}.tsr-schedule-coverage-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.05em}.tsr-schedule-coverage-table{width:100%;border-collapse:collapse;font-size:.78rem}.tsr-schedule-coverage-table th,.tsr-schedule-coverage-table td{border:1px solid #bfdbfe;padding:6px 8px;text-align:left;vertical-align:top}.tsr-schedule-coverage-table th{background:#e7f1ff;color:#334155;font-weight:900}.standalone-pill{display:inline-flex;align-items:center;background:#e7f5ff;color:#0d6efd;border:1px solid #bfdbfe;border-radius:999px;padding:10px 14px;font-weight:900}.tsr-list-box{border:1px solid #e5e7eb;border-radius:14px;min-height:46px;padding:8px;background:#f8fafc}.tsr-list-item{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px 10px;margin-bottom:6px}.tsr-action-text{flex:1;min-width:0;white-space:pre-wrap;word-break:break-word}.tsr-action-controls{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}.tsr-action-controls .btn{font-weight:800}.tsr-chip-box{display:flex;gap:6px;flex-wrap:wrap}.tsr-chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#e7f1ff;border:1px solid #bfdbfe;color:#0d6efd;padding:6px 10px;font-size:.82rem;font-weight:800}.tsr-chip button{border:0;background:transparent;color:#0d6efd;font-weight:900}.tsr-parts-grid{display:grid;grid-template-columns:80px 1fr 1.5fr 70px 1fr;gap:6px;align-items:center}.tsr-parts-header{font-size:.72rem;text-transform:uppercase;font-weight:900;color:#64748b;margin-bottom:6px}.tsr-part-row{margin-bottom:6px}.signature-canvas{display:block;width:100%;height:min(48vh,430px);min-height:340px;border:2px dashed #94a3b8;border-radius:18px;background:#fff;touch-action:none}.tsr-saved-signature-panel{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:16px;padding:12px}.tsr-saved-signature-copy{min-width:0}.schedule-picker-open-btn{text-align:left;justify-content:flex-start;display:flex;align-items:center}.standalone-schedule-card-list{display:grid;gap:10px}.standalone-schedule-card{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:12px;box-shadow:0 6px 18px rgba(15,23,42,.05);cursor:pointer;transition:.15s ease}.standalone-schedule-card:hover{border-color:#0d6efd;transform:translateY(-1px);box-shadow:0 10px 24px rgba(13,110,253,.12)}.standalone-schedule-card.active{border:2px solid #0d6efd;background:#eff6ff}.standalone-schedule-card-top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.standalone-schedule-client{font-weight:900;color:#0f172a}.standalone-schedule-date{font-size:.76rem;font-weight:900;color:#0d6efd;background:#e7f1ff;border:1px solid #bfdbfe;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-date-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.standalone-schedule-date-chip{border:1px solid #bfdbfe;background:#fff;color:#0d6efd;border-radius:999px;padding:6px 10px;font-size:.78rem;font-weight:900;cursor:pointer}.standalone-schedule-date-chip.active,.standalone-schedule-date-chip:hover{background:#0d6efd;color:#fff}.standalone-schedule-count-badge{font-size:.72rem;font-weight:900;color:#475569;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:999px;padding:4px 8px;white-space:nowrap}.standalone-schedule-product{font-size:.88rem;font-weight:800;color:#334155;margin-top:4px}.standalone-schedule-serial{font-size:.8rem;color:#64748b;margin-top:2px}.standalone-schedule-meta{font-size:.78rem;color:#64748b;margin-top:6px}.standalone-schedule-empty{background:#fff;border:1px dashed #cbd5e1;border-radius:16px;padding:22px;text-align:center;color:#64748b;font-weight:800}.tsr-inline-suggestions{border:1px dashed #bfdbfe;background:#f8fbff;border-radius:14px;padding:8px;display:grid;gap:8px;max-height:260px;overflow:auto}.tsr-schedule-locked{background:#f1f5f9!important;color:#475569!important;border-color:#cbd5e1!important;cursor:not-allowed}.tsr-missing-equipment-entry{background:#fffbeb!important;border-color:#f59e0b!important;box-shadow:0 0 0 3px rgba(245,158,11,.08)}.tsr-schedule-locked-note{font-size:.76rem;color:#64748b;font-weight:800;margin-top:4px}.tsr-knowledge-card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px}.tsr-knowledge-meta{font-size:.76rem;color:#64748b;font-weight:800;margin-bottom:5px}.tsr-knowledge-text{font-size:.86rem;color:#0f172a;white-space:pre-wrap}.tsr-knowledge-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tsr-knowledge-section-title{font-size:.72rem;font-weight:900;text-transform:uppercase;color:#0d6efd;letter-spacing:.04em;margin:2px 0 4px}.tsr-knowledge-quick-header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.76rem;font-weight:900;color:#334155}.tsr-knowledge-quick-context{font-size:.72rem;color:#64748b;font-weight:800}.tsr-knowledge-badges{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}.tsr-knowledge-badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 7px;font-size:.68rem;font-weight:900;border:1px solid #cbd5e1;background:#f8fafc;color:#334155}.tsr-knowledge-badge.primary{border-color:#bfdbfe;background:#e7f1ff;color:#0d6efd}.tsr-knowledge-badge.success{border-color:#bbf7d0;background:#ecfdf5;color:#15803d}.tsr-knowledge-badge.warning{border-color:#fde68a;background:#fffbeb;color:#92400e}.tsr-knowledge-empty{border:1px dashed #cbd5e1;border-radius:14px;padding:12px;text-align:center;color:#64748b;font-weight:800;background:#fff}@media(max-width:768px){.offline-tsr-hero{align-items:stretch;flex-direction:column}.offline-tsr-hero-actions .btn{width:100%}.tsr-list-item{align-items:stretch;flex-direction:column}.tsr-action-controls{justify-content:flex-start}.tsr-action-controls .btn{flex:1 1 auto}.tsr-parts-grid{grid-template-columns:1fr}.tsr-parts-header{display:none}.signature-canvas{height:360px;min-height:320px}.tsr-saved-signature-panel{align-items:stretch;flex-direction:column}.tsr-saved-signature-panel .btn{width:100%}}
- .offline-tsr-drafts-card{border-left:5px solid #f59e0b}.standalone-tsr-drafts-list{display:grid;gap:10px}.standalone-tsr-draft-card{border:1px solid #e5e7eb;background:#fff;border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 6px 18px rgba(15,23,42,.05)}.standalone-tsr-draft-card.active{border-color:#0d6efd;background:#eff6ff}.standalone-tsr-draft-title{font-weight:950;color:#0f172a}.standalone-tsr-draft-meta{font-size:.82rem;color:#64748b;font-weight:800;margin-top:3px}.standalone-tsr-draft-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.standalone-tsr-draft-empty{border:1px dashed #cbd5e1;border-radius:16px;padding:16px;text-align:center;color:#64748b;font-weight:800;background:#f8fafc}@media(max-width:768px){.standalone-tsr-draft-card{align-items:stretch;flex-direction:column}.standalone-tsr-draft-actions .btn{flex:1 1 auto}}
+ .offline-tsr-drafts-card{border-left:5px solid #f59e0b}.standalone-tsr-drafts-list{display:grid;gap:10px}.standalone-tsr-draft-card{border:1px solid #e5e7eb;background:#fff;border-radius:16px;padding:12px;display:flex;gap:12px;align-items:center;justify-content:space-between;box-shadow:0 6px 18px rgba(15,23,42,.05)}.standalone-tsr-draft-card.active{border-color:#0d6efd;background:#eff6ff}.standalone-tsr-draft-title{font-weight:950;color:#0f172a}.standalone-tsr-draft-meta{font-size:.82rem;color:#64748b;font-weight:800;margin-top:3px}.standalone-tsr-draft-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.standalone-tsr-draft-empty{border:1px dashed #cbd5e1;border-radius:16px;padding:16px;text-align:center;color:#64748b;font-weight:800;background:#f8fafc}.tsr-signature-recovery-source{display:flex;align-items:flex-start;gap:10px;border:1px solid #cbd5e1;border-radius:14px;padding:10px 12px;background:#f8fafc;cursor:pointer}.tsr-signature-recovery-source:has(input:checked){border-color:#0d6efd;background:#eff6ff;box-shadow:0 0 0 2px rgba(13,110,253,.12)}.tsr-signature-recovery-source input{margin-top:3px;min-width:18px;min-height:18px}.tsr-signature-recovery-source-copy{min-width:0}.tsr-signature-recovery-source-title{font-weight:900;color:#0f172a}.tsr-signature-recovery-source-meta{font-size:.78rem;color:#64748b;font-weight:700;margin-top:3px;word-break:break-word}@media(max-width:768px){.standalone-tsr-draft-card{align-items:stretch;flex-direction:column}.standalone-tsr-draft-actions{justify-content:stretch}.standalone-tsr-draft-actions .btn{flex:1 1 auto}.tsr-signature-recovery-source{align-items:stretch}}
 .offline-tsr-connection-banner{border-radius:16px;padding:10px 12px;margin-bottom:12px;font-weight:800;display:flex;align-items:center;gap:8px}.offline-tsr-connection-banner.online{background:#ecfdf5;color:#15803d;border:1px solid #bbf7d0}.offline-tsr-connection-banner.offline{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}.offline-tsr-connection-banner.syncing{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}.offline-tsr-connection-banner.failed{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca}.offline-tsr-queue-panel-syncing{border-left:5px solid #0d6efd!important}.offline-tsr-queue-panel-failed{border-left:5px solid #dc3545!important}.offline-tsr-queue-panel-success{border-left:5px solid #198754!important}
 
 /* Offline TSR cleanup helpers */
@@ -734,6 +767,8 @@ let standaloneCurrentDraftId = '';
 let standaloneTSRActiveContextVersion = 0;
 let standaloneTSRLocalSaveChain = Promise.resolve();
 let standaloneTSRAutosavePaused = false;
+let standaloneTSRSignatureRecoveryState = null;
+let standaloneTSRSignatureRecoveryBusy = false;
 let signatureDrawing = false;
 let signatureCanvas, signatureCtx;
 
@@ -3567,8 +3602,21 @@ async function mergeServerStandaloneTSRDrafts(){
     }
 
     const remoteDrafts = Array.isArray(result.drafts) ? result.drafts : [];
+    const pendingServerDraftDeletes = new Set(readStandaloneTSRServerDraftDeleteQueue());
     const localRecords = await loadStandaloneTSRDraftRecordsFromIndexedDB().catch(() => []);
     const localByKey = new Map(localRecords.map(record => [String(record.id || ''), record]));
+    const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
+    if(fallback && isStandaloneTSRDraftMeaningful(fallback)){
+      const fallbackId = String(fallback._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID).trim();
+      if(!localByKey.has(fallbackId)){
+        localByKey.set(fallbackId, {
+          id:fallbackId,
+          payload:Object.assign({}, fallback, { _draft_id:fallbackId }),
+          updated_at:fallback.savedAt || '',
+          source:'localstorage'
+        });
+      }
+    }
     const remoteKeys = new Set(remoteDrafts.map(draft => String(draft.draft_key || draft.id || '')));
 
     for(const localRecord of localRecords){
@@ -3583,6 +3631,10 @@ async function mergeServerStandaloneTSRDrafts(){
     for(const remote of remoteDrafts){
       const draftKey = String(remote.draft_key || remote.id || '').trim();
       if(!draftKey) continue;
+      // A successful final save clears the device copy first and queues this account-draft
+      // deletion when the network is unavailable or the delete request fails. Do not hydrate
+      // that stale signed draft back into recovery while the deletion is being retried.
+      if(pendingServerDraftDeletes.has(draftKey)) continue;
       const local = localByKey.get(draftKey);
       const localTimestamp = parseOfflineTSRDate(local?.updated_at || local?.payload?.savedAt);
       const remoteTimestamp = parseOfflineTSRDate(remote.updated_at || remote.device_updated_at);
@@ -3594,11 +3646,22 @@ async function mergeServerStandaloneTSRDrafts(){
         continue;
       }
 
-      const payload = Object.assign({}, remote.payload || {}, {
+      const remotePayload = Object.assign({}, remote.payload || {});
+      const remoteContextPayload = Object.assign({}, remotePayload, {
+        schedule_id: remote.schedule_id || remotePayload.schedule_id || remotePayload.selectedScheduleId || '',
+        'tsr-service-date': remote.service_date || remotePayload['tsr-service-date'] || '',
+        'tsr-customer-name': remote.client_name || remotePayload['tsr-customer-name'] || ''
+      });
+      const mergedRemotePayload = mergeStandaloneTSRSignaturesFromLocal(
+        remoteContextPayload,
+        local?.payload || {}
+      );
+      const payload = Object.assign({}, remotePayload, {
         _draft_id: draftKey,
         _server_draft_attachment_count: Number(remote.attachment_count || 0),
         _server_draft_attachment_names: Array.isArray(remote.attachment_names) ? remote.attachment_names : [],
-        attachments: local?.payload?.attachments || []
+        attachments: local?.payload?.attachments || [],
+        signatures: mergedRemotePayload.signatures || remotePayload.signatures || {}
       });
       const record = {
         id: draftKey,
@@ -4023,6 +4086,479 @@ async function getStandaloneTSRDraftRecords(){
   return records.sort((a,b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
 }
 
+function getStandaloneTSRSignatureRecoveryPayload(source){
+  if(source?.payload && typeof source.payload === 'object') return source.payload;
+  return source && typeof source === 'object' ? source : {};
+}
+
+function getStandaloneTSRSignatureRecoveryContext(source){
+  const payload = getStandaloneTSRSignatureRecoveryPayload(source);
+  const selected = payload.selectedSchedule && typeof payload.selectedSchedule === 'object'
+    ? payload.selectedSchedule
+    : (source?.selectedSchedule && typeof source.selectedSchedule === 'object' ? source.selectedSchedule : {});
+  const scheduleId = [
+    source?.shift_id,
+    source?.schedule_id,
+    source?.selected_schedule_id,
+    payload.schedule_id,
+    payload.selectedScheduleId,
+    selected.id,
+    selected.schedule_id,
+    selected.shift_id
+  ].map(value => String(value || '').trim()).find(Boolean) || '';
+  const runtimeScheduleMatch = scheduleId.match(/^shift::(\d+)::/i);
+  const pendingScheduleMatch = scheduleId.match(/^pending::([^:]+)::/i);
+  const pendingToken = [
+    source?.pending_schedule_token,
+    payload.pending_schedule_token,
+    selected.pending_schedule_token,
+    pendingScheduleMatch?.[1]
+  ].map(value => String(value || '').trim()).find(Boolean) || '';
+  const date = String(
+    source?.service_date ||
+    payload['tsr-service-date'] ||
+    selected.date_iso ||
+    selected.start_date ||
+    selected.date_label ||
+    ''
+  ).trim().slice(0, 10);
+  const clientId = [source?.client_id, payload.client_id, selected.client_id]
+    .map(value => String(value || '').trim()).find(Boolean) || '';
+  const clientName = String(
+    source?.client_name ||
+    payload['tsr-customer-name'] ||
+    selected.client_name ||
+    ''
+  ).trim();
+  const schedule = Object.assign({}, selected, {
+    id: selected.id || (/^\d+$/.test(scheduleId) ? scheduleId : ''),
+    schedule_id: selected.schedule_id || scheduleId,
+    shift_id: selected.shift_id || scheduleId,
+    pending_schedule_token: selected.pending_schedule_token || pendingToken,
+    date_iso: selected.date_iso || date,
+    date_label: selected.date_label || date,
+    client_id: selected.client_id || clientId,
+    client_name: selected.client_name || clientName,
+    task: selected.task || payload.task || '',
+    product_name: selected.product_name || payload['tsr-equipment-model'] || '',
+    product_id: selected.product_id || payload['tsr-serial-no'] || '',
+    time_start: selected.time_start || payload['tsr-time-started'] || '',
+    time_end: selected.time_end || payload['tsr-time-finished'] || ''
+  });
+  return {
+    scheduleId,
+    realScheduleId: /^\d+$/.test(scheduleId) ? scheduleId : (runtimeScheduleMatch?.[1] || ''),
+    pendingToken,
+    date,
+    clientId,
+    clientName,
+    schedule
+  };
+}
+
+function standaloneTSRRecoveryDatesMatch(left, right){
+  const a = String(left?.date || '').trim();
+  const b = String(right?.date || '').trim();
+  return !a || !b || a === b;
+}
+
+function standaloneTSRRecoverySchedulesMatch(left, right){
+  const a = left || {};
+  const b = right || {};
+  if(!standaloneTSRRecoveryDatesMatch(a, b)) return false;
+  if(a.pendingToken || b.pendingToken){
+    return Boolean(a.pendingToken && b.pendingToken && a.pendingToken === b.pendingToken);
+  }
+  if(a.realScheduleId || b.realScheduleId){
+    return Boolean(a.realScheduleId && b.realScheduleId && a.realScheduleId === b.realScheduleId);
+  }
+  if(a.scheduleId && b.scheduleId && a.scheduleId === b.scheduleId) return true;
+  if(a.schedule && b.schedule){
+    if(a.scheduleId && isSameScheduleSelection(a.scheduleId, b.schedule)) return true;
+    if(b.scheduleId && isSameScheduleSelection(b.scheduleId, a.schedule)) return true;
+  }
+  const aUid = a.schedule ? buildStableScheduleOptionUid(a.schedule) : '';
+  const bUid = b.schedule ? buildStableScheduleOptionUid(b.schedule) : '';
+  return Boolean(aUid && bUid && aUid === bUid);
+}
+
+function standaloneTSRRecoveryClientsMatch(left, right){
+  const a = left || {};
+  const b = right || {};
+  if(a.clientId && b.clientId) return a.clientId === b.clientId;
+  const aName = normalizeStandaloneDraftComparable(a.clientName);
+  const bName = normalizeStandaloneDraftComparable(b.clientName);
+  return Boolean(aName && bName && aName === bName);
+}
+
+function standaloneTSRRecoveryContextsMatch(left, right){
+  return standaloneTSRRecoverySchedulesMatch(left, right) && standaloneTSRRecoveryClientsMatch(left, right);
+}
+
+function getStandaloneTSRRecoverySignatures(source){
+  const payload = getStandaloneTSRSignatureRecoveryPayload(source);
+  const raw = payload.signatures && typeof payload.signatures === 'object'
+    ? payload.signatures
+    : (source?.signatures && typeof source.signatures === 'object' ? source.signatures : {});
+  const normalize = value => {
+    const text = String(value || '').trim();
+    return /^data:image\//i.test(text) && text.includes(',') ? text : '';
+  };
+  return {
+    serviced: normalize(raw.serviced),
+    acknowledged: normalize(raw.acknowledged)
+  };
+}
+
+function filterStandaloneTSRSignatureRecoveryCandidates(target, candidates){
+  const targetId = String(target?.id || target?.draft_id || '').trim();
+  const targetContext = getStandaloneTSRSignatureRecoveryContext(target);
+  return (Array.isArray(candidates) ? candidates : []).filter(candidate => {
+    const candidateId = String(candidate?.id || candidate?.source_id || '').trim();
+    if(targetId && candidateId && targetId === candidateId) return false;
+    if(!isStandaloneTSRUnfinishedSignatureRecoverySource(candidate, candidate?.source || '')) return false;
+    const signatures = getStandaloneTSRRecoverySignatures(candidate);
+    if(!signatures.serviced && !signatures.acknowledged) return false;
+    return standaloneTSRRecoveryContextsMatch(targetContext, candidate.context || getStandaloneTSRSignatureRecoveryContext(candidate));
+  });
+}
+
+function mergeStandaloneTSRRecoverySignatures(current, candidate, requestedTargets=['serviced','acknowledged']){
+  const currentSignatures = current && typeof current === 'object' ? current : {};
+  const candidateSource = candidate && typeof candidate === 'object' && candidate.signatures
+    ? candidate
+    : { signatures: candidate || {} };
+  const candidateSignatures = getStandaloneTSRRecoverySignatures(candidateSource);
+  const merged = Object.assign({}, currentSignatures);
+  (Array.isArray(requestedTargets) ? requestedTargets : []).forEach(target => {
+    if(!['serviced','acknowledged'].includes(target)) return;
+    if(String(merged[target] || '').trim()) return;
+    if(candidateSignatures[target]) merged[target] = candidateSignatures[target];
+  });
+  return merged;
+}
+
+function mergeStandaloneTSRSignaturesFromLocal(remotePayload, localPayload){
+  const remote = Object.assign({}, remotePayload || {});
+  const local = localPayload && typeof localPayload === 'object' ? localPayload : {};
+  // A corrected TSR intentionally clears the old acknowledgement. Keep that reset authoritative;
+  // only unfinished local/account drafts remain eligible for the explicit recovery action below.
+  if(remote.parent_submission_id || remote._revision_of_submission_id || remote.revision_reason){
+    return remote;
+  }
+  if(!standaloneTSRRecoveryContextsMatch(
+    getStandaloneTSRSignatureRecoveryContext(remote),
+    getStandaloneTSRSignatureRecoveryContext(local)
+  )){
+    return remote;
+  }
+  remote.signatures = mergeStandaloneTSRRecoverySignatures(
+    remote.signatures || {},
+    { signatures: local.signatures || {} },
+    ['serviced','acknowledged']
+  );
+  return remote;
+}
+
+function isStandaloneTSRUnfinishedSignatureRecoverySource(source, sourceType=''){
+  const payload = getStandaloneTSRSignatureRecoveryPayload(source);
+  const status = String(source?.status || payload.status || '').trim().toLowerCase();
+  const phase = String(source?.sync_phase || payload.sync_phase || '').trim().toLowerCase();
+  if(['completed','complete','synced','finalized'].includes(status)) return false;
+  if(['complete','completed','finalized'].includes(phase)) return false;
+  if(payload._final_save_completed_at || payload._finalized_at || payload._completed_at) return false;
+  if(sourceType === 'local_queue'){
+    // Once the server has a submission id, the core TSR is already completed. Any remaining
+    // queue work is attachment delivery and must never become a signature recovery source.
+    if(source?.server_submission_id || source?.server_result?.submission_id) return false;
+    if(source?.retryable === false && status !== 'pending') return false;
+    return status === '' || status === 'pending';
+  }
+  return true;
+}
+
+function buildStandaloneTSRSignatureRecoveryCandidate(source, sourceType, metadata={}){
+  const payload = getStandaloneTSRSignatureRecoveryPayload(source);
+  const signatures = getStandaloneTSRRecoverySignatures(source);
+  let sourceLabel = metadata.source_label || '';
+  if(!sourceLabel){
+    sourceLabel = sourceType === 'local_draft' ? 'Saved device draft'
+      : sourceType === 'local_queue' ? 'Queued offline TSR'
+      : sourceType === 'localstorage' ? 'Device fallback copy'
+      : sourceType === 'server_draft' ? 'Account backup draft'
+      : 'Saved unfinished TSR draft';
+  }
+  return {
+    id: String(metadata.id || source?.id || source?.submission_id || '').trim() || `${sourceType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    source: sourceType,
+    sourceLabel,
+    payload,
+    context: getStandaloneTSRSignatureRecoveryContext(source),
+    signatures
+  };
+}
+
+async function collectStandaloneTSRSignatureCandidates(targetRecord){
+  const candidates = [];
+  const warnings = [];
+  const addCandidate = (source, sourceType, metadata={}) => {
+    if(!isStandaloneTSRUnfinishedSignatureRecoverySource(source, sourceType)) return;
+    const candidate = buildStandaloneTSRSignatureRecoveryCandidate(source, sourceType, metadata);
+    if(candidate.signatures.serviced || candidate.signatures.acknowledged) candidates.push(candidate);
+  };
+
+  try{
+    const localRecords = await loadStandaloneTSRDraftRecordsFromIndexedDB();
+    localRecords.forEach(record => addCandidate(
+      record,
+      record?.source === 'server_draft' ? 'server_draft' : 'local_draft',
+      { id:record.id }
+    ));
+  }catch(err){
+    warnings.push('Saved device drafts were unavailable while searching.');
+  }
+
+  try{
+    const queue = await loadOfflineTSRQueueStore();
+    queue.forEach(item => addCandidate(item, 'local_queue', { id:item.id }));
+  }catch(err){
+    warnings.push('Queued offline TSRs were unavailable while searching.');
+  }
+
+  try{
+    const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
+    if(fallback) addCandidate(fallback, 'localstorage', { id:fallback._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID });
+  }catch(err){
+    warnings.push('The device fallback copy was unavailable while searching.');
+  }
+
+  warnings.push('Only unfinished device drafts, account backups, and genuinely pending unsent TSRs were searched. Completed online TSRs and revision history are not recovery sources.');
+
+  return {
+    candidates: filterStandaloneTSRSignatureRecoveryCandidates(targetRecord, candidates),
+    warnings
+  };
+}
+
+function getStandaloneTSRSignatureRecoveryMissingTargets(data){
+  const signatures = getStandaloneTSRRecoverySignatures(data);
+  return ['serviced','acknowledged'].filter(target => !signatures[target]);
+}
+
+function standaloneTSRSignatureRecoveryStateIsActive(state=standaloneTSRSignatureRecoveryState){
+  return Boolean(
+    state &&
+    state.contextVersion === standaloneTSRActiveContextVersion &&
+    String(state.draftId || '') === String(standaloneCurrentDraftId || '')
+  );
+}
+
+function closeStandaloneTSRSignatureRecovery(){
+  standaloneTSRSignatureRecoveryState = null;
+  standaloneTSRSignatureRecoveryBusy = false;
+  const modalEl = document.getElementById('tsrSignatureRecoveryModal');
+  if(modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
+}
+
+function updateStandaloneTSRSignatureRecoveryApplyState(){
+  const state = standaloneTSRSignatureRecoveryState;
+  const applyButton = document.getElementById('tsr-signature-recovery-apply');
+  if(!applyButton) return;
+  const requestedTargets = Array.from(document.querySelectorAll('input[name="tsr-signature-recovery-target"]:checked'))
+    .map(input => input.value)
+    .filter(target => ['serviced','acknowledged'].includes(target));
+  const sourceId = document.querySelector('input[name="tsr-signature-recovery-source"]:checked')?.value || '';
+  const source = state?.candidates?.find(candidate => candidate.id === sourceId);
+  const available = source ? getStandaloneTSRRecoverySignatures(source) : {};
+  applyButton.disabled = Boolean(
+    standaloneTSRSignatureRecoveryBusy ||
+    !requestedTargets.length ||
+    !source ||
+    requestedTargets.some(target => !available[target])
+  );
+}
+
+function renderStandaloneTSRSignatureRecoveryModal(){
+  const state = standaloneTSRSignatureRecoveryState;
+  if(!state) return;
+  const contextEl = document.getElementById('tsr-signature-recovery-context');
+  const targetsEl = document.getElementById('tsr-signature-recovery-targets');
+  const sourcesEl = document.getElementById('tsr-signature-recovery-source-list');
+  const noteEl = document.getElementById('tsr-signature-recovery-note');
+  if(contextEl){
+    const context = state.targetContext || {};
+    contextEl.textContent = `Current draft: ${context.clientName || 'Unknown client'} • Schedule ${context.realScheduleId || context.pendingToken || context.date || 'unidentified'}${context.date ? ` • ${context.date}` : ''}`;
+  }
+  if(targetsEl){
+    targetsEl.innerHTML = state.missingTargets.map(target => {
+      const label = target === 'serviced' ? 'Serviced By (engineer)' : 'Acknowledged (client)';
+      return `<label class="form-check tsr-signature-recovery-source"><input class="form-check-input" type="checkbox" name="tsr-signature-recovery-target" id="tsr-signature-recovery-target-${target}" value="${target}" onchange="updateStandaloneTSRSignatureRecoveryApplyState()"><span class="form-check-label fw-bold">${label}</span></label>`;
+    }).join('');
+  }
+  if(sourcesEl){
+    sourcesEl.innerHTML = state.loading
+      ? '<div class="text-muted small fw-bold">Searching this device and unfinished account drafts...</div>'
+      : state.candidates.length
+        ? state.candidates.map(candidate => {
+          const signatures = getStandaloneTSRRecoverySignatures(candidate);
+          const slots = [signatures.serviced ? 'Serviced By' : '', signatures.acknowledged ? 'Acknowledged' : ''].filter(Boolean).join(' + ');
+          const context = candidate.context || {};
+          const detail = [
+            slots ? `Contains: ${slots}` : '',
+            context.clientName ? `Client: ${context.clientName}` : '',
+            context.date ? `Date: ${context.date}` : ''
+          ].filter(Boolean).join(' • ');
+          return `<label class="tsr-signature-recovery-source"><input class="form-check-input" type="radio" name="tsr-signature-recovery-source" value="${escapeAttr(candidate.id)}" onchange="updateStandaloneTSRSignatureRecoveryApplyState()"><span class="tsr-signature-recovery-source-copy"><span class="tsr-signature-recovery-source-title">${escapeHTML(candidate.sourceLabel)}</span><span class="tsr-signature-recovery-source-meta">${escapeHTML(detail)}</span></span></label>`;
+        }).join('')
+        : '<div class="text-muted small fw-bold">No matching saved signatures were found for this schedule and client.</div>';
+  }
+  if(noteEl){
+    const warningText = (state.warnings || []).join(' ');
+    noteEl.textContent = state.loading
+      ? ''
+      : `${state.revisionMode ? 'Corrected TSR mode intentionally cleared the previous client signature. Choose only an unfinished matching saved source. ' : ''}${warningText}`.trim();
+  }
+  updateStandaloneTSRSignatureRecoveryApplyState();
+}
+
+async function beginStandaloneTSRSignatureRecovery(recordId){
+  if(standaloneTSRSignatureRecoveryBusy) return false;
+  const targetId = String(recordId || '').trim();
+  if(!targetId) return false;
+
+  let record = await loadStandaloneTSRDraftRecordById(targetId).catch(() => null);
+  if(!record){
+    const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
+    if(fallback && (targetId === OFFLINE_TSR_ACTIVE_DRAFT_ID || targetId === fallback._draft_id)){
+      record = { id:targetId, payload:Object.assign({}, fallback, { _draft_id:targetId }), source:'localstorage' };
+    }
+  }
+  if(!record?.payload){
+    showTSRStatus('This TSR draft could not be found for signature recovery.', 'danger');
+    return false;
+  }
+  if(String(standaloneCurrentDraftId || '') !== String(record.id || '')){
+    await openStandaloneTSRDraft(record.id);
+    record = await loadStandaloneTSRDraftRecordById(targetId).catch(() => record);
+  }
+  if(String(standaloneCurrentDraftId || '') !== String(record.id || '')){
+    showTSRStatus('The selected TSR draft is no longer the current draft. Open it again before recovering signatures.', 'warning');
+    return false;
+  }
+
+  const currentPayload = collectTSRData();
+  const missingTargets = getStandaloneTSRSignatureRecoveryMissingTargets(currentPayload);
+  if(!missingTargets.length){
+    showTSRStatus('This TSR draft already has both signatures. Nothing needs to be recovered.', 'info');
+    return false;
+  }
+  standaloneTSRSignatureRecoveryState = {
+    draftId:String(record.id),
+    contextVersion:standaloneTSRActiveContextVersion,
+    targetContext:getStandaloneTSRSignatureRecoveryContext(currentPayload),
+    missingTargets,
+    candidates:[],
+    warnings:[],
+    revisionMode:isOnlineTSRRevisionMode(),
+    loading:true
+  };
+  renderStandaloneTSRSignatureRecoveryModal();
+  const modalEl = document.getElementById('tsrSignatureRecoveryModal');
+  if(modalEl){
+    if(!modalEl.dataset.recoveryStateBound){
+      modalEl.addEventListener('hidden.bs.modal', () => {
+        standaloneTSRSignatureRecoveryState = null;
+        standaloneTSRSignatureRecoveryBusy = false;
+      });
+      modalEl.dataset.recoveryStateBound = 'true';
+    }
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+  }
+
+  let result = { candidates:[], warnings:[] };
+  try{
+    result = await collectStandaloneTSRSignatureCandidates({ id:String(record.id), payload:currentPayload });
+  }catch(err){
+    if(!standaloneTSRSignatureRecoveryStateIsActive()) return false;
+    result.warnings = ['Saved signature sources could not be searched on this device.'];
+  }
+  if(!standaloneTSRSignatureRecoveryStateIsActive()) return false;
+  standaloneTSRSignatureRecoveryState.candidates = result.candidates || [];
+  standaloneTSRSignatureRecoveryState.warnings = result.warnings || [];
+  standaloneTSRSignatureRecoveryState.loading = false;
+  renderStandaloneTSRSignatureRecoveryModal();
+  return true;
+}
+
+async function applyStandaloneTSRSignatureRecovery(){
+  const state = standaloneTSRSignatureRecoveryState;
+  if(standaloneTSRSignatureRecoveryBusy || !state) return false;
+  const requestedTargets = Array.from(document.querySelectorAll('input[name="tsr-signature-recovery-target"]:checked'))
+    .map(input => input.value)
+    .filter(target => state.missingTargets.includes(target));
+  const sourceId = document.querySelector('input[name="tsr-signature-recovery-source"]:checked')?.value || '';
+  const candidate = state.candidates.find(item => item.id === sourceId);
+  if(!requestedTargets.length || !candidate){
+    showTSRStatus('Choose at least one missing signature and one matching saved source before recovering.', 'warning');
+    return false;
+  }
+  if(!standaloneTSRSignatureRecoveryStateIsActive()){
+    closeStandaloneTSRSignatureRecovery();
+    showTSRStatus('The current TSR draft changed while signatures were being searched. Nothing was recovered.', 'warning');
+    return false;
+  }
+  const currentData = collectTSRData();
+  if(!standaloneTSRRecoveryContextsMatch(state.targetContext, getStandaloneTSRSignatureRecoveryContext(currentData))){
+    closeStandaloneTSRSignatureRecovery();
+    showTSRStatus('The current TSR schedule or client changed while signatures were being searched. Nothing was recovered.', 'warning');
+    return false;
+  }
+  const currentSignatures = Object.assign({}, currentData.signatures || signatureData || {});
+  const nextSignatures = mergeStandaloneTSRRecoverySignatures(currentSignatures, candidate, requestedTargets);
+  const changedTargets = requestedTargets.filter(target => (
+    !String(currentSignatures[target] || '').trim() && String(nextSignatures[target] || '').trim()
+  ));
+  if(!changedTargets.length){
+    showTSRStatus('The selected source does not contain any of the requested missing signatures.', 'warning');
+    return false;
+  }
+
+  standaloneTSRSignatureRecoveryBusy = true;
+  renderStandaloneTSRSignatureRecoveryModal();
+  const nextPayload = Object.assign({}, currentData, {
+    _draft_id:state.draftId,
+    signatures:nextSignatures
+  });
+  let saved = null;
+  try{
+    saved = await saveStandaloneTSRDraftLocally(nextPayload, { serverSync:'none' });
+  }catch(err){
+    saved = { failed:true, source:'none', storage_error:err?.message || 'draft_storage_unavailable' };
+  }
+  if(!standaloneTSRSignatureRecoveryStateIsActive()){
+    standaloneTSRSignatureRecoveryBusy = false;
+    standaloneTSRSignatureRecoveryState = null;
+    return false;
+  }
+  standaloneTSRSignatureRecoveryBusy = false;
+  if(saved?.failed || saved?.source === 'none'){
+    renderStandaloneTSRSignatureRecoveryModal();
+    showTSRStatus(`Signatures were found from ${candidate.sourceLabel}, but the current draft could not be saved on this device. Keep this tab open and try again.`, 'danger');
+    return false;
+  }
+  signatureData = Object.assign({}, signatureData, nextSignatures);
+  updateSignatureStatuses();
+  closeStandaloneTSRSignatureRecovery();
+  await renderStandaloneTSRDraftPanel();
+  const recoveredLabels = changedTargets.map(target => target === 'serviced' ? 'Serviced By' : 'Acknowledged').join(' and ');
+  const storageNote = saved?.source === 'localstorage'
+    ? ' IndexedDB was unavailable, so the device fallback copy was used.'
+    : '';
+  showTSRStatus(`Recovered ${recoveredLabels} from ${candidate.sourceLabel}. The current TSR draft was saved on this device.${storageNote}`, 'success');
+  return true;
+}
+
 async function renderStandaloneTSRDraftPanel(){
   const list = document.getElementById('standalone-tsr-drafts-list');
   if(!list) return;
@@ -4052,6 +4588,13 @@ async function renderStandaloneTSRDraftPanel(){
     const attachmentNote = remoteAttachmentCount && !normalizeQueuedAttachments(payload.attachments || []).length
       ? `<div class="standalone-tsr-draft-meta text-warning"><i class="fa-solid fa-paperclip me-1"></i>${remoteAttachmentCount} supporting file${remoteAttachmentCount === 1 ? '' : 's'} remain on the original device.</div>`
       : '';
+    const missingSignatureTargets = getStandaloneTSRSignatureRecoveryMissingTargets(payload);
+    const recoveryNote = missingSignatureTargets.length
+      ? `<div class="standalone-tsr-draft-meta text-warning"><i class="fa-solid fa-signature me-1"></i>Missing: ${missingSignatureTargets.map(target => target === 'serviced' ? 'engineer signature' : 'client signature').join(' and ')}</div>`
+      : '';
+    const recoveryAction = missingSignatureTargets.length
+      ? `<button class="btn btn-warning btn-sm fw-bold" type="button" onclick="beginStandaloneTSRSignatureRecovery('${escapeAttr(record.id)}')"><i class="fa-solid fa-signature me-1"></i>Recover available signatures</button>`
+      : '';
     const sourceNote = record.source === 'server_draft'
       ? '<span class="badge text-bg-success ms-1">Account backup</span>'
       : '<span class="badge text-bg-secondary ms-1">Device copy</span>';
@@ -4061,9 +4604,11 @@ async function renderStandaloneTSRDraftPanel(){
         <div class="standalone-tsr-draft-meta">${escapeHTML(subtitle)}</div>
         <div class="standalone-tsr-draft-meta">Last saved: ${escapeHTML(updated)}</div>
         ${attachmentNote}
+        ${recoveryNote}
       </div>
       <div class="standalone-tsr-draft-actions">
         <button class="btn btn-primary btn-sm fw-bold" type="button" onclick="openStandaloneTSRDraft('${escapeAttr(record.id)}')"><i class="fa-solid fa-folder-open me-1"></i>Open</button>
+        ${recoveryAction}
         <button class="btn btn-outline-danger btn-sm fw-bold" type="button" onclick="deleteStandaloneTSRDraft('${escapeAttr(record.id)}')"><i class="fa-solid fa-trash me-1"></i>Delete</button>
       </div>
     </div>`;
@@ -5460,6 +6005,18 @@ async function uploadTSRSupportingAttachments(coreResult, attachments, options={
   return { uploaded, uploadedTokens:[...uploadedTokens], total:normalized.length, certificate };
 }
 
+function stripStandaloneTSRClientSignatureForCompletedQueuePayload(payload){
+  const persisted = Object.assign({}, payload || {});
+  const signatures = persisted.signatures && typeof persisted.signatures === 'object'
+    ? Object.assign({}, persisted.signatures)
+    : null;
+  if(signatures){
+    delete signatures.acknowledged;
+    persisted.signatures = signatures;
+  }
+  return persisted;
+}
+
 async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', options={}){
   await warnOfflineTSRStoragePressure();
   if(!pdfPackage?.blob){
@@ -5478,9 +6035,13 @@ async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', 
   }
   const queuedAttachments = getCurrentTSRQueuedAttachments(preparedPayload);
   const transportPayload = sanitizeTSRPayloadForTransport(preparedPayload);
-  const submissionToken = ensureTSRSubmissionToken(transportPayload.submission_token || options.submissionToken);
-  transportPayload.submission_token = submissionToken;
-  transportPayload.pending_schedule_token = payload?.pending_schedule_token || selectedSchedule?.pending_schedule_token || '';
+  const coreSaveConfirmed = Boolean(options.coreResult?.submission_id);
+  const persistedQueuePayload = coreSaveConfirmed
+    ? stripStandaloneTSRClientSignatureForCompletedQueuePayload(transportPayload)
+    : transportPayload;
+  const submissionToken = ensureTSRSubmissionToken(persistedQueuePayload.submission_token || options.submissionToken);
+  persistedQueuePayload.submission_token = submissionToken;
+  persistedQueuePayload.pending_schedule_token = payload?.pending_schedule_token || selectedSchedule?.pending_schedule_token || '';
   let queueItem = {
     id: `offline-tsr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     submission_token: submissionToken,
@@ -5503,13 +6064,15 @@ async function queueStandaloneTSROffline(payload, pdfPackage, reason='offline', 
     core_saved_at: options.coreResult?.submission_id ? new Date().toISOString() : '',
     server_result: options.coreResult || null,
     sync_phase: options.coreResult?.submission_id ? 'uploading_attachments' : 'waiting',
-    payload: transportPayload
+    payload: persistedQueuePayload
   };
 
   queueItem = await prepareOfflineTSRQueueItemBlobs(queueItem, pdfPackage?.blob || null, queuedAttachments);
   queue.push(queueItem);
   await persistOfflineTSRQueueStore(queue, { requireDurable:true });
-  await saveStandaloneTSRDraftLocally(payload);
+  await saveStandaloneTSRDraftLocally(coreSaveConfirmed
+    ? stripStandaloneTSRClientSignatureForCompletedQueuePayload(payload)
+    : payload);
   return queueItem;
 }
 
@@ -6496,6 +7059,8 @@ async function finishStandaloneTSRFinalSave(state){
     showTSRStatus(`Corrected TSR saved as ${revLabel}.${pdfNote}${equipmentNote} Calendar Send Email will use the latest corrected TSR by default.`, 'success');
     setOnlineTSRRevisionContext(null);
     await clearStandaloneTSRDraftLocally();
+    initializeBlankStandaloneTSR();
+    resetAllInlineTSRKnowledgeSuggestions();
     await renderStandaloneTSRDraftPanel();
     return;
   }

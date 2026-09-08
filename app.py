@@ -15031,6 +15031,23 @@ def online_tsr_has_acknowledged_signature(payload):
     return signature_value.startswith('data:image/') and ',' in signature_value
 
 
+def strip_persisted_online_tsr_client_signature(payload):
+    """Remove only the reusable client signature after the signed PDF is durable.
+
+    The client signature is needed while rendering/validating the final PDF, but the
+    generated PDF is the completed artifact. Persisting the image in submission JSON
+    would turn a completed TSR into a reusable recovery source. Keep every other field,
+    including the engineer signature, untouched.
+    """
+    persisted = dict(payload) if isinstance(payload, dict) else {}
+    signatures = persisted.get('signatures')
+    if isinstance(signatures, dict):
+        signatures = dict(signatures)
+        signatures.pop('acknowledged', None)
+        persisted['signatures'] = signatures
+    return persisted
+
+
 TSR_SUPPORTING_ATTACHMENT_MAX_BYTES = 35 * 1024 * 1024
 TSR_SUPPORTING_ATTACHMENT_MAX_COUNT = 10
 
@@ -15608,7 +15625,10 @@ def save_offline_tsr_online():
         payload['_completed_shift_ids'] = completed_shift_ids
         payload['_completion_scope'] = completion_scope
         payload['_generated_pdf_at'] = get_manila_time().isoformat()
-        submission.payload_json = json.dumps(payload, ensure_ascii=False)
+        submission.payload_json = json.dumps(
+            strip_persisted_online_tsr_client_signature(payload),
+            ensure_ascii=False,
+        )
         submission.status = 'completed'
         db.session.add(ActivityLog(
             user=(getattr(current_user, 'username', '') or submitted_by or 'System').capitalize(),
@@ -15634,7 +15654,10 @@ def save_offline_tsr_online():
             auto_captured_contact_emails = list(dict.fromkeys(direct_contact_emails + legacy_contact_emails))
             if auto_captured_contact_emails:
                 payload['_auto_captured_contact_emails'] = auto_captured_contact_emails
-                submission.payload_json = json.dumps(payload, ensure_ascii=False)
+                submission.payload_json = json.dumps(
+                    strip_persisted_online_tsr_client_signature(payload),
+                    ensure_ascii=False,
+                )
                 db.session.commit()
         except Exception as contact_capture_error:
             db.session.rollback()
@@ -17441,6 +17464,11 @@ def revise_online_tsr_submission(submission_id):
             'status': 'error',
             'message': 'Serviced By signature is required before saving the corrected TSR.'
         }), 400
+    if not online_tsr_has_acknowledged_signature(payload):
+        return jsonify({
+            'status': 'error',
+            'message': 'Acknowledged By client signature is required before saving the corrected TSR.'
+        }), 400
 
     submission_token = normalize_online_tsr_submission_token(
         payload.get('submission_token') or
@@ -17624,7 +17652,10 @@ def revise_online_tsr_submission(submission_id):
         payload['_pdf_source'] = pdf_source
         payload['_completed_shift_ids'] = completed_shift_ids
         payload['_generated_pdf_at'] = get_manila_time().isoformat()
-        revision.payload_json = json.dumps(payload, ensure_ascii=False)
+        revision.payload_json = json.dumps(
+            strip_persisted_online_tsr_client_signature(payload),
+            ensure_ascii=False,
+        )
         revision.status = 'completed'
         db.session.add(ActivityLog(
             user=(getattr(current_user, 'username', '') or submitted_by or 'System').capitalize(),
@@ -17648,7 +17679,10 @@ def revise_online_tsr_submission(submission_id):
             auto_captured_contact_emails = list(dict.fromkeys(direct_contact_emails + legacy_contact_emails))
             if auto_captured_contact_emails:
                 payload['_auto_captured_contact_emails'] = auto_captured_contact_emails
-                revision.payload_json = json.dumps(payload, ensure_ascii=False)
+                revision.payload_json = json.dumps(
+                    strip_persisted_online_tsr_client_signature(payload),
+                    ensure_ascii=False,
+                )
                 db.session.commit()
         except Exception as contact_capture_error:
             db.session.rollback()
@@ -17765,7 +17799,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v144-tsr-offline-draft-save-order';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v146-tsr-signature-finalization';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
