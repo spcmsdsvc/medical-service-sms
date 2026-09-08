@@ -2,6 +2,75 @@
 
 codex changes - 2026-09-08
 
+- The owner authorized committing and pushing the two TSR packages to `origin/main`, explicitly
+  excluding the database. Publication includes client-signature preservation, independent contact
+  naming, ordered offline draft persistence, focused tests, v144 cache assertions, release metadata,
+  and plan/change records. Local and remote main matched `9ecff4c` before publication. Protected
+  `scheduler.db`, handoffs, `.claude/`, generated output, temporary files, and unrelated artifacts
+  remain excluded. Existing implementation verification applies; remote main and Railway deployment
+  metadata will be checked after push. No manual redeploy or Railway-variable change is included.
+
+- Started the separately authorized TSR follow-up package: keep Service Requested By independent
+  from Acknowledged By after draft reopen, use a neutral contact name when a TSR has only a requester,
+  retain requester-derived email capture, and serialize offline local draft saves so an older snapshot
+  cannot overwrite a newer signed one. Scope excludes schema, historical repair, production/Railway,
+  browser/Codex UI, commit, push, deployment, and formal review; protected artifacts remain owner-owned.
+- Recorded the implementation plan in `plans.md` before source edits. Planned verification uses
+  focused backend and Node runtime fail-first contracts, a fresh external disposable SQLite database,
+  related offline/TSR coverage, syntax/Jinja/JSON/cache/whitespace checks, and isolated full discovery.
+- Updated `app.py` TSR contact capture so Service Requested By no longer supplies the contact name;
+  acknowledged-only captures use the neutral `TSR Contact` label while requester-derived email
+  extraction remains available. The auto-capture path now uses the existing exact client-value
+  normalizer in its client lookup and safe legacy-slot enrichment.
+- Updated `templates/offline_tsr.html` offline draft persistence to snapshot signatures, attachments,
+  selected schedule, and stable draft identity before awaits; serialize IndexedDB/localStorage saves
+  in invocation order; recover after a failed local write; keep server backup waits outside the local
+  queue; wait for pending local saves before reopening; and protect active draft id/attachments from
+  completion of another draft's save. Existing schedule-change and corrected-TSR signature resets
+  remain unchanged.
+- Added `tests/test_tsr_offline_followup.py` runtime/source contracts for distinct requester and
+  acknowledger names, requester-only neutral contact capture, requester email capture, overlapping
+  signed saves, failed-save recovery, save/reopen signature restoration, and cross-draft state safety.
+  Final follow-up coverage passed **12/12**; existing TSR contact coverage passed **16/16**; related
+  offline/TSR coverage passed **201/201**. The unchanged-source fail-first checkpoint was **10 tests:
+  1 passed, 5 failed, 0 errors, 4 skipped**.
+- Bumped the embedded service worker to
+  `medical-service-pwa-offline-navigation-v144-tsr-offline-draft-save-order`, updated exact cache
+  assertions, and published the `2026-09-08-tsr-offline-draft-save-order` changelog release item.
+  Isolated full discovery used a fresh external disposable SQLite database and ran **1005 tests:
+  994 passed, 10 known unrelated failures, 0 errors, 1 skipped**: eight Purchase Order setup/
+  rate-limit 429 cases and two Staff Creation fixture/initials cases. In-memory Python AST,
+  Jinja, extracted inline-JavaScript, release JSON (**78 releases, 240 unique items**), exact-cache,
+  and `git diff --check` validations passed. Browser verification remains owner-only; no commit,
+  push, deployment, production/Railway, database operation, or formal review occurred.
+
+- Started the separately authorized Create TSR client-signature preservation package. Selecting a
+  saved client contact or editing the client name, phone, or email now keeps both captured
+  signatures through the existing autosave, Save Draft, and local draft reload paths; schedule
+  changes and corrected TSR revisions retain their established signature resets. No backend,
+  schema, database, artifact-layout, production, Railway, browser, commit, push, or deployment
+  action is in scope. Protected `scheduler.db`, handoffs, `.claude/`, `output/`, `outputs/`, and
+  `tmp/` remain owner-owned and unstaged.
+- Added focused selection, manual-input, and save/reload runtime contracts in
+  `tests/test_tsr_contact_suggestions.py`, and pinned that module to a unique external disposable
+  test database before importing `app.py`. The unchanged-source fail-first checkpoint ran
+  **10 tests: 7 passed, 3 intentional failures, 0 errors, 0 skips**; failures covered the
+  selection invalidation, manual listener invalidation, and old “sign again” behavior.
+- Removed the contact-change client-signature invalidation from `templates/offline_tsr.html`,
+  deleted the unused helper, and changed the applied-contact status to confirm existing
+  signatures were preserved. Bumped the embedded worker marker to
+  `medical-service-pwa-offline-navigation-v143-tsr-contact-signature-preservation`, updated all
+  exact current-cache assertions, added the published `2026-09-08-tsr-contact-signature-preservation`
+  release item, and recorded the approved execution plan in `plans.md`.
+- Final verification passed: focused TSR contact coverage **16/16**, related TSR draft/sync/
+  schedule/notification/artifact coverage **136/136**, and cache/release compatibility coverage
+  **190/190**. Isolated full discovery ran **993 tests: 983 passed, 10 known unrelated failures,
+  0 errors, 1 skipped**; the failures are the existing eight Purchase Order 429 setup/rate-limit
+  cases and two Staff Creation fixture/initials cases. In-memory Python compilation, Jinja and
+  extracted inline-JavaScript syntax checks, release JSON validation (**77 releases, 239 unique
+  items**), and full/scoped `git diff --check` passed. Browser verification remains owner-only;
+  no commit, push, Railway, production, database, or formal review action was performed.
+
 - Committed the 16-file Reimbursement bulk-selection package as `a03c1bd` and recorded its
   execution hash in `plans.md`. Staged whitespace checks passed. This journal-only closeout
   accompanies the authorized push to `origin/main`; protected local artifacts remain unstaged.

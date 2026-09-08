@@ -1,8 +1,10 @@
 """Focused contracts for client-contact suggestions and TSR acknowledgement signatures."""
 
 import json
+import os
 import pathlib
 import subprocess
+import tempfile
 import unittest
 from datetime import datetime, time
 from types import SimpleNamespace
@@ -11,6 +13,12 @@ from uuid import uuid4
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 NODE = pathlib.Path(r'C:\Users\Jonamar\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe')
+
+# Keep the runtime coverage isolated from the protected repository database.  This module
+# creates real Flask/SQLAlchemy fixtures in its route tests, so app.py must be pointed at a
+# disposable external database before it is imported.
+_TEST_DB_PATH = pathlib.Path(tempfile.gettempdir()) / f'medical_service_tsr_contact_{os.getpid()}_{uuid4().hex}.db'
+os.environ.setdefault('MEDICAL_SERVICE_TEST_DB', str(_TEST_DB_PATH))
 
 try:
     import app as app_module
@@ -80,8 +88,20 @@ class TSRContactSuggestionSourceTests(unittest.TestCase):
         self.assertIn("setFieldValue('tsr-acknowledged-by'", apply_fn)
         self.assertIn("setFieldValue('tsr-contact-no'", apply_fn)
         self.assertIn("setFieldValue('tsr-email-add'", apply_fn)
-        self.assertIn("signatureData.acknowledged = ''", apply_fn)
+        self.assertNotIn("signatureData.acknowledged = ''", apply_fn)
+        self.assertNotIn('invalidateAcknowledgedTSRSignature', apply_fn)
+        self.assertIn('Saved client contact applied.', apply_fn)
+        self.assertNotIn('must sign this TSR again', apply_fn)
         self.assertNotIn("getElementById('tsr-requested-by').value", apply_fn)
+
+        schedule_reset = self.tsr_source.split('function clearStandaloneTSRWorkFieldsForScheduleChange(){', 1)[1].split(
+            '\nfunction buildComplaintFromSelectedSchedule', 1
+        )[0]
+        self.assertIn("signatureData = { serviced: '', acknowledged: '' };", schedule_reset)
+        revision_loader = self.tsr_source.split('async function loadOnlineTSRRevisionFromUrl', 1)[1].split(
+            '\nasync function saveStandaloneTSRDraftLocally', 1
+        )[0]
+        self.assertIn("signatureData.acknowledged = '';", revision_loader)
 
     def test_frontend_renders_contacts_after_each_schedule_restore_path(self):
         for function_name in (
@@ -103,12 +123,133 @@ class TSRContactSuggestionSourceTests(unittest.TestCase):
         self.assertIn("target !== 'serviced'", saved_signature)
 
     def test_cache_and_release_markers_are_updated(self):
-        self.assertIn("medical-service-pwa-offline-navigation-v142-reimbursement-bulk-selection", self.app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v144-tsr-offline-draft-save-order", self.app_source)
         for test_name in ('test_layout_sidebar.py', 'test_stock_inventory.py', 'test_timeline_desktop_collapse.py'):
             source = (ROOT / 'tests' / test_name).read_text(encoding='utf-8')
-            self.assertIn('medical-service-pwa-offline-navigation-v142-reimbursement-bulk-selection', source)
+            self.assertIn('medical-service-pwa-offline-navigation-v144-tsr-offline-draft-save-order', source)
+        self.assertIn('2026-09-08-tsr-contact-signature-preservation', self.release_source)
+        self.assertIn('preserves the engineer and client signatures', self.release_source)
         self.assertIn('2026-09-05-tsr-contact-suggestions', self.release_source)
         self.assertIn('per-TSR client signing', self.release_source)
+
+    @unittest.skipUnless(NODE.exists(), f'Node runtime unavailable at {NODE}')
+    def test_node_manual_contact_edits_preserve_signatures_and_autosave(self):
+        listener = (
+            "document.querySelectorAll('.tsr-field').forEach(el=>el.addEventListener('input',()=>{"
+            + self.tsr_source.split("document.querySelectorAll('.tsr-field').forEach(el=>el.addEventListener('input',()=>{", 1)[1]
+            .split("\n  const serviceDateField", 1)[0]
+        )
+        invalidate = ''
+        if 'function invalidateAcknowledgedTSRSignature(' in self.tsr_source:
+            invalidate = (
+                'function invalidateAcknowledgedTSRSignature('
+                + self.tsr_source.split('function invalidateAcknowledgedTSRSignature(', 1)[1]
+                .split('\nfunction updateSignatureStatuses', 1)[0]
+            )
+        script = f"""
+const fieldIds = ['tsr-acknowledged-by', 'tsr-contact-no', 'tsr-email-add'];
+const fields = {{}};
+const listeners = {{}};
+fieldIds.forEach(id => {{
+  fields[id] = {{ id, value: 'changed', addEventListener(type, handler) {{ listeners[id] = handler; }} }};
+}});
+const document = {{
+  querySelectorAll(selector) {{ return fieldIds.map(id => fields[id]); }},
+  getElementById(id) {{ return fields[id] || null; }}
+}};
+let signatureData = {{ serviced: 'engineer-signature', acknowledged: 'client-signature' }};
+let saveCount = 0;
+function saveStandaloneTSRDraft(silent) {{ saveCount += 1; }}
+function updateSignatureStatuses() {{}}
+{invalidate}
+{listener}
+fieldIds.forEach(id => listeners[id]({{ target: fields[id] }}));
+console.log(JSON.stringify({{ signatureData, saveCount }}));
+"""
+        result = subprocess.run([str(NODE), '-e', script], cwd=ROOT, text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout.strip())
+        self.assertEqual(output['signatureData'], {
+            'serviced': 'engineer-signature',
+            'acknowledged': 'client-signature',
+        })
+        self.assertEqual(output['saveCount'], 3)
+
+    @unittest.skipUnless(NODE.exists(), f'Node runtime unavailable at {NODE}')
+    def test_node_save_and_reload_preserves_both_signatures(self):
+        collect = (
+            'function collectTSRData(){'
+            + self.tsr_source.split('function collectTSRData(){', 1)[1]
+            .split('\nconst OFFLINE_TSR_QUEUE_KEY', 1)[0]
+        )
+        apply_draft = (
+            'function applyStandaloneTSRDraftData(data){'
+            + self.tsr_source.split('function applyStandaloneTSRDraftData(data){', 1)[1]
+            .split('\nfunction setOnlineTSRRevisionContext', 1)[0]
+        )
+        script = f"""
+const fields = {{
+  'tsr-acknowledged-by': {{ id: 'tsr-acknowledged-by', value: 'Client' }},
+  'tsr-contact-no': {{ id: 'tsr-contact-no', value: '100' }},
+  'tsr-email-add': {{ id: 'tsr-email-add', value: 'client@example.test' }}
+}};
+const document = {{
+  querySelectorAll(selector) {{ return Object.values(fields); }},
+  getElementById(id) {{ return fields[id] || null; }}
+}};
+const window = {{ calibrationReport: {{ collect() {{ return null; }}, apply() {{}} }} }};
+let signatureData = {{ serviced: 'engineer-signature', acknowledged: 'client-signature' }};
+let standaloneDocuments = [];
+let offlineTSRAttachments = [];
+let selectedStandaloneScheduleId = '';
+let selectedStandaloneScheduleSnapshot = null;
+let standaloneCurrentDraftId = 'draft-1';
+let standaloneTSRActiveContextVersion = 1;
+let standaloneTSRAutosavePaused = false;
+let standaloneScheduleOptions = [];
+let awaitingScheduleRepick = false;
+let onlineTSRRevisionContext = null;
+const activeTSRFilenameTemplate = 'TSR';
+const LOGGED_IN_ENGINEER_NAME = 'Engineer';
+function commitPendingTSRActionInput() {{}}
+function syncActionsText() {{}}
+function syncPartsText() {{}}
+function generateTSRNumber() {{}}
+function getSelectedStandaloneSchedule() {{ return null; }}
+function getParts() {{ return []; }}
+function getStandaloneScheduleRealId() {{ return ''; }}
+function getTSRScheduleCoverageRows() {{ return []; }}
+function selectedScheduleNeedsEquipmentEntry() {{ return false; }}
+function normalizeQueuedAttachments(value) {{ return value || []; }}
+function isSameScheduleSelection() {{ return false; }}
+function getStandaloneScheduleRuntimeId() {{ return ''; }}
+function renderTSRClientContactSuggestions() {{}}
+function renderTSRScheduleCoveragePanel() {{}}
+function addTSRPartRow() {{}}
+function setFieldValue(id, value) {{ if(fields[id]) fields[id].value = value || ''; }}
+function renderDocs() {{}}
+function renderTSRAttachments() {{}}
+function updateSignatureStatuses() {{}}
+function toggleTSROtherCategory() {{}}
+function setStandaloneScheduleLockedFields() {{}}
+function hasStandaloneScheduleSelection() {{ return false; }}
+function updateCreateTSRScheduleGate() {{}}
+function advanceStandaloneTSRActiveContext() {{ standaloneTSRActiveContextVersion += 1; }}
+{collect}
+{apply_draft}
+const persisted = JSON.parse(JSON.stringify(collectTSRData()));
+signatureData = {{ serviced: '', acknowledged: '' }};
+applyStandaloneTSRDraftData(persisted);
+console.log(JSON.stringify({{ persisted: persisted.signatures, restored: signatureData }}));
+"""
+        result = subprocess.run([str(NODE), '-e', script], cwd=ROOT, text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout.strip())
+        self.assertEqual(output['persisted'], {
+            'serviced': 'engineer-signature',
+            'acknowledged': 'client-signature',
+        })
+        self.assertEqual(output['restored'], output['persisted'])
 
     @unittest.skipUnless(NODE.exists(), f'Node runtime unavailable at {NODE}')
     def test_node_contact_selection_maps_only_the_three_intended_fields(self):
@@ -152,7 +293,7 @@ console.log(JSON.stringify({{ applied, count: standaloneTSRClientContactSuggesti
         self.assertEqual(output['fields']['tsr-contact-no']['value'], '100')
         self.assertEqual(output['fields']['tsr-email-add']['value'], 'alice@example.test')
         self.assertEqual(output['fields']['tsr-requested-by']['value'], 'Requester')
-        self.assertEqual(output['signatureData']['acknowledged'], '')
+        self.assertEqual(output['signatureData']['acknowledged'], 'old-client-signature')
         self.assertTrue(output['saved'])
 
 

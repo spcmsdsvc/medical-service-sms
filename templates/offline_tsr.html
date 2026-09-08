@@ -731,6 +731,8 @@ let mySavedSignatureLoadingPromise = null;
 let offlineTSRAttachments = [];
 let onlineTSRRevisionContext = null;
 let standaloneCurrentDraftId = '';
+let standaloneTSRActiveContextVersion = 0;
+let standaloneTSRLocalSaveChain = Promise.resolve();
 let standaloneTSRAutosavePaused = false;
 let signatureDrawing = false;
 let signatureCanvas, signatureCtx;
@@ -1034,13 +1036,12 @@ function renderTSRClientContactSuggestions(schedule){
 function applySuggestedTSRClientContact(index){
   const contact = standaloneTSRClientContactSuggestions[Number(index)];
   if(!contact) return false;
-  signatureData.acknowledged = '';
   setFieldValue('tsr-acknowledged-by', contact.name, true);
   setFieldValue('tsr-contact-no', contact.phone, true);
   setFieldValue('tsr-email-add', contact.email, true);
   updateSignatureStatuses();
   saveStandaloneTSRDraft(true);
-  showTSRStatus('Saved client contact applied. The client must sign this TSR again before final saving.', 'info');
+  showTSRStatus('Saved client contact applied. Existing signatures were preserved.', 'info');
   return true;
 }
 
@@ -1185,7 +1186,12 @@ function selectedScheduleNeedsEquipmentEntry(schedule=null){
   const selected = schedule || getSelectedStandaloneSchedule() || {};
   return !String(selected.product_name || '').trim() || !String(selected.product_id || '').trim();
 }
+function advanceStandaloneTSRActiveContext(){
+  standaloneTSRActiveContextVersion += 1;
+  return standaloneTSRActiveContextVersion;
+}
 function initializeBlankStandaloneTSR(){
+  advanceStandaloneTSRActiveContext();
   standaloneTSRAutosavePaused = true;
   try{
     standaloneCurrentDraftId = '';
@@ -2128,6 +2134,7 @@ async function refreshStandaloneScheduleOptions(manual=false){
   }
 }
 function clearStandaloneTSRWorkFieldsForScheduleChange(){
+  advanceStandaloneTSRActiveContext();
   [
     'tsr-requested-by',
     'tsr-service-category',
@@ -2263,6 +2270,7 @@ function applySelectedStandaloneSchedule(){
   applyScheduleToStandaloneTSR(schedule, true);
 }
 function clearStandaloneScheduleSelection(showMessage=true){
+  advanceStandaloneTSRActiveContext();
   selectedStandaloneScheduleId = '';
   selectedStandaloneScheduleSnapshot = null;
   const select = document.getElementById('tsr-schedule-select');
@@ -3624,10 +3632,10 @@ async function refreshStandaloneTSRDraftPanel(){
   await renderStandaloneTSRDraftPanel();
 }
 
-async function saveStandaloneTSRDraftToIndexedDB(data){
+async function saveStandaloneTSRDraftToIndexedDB(data, { updateActiveState=true } = {}){
   const record = await buildOfflineTSRDraftRecord(data);
   await offlineTSRDBPut(OFFLINE_TSR_DB_STORES.drafts, record);
-  standaloneCurrentDraftId = record.id;
+  if(updateActiveState) standaloneCurrentDraftId = record.id;
   return record;
 }
 
@@ -3715,6 +3723,7 @@ function applyStandaloneTSRDraftData(data){
     return false;
   }
 
+  advanceStandaloneTSRActiveContext();
   standaloneTSRAutosavePaused = true;
   try{
     standaloneCurrentDraftId = String(data._draft_id || data.draft_id || standaloneCurrentDraftId || '').trim();
@@ -3871,38 +3880,54 @@ async function loadOnlineTSRRevisionFromUrl(){
   }
 }
 
-async function saveStandaloneTSRDraftLocally(data, { serverSync='debounced' } = {}){
-  if(!isStandaloneTSRDraftMeaningful(data)){
-    return { skipped:true, reason:'empty_tsr_draft' };
+function captureStandaloneTSRLocalSaveContext(data){
+  // Autosave handlers invoke this before any asynchronous attachment or storage work. Keep the
+  // signatures and attachment list detached from the live form so a later edit cannot change an
+  // earlier save's payload while it is waiting for IndexedDB.
+  const snapshot = Object.assign({}, data || {});
+  snapshot.signatures = Object.assign({}, snapshot.signatures || {});
+  snapshot.attachments = normalizeQueuedAttachments(snapshot.attachments || [])
+    .map(attachment => Object.assign({}, attachment));
+  if(snapshot.selectedSchedule && typeof snapshot.selectedSchedule === 'object'){
+    snapshot.selectedSchedule = Object.assign({}, snapshot.selectedSchedule);
   }
-  await warnOfflineTSRStoragePressure({ silent:true });
+  const draftId = resolveStandaloneTSRDraftId(snapshot);
+  snapshot._draft_id = draftId;
+  return {
+    data:snapshot,
+    draftId,
+    activeDraftId:String(standaloneCurrentDraftId || '').trim(),
+    contextVersion:standaloneTSRActiveContextVersion
+  };
+}
+
+function standaloneTSRLocalSaveContextIsActive(context){
+  if(!context || context.contextVersion !== standaloneTSRActiveContextVersion) return false;
+  if(context.activeDraftId && context.activeDraftId !== context.draftId) return false;
+  const activeDraftId = String(standaloneCurrentDraftId || '').trim();
+  return !activeDraftId || activeDraftId === context.draftId;
+}
+
+function waitForStandaloneTSRLocalSaves(){
+  return standaloneTSRLocalSaveChain.catch(() => null);
+}
+
+async function saveStandaloneTSRDraftLocallyNow(context){
+  const data = context.data;
   let record = null;
   try{
-    record = await saveStandaloneTSRDraftToIndexedDB(data);
-    offlineTSRAttachments = normalizeQueuedAttachments(record.payload?.attachments || offlineTSRAttachments);
-    const mirrorSaved = saveStandaloneTSRDraftToLocalStorageFallback(record.payload || data);
-    const syncResult = serverSync === 'none'
-      ? { skipped:true, reason:'disabled' }
-      : enqueueStandaloneTSRServerDraftSync(record, { immediate:serverSync === 'immediate' });
-    let serverSyncError = null;
-    let resolvedSyncResult = syncResult;
-    if(syncResult && typeof syncResult.then === 'function'){
-      try{
-        resolvedSyncResult = await syncResult;
-      }catch(err){
-        serverSyncError = err;
-        console.warn('[Offline TSR] Immediate server draft backup failed', err);
-      }
+    await warnOfflineTSRStoragePressure({ silent:true });
+    record = await saveStandaloneTSRDraftToIndexedDB(data, { updateActiveState:false });
+    const active = standaloneTSRLocalSaveContextIsActive(context);
+    if(active){
+      standaloneCurrentDraftId = record.id;
+      offlineTSRAttachments = normalizeQueuedAttachments(record.payload?.attachments || offlineTSRAttachments);
     }
-    return Object.assign({}, record, {
-      localstorage_mirror_saved: mirrorSaved,
-      server_sync_result: resolvedSyncResult,
-      server_sync_error: serverSyncError
-    });
+    const mirrorSaved = saveStandaloneTSRDraftToLocalStorageFallback(record.payload || data);
+    return Object.assign({}, record, { localstorage_mirror_saved:mirrorSaved });
   }catch(err){
     console.warn('[Offline TSR DB] IndexedDB draft save failed. Falling back to metadata-only localStorage.', err);
-    const fallbackId = resolveStandaloneTSRDraftId(data);
-    standaloneCurrentDraftId = fallbackId;
+    const fallbackId = context.draftId;
     const payload = Object.assign({}, data || {}, { _draft_id:fallbackId });
     const fallbackSaved = saveStandaloneTSRDraftToLocalStorageFallback(payload);
     if(!fallbackSaved){
@@ -3915,7 +3940,11 @@ async function saveStandaloneTSRDraftLocally(data, { serverSync='debounced' } = 
         updated_at:new Date().toISOString()
       };
     }
-    const fallbackRecord = {
+    if(standaloneTSRLocalSaveContextIsActive(context)){
+      standaloneCurrentDraftId = fallbackId;
+      offlineTSRAttachments = normalizeQueuedAttachments(payload.attachments || offlineTSRAttachments);
+    }
+    return {
       id:fallbackId,
       payload:projectOfflineTSRPayloadForLocalStorage(payload),
       schedule_id:payload.schedule_id || payload.selectedScheduleId || '',
@@ -3925,31 +3954,45 @@ async function saveStandaloneTSRDraftLocally(data, { serverSync='debounced' } = 
       title:getStandaloneTSRDraftTitle(payload),
       subtitle:getStandaloneTSRDraftSubtitle(payload),
       updated_at:new Date().toISOString(),
-      source:'localstorage'
-    };
-    let serverSyncError = null;
-    let serverSyncResult = { skipped:true, reason:'localstorage_fallback' };
-    if(serverSync !== 'none'){
-      const syncResult = enqueueStandaloneTSRServerDraftSync(fallbackRecord, { immediate:serverSync === 'immediate' });
-      if(syncResult && typeof syncResult.then === 'function'){
-        try{
-          serverSyncResult = await syncResult;
-        }catch(syncError){
-          serverSyncError = syncError;
-          console.warn('[Offline TSR] Immediate fallback server draft backup failed', syncError);
-        }
-      }else{
-        serverSyncResult = syncResult;
-      }
-    }
-    return Object.assign({}, fallbackRecord, {
-      id:fallbackId,
+      source:'localstorage',
       attachments_not_durable: normalizeQueuedAttachments(payload.attachments || []).length > 0,
-      storage_error:err?.message || 'indexeddb_unavailable',
-      server_sync_result:serverSyncResult,
-      server_sync_error:serverSyncError
-    });
+      storage_error:err?.message || 'indexeddb_unavailable'
+    };
   }
+}
+
+async function saveStandaloneTSRDraftLocally(data, { serverSync='debounced' } = {}){
+  const context = captureStandaloneTSRLocalSaveContext(data);
+  if(!isStandaloneTSRDraftMeaningful(context.data)){
+    return { skipped:true, reason:'empty_tsr_draft' };
+  }
+
+  // Keep this chain limited to local persistence. Network backup is started only after the local
+  // operation completes, so a slow server never lets an older local snapshot overtake a newer one.
+  const localOperation = standaloneTSRLocalSaveChain
+    .catch(() => null)
+    .then(() => saveStandaloneTSRDraftLocallyNow(context));
+  standaloneTSRLocalSaveChain = localOperation.catch(() => null);
+  const record = await localOperation;
+
+  let serverSyncError = null;
+  let resolvedSyncResult = (record?.failed || record?.source === 'none')
+    ? { skipped:true, reason:'localstorage_unavailable' }
+    : serverSync === 'none'
+    ? { skipped:true, reason:'disabled' }
+    : enqueueStandaloneTSRServerDraftSync(record, { immediate:serverSync === 'immediate' });
+  if(resolvedSyncResult && typeof resolvedSyncResult.then === 'function'){
+    try{
+      resolvedSyncResult = await resolvedSyncResult;
+    }catch(err){
+      serverSyncError = err;
+      console.warn('[Offline TSR] Immediate server draft backup failed', err);
+    }
+  }
+  return Object.assign({}, record, {
+    server_sync_result:resolvedSyncResult,
+    server_sync_error:serverSyncError
+  });
 }
 
 async function clearStandaloneTSRDraftLocally(id=null){
@@ -4028,6 +4071,7 @@ async function renderStandaloneTSRDraftPanel(){
 }
 
 async function openStandaloneTSRDraft(id){
+  await waitForStandaloneTSRLocalSaves();
   let record = null;
   try{
     record = await loadStandaloneTSRDraftRecordById(id);
@@ -7070,12 +7114,6 @@ async function confirmTSRRecommendedDetailsBeforeSave(data){
   return false;
 }
 async function saveSignatureFromModal(){ const target=document.getElementById('signature-target').value; if(!signaturePadHasInk()){ showTSRStatus('Please draw or upload a signature before saving it.', 'danger'); return; } signatureData[target]=await normalizeTSRSignatureDataURL(signatureCanvas.toDataURL('image/png', 1.0)); updateSignatureStatuses(); await saveStandaloneTSRDraft(true); bootstrap.Modal.getInstance(document.getElementById('standaloneSignatureModal')).hide(); }
-function invalidateAcknowledgedTSRSignature(){
-  if(!signatureData.acknowledged) return false;
-  signatureData.acknowledged = '';
-  updateSignatureStatuses();
-  return true;
-}
 function updateSignatureStatuses(){ const servicedStatus=document.getElementById('serviced-signature-status'); const acknowledgedStatus=document.getElementById('acknowledged-signature-status'); if(servicedStatus){ servicedStatus.textContent=signatureData.serviced?'Signature saved locally.':'No signature saved.'; servicedStatus.classList.toggle('text-danger', !signatureData.serviced); servicedStatus.classList.toggle('fw-bold', !signatureData.serviced); } if(acknowledgedStatus){ acknowledgedStatus.textContent=signatureData.acknowledged?'Signature saved locally.':'No signature saved.'; acknowledgedStatus.classList.toggle('text-danger', !signatureData.acknowledged); acknowledgedStatus.classList.toggle('fw-bold', !signatureData.acknowledged); } }
 function escapeHTML(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));} function escapeAttr(s){return escapeHTML(s).replace(/`/g,'&#96;');}
 
@@ -8210,9 +8248,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     updateCreateTSRScheduleGate({ showMessage: !hasStandaloneScheduleSelection() });
   });
   document.querySelectorAll('.tsr-field').forEach(el=>el.addEventListener('input',()=>{
-    if(['tsr-acknowledged-by','tsr-contact-no','tsr-email-add'].includes(el.id)){
-      invalidateAcknowledgedTSRSignature();
-    }
     saveStandaloneTSRDraft(true);
   }));
   const serviceDateField=document.getElementById('tsr-service-date');

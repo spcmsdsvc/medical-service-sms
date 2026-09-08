@@ -120,7 +120,7 @@ class TsrDraftSyncContractTests(unittest.TestCase):
             'Storage Persistence',
         ):
             self.assertIn(marker, self.template_source)
-        self.assertIn('saveStandaloneTSRDraftToIndexedDB(data)', self.template_source)
+        self.assertIn('saveStandaloneTSRDraftToIndexedDB(data,', self.template_source)
         self.assertIn("serverSync:'immediate'", self.template_source)
         self.assertIn('Supporting files remain local to this device', self.app_source)
 

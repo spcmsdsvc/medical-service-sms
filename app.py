@@ -12169,7 +12169,7 @@ def auto_capture_tsr_client_contact_from_payload(shift, payload):
 
     Priority for contact name:
     1. tsr-acknowledged-by (end user / TSR receiver)
-    2. tsr-requested-by
+    2. the neutral ``TSR Contact`` label when the acknowledger is absent
 
     This helper only inserts missing emails for the resolved schedule client. It
     never overwrites existing client/contact data. It also mirrors captured
@@ -12207,13 +12207,13 @@ def auto_capture_tsr_client_contact_from_payload(shift, payload):
             selected_schedule.get('client'),
             selected_schedule.get('customer_name'),
         ]
-        normalized_names = [normalize_text_for_compare(name) for name in name_candidates if clean_str(name)]
+        normalized_names = [normalize_client_exact_duplicate_value(name) for name in name_candidates if clean_str(name)]
         normalized_names = [name for name in normalized_names if name]
         if not normalized_names:
             return None
 
         for client_rec in Client.query.all():
-            client_name_key = normalize_text_for_compare(getattr(client_rec, 'name', '') or '')
+            client_name_key = normalize_client_exact_duplicate_value(getattr(client_rec, 'name', '') or '')
             if client_name_key and client_name_key in normalized_names:
                 return client_rec
         return None
@@ -12273,11 +12273,9 @@ def auto_capture_tsr_client_contact_from_payload(shift, payload):
     raw_contact_name = (
         clean_str(payload.get('tsr-acknowledged-by')) or
         clean_str(payload.get('tsr_acknowledged_by')) or
-        clean_str(payload.get('tsr-requested-by')) or
-        clean_str(payload.get('tsr_requested_by')) or
         ''
     )
-    contact_name = format_tsr_contact_name(raw_contact_name)
+    contact_name = format_tsr_contact_name(raw_contact_name) or 'TSR Contact'
     contact_phone = (
         clean_str(payload.get('tsr-contact-no')) or
         clean_str(payload.get('tsr_contact_no')) or
@@ -12341,7 +12339,7 @@ def auto_capture_tsr_client_contact_from_payload(shift, payload):
         if not client:
             return False
 
-        normalized_contact_name = normalize_text_for_compare(contact_name)
+        normalized_contact_name = normalize_client_exact_duplicate_value(contact_name)
 
         # 1) Same email already in a legacy slot: enrich only blank fields.
         for slot_no in (1, 2, 3):
@@ -12371,7 +12369,7 @@ def auto_capture_tsr_client_contact_from_payload(shift, payload):
                 current_phone = clean_str(getattr(client, phone_field, None))
                 if current_email:
                     continue
-                if normalize_text_for_compare(current_name) != normalized_contact_name:
+                if normalize_client_exact_duplicate_value(current_name) != normalized_contact_name:
                     continue
                 setattr(client, email_field, email_key)
                 if contact_phone and not current_phone:
@@ -12531,8 +12529,6 @@ def save_tsr_payload_contact_to_medical_center(shift, payload, source_label='onl
     contact_name = (
         clean_str(payload.get('tsr-acknowledged-by')) or
         clean_str(payload.get('tsr_acknowledged_by')) or
-        clean_str(payload.get('tsr-requested-by')) or
-        clean_str(payload.get('tsr_requested_by')) or
         'TSR Contact'
     )[:100]
     contact_phone = (
@@ -17769,7 +17765,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v142-reimbursement-bulk-selection';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v144-tsr-offline-draft-save-order';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 

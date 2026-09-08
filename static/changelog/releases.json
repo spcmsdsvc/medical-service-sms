@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-08-tsr-offline-draft-save-order",
+      "release_date": "2026-09-08",
+      "title": "TSR Offline Draft Save Reliability",
+      "summary": "Offline TSR drafts keep their latest signatures and separate requester and acknowledger details.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-08-tsr-offline-draft-save-order-everyone",
+          "category": "Technical Service Reports",
+          "description": "Service Requested By and Acknowledged By remain separate after reopening a draft, while offline autosave preserves the latest signed draft even when local saves overlap or recover from a storage error.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
+      "release_key": "2026-09-08-tsr-contact-signature-preservation",
+      "release_date": "2026-09-08",
+      "title": "TSR Contact Signature Preservation",
+      "summary": "Changing a TSR client contact no longer removes signatures already captured on the draft.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-08-tsr-contact-signature-preservation-everyone",
+          "category": "Technical Service Reports",
+          "description": "Create TSR now preserves the engineer and client signatures when a saved contact is selected or the client name, phone, or email is edited. Autosave, Save Draft, and reopening the draft keep the captured signatures available for final validation.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-08-reimbursement-bulk-selection",
       "release_date": "2026-09-08",
       "title": "Reimbursement Bulk Row Selection",

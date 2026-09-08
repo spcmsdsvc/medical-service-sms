@@ -1,5 +1,265 @@
 # Medical Service SMS — Approved Plans
 
+## Keep TSR requester and acknowledger independent; serialize offline draft saves
+
+**Status:** Executed locally — implementation and verification complete; no commit, push, deployment, or formal review.
+**Approved:** 2026-09-08 — the owner confirmed that Service Requested By and Acknowledged By may be
+different people and authorized preserving signatures during offline draft saves and reloads.
+**Execution authorized:** 2026-09-08 — the owner separately said **“proceed with implementation. do not overengineer”.**
+
+### Context and intended outcome
+
+Users reported that reopening a saved TSR draft can make the person in Service Requested By appear
+as the person who acknowledged the TSR. The contact auto-capture helpers currently fall back from
+`tsr-acknowledged-by` to `tsr-requested-by`, so a requester-only payload is stored as a named client
+contact and can later be applied to the acknowledgement field. Users also reported that an offline
+draft save can remove a signature: asynchronous local saves can finish out of order, allowing an
+older unsigned snapshot to overwrite a newer signed snapshot.
+
+The implementation keeps the two form fields independent, gives requester-only contact captures a
+neutral `TSR Contact` name while preserving valid email extraction, and serializes local draft
+persistence in call order with a snapshot and draft identity captured before any await. Reopening a
+draft waits for pending local writes, and a late write for another active draft cannot replace the
+current form's identity or attachments.
+
+### Decisions and boundaries
+
+1. `auto_capture_tsr_client_contact_from_payload()` and
+   `save_tsr_payload_contact_to_medical_center()` use acknowledged name only; when it is absent they
+   use the existing neutral `TSR Contact` label. Requester fields remain eligible email sources.
+2. `saveStandaloneTSRDraftLocally()` snapshots the payload, signatures, attachments, and stable draft
+   id synchronously, then queues only local IndexedDB/localStorage work in invocation order. Server
+   backup waits remain on the existing independent server-sync chain.
+3. `openStandaloneTSRDraft()` waits for pending local writes before applying the selected record.
+   Local-save completion updates active form state only when its captured active context still matches;
+   opening or starting another draft remains authoritative.
+4. Preserve current schedule-change and corrected-TSR signature resets, final-save validation,
+   attachment handling, server draft routes, and localStorage fallback behavior. No schema, migration,
+   dependency, generalized storage redesign, timestamp reconciliation, historical repair, browser/UI,
+   production, Railway, commit, push, or deployment work is in scope.
+
+### Numbered execution steps
+
+1. **Preflight and record control state.** Read all applicable instructions, the complete change log,
+   current plans and handoffs, Git status, current contact helpers, offline draft persistence paths,
+   focused tests, cache marker, and release format. Protect the dirty `scheduler.db`, handoffs,
+   `.claude/`, `output/`, `outputs/`, `tmp/`, and unrelated worktree changes. Use a unique disposable
+   external SQLite database for runtime Flask fixtures. Done when protected state and current v143
+   behavior are identified before source edits.
+2. **Add fail-first regressions.** Add focused source/runtime coverage for distinct requester and
+   acknowledger names, requester-only neutral contact names in both backend capture helpers, valid
+   requester email capture, overlapping local saves where the newest signed snapshot wins, failed-save
+   recovery allowing the next save, save/reopen persistence, and a late save for another draft leaving
+   the active form unchanged. Run these contracts against the unchanged source and record the
+   intentional red checkpoint before implementing the fix.
+3. **Separate contact identities.** In `app.py`, remove requester-name fallbacks from both contact
+   capture helpers and use `TSR Contact` when no acknowledged name is available. Leave requester email
+   parsing and existing safe insert/enrich behavior unchanged.
+4. **Serialize local draft persistence.** In `templates/offline_tsr.html`, add one page-local local
+   save promise chain and a minimal snapshot/context helper. Refactor the existing local-save body so
+   IndexedDB preparation, write, and localStorage mirror execute in order; recover the chain after a
+   rejected write; keep server backup scheduling/awaits outside this chain; and guard global active
+   form updates by the captured draft/context. Do not change queue storage or attachment schema.
+5. **Protect reopen and existing resets.** Make draft open wait for the local chain before loading and
+   applying a record. Keep schedule-change and corrected-revision signature clearing exactly as their
+   current intentional behavior, and ensure manual Save Draft/autosave still report their existing
+   statuses.
+6. **Refresh delivery records.** Bump the embedded worker marker in `app.py` from v143 to v144 with a
+   descriptive TSR offline-draft serialization suffix; update every exact current-cache assertion;
+   add a published release item in `static/changelog/releases.json`; and preserve the earlier release
+   and plan history.
+7. **Verify and close records.** Run the focused new and existing TSR contact/draft tests, related
+   offline/TSR checks, isolated full unittest discovery with a fresh external disposable database,
+   Python compile/AST, Jinja parsing, extracted inline-JavaScript syntax, release JSON, exact cache,
+   and `git diff --check`. Append factual implementation, fail-first, verification totals, known
+   baseline failures, limitations/deviations, and protected-state status to this plan and the current
+   `changes.md`. Do not use browser/Codex UI actions, commit, push, deploy, or formally review.
+
+### Acceptance criteria
+
+- A TSR reopened from a draft retains distinct Service Requested By and Acknowledged By values.
+- A requester-only contact payload never creates a contact named after the requester; its valid email
+  is still captured under the neutral `TSR Contact` label.
+- Concurrent offline saves preserve the latest signed snapshot, and a failed local write does not
+  block a later save or cause its signature to disappear.
+- Saving and reopening a draft restores both signatures; a completed save for another draft cannot
+  overwrite the active form state.
+- Existing schedule-change and corrected-TSR signature resets and final-save signature requirements
+  remain intact.
+
+### Implementation outcome (2026-09-08)
+
+Implemented the authorized follow-up in `app.py` and `templates/offline_tsr.html`. Both TSR contact
+capture helpers now use the acknowledged name only and use the neutral `TSR Contact` label when it
+is absent; requester fields remain valid email sources. The auto-capture helper also now calls the
+existing exact client-value normalizer instead of its undefined `normalize_text_for_compare`
+reference, allowing the exercised capture path to run without changing its insert/enrich rules.
+
+Offline draft saves now snapshot signatures, attachments, selected schedule, and a stable draft id
+before asynchronous work, serialize local IndexedDB and localStorage persistence in invocation
+order, recover after a rejected local write, and keep server backup waits outside that local chain.
+Opening a draft waits for pending local saves, and completed saves update the active draft id and
+attachments only when their captured draft/context is still active. Schedule-change and corrected
+TSR signature resets remain in place.
+
+Added `tests/test_tsr_offline_followup.py` with backend and controlled-delay Node runtime coverage
+for distinct requester/acknowledger names, requester-only neutral contact capture, requester email
+capture, latest signed snapshot wins, failed-save recovery, save/reopen signature restoration, and
+cross-draft active-state protection. The unchanged-source fail-first checkpoint was **10 tests: 1
+passed, 5 failed, 0 errors, 4 skipped**, with the intentional failures covering the new contact,
+queue, and delivery assertions. Final follow-up coverage passed **12/12**; existing TSR contact
+coverage passed **16/16**; related offline/TSR coverage passed **201/201**.
+
+Bumped the embedded worker marker to
+`medical-service-pwa-offline-navigation-v144-tsr-offline-draft-save-order`, updated exact cache
+assertions, and added the published `2026-09-08-tsr-offline-draft-save-order` release item. The
+isolated full discovery used a fresh external disposable SQLite database and ran **1005 tests:
+994 passed, 10 known unrelated failures, 0 errors, 1 skipped**. The failures were the existing
+eight Purchase Order setup/rate-limit 429 cases and two Staff Creation fixture/initials cases.
+In-memory Python AST compilation for four changed Python files, Jinja parsing, two extracted
+inline-JavaScript syntax checks after literalizing template expressions, release JSON validation
+(**78 releases, 240 unique items**), exact-cache checks, and `git diff --check` passed.
+
+Browser verification remains owner-only. No browser/Codex UI, production, Railway, database
+operation, commit, push, deployment, or formal review action was performed. The pre-existing dirty
+`scheduler.db`, handoff, `.claude/`, `output/`, `tmp/`, and unrelated worktree changes remain
+owner-owned and unstaged.
+
+
+## Preserve the client signature when TSR contact details change
+
+**Status:** In progress — implemented locally; no commit, push, deployment, or formal review.
+**Approved:** 2026-09-08 — the owner approved the client-signature preservation behavior.
+**Execution authorized:** 2026-09-08 — the owner separately said **“PLEASE IMPLEMENT THIS PLAN”**.
+
+### Context and intended outcome
+
+When a user creates a TSR, captures the client's signature, and selects a recorded contact,
+the current page clears `signatureData.acknowledged` before autosaving the changed name, phone,
+and email. The contact-field input listener repeats the same invalidation for manual edits, so a
+Save Draft or autosave persists a draft without the client signature. Preserve both captured
+signatures through saved-contact selection, manual client name/phone/email edits, autosave,
+explicit Save Draft, and draft reload. Previously erased signatures cannot be reconstructed.
+
+### Decisions and boundaries
+
+1. Selecting a recorded contact updates only `tsr-acknowledged-by`, `tsr-contact-no`, and
+   `tsr-email-add`; it preserves both signatures and `tsr-requested-by`, including when the
+   selected contact has a different name.
+2. Manual edits to the client name, phone, or email preserve both signatures while retaining the
+   existing input-driven autosave behavior. The neutral contact-applied message must not tell the
+   user to sign again.
+3. Keep final-save validation requiring both signatures. Keep the existing signature resets when
+   switching schedules and when opening a corrected TSR revision.
+4. Make no API, schema, dependency, database, PDF/artifact-layout, production, Railway, commit,
+   push, deployment, browser, or Codex UI changes. Protected `scheduler.db`, handoffs, `.claude/`,
+   `output/`, `outputs/`, `tmp/`, and unrelated worktree changes remain untouched and unstaged.
+
+### Investigation
+
+- `templates/offline_tsr.html` clears `signatureData.acknowledged` in
+  `applySuggestedTSRClientContact()` and through `invalidateAcknowledgedTSRSignature()` from the
+  `.tsr-field` input listener. Draft collection already stores `signatures:signatureData`, and
+  `applyStandaloneTSRDraftData()` already restores `data.signatures`.
+- `tests/test_tsr_contact_suggestions.py` had a Node contact-selection harness that expected the
+  client signature to become empty; its route fixtures imported `app.py` without selecting an
+  external test database.
+- `app.py` embeds the current worker marker at v142, and related exact-cache tests require the
+  same marker. The release manifest is newest-first and all entries are published records.
+
+### Numbered execution steps
+
+1. **Record authorization and isolate tests.** Read all repository instructions, `changes.md`,
+   current plans, Git state, affected template/tests, worker marker, and release manifest. Point
+   TSR runtime fixtures at a unique disposable `MEDICAL_SERVICE_TEST_DB` outside the repository;
+   confirm protected dirty artifacts remain owner-owned. Done when baseline status and protected
+   paths are recorded before implementation.
+2. **Add fail-first regression contracts.** Update `tests/test_tsr_contact_suggestions.py` so saved
+   contact selection expects the existing client signature, add a Node runtime contract for the
+   manual contact input listener (three saves, signatures retained), and add a save/JSON-reload
+   runtime contract that exercises `collectTSRData()` and `applyStandaloneTSRDraftData()`. Add
+   source assertions that the invalidation helper/calls are absent, the message is neutral, and
+   schedule/revision reset paths remain. Run these contracts against unchanged source and record
+   the intentional failures.
+3. **Implement contact preservation.** In `templates/offline_tsr.html`, remove the client-signature
+   assignment from `applySuggestedTSRClientContact()`, remove the now-unused
+   `invalidateAcknowledgedTSRSignature()` helper and its contact-listener call, retain field
+   mapping, status refresh, and autosave, and change the applied-contact message to state that
+   existing signatures were preserved. Do not alter schedule-change or corrected-TSR reset code.
+4. **Refresh delivery records and cache assertions.** Bump `app.py` from
+   `medical-service-pwa-offline-navigation-v142-reimbursement-bulk-selection` to
+   `medical-service-pwa-offline-navigation-v143-tsr-contact-signature-preservation`. Update every
+   exact current-cache assertion under `tests/`, add the published
+   `2026-09-08-tsr-contact-signature-preservation` release item, and preserve all prior history.
+5. **Verify proportionately.** Run the focused TSR source/Node/runtime tests, related TSR/draft/
+   cache/changelog checks, isolated full unittest discovery with a unique disposable external
+   database, Python compile/AST and Jinja checks, extracted inline JavaScript syntax, release JSON
+   validation, exact-cache checks, and `git diff --check`. Do not use browser/Codex UI actions;
+   browser sign/select/save/reopen verification remains owner-only.
+6. **Complete records and report.** Add factual implementation and verification outcomes to this
+   plan and append the same-task `2026-09-08` bullets to `changes.md`. Report exact pass/fail/
+   skip counts, known unrelated baseline failures, limitations, deviations, and protected-work
+   state. Leave commit, push, deployment, production/database operations, and formal review for
+   separately authorized actions.
+
+### Acceptance criteria
+
+- Saved-contact selection updates name, phone, and email while preserving both signatures and the
+  requester field; a different contact name does not invalidate the existing client signature.
+- Manual client name, phone, and email edits preserve both signatures and still autosave.
+- Autosave, explicit Save Draft, and reopening a saved draft preserve the client signature.
+- An unsigned draft remains unsigned and final-save validation still requires both signatures.
+- Switching schedules and opening a corrected TSR retain their existing signature-reset behavior.
+- Focused and related tests/static checks pass apart from documented unrelated baseline failures;
+  browser desktop/mobile verification remains pending for the owner.
+
+### Implementation outcome (2026-09-08)
+
+Implemented the scoped template fix and focused regression coverage. The contact-selection path
+now keeps `signatureData.acknowledged`, the contact-field listener only autosaves, and the unused
+invalidation helper is removed. The existing schedule-change and corrected-revision reset paths
+remain unchanged. The TSR test module now runs real database fixtures against a unique external
+temporary SQLite database, covers saved-contact selection, manual contact edits, and save/reload
+signature preservation, and all current exact-cache assertions use v143. A published TSR release
+entry was added. Verification totals and any unrelated baseline failures are appended after the
+final checks below; no protected artifact, production state, browser, commit, push, or deployment
+was touched.
+
+### Fail-first checkpoint (2026-09-08)
+
+With the old contact invalidation behavior temporarily restored, the focused source/Node contracts
+ran **10 tests: 7 passed, 3 intentional failures, 0 errors, 0 skips**. The failures were the
+saved-contact selection signature expectation, the manual contact-input signature expectation, and
+the source/message contract requiring removal of the old “sign again” behavior. The temporary old
+behavior was then removed again before final verification.
+
+### Verification outcome (2026-09-08)
+
+- `tests/test_tsr_contact_suggestions.py`: **16 passed, 0 failed, 0 errors, 0 skipped**. This
+  includes saved-contact field mapping, manual name/phone/email input autosave with both signatures
+  retained, JSON save/reload restoration, backend contact projection, final signature validation,
+  and unchanged schedule/revision reset contracts.
+- Related TSR modules (`test_tsr_draft_sync`, `test_tsr_sync_reliability`,
+  `test_tsr_legacy_snapshot_selection`, `test_tsr_notifications`, `test_tsr_schedule_coverage_repair`,
+  `test_online_tsr_numbering`, `test_offline_tsr_pending_schedule`, TSR layout/checkbox/filename/
+  subject/email/calibration modules, and timeline TSR file details): **136 passed**.
+- Cache/release compatibility modules covering the v143 marker and affected existing pages:
+  **190 passed**.
+- Isolated full unittest discovery used a unique external temporary SQLite database and ran
+  **993 tests: 983 passed, 10 known unrelated failures, 0 errors, 1 skipped**. The failures are
+  the existing eight Purchase Order setup/rate-limit (429) cases and two Staff Creation fixture/
+  initials cases; no TSR contact failure was introduced.
+- In-memory Python compilation for 12 changed Python files, Jinja parsing of
+  `templates/offline_tsr.html`, extracted syntax checking of 8 inline JavaScript blocks, release
+  JSON validation (**77 releases, 239 unique items**), and full/scoped `git diff --check` passed.
+
+The final diff is limited to the authorized template behavior, focused tests, current worker-cache
+assertions, release metadata, plan, and change journal. The owner’s dirty `scheduler.db`, handoff,
+`.claude/`, `output/`, `outputs/`, `tmp/`, and unrelated worktree changes remain untouched and
+unstaged. Browser desktop/mobile verification, commit, push, Railway/deployment, production, and
+formal review remain separate owner-authorized actions.
+
+
 ## Reimbursement row selection and bulk deletion
 
 **Status:** Executed — `a03c1bd` on 2026-09-08. The owner separately authorized package-only
