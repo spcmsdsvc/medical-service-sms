@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-08-reimbursement-bulk-selection",
+      "release_date": "2026-09-08",
+      "title": "Reimbursement Bulk Row Selection",
+      "summary": "Reimbursement rows can now be selected and removed together while remaining recoverable.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-08-reimbursement-bulk-selection-everyone",
+          "category": "Reimbursement",
+          "description": "The Reimbursement worksheet now supports labelled desktop and mobile row checkboxes, Select all with partial-selection feedback, and one Delete selected confirmation. Removed rows keep their entered values and remain available through Removed Rows for restoration; calendar schedules and uploaded receipts are unchanged.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-08-calendar-week-navigation",
       "release_date": "2026-09-08",
       "title": "Faster Calendar Week Changes",

@@ -2,6 +2,44 @@
 
 codex changes - 2026-09-08
 
+- The owner authorized committing and pushing only the Reimbursement bulk-selection package
+  to `origin/main`. Publication includes the reimbursement template, focused selection tests,
+  v142 service-worker marker and exact-cache assertions, release entry, and plan/change records.
+  Local and remote main matched `94bcf5a` before publication. Existing verification recorded below
+  applies; protected database, handoffs, generated output, temporary files, and unrelated work
+  remain excluded. Remote main and Railway deployment metadata will be checked after push;
+  no manual redeploy or environment-variable change is included.
+
+- Started the owner-authorized Reimbursement row-selection and bulk-deletion package. The planned
+  change adds synchronized desktop/mobile row checkboxes, Select all with partial-selection state,
+  and one Delete selected confirmation that moves active rows into the existing recoverable Removed
+  Rows list and persists the batch once. Existing amount/remarks inputs, autosave coordination,
+  single-row removal, totals, calendar schedules, package receipts, locked-state handling, and
+  protected dirty artifacts remain in scope only for compatibility and are not redesigned. No
+  commit, push, deployment, database, production, Railway, or browser action is authorized.
+- Added the focused bulk-selection contracts and ran the required unchanged-source fail-first
+  checkpoint: **8 tests: 1 passed, 4 intentional failures, 3 expected extraction errors, 0 skips**.
+- Implemented the Reimbursement selection toolbar and synchronized desktop/mobile checkboxes in
+  `templates/reimbursement.html`. Selection is keyed by existing row keys, supports Select all
+  with native partial state, preserves live amount/remarks/manual-category inputs, and disables
+  controls during locked, loading, busy, row-mutation, bulk-confirmation, and submit states.
+- Added `removeSelectedReimbursementRows()` using one confirmation, a post-dialog context and
+  editability recheck, the existing excluded-row snapshots, one `persistReimbursementRowChange`
+  call, and shared rollback. Successful batches clear selection; cancellation and save failure
+  retain selection; Removed Rows continues to restore saved values. Calendar schedules and package
+  receipts remain unchanged.
+- Bumped the embedded worker to
+  `medical-service-pwa-offline-navigation-v142-reimbursement-bulk-selection`, updated all exact
+  current-cache assertions, added `2026-09-08-reimbursement-bulk-selection` as a published
+  Reimbursement release, and added `tests/test_reimbursement_bulk_selection.py`.
+- Verification passed: final bulk contracts **8/8**; related Reimbursement/design/cache/changelog
+  checks **95 tests: 94 passed, 0 failed, 0 errors, 1 skipped**; exact-cache/theme/layout/TSR
+  compatibility **136/136**; isolated full discovery **991 tests: 980 passed, 10 known baseline
+  failures, 0 errors, 1 skipped** (eight Purchase Order 429 setup/rate-limit and two Staff
+  Creation fixture/initials failures). Python/Jinja/JavaScript/CSS/release/whitespace checks
+  passed. Browser visual verification remains owner-only; no commit, push, deployment, Railway,
+  database, production, or formal review action was performed.
+
 - Committed the 15-file Faster Calendar Week Navigation allowlist as `b678cf7` and recorded its
   execution hash in `plans.md`. Staged whitespace checks passed. This journal-only closeout
   accompanies the authorized push to `origin/main`; protected local artifacts remain unstaged.

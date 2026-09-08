@@ -1,5 +1,140 @@
 # Medical Service SMS — Approved Plans
 
+## Reimbursement row selection and bulk deletion
+
+**Status:** In progress — implementation and local verification complete; the owner authorized
+package-only commit and push on 2026-09-08. Execution hash will be recorded after commit.
+**Approved:** 2026-09-08 — the owner approved the row-selection and bulk-deletion package.
+**Execution authorized:** 2026-09-08 — the owner separately said **“PLEASE IMPLEMENT THIS PLAN”**.
+
+### Context and intended outcome
+
+The Reimbursement worksheet currently exposes one delete action per active row. Add a compact
+selection toolbar and row checkboxes so a user can select several active schedule or manual rows,
+confirm once, and remove them together from the current worksheet. Removed rows remain recoverable
+through the existing Removed Rows panel, with their entered amounts and remarks intact. Calendar
+schedules, package receipts, and the permanent Delete Draft workflow remain separate.
+
+### Decisions and boundaries
+
+1. Add labelled checkboxes beside every active desktop row and mobile card, plus a **Select all**
+   control and **Delete selected (N)** action. Select all covers only rows in the currently loaded
+   reimbursement worksheet. Partial selection is represented with the native indeterminate state.
+2. Keep selection page-local and keyed by the existing `getReimbursementRowKey()` values. Desktop
+   and mobile checkbox copies for the same row are synchronized without rebuilding the row or
+   replacing live amount/remarks controls, so selection never triggers a save or loses input.
+3. Bulk deletion uses the existing `reimConfirmDialog`, live worksheet snapshot, exclusion list,
+   `persistReimbursementRowChange`, save coordinator, and rollback path. All selected rows are
+   moved to Removed Rows and persisted with one draft save. A cancelled confirmation leaves the
+   selection; a successful deletion clears it; a failed save restores both rows and selection.
+4. Selection and deletion are disabled while the worksheet is locked, loading/transiting,
+   submitting, or another row change/bulk action is in progress. After the confirmation waits,
+   recheck the active worksheet context and editability before mutating rows.
+5. Touch only the reimbursement template, focused bulk-selection tests, exact worker-cache
+   assertions, the embedded worker marker in `app.py`, the published release manifest, and
+   `plans.md`/`changes.md`. No API, schema, dependency, tracker page, calendar schedule, receipt,
+   permanent-delete, database, Railway, production, browser, commit, push, or deployment change
+   is authorized in this package. Preserve the existing protected dirty artifacts and unrelated
+   worktree changes.
+
+### Numbered execution steps
+
+1. **Preflight and record control state.** Read the complete applicable instructions, `changes.md`,
+   current plans, dirty Git state, reimbursement template/controllers, row-deletion and autosave
+   tests, current worker marker, cache assertions, and release format. Record this authorized plan
+   and the initial change-log entry before source edits. Done when protected paths and current
+   selection/save/delete/load behavior are identified.
+2. **Add focused fail-first contracts.** Create `tests/test_reimbursement_bulk_selection.py` with
+   source contracts and a small Node runtime harness for row-key selection, desktop/mobile
+   synchronization, select-all/partial/empty states, one confirmation and one save, stale-context
+   and locked/busy guards, cancellation and save-failure selection retention, successful clearing,
+   Removed Rows payload/restore compatibility, the v142 worker marker, and the published release.
+   Run these contracts against the unchanged source and record the intentional failures.
+3. **Add selection markup and state.** In `templates/reimbursement.html`, add the toolbar and
+   accessible controls, page-local selected-key state, checkbox rendering in both desktop and
+   mobile row paths, selection handlers, and a synchronization helper that prunes keys absent from
+   the current active rows. Keep the 15-column table geometry and existing input/remarks handlers.
+4. **Implement one bulk row mutation.** Add `removeSelectedReimbursementRows()` beside the existing
+   single-row removal path. Capture live rows and context before the confirmation, reject empty or
+   busy/locked selections, recheck context/editability after confirmation, move selected rows to
+   `currentReimbursementExcludedRows`, call `persistReimbursementRowChange` once, clear selection
+   only on success, and restore selection with the existing row/value rollback on failure. Reuse
+   the existing confirmation wording that calendar schedules and receipts are not deleted.
+5. **Wire lifecycle and delivery records.** Extend status/busy/submit controls to include selection
+   controls, clear selection on a successful new worksheet load or clear operation, preserve it on
+   cancellation/failure, bump the embedded service worker once from v141 to
+   `medical-service-pwa-offline-navigation-v142-reimbursement-bulk-selection`, update all exact
+   current-cache assertions, and add one published `2026-09-08` Reimbursement release item.
+6. **Self-review and verification.** Run the fail-first checkpoint before implementation, final
+   focused bulk tests, related reimbursement/design/cache/changelog tests, and isolated full
+   unittest discovery with a unique disposable external test database. Run Python compile/AST,
+   Jinja parsing, extracted reimbursement inline-JavaScript syntax, CSS balance, release JSON
+   validation, and `git diff --check`. Browser visual verification remains owner-only under
+   `AGENTS.md`; do not navigate or terminate Codex UI, use browser automation, commit, push,
+   deploy, or perform production/database operations.
+7. **Complete records and report.** Amend this plan with actual files, behavior, exact verification
+   totals, known unrelated baseline failures, deviations, limitations, and protected-worktree
+   confirmation. Leave later publication and formal review for separately authorized actions.
+
+### Acceptance criteria
+
+- Desktop and mobile rows expose usable, labelled selection checkboxes; Select all and individual
+  checkbox changes stay synchronized and show correct checked/indeterminate/disabled states.
+- Delete selected is disabled for zero selection, locked records, loading/transit, submit, or any
+  active row mutation; its label reports the selected count.
+- One confirmation removes all selected active rows in one save request, recalculates totals, and
+  lists the removed snapshots in Removed Rows. Calendar schedules and receipts remain untouched.
+- Live amount/remarks/manual-category values survive selection, confirmation, successful removal,
+  cancellation, and save-failure rollback. Removed Rows restores the same values.
+- A stale worksheet context or changed editability after confirmation aborts without mutation;
+  duplicate bulk actions cannot overlap. Selection is cleared after successful deletion or loading
+  a different worksheet and retained after cancellation/failure.
+- Focused/related tests and static checks pass apart from documented unrelated baseline failures;
+  browser visual checks remain pending for the owner.
+
+### Implementation outcome (2026-09-08)
+
+Implemented the package in `templates/reimbursement.html` and added
+`tests/test_reimbursement_bulk_selection.py`. The worksheet now renders a compact selection
+toolbar, labelled desktop/mobile row checkboxes, synchronized copies for each row, native partial
+Select all feedback, and a count-aware Delete selected button. Selection is held by the existing
+row keys, pruned when active rows change, and does not rebuild or save amount, remarks, or manual
+category inputs.
+
+`removeSelectedReimbursementRows()` snapshots live worksheet values, captures the loaded context,
+confirms once, rechecks context/editability and transition/submit state after the dialog, moves all
+selected rows into the existing excluded-row snapshots, and calls `persistReimbursementRowChange`
+once. Successful removal clears selection; cancellation and save failure preserve it, while the
+existing rollback and Removed Rows restore paths retain entered values. Selection controls are
+disabled during loading, general busy actions, row mutation, bulk confirmation/mutation, submit,
+and locked lifecycle states. The service worker marker is now
+`medical-service-pwa-offline-navigation-v142-reimbursement-bulk-selection`, exact current-cache
+assertions were updated, and the published `2026-09-08-reimbursement-bulk-selection` release item
+was added.
+
+Verification completed:
+
+1. The unchanged-source fail-first checkpoint ran **8 tests: 1 passed, 4 intentional failures,
+   3 expected extraction errors, 0 skips**.
+2. Final bulk-selection contracts passed **8/8**, including selection state, desktop/mobile sync,
+   partial/all/empty states, stale/locked/busy guards, one-save bulk mutation, cancellation, and
+   save-failure rollback selection retention.
+3. Reimbursement/design/cache/changelog related checks passed **95 tests: 94 passed, 0 failed,
+   0 errors, 1 skipped**. The exact-cache/theme/layout/TSR compatibility set passed **136/136**.
+4. Isolated full unittest discovery used a unique disposable external database and completed
+   **991 tests: 980 passed, 10 known baseline failures, 0 errors, 1 skipped**. The failures are
+   the existing eight Purchase Order 429 setup/rate-limit cases and two Staff Creation fixture/
+   initials cases; no new Reimbursement bulk-selection failure occurred.
+5. In-memory Python AST/compile, Jinja parsing, extracted reimbursement inline-JavaScript syntax,
+   CSS brace balance (**383 pairs**), release JSON validation (**76 releases, 238 unique items**),
+   and `git diff --check` passed. Browser desktop/mobile visual verification remains owner-only.
+
+Protected dirty artifacts (`scheduler.db`, handoffs, `.claude/`, `output/`, `outputs/`, `tmp/`,
+and unrelated worktree changes) were not staged, committed, pushed, deployed, or otherwise acted
+on by this package. The plan remains **In progress** until the owner separately authorizes package
+review/publication; no commit or formal review was performed.
+
+
 ## Faster Calendar Week Navigation
 
 **Status:** Executed — `b678cf7` on 2026-09-08. The owner separately authorized package-only

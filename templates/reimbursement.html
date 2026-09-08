@@ -963,6 +963,59 @@
         color: #fff;
     }
 
+    .reim-row-selection-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 0 0 10px;
+        padding: 8px 10px;
+        border: 1px solid var(--app-border, #dbe3ea);
+        border-radius: 10px;
+        background: var(--app-surface-raised, #f8fafc);
+    }
+
+    .reim-row-selection-control,
+    .reim-mobile-select {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 44px;
+        color: var(--app-text, #334155);
+        font-size: 0.82rem;
+        font-weight: 800;
+    }
+
+    .reim-row-select,
+    #reimSelectAllRows {
+        width: 18px;
+        height: 18px;
+        margin: 0;
+        accent-color: var(--app-primary, #198754);
+        cursor: pointer;
+    }
+
+    .reim-row-select:disabled,
+    #reimSelectAllRows:disabled {
+        cursor: not-allowed;
+    }
+
+    .reim-row-selection-status {
+        color: var(--app-muted-text, #64748b);
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+
+    .reim-row-select-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .reim-mobile-select {
+        margin-bottom: 4px;
+    }
+
     .reim-mobile-row-actions {
         display: flex;
         justify-content: flex-end;
@@ -2849,6 +2902,15 @@
             </div>
         </div>
 
+        <div class="reim-row-selection-toolbar" id="reimRowSelectionToolbar" aria-label="Select reimbursement rows">
+            <label class="reim-row-selection-control" for="reimSelectAllRows">
+                <input type="checkbox" id="reimSelectAllRows" onchange="handleReimbursementSelectAllRows(this)">
+                <span>Select all active rows</span>
+            </label>
+            <span class="reim-row-selection-status" id="reimSelectedRowsStatus" aria-live="polite">0 selected</span>
+            <button type="button" class="reim-btn reim-btn-danger-outline" id="reimDeleteSelectedBtn" onclick="removeSelectedReimbursementRows()" disabled>Delete selected (0)</button>
+        </div>
+
         <div class="reim-table-wrap" id="reimTableWrap">
             <table class="reim-table reim-columns-pinned" id="reimExpenseTable" data-column-view="pinned">
                 <thead>
@@ -3114,7 +3176,10 @@
 
     let currentReimbursementRows = [];
     let currentReimbursementExcludedRows = [];
+    let reimbursementSelectedRowKeys = new Set();
     let reimbursementRowChangeBusy = false;
+    let reimbursementBulkDeleteBusy = false;
+    let reimbursementButtonsBusy = false;
     let currentReimbursementId = null;
     window.currentReimbursementId = null;
     let currentReimbursementTotalSummary = null;
@@ -4151,9 +4216,106 @@ function formatExpenseDate(value) {
     return value;
 }
 
+function getReimbursementActiveRowKeys(rows) {
+        return new Set((Array.isArray(rows) ? rows : []).map(function(row) {
+            return String(getReimbursementRowKey(row) || '');
+        }).filter(Boolean));
+    }
+
+    function pruneReimbursementSelectedRowKeys(rows) {
+        const activeKeys = getReimbursementActiveRowKeys(rows);
+        const next = new Set();
+        reimbursementSelectedRowKeys.forEach(function(key) {
+            const normalized = String(key || '');
+            if (activeKeys.has(normalized)) next.add(normalized);
+        });
+        reimbursementSelectedRowKeys = next;
+        return next;
+    }
+
+    function reimbursementSelectionControlsBusy() {
+        return !!(
+            reimbursementRowChangeBusy
+            || reimbursementBulkDeleteBusy
+            || reimbursementButtonsBusy
+            || reimbursementTransitionBusy
+            || reimbursementTransitionPromptBusy
+            || reimbursementSubmitBusy
+        );
+    }
+
+    function syncReimbursementRowSelectionUi() {
+        const activeKeys = getReimbursementActiveRowKeys(currentReimbursementRows);
+        pruneReimbursementSelectedRowKeys(currentReimbursementRows);
+        const total = activeKeys.size;
+        const selected = reimbursementSelectedRowKeys.size;
+        const editable = typeof reimbursementIsEditable === 'function' ? reimbursementIsEditable() : true;
+        const busy = reimbursementSelectionControlsBusy();
+        const selectAll = document.getElementById('reimSelectAllRows');
+        const deleteButton = document.getElementById('reimDeleteSelectedBtn');
+        const status = document.getElementById('reimSelectedRowsStatus');
+
+        if (selectAll) {
+            selectAll.checked = total > 0 && selected === total;
+            selectAll.indeterminate = selected > 0 && selected < total;
+            selectAll.disabled = !editable || busy || total === 0;
+            selectAll.setAttribute('aria-label', total ? `Select all ${total} active reimbursement rows` : 'Select all active reimbursement rows');
+        }
+        if (status) {
+            status.textContent = selected ? `${selected} selected` : '0 selected';
+        }
+        if (deleteButton) {
+            deleteButton.disabled = !editable || busy || selected === 0;
+            deleteButton.textContent = `Delete selected (${selected})`;
+            deleteButton.title = selected
+                ? 'Move selected rows to Removed Rows'
+                : 'Select at least one active reimbursement row';
+        }
+        document.querySelectorAll('.reim-row-select').forEach(function(input) {
+            const key = String(input.dataset.rowKey || '');
+            input.checked = reimbursementSelectedRowKeys.has(key);
+            input.disabled = !editable || busy;
+        });
+    }
+
+    function handleReimbursementRowSelection(input) {
+        if (!input) return;
+        const rowKey = String(input.dataset.rowKey || '');
+        if (!rowKey || !reimbursementIsEditable() || reimbursementSelectionControlsBusy()) {
+            syncReimbursementRowSelectionUi();
+            return;
+        }
+        if (input.checked) {
+            reimbursementSelectedRowKeys.add(rowKey);
+        } else {
+            reimbursementSelectedRowKeys.delete(rowKey);
+        }
+        syncReimbursementRowSelectionUi();
+    }
+
+    function handleReimbursementSelectAllRows(input) {
+        if (!input || !reimbursementIsEditable() || reimbursementSelectionControlsBusy()) {
+            syncReimbursementRowSelectionUi();
+            return;
+        }
+        const activeKeys = getReimbursementActiveRowKeys(currentReimbursementRows);
+        if (input.checked) {
+            activeKeys.forEach(function(key) { reimbursementSelectedRowKeys.add(key); });
+        } else {
+            reimbursementSelectedRowKeys.clear();
+        }
+        syncReimbursementRowSelectionUi();
+    }
+
+    function clearReimbursementRowSelection() {
+        reimbursementSelectedRowKeys.clear();
+        syncReimbursementRowSelectionUi();
+    }
+
 function renderReimbursementRows(rows) {
         currentReimbursementRows = sortReimbursementRows(Array.isArray(rows) ? rows : []);
         rows = currentReimbursementRows;
+        pruneReimbursementSelectedRowKeys(rows);
         applyReimbursementColumnView(reimbursementColumnViewMode, false);
         applyReimbursementZoom(reimbursementZoomLevel, false);
         rows.forEach(function(row) {
@@ -4171,6 +4333,7 @@ function renderReimbursementRows(rows) {
         if (!rows.length) {
             body.innerHTML = '<tr><td colspan="15" class="reim-empty">No active reimbursement rows for this date range.</td></tr>';
             mobile.innerHTML = '<div class="reim-empty">No active reimbursement rows for this date range.</div>';
+            syncReimbursementRowSelectionUi();
             recalculateReimbursementTotals();
             syncReimbursementHorizontalScroll();
             renderRemovedReimbursementRows();
@@ -4186,7 +4349,10 @@ function renderReimbursementRows(rows) {
             return `
                 <tr data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" data-manual="${row.manual ? '1' : '0'}">
                     <td class="reimb-date-cell">
-                        <strong>${reimEscape(formatExpenseDate(row.date))}</strong>
+                        <div class="reim-row-select-wrap">
+                            <input class="reim-row-select" type="checkbox" data-row-key="${reimEscape(rowKey)}" onchange="handleReimbursementRowSelection(this)" aria-label="Select ${reimEscape(row.task || 'reimbursement row')}" ${reimbursementSelectedRowKeys.has(String(rowKey)) ? 'checked' : ''}>
+                            <strong>${reimEscape(formatExpenseDate(row.date))}</strong>
+                        </div>
                         <div class="reim-row-actions">
                             <button type="button" class="reim-row-details-btn" data-row-key="${reimEscape(rowKey)}" onclick="openReimbursementRowDetails(this.dataset.rowKey)" title="View details" aria-label="View details for ${reimEscape(row.task || 'reimbursement row')}" aria-haspopup="dialog"><i class="fa-solid fa-eye"></i><span class="visually-hidden">View details</span></button>
                             <button type="button" class="reim-row-delete-btn" data-row-key="${reimEscape(rowKey)}" onclick="removeReimbursementRow(this.dataset.rowKey)" title="Delete row" aria-label="Delete ${reimEscape(row.task || 'reimbursement row')}"><i class="fa-solid fa-trash"></i></button>
@@ -4215,6 +4381,10 @@ function renderReimbursementRows(rows) {
             const manualBadge = row.manual ? '<span class="reim-manual-badge">Manual</span>' : '';
             return `
                 <div class="reim-mobile-card" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}">
+                    <label class="reim-mobile-select">
+                        <input class="reim-row-select" type="checkbox" data-row-key="${reimEscape(rowKey)}" onchange="handleReimbursementRowSelection(this)" aria-label="Select ${reimEscape(row.task || 'reimbursement row')}" ${reimbursementSelectedRowKeys.has(String(rowKey)) ? 'checked' : ''}>
+                        <span>Select row</span>
+                    </label>
                     <h3>${reimEscape(row.manual ? row.task : (row.client || row.task || 'Schedule'))} ${manualBadge}</h3>
                     <div class="reim-mobile-meta">${reimEscape(formatExpenseDate(row.date))} • ${reimEscape(row.manual ? 'Manual item' : `${row.start_time || ''}-${row.end_time || ''}`)}</div>
                     <div><strong>Task:</strong> ${reimEscape(row.task)}</div>
@@ -4230,6 +4400,7 @@ function renderReimbursementRows(rows) {
                 </div>
             `;
         }).join('');
+        syncReimbursementRowSelectionUi();
         recalculateReimbursementTotals();
         syncReimbursementHorizontalScroll();
         refreshReimbursementReceiptCells();
@@ -4541,6 +4712,7 @@ function renderReimbursementRows(rows) {
             button.disabled = !editable;
             button.style.display = editable ? '' : 'none';
         });
+        syncReimbursementRowSelectionUi();
         renderRemovedReimbursementRows();
         syncReimbursementFocusPanelButtons();
 
@@ -5698,6 +5870,127 @@ function renderReimbursementRows(rows) {
         );
     }
 
+    async function removeSelectedReimbursementRows() {
+        if (
+            reimbursementRowChangeBusy
+            || reimbursementBulkDeleteBusy
+            || reimbursementTransitionBusy
+            || reimbursementTransitionPromptBusy
+            || reimbursementSubmitBusy
+        ) return;
+        if (!guardReimbursementEditableAction('delete selected rows')) return;
+
+        const worksheetRows = snapshotCurrentReimbursementWorksheetRows();
+        const selectedKeys = new Set(Array.from(reimbursementSelectedRowKeys).map(function(key) {
+            return String(key || '');
+        }).filter(Boolean));
+        const selectedRows = worksheetRows.filter(function(row) {
+            return selectedKeys.has(String(getReimbursementRowKey(row) || ''));
+        });
+        if (!selectedRows.length) {
+            clearReimbursementRowSelection();
+            return;
+        }
+
+        const loadedContextKey = reimbursementCurrentContext().key;
+        reimbursementBulkDeleteBusy = true;
+        syncReimbursementRowSelectionUi();
+
+        let confirmed = false;
+        try {
+            confirmed = await reimConfirmDialog({
+                title: 'Delete Selected Reimbursement Rows?',
+                message: `Remove ${selectedRows.length} selected reimbursement row${selectedRows.length === 1 ? '' : 's'} from this draft? Calendar schedules and package receipts will not be deleted. The rows can be restored from Removed Rows.`,
+                confirmText: `Delete ${selectedRows.length} Row${selectedRows.length === 1 ? '' : 's'}`,
+                cancelText: 'Cancel',
+                tone: 'danger',
+                icon: 'trash'
+            });
+        } catch (error) {
+            console.error('[Reimbursement] Bulk row confirmation failed', error);
+            reimAlert(error.message || 'Unable to confirm row deletion.');
+            reimbursementBulkDeleteBusy = false;
+            syncReimbursementRowSelectionUi();
+            return;
+        }
+
+        if (!confirmed) {
+            reimbursementBulkDeleteBusy = false;
+            syncReimbursementRowSelectionUi();
+            return;
+        }
+
+        // The dialog may remain open while another transition or status update
+        // changes the worksheet. Never apply a batch to a different context.
+        if (reimbursementCurrentContext().key !== loadedContextKey) {
+            reimbursementBulkDeleteBusy = false;
+            syncReimbursementRowSelectionUi();
+            reimAlert('The reimbursement worksheet changed before the selected rows could be removed. Please select the rows again.');
+            return;
+        }
+        if (reimbursementTransitionBusy || reimbursementTransitionPromptBusy || reimbursementSubmitBusy) {
+            reimbursementBulkDeleteBusy = false;
+            syncReimbursementRowSelectionUi();
+            reimAlert('The worksheet is busy. Please wait for the current action to finish, then select the rows again.');
+            return;
+        }
+        if (!guardReimbursementEditableAction('delete selected rows')) {
+            reimbursementBulkDeleteBusy = false;
+            syncReimbursementRowSelectionUi();
+            return;
+        }
+
+        const latestRows = snapshotCurrentReimbursementWorksheetRows();
+        const latestSelectedRows = latestRows.filter(function(row) {
+            return selectedKeys.has(String(getReimbursementRowKey(row) || ''));
+        });
+        if (!latestSelectedRows.length) {
+            reimbursementBulkDeleteBusy = false;
+            clearReimbursementRowSelection();
+            return;
+        }
+
+        const previousRows = latestRows.slice();
+        const previousExcludedRows = currentReimbursementExcludedRows.slice();
+        const selectedExcludedKeys = new Set(latestSelectedRows.map(reimbursementExcludedRowKey));
+        currentReimbursementRows = latestRows.filter(function(row) {
+            return !selectedKeys.has(String(getReimbursementRowKey(row) || ''));
+        });
+        currentReimbursementExcludedRows = currentReimbursementExcludedRows
+            .filter(function(row) {
+                return !selectedExcludedKeys.has(reimbursementExcludedRowKey(row));
+            })
+            .concat(latestSelectedRows);
+
+        let saved = false;
+        try {
+            saved = await persistReimbursementRowChange(
+                previousRows,
+                previousExcludedRows,
+                `${latestSelectedRows.length} reimbursement row${latestSelectedRows.length === 1 ? '' : 's'} removed. You can restore them from Removed Rows.`
+            );
+            if (saved) {
+                clearReimbursementRowSelection();
+            } else {
+                // The shared persistence helper restores the live rows and values;
+                // restore the selection as well so the user can retry deliberately.
+                reimbursementSelectedRowKeys = selectedKeys;
+                syncReimbursementRowSelectionUi();
+            }
+        } catch (error) {
+            console.error('[Reimbursement] Bulk row removal failed', error);
+            currentReimbursementRows = previousRows;
+            currentReimbursementExcludedRows = previousExcludedRows;
+            reimbursementSelectedRowKeys = selectedKeys;
+            renderReimbursementRows(currentReimbursementRows);
+            setReimbursementDraftStatus(error.message || 'Unable to remove selected rows.', 'error');
+            reimAlert(error.message || 'Unable to remove selected rows.');
+        } finally {
+            reimbursementBulkDeleteBusy = false;
+            syncReimbursementRowSelectionUi();
+        }
+    }
+
     async function restoreReimbursementRow(rowKey) {
         if (reimbursementRowChangeBusy) return;
         if (!guardReimbursementEditableAction('restore this row')) return;
@@ -5769,19 +6062,22 @@ function renderReimbursementRows(rows) {
     }
 
     function setReimbursementButtonsBusy(isBusy) {
-        ['reimSaveDraftBtn', 'reimDownloadExcelBtn', 'reimClearBtn', 'reimSubmitBtn', 'reimAddManualBtn', 'reimDeleteDraftBtn'].forEach(function(id) {
+        reimbursementButtonsBusy = !!isBusy;
+        ['reimSaveDraftBtn', 'reimDownloadExcelBtn', 'reimClearBtn', 'reimSubmitBtn', 'reimAddManualBtn', 'reimDeleteDraftBtn', 'reimDeleteSelectedBtn'].forEach(function(id) {
             const btn = document.getElementById(id);
             if (btn) btn.disabled = !!isBusy;
         });
         if (!isBusy) {
             applyReimbursementStatusUi();
+        } else {
+            syncReimbursementRowSelectionUi();
         }
     }
 
     function setReimbursementSubmitInputsBusy(isBusy) {
         const controls = document.querySelectorAll(
             '#reimStartDate, #reimEndDate, .reim-amount, .reim-remarks, '
-            + '.reim-manual-category, .reim-row-delete-btn'
+            + '.reim-manual-category, .reim-row-delete-btn, .reim-row-select, #reimSelectAllRows'
         );
         controls.forEach(function(control) {
             if (isBusy) {
@@ -5789,7 +6085,7 @@ function renderReimbursementRows(rows) {
                 control.dataset.reimSubmitBusy = '1';
                 control.dataset.reimSubmitWasDisabled = control.disabled ? '1' : '0';
                 control.dataset.reimSubmitWasReadonly = control.readOnly ? '1' : '0';
-                if (control.matches('select, button, input[type="date"]')) {
+                if (control.matches('select, button, input[type="date"], input[type="checkbox"]')) {
                     control.disabled = true;
                 } else {
                     control.readOnly = true;
@@ -6565,6 +6861,7 @@ async function saveReimbursementDraft(silent, options) {
             lifecycle: currentReimbursementLifecycle,
             receiptsByShift: Object.assign({}, reimbursementReceiptsByShift || {}),
             additionalReceipts: Array.isArray(reimbursementAdditionalReceipts) ? reimbursementAdditionalReceipts.slice() : [],
+            selectedRowKeys: new Set(reimbursementSelectedRowKeys),
             editVersion: reimbursementEditVersion,
             savedEditVersion: reimbursementSavedEditVersion
         };
@@ -6590,6 +6887,7 @@ async function saveReimbursementDraft(silent, options) {
 
         if (reimbursementTransitionBusy) return false;
         reimbursementTransitionBusy = true;
+        syncReimbursementRowSelectionUi();
         reimbursementInvalidatePendingSaves();
         reimbursementEditVersion = 0;
         reimbursementSavedEditVersion = 0;
@@ -6679,6 +6977,7 @@ async function saveReimbursementDraft(silent, options) {
                 setReimbursementDraftStatus('Fresh reimbursement worksheet ready.', '');
             }
 
+            clearReimbursementRowSelection();
             renderReimbursementRows(rows);
             if (draft.exists) {
                 const loadedTotalSummary = applyReimbursementTotalSummary(draft);
@@ -6742,6 +7041,7 @@ async function saveReimbursementDraft(silent, options) {
                 currentReimbursementTotalSummary = previousLoadState.totalSummary;
                 reimbursementReceiptsByShift = previousLoadState.receiptsByShift;
                 reimbursementAdditionalReceipts = previousLoadState.additionalReceipts;
+                reimbursementSelectedRowKeys = new Set(previousLoadState.selectedRowKeys || []);
                 reimbursementEditVersion = previousLoadState.editVersion;
                 reimbursementSavedEditVersion = previousLoadState.savedEditVersion;
                 reimbursementActiveContext = reimbursementCurrentContext();
@@ -6760,6 +7060,7 @@ async function saveReimbursementDraft(silent, options) {
             return false;
         } finally {
             reimbursementTransitionBusy = false;
+            syncReimbursementRowSelectionUi();
         }
     }
 
