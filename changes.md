@@ -2,6 +2,43 @@
 
 codex changes - 2026-09-08
 
+- Started the owner-authorized Calibration Report correction recorded in `plans.md`: generated
+  DOCX Page 2 section 6.7 will print the existing engineer name above the signature image, and
+  newly generated sample/final filenames will omit only the `NCS_` prefix. The scope preserves the
+  supplied DOCX template, existing signature geometry and attachment lifecycle, and excludes
+  historical file renames, database/storage changes, browser/Codex UI, commit, push, deployment,
+  Railway, production, and protected dirty artifacts.
+
+- The planned delivery bump is Calibration Report JavaScript v23 and service-worker
+  `medical-service-pwa-offline-navigation-v148-calibration-report-signature-name-filename`, with
+  focused OOXML/filename tests, release metadata, render verification, and exact test results to
+  be recorded after implementation.
+
+- Implemented the Calibration Report DOCX correction in `static/js/app-calibration-report.js`:
+  Page 2 section 6.7 now prints the normalized service engineer name above the existing signature
+  drawing, with XML escaping and unchanged signature geometry/media handling. Newly generated
+  sample and final filenames now remove only the `NCS_` prefix; existing stored/history files and
+  their metadata were not renamed.
+
+- Updated `templates/offline_tsr.html`, `app.py`, and all exact current-cache assertions for
+  Calibration Report JavaScript v23 and service-worker cache marker
+  `medical-service-pwa-offline-navigation-v148-calibration-report-signature-name-filename`.
+  Added the engineer-facing release entry in `static/changelog/releases.json`; the supplied DOCX
+  template checksum remains unchanged.
+
+- Verification passed: the focused Calibration Report module was **16/16**, the related
+  TSR/offline/attachment/cache set was **344/344**, bundled Node syntax and `app.py` AST checks
+  passed, release JSON/key checks passed, the canonical template SHA-256 matched, and
+  `git diff --check` passed. Isolated full discovery ran **1030 tests: 1019 passed, 10 failed,
+  1 skipped**; the ten failures were unrelated Purchase Order HTTP-429 setup failures (8) and
+  staff-creation test-data/initials assertion failures (2).
+
+- The required DOCX artifact marker ran before QA. A representative generated DOCX was structurally
+  inspected successfully in the writable task QA directory: the engineer name precedes the
+  signature drawing and the signature media/extent remain intact. The bundled DOCX renderer could
+  not produce page images because LibreOffice `soffice.exe` is unavailable, so visual page
+  inspection was not possible; no browser/Codex UI or protected repository artifact was used.
+
 - Committed the verified v147 recovery correction as `5feb5f1` and recorded its execution hash
   in `plans.md`. Staged whitespace checks passed. No database, handoff, generated output, temporary
   artifact, or unrelated change was included. This journal-only closeout accompanies the authorized

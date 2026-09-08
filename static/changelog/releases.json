@@ -20,6 +20,24 @@
       ]
     },
     {
+      "release_key": "2026-09-08-calibration-report-signature-name-filename",
+      "release_date": "2026-09-08",
+      "title": "Calibration Report Output Naming",
+      "summary": "Calibration Report DOCX files now identify the signing engineer and use cleaner filenames.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-08-calibration-report-signature-name-filename-engineers",
+          "category": "Create TSR",
+          "description": "Generated Calibration Reports now print the service engineer's name above the signature in the Page 2 signature section. New sample and final DOCX filenames no longer include the NCS prefix; existing historical files remain unchanged.",
+          "audiences": [
+            "engineers"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-08-tsr-signature-recovery",
       "release_date": "2026-09-08",
       "title": "TSR Signature Recovery and Finalization",

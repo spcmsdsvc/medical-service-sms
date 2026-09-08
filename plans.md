@@ -1,5 +1,155 @@
 # Medical Service SMS — Approved Plans
 
+## Calibration Report Page 2 engineer name and filename cleanup
+
+**Status:** In progress
+**Approved:** 2026-09-08 — the owner said “implement the plan” after selecting the agreed
+signature-name placement and filename scope.
+**Detailed:** 2026-09-08
+**Execution authorization:** The owner separately authorized implementation in the same
+instruction. Review, commit, push, deployment, Railway, production, database, and browser/Codex
+UI actions remain separately unauthorized.
+
+### Context and intended outcome
+
+Generated Calibration Report DOCX files currently write the engineer's signature image into the
+Page 2 `6.7 Name and Signature of Service Engineer` cell but omit the engineer name, even though
+`calibration.engineer_name` is collected, autofilled, and required for final save. The filename
+helper also prefixes every generated report with `NCS_`. The intended result is that the existing
+engineer name is printed above the existing signature image in the same supplied template cell,
+and future sample/final DOCX names omit only the `NCS_` prefix.
+
+### Decisions taken
+
+1. Put the exact normalized `calibration.engineer_name` value above the signature image in the
+   existing Page 2 signature cell, without adding a redundant `Name:` label. Preserve the current
+   signature image dimensions, relationship/media handling, supplied template, page structure, and
+   final-save validation.
+2. Apply the filename change to newly generated sample and final DOCX names only. Do not rename
+   existing stored files, historical attachment metadata, database rows, or server-side records.
+3. Keep the change client-side and delivery-focused: no API, schema, migration, storage, approval,
+   email, permission, or production behavior changes are authorized.
+4. Bump the Calibration Report script query from v22 to v23 and the embedded service worker from
+   v147 to `medical-service-pwa-offline-navigation-v148-calibration-report-signature-name-filename`
+   so installed/offline clients receive the corrected generator.
+5. Preserve the canonical DOCX template byte-for-byte. The dirty handoff, `scheduler.db`,
+   `.claude/`, `output/`, `outputs/`, and `tmp/` remain protected and outside the change.
+
+### Investigation
+
+- `static/js/app-calibration-report.js:719-723` builds the name as
+  `NCS_CALIBRATION_REPORT_Shimadzu_...docx`; the same helper feeds final metadata and the `SAMPLE_`
+  download path.
+- `static/js/app-calibration-report.js:879-884` creates the existing signature drawing and
+  `fillSignatureCell()` replaces the blank Page 2 cell with only that drawing.
+- `static/js/app-calibration-report.js:924` patches source table 1, row 14, cell 1, which is the
+  supplied Page 2 signature cell. The source cell is blank, so adding a text run and line break
+  before the existing drawing is a surgical OOXML change.
+- `static/js/app-calibration-report.js:601` autofills `calibration.engineer_name` from the selected
+  schedule/TSR, while `:677` requires it for final save. No new state field is needed.
+- `templates/offline_tsr.html:23` and `app.py:17803,17827` currently expose Calibration Report
+  JavaScript v22 and the v147 service-worker cache. Multiple test modules assert the exact current
+  v147 marker and must be updated together.
+- `tests/test_tsr_calibration_report.py:1147` currently asserts that the engineer name is omitted;
+  the controlled Node harness already opens the generated DOCX XML and is the correct place to
+  reverse that contract and assert name placement plus the cleaned filename.
+- The supplied template remains SHA-256
+  `31B6FE282CBE227B407870F5893493C1B7C529685892CD1997E25C9D4CC5A79E`; existing generated files
+  under `static/uploads/reports/` are historical/QA artifacts and are not migration targets.
+
+### Numbered execution steps
+
+1. **Preflight and control records.** Re-read the complete `changes.md` and `plans.md`, confirm the
+   current Git status, and preserve all protected dirty paths. Record this full plan at the top of
+   `plans.md` and append the 2026-09-08 start bullets to `changes.md` before source/test edits.
+   Done when the plan is `In progress`, the start entry names the exact files/behavior, and no
+   protected artifact is staged or edited.
+2. **Fail-first regression contracts.** In `tests/test_tsr_calibration_report.py`, change the
+   generated-DOCX control to inspect Page 2 table 1 row 14 cell 1, require the engineer name before
+   `<wp:inline`, and require the generated final/sample names to contain no `NCS_`. Run the
+   unchanged generator against these new assertions and record the intentional failures before
+   editing `static/js/app-calibration-report.js`.
+3. **Patch the DOCX generator.** Update `fillSignatureCell(cellXml, relId, engineerName)` to
+   retain the source paragraph/run properties, add one XML-escaped single-line name run followed
+   by a paragraph line break, and then append the existing `signatureDrawingRun()`. Pass the
+   normalized `calibration.engineer_name` from `buildDocx()` at the existing table-cell patch.
+   Keep incomplete sample generation safe when the name is blank, while final save remains governed
+   by current required-field validation. Change only the filename prefix in `filenameFor()`.
+4. **Refresh delivery metadata.** Change the page/service-worker Calibration Report URL to v23,
+   bump the service-worker cache marker to v148 with the exact label above, and update every literal
+   v147 assertion found by `rg` in the affected cache/layout/TSR tests. Add one engineer-facing
+   item to the existing 2026-09-08 release manifest describing the visible name and filename
+   correction without removing or rewriting the historical 2026-08-19 report entry.
+5. **Self-review and focused verification.** Review the diff for protected-worktree disturbance,
+   unrelated rewrites, unsafe XML construction, stale v22/v147 references, and accidental filename
+   changes outside the `NCS_` prefix. Run the focused Calibration Report suite, related TSR/offline/
+   attachment/cache tests, bundled Node syntax, Python AST/Jinja checks, release JSON/key checks,
+   canonical-template checksum, and `git diff --check`.
+6. **DOCX artifact verification.** Immediately before the first generated-artifact authoring/QA
+   command, run the documents skill artifact marker for one edited DOCX output. Generate a complete
+   representative DOCX into `tmp/` using the controlled Node harness, reopen it as a ZIP, verify
+   the Page 2 name-before-signature ordering, signature media/relationship, filename, MIME, and
+   unchanged source template hash. Render all three pages with the bundled `render_docx.py`, inspect
+   every PNG at 100% (especially Page 2), and confirm no clipping, overlap, page-count drift,
+   footer change, or signature displacement. Do not use browser/Codex UI verification.
+7. **Regression and closeout.** Run full unittest discovery against a unique disposable external
+   `MEDICAL_SERVICE_TEST_DB` where feasible, report exact pass/fail/skip results and isolate any
+   unrelated baseline failures. Update this plan with truthful implementation evidence and keep its
+   status `In progress` because no commit has been authorized. Append the final factual bullets to
+   the existing 2026-09-08 `changes.md` section, including tests and any renderer limitation.
+8. **Commit checklist only.** Verify only intended source, test, cache, release, plan, and change-log
+   files would be eligible for a future commit; do not stage, commit, push, deploy, modify Railway,
+   rename historical files, touch production data, or alter protected artifacts in this cycle.
+
+### Deliberately excluded
+
+Renaming existing generated DOCX files; rewriting database/storage metadata; changing the official
+DOCX template; changing signature image size or drawing placement; adding a label or new engineer
+field; modifying certificate approval/PDF/email behavior; browser automation; database repair;
+`scheduler.db`; output/tmp cleanup; Git staging/history; commit/push; Railway; deployment; and
+production actions are excluded because they are unnecessary or separately protected.
+
+### Acceptance criteria
+
+- A complete generated report visibly contains the engineer name above the signature image in Page
+  2 section 6.7, with XML escaping and existing signature media intact.
+- Final filenames begin `CALIBRATION_REPORT_...docx`; sample filenames begin
+  `SAMPLE_CALIBRATION_REPORT_...docx`; neither contains `NCS_`.
+- Existing report validation, attachment lifecycle, signature dimensions, template checksum, page
+  count, headers/footers, and Page 3 output remain unchanged.
+- v148/v23 delivery records, focused tests, release metadata, plan, and change log truthfully
+  describe the correction; no historical file is renamed.
+
+### Implementation and verification evidence (2026-09-08)
+
+- Implemented the generator change in `static/js/app-calibration-report.js`: the existing
+  normalized `calibration.engineer_name` is XML-escaped and written above the unchanged
+  signature drawing in Page 2 table 1, row 14, cell 1. The filename helper now removes only the
+  `NCS_` prefix for newly generated sample and final DOCX files.
+- Updated `templates/offline_tsr.html` and `app.py` to serve Calibration Report JavaScript v23
+  and the exact v148 service-worker cache marker. Updated all exact current-cache assertions,
+  added the engineer-facing release entry, and kept the supplied template and historical files
+  unchanged.
+- The fail-first contract failed before the generator edit because the sample filename still
+  contained the old prefix. After the edit, `tests.test_tsr_calibration_report` passed **16/16**
+  and the related TSR/offline/attachment/cache modules passed **344/344**. Bundled Node syntax,
+  `app.py` AST parsing, release JSON/key uniqueness, canonical template SHA-256, and
+  `git diff --check` all passed. The full isolated discovery run used an external disposable
+  `MEDICAL_SERVICE_TEST_DB` and ran **1030 tests: 1019 passed, 10 failed, 1 skipped**. The ten
+  failures were outside this change: eight Purchase Order setup requests were rate-limited with
+  HTTP 429, and two staff-creation assertions conflicted with generated initials/test data.
+- Artifact QA started with the required documents marker. The controlled Node harness generated
+  a representative DOCX in the writable task QA directory after the protected repository `tmp/`
+  directory rejected the attempted output. ZIP inspection confirmed the engineer name precedes
+  `<wp:inline`, the signature media/relationship remains present, the original drawing extent is
+  preserved, and the generated name omits `NCS_`. The bundled `render_docx.py` could not render
+  PNGs because LibreOffice `soffice.exe` is not installed; no browser/Codex UI verification was
+  used, so visual page inspection remains unavailable in this environment.
+- No commit, staging, push, deployment, Railway, production, database, historical-file rename,
+  or protected dirty-artifact operation was performed. The plan remains **In progress** because
+  commit authorization was not included.
+
+
 ## TSR same-draft recovery source identity and apply-state correction
 
 **Status:** Executed — `5feb5f1` on 2026-09-08. The owner separately authorized committing and

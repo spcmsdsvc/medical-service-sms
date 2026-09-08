@@ -723,7 +723,7 @@ class CalibrationReportContractTests(unittest.TestCase):
         result = subprocess.run([str(NODE), '-e', NODE_SAMPLE_FINAL_SCRIPT], cwd=ROOT, text=True, capture_output=True, check=False)
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
         payload = json.loads(result.stdout.strip().splitlines()[-1])
-        for key in ('legacyDefaults', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'unfinalizedRefused', 'finalAttached', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameOmitted', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule'):
+        for key in ('legacyDefaults', 'smallOnly', 'largeOnly', 'bothSelected', 'smallOnlyOutput', 'largeOnlyOutput', 'missingSizeRejected', 'incompleteSampleWarning', 'sampleUnattached', 'sampleFilenameWithoutNcs', 'unfinalizedRefused', 'finalAttached', 'finalFilenameWithoutNcs', 'unicodePreserved', 'focalSizesInDocx', 'page3FocalGapPreserved', 'page3FooterGapCompacted', 'page3MeasurementsCentered', 'signatureNameAboveSignature', 'signatureIsLarger', 'editInvalidates', 'clearPreservesSchedule'):
             self.assertTrue(payload[key], key)
 
     def test_entry_page_has_single_card_action_and_accessible_dialog_contract(self):
@@ -755,8 +755,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=7", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=22", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=22'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=23", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=23'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1040,9 +1040,9 @@ function report(overrides = {}) {
   const base = {
     status:'draft', facility:{ name:"St. Mary's & Niño Clinic", address:'123 Main Street', telephone:'Phone', email:'client@example.test', location:'Radiology' },
     machine:{ manufacturer:'Shimadzu', modality:'Mobile X-Ray System', model:'MobileDart Evolution MX9', serial_number:'SN-1' },
-    technical:{}, calibration:{ machine_calibration_date:'2026-08-20', next_calibration_date:'2027-08-20', test_tool_manufacturer:'Tool Co', test_tool_model:'Tool 1', test_tool_serial:'TOOL-1', test_tool_calibration_date:'2026-08-01', engineer_name:'Engineer' },
+    technical:{}, calibration:{ machine_calibration_date:'2026-08-20', next_calibration_date:'2027-08-20', test_tool_manufacturer:'Tool Co', test_tool_model:'Tool 1', test_tool_serial:'TOOL-1', test_tool_calibration_date:'2026-08-01', engineer_name:'Engineer & Niño' },
     mechanical_checks:[{result:'Pass'}], generator_checks:[{result:'Pass'},{result:'Pass'},{result:'Pass'},{result:'Pass'}],
-    exposure:{ small:rows, large:[Object.assign({}, rows[0], { nominal_kvp:'100' }), {}, {}, {}, {}] }, performance_results:['Pass','Pass'], signature:{ name:'Engineer', image:png },
+    exposure:{ small:rows, large:[Object.assign({}, rows[0], { nominal_kvp:'100' }), {}, {}, {}, {}] }, performance_results:['Pass','Pass'], signature:{ name:'Engineer & Niño', image:png },
     focal_spots:{ small:true, large:true }, focal_sizes:{ small:'0.6', large:'1.0' }
   };
   return Object.assign(base, overrides);
@@ -1075,6 +1075,7 @@ function report(overrides = {}) {
   let unfinalizedRefused = false;
   try { await api.preparePayload(currentTSR, 'calibration-unfinalized'); } catch (error) { unfinalizedRefused = error.code === 'calibration_report_not_finalized'; }
   await api.generateSample();
+  const sampleFilenameWithoutNcs = link.download.startsWith('SAMPLE_CALIBRATION_REPORT_') && !link.download.includes('NCS_');
   const sampleUnattached = records.size === 0 && documents.value === '' && !api.getAttachment({ calibration_report:api.collect() }) && link.download.startsWith('SAMPLE_');
   context.saveStandaloneTSRDraft = async () => { savedDrafts += 1; persistedPayload = { calibration_report:api.collect(), attachments:[] }; return { source:'indexeddb', payload:persistedPayload }; };
   await api.saveFinalReport();
@@ -1123,6 +1124,11 @@ function report(overrides = {}) {
   }
   const body = (xml.match(/<w:body>([\s\S]*)<\/w:body>/) || [])[1] || '';
   const page3Tables = directBlocks(body, 'tbl');
+  const page2Xml = page3Tables.length > 1 ? body.slice(page3Tables[1].start, page3Tables[1].end) : '';
+  const page2Rows = directBlocks(page2Xml, 'tr');
+  const signatureRowXml = page2Rows.length > 14 ? page2Xml.slice(page2Rows[14].start, page2Rows[14].end) : '';
+  const signatureCells = directBlocks(signatureRowXml, 'tc');
+  const signatureCellXml = signatureCells.length > 1 ? signatureRowXml.slice(signatureCells[1].start, signatureCells[1].end) : '';
   const focalGap = page3Tables.length >= 4 ? body.slice(page3Tables[2].end, page3Tables[3].start) : '';
   const page3Gap = page3Tables.length >= 5 ? body.slice(page3Tables[3].end, page3Tables[4].start) : '';
   const page3FocalGapPreserved = (focalGap.match(/<w:p\b/g) || []).length === 2;
@@ -1144,7 +1150,8 @@ function report(overrides = {}) {
   }
   const page3MeasurementsCentered = page3Tables.length >= 4 && measurementRowsAreCentered(page3Tables[2]) && measurementRowsAreCentered(page3Tables[3]);
   const signatureExtent = xml.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/><wp:effectExtent[^>]*\/\><wp:docPr id="2000000001"/);
-  const signatureNameOmitted = !xml.includes('<w:t xml:space="preserve">Engineer</w:t><w:tab/>');
+  const signatureNameAboveSignature = signatureCellXml.includes('Engineer &amp; Niño') && signatureCellXml.indexOf('Engineer &amp; Niño') < signatureCellXml.indexOf('<wp:inline');
+  const finalFilenameWithoutNcs = finalized.generated.filename.startsWith('CALIBRATION_REPORT_') && !finalized.generated.filename.includes('NCS_');
   const signatureIsLarger = !!signatureExtent && Number(signatureExtent[1]) >= 2400000 && Number(signatureExtent[2]) >= 500000;
 
   documents.value = '';
@@ -1158,7 +1165,7 @@ function report(overrides = {}) {
   await api.clearForm();
   const cleared = api.collect();
   const clearPreservesSchedule = cleared.facility.name === 'Schedule Client' && cleared.machine.model === 'Schedule Model' && cleared.focal_spots.small && cleared.focal_spots.large && cleared.focal_sizes.small === '0.6' && cleared.focal_sizes.large === '1.0' && documents.value === '';
-  console.log(JSON.stringify({ legacyDefaults, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, unfinalizedRefused, finalAttached, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameOmitted, signatureIsLarger, editInvalidates, clearPreservesSchedule }));
+  console.log(JSON.stringify({ legacyDefaults, smallOnly:smallValidation, largeOnly:largeValidation, bothSelected:bothValidation, smallOnlyOutput, largeOnlyOutput, missingSizeRejected, incompleteSampleWarning, sampleUnattached, sampleFilenameWithoutNcs, unfinalizedRefused, finalAttached, finalFilenameWithoutNcs, unicodePreserved, focalSizesInDocx, page3FocalGapPreserved, page3FooterGapCompacted, page3MeasurementsCentered, signatureNameAboveSignature, signatureIsLarger, editInvalidates, clearPreservesSchedule }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
 '''
 

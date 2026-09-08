@@ -720,7 +720,7 @@
     var client = String(report.facility.name || payload?.['tsr-customer-name'] || 'Client').trim(); var model = String(report.machine.model || payload?.['tsr-equipment-model'] || 'Model').trim(); var serial = String(report.machine.serial_number || payload?.['tsr-serial-no'] || 'Serial').trim(); var date = String(report.calibration.machine_calibration_date || payload?.['tsr-service-date'] || '').replace(/[^0-9]/g,'');
     if(date.length !== 8){ var now = new Date(); date = String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + String(now.getFullYear()); } else if(/^\d{8}$/.test(date)) date = date.slice(4,6) + date.slice(6,8) + date.slice(0,4);
     function safe(value){ return String(value).replace(/[<>:"/\\|?*]+/g,'_').replace(/\s+/g,' ').trim().slice(0,80) || 'Unknown'; }
-    return 'NCS_CALIBRATION_REPORT_Shimadzu_' + safe(client) + '_' + safe(model) + '(' + safe(serial) + ')_' + date + '.docx';
+    return 'CALIBRATION_REPORT_Shimadzu_' + safe(client) + '_' + safe(model) + '(' + safe(serial) + ')_' + date + '.docx';
   }
 
   function dataUrlBytes(dataUrl){
@@ -880,10 +880,15 @@
     var cx = 2400000; var cy = 500000;
     return '<w:r>' + (runProperties || '') + '<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="' + cx + '" cy="' + cy + '"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:docPr id="2000000001" name="Calibration signature"/><wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="2000000001" name="Calibration signature"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="' + relId + '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>';
   }
-  function fillSignatureCell(cellXml, relId){
+  function signatureNameRun(value, runProperties){
+    var name = singleLineDocxText(value); if(!name) return '';
+    return '<w:r>' + (runProperties || '') + '<w:t xml:space="preserve">' + xmlEscape(name) + '</w:t><w:br/></w:r>';
+  }
+  function fillSignatureCell(cellXml, relId, engineerName){
     if(cellText(cellXml)) throw templateSlotError('signature cell is not blank');
     var paragraphs = directXmlBlocks(cellXml, 'p'); if(!paragraphs.length) throw templateSlotError('signature cell paragraph');
-    return replaceFirstParagraph(cellXml, signatureDrawingRun(relId, firstRunProperties(paragraphs[0].xml)));
+    var runProperties = firstRunProperties(paragraphs[0].xml);
+    return replaceFirstParagraph(cellXml, signatureNameRun(engineerName, runProperties) + signatureDrawingRun(relId, runProperties));
   }
   function addImageRelationship(relsXml){
     var existing = relsXml.match(/<Relationship\b[^>]*Target="media\/calibration-signature\.png"[^>]*\/>/);
@@ -921,7 +926,7 @@
     if(report.focal_spots?.large === false) documentXml = removeDirectTable(documentXml, 3);
     if(report.focal_spots?.small === false) documentXml = removeDirectTable(documentXml, 2);
     documentXml = compactPageThreeGap(documentXml);
-    var relationshipInfo = addImageRelationship(documentRels); documentXml = patchTableCell(documentXml, 1, 14, 1, function(cell){ return fillSignatureCell(cell, relationshipInfo.id); });
+    var relationshipInfo = addImageRelationship(documentRels); documentXml = patchTableCell(documentXml, 1, 14, 1, function(cell){ return fillSignatureCell(cell, relationshipInfo.id, getPath(report, 'calibration.engineer_name')); });
     zip.file('word/document.xml', documentXml); zip.file('word/_rels/document.xml.rels', relationshipInfo.xml); zip.file('[Content_Types].xml', addImageContentType(await contentTypesFile.async('string'))); zip.file('word/media/calibration-signature.png', dataUrlBytes(report.signature.image), { binary:true });
     var bytes = await zip.generateAsync({ type:'blob', compression:'STORE' }); return { blob:new Blob([bytes], { type:DOCX_MIME }), filename:filename };
   }
