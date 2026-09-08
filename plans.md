@@ -2,8 +2,8 @@
 
 ## Calendar duplicate scrollbar and collapsible legend
 
-**Status:** In progress — implementation completed locally on 2026-09-08; package-only
-commit and push to `origin/main` authorized on 2026-09-08. Publication is pending.
+**Status:** Executed — `af190d4` on 2026-09-08. The owner separately authorized package-only
+commit and push to `origin/main`; this record accompanies that publication.
 **Approved:** 2026-09-08 — the owner accepted the recommendation to remove the extra lowest
 calendar scrollbar and make the footer legend available through a collapsed-by-default control.
 **Detailed:** 2026-09-08

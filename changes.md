@@ -2,6 +2,10 @@
 
 codex changes - 2026-09-08
 
+- Committed the 16-file Calendar package allowlist as `af190d4` and recorded its execution hash
+  in `plans.md`. Staged whitespace checks passed. This journal-only closeout accompanies the
+  authorized push to `origin/main`; protected local artifacts remain unstaged.
+
 - The owner authorized committing and pushing only the Calendar duplicate-scrollbar and
   collapsible-legend package to `origin/main`. Publication includes its template/theme changes,
   cache and asset versions, release entry, associated test updates, and plan/change records.
