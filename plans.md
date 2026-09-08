@@ -2,8 +2,8 @@
 
 ## Faster Calendar Week Navigation
 
-**Status:** In progress — implementation and local verification complete; package-only commit and
-push authorized on 2026-09-08. Execution hash will be recorded after commit.
+**Status:** Executed — `b678cf7` on 2026-09-08. The owner separately authorized package-only
+commit and push to `origin/main`; this record accompanies that publication.
 **Approved:** 2026-09-08 — the owner accepted the proposed cache-first week-navigation approach.
 **Execution authorized:** 2026-09-08 — the owner separately said “go ahead and implement the plan,”
 asked for one Builder, and asked that the Builder work to completion without periodic check-ins.

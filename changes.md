@@ -2,6 +2,10 @@
 
 codex changes - 2026-09-08
 
+- Committed the 15-file Faster Calendar Week Navigation allowlist as `b678cf7` and recorded its
+  execution hash in `plans.md`. Staged whitespace checks passed. This journal-only closeout
+  accompanies the authorized push to `origin/main`; protected local artifacts remain unstaged.
+
 - The owner authorized committing and pushing only the Faster Calendar Week Navigation package
   to `origin/main`. Publication includes the calendar template, v141 cache marker, release entry,
   focused navigation tests, exact cache assertions, and plan/change records. Local and remote main
