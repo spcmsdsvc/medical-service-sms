@@ -103,10 +103,10 @@ class TSRContactSuggestionSourceTests(unittest.TestCase):
         self.assertIn("target !== 'serviced'", saved_signature)
 
     def test_cache_and_release_markers_are_updated(self):
-        self.assertIn("medical-service-pwa-offline-navigation-v139-graphite-dark", self.app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v140-timeline-scroll-legend", self.app_source)
         for test_name in ('test_layout_sidebar.py', 'test_stock_inventory.py', 'test_timeline_desktop_collapse.py'):
             source = (ROOT / 'tests' / test_name).read_text(encoding='utf-8')
-            self.assertIn('medical-service-pwa-offline-navigation-v139-graphite-dark', source)
+            self.assertIn('medical-service-pwa-offline-navigation-v140-timeline-scroll-legend', source)
         self.assertIn('2026-09-05-tsr-contact-suggestions', self.release_source)
         self.assertIn('per-TSR client signing', self.release_source)
 

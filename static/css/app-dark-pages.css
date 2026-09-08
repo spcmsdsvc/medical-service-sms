@@ -285,12 +285,12 @@
 :root[data-app-theme="dark"] [data-timeline-week-nav].timeline-week-nav-loading {
     color: var(--dark-muted) !important;
 }
-:root[data-app-theme="dark"] :is(.timeline-sticky-h-scroll, .timeline-bottom-scroll) {
+:root[data-app-theme="dark"] .timeline-sticky-h-scroll {
     background: var(--dark-panel) !important;
     border-color: var(--dark-border) !important;
 }
-:root[data-app-theme="dark"] :is(.timeline-sticky-h-scroll, .timeline-bottom-scroll)::-webkit-scrollbar-track { background: var(--dark-panel) !important; }
-:root[data-app-theme="dark"] :is(.timeline-sticky-h-scroll, .timeline-bottom-scroll)::-webkit-scrollbar-thumb { background: var(--dark-border-strong) !important; border-color: var(--dark-panel) !important; }
+:root[data-app-theme="dark"] .timeline-sticky-h-scroll::-webkit-scrollbar-track { background: var(--dark-panel) !important; }
+:root[data-app-theme="dark"] .timeline-sticky-h-scroll::-webkit-scrollbar-thumb { background: var(--dark-border-strong) !important; border-color: var(--dark-panel) !important; }
 :root[data-app-theme="dark"] .timeline-scroll-wrapper {
     background: var(--dark-panel) !important;
     border-color: var(--dark-border) !important;
@@ -405,6 +405,16 @@
 
 :root[data-app-theme="dark"] .calendar-legend { color: var(--dark-muted); }
 :root[data-app-theme="dark"] .legend-pill { background: var(--dark-card) !important; color: var(--dark-text); border-color: var(--dark-border); box-shadow: 0 2px 8px rgba(0,0,0,.18); }
+:root[data-app-theme="dark"] .timeline-calendar-legend-shell .calendar-legend-toggle {
+    background: var(--dark-card) !important;
+    color: var(--dark-text) !important;
+    border-color: var(--dark-border) !important;
+}
+:root[data-app-theme="dark"] .timeline-calendar-legend-shell .calendar-legend-toggle:hover,
+:root[data-app-theme="dark"] .timeline-calendar-legend-shell .calendar-legend-toggle:focus-visible {
+    background: var(--dark-control-hover) !important;
+    border-color: var(--app-primary) !important;
+}
 :root[data-app-theme="dark"] :is(.timeline-schedule-hover-summary, .timeline-summary-close-btn) {
     background: var(--dark-card) !important;
     color: var(--dark-text) !important;

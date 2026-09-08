@@ -370,7 +370,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn('--login-page-bg: #202124;', auth_css)
 
         self.assertIn("filename='css/app-themes.css') }}?v=21", layout)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=27", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=28", layout)
         self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
         for source in sources:
             self.assertIn("filename='css/app-themes.css') }}?v=21", source)
@@ -380,7 +380,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
         manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
 
-        self.assertIn('medical-service-pwa-offline-navigation-v139-graphite-dark', app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v140-timeline-scroll-legend', app_source)
         matches = [
             item
             for release in manifest['releases']
@@ -476,7 +476,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         self.assertIn("palette === 'amoled' ? '#000000'", runtime)
         self.assertIn('--login-page-bg: #000000;', auth_styles)
         self.assertIn("filename='css/app-themes.css') }}?v=21", layout)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=27", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=28", layout)
         self.assertIn("filename='js/app-appearance.js') }}?v=18", layout)
         for source in auth:
             self.assertIn("filename='css/app-themes.css') }}?v=21", source)
@@ -567,7 +567,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
             '[class*="-stat-value"]',
         ):
             self.assertIn(selector, css)
-        self.assertIn("filename='css/app-dark-pages.css') }}?v=27", layout)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=28", layout)
 
     def test_dark_mode_covers_native_and_custom_dropdowns(self):
         css = (ROOT / 'static' / 'css' / 'app-dark-pages.css').read_text(encoding='utf-8')

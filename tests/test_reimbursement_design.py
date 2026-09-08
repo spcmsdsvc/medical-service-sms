@@ -197,7 +197,7 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
         self.assertIn('height: 44px;', mobile_css)
 
     def test_reimbursement_design_cache_and_release_record(self):
-        self.assertIn('medical-service-pwa-offline-navigation-v139-graphite-dark', APP_SOURCE)
+        self.assertIn('medical-service-pwa-offline-navigation-v140-timeline-scroll-legend', APP_SOURCE)
         matches = [
             release for release in RELEASES.get('releases', [])
             if release.get('release_key') == '2026-09-05-reimbursement-design'
@@ -451,7 +451,7 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
         self.assertIn('applyReimbursementColumnView(', render)
 
     def test_zoom_release_and_cache_record_are_current(self):
-        self.assertIn('medical-service-pwa-offline-navigation-v139-graphite-dark', APP_SOURCE)
+        self.assertIn('medical-service-pwa-offline-navigation-v140-timeline-scroll-legend', APP_SOURCE)
         matches = [
             release for release in RELEASES.get('releases', [])
             if release.get('release_key') == '2026-09-05-reimbursement-worksheet-zoom-actions'
@@ -726,7 +726,7 @@ class ReimbursementDesignSourceTests(unittest.TestCase):
         self.assertIn('.reim-focus-toggle', mobile_css)
 
     def test_focus_toolbar_release_and_cache_record_are_current(self):
-        self.assertIn('medical-service-pwa-offline-navigation-v139-graphite-dark', APP_SOURCE)
+        self.assertIn('medical-service-pwa-offline-navigation-v140-timeline-scroll-legend', APP_SOURCE)
         matches = [
             release for release in RELEASES.get('releases', [])
             if release.get('release_key') == '2026-09-06-reimbursement-focus-toolbar'

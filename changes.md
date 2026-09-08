@@ -2,6 +2,48 @@
 
 codex changes - 2026-09-08
 
+- The owner authorized committing and pushing only the Calendar duplicate-scrollbar and
+  collapsible-legend package to `origin/main`. Publication includes its template/theme changes,
+  cache and asset versions, release entry, associated test updates, and plan/change records.
+  Local and remote main both matched `6f84479` before publication. Protected database, handoffs,
+  `.claude/`, generated output, temporary files, and unrelated work remain excluded. Remote main
+  and Railway deployment metadata will be verified after push; no manual redeploy or variable
+  change is authorized.
+
+- Started the owner-authorized Calendar duplicate-scrollbar and collapsible-legend package. The
+  scope removes the extra `timeline-bottom-scroll` mirror while retaining the native calendar
+  wrapper scrollbar and synchronized top mirror, collapses the existing schedule/status and
+  workload legend behind an accessible Show/Hide legend control, recalculates desktop grid height
+  when the legend changes, and bumps the service-worker delivery marker. Protected database,
+  handoffs, `.claude/`, generated output, temporary files, unrelated application work, production,
+  Railway, browser automation, commit, push, and formal review remain excluded.
+
+- Implemented the Calendar layout change in `templates/timeline.html`: removed the duplicate
+  bottom scrollbar mirror and its sizing/event paths while retaining the wrapper's native lower
+  scrollbar, synchronized top mirror, sticky header, frozen engineer column, day access, and
+  responsive/forced-desktop behavior. Desktop footer height now reserves the visible legend shell
+  without a bottom-mirror allowance.
+- Replaced the always-visible Calendar footer labels with a collapsed-by-default accessible
+  `Show legend` control. The `Hide legend` state, ARIA attributes, existing schedule/status pills,
+  dynamic `timeline-intelligence-legend`, print behavior, and role-specific filtering remain
+  available; toggling dispatches the existing resize path so the grid height follows the shell.
+- Updated `static/css/app-dark-pages.css` to remove the dead bottom-mirror scrollbar theme and
+  style the disclosure control, then bumped its `app-dark-pages.css` asset query from v27 to v28
+  in `templates/layout.html`. Bumped the embedded worker cache in `app.py` to
+  `medical-service-pwa-offline-navigation-v140-timeline-scroll-legend` and added the published
+  `2026-09-08-timeline-scroll-legend` Calendar release entry in
+  `static/changelog/releases.json`; exact current-cache assertions were updated accordingly.
+- Added focused source contracts in `tests/test_timeline_desktop_collapse.py` and refreshed
+  current-cache assertions in the related test modules. The unchanged-source fail-first
+  checkpoint was **20 tests: 15 passed, 5 intentional failures, 0 errors, 0 skips**; final
+  focused timeline checks passed **20/20**, and the related isolated checks passed **308 tests:
+  307 passed, 0 failed, 0 errors, 1 skipped**. Full isolated discovery ran **976 tests: 965
+  passed, 10 known baseline failures, 0 errors, 1 skipped**; the failures remain the existing
+  eight Purchase Order 429 setup/rate-limit cases and two Staff Creation fixture/initials cases.
+  AST/Jinja/JavaScript/CSS/release/whitespace/runtime checks passed. Browser visual verification
+  remains owner-only; no commit, push, deployment, production, database, or protected-artifact
+  action was performed.
+
 - Committed the six-file Package 1 allowlist as `378c025` and recorded that implementation hash
   in `plans.md`. This journal-only closeout accompanies the authorized push to `origin/main`.
 

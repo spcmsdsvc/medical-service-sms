@@ -454,14 +454,23 @@
 
         </table>
     </div>
-    <div class="timeline-bottom-scroll no-print" id="timeline-bottom-scroll" aria-label="Calendar horizontal scroll">
-        <div class="timeline-bottom-scroll-inner" id="timeline-bottom-scroll-inner"></div>
-    </div>
 
 
     <!-- GRID FOOTER LEGEND -->
-    <div class="mt-3 no-print">
-        <div class="calendar-legend calendar-legend-compact d-flex flex-wrap gap-1 small fw-bold">
+    <div class="mt-3 no-print timeline-calendar-legend-shell">
+        <button type="button"
+                class="btn btn-outline-secondary btn-sm calendar-legend-toggle"
+                id="timeline-legend-toggle"
+                aria-controls="timeline-calendar-legend"
+                aria-expanded="false"
+                aria-label="Show calendar legend"
+                onclick="toggleTimelineLegend()">
+            <i id="timeline-legend-toggle-icon" class="fa-solid fa-chevron-down me-1" aria-hidden="true"></i>
+            <span id="timeline-legend-toggle-label">Show legend</span>
+        </button>
+        <div id="timeline-calendar-legend"
+             class="calendar-legend calendar-legend-compact d-flex d-none flex-wrap gap-1 small fw-bold"
+             aria-hidden="true">
             <div class="legend-pill"><span class="legend-dot bg-primary"></span><i class="fa-solid fa-briefcase-medical"></i>Site Visit</div>
             <div class="legend-pill"><span class="legend-dot bg-success"></span><i class="fa-solid fa-circle-check"></i>Completed</div>
             <div class="legend-pill"><span class="legend-dot bg-warning"></span><i class="fa-solid fa-file-invoice"></i>Waiting P.O</div>
@@ -1990,10 +1999,6 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
         height: 16px;
     }
 
-    body.timeline-expanded-desktop-grid .timeline-bottom-scroll {
-        height: 15px;
-    }
-
     body.timeline-expanded-desktop-grid .timeline-scroll-wrapper {
         height: var(--timeline-grid-height, auto);
         max-height: var(--timeline-grid-height, calc(100vh - var(--timeline-grid-maxheight-offset, 190px))) !important;
@@ -3054,12 +3059,6 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 }
 
 
-.timeline-bottom-scroll{position:sticky;bottom:0;z-index:30;width:100%;overflow-x:auto;overflow-y:hidden;height:18px;background:rgba(255,255,255,.96);border:1px solid #dee2e6;border-top:0;border-radius:0 0 .75rem .75rem;box-shadow:0 -2px 8px rgba(15,23,42,.08)}
-.timeline-bottom-scroll-inner{height:1px;min-width:1180px}
-.timeline-bottom-scroll::-webkit-scrollbar{height:14px}
-.timeline-bottom-scroll::-webkit-scrollbar-track{background:#e9ecef;border-radius:999px}
-.timeline-bottom-scroll::-webkit-scrollbar-thumb{background:#6c757d;border-radius:999px;border:2px solid #e9ecef}
-.timeline-bottom-scroll::-webkit-scrollbar-thumb:hover{background:#343a40}
 .delete-context-card{display:flex;align-items:flex-start;gap:.85rem;padding:.9rem;border:1px solid #fecaca;background:#fff5f5;border-radius:1rem}
 .delete-context-icon{width:2.35rem;height:2.35rem;border-radius:999px;background:#fee2e2;color:#dc3545;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 .delete-mode-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}
@@ -7598,7 +7597,7 @@ body.timeline-pure-engineer-desktop .timeline-my-engineer-row [class*="schedule-
     }
 
     body.mobile-engineer-desktop-forced .timeline-scroll-hint,
-    body.mobile-engineer-desktop-forced .calendar-legend,
+    body.mobile-engineer-desktop-forced .timeline-calendar-legend-shell,
     body.mobile-engineer-desktop-forced .timeline-engineer-focus-strip,
     body.mobile-engineer-desktop-forced .timeline-engineer-desktop-hero,
     body.mobile-engineer-desktop-forced .timeline-hybrid-desktop-hero,
@@ -7606,8 +7605,7 @@ body.timeline-pure-engineer-desktop .timeline-my-engineer-row [class*="schedule-
         display: none !important;
     }
 
-    body.mobile-engineer-desktop-forced .timeline-sticky-h-scroll,
-    body.mobile-engineer-desktop-forced .timeline-bottom-scroll {
+    body.mobile-engineer-desktop-forced .timeline-sticky-h-scroll {
         display: block !important;
         height: 16px !important;
         min-height: 16px !important;
@@ -7632,8 +7630,7 @@ body.timeline-pure-engineer-desktop .timeline-my-engineer-row [class*="schedule-
     }
 
     body.mobile-engineer-desktop-forced .timeline-grid-table,
-    body.mobile-engineer-desktop-forced .timeline-sticky-h-scroll-inner,
-    body.mobile-engineer-desktop-forced .timeline-bottom-scroll-inner {
+    body.mobile-engineer-desktop-forced .timeline-sticky-h-scroll-inner {
         min-width: 1680px !important;
         width: 1680px !important;
         max-width: none !important;
@@ -14631,18 +14628,12 @@ async function loadGrid() {
         const wrapper = document.getElementById('timeline-scroll-wrapper');
         const topMirror = document.getElementById('timeline-sticky-h-scroll');
         const topMirrorInner = document.getElementById('timeline-sticky-h-scroll-inner');
-        const bottomMirror = document.getElementById('timeline-bottom-scroll');
-        const bottomMirrorInner = document.getElementById('timeline-bottom-scroll-inner');
         const table = document.getElementById('main-grid-table');
 
         if(!wrapper || !topMirror || !topMirrorInner || !table) return;
 
         const syncWidth = Math.max(table.scrollWidth, wrapper.scrollWidth, wrapper.clientWidth);
         topMirrorInner.style.width = `${syncWidth}px`;
-
-        if(bottomMirrorInner){
-            bottomMirrorInner.style.width = `${syncWidth}px`;
-        }
 
         let syncFrame = null;
         let syncSource = null;
@@ -14665,7 +14656,6 @@ async function loadGrid() {
 
                 if(sourceEl !== wrapper) setScrollLeftIfNeeded(wrapper, leftValue);
                 if(sourceEl !== topMirror) setScrollLeftIfNeeded(topMirror, leftValue);
-                if(bottomMirror && sourceEl !== bottomMirror) setScrollLeftIfNeeded(bottomMirror, leftValue);
             });
         }
 
@@ -14677,16 +14667,7 @@ async function loadGrid() {
             setAllScroll(topMirror.scrollLeft, topMirror);
         };
 
-        if(bottomMirror){
-            bottomMirror.onscroll = function(){
-                setAllScroll(bottomMirror.scrollLeft, bottomMirror);
-            };
-        }
-
         topMirror.scrollLeft = wrapper.scrollLeft;
-        if(bottomMirror){
-            bottomMirror.scrollLeft = wrapper.scrollLeft;
-        }
     }
 
 // --- AUTOCOMPLETE DATA ENGINE ---
@@ -19914,6 +19895,40 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 window.addEventListener('resize', syncTimelineIntroViewport, { passive: true });
 
+function setTimelineLegendExpanded(expanded){
+    const toggle = document.getElementById('timeline-legend-toggle');
+    const legend = document.getElementById('timeline-calendar-legend');
+    const label = document.getElementById('timeline-legend-toggle-label');
+    const icon = document.getElementById('timeline-legend-toggle-icon');
+    if(!toggle || !legend) return;
+
+    const isExpanded = Boolean(expanded);
+    legend.classList.toggle('d-none', !isExpanded);
+    legend.setAttribute('aria-hidden', String(!isExpanded));
+    toggle.setAttribute('aria-expanded', String(isExpanded));
+    toggle.setAttribute('aria-label', isExpanded ? 'Hide calendar legend' : 'Show calendar legend');
+    if(label) label.textContent = isExpanded ? 'Hide legend' : 'Show legend';
+    if(icon){
+        icon.classList.toggle('fa-chevron-up', isExpanded);
+        icon.classList.toggle('fa-chevron-down', !isExpanded);
+        icon.classList.toggle('fa-circle-info', false);
+    }
+
+    // The existing sticky-height listener measures the visible legend. Re-run it
+    // after disclosure changes so the grid never overlaps the expanded labels.
+    window.dispatchEvent(new Event('resize'));
+}
+
+function toggleTimelineLegend(){
+    const toggle = document.getElementById('timeline-legend-toggle');
+    if(!toggle) return;
+    setTimelineLegendExpanded(toggle.getAttribute('aria-expanded') !== 'true');
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+    setTimelineLegendExpanded(false);
+});
+
 function initTimelineStickyHeaderPolish(){
     if(window.__timelineStickyHeaderPolishBound) return;
     window.__timelineStickyHeaderPolishBound = true;
@@ -19923,15 +19938,18 @@ function initTimelineStickyHeaderPolish(){
         const collapsedRail = document.getElementById('timeline-intro-toggle-row');
         const topScrollbar = document.getElementById('timeline-sticky-h-scroll');
         const wrapper = document.getElementById('timeline-scroll-wrapper');
-        const bottomScroll = document.getElementById('timeline-bottom-scroll');
         const shell = document.getElementById('timeline-desktop-shell');
         const legend = document.querySelector('.calendar-legend');
+        const legendFooter = document.querySelector('.timeline-calendar-legend-shell');
         const toolbarHeight = toolbar ? Math.ceil(toolbar.getBoundingClientRect().height) : 0;
         const collapsedRailHeight = collapsedRail && collapsedRail.classList.contains('timeline-intro-row-collapsed')
             ? Math.ceil(collapsedRail.getBoundingClientRect().height)
             : 0;
         const scrollbarHeight = topScrollbar ? Math.ceil(topScrollbar.getBoundingClientRect().height) : 0;
         const legendHeight = legend ? Math.ceil(legend.getBoundingClientRect().height) : 0;
+        const legendFooterHeight = legendFooter
+            ? Math.ceil(legendFooter.getBoundingClientRect().height)
+            : legendHeight;
 
         const isDesktop = window.matchMedia('(min-width: 769px)').matches;
         document.body.classList.toggle('timeline-expanded-desktop-grid', isDesktop);
@@ -19958,9 +19976,6 @@ function initTimelineStickyHeaderPolish(){
                 320
             );
             const gridTop = Math.max(0, Math.ceil(wrapper ? wrapper.getBoundingClientRect().top : 0));
-            const bottomScrollbarHeight = bottomScroll
-                ? Math.ceil(bottomScroll.getBoundingClientRect().height)
-                : 18;
             const legendParent = legend ? legend.closest('.mt-3') : null;
             const legendMarginTop = legendParent
                 ? (parseFloat(window.getComputedStyle(legendParent).marginTop) || 0)
@@ -19968,7 +19983,7 @@ function initTimelineStickyHeaderPolish(){
             const shellPaddingBottom = shell
                 ? (parseFloat(window.getComputedStyle(shell).paddingBottom) || 0)
                 : 0;
-            const footerReserve = bottomScrollbarHeight + legendHeight +
+            const footerReserve = legendFooterHeight +
                 Math.max(8, legendMarginTop) + shellPaddingBottom + 12;
             const minimumGridHeight = Math.min(320, Math.max(220, viewportHeight - 32));
             const availableHeight = Math.max(
@@ -20420,6 +20435,32 @@ document.addEventListener('DOMContentLoaded', function(){
 }
 
 /* OFFICE + LEGEND NEXT-LEVEL VISUAL UPGRADE */
+.timeline-calendar-legend-shell {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+}
+
+.calendar-legend-toggle {
+    font-size: 0.72rem;
+    font-weight: 800;
+    min-height: 2rem;
+}
+
+.calendar-legend-toggle:focus-visible {
+    outline: 2px solid var(--app-focus, #0d6efd);
+    outline-offset: 2px;
+}
+
+.timeline-calendar-legend-shell .calendar-legend {
+    width: 100%;
+}
+
+.timeline-calendar-legend-shell .calendar-legend[aria-hidden="true"] {
+    display: none !important;
+}
+
 .calendar-legend {
     color: #5f6873;
 }

@@ -1,5 +1,169 @@
 # Medical Service SMS — Approved Plans
 
+## Calendar duplicate scrollbar and collapsible legend
+
+**Status:** In progress — implementation completed locally on 2026-09-08; package-only
+commit and push to `origin/main` authorized on 2026-09-08. Publication is pending.
+**Approved:** 2026-09-08 — the owner accepted the recommendation to remove the extra lowest
+calendar scrollbar and make the footer legend available through a collapsed-by-default control.
+**Detailed:** 2026-09-08
+**Execution authorized:** 2026-09-08 — the owner said `go head ang implement` and asked for one
+Builder to work autonomously without repeated check-ins.
+
+### Context
+
+The desktop Calendar currently renders the native horizontal scrollbar inside
+`#timeline-scroll-wrapper`, a synchronized sticky scrollbar above it, and a second synchronized
+mirror in `#timeline-bottom-scroll`. The two lower bars are visible together at the bottom of the
+calendar and consume vertical space. The footer legend also renders every schedule and workload
+label immediately below the grid, even though cards and workload chips already carry the active
+meaning. The intended result is one native lower scrollbar plus the existing top synchronized
+scrollbar, and a compact accessible `Show legend` control that reveals the labels only when needed.
+
+### Decisions taken
+
+1. Remove the `#timeline-bottom-scroll` mirror and its inner spacer. Keep the native scrollbar
+   owned by `#timeline-scroll-wrapper` and the existing `#timeline-sticky-h-scroll` mirror. The
+   wrapper, table width, sticky header, frozen Engineer Name column, day access, drag/drop, and
+   responsive/mobile forced-desktop behavior remain on their existing paths.
+2. Update `syncTimelineHorizontalScroll()` to synchronize only the wrapper and top mirror, and
+   remove the bottom mirror from width measurement, event binding, initialization, and all page
+   height reservations. Delete only the obsolete bottom-mirror CSS and dark-theme selectors.
+3. Wrap the existing schedule/status and dynamically shown workload legend in an accessible
+   page-local disclosure. It starts collapsed with `Show legend`, uses `aria-controls` and
+   `aria-expanded`, changes to `Hide legend` when open, and preserves every existing label,
+   status/category color, `timeline-intelligence-legend` visibility rule, role-specific filtering,
+   print behavior, and escaped/static markup. Toggle changes dispatch the existing resize path so
+   desktop grid height is recalculated for the legend's actual visible height.
+4. Bump the embedded service-worker cache once from the verified v139 Graphite marker to a
+   monotonic v140 Calendar scrollbar/legend marker and update exact current-cache assertions.
+   Add one published 2026-09-08 Calendar release item. If the shared dark-page stylesheet is
+   edited to remove the dead bottom-mirror selector, bump its existing layout query from v27 to
+   v28 and update the exact asset assertions.
+
+### Investigation
+
+- `templates/timeline.html:431-459` renders the top mirror, native scroll wrapper/table, and
+  extra `timeline-bottom-scroll` mirror in that order; `:462-482` renders the always-visible
+  legend.
+- `templates/timeline.html:14630-14690` binds wrapper, top mirror, and bottom mirror scroll
+  events and gives all three the measured table width. The wrapper remains the authoritative
+  native calendar scroll surface after the bottom mirror is removed.
+- `templates/timeline.html:19917-20004` derives desktop grid height from toolbar, top mirror,
+  bottom mirror, legend, and shell spacing. The bottom mirror reservation is obsolete; the legend
+  height must continue to be measured so opening/closing it does not overlap the shell.
+- `templates/timeline.html:1993-1995`, `:3057-3062`, and `:7609-7639` contain desktop/forced-
+  mobile bottom-mirror presentation and sizing rules that must be removed with the markup.
+- `static/css/app-dark-pages.css:288-293` themes both scrollbar mirrors; after the removal only
+  `.timeline-sticky-h-scroll` needs that page-level dark override.
+- `tests/test_timeline_desktop_collapse.py` currently asserts the old bottom mirror and v139
+  marker, and the other current-cache tests under `tests/` must follow the v140 shell marker.
+- The worktree contains protected owner changes in `Handoffs/08-11-26 handoff.md`,
+  `scheduler.db`, `.claude/`, `medical-service-sms-detailed-handoff-2026-07-26.md`, `output/`,
+  and `tmp/`; they are outside this package and must remain untouched and unstaged.
+
+### Execution steps
+
+1. **Record control state and baseline.** Keep this plan at the top of `plans.md`, append the
+   factual 2026-09-08 start entry to `changes.md`, recheck Git status and protected paths, and
+   inspect the affected template, dark stylesheet, cache marker, release manifest, and tests.
+   Done when the owner authorization, exact scope, exclusions, and baseline are recorded before
+   source/test implementation edits.
+2. **Add fail-first contracts.** Extend `tests/test_timeline_desktop_collapse.py` with focused
+   source contracts proving one top mirror plus the native wrapper, no bottom mirror identifiers or
+   obsolete selectors, two-surface scroll synchronization, height calculation without a bottom
+   reservation, collapsed legend disclosure markup/controller/resize hook, preserved workload
+   legend hook, v140 cache marker, dark asset version, and the new release item. Run those
+   contracts against the unchanged source and record the intentional failures.
+3. **Remove the duplicate mirror.** In `templates/timeline.html`, delete the bottom mirror markup,
+   its desktop/forced-mobile CSS, and its bottom-specific selectors. In
+   `syncTimelineHorizontalScroll()`, remove bottom element lookup, width assignment, event binding,
+   and initialization while preserving wrapper/top synchronization and requestAnimationFrame
+   coalescing. In `initTimelineStickyHeaderPolish()`, remove bottom scrollbar height from the
+   desktop footer reserve while continuing to measure visible legend and shell spacing.
+4. **Collapse the footer legend.** Replace the always-visible footer wrapper with a compact
+   `Show legend` button and a collapsed legend region. Add the smallest page-local controller to
+   toggle `d-none`/ARIA state and visible button label/icon, invoke the existing resize event, and
+   initialize collapsed state after DOM ready. Keep `timeline-intelligence-legend` nested in the
+   existing legend so dynamic workload visibility and role-specific labels continue to work.
+5. **Refresh delivery records.** Change the embedded `CACHE_VERSION` in `app.py` to the v140
+   Calendar marker; update every exact current-cache assertion under `tests/`; if the dark-page
+   selector is removed, change `templates/layout.html`'s query to v28 and its exact tests. Add a
+   published `2026-09-08` Calendar release entry without rewriting prior release history.
+6. **Self-review and verification.** Run the fail-first checkpoint and final focused timeline
+   module, related layout/appearance/offline/cache/changelog checks, and isolated full unittest
+   discovery with a unique disposable external database. Run Python AST/compile, Jinja parse,
+   extracted timeline JavaScript syntax, CSS brace balance, release JSON validation, exact-cache
+   checks, and `git diff --check`. Use source/runtime checks for wrapper/top scroll propagation,
+   legend initial ARIA state, toggle state/resize recalculation, and preserved intelligence markup.
+   Browser/Codex UI verification remains owner-only under `AGENTS.md`; do not use browser
+   automation or navigate/terminate the Codex app.
+7. **Complete records and report.** Update this plan and `changes.md` with exact files, tests,
+   known unrelated baseline failures/skips, manual source checks, protected-state confirmation,
+   deviations, and material limitations. Keep this plan `In progress` because no commit hash is
+   authorized. Leave staging, commit, push, Railway, deployment, production, database, and formal
+   review untouched.
+
+### Deliberately excluded
+
+- No calendar API, database/schema, schedule rendering, drag/drop, permissions, sticky-column
+  redesign, day widths, mobile card redesign, print-layout change, workload calculation, or
+  status/category semantics change.
+- No new dependency, generalized disclosure component, alternate scrollbar implementation,
+  browser alert/confirm/prompt, or app-wide styling redesign.
+- No changes to protected handoffs, `scheduler.db`, `.claude/`, `output/`, `outputs/`, `tmp/`,
+  unrelated owner work, pending-work history, production/Railway state, commit/push/deployment,
+  browser automation, or post-implementation review classification.
+
+### Verification and acceptance criteria
+
+- Desktop markup has exactly one synchronized top mirror and the wrapper's native lower scrollbar;
+  no `timeline-bottom-scroll` element, handler, sizing rule, or dark override remains. Wrapper
+  scrolling and top scrolling continue to track each other, and the engineer column/header stay
+  sticky while all days remain reachable.
+- The legend starts collapsed with accessible `Show legend` state and minimal height, expands to
+  show all existing schedule/status labels plus workload labels when enabled, changes to
+  `Hide legend`, and recalculates desktop height on both transitions. Mobile/forced-desktop and
+  print visibility rules remain coherent.
+- Focused and related tests, syntax/static checks, release/cache validation, and `git diff --check`
+  pass apart from documented unrelated baseline failures. Browser visual verification remains
+  pending for the owner.
+
+### After implementation
+
+Keep the plan `In progress`, record actual results, and return one consolidated Builder report.
+The owner may separately authorize review, commit, push, Railway/deployment, or browser checks;
+none is performed in this implementation package.
+
+### Implementation outcome (2026-09-08)
+
+- The authorized package was implemented in `templates/timeline.html`,
+  `static/css/app-dark-pages.css`, `templates/layout.html`, `app.py`,
+  `static/changelog/releases.json`, and the focused/current-cache tests. The bottom mirror and
+  its desktop, forced-mobile, synchronization, height-reservation, and dark-theme selectors are
+  gone. The wrapper's native scrollbar remains paired with the top sticky mirror. The footer now
+  starts as a compact accessible `Show legend` disclosure, changes to `Hide legend` when open,
+  retains all schedule/status and workload labels, and dispatches resize so the desktop grid
+  reserve follows the visible shell height.
+- The fail-first checkpoint ran against the unchanged source after the contracts were added:
+  **20 tests: 15 passed, 5 intentional failures, 0 errors, 0 skips**. The failures covered the
+  expected old bottom-mirror, legend, height, cache, and release contracts.
+- The final focused timeline module passed **20/20**. The related isolated command covering
+  appearance, layout, inventory, reimbursement, TSR, changelog, offline, timeline, delivery,
+  and service-worker checks passed **308 tests: 307 passed, 0 failed, 0 errors, 1 skipped**.
+  Full isolated unittest discovery ran **976 tests: 965 passed, 10 known baseline failures,
+  0 errors, 1 skipped**. The ten unrelated failures are the existing eight Purchase Order
+  setup/rate-limit cases returning 429 and two Staff Creation fixture/initials cases.
+- Python AST parsing for the ten changed Python files, Jinja parsing of `templates/timeline.html`,
+  extracted timeline JavaScript syntax checks, CSS brace balance, release JSON validation
+  (**74 releases, 236 unique items**), stale-cache marker checks, and `git diff --check` passed.
+  A Node runtime harness verified wrapper/top scroll propagation and the collapsed/expanded legend
+  ARIA, label, resize, and height behavior. Isolated test databases were external disposable
+  files and were removed after each run.
+- Browser/Codex UI verification was not run because the project explicitly reserves it for the
+  owner. No commit, push, deployment, production/Railway action, database operation, or protected
+  artifact edit was performed. No deviation from the approved scope was required.
+
 ## Graphite effective-mode correction
 
 **Status:** Executed — committed as `06c5a2b` on 2026-09-07; owner-authorized

@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TIMELINE = ROOT / "templates" / "timeline.html"
 APP = ROOT / "app.py"
 APP_DARK = ROOT / "static" / "css" / "app-dark-pages.css"
+LAYOUT = ROOT / "templates" / "layout.html"
 RELEASES = ROOT / "static" / "changelog" / "releases.json"
 
 
@@ -17,6 +18,7 @@ class TimelineDesktopCollapsibleIntroTests(unittest.TestCase):
         cls.timeline = TIMELINE.read_text(encoding="utf-8")
         cls.app = APP.read_text(encoding="utf-8")
         cls.dark_css = APP_DARK.read_text(encoding="utf-8")
+        cls.layout = LAYOUT.read_text(encoding="utf-8")
         cls.releases = json.loads(RELEASES.read_text(encoding="utf-8"))
 
     def _intro_panel(self):
@@ -96,12 +98,91 @@ class TimelineDesktopCollapsibleIntroTests(unittest.TestCase):
         positions = [
             self.timeline.index('id="timeline-sticky-h-scroll"'),
             self.timeline.index('id="timeline-scroll-wrapper"'),
-            self.timeline.index('id="timeline-bottom-scroll"'),
             self.timeline.index('class="calendar-legend calendar-legend-compact'),
         ]
 
         self.assertTrue(all(panel_end < position for position in positions))
         self.assertEqual(positions, sorted(positions))
+
+    def test_calendar_has_one_top_mirror_and_native_wrapper_scrollbar(self):
+        self.assertEqual(self.timeline.count('id="timeline-sticky-h-scroll"'), 1)
+        self.assertEqual(self.timeline.count('id="timeline-sticky-h-scroll-inner"'), 1)
+        self.assertEqual(self.timeline.count('id="timeline-scroll-wrapper"'), 1)
+        for obsolete in (
+            'timeline-bottom-scroll',
+            'timeline-bottom-scroll-inner',
+            'const bottomMirror',
+            'bottomMirrorInner',
+            '.timeline-bottom-scroll',
+        ):
+            self.assertNotIn(obsolete, self.timeline, obsolete)
+
+        sync_start = self.timeline.index('function syncTimelineHorizontalScroll')
+        sync_end = self.timeline.index('// --- AUTOCOMPLETE DATA ENGINE ---', sync_start)
+        sync = self.timeline[sync_start:sync_end]
+        for marker in (
+            "const wrapper = document.getElementById('timeline-scroll-wrapper')",
+            "const topMirror = document.getElementById('timeline-sticky-h-scroll')",
+            'wrapper.onscroll = function()',
+            'topMirror.onscroll = function()',
+            'setScrollLeftIfNeeded(wrapper, leftValue)',
+            'setScrollLeftIfNeeded(topMirror, leftValue)',
+        ):
+            self.assertIn(marker, sync, marker)
+
+    def test_calendar_legend_is_collapsed_accessible_and_preserves_workload_hook(self):
+        toggle_match = re.search(
+            r'<button(?P<button>[^>]*id="timeline-legend-toggle"[^>]*)>'
+            r'(?P<body>.*?)</button>',
+            self.timeline,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(toggle_match, 'calendar legend toggle is missing')
+        if toggle_match is None:
+            return
+        toggle = toggle_match.group('button')
+        body = toggle_match.group('body')
+        self.assertIn('type="button"', toggle)
+        self.assertIn('aria-controls="timeline-calendar-legend"', toggle)
+        self.assertIn('aria-expanded="false"', toggle)
+        self.assertIn('Show legend', body)
+        self.assertIn('id="timeline-legend-toggle-label"', body)
+        self.assertIn('id="timeline-calendar-legend"', self.timeline)
+        legend_start = self.timeline.index('id="timeline-calendar-legend"')
+        legend_open = self.timeline.rfind('<div', 0, legend_start)
+        legend_tag_end = self.timeline.index('>', legend_start)
+        legend_tag = self.timeline[legend_open:legend_tag_end + 1]
+        self.assertIn('calendar-legend', legend_tag)
+        self.assertIn('d-none', legend_tag)
+        self.assertIn('aria-hidden="true"', legend_tag)
+        self.assertIn('id="timeline-intelligence-legend"', self.timeline)
+
+        controller_start = self.timeline.index('function setTimelineLegendExpanded')
+        controller_end = self.timeline.index('function initTimelineStickyHeaderPolish', controller_start)
+        controller = self.timeline[controller_start:controller_end]
+        for marker in (
+            'function setTimelineLegendExpanded',
+            'function toggleTimelineLegend',
+            "legend.classList.toggle('d-none', !isExpanded)",
+            "toggle.setAttribute('aria-expanded', String(isExpanded))",
+            "label.textContent = isExpanded ? 'Hide legend' : 'Show legend'",
+            "window.dispatchEvent(new Event('resize'))",
+            'setTimelineLegendExpanded(false);',
+        ):
+            self.assertIn(marker, controller, marker)
+
+    def test_dead_bottom_mirror_is_removed_from_height_and_dark_rules(self):
+        sticky_start = self.timeline.index('function initTimelineStickyHeaderPolish')
+        sticky = self.timeline[sticky_start:]
+        self.assertNotIn("getElementById('timeline-bottom-scroll')", sticky)
+        self.assertNotIn('bottomScrollbarHeight', sticky)
+        self.assertNotIn('bottomScroll', sticky)
+        self.assertIn('const legendHeight = legend ? Math.ceil(legend.getBoundingClientRect().height) : 0;', sticky)
+        self.assertIn('const legendFooterHeight = legendFooter', sticky)
+        self.assertIn('const footerReserve = legendFooterHeight +', sticky)
+        self.assertNotIn('.timeline-bottom-scroll', self.dark_css)
+        self.assertIn(':root[data-app-theme="dark"] .timeline-sticky-h-scroll', self.dark_css)
+        self.assertIn("filename='css/app-dark-pages.css') }}?v=28", self.layout)
 
     def test_collapsed_utility_rail_boundary_and_control_order(self):
         row_start = self.timeline.index('<div class="timeline-intro-toggle-row')
@@ -258,13 +339,18 @@ class TimelineDesktopCollapsibleIntroTests(unittest.TestCase):
         for marker in (
             "const wrapper = document.getElementById('timeline-scroll-wrapper')",
             'wrapper.getBoundingClientRect().top',
-            "const bottomScroll = document.getElementById('timeline-bottom-scroll')",
             'const gridTop = Math.max(0',
             'const availableHeight = Math.max(',
             "'--timeline-grid-height'",
         ):
             self.assertIn(marker, sticky, marker)
 
+        self.assertIn('const legend = document.querySelector(\'.calendar-legend\')', sticky)
+        self.assertIn('const legendHeight = legend ? Math.ceil(legend.getBoundingClientRect().height) : 0;', sticky)
+        self.assertIn("const legendFooter = document.querySelector('.timeline-calendar-legend-shell')", sticky)
+        self.assertIn('const legendFooterHeight = legendFooter', sticky)
+        self.assertIn('const footerReserve = legendFooterHeight +', sticky)
+        self.assertNotIn('timeline-bottom-scroll', sticky)
         self.assertIn('height: var(--timeline-grid-height', self.timeline)
         self.assertIn('max-height: var(--timeline-grid-height', self.timeline)
         self.assertNotIn('max-height: calc(100vh - 68px) !important;', self.timeline)
@@ -406,9 +492,22 @@ class TimelineDesktopCollapsibleIntroTests(unittest.TestCase):
 
     def test_cache_version_and_everyone_release_are_present(self):
         self.assertIn(
-            "medical-service-pwa-offline-navigation-v139-graphite-dark",
+            "medical-service-pwa-offline-navigation-v140-timeline-scroll-legend",
             self.app,
         )
+
+        release = next(
+            (
+                item
+                for item in self.releases["releases"]
+                if item.get("release_key") == "2026-09-08-timeline-scroll-legend"
+            ),
+            None,
+        )
+        self.assertIsNotNone(release, "calendar scrollbar/legend release is missing")
+        if release is not None:
+            self.assertEqual(release["release_date"], "2026-09-08")
+            self.assertTrue(release["is_published"])
 
         release = next(
             (
