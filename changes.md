@@ -2,6 +2,52 @@
 
 codex changes - 2026-09-08
 
+- The owner authorized committing and pushing only the v147 same-draft client-signature recovery
+  correction to `origin/main`. Local and remote main matched `bd7a415` before publication. The
+  allowlist contains the recovery template, focused tests, cache-only app/test assertions, release
+  metadata, and plan/change records. Protected database, handoffs, `.claude/`, output, temporary
+  files, and unrelated work remain excluded. Existing implementation verification applies; staged
+  whitespace, remote main, and Railway deployment metadata are checked for publication. No manual
+  redeploy, database repair, or Railway-variable change is included.
+
+- Started the owner-authorized focused v147 TSR recovery correction. The current recovery filter
+  hides a surviving signed fallback when it shares the active draft's logical record ID, and the
+  modal apply state provides no clear reason while the source list is empty or a selection is
+  incomplete. The correction will qualify source IDs by store, preserve same schedule/client and
+  unfinished-only rules, capture the fallback before asynchronous queue migration reads, and enable
+  the button only for an explicit valid missing-slot/source selection. No customer data, historical
+  completed TSR/revision, database, production, browser/Codex UI, commit, push, deployment, or
+  formal review action is included; v147 delivery records and focused tests will be updated after
+  the source change.
+
+- Implemented the v147 correction in `templates/offline_tsr.html`: recovery candidates now use
+  source-qualified IDs so IndexedDB, localStorage, and pending queue copies with one logical draft
+  key remain independently selectable. Same-schedule/client, unfinished-only, completed/history,
+  and missing-slot filtering remain enforced, while the matching fallback is no longer rejected.
+- Captured the localStorage fallback synchronously before asynchronous IndexedDB/queue reads so
+  queue migration writes cannot hide the surviving signed copy during a recovery attempt. No new
+  recovery-path writes, online history fetches, completed TSR reuse, or customer-data inspection
+  were added.
+- Added a live apply-state reason beside the recovery button and preserved target/source choices
+  through modal rerenders. Search, busy, stale, no-target, no-source, and partial-source states
+  remain disabled; a selected source containing every selected missing slot enables recovery.
+  The screenshot state with no matching source therefore remains safely disabled but now explains
+  why.
+- Bumped the service-worker marker once to
+  `medical-service-pwa-offline-navigation-v147-tsr-same-draft-recovery`, updated every exact
+  current-cache assertion, and amended the existing TSR recovery release description with the
+  same-key-source and apply-state behavior.
+- Added fail-first and final controlled Node/source contracts. The red checkpoint was **22 tests:
+  19 passed, 3 intentional failures**. Final focused recovery was **22/22 passed**; related
+  TSR/offline/contact/notification/draft-sync/resilience checks were **117/117 passed**. Isolated
+  full discovery used a unique external `MEDICAL_SERVICE_TEST_DB` and ran **1030 tests: 1020
+  passed, 10 known unrelated baseline failures, 0 errors, 0 skips** (eight Purchase Order HTTP
+  429 setup failures and two Staff Creation fixture/initials failures). AST/Jinja/Node/JSON/key/
+  diff checks passed; `py_compile` could not write the pre-existing workspace `__pycache__`, so
+  AST parsing was used for syntax verification. The owner's device, browser, database, production,
+  commit, push, deployment, and formal review remain untouched; no actual historical signature
+  recovery is claimed.
+
 - The owner authorized committing and pushing only the Calibration Certificate approval fix
   to `origin/main`. The six-file publication includes the PDF validator, Approval Center error
   handlers, two focused test modules, release metadata, and this change log. Local and remote

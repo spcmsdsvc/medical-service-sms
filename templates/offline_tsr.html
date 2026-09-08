@@ -85,11 +85,12 @@ window.CalibrationReportConfig = {
               <div class="text-muted small fw-bold">Searching this device and unfinished account drafts...</div>
             </div>
           </fieldset>
+          <div id="tsr-signature-recovery-apply-reason" class="small text-muted fw-bold mt-3" role="status" aria-live="polite" aria-atomic="true"></div>
           <div id="tsr-signature-recovery-note" class="small text-muted fw-bold mt-3"></div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline-secondary fw-bold" type="button" data-bs-dismiss="modal">Cancel</button>
-          <button class="btn btn-warning fw-bold" type="button" id="tsr-signature-recovery-apply" onclick="applyStandaloneTSRSignatureRecovery()" disabled><i class="fa-solid fa-check me-1"></i>Recover selected signatures</button>
+          <button class="btn btn-warning fw-bold" type="button" id="tsr-signature-recovery-apply" aria-describedby="tsr-signature-recovery-apply-reason" onclick="applyStandaloneTSRSignatureRecovery()" disabled><i class="fa-solid fa-check me-1"></i>Recover selected signatures</button>
         </div>
       </div>
     </div>
@@ -4211,14 +4212,13 @@ function getStandaloneTSRRecoverySignatures(source){
 }
 
 function filterStandaloneTSRSignatureRecoveryCandidates(target, candidates){
-  const targetId = String(target?.id || target?.draft_id || '').trim();
   const targetContext = getStandaloneTSRSignatureRecoveryContext(target);
+  const targetSignatures = getStandaloneTSRRecoverySignatures(target);
+  const missingTargets = ['serviced','acknowledged'].filter(targetName => !targetSignatures[targetName]);
   return (Array.isArray(candidates) ? candidates : []).filter(candidate => {
-    const candidateId = String(candidate?.id || candidate?.source_id || '').trim();
-    if(targetId && candidateId && targetId === candidateId) return false;
     if(!isStandaloneTSRUnfinishedSignatureRecoverySource(candidate, candidate?.source || '')) return false;
     const signatures = getStandaloneTSRRecoverySignatures(candidate);
-    if(!signatures.serviced && !signatures.acknowledged) return false;
+    if(!missingTargets.some(targetName => signatures[targetName])) return false;
     return standaloneTSRRecoveryContextsMatch(targetContext, candidate.context || getStandaloneTSRSignatureRecoveryContext(candidate));
   });
 }
@@ -4280,6 +4280,11 @@ function isStandaloneTSRUnfinishedSignatureRecoverySource(source, sourceType='')
 function buildStandaloneTSRSignatureRecoveryCandidate(source, sourceType, metadata={}){
   const payload = getStandaloneTSRSignatureRecoveryPayload(source);
   const signatures = getStandaloneTSRRecoverySignatures(source);
+  const normalizedSourceType = String(sourceType || 'source').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_');
+  const sourceRecordId = String(
+    metadata.record_id ?? metadata.id ?? source?.id ?? source?.submission_id ?? ''
+  ).trim();
+  const candidateId = String(metadata.source_id || '').trim() || `${normalizedSourceType}:${sourceRecordId || `anonymous-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`}`;
   let sourceLabel = metadata.source_label || '';
   if(!sourceLabel){
     sourceLabel = sourceType === 'local_draft' ? 'Saved device draft'
@@ -4289,7 +4294,7 @@ function buildStandaloneTSRSignatureRecoveryCandidate(source, sourceType, metada
       : 'Saved unfinished TSR draft';
   }
   return {
-    id: String(metadata.id || source?.id || source?.submission_id || '').trim() || `${sourceType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    id: candidateId,
     source: sourceType,
     sourceLabel,
     payload,
@@ -4301,9 +4306,21 @@ function buildStandaloneTSRSignatureRecoveryCandidate(source, sourceType, metada
 async function collectStandaloneTSRSignatureCandidates(targetRecord){
   const candidates = [];
   const warnings = [];
+  let fallback = null;
+  try{
+    // Capture this synchronous copy before any IndexedDB/queue await. Queue migration may write
+    // its localStorage mirror while it is being read, so the surviving fallback must be stable
+    // for this recovery attempt.
+    fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
+  }catch(err){
+    warnings.push('The device fallback copy was unavailable while searching.');
+  }
+  const seenSourceRecords = new Set();
   const addCandidate = (source, sourceType, metadata={}) => {
     if(!isStandaloneTSRUnfinishedSignatureRecoverySource(source, sourceType)) return;
     const candidate = buildStandaloneTSRSignatureRecoveryCandidate(source, sourceType, metadata);
+    if(seenSourceRecords.has(candidate.id)) return;
+    seenSourceRecords.add(candidate.id);
     if(candidate.signatures.serviced || candidate.signatures.acknowledged) candidates.push(candidate);
   };
 
@@ -4325,12 +4342,7 @@ async function collectStandaloneTSRSignatureCandidates(targetRecord){
     warnings.push('Queued offline TSRs were unavailable while searching.');
   }
 
-  try{
-    const fallback = loadStandaloneTSRDraftFromLocalStorageFallback();
-    if(fallback) addCandidate(fallback, 'localstorage', { id:fallback._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID });
-  }catch(err){
-    warnings.push('The device fallback copy was unavailable while searching.');
-  }
+  if(fallback) addCandidate(fallback, 'localstorage', { id:fallback._draft_id || OFFLINE_TSR_ACTIVE_DRAFT_ID });
 
   warnings.push('Only unfinished device drafts, account backups, and genuinely pending unsent TSRs were searched. Completed online TSRs and revision history are not recovery sources.');
 
@@ -4360,6 +4372,29 @@ function closeStandaloneTSRSignatureRecovery(){
   if(modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
 }
 
+function getStandaloneTSRSignatureRecoveryApplyDecision(state, requestedTargets=[], sourceId='', options={}){
+  const active = options.active !== false;
+  const busy = Boolean(options.busy);
+  const missingTargets = Array.isArray(state?.missingTargets) ? state.missingTargets : [];
+  const targets = (Array.isArray(requestedTargets) ? requestedTargets : [])
+    .filter(target => missingTargets.includes(target));
+  const source = state?.candidates?.find(candidate => String(candidate?.id || '') === String(sourceId || '')) || null;
+  if(!state) return { disabled:true, reason:'Open a saved TSR draft before recovering signatures.' };
+  if(state.loading) return { disabled:true, reason:'Searching saved signatures...' };
+  if(busy) return { disabled:true, reason:'Saving recovered signatures...' };
+  if(!active) return { disabled:true, reason:'The current TSR draft changed. Open it again before recovering signatures.' };
+  if(!targets.length) return { disabled:true, reason:'Choose a missing signature to recover.' };
+  if(!state.candidates?.length) return { disabled:true, reason:'No saved source found for this schedule and client.' };
+  if(!source) return { disabled:true, reason:'Choose a saved source.' };
+  const available = getStandaloneTSRRecoverySignatures(source);
+  const unavailableTargets = targets.filter(target => !available[target]);
+  if(unavailableTargets.length){
+    const labels = unavailableTargets.map(target => target === 'serviced' ? 'Serviced By' : 'Acknowledged');
+    return { disabled:true, reason:`Selected source lacks ${labels.join(' and ')}. Choose another saved source or adjust the missing signatures.` };
+  }
+  return { disabled:false, reason:'Ready to recover the selected signature(s).' };
+}
+
 function updateStandaloneTSRSignatureRecoveryApplyState(){
   const state = standaloneTSRSignatureRecoveryState;
   const applyButton = document.getElementById('tsr-signature-recovery-apply');
@@ -4368,14 +4403,18 @@ function updateStandaloneTSRSignatureRecoveryApplyState(){
     .map(input => input.value)
     .filter(target => ['serviced','acknowledged'].includes(target));
   const sourceId = document.querySelector('input[name="tsr-signature-recovery-source"]:checked')?.value || '';
-  const source = state?.candidates?.find(candidate => candidate.id === sourceId);
-  const available = source ? getStandaloneTSRRecoverySignatures(source) : {};
-  applyButton.disabled = Boolean(
-    standaloneTSRSignatureRecoveryBusy ||
-    !requestedTargets.length ||
-    !source ||
-    requestedTargets.some(target => !available[target])
-  );
+  if(state){
+    state.selectedTargets = requestedTargets;
+    state.selectedSourceId = sourceId;
+  }
+  const decision = getStandaloneTSRSignatureRecoveryApplyDecision(state, requestedTargets, sourceId, {
+    active:standaloneTSRSignatureRecoveryStateIsActive(state),
+    busy:standaloneTSRSignatureRecoveryBusy
+  });
+  applyButton.disabled = decision.disabled;
+  applyButton.setAttribute('aria-disabled', String(decision.disabled));
+  const reasonEl = document.getElementById('tsr-signature-recovery-apply-reason');
+  if(reasonEl) reasonEl.textContent = decision.reason || '';
 }
 
 function renderStandaloneTSRSignatureRecoveryModal(){
@@ -4385,6 +4424,8 @@ function renderStandaloneTSRSignatureRecoveryModal(){
   const targetsEl = document.getElementById('tsr-signature-recovery-targets');
   const sourcesEl = document.getElementById('tsr-signature-recovery-source-list');
   const noteEl = document.getElementById('tsr-signature-recovery-note');
+  const selectedTargets = Array.isArray(state.selectedTargets) ? state.selectedTargets : [];
+  const selectedSourceId = String(state.selectedSourceId || '').trim();
   if(contextEl){
     const context = state.targetContext || {};
     contextEl.textContent = `Current draft: ${context.clientName || 'Unknown client'} • Schedule ${context.realScheduleId || context.pendingToken || context.date || 'unidentified'}${context.date ? ` • ${context.date}` : ''}`;
@@ -4392,7 +4433,8 @@ function renderStandaloneTSRSignatureRecoveryModal(){
   if(targetsEl){
     targetsEl.innerHTML = state.missingTargets.map(target => {
       const label = target === 'serviced' ? 'Serviced By (engineer)' : 'Acknowledged (client)';
-      return `<label class="form-check tsr-signature-recovery-source"><input class="form-check-input" type="checkbox" name="tsr-signature-recovery-target" id="tsr-signature-recovery-target-${target}" value="${target}" onchange="updateStandaloneTSRSignatureRecoveryApplyState()"><span class="form-check-label fw-bold">${label}</span></label>`;
+      const checked = selectedTargets.includes(target) ? ' checked' : '';
+      return `<label class="form-check tsr-signature-recovery-source"><input class="form-check-input" type="checkbox" name="tsr-signature-recovery-target" id="tsr-signature-recovery-target-${target}" value="${target}" onchange="updateStandaloneTSRSignatureRecoveryApplyState()"${checked}><span class="form-check-label fw-bold">${label}</span></label>`;
     }).join('');
   }
   if(sourcesEl){
@@ -4408,7 +4450,8 @@ function renderStandaloneTSRSignatureRecoveryModal(){
             context.clientName ? `Client: ${context.clientName}` : '',
             context.date ? `Date: ${context.date}` : ''
           ].filter(Boolean).join(' • ');
-          return `<label class="tsr-signature-recovery-source"><input class="form-check-input" type="radio" name="tsr-signature-recovery-source" value="${escapeAttr(candidate.id)}" onchange="updateStandaloneTSRSignatureRecoveryApplyState()"><span class="tsr-signature-recovery-source-copy"><span class="tsr-signature-recovery-source-title">${escapeHTML(candidate.sourceLabel)}</span><span class="tsr-signature-recovery-source-meta">${escapeHTML(detail)}</span></span></label>`;
+          const checked = candidate.id === selectedSourceId ? ' checked' : '';
+          return `<label class="tsr-signature-recovery-source"><input class="form-check-input" type="radio" name="tsr-signature-recovery-source" value="${escapeAttr(candidate.id)}" onchange="updateStandaloneTSRSignatureRecoveryApplyState()"${checked}><span class="tsr-signature-recovery-source-copy"><span class="tsr-signature-recovery-source-title">${escapeHTML(candidate.sourceLabel)}</span><span class="tsr-signature-recovery-source-meta">${escapeHTML(detail)}</span></span></label>`;
         }).join('')
         : '<div class="text-muted small fw-bold">No matching saved signatures were found for this schedule and client.</div>';
   }
@@ -4459,6 +4502,8 @@ async function beginStandaloneTSRSignatureRecovery(recordId){
     missingTargets,
     candidates:[],
     warnings:[],
+    selectedTargets:[],
+    selectedSourceId:'',
     revisionMode:isOnlineTSRRevisionMode(),
     loading:true
   };
@@ -4497,9 +4542,10 @@ async function applyStandaloneTSRSignatureRecovery(){
   const requestedTargets = Array.from(document.querySelectorAll('input[name="tsr-signature-recovery-target"]:checked'))
     .map(input => input.value)
     .filter(target => state.missingTargets.includes(target));
-  const sourceId = document.querySelector('input[name="tsr-signature-recovery-source"]:checked')?.value || '';
+  const selectedTargets = requestedTargets.length ? requestedTargets : (state.selectedTargets || []);
+  const sourceId = document.querySelector('input[name="tsr-signature-recovery-source"]:checked')?.value || state.selectedSourceId || '';
   const candidate = state.candidates.find(item => item.id === sourceId);
-  if(!requestedTargets.length || !candidate){
+  if(!selectedTargets.length || !candidate){
     showTSRStatus('Choose at least one missing signature and one matching saved source before recovering.', 'warning');
     return false;
   }
@@ -4515,8 +4561,8 @@ async function applyStandaloneTSRSignatureRecovery(){
     return false;
   }
   const currentSignatures = Object.assign({}, currentData.signatures || signatureData || {});
-  const nextSignatures = mergeStandaloneTSRRecoverySignatures(currentSignatures, candidate, requestedTargets);
-  const changedTargets = requestedTargets.filter(target => (
+  const nextSignatures = mergeStandaloneTSRRecoverySignatures(currentSignatures, candidate, selectedTargets);
+  const changedTargets = selectedTargets.filter(target => (
     !String(currentSignatures[target] || '').trim() && String(nextSignatures[target] || '').trim()
   ));
   if(!changedTargets.length){

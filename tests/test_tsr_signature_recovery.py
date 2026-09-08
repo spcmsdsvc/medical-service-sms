@@ -298,13 +298,13 @@ globalThis.loadStandaloneTSRDraftFromLocalStorageFallback = () => ({{
         result = subprocess.run([str(NODE), "-e", script], cwd=ROOT, capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
         output = json.loads(result.stdout.strip())
-        self.assertEqual(output["ids"], ["local", "account", "pending"])
+        self.assertEqual(output["ids"], ["local_draft:local", "server_draft:account", "local_queue:pending"])
         self.assertEqual(output["labels"], ["Saved device draft", "Account backup draft", "Queued offline TSR"])
         self.assertEqual(output["fetchCalls"], 0)
         self.assertIn("Completed online TSRs and revision history are not recovery sources", " ".join(output["warnings"]))
 
     def test_worker_and_published_release_are_current(self):
-        self.assertIn("medical-service-pwa-offline-navigation-v146-tsr-signature-finalization", self.app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v147-tsr-same-draft-recovery", self.app_source)
         self.assertNotIn("medical-service-pwa-offline-navigation-v145-tsr-signature-recovery", self.app_source)
         manifest = json.loads(self.release)
         matches = [
@@ -370,6 +370,114 @@ console.log(JSON.stringify({{ ids:filtered.map(row => row.id), kept }}));
         self.assertEqual(output["ids"], ["draft-same"])
         self.assertEqual(output["kept"]["serviced"], "data:image/png;base64,current-eng")
         self.assertEqual(output["kept"]["acknowledged"], "data:image/png;base64,client")
+
+    @unittest.skipUnless(NODE.exists(), f"Node runtime unavailable at {NODE}")
+    def test_runtime_same_logical_id_sources_are_unique_and_missing_slot_filtered(self):
+        script = f"""
+const fs = require('fs');
+const source = fs.readFileSync({json.dumps(str(ROOT / 'templates' / 'offline_tsr.html'))}, 'utf8');
+function take(start, end) {{
+  const at = source.indexOf(start);
+  if(at < 0) throw new Error('missing ' + start);
+  const next = end ? source.indexOf(end, at) : source.length;
+  if(next < 0) throw new Error('missing end ' + end);
+  return source.slice(at, next);
+}}
+function normalizeStandaloneDraftComparable(value) {{ return String(value || '').trim().toLowerCase().replace(/\\s+/g, ' '); }}
+function buildStableScheduleOptionUid(schedule) {{
+  if(!schedule) return '';
+  const id = String(schedule.id || schedule.schedule_id || '').trim();
+  const date = String(schedule.date_iso || schedule.start_date || '').slice(0, 10);
+  return id ? `shift::${{id}}::${{date}}` : `snap::${{normalizeStandaloneDraftComparable(schedule.client_name)}}::${{date}}`;
+}}
+function isSameScheduleSelection(storedId, schedule) {{
+  const stored = String(storedId || '').trim();
+  const id = String(schedule?.id || schedule?.schedule_id || '').trim();
+  return Boolean(stored && id && (stored === id || stored === buildStableScheduleOptionUid(schedule)));
+}}
+eval(take('function getStandaloneTSRSignatureRecoveryPayload', '\\nfunction getStandaloneTSRRecoverySignatures'));
+eval(take('function getStandaloneTSRRecoverySignatures', '\\nfunction filterStandaloneTSRSignatureRecoveryCandidates'));
+eval(take('function filterStandaloneTSRSignatureRecoveryCandidates', '\\nfunction mergeStandaloneTSRRecoverySignatures'));
+eval(take('function isStandaloneTSRUnfinishedSignatureRecoverySource', '\\nfunction buildStandaloneTSRSignatureRecoveryCandidate'));
+eval(take('function buildStandaloneTSRSignatureRecoveryCandidate', '\\nasync function collectStandaloneTSRSignatureCandidates'));
+const context = {{ schedule_id:'3523', 'tsr-customer-name':'Client A', selectedSchedule:{{ id:'3523', client_id:'7', client_name:'Client A', date_iso:'2026-09-01' }} }};
+const target = {{ id:'active', payload:Object.assign({{}}, context, {{ signatures:{{ serviced:'data:image/png;base64,current-eng', acknowledged:'' }} }}) }};
+const device = buildStandaloneTSRSignatureRecoveryCandidate(
+  {{ id:'active', payload:Object.assign({{}}, context, {{ signatures:{{ serviced:'data:image/png;base64,other-eng', acknowledged:'' }} }}) }},
+  'local_draft', {{ id:'active' }}
+);
+const fallback = buildStandaloneTSRSignatureRecoveryCandidate(
+  {{ _draft_id:'active', ...context, signatures:{{ serviced:'', acknowledged:'data:image/png;base64,client' }} }},
+  'localstorage', {{ id:'active' }}
+);
+const filtered = filterStandaloneTSRSignatureRecoveryCandidates(target, [device, fallback]);
+console.log(JSON.stringify({{ allIds:[device.id, fallback.id], ids:filtered.map(row => row.id) }}));
+"""
+        result = subprocess.run([str(NODE), "-e", script], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout.strip())
+        self.assertEqual(len(output["allIds"]), len(set(output["allIds"])))
+        self.assertTrue(output["allIds"][0].startswith("local_draft"))
+        self.assertTrue(output["allIds"][1].startswith("localstorage"))
+        self.assertEqual(len(output["ids"]), 1)
+        self.assertTrue(output["ids"][0].startswith("localstorage"))
+
+    def test_recovery_captures_fallback_before_async_queue_read_and_exposes_apply_reason(self):
+        start = self.template.index("async function collectStandaloneTSRSignatureCandidates")
+        recovery = self.template[start:self.template.index(
+            "\nfunction getStandaloneTSRSignatureRecoveryMissingTargets", start
+        )]
+        fallback_read = recovery.index("loadStandaloneTSRDraftFromLocalStorageFallback")
+        first_await = recovery.index("await ")
+        self.assertLess(fallback_read, first_await)
+        self.assertNotIn("saveOfflineTSRQueueToIndexedDB", recovery)
+        for marker in (
+            "getStandaloneTSRSignatureRecoveryApplyDecision",
+            "tsr-signature-recovery-apply-reason",
+            "aria-describedby",
+            "Searching saved signatures",
+            "No saved source found",
+            "Choose a saved source",
+            "Selected source lacks",
+            "state.selectedSourceId",
+            "state.selectedTargets",
+        ):
+            self.assertIn(marker, self.template)
+
+    @unittest.skipUnless(NODE.exists(), f"Node runtime unavailable at {NODE}")
+    def test_runtime_apply_state_disables_incomplete_states_and_enables_valid_selection(self):
+        script = f"""
+const fs = require('fs');
+const source = fs.readFileSync({json.dumps(str(ROOT / 'templates' / 'offline_tsr.html'))}, 'utf8');
+function take(start, end) {{
+  const at = source.indexOf(start);
+  if(at < 0) throw new Error('missing ' + start);
+  const next = end ? source.indexOf(end, at) : source.length;
+  if(next < 0) throw new Error('missing end ' + end);
+  return source.slice(at, next);
+}}
+eval(take('function getStandaloneTSRSignatureRecoveryApplyDecision', '\\nfunction updateStandaloneTSRSignatureRecoveryApplyState'));
+eval(take('function getStandaloneTSRSignatureRecoveryPayload', '\\nfunction getStandaloneTSRRecoverySignatures'));
+eval(take('function getStandaloneTSRRecoverySignatures', '\\nfunction filterStandaloneTSRSignatureRecoveryCandidates'));
+const sourceWithClient = {{ id:'localstorage:active', signatures:{{ serviced:'', acknowledged:'data:image/png;base64,client' }} }};
+const ready = {{ loading:false, candidates:[sourceWithClient], missingTargets:['serviced','acknowledged'] }};
+const states = {{
+  loading: getStandaloneTSRSignatureRecoveryApplyDecision({{ ...ready, loading:true }}, ['acknowledged'], sourceWithClient.id, {{ active:true, busy:false }}),
+  noSource: getStandaloneTSRSignatureRecoveryApplyDecision({{ ...ready, candidates:[] }}, ['acknowledged'], '', {{ active:true, busy:false }}),
+  noTarget: getStandaloneTSRSignatureRecoveryApplyDecision(ready, [], sourceWithClient.id, {{ active:true, busy:false }}),
+  partial: getStandaloneTSRSignatureRecoveryApplyDecision(ready, ['serviced'], sourceWithClient.id, {{ active:true, busy:false }}),
+  stale: getStandaloneTSRSignatureRecoveryApplyDecision(ready, ['acknowledged'], sourceWithClient.id, {{ active:false, busy:false }}),
+  valid: getStandaloneTSRSignatureRecoveryApplyDecision(ready, ['acknowledged'], sourceWithClient.id, {{ active:true, busy:false }})
+}};
+console.log(JSON.stringify(states));
+"""
+        result = subprocess.run([str(NODE), "-e", script], cwd=ROOT, capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(result.stdout.strip())
+        for key in ("loading", "noSource", "noTarget", "partial", "stale"):
+            self.assertTrue(output[key]["disabled"], key)
+            self.assertTrue(output[key]["reason"], key)
+        self.assertFalse(output["valid"]["disabled"])
 
 
     @unittest.skipUnless(NODE.exists(), f"Node runtime unavailable at {NODE}")

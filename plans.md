@@ -1,5 +1,132 @@
 # Medical Service SMS — Approved Plans
 
+## TSR same-draft recovery source identity and apply-state correction
+
+**Status:** In progress — implementation and local verification complete; no commit was created,
+and commit, push, deployment, database repair, browser/Codex UI actions, and formal review remain
+separately authorized and excluded.
+**Approved:** 2026-09-08 — the owner said **“yes implement the correction”** and reported that
+the recovery button could not be clicked. This focused correction amends the executed v146
+recovery package without promising that the historical signature is still present on the owner's
+device.
+**Detailed:** 2026-09-08.
+
+### Context and intended outcome
+
+The v146 recovery search can collect an unsigned current draft and a surviving signed fallback
+copy with the same logical draft ID, but `filterStandaloneTSRSignatureRecoveryCandidates()`
+currently rejects any candidate whose record ID equals the target ID. That hides the only matching
+source in the reported same-engineer/device scenario. Candidate identity must include its source
+store and record ID, so IndexedDB, localStorage, and pending queue copies remain independently
+selectable even when their logical draft key matches. Recovery must still require the same schedule
+and client context and must offer only a source that contains at least one currently missing slot.
+
+The modal's apply button must remain disabled while searching, stale, busy, without a selected
+target/source, or when the selected source lacks a selected missing signature. It must become
+enabled once a valid source and compatible missing target are selected, with a visible plain
+reason explaining each disabled state. A screenshot showing a selected client target but no
+matching source is correctly disabled; this correction makes retryable valid states selectable and
+does not fabricate or automatically restore a signature.
+
+### Decisions and boundaries
+
+1. Change only the existing unfinished local recovery path in `templates/offline_tsr.html`, its
+   focused contracts in `tests/test_tsr_signature_recovery.py`, the embedded worker marker and
+   exact cache assertions in `app.py`/tests, `static/changelog/releases.json`, `plans.md`, and
+   `changes.md`.
+2. Keep matching schedule/client checks, explicit missing-slot/source choices, stale-context and
+   storage-failure reporting, pending-unsent queue rules, completed/history exclusions, and
+   engineer-signature preservation. Do not inspect customer data, reuse completed TSR/revisions,
+   add a signature vault, alter schema/history, fetch a new external source, or perform production
+   repair. The actual device remains inaccessible and a retry is not a guarantee of recovery.
+3. Capture localStorage fallback data before asynchronous queue migration/upgrade work can write
+   over it, and do not add writes to the recovery search path. Keep existing queue lifecycle and
+   account fallback scope otherwise unchanged.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Read all applicable instructions, full `changes.md` and `plans.md`,
+   current Git state, recovery functions, controlled Node tests, cache assertions, and release
+   shape. Preserve dirty handoffs, `scheduler.db`, `.claude/`, `output/`, `outputs/`, and `tmp/`.
+   Record this plan and a same-day change-log start entry before source edits.
+2. **Fail-first contracts.** Add controlled Node assertions for same logical ID across IndexedDB
+   and localStorage/queue being independently selectable; unique source-qualified IDs; filtering
+   by missing slots, schedule, and client; exclusion of completed/history/attachment-only records;
+   fallback capture before queue reads; and apply-state reasons for no source, loading, stale,
+   partial, and valid selections. Run the unchanged-source checkpoint and record its result.
+3. **Correct recovery identity and collection.** In `templates/offline_tsr.html`, qualify every
+   candidate ID with source type plus record ID, remove the blanket target-ID rejection, de-duplicate
+   only the exact same source record, and retain only candidates able to supply a current missing
+   target. Snapshot the synchronous localStorage fallback before `await loadOfflineTSRQueueStore()`
+   and search it without introducing writes.
+4. **Correct apply state and UI feedback.** Track a stable selected source/targets during rerenders,
+   keep the button disabled for loading/busy/stale/no target/no source/insufficient signatures,
+   enable it for a valid selection, and show a plain live reason tied through `aria-describedby`.
+   Preserve unrelated status errors and existing modal conventions; do not force-enable an empty
+   source state or redesign the page.
+5. **Delivery records.** Bump the current worker marker exactly once from v146 to
+   `medical-service-pwa-offline-navigation-v147-tsr-same-draft-recovery`; update every exact
+   current-cache assertion and the existing TSR release description with the recovery identity and
+   apply-state correction while preserving prior release history.
+6. **Verification and closeout.** Run focused recovery tests (including red and final checkpoints),
+   related TSR/offline checks, isolated full discovery with a unique disposable external
+   `MEDICAL_SERVICE_TEST_DB`, Python/Jinja/inline-JS/JSON/cache/diff checks, and report exact
+   failures/skips plus the no-device-recovery caveat. Update this plan's outcome and `changes.md`.
+   Do not commit, push, deploy, inspect `scheduler.db`, or use browser/Codex UI verification.
+
+### Acceptance criteria
+
+- A same-logical-draft signed fallback remains visible as a separate source and can supply only
+  selected missing slots while preserving existing signatures.
+- Two sources with the same record key have unique radio values and cannot collide; mismatched
+  schedule/client, completed/history, and attachment-only sources remain excluded.
+- The recovery search does not overwrite fallback storage, and valid source/target selection
+  enables the button while all busy, stale, empty, partial, and no-source states remain disabled
+  with a visible reason.
+- v147 delivery records and focused tests describe the behavior truthfully; no claim is made that
+  the requested historical signature was recovered on the owner's actual device.
+
+### Implementation and local verification (2026-09-08)
+
+Implemented the focused correction in the existing recovery package:
+
+- `templates/offline_tsr.html` now gives every recovery candidate a source-qualified ID such as
+  `local_draft:active` or `localstorage:active`, de-duplicates only the exact source record, and
+  no longer rejects a fallback or persisted copy merely because its logical draft key matches the
+  current draft. Filtering still requires matching schedule/client context, unfinished source
+  status, and at least one signature in a currently missing slot.
+- The recovery search snapshots the synchronous localStorage fallback before any IndexedDB or
+  queue await, so queue migration/upgrades cannot hide the surviving fallback during that search.
+  No new recovery-path writes or online/history fetches were added.
+- The modal now preserves selected targets/source through rerenders and exposes a dedicated live
+  apply-state reason. The button remains disabled while searching, busy, stale, targetless,
+  sourceless, or when the selected source lacks a selected missing slot; it enables only for a
+  valid source/target combination and retains the existing explicit apply/save behavior.
+- Added controlled Node contracts for same-key source identity and missing-slot filtering,
+  fallback-before-await ordering, apply-state reasons, and valid/invalid button states. Updated
+  all exact current-cache assertions and the existing TSR release description; the worker marker
+  is now `medical-service-pwa-offline-navigation-v147-tsr-same-draft-recovery`.
+
+Verification:
+
+1. Unchanged-source red checkpoint after adding the correction contracts: **22 tests, 19 passed,
+   3 intentional failures, 0 errors, 0 skips** (same-key filtering, fallback ordering, and
+   missing apply-state helper).
+2. Focused recovery suite: **22 passed, 0 failed, 0 errors, 0 skipped**. Related TSR/offline,
+   contact, notification, draft-sync, and resilience suites: **117 passed, 0 failed, 0 errors,
+   0 skipped**.
+3. Isolated full discovery against a unique external `MEDICAL_SERVICE_TEST_DB`: **1030 tests,
+   1020 passed, 10 failed, 0 errors, 0 skipped**. The ten failures are unrelated baseline setup
+   and fixture failures: eight Purchase Order HTTP 429 cases and two Staff Creation cases. The
+   suite discovered no skipped tests in this newer post-calibration baseline.
+4. Python AST parsing, Jinja parsing for `offline_tsr.html`, controlled Node execution, release
+   JSON/key uniqueness, and `git diff --check` passed. `py_compile` could not write the existing
+   workspace `__pycache__` due its permission state; AST parsing passed and no source bytecode was
+   required. No customer data, `scheduler.db`, production state, browser/Codex UI, commit, push,
+   deployment, or formal review was touched. The owner's actual device remains unverified, so this
+   correction enables a retry but does not claim that the missing historical signature was found.
+
+
 ## TSR client-signature finalization lifecycle and unfinished-only recovery
 
 **Status:** Executed — `e156bac` on 2026-09-08. The owner separately authorized package-only

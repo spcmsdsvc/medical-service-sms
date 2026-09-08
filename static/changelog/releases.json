@@ -23,13 +23,13 @@
       "release_key": "2026-09-08-tsr-signature-recovery",
       "release_date": "2026-09-08",
       "title": "TSR Signature Recovery and Finalization",
-      "summary": "Signed TSR PDFs keep client signatures while reusable payloads stay limited to unfinished work.",
+      "summary": "TSR recovery keeps same-draft copies selectable while signed PDFs keep client signatures.",
       "is_published": true,
       "items": [
         {
           "item_key": "2026-09-08-tsr-signature-recovery-everyone",
           "category": "Technical Service Reports",
-          "description": "Create TSR now offers Recover available signatures for drafts missing an engineer or client signature, limited to same-schedule, same-client unfinished device/account drafts and genuinely pending unsent TSRs. Save Draft and retryable offline work keep both signatures; after a successful online or corrected final save, the signed PDF remains the artifact while the reusable client signature is removed from the completed payload and queue state. Completed online TSRs and revision history are never recovery sources.",
+          "description": "Create TSR now offers Recover available signatures for drafts missing an engineer or client signature, limited to same-schedule, same-client unfinished device/account drafts and genuinely pending unsent TSRs. A surviving device fallback remains independently selectable even when it shares the active draft key, and the recovery action explains when a source or missing signature still needs to be selected. Save Draft and retryable offline work keep both signatures; after a successful online or corrected final save, the signed PDF remains the artifact while the reusable client signature is removed from the completed payload and queue state. Completed online TSRs and revision history are never recovery sources.",
           "audiences": [
             "everyone"
           ],
