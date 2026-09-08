@@ -2,7 +2,9 @@
 
 ## Keep TSR requester and acknowledger independent; serialize offline draft saves
 
-**Status:** Executed locally — implementation and verification complete; no commit, push, deployment, or formal review.
+**Status:** Executed — `fad286e` on 2026-09-08. The owner separately authorized commit and push
+to `origin/main`, excluding the database; this record accompanies that publication. Formal review
+and browser verification remain separate.
 **Approved:** 2026-09-08 — the owner confirmed that Service Requested By and Acknowledged By may be
 different people and authorized preserving signatures during offline draft saves and reloads.
 **Execution authorized:** 2026-09-08 — the owner separately said **“proceed with implementation. do not overengineer”.**
@@ -128,7 +130,9 @@ owner-owned and unstaged.
 
 ## Preserve the client signature when TSR contact details change
 
-**Status:** In progress — implemented locally; no commit, push, deployment, or formal review.
+**Status:** Executed — `fad286e` on 2026-09-08. The owner separately authorized commit and push
+to `origin/main`, excluding the database; this record accompanies that publication. Formal review
+and browser verification remain separate.
 **Approved:** 2026-09-08 — the owner approved the client-signature preservation behavior.
 **Execution authorized:** 2026-09-08 — the owner separately said **“PLEASE IMPLEMENT THIS PLAN”**.
 

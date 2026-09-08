@@ -2,6 +2,10 @@
 
 codex changes - 2026-09-08
 
+- Committed the verified 18-file TSR publication set as `fad286e` and recorded its hash in both
+  executed plans. Staged whitespace checks passed; no database, handoff, generated output, or
+  temporary artifact was included. This journal-only closeout accompanies the authorized main push.
+
 - The owner authorized committing and pushing the two TSR packages to `origin/main`, explicitly
   excluding the database. Publication includes client-signature preservation, independent contact
   naming, ordered offline draft persistence, focused tests, v144 cache assertions, release metadata,
