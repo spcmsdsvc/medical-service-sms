@@ -2,13 +2,15 @@
 
 ## Calibration Report Page 2 engineer name and filename cleanup
 
-**Status:** In progress
+**Status:** Executed — `387ebf6` on 2026-09-08. The owner authorized committing and pushing only
+this correction to `origin/main`; `git ls-remote` verified the published commit. Railway deployment
+metadata was unavailable because no Railway CLI or connector is available in this environment.
 **Approved:** 2026-09-08 — the owner said “implement the plan” after selecting the agreed
 signature-name placement and filename scope.
 **Detailed:** 2026-09-08
-**Execution authorization:** The owner separately authorized implementation in the same
-instruction. Review, commit, push, deployment, Railway, production, database, and browser/Codex
-UI actions remain separately unauthorized.
+**Execution authorization:** The owner separately authorized implementation and later authorized
+commit/push of only this correction to `origin/main`. Formal review, deployment, Railway changes,
+production, database, and browser/Codex UI actions remain separately unauthorized.
 
 ### Context and intended outcome
 
@@ -97,17 +99,18 @@ and future sample/final DOCX names omit only the `NCS_` prefix.
    unrelated baseline failures. Update this plan with truthful implementation evidence and keep its
    status `In progress` because no commit has been authorized. Append the final factual bullets to
    the existing 2026-09-08 `changes.md` section, including tests and any renderer limitation.
-8. **Commit checklist only.** Verify only intended source, test, cache, release, plan, and change-log
-   files would be eligible for a future commit; do not stage, commit, push, deploy, modify Railway,
-   rename historical files, touch production data, or alter protected artifacts in this cycle.
+8. **Commit and publish checklist.** After separate owner authorization, stage only the intended
+   source, test, cache, release, plan, and change-log files; commit and push only that allowlist to
+   `origin/main`; verify the remote SHA and deployment metadata; do not rename historical files,
+   touch production data, or alter protected artifacts.
 
 ### Deliberately excluded
 
 Renaming existing generated DOCX files; rewriting database/storage metadata; changing the official
 DOCX template; changing signature image size or drawing placement; adding a label or new engineer
 field; modifying certificate approval/PDF/email behavior; browser automation; database repair;
-`scheduler.db`; output/tmp cleanup; Git staging/history; commit/push; Railway; deployment; and
-production actions are excluded because they are unnecessary or separately protected.
+`scheduler.db`; output/tmp cleanup; Git history rewriting; manual Railway/deployment operations;
+and production actions are excluded because they are unnecessary or separately protected.
 
 ### Acceptance criteria
 
@@ -145,9 +148,11 @@ production actions are excluded because they are unnecessary or separately prote
   preserved, and the generated name omits `NCS_`. The bundled `render_docx.py` could not render
   PNGs because LibreOffice `soffice.exe` is not installed; no browser/Codex UI verification was
   used, so visual page inspection remains unavailable in this environment.
-- No commit, staging, push, deployment, Railway, production, database, historical-file rename,
-  or protected dirty-artifact operation was performed. The plan remains **In progress** because
-  commit authorization was not included.
+- Implementation commit `387ebf6` contains exactly the 20-file allowlist and was pushed to
+  `origin/main`; `git ls-remote origin refs/heads/main` returned
+  `387ebf60ad53986c8fc0b09f34e93b77f3b0f5f4`. No deployment, Railway-variable, production,
+  database, historical-file rename, or protected dirty-artifact operation was performed. Railway
+  deployment metadata could not be verified because the Railway CLI/connector is unavailable.
 
 
 ## TSR same-draft recovery source identity and apply-state correction

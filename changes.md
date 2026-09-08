@@ -39,6 +39,16 @@ codex changes - 2026-09-08
   not produce page images because LibreOffice `soffice.exe` is unavailable, so visual page
   inspection was not possible; no browser/Codex UI or protected repository artifact was used.
 
+- The owner authorized publication of only this Calibration Report package. Commit `387ebf6`
+  contains exactly the 20-file allowlist and excludes the pre-existing handoff, `scheduler.db`,
+  `.claude/`, `output/`, and `tmp/` paths. It was pushed to `origin/main`, and
+  `git ls-remote origin refs/heads/main` returned
+  `387ebf60ad53986c8fc0b09f34e93b77f3b0f5f4`.
+
+- Railway deployment metadata could not be verified because no Railway CLI or connector is
+  available in this environment. No manual redeploy, Railway-variable change, production database
+  operation, or protected-artifact cleanup was performed.
+
 - Committed the verified v147 recovery correction as `5feb5f1` and recorded its execution hash
   in `plans.md`. Staged whitespace checks passed. No database, handoff, generated output, temporary
   artifact, or unrelated change was included. This journal-only closeout accompanies the authorized
