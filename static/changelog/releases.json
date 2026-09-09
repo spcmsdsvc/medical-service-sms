@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-09-calibration-report-pdf-output",
+      "release_date": "2026-09-09",
+      "title": "Calibration Report PDF Output",
+      "summary": "Calibration Reports now present as PDFs while their original DOCX sources remain privately retained.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-09-calibration-report-pdf-output-everyone",
+          "category": "Calibration Reports",
+          "description": "New and historical generated Calibration Report revisions are converted from their retained DOCX sources to PDF. Engineers see Sample PDF and Final PDF actions, approvers and archive users receive PDF previews/downloads, and service-document email waits for the latest required PDF instead of attaching the private DOCX source. Offline saves still synchronize their retained source and show conversion progress or a retryable failure afterward.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-08-calibration-approval-reliability",
       "release_date": "2026-09-08",
       "title": "Calibration Certificate Approval Reliability",

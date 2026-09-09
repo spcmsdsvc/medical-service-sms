@@ -92,14 +92,14 @@ class ScheduleEmailAttachmentTests(unittest.TestCase):
         self.assertFalse(package[1]['is_tsr'])
         self.assertFalse(package[2]['is_tsr'])
 
-    def test_email_package_includes_only_the_latest_marked_calibration_docx(self):
+    def test_email_package_includes_only_the_latest_converted_calibration_pdf(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             names_and_contents = {
                 'main-tsr.pdf': b'tsr',
                 'quotation.pdf': b'pdf',
                 'site-photo.jpg': b'jpg',
-                'latest-calibration.docx': b'latest',
-                'superseded-calibration.docx': b'old',
+                'latest-calibration.pdf': b'%PDF-latest',
+                'superseded-calibration.pdf': b'%PDF-old',
                 'unrelated-word.docx': b'unrelated',
             }
             paths = {}
@@ -112,8 +112,8 @@ class ScheduleEmailAttachmentTests(unittest.TestCase):
             records = [
                 SimpleNamespace(id=2, filename='quotation.pdf', original_filename='Quotation.pdf', uploaded_at=None),
                 SimpleNamespace(id=3, filename='site-photo.jpg', original_filename='Site Photo.jpg', uploaded_at=None),
-                SimpleNamespace(id=4, filename='latest-calibration.docx', original_filename='Calibration Report.docx', uploaded_at=None),
-                SimpleNamespace(id=5, filename='superseded-calibration.docx', original_filename='Calibration Report old.docx', uploaded_at=None),
+                SimpleNamespace(id=4, filename='latest-calibration.pdf', original_filename='Calibration Report.pdf', uploaded_at=None),
+                SimpleNamespace(id=5, filename='superseded-calibration.pdf', original_filename='Calibration Report old.pdf', uploaded_at=None),
                 SimpleNamespace(id=6, filename='unrelated-word.docx', original_filename='Unrelated Word.docx', uploaded_at=None),
             ]
             shift = SimpleNamespace(id=17, files=records, start_time=datetime(2026, 7, 17, 8, 0))

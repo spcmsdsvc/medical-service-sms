@@ -20,7 +20,7 @@ window.CalibrationReportConfig = {
 <script src="{{ url_for('static', filename='vendor/jszip/jszip.min.js') }}?v=3.10.1"></script>
 <script src="{{ url_for('static', filename='vendor/pdf-lib/pdf-lib.min.js') }}?v=1.17.1"></script>
 <script src="{{ url_for('static', filename='templates/calibration-certificate/calibration-certificate-template-data.js') }}?v=2"></script>
-<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=23"></script>
+<script src="{{ url_for('static', filename='js/app-calibration-report.js') }}?v=24"></script>
 <script src="{{ url_for('static', filename='js/app-offline-schedule.js') }}?v=2"></script>
 <div class="offline-tsr-page">
   <div class="offline-tsr-hero no-print">
@@ -328,14 +328,14 @@ window.CalibrationReportConfig = {
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
           <div>
             <label class="small fw-bold text-muted text-uppercase mb-0">Optional Calibration Report</label>
-            <div class="small text-muted" id="calibration-report-summary">Create an optional calibration report from the supplied Word form. It will remain separate from the main TSR PDF.</div>
+            <div class="small text-muted" id="calibration-report-summary">Create an optional calibration report from the supplied form. It will remain separate from the main TSR PDF.</div>
           </div>
           <span id="calibration-report-status" class="calibration-report-status muted">Not Started</span>
         </div>
         <div class="d-flex flex-wrap gap-2">
           <button type="button" class="btn btn-outline-primary fw-bold" id="calibration-report-create-btn"><i class="fa-solid fa-file-circle-plus me-1"></i><span id="calibration-report-entry-label">Create Calibration Report</span></button>
         </div>
-        <div id="calibration-report-filename" class="calibration-report-file-meta mt-2">No DOCX generated yet.</div>
+        <div id="calibration-report-filename" class="calibration-report-file-meta mt-2">No PDF generated yet.</div>
         <div id="calibration-report-capacity" class="calibration-report-capacity mt-1">Supporting attachment capacity is checked when the TSR is saved.</div>
         <div id="calibration-report-attachment-note" class="calibration-report-attachment-note mt-1">No generated report attachment.</div>
       </div>
@@ -413,14 +413,14 @@ window.CalibrationReportConfig = {
     <div class="calibration-report-toolbar-actions">
       <button type="button" class="btn btn-outline-secondary fw-bold" id="calibration-report-close"><i class="fa-solid fa-arrow-left me-1"></i>Back to TSR</button>
       <button type="button" class="btn btn-outline-primary fw-bold" id="calibration-report-save"><i class="fa-solid fa-bookmark me-1"></i>Save Draft</button>
-      <button type="button" class="btn btn-primary fw-bold" id="calibration-report-generate"><i class="fa-solid fa-file-word me-1"></i><span id="calibration-report-generate-label">Generate Sample DOCX</span></button>
+      <button type="button" class="btn btn-primary fw-bold" id="calibration-report-generate"><i class="fa-solid fa-file-pdf me-1"></i><span id="calibration-report-generate-label">Generate Sample PDF</span></button>
       <div id="calibration-report-certificate-controls" class="calibration-report-certificate-controls" role="group" aria-label="Calibration Certificate sample">
         <label class="calibration-report-certificate-field"><span>BSID (from Product Inventory)</span><input id="calibration-report-bsid" type="text" maxlength="40" autocomplete="off" inputmode="text" readonly aria-readonly="true" aria-describedby="calibration-report-certificate-number-help" placeholder="Select a machine with BSID"></label>
         <label class="calibration-report-certificate-preview"><span>Certificate No.</span><output id="calibration-report-certificate-number" aria-live="polite">Incomplete certificate number</output><small id="calibration-report-certificate-number-help">YYYY-MMDD-BSID</small></label>
         <button type="button" class="btn btn-outline-primary fw-bold" id="calibration-report-certificate-generate"><i class="fa-solid fa-file-pdf me-1"></i>Generate Sample Certificate PDF</button>
       </div>
       <button type="button" class="btn btn-success fw-bold d-none" id="calibration-report-final-save"><i class="fa-solid fa-file-circle-check me-1"></i>Save Final Report</button>
-      <button type="button" class="btn btn-outline-success fw-bold d-none" id="calibration-report-download"><i class="fa-solid fa-file-arrow-down me-1"></i>Download Final DOCX</button>
+      <button type="button" class="btn btn-outline-success fw-bold d-none" id="calibration-report-download"><i class="fa-solid fa-file-arrow-down me-1"></i>Download Final PDF</button>
       <button type="button" class="btn btn-outline-warning fw-bold d-none" id="calibration-report-clear"><i class="fa-solid fa-eraser me-1"></i>Clear Form</button>
       <button type="button" class="btn btn-outline-danger fw-bold d-none" id="calibration-report-toolbar-remove"><i class="fa-solid fa-trash-can me-1"></i>Remove Report</button>
     </div>
@@ -6040,6 +6040,9 @@ async function uploadTSRSupportingAttachments(coreResult, attachments, options={
         result,
         coreResult
       });
+    }
+    if(attachment.source === 'generated_calibration_report' && result.calibration_report && window.calibrationReport?.setConversionStatus){
+      window.calibrationReport.setConversionStatus(result.calibration_report);
     }
     uploadedTokens.add(token);
     uploaded.push(result);

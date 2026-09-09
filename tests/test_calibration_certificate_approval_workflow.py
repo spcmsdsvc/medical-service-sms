@@ -420,6 +420,28 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
             db.session.add(submission)
             db.session.flush()
             report_file.online_tsr_submission_id = submission.id
+            pdf_name = f'Calibration Report {suffix}.pdf'
+            pdf_disk_name = f'shift_{shift.id}_{uuid.uuid4().hex[:16]}_calibration_report.pdf'
+            pdf_file = app_module.ShiftFile(
+                shift_id=shift.id,
+                filename=pdf_disk_name,
+                original_filename=pdf_name,
+                upload_token=f'calibration-report-pdf-fixture-{suffix}',
+                online_tsr_submission_id=submission.id,
+            )
+            db.session.add(pdf_file)
+            db.session.flush()
+            db.session.add(app_module.CalibrationReportConversion(
+                source_shift_file_id=report_file.id,
+                pdf_shift_file_id=pdf_file.id,
+                source_sha256='source-' + suffix,
+                pdf_sha256='pdf-' + suffix,
+                converter_version='test-fixture',
+                state='ready',
+                attempts=1,
+                converted_at=datetime.now(),
+                updated_at=datetime.now(),
+            ))
             approval = app_module.CalibrationCertificateApproval(
                 shift_id=shift.id,
                 online_tsr_submission_id=submission.id,
@@ -436,11 +458,13 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
             db.session.commit()
             fixture = {
                 'approval_id': approval.id,
-                'file_id': report_file.id,
+                'file_id': pdf_file.id,
+                'source_file_id': report_file.id,
                 'shift_id': shift.id,
                 'submission_id': submission.id,
-                'report_name': report_name,
-                'disk_name': disk_name,
+                'report_name': pdf_name,
+                'disk_name': pdf_disk_name,
+                'source_disk_name': disk_name,
                 'requester_id': requester.id,
                 'approver_id': approver.id,
                 'administrator_id': administrator.id,
@@ -471,7 +495,7 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
 
     def _download(self, fixture, user_id, storage_root, extra_file_id=None):
         path = pathlib.Path(storage_root) / fixture['disk_name']
-        path.write_bytes(b'finalized calibration report docx bytes')
+        path.write_bytes(b'%PDF-1.4 finalized calibration report bytes')
         file_id = extra_file_id or fixture['file_id']
         return self._invoke_download(user_id, file_id, fixture['approval_id'])
 
@@ -492,22 +516,17 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
             parse_qs(parsed.query),
             {'scope': ['all'], 'approval_id': [str(fixture['approval_id'])]},
         )
+        preview = urlsplit(item['calibration_report_preview_url'])
+        self.assertEqual(preview.path, f"/preview_tsr_archive_file/{fixture['file_id']}")
+        self.assertEqual(parse_qs(preview.query), {'scope': ['all'], 'approval_id': [str(fixture['approval_id'])]})
 
-    def test_approval_report_preview_uses_local_pinned_runtime_without_new_server_surface(self):
+    def test_approval_report_preview_uses_server_pdf_viewer(self):
         template = (ROOT / 'templates' / 'approvals.html').read_text(encoding='utf-8')
-        renderer = ROOT / 'static' / 'vendor' / 'docx-preview' / 'docx-preview.min.js'
-        license_path = ROOT / 'static' / 'vendor' / 'docx-preview' / 'LICENSE'
-        self.assertTrue(renderer.is_file())
-        self.assertTrue(license_path.is_file())
-        renderer_source = renderer.read_text(encoding='utf-8')
-        license_source = license_path.read_text(encoding='utf-8')
-        self.assertIn('docx-preview <https://github.com/VolodymyrBaydalka/docxjs>', renderer_source)
-        self.assertIn('renderAsync', renderer_source)
-        self.assertIn('Apache License', license_source)
-        self.assertIn('Version 2.0', license_source)
-        self.assertIn('vendor/jszip/jszip.min.js', template)
-        self.assertIn('vendor/docx-preview/docx-preview.min.js', template)
-        self.assertIn('0.4.0', template)
+        self.assertIn('Read-only PDF preview', template)
+        self.assertIn("frame.src = reportUrl", template)
+        self.assertIn('/preview_tsr_archive_file/', template)
+        self.assertNotIn('vendor/jszip/jszip.min.js', template)
+        self.assertNotIn('vendor/docx-preview/docx-preview.min.js', template)
         self.assertIn('calibration_report_download_url', template)
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
         self.assertNotIn('vendor/docx-preview/docx-preview.min.js', app_source)
@@ -521,7 +540,7 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
             app.config['UPLOAD_FOLDER'] = storage_root
             try:
                 report_path = pathlib.Path(storage_root) / fixture['disk_name']
-                report_path.write_bytes(b'finalized calibration report docx bytes')
+                report_path.write_bytes(b'%PDF-1.4 finalized calibration report bytes')
                 cases = (
                     ('requester', fixture['requester_id']),
                     ('approver', fixture['approver_id']),
@@ -548,7 +567,7 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
                                 fixture['approval_id'],
                             )
                         self.assertEqual(response.status_code, 200)
-                        self.assertEqual(response.data, b'finalized calibration report docx bytes')
+                        self.assertEqual(response.data, b'%PDF-1.4 finalized calibration report bytes')
                         self.assertIn(
                             f'filename="{fixture["report_name"]}"',
                             response.headers.get('Content-Disposition', ''),

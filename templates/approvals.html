@@ -1647,7 +1647,7 @@
         }
     }
 
-    /* Approval Center Calibration Report DOCX Preview */
+    /* Approval Center Calibration Report PDF Preview */
     .approval-calibration-report-preview-backdrop {
         position: fixed;
         inset: 0;
@@ -1745,19 +1745,13 @@
         min-height: 100%;
     }
 
-    .approval-calibration-report-preview-content .docx-wrapper {
-        margin: 0 auto;
-        padding: 0;
-        background: transparent;
-    }
-
-    .approval-calibration-report-preview-content .docx {
-        margin: 0 auto 18px;
-        box-shadow: 0 14px 34px rgba(15, 23, 42, 0.24);
-    }
-
-    .approval-calibration-report-preview-style-container {
-        display: none;
+    .approval-calibration-report-preview-content iframe {
+        display: block;
+        width: 100%;
+        min-height: 70vh;
+        border: 0;
+        border-radius: 10px;
+        background: #fff;
     }
 
     .approval-calibration-report-preview-footer {
@@ -2311,7 +2305,7 @@
         <div class="approval-calibration-report-preview-header">
             <div>
                 <div class="approval-calibration-report-preview-title" id="approvalCalibrationReportPreviewTitle">Calibration Report Preview</div>
-                <div class="approval-calibration-report-preview-subtitle">Read-only DOCX preview</div>
+                <div class="approval-calibration-report-preview-subtitle">Read-only PDF preview</div>
             </div>
             <button type="button" class="approval-calibration-report-preview-close" id="approvalCalibrationReportPreviewClose" aria-label="Close Calibration Report preview">×</button>
         </div>
@@ -2319,10 +2313,9 @@
             <div class="approval-calibration-report-preview-status" id="approvalCalibrationReportPreviewStatus" role="status" aria-live="polite">Select Preview Calibration Report to load the report.</div>
             <div class="approval-calibration-report-preview-error" id="approvalCalibrationReportPreviewError" role="alert" hidden></div>
             <div class="approval-calibration-report-preview-content" id="approvalCalibrationReportPreviewContent" aria-label="Rendered Calibration Report"></div>
-            <div class="approval-calibration-report-preview-style-container" id="approvalCalibrationReportPreviewStyleContainer" aria-hidden="true"></div>
         </div>
         <div class="approval-calibration-report-preview-footer">
-            <a class="approval-btn approval-btn-primary" id="approvalCalibrationReportPreviewDownload" href="#" target="_blank" rel="noopener" hidden><i class="fa-solid fa-download me-1"></i>Download Calibration Report (DOCX)</a>
+            <a class="approval-btn approval-btn-primary" id="approvalCalibrationReportPreviewDownload" href="#" target="_blank" rel="noopener" hidden><i class="fa-solid fa-download me-1"></i>Download Calibration Report (PDF)</a>
             <button type="button" class="approval-btn approval-btn-secondary" id="approvalCalibrationReportPreviewFooterClose">Close</button>
         </div>
     </div>
@@ -2337,13 +2330,7 @@
     let selectedApprovalModule = 'reimbursement';
     let approvalModalLoadSequence = 0;
     let calibrationReportPreviewSequence = 0;
-    let calibrationReportPreviewRuntimePromise = null;
-    let calibrationReportPreviewFetchController = null;
     let calibrationReportPreviewTrigger = null;
-    const calibrationReportPreviewAssetUrls = [
-        {{ url_for('static', filename='vendor/jszip/jszip.min.js')|tojson }} + '?v=3.10.1',
-        {{ url_for('static', filename='vendor/docx-preview/docx-preview.min.js')|tojson }} + '?v=0.4.0'
-    ];
 
     const approvalModuleCopy = Object.freeze({
         reimbursement: {
@@ -5205,133 +5192,15 @@ Recipient count: ${recipientCount}` : ''),
             .replace(/\r?\n/g, ' ');
     }
 
-    function loadCalibrationReportPreviewScript(url) {
-        return new Promise(function(resolve, reject) {
-            const existing = Array.from(document.scripts).find(function(script) {
-                return script.dataset && script.dataset.calibrationReportPreviewAsset === url;
-            });
-            if (existing) {
-                if (existing.dataset.calibrationReportPreviewLoaded === 'true') {
-                    resolve();
-                    return;
-                }
-                existing.addEventListener('load', function() { resolve(); }, {once: true});
-                existing.addEventListener('error', function() { reject(new Error('Calibration Report preview runtime failed to load.')); }, {once: true});
-                return;
-            }
-
-            const script = document.createElement('script');
-            script.src = url;
-            script.async = false;
-            script.dataset.calibrationReportPreviewAsset = url;
-            script.addEventListener('load', function() {
-                script.dataset.calibrationReportPreviewLoaded = 'true';
-                resolve();
-            }, {once: true});
-            script.addEventListener('error', function() {
-                reject(new Error('Calibration Report preview runtime failed to load.'));
-            }, {once: true});
-            document.head.appendChild(script);
-        });
-    }
-
-    function loadCalibrationReportPreviewRuntime() {
-        if (window.JSZip && window.docx && typeof window.docx.renderAsync === 'function') {
-            return Promise.resolve();
-        }
-        if (!calibrationReportPreviewRuntimePromise) {
-            const zipReady = window.JSZip
-                ? Promise.resolve()
-                : loadCalibrationReportPreviewScript(calibrationReportPreviewAssetUrls[0]);
-            calibrationReportPreviewRuntimePromise = zipReady
-                .then(function() {
-                    if (window.docx && typeof window.docx.renderAsync === 'function') return undefined;
-                    return loadCalibrationReportPreviewScript(calibrationReportPreviewAssetUrls[1]);
-                })
-                .then(function() {
-                    if (!window.JSZip || !window.docx || typeof window.docx.renderAsync !== 'function') {
-                        throw new Error('Calibration Report preview is unavailable in this browser.');
-                    }
-                })
-                .catch(function(error) {
-                    calibrationReportPreviewRuntimePromise = null;
-                    throw error;
-                });
-        }
-        return calibrationReportPreviewRuntimePromise;
-    }
-
     function calibrationReportPreviewUrlIsAllowed(value) {
         try {
             const parsed = new URL(String(value || ''), window.location.origin);
             return parsed.origin === window.location.origin
-                && parsed.pathname.indexOf('/download_tsr_archive_file/') === 0;
+                && (parsed.pathname.indexOf('/preview_tsr_archive_file/') === 0
+                    || parsed.pathname.indexOf('/download_tsr_archive_file/') === 0);
         } catch (_) {
             return false;
         }
-    }
-
-    function calibrationReportPreviewResourceUrlIsSafe(value) {
-        const raw = String(value || '').trim();
-        const lower = raw.toLowerCase();
-        if (!raw || /^(javascript|vbscript|file|about):/i.test(lower)) return false;
-        if (lower.indexOf('data:') === 0) {
-            return /^data:image\/(?:png|jpe?g|gif|webp|bmp|x-icon);/i.test(raw);
-        }
-        if (lower.indexOf('http://') === 0 || lower.indexOf('https://') === 0) {
-            try { return new URL(raw, window.location.origin).origin === window.location.origin; } catch (_) { return false; }
-        }
-        return lower.indexOf('blob:') === 0 || lower.indexOf('/') === 0 || lower.indexOf('./') === 0 || lower.indexOf('../') === 0;
-    }
-
-    function sanitizeCalibrationReportPreviewStyles(styleRoot) {
-        if (!styleRoot) return;
-        styleRoot.querySelectorAll('style').forEach(function(style) {
-            const css = style.textContent || '';
-            if (/(?:@import|expression\s*\(|javascript\s*:|vbscript\s*:|data:text\/html)/i.test(css)) {
-                style.remove();
-                return;
-            }
-            style.textContent = css.replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, function(match, quote, resource) {
-                return calibrationReportPreviewResourceUrlIsSafe(resource)
-                    ? `url(${quote}${resource}${quote})`
-                    : 'none';
-            });
-        });
-    }
-
-    function sanitizeCalibrationReportPreview(contentRoot, styleRoot) {
-        if (!contentRoot) return;
-        contentRoot.querySelectorAll('script,style,iframe,object,embed,form,input,button,select,textarea,video,audio,canvas,base,meta,link').forEach(function(node) {
-            node.remove();
-        });
-        contentRoot.querySelectorAll('*').forEach(function(element) {
-            Array.from(element.attributes).forEach(function(attribute) {
-                const name = String(attribute.name || '').toLowerCase();
-                const value = attribute.value || '';
-                if (name.indexOf('on') === 0 || ['srcdoc', 'action', 'formaction', 'method', 'target', 'download', 'contenteditable', 'tabindex'].includes(name)) {
-                    element.removeAttribute(attribute.name);
-                    return;
-                }
-                if (['href', 'xlink:href'].includes(name)) {
-                    element.removeAttribute(attribute.name);
-                    return;
-                }
-                if (['src', 'srcset', 'poster'].includes(name) && !calibrationReportPreviewResourceUrlIsSafe(value)) {
-                    element.removeAttribute(attribute.name);
-                    return;
-                }
-                if (name === 'style' && /(?:expression\s*\(|javascript\s*:|vbscript\s*:|url\(\s*['"]?\s*(?:javascript|vbscript|data:text))/i.test(value)) {
-                    element.removeAttribute(attribute.name);
-                }
-            });
-            if (element.tagName && element.tagName.toLowerCase() === 'a') {
-                element.removeAttribute('href');
-                element.removeAttribute('target');
-                element.removeAttribute('rel');
-            }
-        });
-        sanitizeCalibrationReportPreviewStyles(styleRoot);
     }
 
     function calibrationReportPreviewElements() {
@@ -5340,7 +5209,6 @@ Recipient count: ${recipientCount}` : ''),
             status: document.getElementById('approvalCalibrationReportPreviewStatus'),
             error: document.getElementById('approvalCalibrationReportPreviewError'),
             content: document.getElementById('approvalCalibrationReportPreviewContent'),
-            styleContainer: document.getElementById('approvalCalibrationReportPreviewStyleContainer'),
             title: document.getElementById('approvalCalibrationReportPreviewTitle'),
             download: document.getElementById('approvalCalibrationReportPreviewDownload')
         };
@@ -5378,17 +5246,12 @@ Recipient count: ${recipientCount}` : ''),
     function closeCalibrationReportPreview(options) {
         options = options || {};
         calibrationReportPreviewSequence += 1;
-        if (calibrationReportPreviewFetchController) {
-            calibrationReportPreviewFetchController.abort();
-            calibrationReportPreviewFetchController = null;
-        }
         const elements = calibrationReportPreviewElements();
         if (elements.backdrop) {
             elements.backdrop.hidden = true;
             elements.backdrop.style.display = 'none';
         }
         if (elements.content) elements.content.innerHTML = '';
-        if (elements.styleContainer) elements.styleContainer.innerHTML = '';
         if (elements.error) {
             elements.error.hidden = true;
             elements.error.textContent = '';
@@ -5415,10 +5278,8 @@ Recipient count: ${recipientCount}` : ''),
         if (!elements.backdrop || !calibrationReportPreviewUrlIsAllowed(url)) return;
 
         const reportUrl = new URL(String(url), window.location.origin).href;
-        const safeFilename = String(filename || 'Calibration Report.docx');
+        const safeFilename = String(filename || 'Calibration Report.pdf');
         const sequence = ++calibrationReportPreviewSequence;
-        if (calibrationReportPreviewFetchController) calibrationReportPreviewFetchController.abort();
-        calibrationReportPreviewFetchController = typeof AbortController === 'function' ? new AbortController() : null;
         calibrationReportPreviewTrigger = trigger || document.activeElement;
         if (elements.title) elements.title.textContent = safeFilename;
         if (elements.download) {
@@ -5427,54 +5288,39 @@ Recipient count: ${recipientCount}` : ''),
         }
         if (elements.content) {
             elements.content.innerHTML = '';
-            elements.content.hidden = true;
+            elements.content.hidden = false;
         }
-        if (elements.styleContainer) elements.styleContainer.innerHTML = '';
         setCalibrationReportPreviewState('loading', `Loading ${safeFilename}...`);
         elements.backdrop.hidden = false;
         elements.backdrop.style.display = 'flex';
 
         try {
-            const fetchOptions = {
-                credentials: 'same-origin',
-                cache: 'no-store',
-                headers: {Accept: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/octet-stream'}
-            };
-            if (calibrationReportPreviewFetchController) fetchOptions.signal = calibrationReportPreviewFetchController.signal;
-            const response = await fetch(reportUrl, fetchOptions);
-            if (!response.ok) throw new Error(`The Calibration Report could not be loaded (${response.status}).`);
-            const bytes = await response.arrayBuffer();
-            await loadCalibrationReportPreviewRuntime();
             if (!calibrationReportPreviewSequenceIsCurrent(sequence)) return;
-            await window.docx.renderAsync(bytes, elements.content, elements.styleContainer, {
-                className: 'calibration-report-docx',
-                inWrapper: true,
-                breakPages: true,
-                renderHeaders: true,
-                renderFooters: true,
-                renderFootnotes: true,
-                renderEndnotes: true,
-                ignoreLastRenderedPageBreak: false,
-                useBase64URL: true,
-                renderAltChunks: false,
-                renderComments: false,
-                renderChanges: false
-            });
-            if (!calibrationReportPreviewSequenceIsCurrent(sequence)) return;
-            sanitizeCalibrationReportPreview(elements.content, elements.styleContainer);
-            if (!elements.content.children.length) throw new Error('The Calibration Report did not contain previewable content.');
+            const frame = document.createElement('iframe');
+            frame.title = `${safeFilename} preview`;
+            frame.src = reportUrl;
+            frame.loading = 'eager';
+            frame.referrerPolicy = 'same-origin';
+            frame.style.width = '100%';
+            frame.style.minHeight = '70vh';
+            frame.style.border = '0';
+            frame.style.borderRadius = '10px';
+            frame.addEventListener('load', function() {
+                if (calibrationReportPreviewSequenceIsCurrent(sequence)) {
+                    setCalibrationReportPreviewState('ready', `${safeFilename} is ready to review.`);
+                }
+            }, {once: true});
+            if (elements.content) elements.content.appendChild(frame);
+            if (elements.download) elements.download.hidden = false;
             setCalibrationReportPreviewState('ready', `${safeFilename} is ready to review.`);
         } catch (error) {
-            if (!calibrationReportPreviewSequenceIsCurrent(sequence) || error?.name === 'AbortError') return;
+            if (!calibrationReportPreviewSequenceIsCurrent(sequence)) return;
             if (elements.content) {
                 elements.content.innerHTML = '';
                 elements.content.hidden = true;
             }
-            if (elements.styleContainer) elements.styleContainer.innerHTML = '';
             if (elements.download) elements.download.hidden = false;
-            setCalibrationReportPreviewState('error', `${error?.message || 'Calibration Report preview is unavailable.'} Use Download Calibration Report (DOCX) instead.`);
-        } finally {
-            if (calibrationReportPreviewSequenceIsCurrent(sequence)) calibrationReportPreviewFetchController = null;
+            setCalibrationReportPreviewState('error', `${error?.message || 'Calibration Report preview is unavailable.'} Use Download Calibration Report (PDF) instead.`);
         }
     }
 
@@ -6250,9 +6096,12 @@ async function dismissApprovalNotification(event, notificationId) {
             const subtitle = document.getElementById('approvalModalSubtitle');
             if (title) title.textContent = `Review ${data.certificate_number || 'Calibration Certificate'}`;
             if (subtitle) subtitle.textContent = `${data.machine || data.bsid || 'Machine'} • REV${Number(data.revision_no || 1)}`;
-            const calibrationReportPanel = data.calibration_report_download_url
-                ? `<div class="approval-modal-panel full"><h3>Calibration Report</h3><div class="approval-actions"><button type="button" class="approval-btn approval-btn-secondary" data-calibration-report-preview data-calibration-report-preview-url="${approvalEscape(data.calibration_report_download_url)}" data-calibration-report-preview-filename="${approvalEscape(data.calibration_report_filename || 'Calibration Report.docx')}"><i class="fa-solid fa-eye me-1"></i>Preview Calibration Report</button><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.calibration_report_download_url)}" target="_blank" rel="noopener"><i class="fa-solid fa-file-word me-1"></i>Download Calibration Report (DOCX)</a><span class="approval-muted">${approvalEscape(data.calibration_report_filename || 'Calibration Report.docx')}</span></div></div>`
-                : `<div class="approval-modal-panel full"><h3>Calibration Report</h3><div class="approval-empty">The finalized Calibration Report is unavailable for this submission.</div></div>`;
+            const calibrationReportPreviewUrl = data.calibration_report_preview_url || '';
+            const calibrationReportReady = Boolean(data.calibration_report_download_url && calibrationReportPreviewUrl);
+            const calibrationReportState = String(data.calibration_report_state || '').toLowerCase();
+            const calibrationReportPanel = calibrationReportReady
+                ? `<div class="approval-modal-panel full"><h3>Calibration Report PDF</h3><div class="approval-actions"><button type="button" class="approval-btn approval-btn-secondary" data-calibration-report-preview data-calibration-report-preview-url="${approvalEscape(calibrationReportPreviewUrl)}" data-calibration-report-preview-filename="${approvalEscape(data.calibration_report_filename || 'Calibration Report.pdf')}"><i class="fa-solid fa-eye me-1"></i>Preview Calibration Report</button><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.calibration_report_download_url)}" target="_blank" rel="noopener"><i class="fa-solid fa-file-pdf me-1"></i>Download Calibration Report (PDF)</a><span class="approval-muted">${approvalEscape(data.calibration_report_filename || 'Calibration Report.pdf')}</span></div></div>`
+                : `<div class="approval-modal-panel full"><h3>Calibration Report PDF</h3><div class="approval-empty">${calibrationReportState === 'failed' ? 'PDF conversion failed. Retry the report conversion before reviewing this certificate.' : 'The Calibration Report PDF is still being prepared after TSR synchronization.'}${data.calibration_report_error ? ` <span class="approval-muted">${approvalEscape(data.calibration_report_error)}</span>` : ''}</div></div>`;
             if (body) body.innerHTML = `<div class="approval-detail-grid"><div class="approval-stat"><small>Certificate No.</small><strong>${approvalEscape(data.certificate_number || '')}</strong></div><div class="approval-stat"><small>Machine / BSID</small><strong>${approvalEscape(data.machine || data.bsid || '—')}</strong></div><div class="approval-stat"><small>Facility</small><strong>${approvalEscape(data.facility || '—')}</strong></div><div class="approval-stat"><small>Status</small><strong>${approvalEscape(data.status || '')}</strong></div></div><div class="approval-detail-grid"><div class="approval-stat"><small>TSR</small><strong>${approvalEscape(data.tsr_number || '—')}</strong></div><div class="approval-stat"><small>Calibration Date</small><strong>${approvalEscape(data.calibration_date || '—')}</strong></div><div class="approval-stat"><small>Next Calibration</small><strong>${approvalEscape(data.next_calibration_date || '—')}</strong></div><div class="approval-stat"><small>Requester</small><strong>${approvalEscape(data.requester || '—')}</strong></div></div>${calibrationReportPanel}<div class="approval-modal-panel full"><h3>Certificate Preview</h3><iframe title="Calibration Certificate preview" src="${approvalEscape(data.signed_preview_url || data.unsigned_preview_url || '#')}" style="width:100%;min-height:520px;border:1px solid #e2e8f0;border-radius:10px;"></iframe>${data.no_signature_preview_url ? `<div class="approval-actions mt-2"><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.no_signature_preview_url)}" target="_blank" rel="noopener"><i class="fa-solid fa-print me-1"></i>Preview No-Signature Print Copy</a><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.no_signature_url || '#')}"><i class="fa-solid fa-download me-1"></i>Download No-Signature Print Copy</a></div>` : ''}</div>${data.return_remarks ? `<div class="approval-decision-panel rejected"><h3>Return Remarks</h3><div>${approvalEscape(data.return_remarks)}</div></div>` : ''}`;
             wireCalibrationReportPreview(body);
             const approveBtn = document.getElementById('approvalApproveBtn');

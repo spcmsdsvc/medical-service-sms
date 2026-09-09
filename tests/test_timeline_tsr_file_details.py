@@ -120,12 +120,18 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
             )
             cls.calibration_report_file = app_module.ShiftFile(
                 shift_id=cls.shift.id,
-                filename='generated-calibration-report.docx',
-                original_filename='Calibration Report.docx',
+                filename='generated-calibration-report.pdf',
+                original_filename='Calibration Report.pdf',
+            )
+            cls.calibration_report_source_file = app_module.ShiftFile(
+                shift_id=cls.shift.id,
+                filename='generated-calibration-report-source.docx',
+                original_filename='Calibration Report source.docx',
             )
             app_module.db.session.add_all([
                 cls.manual_file,
                 cls.generated_file,
+                cls.calibration_report_source_file,
                 cls.calibration_report_file,
             ])
             app_module.db.session.commit()
@@ -140,14 +146,26 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
                     '_attached_file_id': cls.generated_file.id,
                     '_generated_calibration_report': {
                         'source': 'generated_calibration_report',
-                        'file_id': cls.calibration_report_file.id,
+                        'file_id': cls.calibration_report_source_file.id,
                     },
                 }),
             )
             app_module.db.session.add(cls.submission)
             app_module.db.session.commit()
             cls.generated_file.online_tsr_submission_id = cls.submission.id
+            cls.calibration_report_source_file.online_tsr_submission_id = cls.submission.id
             cls.calibration_report_file.online_tsr_submission_id = cls.submission.id
+            app_module.db.session.add(app_module.CalibrationReportConversion(
+                source_shift_file_id=cls.calibration_report_source_file.id,
+                pdf_shift_file_id=cls.calibration_report_file.id,
+                source_sha256='timeline-source-fixture',
+                pdf_sha256='timeline-pdf-fixture',
+                converter_version='test-fixture',
+                state='ready',
+                attempts=1,
+                converted_at=datetime.now(),
+                updated_at=datetime.now(),
+            ))
             app_module.db.session.commit()
 
             # An HR schedule viewer: no Engineer profile, so is_hr_schedule_only_user()
@@ -171,6 +189,7 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
             cls.manual_file_id = cls.manual_file.id
             cls.generated_file_id = cls.generated_file.id
             cls.calibration_report_file_id = cls.calibration_report_file.id
+            cls.calibration_report_source_file_id = cls.calibration_report_source_file.id
             cls.submission_id = cls.submission.id
 
     @classmethod
@@ -179,6 +198,9 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
             shift = app_module.db.session.get(app_module.Shift, cls.shift_id)
             if shift:
                 app_module.ShiftEngineer.query.filter_by(shift_id=cls.shift_id).delete()
+                app_module.CalibrationReportConversion.query.filter_by(
+                    source_shift_file_id=cls.calibration_report_source_file_id,
+                ).delete(synchronize_session=False)
                 app_module.ShiftFile.query.filter_by(shift_id=cls.shift_id).delete()
                 app_module.db.session.delete(shift)
             submission = app_module.db.session.get(app_module.OnlineTsrSubmission, cls.submission_id)
@@ -232,9 +254,9 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
         self.assertFalse(report_details['is_tsr'])
         self.assertTrue(report_details['is_calibration_report'])
         self.assertTrue(report_details['can_download'])
-        self.assertFalse(report_details['can_preview'])
+        self.assertTrue(report_details['can_preview'])
         self.assertIn('/download_tsr_archive_file/', report_details['download_url'])
-        self.assertEqual(report_details['preview_url'], '')
+        self.assertIn('/preview_tsr_archive_file/', report_details['preview_url'])
         self.assertTrue(details_by_id[self.generated_file_id]['download_url'])
         self.assertEqual(details_by_id[self.manual_file_id]['download_url'], '')
 
@@ -246,12 +268,12 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
         self.assertFalse(details[self.calibration_report_file_id]['is_tsr'])
         self.assertTrue(details[self.calibration_report_file_id]['is_calibration_report'])
         self.assertTrue(details[self.calibration_report_file_id]['download_url'])
-        self.assertEqual(details[self.calibration_report_file_id]['preview_url'], '')
+        self.assertTrue(details[self.calibration_report_file_id]['preview_url'])
 
-    def test_generated_calibration_report_downloads_as_attachment(self):
-        report_bytes = b'generated calibration report docx bytes'
+    def test_generated_calibration_report_pdf_downloads_as_attachment(self):
+        report_bytes = b'generated calibration report pdf bytes'
         with tempfile.TemporaryDirectory() as temp_dir:
-            report_path = pathlib.Path(temp_dir) / 'generated-calibration-report.docx'
+            report_path = pathlib.Path(temp_dir) / 'generated-calibration-report.pdf'
             report_path.write_bytes(report_bytes)
             client = self._client_for_user()
 
@@ -266,7 +288,7 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200)
             self.assertIn('attachment;', response.headers.get('Content-Disposition', '').lower())
-            self.assertIn('Calibration Report.docx', response.headers.get('Content-Disposition', ''))
+            self.assertIn('Calibration Report.pdf', response.headers.get('Content-Disposition', ''))
             self.assertEqual(response.data, report_bytes)
             response.close()
 

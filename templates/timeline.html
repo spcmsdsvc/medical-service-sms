@@ -15502,9 +15502,9 @@ if(shift.engineers){
         const rows = recognizedFiles.map(file => {
             const displayName = file.display_name || cleanStoredFilenameForDisplay(file.filename) || 'TSR document';
             const isCalibrationReport = Boolean(file.is_calibration_report);
-            const actionUrl = isCalibrationReport ? getTimelineFileDownloadUrl(file) : getTimelineFilePreviewUrl(file);
-            const actionLabel = isCalibrationReport ? 'Download' : 'Preview';
-            const linkAttrs = isCalibrationReport ? 'download' : 'target="_blank" rel="noopener"';
+            const actionUrl = getTimelineFilePreviewUrl(file);
+            const actionLabel = 'Preview';
+            const linkAttrs = 'target="_blank" rel="noopener"';
             const fileIcon = /\.docx$/i.test(displayName)
                 ? 'fa-file-word'
                 : (/\.(png|jpe?g)$/i.test(displayName) ? 'fa-file-image' : 'fa-file-pdf');
@@ -15518,7 +15518,7 @@ if(shift.engineers){
             }
             if(!actionUrl){
                 return `
-                    <div class="timeline-tsr-attachment-unavailable" title="${isCalibrationReport ? 'Download is unavailable for this file' : 'Preview is unavailable for this legacy file'}">
+                        <div class="timeline-tsr-attachment-unavailable" title="${isCalibrationReport ? 'Preview is unavailable for this file' : 'Preview is unavailable for this legacy file'}">
                         <i class="fa-solid ${fileIcon}" aria-hidden="true"></i>
                         <span>${escapeHtml(displayName)}</span>
                     </div>
@@ -15528,7 +15528,7 @@ if(shift.engineers){
                 <a class="timeline-tsr-attachment-link" href="${escapeHtml(actionUrl)}" ${linkAttrs} aria-label="${actionLabel} ${escapeHtml(displayName)}">
                     <i class="fa-solid ${fileIcon}" aria-hidden="true"></i>
                     <span>${escapeHtml(displayName)}</span>
-                    <i class="fa-solid ${isCalibrationReport ? 'fa-download' : 'fa-arrow-up-right-from-square'}" aria-hidden="true"></i>
+                    <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
                 </a>
             `;
         }).join('');

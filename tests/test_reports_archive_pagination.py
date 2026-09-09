@@ -60,7 +60,7 @@ class ReportsArchivePaginationSourceTests(unittest.TestCase):
         attachments = template_source[attachments_start:attachments_end]
 
         self.assertIn('file.is_tsr || file.is_managed_certificate || file.is_calibration_report', attachments)
-        self.assertIn('getTimelineFileDownloadUrl(file)', attachments)
+        self.assertIn('getTimelineFilePreviewUrl(file)', attachments)
         self.assertIn("'fa-file-word'", attachments)
         self.assertIn('actionLabel', attachments)
         self.assertIn('file.is_no_signature && (file.locked || file.can_preview === false)', attachments)
@@ -79,14 +79,14 @@ class ReportsArchivePaginationSourceTests(unittest.TestCase):
         self.assertIn('getTimelineFileDownloadUrl(fileInfo)', edit_file_list)
         self.assertIn('fileInfo.is_calibration_report', edit_file_list)
 
-    def test_timeline_schedule_card_uses_report_download_accessibility_metadata(self):
+    def test_timeline_schedule_card_uses_report_preview_accessibility_metadata(self):
         template_source = (ROOT / 'templates' / 'timeline.html').read_text(encoding='utf-8')
         attachments_start = template_source.index('function buildTimelineTSRAttachmentsHtml(')
         attachments_end = template_source.index('function getTimelineFilePreviewUrl(', attachments_start)
         attachments = template_source[attachments_start:attachments_end]
-        self.assertIn("'Download'", attachments)
+        self.assertIn("'Preview'", attachments)
         self.assertIn('aria-label="${actionLabel} ${escapeHtml(displayName)}"', attachments)
-        self.assertIn('download', attachments)
+        self.assertIn('target="_blank" rel="noopener"', attachments)
 
     def test_generated_report_release_item_is_present(self):
         releases = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
@@ -125,10 +125,10 @@ class ReportsArchivePaginationSourceTests(unittest.TestCase):
         self.assertIsNone(resolved)
         self.assertEqual(error_response.status_code, 403)
 
-    def test_archive_accepts_only_submission_linked_generated_calibration_report_docx(self):
+    def test_archive_hides_private_source_and_accepts_linked_calibration_report_pdf(self):
         with tempfile.TemporaryDirectory() as temp_dir:
-            report_path = Path(temp_dir) / 'calibration-report.docx'
-            report_path.write_bytes(b'generated calibration report')
+            report_path = Path(temp_dir) / 'calibration-report.pdf'
+            report_path.write_bytes(b'%PDF-1.4 generated calibration report')
             shift = SimpleNamespace(id=864)
             submission = SimpleNamespace(
                 id=27,
@@ -140,24 +140,24 @@ class ReportsArchivePaginationSourceTests(unittest.TestCase):
                     }
                 }),
             )
-            generated_file = SimpleNamespace(
+            source_file = SimpleNamespace(
                 id=134,
                 shift_id=864,
                 filename='calibration-report.docx',
                 original_filename='Calibration Report.docx',
                 online_tsr_submission_id=27,
             )
-            unrelated_file = SimpleNamespace(
-                id=135,
+            generated_pdf = SimpleNamespace(
+                id=136,
                 shift_id=864,
-                filename='unrelated.docx',
-                original_filename='Unrelated.docx',
+                filename='calibration-report.pdf',
+                original_filename='Calibration Report.pdf',
                 online_tsr_submission_id=27,
             )
 
             def load_record(model, record_id):
                 if model is app_module.ShiftFile:
-                    return generated_file if record_id == 134 else unrelated_file
+                    return source_file if record_id == 134 else generated_pdf
                 if model is app_module.Shift:
                     return shift
                 if model is app_module.OnlineTsrSubmission:
@@ -167,20 +167,22 @@ class ReportsArchivePaginationSourceTests(unittest.TestCase):
             with app_module.app.test_request_context('/preview_tsr_archive_file/134'):
                 with patch.object(app_module.db.session, 'get', side_effect=load_record), \
                         patch.object(app_module, 'user_can_view_shift_tsr_archive', return_value=True), \
-                        patch.object(app_module, 'managed_storage_read_path', return_value=str(report_path)):
+                        patch.object(app_module, 'calibration_report_source_file_is_private', return_value=True):
                     resolved, error_response = app_module._resolve_tsr_archive_file_for_preview(134)
 
-            self.assertIsNone(error_response)
-            self.assertEqual(resolved['ext'], 'docx')
+            self.assertIsNone(resolved)
+            self.assertEqual(error_response.status_code, 403)
 
-            with app_module.app.test_request_context('/preview_tsr_archive_file/135'):
+            with app_module.app.test_request_context('/preview_tsr_archive_file/136'):
                 with patch.object(app_module.db.session, 'get', side_effect=load_record), \
                         patch.object(app_module, 'user_can_view_shift_tsr_archive', return_value=True), \
-                        patch.object(app_module, 'managed_storage_read_path', return_value=str(report_path)):
-                    resolved, error_response = app_module._resolve_tsr_archive_file_for_preview(135)
+                        patch.object(app_module, 'managed_storage_read_path', return_value=str(report_path)), \
+                        patch.object(app_module, 'calibration_certificate_no_signature_approval_for_file', return_value=None), \
+                        patch.object(app_module, 'is_system_generated_calibration_report_pdf_file', return_value=True):
+                    resolved, error_response = app_module._resolve_tsr_archive_file_for_preview(136)
 
-            self.assertIsNone(resolved)
-            self.assertEqual(error_response.status_code, 400)
+            self.assertIsNone(error_response)
+            self.assertEqual(resolved['ext'], 'pdf')
 
 
 if __name__ == '__main__':

@@ -131,7 +131,7 @@ class TimelineWeekNavigationCacheTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
     def test_current_worker_marker_and_release_are_updated(self):
-        self.assertIn("medical-service-pwa-offline-navigation-v148-calibration-report-signature-name-filename", APP_SOURCE)
+        self.assertIn("medical-service-pwa-offline-navigation-v149-calibration-report-pdf", APP_SOURCE)
         matches = [
             release
             for release in RELEASES.get("releases", [])

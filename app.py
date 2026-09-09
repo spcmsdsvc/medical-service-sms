@@ -123,8 +123,10 @@ import hashlib
 import mimetypes
 import types
 import shutil
+import subprocess
 import sqlite3
 import unicodedata
+from pathlib import Path
 from functools import wraps
 from email.message import EmailMessage
 from email.utils import formataddr
@@ -2788,6 +2790,40 @@ class OnlineTsrSubmission(db.Model):
     revised_by_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True, index=True)
 
 
+class CalibrationReportConversion(db.Model):
+    """Durable conversion state for one generated Calibration Report source."""
+    __tablename__ = 'calibration_report_conversion'
+
+    id = db.Column(db.Integer, primary_key=True)
+    source_shift_file_id = db.Column(
+        db.Integer,
+        db.ForeignKey('shift_file.id'),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    pdf_shift_file_id = db.Column(
+        db.Integer,
+        db.ForeignKey('shift_file.id'),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+    source_sha256 = db.Column(db.String(64), nullable=True, index=True)
+    pdf_sha256 = db.Column(db.String(64), nullable=True)
+    converter_version = db.Column(db.String(80), nullable=True)
+    state = db.Column(db.String(20), nullable=False, default='pending', index=True)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    claim_token = db.Column(db.String(80), nullable=True, index=True)
+    claimed_at = db.Column(db.DateTime, nullable=True)
+    next_retry_at = db.Column(db.DateTime, nullable=True, index=True)
+    last_attempt_at = db.Column(db.DateTime, nullable=True)
+    converted_at = db.Column(db.DateTime, nullable=True)
+    last_error = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=get_manila_time, nullable=False, index=True)
+
+
 class CalibrationCertificateApproval(db.Model):
     """Revision-aware approval record for a finalized Calibration Report."""
     __tablename__ = 'calibration_certificate_approval'
@@ -2889,6 +2925,10 @@ _shift_travel_block_columns_ready = False
 _shift_creation_token_ready = False
 _travel_liquidation_tables_ready = False
 _stock_inventory_tables_ready = False
+_calibration_report_conversion_table_ready = False
+_calibration_report_conversion_worker = None
+_calibration_report_conversion_worker_lock = threading.Lock()
+_calibration_report_conversion_worker_wakeup = threading.Event()
 
 
 def ensure_tsr_knowledge_entry_table():
@@ -3040,6 +3080,41 @@ def ensure_calibration_certificate_approval_table():
         _calibration_certificate_approval_table_ready = True
     except Exception as certificate_schema_error:
         print(f"[CalibrationCertificate] Schema migration failed: {certificate_schema_error}", flush=True)
+        raise
+
+
+def ensure_calibration_report_conversion_table():
+    """Create the additive Calibration Report conversion table when needed."""
+    global _calibration_report_conversion_table_ready
+    if _calibration_report_conversion_table_ready:
+        return True
+
+    try:
+        CalibrationReportConversion.__table__.create(db.engine, checkfirst=True)
+        with db.engine.begin() as connection:
+            index_statements = (
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_calibration_report_conversion_source "
+                "ON calibration_report_conversion (source_shift_file_id)",
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_calibration_report_conversion_pdf "
+                "ON calibration_report_conversion (pdf_shift_file_id)",
+                "CREATE INDEX IF NOT EXISTS idx_calibration_report_conversion_state_retry "
+                "ON calibration_report_conversion (state, next_retry_at)",
+                "CREATE INDEX IF NOT EXISTS idx_calibration_report_conversion_claim "
+                "ON calibration_report_conversion (state, claimed_at)",
+            )
+            for statement in index_statements:
+                try:
+                    connection.exec_driver_sql(statement)
+                except Exception as index_error:
+                    print(
+                        f"[CalibrationReport] Conversion index step skipped ({index_error}): {statement}",
+                        flush=True,
+                    )
+        _calibration_report_conversion_table_ready = True
+        return True
+    except Exception as table_error:
+        db.session.rollback()
+        print(f"[CalibrationReport] Unable to ensure conversion table: {table_error}", flush=True)
         raise
 
 
@@ -15727,6 +15802,648 @@ def calibration_report_filename_is_docx(filename):
     return clean_str(filename).lower().endswith('.docx')
 
 
+CALIBRATION_REPORT_CONVERTER_VERSION = clean_str(
+    os.environ.get('CALIBRATION_REPORT_CONVERTER_VERSION')
+) or 'libreoffice-writer-1'
+CALIBRATION_REPORT_CONVERTER_TIMEOUT_SECONDS = 120
+CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS = 3
+CALIBRATION_REPORT_CONVERSION_RETRY_DELAYS = (60, 300, 1800)
+CALIBRATION_REPORT_CONVERSION_STALE_CLAIM_MINUTES = 10
+CALIBRATION_REPORT_MAX_BYTES = 35 * 1024 * 1024
+
+
+def _calibration_report_now():
+    """Return the naive Manila-clock value used by SQLite DateTime columns."""
+    # The application stores Manila-clock values in SQLite DateTime columns.
+    # SQLite returns those values without tzinfo, so conversion comparisons and
+    # retry arithmetic must use the same representation.
+    return get_manila_time().replace(tzinfo=None)
+
+
+def calibration_report_conversion_for_source(source_file_id):
+    """Return durable conversion state for one private DOCX source."""
+    source_file_id = clean_int(source_file_id)
+    if not source_file_id or not has_app_context():
+        return None
+    try:
+        ensure_calibration_report_conversion_table()
+        return CalibrationReportConversion.query.filter_by(
+            source_shift_file_id=source_file_id
+        ).first()
+    except Exception as conversion_lookup_error:
+        print(
+            f"[CalibrationReport] Conversion state lookup skipped for source #{source_file_id}: "
+            f"{conversion_lookup_error}",
+            flush=True,
+        )
+        return None
+
+
+def calibration_report_conversion_for_pdf(pdf_file_id):
+    """Return conversion state that owns one generated PDF ShiftFile."""
+    pdf_file_id = clean_int(pdf_file_id)
+    if not pdf_file_id or not has_app_context():
+        return None
+    try:
+        ensure_calibration_report_conversion_table()
+        return CalibrationReportConversion.query.filter_by(
+            pdf_shift_file_id=pdf_file_id
+        ).first()
+    except Exception as conversion_lookup_error:
+        print(
+            f"[CalibrationReport] PDF linkage lookup skipped for file #{pdf_file_id}: "
+            f"{conversion_lookup_error}",
+            flush=True,
+        )
+        return None
+
+
+def calibration_report_source_file_is_private(file_rec):
+    """Identify the retained DOCX source that must not enter normal UI/email paths."""
+    if not file_rec:
+        return False
+    return bool(
+        calibration_report_filename_is_docx(get_shift_file_display_name(file_rec)) and
+        is_system_generated_calibration_report_file(file_rec)
+    )
+
+
+def calibration_report_pdf_file_for_source(source_file_id, require_ready=True):
+    """Return the validated user-facing PDF linked to a private source, if ready."""
+    job = calibration_report_conversion_for_source(source_file_id)
+    if not job or (require_ready and job.state != 'ready') or not job.pdf_shift_file_id:
+        return None
+    pdf_file = db.session.get(ShiftFile, job.pdf_shift_file_id)
+    if not pdf_file or not calibration_report_filename_is_pdf(get_shift_file_display_name(pdf_file)):
+        return None
+    source_file = db.session.get(ShiftFile, job.source_shift_file_id)
+    if (
+        not source_file or
+        not calibration_report_source_file_is_private(source_file) or
+        clean_int(pdf_file.shift_id) != clean_int(source_file.shift_id) or
+        clean_int(pdf_file.online_tsr_submission_id) != clean_int(source_file.online_tsr_submission_id)
+    ):
+        return None
+    return pdf_file
+
+
+def is_system_generated_calibration_report_pdf_file(file_rec):
+    """Identify a generated Calibration Report PDF by durable source linkage."""
+    if not file_rec or not calibration_report_filename_is_pdf(get_shift_file_display_name(file_rec)):
+        return False
+    job = calibration_report_conversion_for_pdf(getattr(file_rec, 'id', None))
+    if not job or job.state != 'ready' or clean_int(job.pdf_shift_file_id) != clean_int(file_rec.id):
+        return False
+    source_file = db.session.get(ShiftFile, job.source_shift_file_id)
+    return bool(
+        source_file and
+        calibration_report_source_file_is_private(source_file) and
+        clean_int(source_file.shift_id) == clean_int(file_rec.shift_id) and
+        clean_int(source_file.online_tsr_submission_id) == clean_int(file_rec.online_tsr_submission_id)
+    )
+
+
+def calibration_report_conversion_state(source_file_id):
+    """Serialize conversion state without exposing the retained DOCX source."""
+    source_file_id = clean_int(source_file_id)
+    job = calibration_report_conversion_for_source(source_file_id)
+    if not job:
+        return {
+            'state': 'pending',
+            'source_file_id': source_file_id,
+            'pdf_file_id': None,
+            'pdf_filename': '',
+            'attempts': 0,
+            'next_retry_at': None,
+            'last_error': '',
+        }
+    if job.state == 'pending' or (
+        job.state == 'failed' and
+        job.next_retry_at and job.next_retry_at <= _calibration_report_now()
+    ):
+        try:
+            schedule_calibration_report_conversion()
+        except Exception as schedule_error:
+            print(f'[CalibrationReport] Conversion wake skipped: {schedule_error}', flush=True)
+    pdf_file = calibration_report_pdf_file_for_source(source_file_id)
+    return {
+        'state': clean_str(job.state) or 'pending',
+        'source_file_id': source_file_id,
+        'pdf_file_id': clean_int(getattr(pdf_file, 'id', None)) if pdf_file else clean_int(job.pdf_shift_file_id),
+        'pdf_filename': get_shift_file_display_name(pdf_file) if pdf_file else '',
+        'attempts': clean_int(job.attempts) or 0,
+        'next_retry_at': job.next_retry_at.isoformat() if job.next_retry_at else None,
+        'last_error': clean_str(job.last_error) or '',
+    }
+
+
+def calibration_report_filename_is_pdf(filename):
+    """Return whether a generated Calibration Report user artifact is a PDF."""
+    return schedule_attachment_extension(filename) == 'pdf'
+
+
+def _calibration_report_source_bytes(source_file):
+    """Read a retained source through the configured volume/bucket backend."""
+    disk_name = get_shift_file_disk_name(source_file)
+    if not disk_name:
+        raise FileNotFoundError('The Calibration Report source has no stored filename.')
+    local_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
+    readable_path = None
+    try:
+        readable_path = managed_storage_read_path(STORAGE_PREFIX_REPORTS, local_path)
+        with open(readable_path, 'rb') as source_handle:
+            data = source_handle.read(CALIBRATION_REPORT_MAX_BYTES + 1)
+        if len(data) > CALIBRATION_REPORT_MAX_BYTES:
+            raise ValueError('The Calibration Report source exceeds the 35MB attachment limit.')
+        return data
+    finally:
+        if readable_path and readable_path != local_path:
+            managed_storage_release_path(readable_path)
+
+
+def _calibration_report_pdf_bytes_are_valid(pdf_bytes):
+    """Validate PDF magic, size, and readable page structure."""
+    if not pdf_bytes or len(pdf_bytes) > CALIBRATION_REPORT_MAX_BYTES:
+        return False
+    if not bytes(pdf_bytes[:5]) == b'%PDF-':
+        return False
+    try:
+        import fitz
+        with fitz.open(stream=pdf_bytes, filetype='pdf') as pdf_document:
+            return int(getattr(pdf_document, 'page_count', 0) or len(pdf_document)) > 0
+    except Exception:
+        return False
+
+
+def _validate_calibration_report_docx_bytes(docx_bytes):
+    """Reject truncated or non-DOCX input before invoking LibreOffice."""
+    if not docx_bytes or len(docx_bytes) > CALIBRATION_REPORT_MAX_BYTES:
+        raise ValueError('The Calibration Report source is empty or exceeds the 35MB limit.')
+    if not zipfile.is_zipfile(io.BytesIO(docx_bytes)):
+        raise ValueError('The Calibration Report source is not a readable DOCX package.')
+    try:
+        with zipfile.ZipFile(io.BytesIO(docx_bytes)) as package:
+            if package.testzip() is not None:
+                raise ValueError('The Calibration Report DOCX package is corrupt.')
+            names = set(package.namelist())
+            if '[Content_Types].xml' not in names or 'word/document.xml' not in names:
+                raise ValueError('The Calibration Report source is missing required DOCX parts.')
+    except zipfile.BadZipFile as package_error:
+        raise ValueError('The Calibration Report source is not a readable DOCX package.') from package_error
+
+
+def convert_calibration_report_docx_bytes(docx_bytes, original_filename='Calibration_Report.docx'):
+    """Convert one validated DOCX in an isolated headless LibreOffice profile."""
+    _validate_calibration_report_docx_bytes(docx_bytes)
+    libreoffice_binary = clean_str(os.environ.get('LIBREOFFICE_BIN')) or ''
+    if libreoffice_binary and not os.path.isfile(libreoffice_binary):
+        libreoffice_binary = shutil.which(libreoffice_binary) or ''
+    binaries = [libreoffice_binary] if libreoffice_binary else []
+    binaries.extend(
+        binary for binary in (shutil.which('soffice'), shutil.which('libreoffice'), shutil.which('lowriter'))
+        if binary and binary not in binaries
+    )
+    if not binaries:
+        raise RuntimeError('LibreOffice Writer is not installed on the report conversion worker.')
+
+    source_name = secure_filename(os.path.basename(original_filename or 'Calibration_Report.docx')) or 'Calibration_Report.docx'
+    if not calibration_report_filename_is_docx(source_name):
+        source_name = f'{source_name}.docx'
+
+    with tempfile.TemporaryDirectory(prefix='calibration-report-conversion-') as temp_root:
+        input_dir = os.path.join(temp_root, 'input')
+        output_dir = os.path.join(temp_root, 'output')
+        profile_dir = os.path.join(temp_root, 'profile')
+        os.makedirs(input_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(profile_dir, exist_ok=True)
+        source_path = os.path.join(input_dir, source_name)
+        with open(source_path, 'wb') as source_handle:
+            source_handle.write(docx_bytes)
+
+        command = [
+            binaries[0],
+            '--headless',
+            '--nologo',
+            '--nodefault',
+            '--nofirststartwizard',
+            f'-env:UserInstallation={Path(profile_dir).as_uri()}',
+            '--convert-to',
+            'pdf',
+            '--outdir',
+            output_dir,
+            source_path,
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=CALIBRATION_REPORT_CONVERTER_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as timeout_error:
+            raise RuntimeError('LibreOffice conversion timed out after 120 seconds.') from timeout_error
+        except OSError as binary_error:
+            raise RuntimeError('LibreOffice Writer could not be started on the report conversion worker.') from binary_error
+        if result.returncode != 0:
+            raise RuntimeError('LibreOffice could not convert the Calibration Report DOCX to PDF.')
+
+        expected_path = os.path.join(output_dir, os.path.splitext(source_name)[0] + '.pdf')
+        candidates = [expected_path] + [
+            os.path.join(output_dir, name)
+            for name in os.listdir(output_dir)
+            if name.lower().endswith('.pdf')
+        ]
+        pdf_path = next((path for path in candidates if os.path.isfile(path)), None)
+        if not pdf_path:
+            raise RuntimeError('LibreOffice completed without producing a Calibration Report PDF.')
+        with open(pdf_path, 'rb') as pdf_handle:
+            pdf_bytes = pdf_handle.read(CALIBRATION_REPORT_MAX_BYTES + 1)
+        if not _calibration_report_pdf_bytes_are_valid(pdf_bytes):
+            raise ValueError('LibreOffice produced an unreadable Calibration Report PDF.')
+        return pdf_bytes
+
+
+def _calibration_report_file_bytes(file_rec):
+    """Read one managed report object for conversion validation."""
+    disk_name = get_shift_file_disk_name(file_rec)
+    if not disk_name:
+        raise FileNotFoundError('The report file has no stored filename.')
+    local_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
+    readable_path = None
+    try:
+        readable_path = managed_storage_read_path(STORAGE_PREFIX_REPORTS, local_path)
+        with open(readable_path, 'rb') as file_handle:
+            return file_handle.read(CALIBRATION_REPORT_MAX_BYTES + 1)
+    finally:
+        if readable_path and readable_path != local_path:
+            managed_storage_release_path(readable_path)
+
+
+def _calibration_report_pdf_filename(source_file):
+    source_name = get_shift_file_display_name(source_file) or get_shift_file_disk_name(source_file)
+    stem = os.path.splitext(os.path.basename(source_name or 'Calibration_Report'))[0]
+    return secure_filename(stem or 'Calibration_Report') + '.pdf'
+
+
+def _calibration_report_conversion_job_for_source(source_file_id, create=False):
+    ensure_calibration_report_conversion_table()
+    source_file_id = clean_int(source_file_id)
+    job = CalibrationReportConversion.query.filter_by(
+        source_shift_file_id=source_file_id
+    ).first() if source_file_id else None
+    if not job and create and source_file_id:
+        job = CalibrationReportConversion(
+            source_shift_file_id=source_file_id,
+            state='pending',
+            attempts=0,
+            created_at=get_manila_time(),
+            updated_at=get_manila_time(),
+        )
+        db.session.add(job)
+        db.session.flush()
+    return job
+
+
+def _update_calibration_report_conversion_marker(source_file, job, pdf_file=None):
+    """Extend the source marker with state without changing its source identity."""
+    submission_id = clean_int(getattr(source_file, 'online_tsr_submission_id', None))
+    submission = db.session.get(OnlineTsrSubmission, submission_id) if submission_id else None
+    if not submission:
+        return
+    payload = parse_online_tsr_payload_json(submission)
+    marker = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
+    if not isinstance(marker, dict) or clean_int(marker.get('file_id')) != clean_int(source_file.id):
+        return
+
+    state = clean_str(getattr(job, 'state', None)) or 'pending'
+    pdf_file_id = clean_int(getattr(pdf_file, 'id', None)) if pdf_file else clean_int(getattr(job, 'pdf_shift_file_id', None))
+    pdf_filename = get_shift_file_display_name(pdf_file) if pdf_file else ''
+    marker = dict(marker)
+    marker.update({
+        'pdf_file_id': pdf_file_id,
+        'pdf_filename': pdf_filename,
+        'pdf_state': state,
+        'pdf_error': clean_str(getattr(job, 'last_error', None)) or '',
+        'pdf_attempts': clean_int(getattr(job, 'attempts', None)) or 0,
+    })
+    payload['_generated_calibration_report'] = marker
+    report = payload.get('calibration_report') if isinstance(payload, dict) else None
+    generated = report.get('generated') if isinstance(report, dict) else None
+    if isinstance(report, dict) and isinstance(generated, dict):
+        report = dict(report)
+        generated = dict(generated)
+        generated.update({
+            'pdf_file_id': pdf_file_id,
+            'pdf_filename': pdf_filename,
+            'pdf_state': state,
+            'pdf_error': clean_str(getattr(job, 'last_error', None)) or '',
+            'pdf_attempts': clean_int(getattr(job, 'attempts', None)) or 0,
+        })
+        report['generated'] = generated
+        payload['calibration_report'] = report
+    submission.payload_json = json.dumps(payload, ensure_ascii=False)
+
+
+def _calibration_report_conversion_failure(source_file_id, error, attempts=None):
+    """Persist a retryable/final failure after rolling back partial storage work."""
+    db.session.rollback()
+    job = _calibration_report_conversion_job_for_source(source_file_id, create=True)
+    now = _calibration_report_now()
+    attempt_count = clean_int(attempts)
+    if attempt_count is None:
+        attempt_count = clean_int(job.attempts) or 0
+    job.attempts = max(clean_int(job.attempts) or 0, attempt_count)
+    job.state = 'failed'
+    job.claim_token = None
+    job.claimed_at = None
+    job.last_attempt_at = now
+    job.next_retry_at = (
+        now + timedelta(seconds=CALIBRATION_REPORT_CONVERSION_RETRY_DELAYS[min(job.attempts - 1, len(CALIBRATION_REPORT_CONVERSION_RETRY_DELAYS) - 1)])
+        if job.attempts < CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS and job.attempts > 0
+        else None
+    )
+    job.last_error = (clean_str(str(error)) or 'Calibration Report conversion failed.')[:1000]
+    job.updated_at = now
+    source_file = db.session.get(ShiftFile, clean_int(source_file_id))
+    if source_file:
+        _update_calibration_report_conversion_marker(source_file, job)
+    db.session.commit()
+    return job
+
+
+def _calibration_report_conversion_is_idempotently_ready(source_file, job, source_sha256):
+    """Keep a valid existing PDF when the immutable source checksum is unchanged."""
+    if (
+        not job or job.state != 'ready' or
+        clean_str(job.source_sha256) != clean_str(source_sha256) or
+        not job.pdf_shift_file_id
+    ):
+        return None
+    pdf_file = calibration_report_pdf_file_for_source(source_file.id)
+    if not pdf_file:
+        return None
+    try:
+        pdf_bytes = _calibration_report_file_bytes(pdf_file)
+        if not _calibration_report_pdf_bytes_are_valid(pdf_bytes):
+            return None
+    except Exception:
+        return None
+    return pdf_file
+
+
+def convert_calibration_report_source(source_file_id, force=False, claimed_job_id=None):
+    """Convert one stored DOCX source and publish one linked PDF idempotently."""
+    ensure_calibration_report_conversion_table()
+    source_file_id = clean_int(source_file_id)
+    source_file = db.session.get(ShiftFile, source_file_id) if source_file_id else None
+    if not source_file or not calibration_report_source_file_is_private(source_file):
+        return None
+
+    job = _calibration_report_conversion_job_for_source(source_file_id, create=True)
+    if not job:
+        return None
+    if claimed_job_id and clean_int(job.id) != clean_int(claimed_job_id):
+        return job
+    if force:
+        job.state = 'pending'
+        job.attempts = 0
+        job.next_retry_at = None
+        job.last_error = None
+        job.updated_at = get_manila_time()
+        db.session.commit()
+    elif job.state == 'failed' and (clean_int(job.attempts) or 0) >= CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS:
+        return job
+
+    try:
+        source_bytes = _calibration_report_source_bytes(source_file)
+        _validate_calibration_report_docx_bytes(source_bytes)
+        source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+    except Exception as source_error:
+        return _calibration_report_conversion_failure(
+            source_file_id,
+            source_error,
+            attempts=(clean_int(job.attempts) or 0) + 1,
+        )
+
+    if not force:
+        existing_pdf = _calibration_report_conversion_is_idempotently_ready(source_file, job, source_sha256)
+        if existing_pdf:
+            if job.source_sha256 != source_sha256:
+                job.source_sha256 = source_sha256
+                job.converter_version = CALIBRATION_REPORT_CONVERTER_VERSION
+                job.updated_at = get_manila_time()
+                _update_calibration_report_conversion_marker(source_file, job, existing_pdf)
+                db.session.commit()
+            return job
+
+    now = _calibration_report_now()
+    if clean_str(job.state) != 'running':
+        job.state = 'running'
+        job.attempts = (clean_int(job.attempts) or 0) + 1
+        job.claim_token = secrets.token_hex(16)
+        job.claimed_at = now
+        job.last_attempt_at = now
+        job.next_retry_at = None
+        job.last_error = None
+        job.updated_at = now
+        db.session.commit()
+
+    try:
+        pdf_bytes = convert_calibration_report_docx_bytes(
+            source_bytes,
+            get_shift_file_display_name(source_file) or 'Calibration_Report.docx',
+        )
+        pdf_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
+        pdf_name = _calibration_report_pdf_filename(source_file)
+        pdf_token = f'calibration-report-pdf-{source_file.id}-{source_sha256}'[:100]
+        pdf_file = ShiftFile.query.filter_by(upload_token=pdf_token).first()
+        if pdf_file:
+            try:
+                existing_pdf_bytes = _calibration_report_file_bytes(pdf_file)
+                if not _calibration_report_pdf_bytes_are_valid(existing_pdf_bytes):
+                    pdf_file = None
+            except Exception:
+                pdf_file = None
+
+        if not pdf_file:
+            disk_name = get_unique_upload_filename(pdf_name)
+            disk_path = os.path.join(app.config['UPLOAD_FOLDER'], disk_name)
+            managed_storage_write_bytes(
+                STORAGE_PREFIX_REPORTS,
+                disk_path,
+                pdf_bytes,
+                original_filename=pdf_name,
+                content_type='application/pdf',
+            )
+            pdf_file = ShiftFile(
+                shift_id=source_file.shift_id,
+                filename=disk_name,
+                original_filename=pdf_name,
+                upload_token=pdf_token,
+                online_tsr_submission_id=source_file.online_tsr_submission_id,
+                uploaded_at=get_manila_time(),
+            )
+            db.session.add(pdf_file)
+            db.session.flush()
+
+        job.source_sha256 = source_sha256
+        job.pdf_sha256 = pdf_sha256
+        job.pdf_shift_file_id = pdf_file.id
+        job.converter_version = CALIBRATION_REPORT_CONVERTER_VERSION
+        job.state = 'ready'
+        job.claim_token = None
+        job.claimed_at = None
+        job.next_retry_at = None
+        job.last_error = None
+        job.converted_at = get_manila_time()
+        job.updated_at = get_manila_time()
+        _update_calibration_report_conversion_marker(source_file, job, pdf_file)
+        db.session.commit()
+        print(
+            f'[CalibrationReport] Converted source={source_file.id} pdf={pdf_file.id} '
+            f'sha256={source_sha256}',
+            flush=True,
+        )
+        return job
+    except Exception as conversion_error:
+        return _calibration_report_conversion_failure(
+            source_file_id,
+            conversion_error,
+            attempts=clean_int(job.attempts) or 1,
+        )
+
+
+def _claim_next_calibration_report_conversion():
+    """Claim one due job for the single in-process conversion worker."""
+    ensure_calibration_report_conversion_table()
+    now = _calibration_report_now()
+    stale_at = now - timedelta(minutes=CALIBRATION_REPORT_CONVERSION_STALE_CLAIM_MINUTES)
+    stale_jobs = CalibrationReportConversion.query.filter(
+        CalibrationReportConversion.state == 'running',
+        CalibrationReportConversion.claimed_at < stale_at,
+    ).all()
+    for stale_job in stale_jobs:
+        stale_job.state = 'pending'
+        stale_job.claim_token = None
+        stale_job.claimed_at = None
+        stale_job.updated_at = now
+
+    job = CalibrationReportConversion.query.filter(
+        CalibrationReportConversion.attempts < CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS,
+        or_(
+            CalibrationReportConversion.state == 'pending',
+            and_(
+                CalibrationReportConversion.state == 'failed',
+                or_(
+                    CalibrationReportConversion.next_retry_at.is_(None),
+                    CalibrationReportConversion.next_retry_at <= now,
+                ),
+            ),
+        ),
+    ).order_by(
+        CalibrationReportConversion.created_at.asc(),
+        CalibrationReportConversion.id.asc(),
+    ).first()
+    if not job:
+        if stale_jobs:
+            db.session.commit()
+        return None
+
+    job.state = 'running'
+    job.attempts = (clean_int(job.attempts) or 0) + 1
+    job.last_attempt_at = now
+    job.claim_token = secrets.token_hex(16)
+    job.claimed_at = now
+    job.updated_at = now
+    db.session.commit()
+    return job
+
+
+def _calibration_report_conversion_worker_wait_seconds():
+    """Return a bounded wait until the next retryable conversion is due."""
+    now = _calibration_report_now()
+    future_job = CalibrationReportConversion.query.filter(
+        CalibrationReportConversion.attempts < CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS,
+        CalibrationReportConversion.state == 'failed',
+        CalibrationReportConversion.next_retry_at.isnot(None),
+        CalibrationReportConversion.next_retry_at > now,
+    ).order_by(CalibrationReportConversion.next_retry_at.asc()).first()
+    if not future_job or not future_job.next_retry_at:
+        return None
+    return max(1, min(60, int((future_job.next_retry_at - now).total_seconds())))
+
+
+def _run_calibration_report_conversion_worker():
+    """Process due jobs serially; all state survives a worker restart."""
+    global _calibration_report_conversion_worker
+    try:
+        with app.app_context():
+            while True:
+                job = _claim_next_calibration_report_conversion()
+                if not job:
+                    wait_seconds = _calibration_report_conversion_worker_wait_seconds()
+                    if wait_seconds is None:
+                        break
+                    _calibration_report_conversion_worker_wakeup.clear()
+                    _calibration_report_conversion_worker_wakeup.wait(wait_seconds)
+                    continue
+                convert_calibration_report_source(
+                    job.source_shift_file_id,
+                    claimed_job_id=job.id,
+                )
+    except Exception as worker_error:
+        print(f'[CalibrationReport] Conversion worker stopped: {worker_error}', flush=True)
+    finally:
+        try:
+            db.session.remove()
+        except Exception:
+            pass
+        _calibration_report_conversion_worker = None
+
+
+def schedule_calibration_report_conversion(source_file_id=None):
+    """Persist a pending job and wake the one serial conversion worker."""
+    global _calibration_report_conversion_worker
+    ensure_calibration_report_conversion_table()
+    if source_file_id:
+        source_file = db.session.get(ShiftFile, clean_int(source_file_id))
+        if source_file and calibration_report_source_file_is_private(source_file):
+            _calibration_report_conversion_job_for_source(source_file.id, create=True)
+            db.session.commit()
+
+    now = _calibration_report_now()
+    due = CalibrationReportConversion.query.filter(
+        CalibrationReportConversion.attempts < CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS,
+        or_(
+            CalibrationReportConversion.state == 'pending',
+            and_(
+                CalibrationReportConversion.state == 'failed',
+                or_(
+                    CalibrationReportConversion.next_retry_at.is_(None),
+                    CalibrationReportConversion.next_retry_at <= now,
+                ),
+            ),
+        ),
+    ).first()
+    if not due:
+        return False
+    with _calibration_report_conversion_worker_lock:
+        if _calibration_report_conversion_worker and _calibration_report_conversion_worker.is_alive():
+            _calibration_report_conversion_worker_wakeup.set()
+            return True
+        _calibration_report_conversion_worker = threading.Thread(
+            target=_run_calibration_report_conversion_worker,
+            name='calibration-report-converter',
+            daemon=True,
+        )
+        _calibration_report_conversion_worker_wakeup.set()
+        _calibration_report_conversion_worker.start()
+    return True
+
+
 CALIBRATION_CERTIFICATE_TEMPLATE_SHA256 = 'C06F43E221C297229D5108E0F3BA0348FF0C1C6F299A791FF4359D60E9F17EBC'
 CALIBRATION_CERTIFICATE_RUNTIME_SHA256 = '20C84569CB120F90E9F9998D68021E99ABCBD65E3C9085C7640754C6F0EBE2D8'
 CALIBRATION_CERTIFICATE_FIELDS = ('Textfield', 'Text1', 'Text2', 'Text3', 'Text4', 'Text5', 'Text6', 'Textfield-0')
@@ -16543,8 +17260,8 @@ def products_page_calibration_certificate_can_view(approval):
     )
 
 
-def calibration_certificate_generated_report_file(approval):
-    """Return the exact generated DOCX linked to a certificate submission."""
+def calibration_certificate_generated_report_source_file(approval):
+    """Return the retained private DOCX source linked to a certificate submission."""
     if not approval:
         return None
 
@@ -16571,11 +17288,16 @@ def calibration_certificate_generated_report_file(approval):
     if (
         clean_int(getattr(report_file, 'shift_id', None)) != approval_shift_id or
         clean_int(getattr(report_file, 'online_tsr_submission_id', None)) != submission_id or
-        not calibration_report_filename_is_docx(get_shift_file_display_name(report_file)) or
-        not is_system_generated_calibration_report_file(report_file)
+        not calibration_report_source_file_is_private(report_file)
     ):
         return None
     return report_file
+
+
+def calibration_certificate_generated_report_file(approval):
+    """Return the ready PDF linked to a certificate submission, never its DOCX source."""
+    source_file = calibration_certificate_generated_report_source_file(approval)
+    return calibration_report_pdf_file_for_source(source_file.id) if source_file else None
 
 
 def calibration_certificate_approval_to_dict(approval, include_urls=True):
@@ -16586,7 +17308,20 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
         payload = {}
     shift = getattr(approval, 'shift', None)
     product = getattr(shift, 'product', None) if shift else None
-    generated_report_file = calibration_certificate_generated_report_file(approval)
+    generated_report_source = calibration_certificate_generated_report_source_file(approval)
+    generated_report_file = calibration_report_pdf_file_for_source(generated_report_source.id) if generated_report_source else None
+    report_conversion_state = (
+        calibration_report_conversion_state(generated_report_source.id)
+        if generated_report_source else {
+            'state': 'none',
+            'source_file_id': None,
+            'pdf_file_id': None,
+            'pdf_filename': '',
+            'attempts': 0,
+            'next_retry_at': None,
+            'last_error': '',
+        }
+    )
     item = {
         'id': approval.id,
         'module': 'calibration_certificate',
@@ -16617,8 +17352,16 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
         'artifact_created_at': approval.artifact_created_at.isoformat() if approval.artifact_created_at else None,
         'signed_shift_file_id': approval.signed_shift_file_id,
         'no_signature_shift_file_id': approval.no_signature_shift_file_id,
-        'calibration_report_filename': get_shift_file_display_name(generated_report_file) if generated_report_file else '',
+        'calibration_report_filename': (
+            get_shift_file_display_name(generated_report_file)
+            if generated_report_file else
+            (_calibration_report_pdf_filename(generated_report_source) if generated_report_source else '')
+        ),
         'calibration_report_download_url': '',
+        'calibration_report_preview_url': '',
+        'calibration_report_state': report_conversion_state.get('state', 'none'),
+        'calibration_report_error': report_conversion_state.get('last_error', ''),
+        'calibration_report_pdf_file_id': report_conversion_state.get('pdf_file_id'),
     }
     if include_urls:
         item['unsigned_url'] = url_for('calibration_certificate_pdf', approval_id=approval.id, artifact='unsigned')
@@ -16632,6 +17375,12 @@ def calibration_certificate_approval_to_dict(approval, include_urls=True):
         if generated_report_file:
             item['calibration_report_download_url'] = url_for(
                 'download_tsr_archive_file',
+                file_id=generated_report_file.id,
+                scope='all',
+                approval_id=approval.id,
+            )
+            item['calibration_report_preview_url'] = url_for(
+                'preview_tsr_archive_file',
                 file_id=generated_report_file.id,
                 scope='all',
                 approval_id=approval.id,
@@ -16835,7 +17584,7 @@ def calibration_certificate_approver_can_act(approval):
 
 
 def calibration_certificate_report_approval_for_file_download(file_record, approval_id):
-    """Authorize an approval-scoped download for its exact generated report."""
+    """Authorize an approval-scoped download for its exact generated PDF report."""
     approval_id = clean_int(approval_id)
     if not file_record or not approval_id:
         return None
@@ -16851,7 +17600,11 @@ def calibration_certificate_report_approval_for_file_download(file_record, appro
         return None
 
     generated_report_file = calibration_certificate_generated_report_file(approval)
-    if not generated_report_file or clean_int(generated_report_file.id) != clean_int(file_record.id):
+    if (
+        not generated_report_file or
+        not is_system_generated_calibration_report_pdf_file(file_record) or
+        clean_int(generated_report_file.id) != clean_int(file_record.id)
+    ):
         return None
     return approval
 
@@ -17157,15 +17910,26 @@ def record_calibration_report_upload(submission, upload_token, file_rec, origina
         return False
 
     generated = dict(generated)
+    previous_source_file_id = clean_int(generated.get('file_id'))
+    previous_pdf_fields = {
+        key: generated.get(key)
+        for key in ('pdf_state', 'pdf_file_id', 'pdf_filename', 'pdf_error', 'pdf_attempts')
+        if key in generated and previous_source_file_id == clean_int(file_rec.id)
+    }
     generated.update({
         'file_id': file_rec.id,
         'uploaded_filename': original_name,
         'upload_token': upload_token,
         'source': 'generated_calibration_report',
     })
+    generated.update(previous_pdf_fields)
+    generated.setdefault('pdf_state', 'pending')
+    generated.setdefault('pdf_file_id', None)
+    generated.setdefault('pdf_filename', '')
+    generated.setdefault('pdf_error', '')
     report['generated'] = generated
     payload['calibration_report'] = report
-    payload['_generated_calibration_report'] = {
+    source_marker = {
         'source': 'generated_calibration_report',
         'attachment_id': clean_str(generated.get('attachment_id')) or upload_token,
         'fingerprint': clean_str(generated.get('fingerprint')),
@@ -17173,6 +17937,13 @@ def record_calibration_report_upload(submission, upload_token, file_rec, origina
         'filename': original_name,
         'upload_token': upload_token,
     }
+    source_marker.update(previous_pdf_fields)
+    source_marker.setdefault('pdf_state', generated.get('pdf_state') or 'pending')
+    source_marker.setdefault('pdf_file_id', generated.get('pdf_file_id'))
+    source_marker.setdefault('pdf_filename', generated.get('pdf_filename') or '')
+    source_marker.setdefault('pdf_error', generated.get('pdf_error') or '')
+    source_marker.setdefault('pdf_attempts', generated.get('pdf_attempts') or 0)
+    payload['_generated_calibration_report'] = source_marker
     submission.payload_json = json.dumps(payload, ensure_ascii=False)
     return True
 
@@ -17242,6 +18013,10 @@ def upload_online_tsr_attachment(submission_id):
             if record_calibration_report_upload(submission, upload_token, existing_file, get_shift_file_display_name(existing_file)):
                 db.session.commit()
             try:
+                schedule_calibration_report_conversion(existing_file.id)
+            except Exception as conversion_schedule_error:
+                print(f'[CalibrationReport] Conversion scheduling skipped for source {existing_file.id}: {conversion_schedule_error}', flush=True)
+            try:
                 certificate_result = submit_calibration_certificate_for_submission(submission)
             except Exception as certificate_error:
                 print(f'[CalibrationCertificate] Submission retry failed for TSR {submission.id}: {certificate_error}', flush=True)
@@ -17254,6 +18029,8 @@ def upload_online_tsr_attachment(submission_id):
             'attachment_token': upload_token,
             'file_id': existing_file.id,
             'filename': get_shift_file_display_name(existing_file),
+            'attachment_source': attachment_source or 'manual_attachment',
+            'calibration_report': calibration_report_conversion_state(existing_file.id) if attachment_source == 'generated_calibration_report' else None,
             'certificate': calibration_certificate_approval_to_dict(certificate_result['approval']) if certificate_result.get('ok') and certificate_result.get('approval') else {'status': certificate_result.get('code', 'retryable')},
         })
 
@@ -17327,6 +18104,22 @@ def upload_online_tsr_attachment(submission_id):
             f"submission={submission.id} file={file_rec.id}",
             flush=True,
         )
+        conversion_state = None
+        if attachment_source == 'generated_calibration_report':
+            try:
+                schedule_calibration_report_conversion(file_rec.id)
+                conversion_state = calibration_report_conversion_state(file_rec.id)
+            except Exception as conversion_schedule_error:
+                print(f'[CalibrationReport] Conversion scheduling skipped for source {file_rec.id}: {conversion_schedule_error}', flush=True)
+                conversion_state = {
+                    'state': 'pending',
+                    'source_file_id': file_rec.id,
+                    'pdf_file_id': None,
+                    'pdf_filename': '',
+                    'attempts': 0,
+                    'next_retry_at': None,
+                    'last_error': 'Conversion will retry after the source is saved.',
+                }
         certificate_result = {'ok': False, 'code': 'not_attempted'}
         if attachment_source == 'generated_calibration_report':
             try:
@@ -17345,6 +18138,7 @@ def upload_online_tsr_attachment(submission_id):
             'filename': get_shift_file_display_name(file_rec),
             'size': len(file_bytes),
             'attachment_source': attachment_source or 'manual_attachment',
+            'calibration_report': conversion_state,
             'certificate': calibration_certificate_approval_to_dict(certificate_result['approval']) if certificate_result.get('ok') and certificate_result.get('approval') else {'status': certificate_result.get('code', 'not_requested'), 'message': certificate_result.get('message', '')},
         })
     except Exception as attachment_error:
@@ -17362,6 +18156,43 @@ def upload_online_tsr_attachment(submission_id):
             'retryable': True,
             'phase': 'uploading_supporting_attachment',
         }), 500
+
+
+@app.route('/convert_calibration_report_sample', methods=['POST'])
+@login_required
+def convert_calibration_report_sample():
+    """Convert an unsaved browser-generated DOCX for an online PDF sample download."""
+    if not (is_admin_authorized() or getattr(current_user, 'role', None) == 'engineer'):
+        return denied()
+
+    file_obj = request.files.get('docx') or request.files.get('calibration_report') or request.files.get('file')
+    if not file_obj or not getattr(file_obj, 'filename', None):
+        return jsonify({'status': 'error', 'message': 'The Calibration Report source is missing.'}), 400
+    original_name = secure_filename(os.path.basename(file_obj.filename))
+    if not calibration_report_filename_is_docx(original_name):
+        return jsonify({'status': 'error', 'message': 'Calibration Report samples must be DOCX files.'}), 400
+
+    try:
+        file_obj.stream.seek(0)
+        source_bytes = file_obj.read(CALIBRATION_REPORT_MAX_BYTES + 1)
+        pdf_bytes = convert_calibration_report_docx_bytes(source_bytes, original_name)
+        pdf_name = f'{os.path.splitext(original_name)[0]}.pdf'
+        response = send_file(
+            io.BytesIO(pdf_bytes),
+            as_attachment=True,
+            download_name=pdf_name,
+            mimetype='application/pdf',
+        )
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
+    except Exception as sample_error:
+        print(f'[CalibrationReport] Sample conversion failed: {sample_error}', flush=True)
+        return jsonify({
+            'status': 'error',
+            'message': 'Calibration Report PDF conversion is temporarily unavailable. Save the TSR and retry after synchronization.',
+            'retryable': True,
+        }), 503
 
 
 @app.route('/get_online_tsr_submission/<int:submission_id>', methods=['GET'])
@@ -17800,7 +18631,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v148-calibration-report-signature-name-filename';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v149-calibration-report-pdf';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -17824,7 +18655,7 @@ const APP_SHELL = [
   '/static/js/app-analytics.js',
   '/static/js/app-changelog.js',
   '/static/templates/calibration-certificate/calibration-certificate-template-data.js?v=2',
-  '/static/js/app-calibration-report.js?v=23',
+  '/static/js/app-calibration-report.js?v=24',
   '/static/js/app-offline-schedule.js',
   '/static/templates/calibration-report/calibration-report-template.docx',
   '/static/vendor/jszip/jszip.min.js',
@@ -40025,7 +40856,7 @@ def redact_timeline_payload_for_hr(payload):
 def timeline_file_detail_payload(file_record, certificate_approval_map=None):
     """Serialize one schedule file with explicit schedule-artifact identity flags."""
     is_tsr = shift_file_is_recognized_tsr(file_record)
-    is_calibration_report = is_system_generated_calibration_report_file(file_record)
+    is_calibration_report = is_system_generated_calibration_report_pdf_file(file_record)
     if certificate_approval_map is None:
         no_signature_approval = calibration_certificate_no_signature_approval_for_file(file_record)
         certificate_approval = no_signature_approval or calibration_certificate_approval_for_shift_file(file_record)
@@ -40044,7 +40875,7 @@ def timeline_file_detail_payload(file_record, certificate_approval_map=None):
     can_preview = (
         bool(certificate_approval and can_access_no_signature)
         if certificate_approval
-        else bool(is_tsr)
+        else bool(is_tsr or is_calibration_report)
     )
     can_download = (
         bool(certificate_approval and can_access_no_signature)
@@ -40064,7 +40895,7 @@ def timeline_file_detail_payload(file_record, certificate_approval_map=None):
         'locked': bool(is_no_signature and not can_access_no_signature),
         'can_preview': can_preview,
         'can_download': can_download,
-        'can_delete': bool(not is_no_signature),
+        'can_delete': bool(not is_no_signature and not is_calibration_report),
         'preview_url': url_for('preview_tsr_archive_file', file_id=file_record.id, scope='all') if can_preview else '',
         'download_url': url_for('download_tsr_archive_file', file_id=file_record.id, scope='all') if can_download else '',
         'uploaded_at': file_record.uploaded_at.isoformat() if file_record.uploaded_at else '',
@@ -40074,6 +40905,14 @@ def timeline_file_detail_payload(file_record, certificate_approval_map=None):
             if getattr(file_record, 'last_emailed_at', None) else ''
         ),
     }
+
+
+def get_user_visible_shift_file_records(shift):
+    """Return schedule files excluding retained private Calibration Report DOCX sources."""
+    return [
+        file_record for file_record in (getattr(shift, 'files', []) or [])
+        if not calibration_report_source_file_is_private(file_record)
+    ]
 
 
 @app.route('/get_timeline_data')
@@ -40254,10 +41093,10 @@ def get_timeline_data():
                 'status': shift.status,
                 # Keep default legacy payload unchanged.
                 # When timeline_lite=true, skip heavy per-file metadata so the grid can load faster.
-                'files': [] if timeline_lite else [get_shift_file_display_name(file_record) or file_record.filename for file_record in shift.files],
+                'files': [] if timeline_lite else [get_shift_file_display_name(file_record) or file_record.filename for file_record in get_user_visible_shift_file_records(shift)],
                 'file_details': [] if timeline_lite else [
                     timeline_file_detail_payload(file_record, certificate_approval_map)
-                    for file_record in shift.files
+                    for file_record in get_user_visible_shift_file_records(shift)
                 ],
                 'service_file_delivery': service_file_delivery,
                 'has_linked_tsr': bool(service_file_tsr_total),
@@ -40404,10 +41243,10 @@ def get_shift_details(shift_id):
             'client_id': shift.client_id,
             'product_id': shift.product_id,
             'status': shift.status,
-            'files': [get_shift_file_display_name(file_record) or file_record.filename for file_record in shift.files],
+            'files': [get_shift_file_display_name(file_record) or file_record.filename for file_record in get_user_visible_shift_file_records(shift)],
             'file_details': [
                 timeline_file_detail_payload(file_record, certificate_approval_map)
-                for file_record in shift.files
+                for file_record in get_user_visible_shift_file_records(shift)
             ],
             'manual_upload_count': get_linked_schedule_manual_upload_count(shift),
             'manual_upload_limit': SCHEDULE_MANUAL_UPLOAD_LIMIT,
@@ -41138,9 +41977,12 @@ def tsr_archive_shift_to_dict(shift):
     for file_rec in sorted_files:
         if clean_int(getattr(file_rec, 'id', None)) in suppressed_primary_ids:
             continue
+        if calibration_report_source_file_is_private(file_rec):
+            continue
         display_name = get_shift_file_display_name(file_rec)
         disk_name = get_shift_file_disk_name(file_rec)
-        if not shift_file_is_recognized_tsr(file_rec):
+        is_calibration_report = is_system_generated_calibration_report_pdf_file(file_rec)
+        if not shift_file_is_recognized_tsr(file_rec) and not is_calibration_report:
             continue
 
         filename_for_ext = display_name or disk_name or ''
@@ -41155,6 +41997,7 @@ def tsr_archive_shift_to_dict(shift):
             'file_type': ext,
             'is_pdf': ext == 'pdf',
             'source': (
+                'Calibration Report' if is_calibration_report else
                 'Complete Uploaded TSR' if is_legacy_replacement else
                 ('Generated Online TSR' if is_generated_online_tsr else 'Uploaded TSR')
             ),
@@ -41307,9 +42150,12 @@ def get_tsr_archive():
         file_id = clean_int(file_rec.id)
         if file_id in (legacy_policy.get('suppressed_primary_ids') or set()):
             continue
+        if calibration_report_source_file_is_private(file_rec):
+            continue
 
         submission = primary_submission_files.get(file_id)
         certificate_approval = certificate_approval_map.get(file_id)
+        is_calibration_report = is_system_generated_calibration_report_pdf_file(file_rec)
         is_no_signature = bool(
             certificate_approval and certificate_approval.no_signature_shift_file_id == file_id
         )
@@ -41317,7 +42163,7 @@ def get_tsr_archive():
         display_name = get_shift_file_display_name(file_rec)
         disk_name = get_shift_file_disk_name(file_rec)
         if (
-            not submission and not is_legacy_replacement and not certificate_approval and
+            not submission and not is_legacy_replacement and not certificate_approval and not is_calibration_report and
             not existing_files_have_tsr([display_name, disk_name])
         ):
             continue
@@ -41349,11 +42195,13 @@ def get_tsr_archive():
             'uploaded_at': file_rec.uploaded_at.strftime('%Y-%m-%d %H:%M') if file_rec.uploaded_at else '',
             'file_type': extension,
             'is_pdf': extension == 'pdf',
+            'is_calibration_report': is_calibration_report,
             'source': (
                 'Calibration Certificate print copy' if is_no_signature else
                 ('Calibration Certificate' if certificate_approval else
-                'Complete Uploaded TSR' if is_legacy_replacement else
-                ('Generated Online TSR' if submission else 'Uploaded TSR'))
+                ('Calibration Report' if is_calibration_report else
+                ('Complete Uploaded TSR' if is_legacy_replacement else
+                ('Generated Online TSR' if submission else 'Uploaded TSR'))))
             ),
             'certificate_kind': 'no_signature' if is_no_signature else ('signed' if certificate_approval else ''),
             'is_managed_certificate': bool(certificate_approval),
@@ -41361,7 +42209,7 @@ def get_tsr_archive():
             'locked': bool(is_no_signature and not no_signature_access),
             'can_preview': bool(no_signature_access),
             'can_download': bool(no_signature_access),
-            'can_delete': bool(not is_no_signature),
+            'can_delete': bool(not is_no_signature and not is_calibration_report),
             'preview_url': url_for('preview_tsr_archive_file', file_id=file_rec.id, scope=scope) if no_signature_access else '',
             'download_url': url_for('download_tsr_archive_file', file_id=file_rec.id, scope=scope) if no_signature_access else '',
             '_file_rec': file_rec,
@@ -41502,6 +42350,11 @@ def _resolve_tsr_archive_file_for_preview(file_id, approval_id=None):
     file_rec = db.session.get(ShiftFile, file_id)
     if not file_rec:
         return None, _tsr_archive_error_response(f'TSR file record #{file_id} was not found.', 404)
+    if calibration_report_source_file_is_private(file_rec):
+        return None, _tsr_archive_error_response(
+            'The original Calibration Report DOCX is retained privately and is not available in the user-facing archive.',
+            403,
+        )
 
     shift = db.session.get(Shift, file_rec.shift_id)
     scope = tsr_archive_requested_scope()
@@ -41562,9 +42415,13 @@ def _resolve_tsr_archive_file_for_preview(file_id, approval_id=None):
     is_generated_calibration_report_docx = bool(
         ext == 'docx' and is_system_generated_calibration_report_file(file_rec)
     )
+    is_generated_calibration_report_pdf = bool(
+        ext == 'pdf' and is_system_generated_calibration_report_pdf_file(file_rec)
+    )
     if (
         not is_supported_schedule_attachment and
         not is_generated_calibration_report_docx and
+        not is_generated_calibration_report_pdf and
         not existing_files_have_tsr([display_name, disk_name]) and
         not report_file_content_looks_like_tsr(file_path, display_name or disk_name)
     ):
@@ -41596,7 +42453,8 @@ def preview_tsr_archive_file(file_id):
     """
     import json
 
-    resolved, error_response = _resolve_tsr_archive_file_for_preview(file_id)
+    approval_id = request.args.get('approval_id')
+    resolved, error_response = _resolve_tsr_archive_file_for_preview(file_id, approval_id=approval_id)
     if error_response:
         return error_response
 
@@ -41605,15 +42463,16 @@ def preview_tsr_archive_file(file_id):
     ext = resolved['ext']
     safe_name = resolved['display_name'] or resolved['disk_name']
 
-    content_url = url_for('preview_tsr_archive_content', file_id=file_rec.id, scope=scope)
-    pdf_meta_url = url_for('preview_tsr_archive_pdf_meta', file_id=file_rec.id, scope=scope)
+    content_url = url_for('preview_tsr_archive_content', file_id=file_rec.id, scope=scope, approval_id=approval_id) if approval_id else url_for('preview_tsr_archive_content', file_id=file_rec.id, scope=scope)
+    pdf_meta_url = url_for('preview_tsr_archive_pdf_meta', file_id=file_rec.id, scope=scope, approval_id=approval_id) if approval_id else url_for('preview_tsr_archive_pdf_meta', file_id=file_rec.id, scope=scope)
     pdf_page_url_template = url_for(
         'preview_tsr_archive_pdf_page',
         file_id=file_rec.id,
         page_number=0,
-        scope=scope
+        scope=scope,
+        approval_id=approval_id
     ).replace('/0?', '/__PAGE__?')
-    download_url = url_for('download_tsr_archive_file', file_id=file_rec.id, scope=scope)
+    download_url = url_for('download_tsr_archive_file', file_id=file_rec.id, scope=scope, approval_id=approval_id) if approval_id else url_for('download_tsr_archive_file', file_id=file_rec.id, scope=scope)
 
     viewer_html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -41762,7 +42621,7 @@ def preview_tsr_archive_file(file_id):
 @login_required
 def preview_tsr_archive_pdf_meta(file_id):
     """Return PDF page count for server-rendered TSR preview."""
-    resolved, error_response = _resolve_tsr_archive_file_for_preview(file_id)
+    resolved, error_response = _resolve_tsr_archive_file_for_preview(file_id, approval_id=request.args.get('approval_id'))
     if error_response:
         return error_response
 
@@ -41797,7 +42656,7 @@ def preview_tsr_archive_pdf_meta(file_id):
 @login_required
 def preview_tsr_archive_pdf_page(file_id, page_number):
     """Render one PDF page as PNG for Brave/mobile-safe TSR preview."""
-    resolved, error_response = _resolve_tsr_archive_file_for_preview(file_id)
+    resolved, error_response = _resolve_tsr_archive_file_for_preview(file_id, approval_id=request.args.get('approval_id'))
     if error_response:
         return error_response
 
@@ -41846,7 +42705,7 @@ def preview_tsr_archive_pdf_page(file_id, page_number):
 @login_required
 def preview_tsr_archive_content(file_id):
     """Authenticated raw TSR content endpoint used by the preview page for image/CSV rendering."""
-    resolved, error_response = _resolve_tsr_archive_file_for_preview(file_id)
+    resolved, error_response = _resolve_tsr_archive_file_for_preview(file_id, approval_id=request.args.get('approval_id'))
     if error_response:
         return error_response
 
@@ -46848,6 +47707,8 @@ def get_tsr_files_for_shift(shift):
         for file_rec in getattr(candidate_shift, 'files', []) or []:
             if getattr(file_rec, 'id', None) in seen_file_ids:
                 continue
+            if calibration_report_source_file_is_private(file_rec):
+                continue
             if clean_int(getattr(file_rec, 'id', None)) in legacy_suppressed_primary_ids:
                 continue
 
@@ -46996,20 +47857,32 @@ def get_tsr_files_for_shift(shift):
 
 
 def get_linked_schedule_calibration_report_file_state(candidate_shifts):
-    """Return all/latest generated Calibration Report file ids for linked schedules."""
+    """Return all/latest user-facing Calibration Report PDF ids and source states."""
     shift_ids = [
         clean_int(getattr(candidate, 'id', None))
         for candidate in candidate_shifts or []
         if clean_int(getattr(candidate, 'id', None))
     ]
     if not shift_ids:
-        return {'all_ids': set(), 'latest_ids': set(), 'metadata': {}}
+        return {
+            'all_ids': set(), 'latest_ids': set(), 'metadata': {},
+            'source_ids': set(), 'latest_source_ids': set(),
+            'pending_latest_source_ids': set(), 'failed_latest_source_ids': set(),
+        }
     if not has_app_context():
-        return {'all_ids': set(), 'latest_ids': set(), 'metadata': {}}
+        return {
+            'all_ids': set(), 'latest_ids': set(), 'metadata': {},
+            'source_ids': set(), 'latest_source_ids': set(),
+            'pending_latest_source_ids': set(), 'failed_latest_source_ids': set(),
+        }
 
     all_ids = set()
     latest_ids = set()
     metadata = {}
+    source_ids = set()
+    latest_source_ids = set()
+    pending_latest_source_ids = set()
+    failed_latest_source_ids = set()
     submissions = OnlineTsrSubmission.query.filter(
         OnlineTsrSubmission.shift_id.in_(shift_ids)
     ).all()
@@ -47018,24 +47891,66 @@ def get_linked_schedule_calibration_report_file_state(candidate_shifts):
         marker = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
         if not isinstance(marker, dict) or marker.get('source') != 'generated_calibration_report':
             continue
-        file_id = clean_int(marker.get('file_id'))
-        if not file_id:
+        source_file_id = clean_int(marker.get('file_id'))
+        source_file = db.session.get(ShiftFile, source_file_id) if source_file_id else None
+        if not source_file or not calibration_report_source_file_is_private(source_file):
             continue
-        all_ids.add(file_id)
-        metadata[file_id] = {
+        source_ids.add(source_file_id)
+        pdf_file = calibration_report_pdf_file_for_source(source_file_id)
+        if not pdf_file:
+            continue
+        pdf_file_id = clean_int(pdf_file.id)
+        all_ids.add(pdf_file_id)
+        metadata[pdf_file_id] = {
             'revision_no': clean_int(getattr(submission, 'revision_no', None)) or 1,
             'shift_id': clean_int(getattr(submission, 'shift_id', None)),
+            'source_file_id': source_file_id,
         }
 
     for shift_id in shift_ids:
         latest_submission = get_latest_online_tsr_submission_for_shift(shift_id)
         latest_payload = parse_online_tsr_payload_json(latest_submission)
         marker = latest_payload.get('_generated_calibration_report') if isinstance(latest_payload, dict) else None
-        latest_file_id = clean_int(marker.get('file_id')) if isinstance(marker, dict) else None
-        if latest_file_id:
-            latest_ids.add(latest_file_id)
+        latest_source_file_id = clean_int(marker.get('file_id')) if isinstance(marker, dict) else None
+        latest_source_file = db.session.get(ShiftFile, latest_source_file_id) if latest_source_file_id else None
+        if not latest_source_file or not calibration_report_source_file_is_private(latest_source_file):
+            continue
+        latest_source_ids.add(latest_source_file_id)
+        pdf_file = calibration_report_pdf_file_for_source(latest_source_file_id)
+        if pdf_file:
+            latest_ids.add(clean_int(pdf_file.id))
+            continue
+        job = calibration_report_conversion_for_source(latest_source_file_id)
+        if job and clean_str(job.state) == 'failed':
+            failed_latest_source_ids.add(latest_source_file_id)
+        else:
+            pending_latest_source_ids.add(latest_source_file_id)
 
-    return {'all_ids': all_ids, 'latest_ids': latest_ids, 'metadata': metadata}
+    return {
+        'all_ids': all_ids,
+        'latest_ids': latest_ids,
+        'metadata': metadata,
+        'source_ids': source_ids,
+        'latest_source_ids': latest_source_ids,
+        'pending_latest_source_ids': pending_latest_source_ids,
+        'failed_latest_source_ids': failed_latest_source_ids,
+    }
+
+
+def get_calibration_report_email_block(shift):
+    """Return a retryable send error while the latest report PDF is unavailable."""
+    if not shift or not has_app_context():
+        return None
+    state = get_linked_schedule_calibration_report_file_state(
+        get_linked_schedule_file_shifts(shift)
+    )
+    failed_ids = state.get('failed_latest_source_ids') or set()
+    pending_ids = state.get('pending_latest_source_ids') or set()
+    if failed_ids:
+        return 'The latest Calibration Report PDF is not ready because conversion failed. Retry conversion before sending service documents.'
+    if pending_ids:
+        return 'The latest Calibration Report PDF is still being prepared. Retry Send Service Files after conversion completes.'
+    return None
 
 
 def get_linked_schedule_calibration_certificate_file_state(candidate_shifts):
@@ -47119,9 +48034,9 @@ def get_tsr_email_files_for_shift(shift, tsr_files=None):
             ext = schedule_attachment_extension(display_name or disk_name)
             is_calibration_report = file_id in latest_calibration_report_ids
             is_calibration_certificate = file_id in latest_certificate_ids
-            is_latest_calibration_report_docx = is_calibration_report and ext == 'docx'
+            is_latest_calibration_report_pdf = is_calibration_report and ext == 'pdf'
             is_latest_calibration_certificate_pdf = is_calibration_certificate and ext == 'pdf'
-            if ext not in SCHEDULE_ATTACHMENT_EXTENSIONS and not is_latest_calibration_report_docx and not is_latest_calibration_certificate_pdf:
+            if ext not in SCHEDULE_ATTACHMENT_EXTENSIONS and not is_latest_calibration_report_pdf and not is_latest_calibration_certificate_pdf:
                 continue
 
             file_path = None
@@ -47915,6 +48830,9 @@ def mark_service_files_emailed(file_infos, sent_at=None):
 def prepare_tsr_client_email_message(shift, payload):
     """Build and validate the exact TSR client email used by preview and send."""
     payload = payload or {}
+    calibration_report_email_block = get_calibration_report_email_block(shift)
+    if calibration_report_email_block:
+        return None, calibration_report_email_block, 409
     recipient_emails = parse_manual_recipient_emails(payload.get('emails') or payload.get('email'))
     if not recipient_emails:
         return None, 'Please provide at least one valid recipient email address.', 400
@@ -49843,6 +50761,13 @@ def delete_file(filename):
     if not file_recs:
         return jsonify({'message': 'File not found'}), 404
 
+    if any(
+        calibration_report_source_file_is_private(file_rec) or
+        is_system_generated_calibration_report_pdf_file(file_rec)
+        for file_rec in file_recs
+    ):
+        return denied('Calibration Report source and published PDF artifacts are managed immutable files and cannot be deleted.')
+
     if any(calibration_certificate_no_signature_approval_for_file(file_rec) for file_rec in file_recs):
         return denied('The no-signature Calibration Certificate is a managed immutable artifact and cannot be deleted.')
 
@@ -50884,6 +51809,10 @@ def ensure_runtime_sqlite_migrations_before_request():
 
     # Safe on existing SQLite databases; creates tables only when missing.
     db.create_all()
+    try:
+        schedule_calibration_report_conversion()
+    except Exception as conversion_worker_error:
+        print(f'[CalibrationReport] Startup conversion wake skipped: {conversion_worker_error}', flush=True)
     ensure_user_admin_capability_columns()
     ensure_purchase_order_schema()
     ensure_reimbursement_tracker_schema()

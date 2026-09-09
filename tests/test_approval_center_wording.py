@@ -92,13 +92,14 @@ class ApprovalCenterWordingTests(unittest.TestCase):
             self.source,
         )
 
-    def test_calibration_certificate_modal_exposes_safe_report_download_or_unavailable_state(self):
+    def test_calibration_certificate_modal_exposes_pdf_download_or_unavailable_state(self):
         self.assertIn("data.calibration_report_download_url", self.source)
         self.assertIn("data.calibration_report_filename", self.source)
-        self.assertIn("Download Calibration Report (DOCX)", self.source)
+        self.assertIn("Download Calibration Report (PDF)", self.source)
         self.assertIn('href="${approvalEscape(data.calibration_report_download_url)}"', self.source)
         self.assertIn('target="_blank" rel="noopener"', self.source)
-        self.assertIn("The finalized Calibration Report is unavailable for this submission.", self.source)
+        self.assertIn("The Calibration Report PDF is still being prepared after TSR synchronization.", self.source)
+        self.assertIn("PDF conversion failed. Retry the report conversion before reviewing this certificate.", self.source)
 
     def test_calibration_decision_handlers_report_failures_and_signature_requirements(self):
         handlers = {
@@ -132,38 +133,26 @@ class ApprovalCenterWordingTests(unittest.TestCase):
         self.assertIn('role="status" aria-live="polite"', self.source)
         self.assertIn('id="approvalCalibrationReportPreviewError"', self.source)
         self.assertIn('id="approvalCalibrationReportPreviewContent"', self.source)
-        self.assertIn('data-calibration-report-preview-url="${approvalEscape(data.calibration_report_download_url)}"', self.source)
-        self.assertIn('data-calibration-report-preview-filename="${approvalEscape(data.calibration_report_filename || \'Calibration Report.docx\')}"', self.source)
+        self.assertIn('data-calibration-report-preview-url="${approvalEscape(calibrationReportPreviewUrl)}"', self.source)
+        self.assertIn('data-calibration-report-preview-filename="${approvalEscape(data.calibration_report_filename || \'Calibration Report.pdf\')}"', self.source)
         self.assertNotIn('onclick="openCalibrationReportPreview', self.source)
         self.assertNotIn("onclick='openCalibrationReportPreview", self.source)
         self.assertIn("id=\"approvalCalibrationReportPreviewClose\"", self.source)
         self.assertIn("id=\"approvalCalibrationReportPreviewFooterClose\"", self.source)
 
-    def test_calibration_report_preview_uses_local_renderer_with_authenticated_fetch_and_cleanup(self):
+    def test_calibration_report_preview_uses_authenticated_server_pdf_viewer(self):
         for expected in (
-            "vendor/jszip/jszip.min.js",
-            "vendor/docx-preview/docx-preview.min.js",
-            "credentials: 'same-origin'",
-            "cache: 'no-store'",
-            "response.arrayBuffer()",
-            "docx.renderAsync",
-            "renderHeaders: true",
-            "renderFooters: true",
-            "renderFootnotes: true",
-            "renderEndnotes: true",
-            "breakPages: true",
-            "useBase64URL: true",
-            "renderAltChunks: false",
-            "AbortController",
-            "sanitizeCalibrationReportPreview",
+            "const reportUrl = new URL(String(url), window.location.origin).href",
+            "frame.src = reportUrl",
+            "preview_tsr_archive_file",
+            "setCalibrationReportPreviewState('ready'",
             "closeCalibrationReportPreview",
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, self.source)
-        self.assertIn("calibrationReportPreviewRuntimePromise", self.source)
         self.assertIn("calibrationReportPreviewSequence", self.source)
-        self.assertIn("removeAttribute('href')", self.source)
-        self.assertIn("<script", self.source)
+        self.assertNotIn("docx-preview.min.js", self.source)
+        self.assertNotIn("docx.renderAsync", self.source)
 
 
 if __name__ == "__main__":

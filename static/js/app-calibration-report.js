@@ -25,6 +25,7 @@
   var EXPOSURE_KEYS = ['nominal_kvp','measured_kvp','ma_mas','dose_mgy','dose_rate','time_msec','measured_time'];
   var DEFAULT_MANUFACTURER = 'Shimadzu';
   var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  var PDF_MIME = 'application/pdf';
   var EXACT_FIT_CAPACITIES = {
     page1_value: { name:'page1_value', maxLength:40, label:'Page 1 identity/value' },
     page1_narrow: { name:'page1_narrow', maxLength:22, label:'Page 1 narrow value' },
@@ -266,9 +267,9 @@
     return exactFitEntries(report).reduce(function(violations, entry){
       var raw = String(entry.value === undefined || entry.value === null ? '' : entry.value);
       if(/[\r\n\t]/.test(raw)){
-        violations.push({ path:entry.path, label:entry.label, maxLength:entry.rule.maxLength, reason:'single_line', message:entry.label + ' must be a single-line value for the supplied Word form.' });
+        violations.push({ path:entry.path, label:entry.label, maxLength:entry.rule.maxLength, reason:'single_line', message:entry.label + ' must be a single-line value for the supplied form.' });
       }else if(normalizeFitValue(raw).length > entry.rule.maxLength){
-        violations.push({ path:entry.path, label:entry.label, maxLength:entry.rule.maxLength, reason:'too_long', message:entry.label + ' is too long for the supplied Word form (maximum ' + entry.rule.maxLength + ' characters).' });
+        violations.push({ path:entry.path, label:entry.label, maxLength:entry.rule.maxLength, reason:'too_long', message:entry.label + ' is too long for the supplied form (maximum ' + entry.rule.maxLength + ' characters).' });
       }
       return violations;
     }, []);
@@ -342,7 +343,7 @@
   function buildEditor(){
     var performanceRows = SOURCE.performance.map(function(criteria, index){ var rule = fitRuleForPath('performance_results.' + index); var limit = rule ? ' maxlength="' + rule.maxLength + '" data-cr-fit-class="' + escapeHtml(rule.name) + '"' : ''; return '<tr><td><div class="calibration-report-check-criteria">' + escapeHtml(criteria) + '</div></td><td><textarea class="calibration-report-performance-result" data-cr-performance="' + index + '" placeholder="Enter result"' + limit + '></textarea></td></tr>'; }).join('');
     var html = '<div class="calibration-report-tabs" role="tablist" aria-label="Calibration report pages"><button type="button" class="calibration-report-tab is-active" data-cr-page="1" id="calibration-report-tab-1" role="tab" aria-controls="calibration-report-page-1" aria-selected="true" tabindex="0">Page 1 · Identity</button><button type="button" class="calibration-report-tab" data-cr-page="2" id="calibration-report-tab-2" role="tab" aria-controls="calibration-report-page-2" aria-selected="false" tabindex="-1">Page 2 · Checks</button><button type="button" class="calibration-report-tab" data-cr-page="3" id="calibration-report-tab-3" role="tab" aria-controls="calibration-report-page-3" aria-selected="false" tabindex="-1">Page 3 · Output</button></div>'
-      + '<div class="calibration-report-template-note"><i class="fa-solid fa-lock me-1" aria-hidden="true"></i>DOCX output uses the supplied Word form. Only its existing blank fields and signature area receive data.</div>'
+      + '<div class="calibration-report-template-note"><i class="fa-solid fa-lock me-1" aria-hidden="true"></i>The PDF uses the supplied form. Only its existing blank fields and signature area receive data.</div>'
       + '<section class="calibration-report-page is-active" data-cr-page-panel="1"><div class="calibration-report-paper-title">CALIBRATION REPORT</div>'
       + '<div class="calibration-report-section"><div class="calibration-report-section-title">1. FACILITY INFORMATION</div><div class="calibration-report-grid">'
       + fieldMarkup('facility.name','1.1 Facility Name') + fieldMarkup('facility.address','1.2 Address') + fieldMarkup('facility.telephone','1.3 Telephone/Mobile No.') + fieldMarkup('facility.email','1.4 Email Address','email') + fieldMarkup('facility.location','1.5 Location within the Facility') + '</div></div>'
@@ -692,7 +693,7 @@
   function validateForFinalSave(payload){
     var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : state; if(!isActive(report)) return { ok:true, missing:[] };
     var fit = exactFitViolations(report);
-    if(fit.length){ return { ok:false, missing:fit.map(function(item){ return { path:item.path, label:item.label }; }), fit:fit, message:fit[0].message + (fit.length > 1 ? ' Fix the marked fields before generating the DOCX.' : '') }; }
+    if(fit.length){ return { ok:false, missing:fit.map(function(item){ return { path:item.path, label:item.label }; }), fit:fit, message:fit[0].message + (fit.length > 1 ? ' Fix the marked fields before generating the PDF.' : '') }; }
     var missing = missingFields(report); if(missing.length) return { ok:false, missing:missing, message:'Complete the Calibration Report or remove it before saving: ' + missing.slice(0,4).map(function(item){ return item.label; }).join(', ') + (missing.length > 4 ? ', and more.' : '.') };
     if(!CERTIFICATE_CATALOG_AVAILABLE){
       return { ok:false, missing:[{ path:'machine.modality', label:'Calibration Certificate catalog' }], message:'The Calibration Certificate catalog is unavailable or invalid. Reload Create TSR before saving the final report.' };
@@ -930,10 +931,58 @@
     zip.file('word/document.xml', documentXml); zip.file('word/_rels/document.xml.rels', relationshipInfo.xml); zip.file('[Content_Types].xml', addImageContentType(await contentTypesFile.async('string'))); zip.file('word/media/calibration-signature.png', dataUrlBytes(report.signature.image), { binary:true });
     var bytes = await zip.generateAsync({ type:'blob', compression:'STORE' }); return { blob:new Blob([bytes], { type:DOCX_MIME }), filename:filename };
   }
-  function missingGeneratedBlobError(){ var error = new Error('The stored Calibration Report DOCX is missing from this device. Click Save Final Report to create a new final attachment.'); error.code = 'calibration_report_blob_missing'; return error; }
-  function notFinalizedError(){ var error = new Error('Save Final Report before saving or synchronizing this TSR. Generate Sample DOCX is for review only.'); error.code = 'calibration_report_not_finalized'; return error; }
+  function missingGeneratedBlobError(){ var error = new Error('The stored Calibration Report source is missing from this device. Click Save Final Report to create a new final report.'); error.code = 'calibration_report_blob_missing'; return error; }
+  function notFinalizedError(){ var error = new Error('Save Final Report before saving or synchronizing this TSR. Generate Sample PDF is for review only.'); error.code = 'calibration_report_not_finalized'; return error; }
   function downloadBlob(blob, filename){
     var url = URL.createObjectURL(blob); var link = document.createElement('a'); link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
+  }
+  function pdfFilenameFor(filename){
+    var source = String(filename || 'Calibration_Report.docx');
+    return source.replace(/\.docx$/i, '.pdf');
+  }
+  async function convertDocxToPdf(blob, filename){
+    if(!(blob instanceof Blob) || !blob.size) throw new Error('The Calibration Report source is empty.');
+    if(typeof FormData !== 'function'){
+      var runtimeError = new Error('PDF conversion is available when this page is online. The report source remains saved for synchronization.');
+      runtimeError.code = 'calibration_report_pdf_unavailable';
+      throw runtimeError;
+    }
+    var formData = new FormData();
+    formData.append('docx', blob, filename || 'Calibration_Report.docx');
+    var headers = { Accept:'application/pdf, application/json' };
+    try{
+      if(typeof getCSRFToken === 'function'){
+        var csrfToken = getCSRFToken();
+        if(csrfToken) headers['X-CSRFToken'] = csrfToken;
+      }
+    }catch(tokenError){}
+    var response;
+    try{
+      response = await fetch('/convert_calibration_report_sample', { method:'POST', credentials:'same-origin', cache:'no-store', headers:headers, body:formData });
+    }catch(fetchError){
+      var networkError = new Error('PDF conversion is unavailable while offline. Save the TSR and retry after synchronization.');
+      networkError.code = 'calibration_report_pdf_unavailable';
+      throw networkError;
+    }
+    if(!response.ok){
+      var errorPayload = await response.json().catch(function(){ return {}; });
+      var conversionError = new Error(errorPayload.message || 'Calibration Report PDF conversion is temporarily unavailable. Save the TSR and retry after synchronization.');
+      conversionError.code = 'calibration_report_pdf_unavailable';
+      throw conversionError;
+    }
+    var contentType = String(response.headers?.get?.('content-type') || '').toLowerCase();
+    if(contentType && contentType.indexOf(PDF_MIME) < 0){
+      var responseError = new Error('The conversion service did not return a PDF. Save the TSR and retry after synchronization.');
+      responseError.code = 'calibration_report_pdf_unavailable';
+      throw responseError;
+    }
+    var pdfBlob = await response.blob();
+    if(!pdfBlob || !pdfBlob.size){
+      var emptyError = new Error('The conversion service returned an empty PDF. Save the TSR and retry after synchronization.');
+      emptyError.code = 'calibration_report_pdf_unavailable';
+      throw emptyError;
+    }
+    return { blob:pdfBlob, filename:pdfFilenameFor(filename) };
   }
 
   async function preparePayload(payload, ownerId, options){
@@ -947,7 +996,7 @@
     var blob = record?.blob && existingMatches && !opts.regenerate ? record.blob : null;
     if(!blob){
       blob = (await buildDocx(next, report, filename)).blob;
-      if(typeof window.saveOfflineTSRBlobRecord !== 'function') throw new Error('Durable browser storage is unavailable for the Calibration Report DOCX.');
+      if(typeof window.saveOfflineTSRBlobRecord !== 'function') throw new Error('Durable browser storage is unavailable for the Calibration Report source.');
       // Write new bytes before swapping the report metadata and attachment reference.
       await window.saveOfflineTSRBlobRecord({ id:blobId, owner_id:ownerId || 'calibration-report', owner_type:'generated_calibration_report', name:filename, type:DOCX_MIME, size:blob.size || 0, blob:blob, source:'generated_calibration_report' });
     }else blobId = existingId;
@@ -1025,11 +1074,11 @@
     try{
       var payload = currentTSRData(); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state); report = normalizeReportFitValues(report);
       var fit = exactFitViolations(report);
-      if(fit.length){ var fitError = new Error(fit[0].message + (fit.length > 1 ? ' Fix the marked fields before generating the DOCX.' : '')); fitError.code = 'calibration_report_exact_fit'; fitError.missing = fit.map(function(item){ return { path:item.path, label:item.label }; }); throw fitError; }
+      if(fit.length){ var fitError = new Error(fit[0].message + (fit.length > 1 ? ' Fix the marked fields before generating the PDF.' : '')); fitError.code = 'calibration_report_exact_fit'; fitError.missing = fit.map(function(item){ return { path:item.path, label:item.label }; }); throw fitError; }
       var missing = missingFields(report);
-      var filename = 'SAMPLE_' + filenameFor(payload, report); var built = await buildDocx(payload, report, filename); downloadBlob(built.blob, filename); showStatus('Sample Calibration Report DOCX downloaded. It is not attached to the TSR.', 'success');
-      if(missing.length){ showStatus('Sample Calibration Report DOCX downloaded. It is not attached. Some required fields are still missing: ' + missing.slice(0,4).map(function(item){ return item.label; }).join(', ') + (missing.length > 4 ? ', and more.' : '.'), 'warning'); }
-    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else { console.error('[Calibration Report] Sample DOCX generation failed',err); showStatus(err?.message || 'Calibration Report sample DOCX could not be generated.','danger'); } }
+      var filename = 'SAMPLE_' + filenameFor(payload, report); var built = await buildDocx(payload, report, filename); var pdf = await convertDocxToPdf(built.blob, filename); downloadBlob(pdf.blob, pdf.filename); showStatus('Sample Calibration Report PDF downloaded. It is not attached to the TSR.', 'success');
+      if(missing.length){ showStatus('Sample Calibration Report PDF downloaded. It is not attached. Some required fields are still missing: ' + missing.slice(0,4).map(function(item){ return item.label; }).join(', ') + (missing.length > 4 ? ', and more.' : '.'), 'warning'); }
+    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else { console.error('[Calibration Report] Sample PDF generation failed',err); showStatus(err?.message || 'Calibration Report sample PDF could not be generated.','danger'); } }
   }
   async function saveFinalReport(){
     try{
@@ -1048,20 +1097,20 @@
       var payload = currentTSRData(); var report = payload?.calibration_report ? normalizeState(payload.calibration_report) : normalizeState(state); var attachment = attachmentFromPayload({ calibration_report:report });
       if(!attachment || !hasGeneratedMetadata(report)){ throw notFinalizedError(); }
       var blob = await resolveAttachmentBlob(attachment); if(!blob){ generatedBlobState = 'missing'; renderCard(); syncAutoDocument(); throw missingGeneratedBlobError(); }
-      downloadBlob(blob, attachment.filename || report.generated.filename || 'Calibration_Report.docx'); showStatus('Final Calibration Report DOCX downloaded.', 'success');
-    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else showStatus(err?.message || 'Save Final Report before downloading the final DOCX.','danger'); }
+      var pdf = await convertDocxToPdf(blob, attachment.filename || report.generated.filename || 'Calibration_Report.docx'); downloadBlob(pdf.blob, pdf.filename); showStatus('Final Calibration Report PDF downloaded.', 'success');
+    }catch(err){ if(err?.code === 'calibration_report_incomplete' || err?.code === 'calibration_report_exact_fit'){ showStatus(err.message,'danger',{ key:'calibration-validation', action:{ label:'Review calibration report', onClick:function(){ focusMissing(err.missing, { explicit:true }); } } }); } else showStatus(err?.message || 'Save Final Report before downloading the final PDF.','danger'); }
   }
 
   function renderCard(){
     var status = q('#calibration-report-status'); var summary = q('#calibration-report-summary'); var createButton = q('#calibration-report-create-btn'); var entryLabel = q('#calibration-report-entry-label'); var toolbarGenerate = q('#calibration-report-generate'); var toolbarGenerateLabel = q('#calibration-report-generate-label'); var toolbarFinal = q('#calibration-report-final-save'); var toolbarDownload = q('#calibration-report-download'); var toolbarClear = q('#calibration-report-clear'); var toolbarRemove = q('#calibration-report-toolbar-remove'); var note = q('#calibration-report-attachment-note'); var filename = q('#calibration-report-filename'); var capacity = q('#calibration-report-capacity');
-    var active = isActive(state); var validation = active ? validateForFinalSave({ calibration_report:state }) : { ok:false, missing:[] }; var capacityInfo = typeof window.getTSRAttachmentCapacity === 'function' ? window.getTSRAttachmentCapacity({ calibration_report:state }) : null; var overCapacity = !!(capacityInfo && capacityInfo.total > capacityInfo.max); var hasGenerated = hasGeneratedMetadata(state); var ready = active && validation.ok && !overCapacity; var downloadReady = reportReadyForAutoDocument();
+    var active = isActive(state); var validation = active ? validateForFinalSave({ calibration_report:state }) : { ok:false, missing:[] }; var capacityInfo = typeof window.getTSRAttachmentCapacity === 'function' ? window.getTSRAttachmentCapacity({ calibration_report:state }) : null; var overCapacity = !!(capacityInfo && capacityInfo.total > capacityInfo.max); var hasGenerated = hasGeneratedMetadata(state); var conversionState = String(state.conversion?.state || state.generated?.pdf_state || '').toLowerCase(); var ready = active && validation.ok && !overCapacity; var downloadReady = reportReadyForAutoDocument();
     var cardLabel = !active ? 'Create Calibration Report' : (downloadReady ? 'Open Calibration Report' : 'Continue Calibration Report');
     if(status){ status.textContent = !active ? 'Not Started' : (downloadReady ? 'Final Saved' : 'Draft'); status.className = 'calibration-report-status ' + (!active ? 'muted' : (downloadReady ? 'ready' : 'draft')); }
-    if(summary) summary.textContent = !active ? 'Create an optional Calibration Report using the supplied Word form. It remains separate from the main TSR PDF.' : (hasGenerated && generatedBlobState === 'missing' ? 'The final DOCX is missing from this device. Save Final Report again before downloading or saving the TSR.' : (ready ? (downloadReady ? 'Final report saved and attached to this TSR draft.' : 'Complete. Generate a sample for review or save the final report to attach it.') : 'Incomplete report or attachment capacity issue. Finish the marked fields, save the final report, or remove the report before saving.'));
+    if(summary) summary.textContent = !active ? 'Create an optional Calibration Report using the supplied form. It remains separate from the main TSR PDF.' : (hasGenerated && generatedBlobState === 'missing' ? 'The final report source is missing from this device. Save Final Report again before downloading or saving the TSR.' : (conversionState === 'failed' ? 'PDF conversion failed after synchronization. Retry the report conversion before emailing or approving it.' : (conversionState === 'pending' ? 'Final report source saved. The PDF will become available after synchronization.' : (ready ? (downloadReady ? 'Final report saved locally. PDF conversion is available online and after TSR sync.' : 'Complete. Generate a sample PDF for review or save the final report to attach it.') : 'Incomplete report or attachment capacity issue. Finish the marked fields, save the final report, or remove the report before saving.'))));
     if(entryLabel) entryLabel.textContent = cardLabel; if(createButton) createButton.setAttribute('aria-label', cardLabel);
-    if(toolbarGenerateLabel) toolbarGenerateLabel.textContent = 'Generate Sample DOCX';
+    if(toolbarGenerateLabel) toolbarGenerateLabel.textContent = 'Generate Sample PDF';
     if(toolbarGenerate) toolbarGenerate.classList.toggle('d-none', !active); if(toolbarFinal) toolbarFinal.classList.toggle('d-none', !active); if(toolbarDownload) toolbarDownload.classList.toggle('d-none', !downloadReady); if(toolbarClear) toolbarClear.classList.toggle('d-none', !active); if(toolbarRemove) toolbarRemove.classList.toggle('d-none', !active);
-    if(filename) filename.textContent = active && state.generated?.filename ? state.generated.filename : 'No DOCX generated yet.';
+    if(filename) filename.textContent = active && state.generated?.filename ? pdfFilenameFor(state.generated.filename) : 'No PDF generated yet.';
     if(capacity){ if(!capacityInfo) capacity.textContent = 'Supporting attachment capacity is checked when the TSR is saved.'; else if(overCapacity) capacity.textContent = `${capacityInfo.total} of ${capacityInfo.max} supporting attachments selected. Remove an ordinary attachment before attaching this report; files will not be truncated.`; else capacity.textContent = `${capacityInfo.total} of ${capacityInfo.max} supporting attachment slots used${active ? ' including this report' : ''}.`; capacity.classList.toggle('is-over', overCapacity); }
     var cert = state.certificate_approval || {};
     var certStatusKey = String(cert.status || '').trim().toLowerCase().replace(/\s+/g, '_');
@@ -1072,7 +1121,8 @@
     else if(certStatusKey === 'pending') certStatus = 'Certificate pending approval.';
     else if(certStatusKey === 'awaiting_route' || certStatusKey === 'awaiting_approver_assignment') certStatus = 'Certificate awaiting approver assignment.';
     else if(certStatusKey === 'error' || certStatusKey === 'retryable') certStatus = 'Certificate submission failed; retry after TSR sync.';
-    if(note) note.textContent = (downloadReady ? 'Auto-managed document chip: Calibration Report · source: generated_calibration_report. ' : 'Sample downloads are not attached. Save Final Report to create the TSR attachment. ') + certStatus;
+    var conversionNote = conversionState === 'ready' ? 'PDF is ready for archive and delivery. ' : (conversionState === 'failed' ? 'PDF conversion failed; retry is available. ' : 'PDF is created after TSR synchronization. ');
+    if(note) note.textContent = (downloadReady ? 'Auto-managed document chip: Calibration Report · ' + conversionNote : 'Sample PDFs are not attached. Save Final Report to create the TSR attachment. ') + certStatus;
   }
   function setApprovalStatus(approval, statusLabel){
     if(!approval || typeof approval !== 'object') return;
@@ -1090,6 +1140,25 @@
       signed_url: approval.signed_url || '',
       error: approval.error || ''
     });
+    renderCard();
+  }
+  function setConversionStatus(conversion){
+    if(!conversion || typeof conversion !== 'object' || !isActive(state)) return;
+    state.conversion = Object.assign({}, state.conversion || {}, {
+      state: String(conversion.state || 'pending'),
+      pdf_file_id: conversion.pdf_file_id || null,
+      pdf_filename: conversion.pdf_filename || '',
+      last_error: conversion.last_error || '',
+      attempts: Number(conversion.attempts || 0),
+      next_retry_at: conversion.next_retry_at || null
+    });
+    if(state.generated && typeof state.generated === 'object'){
+      state.generated.pdf_state = state.conversion.state;
+      state.generated.pdf_file_id = state.conversion.pdf_file_id;
+      state.generated.pdf_filename = state.conversion.pdf_filename;
+      state.generated.pdf_error = state.conversion.last_error;
+      state.generated.pdf_attempts = state.conversion.attempts;
+    }
     renderCard();
   }
   async function saveReportDraft(){
@@ -1127,11 +1196,11 @@
     state.generated_cleanup = { blob_ids:cleanupFailures };
     renderCard(); syncAutoDocument();
     if(typeof window.saveStandaloneTSRDraft === 'function') await window.saveStandaloneTSRDraft(true).catch(function(){});
-    if(cleanupFailures.length) showStatus('Calibration Report removed, but generated DOCX cleanup remains pending on this device.', 'danger');
+    if(cleanupFailures.length) showStatus('Calibration Report removed, but generated report cleanup remains pending on this device.', 'danger');
     else showStatus('Calibration Report removed. The ordinary TSR remains unchanged.', 'info');
   }
   function ensureEditor(){ if(!editorBuilt) buildEditor(); }
 
-  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice() }; }, getSource:function(){ return clone(SOURCE); }, getExactFitRules:function(){ return clone(EXACT_FIT_CAPACITIES); } };
+  window.calibrationReport = { collect:collect, apply:apply, setApprovalStatus:setApprovalStatus, setConversionStatus:setConversionStatus, getApprovalStatus:function(){ return clone(state.certificate_approval || {}); }, reset:reset, create:createReport, open:open, close:close, generate:generateSample, generateSample:generateSample, generateCertificateSample:generateCertificateSample, saveFinalReport:saveFinalReport, download:download, saveDraft:saveReportDraft, clearForm:clearForm, remove:removeReport, onScheduleApplied:onScheduleApplied, clearForScheduleChange:clearForScheduleChange, validateForFinalSave:validateForFinalSave, focusMissing:focusMissing, preparePayload:preparePayload, getAttachment:attachmentFromPayload, resolveAttachmentBlob:resolveAttachmentBlob, getCertificateNumber:function(report){ return certificateNumber(normalizeState(report || state)); }, getCertificateFields:function(payload, report){ return certificateFieldValues(payload || currentTSRData(), normalizeState(report || state)); }, getCertificateModelMatch:certificateModelMatch, normalizeCertificateModel:normalizeCertificateModel, getCertificateCatalog:function(){ return { equipment_names:CERTIFICATE_EQUIPMENT_NAMES.slice(), models:CERTIFICATE_MODELS.slice() }; }, getSource:function(){ return clone(SOURCE); }, getExactFitRules:function(){ return clone(EXACT_FIT_CAPACITIES); } };
   document.addEventListener('DOMContentLoaded', function(){ ensureEditor(); renderCard(); q('#calibration-report-close')?.addEventListener('click', close); q('#calibration-report-save')?.addEventListener('click', saveReportDraft); q('#calibration-report-generate')?.addEventListener('click', generateSample); q('#calibration-report-certificate-generate')?.addEventListener('click', generateCertificateSample); q('#calibration-report-final-save')?.addEventListener('click', saveFinalReport); q('#calibration-report-download')?.addEventListener('click', download); q('#calibration-report-clear')?.addEventListener('click', clearForm); q('#calibration-report-create-btn')?.addEventListener('click', createReport); q('#calibration-report-toolbar-remove')?.addEventListener('click', removeReport); document.addEventListener('keydown', handleDialogKeydown); });
 })();

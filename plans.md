@@ -1,5 +1,200 @@
 # Medical Service SMS — Approved Plans
 
+## Calibration Reports: retain private DOCX sources and publish PDF outputs
+
+**Status:** In progress.
+**Approved:** 2026-09-09 — the owner explicitly said “implement the plan” after choosing PDF-only
+user-facing reports, private DOCX retention, all historical revisions, LibreOffice on Railway,
+save-then-retry conversion, after-sync availability for offline saves, and blocking service-document
+email until the required PDF is ready.
+**Detailed:** 2026-09-09.
+
+### Context and intended outcome
+
+Engineers currently generate the supplied calibration-report Word form as a DOCX in the browser.
+The saved report is uploaded as a generated TSR supporting file and downstream archive, approval,
+preview, and service-document email paths treat that DOCX as the report. The requested behavior is
+to make PDF the only engineer/approver/client-facing report format while retaining the original DOCX
+bytes privately as an immutable source and audit/fallback artifact. Existing saved generated
+Calibration Report DOCX files must also be convertible, including superseded revisions.
+
+The supplied DOCX template remains the source of truth. Conversion happens only after the source
+bytes are durably saved, so a renderer outage cannot lose an engineer's completed report. Conversion
+is persistent, idempotent, retryable, and linked to the exact source file/checksum. Offline final
+saves continue to queue the source DOCX locally; the PDF becomes available after synchronization.
+
+### Decisions taken
+
+1. PDF is the user-facing report. Engineers, approvers, archive/timeline previews, downloads, and
+   service-document emails resolve to the PDF when ready. They do not expose the source DOCX.
+2. Retain every original generated DOCX privately. Do not delete, rename, or rewrite source bytes;
+   keep their existing generated-report markers and attachment identity for audit/retry purposes.
+3. Convert all recognized server-stored generated Calibration Report DOCX files, including
+   superseded revisions, through a resumable administrator CLI with dry-run and apply modes.
+4. Use headless LibreOffice Writer in the Railway image. Use a per-attempt isolated user profile,
+   private temporary input/output folders, a bounded process timeout, and validate the resulting
+   PDF before publishing it.
+5. Save the source first and schedule conversion afterward. A pending or failed conversion is a
+   visible report state with retry timing and an actionable error; it never falls back to a DOCX in
+   a user-facing surface.
+6. Offline final saves remain valid local work. The queued DOCX source is uploaded on sync and then
+   converted; the page reports that PDF availability is pending rather than claiming a local PDF
+   exists.
+7. Service-document email waits for the latest required Calibration Report PDF. If it is pending
+   or failed, send is refused with a retryable explanation; private DOCX sources are never attached.
+
+### Files and responsibilities
+
+- `app.py`: additive conversion model/schema helper; source/PDF linkage and state serialization;
+  storage reads/writes; persistent single-worker scheduling/retry/recovery; upload and sample
+  conversion routes; PDF-aware archive/timeline/approval resolution; private DOCX access guard;
+  latest-PDF email selection and delivery gating; service-worker cache version bump.
+- `static/js/app-calibration-report.js`: keep DOCX generation as the private upload source, change
+  engineer-facing sample/final actions to PDF wording and online sample conversion, and display
+  pending/failed post-sync PDF state without offering a DOCX download.
+- `templates/offline_tsr.html` and `static/css/app-calibration-report.css`: update report controls,
+  status copy, sample action, and download/preview labels while preserving the offline queue and
+  supplied template URL.
+- `templates/timeline.html` and `templates/approvals.html`: consume the existing report-file
+  action contract as PDF preview/download only; do not add a second artifact-resolution heuristic.
+- `scripts/convert_calibration_reports.py`: dry-run/apply historical backfill over every recognized
+  stored generated-report source, with resumable batches, source-byte validation, and a summary of
+  converted, skipped, missing, corrupt, pending, and failed records.
+- `Dockerfile`: install headless LibreOffice Writer, fontconfig, and compatible Liberation/Carlito
+  fonts while preserving the existing Gunicorn command and Railway volume paths.
+- `tests/test_calibration_report_pdf.py` plus affected existing tests: cover conversion validation,
+  idempotency/retry, private-source protection, PDF archive/approval/email selection, upload/save
+  ordering, sample conversion, historical dry-run/apply selection, offline status copy, cache
+  delivery, and compatibility with ordinary attachments.
+- `static/changelog/releases.json`, `plans.md`, and `changes.md`: record the user-facing format
+  change, execution evidence, renderer limitation/verification facts, and protected-artifact scope.
+
+### Numbered execution steps
+
+1. **Preflight and control records.** Confirm the complete `AGENTS.md`, `changes.md`, and current
+   `plans.md` have been read; inspect `git status`; preserve the handoff, `scheduler.db`, `.claude/`,
+   `output/`, and `tmp/`. Keep this plan at the top with status `In progress`, and append the
+   2026-09-09 start entry to `changes.md` before application/test edits. Done when no protected path
+   is staged or modified by this feature.
+2. **Map current report identity and contracts.** Trace `ShiftFile`, generated-report marker
+   helpers, `upload_online_tsr_attachment`, `get_linked_schedule_calibration_report_file_state`,
+   `timeline_file_detail_payload`, archive preview/download resolvers,
+   `calibration_certificate_generated_report_file`, `get_tsr_email_files_for_shift`, and the
+   offline TSR upload/sample controls. Preserve all existing ordinary attachment, approval,
+   schedule, and offline queue behavior outside the report conversion path.
+3. **Add durable conversion state.** In `app.py`, add an additive table keyed by source `ShiftFile`
+   with unique PDF linkage, source SHA-256, converter version, state, attempts, claim/retry/error
+   metadata, and timestamps. Add safe startup creation/migration behavior without replacing or
+   mutating `scheduler.db` in this task. Keep the original generated-report marker authoritative
+   for the DOCX source and extend its metadata with PDF state/linkage after successful conversion.
+4. **Implement conversion and scheduling.** Add a bounded LibreOffice conversion helper using an
+   isolated profile and temporary directories, validate PDF magic/size/page readability with the
+   bundled PDF libraries, store the PDF through managed report storage, and create the linked
+   `ShiftFile` only after validation. Add one serial persistent worker with claim/recovery,
+   idempotency by source id/checksum, three increasing retry delays, and a 120-second renderer
+   timeout. Upload commits the DOCX before waking the worker; worker failures leave the source and
+   conversion state intact.
+5. **Wire new and sample saves.** Update the generated-report upload route to enqueue conversion
+   after commit and return source/PDF state. Add an authenticated online-only sample conversion
+   endpoint that accepts the browser-generated DOCX temporarily and returns a validated PDF without
+   creating a report, shift attachment, approval, or email record. Update the calibration UI to
+   say Sample PDF / Final PDF, retain DOCX only as the hidden sync source, and show pending/failed
+   conversion state after save/sync.
+6. **Make PDF the only normal report surface.** Update archive, timeline, certificate approval,
+   and related serializers/resolvers to select the linked PDF for preview/download and report its
+   PDF MIME/name. Hide private source DOCX rows from normal engineer/approver/client-facing lists;
+   direct source download/preview is refused unless the existing administrative authorization path
+   explicitly permits private audit access. No DOCX fallback is allowed when PDF conversion is
+   pending or failed, and ordinary non-report DOCX attachments remain unchanged.
+7. **Gate service-document email.** Change `get_tsr_email_files_for_shift` and its preparation/send
+   callers to select only the latest logical report revision's ready PDF, exclude private DOCX
+   sources and superseded revisions, and refuse send while the latest required PDF is unavailable.
+   Preserve the existing email idempotency/attachment marker behavior so a PDF is marked sent only
+   after the actual email provider succeeds.
+8. **Add historical conversion tooling.** Implement the CLI against stored generated-report markers,
+   not filename guesses. Dry-run reports all candidates and reasons; apply processes resumable
+   batches, skips valid complete links, validates source bytes/checksum/storage, creates only the
+   missing PDF/linkage, and leaves corrupt/missing source records reported for manual recovery.
+   Do not run the apply mode against production or the owner's database in this task.
+9. **Deployable renderer and delivery metadata.** Add the Dockerfile packages and preserve Gunicorn,
+   Railway volume storage, and existing Python dependencies. Bump the embedded app-shell service
+   worker version because `offline_tsr.html` and the calibration script change; add the engineer-
+   facing release entry and update exact cache/script assertions. Do not deploy, change Railway
+   variables, or perform production storage/database operations.
+10. **Fail-first and focused verification.** Add tests before or alongside each contract and prove
+    the critical tests fail against the pre-fix behavior where practical: source-first save ordering,
+    no DOCX user fallback, private-source refusal, PDF-only email/archive/approval selection,
+    retry/idempotency, historical candidate selection, and ordinary attachment compatibility. Run
+    Python compilation/AST checks, focused unit tests, Node syntax checks, release/cache checks,
+    and `git diff --check` against a unique disposable external test database.
+11. **Artifact verification.** Immediately before the first QA DOCX/PDF artifact generation, run the
+    documents/PDF artifact-operation marker. Generate a representative report source and converted
+    PDF in a task QA directory, inspect the ZIP/XML/media and PDF metadata/page count, render PDF
+    pages with the bundled renderer, and inspect every page for clipping, page-break drift, missing
+    signatures, font substitution that changes geometry, or altered supplied-template content. Do
+    not use browser/Codex UI automation under the project rules.
+12. **Closeout records.** Run the full unittest discovery where feasible against a unique disposable
+    `MEDICAL_SERVICE_TEST_DB`, report exact pass/fail/skip counts and unrelated baseline failures,
+    update this plan with truthful implementation evidence while keeping it `In progress` until a
+    commit is authorized, and append factual final bullets to the 2026-09-09 `changes.md` section.
+    Do not commit, push, deploy, clean, reset, delete, or touch protected artifacts without separate
+    owner authorization.
+
+### Deliberately excluded
+
+Deleting or renaming existing DOCX bytes/files; changing the supplied official DOCX template;
+rewriting completed approval records; changing ordinary non-calibration attachments; automatic
+production historical backfill; Railway variable/storage/database operations; database replacement
+or destructive migration; browser/Codex UI verification; commits, pushes, merges, rebases, deploys;
+protected handoff/database/output/tmp cleanup; and a public DOCX/audit-download UI are excluded
+because they are either contrary to the selected PDF-only behavior or separately authorized work.
+
+### Acceptance criteria
+
+- A newly saved generated Calibration Report source is retained as DOCX privately, conversion is
+  scheduled after source commit, and a validated PDF is linked and becomes the sole normal report.
+- A conversion outage leaves the saved source intact, persists a pending/failed state, retries
+  safely without duplicate PDFs, and exposes an actionable state without offering DOCX fallback.
+- All recognized historical generated-report DOCX revisions are discoverable by the dry-run CLI and
+  can be converted idempotently in apply mode without filename heuristics or source-byte changes.
+- Archive/timeline/approval preview/download and service-document email select the correct latest
+  PDF; private DOCX sources and superseded revisions are excluded from normal user-facing output.
+- Offline final saves remain durable and become PDF-backed after sync; online sample generation
+  returns PDF without creating a saved report or approval record.
+- The supplied DOCX template, existing generated-source signature/media content, ordinary attachment
+  behavior, authorization boundaries, app-shell delivery, and protected dirty artifacts remain safe.
+
+### Implementation evidence — 2026-09-09
+
+The owner-authorized working-tree implementation is complete and remains uncommitted. Status remains
+`In progress` because commit/push/deployment were not authorized for this task.
+
+- `app.py` now retains generated Calibration Report DOCX sources privately, stores durable
+  source/checksum/converter/state/retry metadata, converts through an isolated headless LibreOffice
+  Writer worker after the source commit, validates PDFs before linking them, recovers stale claims,
+  and keeps failed conversions retryable without removing the source.
+- New and historical recognized generated-report revisions are covered by
+  `scripts/convert_calibration_reports.py` with dry-run default plus explicit `--apply`, `--force`,
+  and `--limit` controls. No production or owner-database backfill was run.
+- Engineer sample/final actions, archive/timeline/approval previews and downloads, and
+  service-document email now expose only PDF output. Pending/failed conversion state is surfaced;
+  private DOCX sources and superseded report revisions are excluded from normal user-facing output.
+  Offline final saves continue to queue the DOCX source and become PDF-backed after sync.
+- `Dockerfile` installs LibreOffice Writer and compatible fonts; the app-shell cache was bumped to
+  `medical-service-pwa-offline-navigation-v149-calibration-report-pdf`, the calibration script
+  query was bumped to v24, and release metadata/tests were updated.
+- Verification: the focused Calibration Report/PDF, archive, approval, email, timeline, and sync
+  set passed **87/87**. Repository-wide discovery ran **1035 tests: 1024 passed, 10 failed, 1
+  skipped**; the remaining failures are unrelated shared-suite state issues (eight purchase-order
+  login rate-limit setup failures and two staff-creation fixture/initials failures). Node syntax,
+  app AST, release JSON, and `git diff --check` checks passed.
+- Real LibreOffice conversion and rendered-page visual inspection were not run locally because the
+  bundled development environment has no LibreOffice binary; the Railway image contains the
+  renderer, and production deployment remains intentionally outside this authorization.
+- The pre-existing handoff, `scheduler.db`, `.claude/`, `output/`, and `tmp/` work was preserved;
+  no commit, push, deploy, destructive database/storage action, or browser/Codex UI test was run.
+
+
 ## Calibration Report Page 2 engineer name and filename cleanup
 
 **Status:** Executed — `387ebf6` on 2026-09-08. The owner authorized committing and pushing only

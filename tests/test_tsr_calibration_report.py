@@ -577,7 +577,7 @@ const backInput = editorControl("facility.name"); if(!backInput) fail("Back pers
   api.open(); const ready = setReadyFields(api.collect()); api.apply(ready); const clean = api.collect(); const stable = JSON.stringify(clean, (key, value) => ["status","updated_at","auto_fill","generated","generated_cleanup","auto_document","certificate","certificate_approval"].includes(key) ? undefined : value); const fingerprint = fnv(stable); const blobId = "calibration-report-" + fingerprint;
   clean.generated = { fingerprint, attachment_id:blobId, blob_id:blobId, filename:"ready.docx", size:4 }; records.set(blobId, { blob:new Blob(["ready"]) }); api.apply(clean); await new Promise(resolve => setTimeout(resolve, 0));
    if(entryLabel.textContent !== "Open Calibration Report" || status.textContent !== "Final Saved" || downloadButton.classList.contains("d-none") || removeButton.classList.contains("d-none")) fail("ready card or toolbar state is wrong");
-   if(!context.document.querySelector("#calibration-report-generate-label") || context.document.querySelector("#calibration-report-generate-label").textContent !== "Generate Sample DOCX") fail("ready toolbar did not expose sample generation");
+   if(!context.document.querySelector("#calibration-report-generate-label") || context.document.querySelector("#calibration-report-generate-label").textContent !== "Generate Sample PDF") fail("ready toolbar did not expose sample PDF generation");
   const ordinaryId = "ordinary-attachment"; records.set(ordinaryId, { blob:new Blob(["ordinary"]) }); await api.remove(); if(entryLabel.textContent !== "Create Calibration Report" || records.has(blobId) || !records.has(ordinaryId)) fail("Remove did not clean only the generated report");
   console.log(JSON.stringify({ inactive:"Not Started", draft:"Draft", ready:"Ready", labels:["Create Calibration Report","Continue Calibration Report","Open Calibration Report"], autofill:true, backValueRestored:true, escapeValueRestored:true, scrollRestored:true, tabAria:true, forwardTabWrapped:true, backwardShiftTabWrapped:true, toolbar:true, narrowCleanup:true }));
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });
@@ -663,14 +663,17 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertEqual(decoded, CERT_RUNTIME_TEMPLATE.read_bytes())
         self.assertEqual(decoded[:5], b'%PDF-')
 
-    def test_report_module_is_docx_only_and_page_has_no_calibration_pdf_workflow(self):
+    def test_report_module_retains_private_docx_source_and_exposes_pdf_workflow(self):
         self.assertIn('JSZip.loadAsync', self.script_source)
         self.assertIn('application/vnd.openxmlformats-officedocument.wordprocessingml.document', self.script_source)
+        self.assertIn('convertDocxToPdf', self.script_source)
+        self.assertIn("/convert_calibration_report_sample", self.script_source)
+        self.assertIn('application/pdf', self.script_source)
         self.assertIn('calibration-report-template.docx', self.template_source)
         self.assertIn('calibration-certificate-template-data.js', self.template_source)
         self.assertIn('generateCertificateSample', self.script_source)
-        self.assertIn('Generate Sample DOCX', self.template_source)
-        self.assertIn('Download Final DOCX', self.template_source)
+        self.assertIn('Generate Sample PDF', self.template_source)
+        self.assertIn('Download Final PDF', self.template_source)
         for forbidden in ('buildPdf', 'calibration-report-template.pdf', 'calibration-report-preview', 'calibration-report-pdf-frame', 'certificateTemplateUrl', 'calibration-certificate-template.bin', 'certificateRetryUrl', 'certificateResponseContentType'):
             self.assertNotIn(forbidden, self.script_source)
         for forbidden in ('calibration-report-template.pdf', 'calibration-report-preview', 'calibration-report-pdf-frame', 'calibration-certificate-template.bin'):
@@ -680,9 +683,9 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('rawSignature.data_url', self.script_source)  # legacy migration only
 
     def test_sample_final_page3_and_clear_form_contract(self):
-        self.assertIn('Generate Sample DOCX', self.template_source)
+        self.assertIn('Generate Sample PDF', self.template_source)
         self.assertIn('Save Final Report', self.template_source)
-        self.assertIn('Download Final DOCX', self.template_source)
+        self.assertIn('Download Final PDF', self.template_source)
         self.assertIn('Clear Form', self.template_source)
         self.assertIn('focal_spots', self.script_source)
         self.assertIn('focal_sizes', self.script_source)
@@ -755,8 +758,8 @@ class CalibrationReportContractTests(unittest.TestCase):
         self.assertIn('getClientRects().length > 0', self.script_source)
         self.assertIn("css/app-calibration-report.css') }}?v=7", self.template_source)
         self.assertIn("calibration-certificate-template-data.js') }}?v=2", self.template_source)
-        self.assertIn("js/app-calibration-report.js') }}?v=23", self.template_source)
-        self.assertIn("'/static/js/app-calibration-report.js?v=23'", self.app_source)
+        self.assertIn("js/app-calibration-report.js') }}?v=24", self.template_source)
+        self.assertIn("'/static/js/app-calibration-report.js?v=24'", self.app_source)
         assert_cache_version_at_least(self, 120, self.app_source)
         self.assertIn('id="calibration-report-modal-status"', self.template_source)
         self.assertIn('calibration-report-modal-status is-visible tone-', self.script_source)
@@ -1007,8 +1010,10 @@ Object.defineProperty(editor, 'innerHTML', {
 });
 editor.elements = [];
 const link = { href:'', download:'', click:()=>{}, remove:()=>{} };
+const samplePdfBytes = new Uint8Array([37,80,68,70,45,49,46,52,10,37,32,67,97,108,105,98,114,97,116,105,111,110,32,82,101,112,111,114,116,10]);
+class FakeFormData { append() {} }
 const context = {
-  console, Blob, Uint8Array, ArrayBuffer, Promise, Date, Math, JSON, setTimeout, clearTimeout, atob, btoa,
+  console, Blob, Uint8Array, ArrayBuffer, Promise, Date, Math, JSON, setTimeout, clearTimeout, atob, btoa, FormData:FakeFormData,
   URL: { createObjectURL:()=> 'blob:test', revokeObjectURL:()=>{} },
   document: {
     activeElement:null,
@@ -1019,7 +1024,9 @@ const context = {
     addEventListener: () => {}
   },
   CalibrationReportConfig: { templateUrl:'/static/templates/calibration-report/calibration-report-template.docx', certificateCatalog },
-  fetch: async () => ({ ok:true, arrayBuffer:async () => fs.readFileSync(templatePath) }),
+  fetch: async url => String(url) === '/convert_calibration_report_sample'
+    ? { ok:true, headers:{ get:() => 'application/pdf' }, blob:async () => new Blob([samplePdfBytes], { type:'application/pdf' }) }
+    : { ok:true, arrayBuffer:async () => fs.readFileSync(templatePath) },
   saveOfflineTSRBlobRecord: async record => records.set(record.id, record),
   loadOfflineTSRBlobRecord: async id => records.get(id) || null,
   deleteOfflineTSRBlobRecord: async id => records.delete(id),

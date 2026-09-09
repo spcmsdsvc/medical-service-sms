@@ -1,5 +1,34 @@
 # Project Change Log
 
+codex changes - 2026-09-09
+
+- Started the owner-authorized Calibration Report PDF conversion implementation recorded at the top
+  of `plans.md`. The approved behavior is PDF-only for engineers, approvers, archive/timeline,
+  downloads, and service-document email; generated DOCX sources remain private and immutable.
+- The implementation scope covers new and all historical recognized generated Calibration Report
+  revisions, durable source-to-PDF linkage/state, post-save LibreOffice conversion with retries,
+  offline-after-sync availability, PDF-only email gating, and a dry-run/apply historical conversion
+  CLI. Production backfill, Railway changes, commit/push/deploy, browser/Codex UI testing, and the
+  protected handoff, `scheduler.db`, `.claude/`, `output/`, and `tmp/` paths remain excluded.
+- Implemented durable Calibration Report source-to-PDF conversion in `app.py`: generated DOCX
+  sources remain private and immutable, conversion is scheduled after source commit, validated PDF
+  files are linked idempotently, stale worker claims are recoverable, and pending/failed attempts
+  retain retry/error state without deleting the source.
+- Added `scripts/convert_calibration_reports.py` for dry-run historical discovery and explicit
+  apply/force/limit conversion of every recognized generated-report revision; no production or
+  owner-database backfill was executed.
+- Updated engineer sample/final controls, offline sync status, archive/timeline/approval PDF
+  preview/download behavior, and service-document email selection/gating so only the latest ready
+  Calibration Report PDF is user-facing or attached; ordinary non-report attachments remain intact.
+- Added the Railway `Dockerfile` LibreOffice Writer/font runtime, bumped the app-shell cache to
+  `medical-service-pwa-offline-navigation-v149-calibration-report-pdf`, bumped the calibration
+  script to v24, and updated release metadata and focused regression coverage.
+- Verification completed: focused PDF/report/archive/approval/email/timeline/sync tests **87/87**;
+  full discovery **1035 total, 1024 passed, 10 failed, 1 skipped**, with the ten failures limited
+  to unrelated purchase-order HTTP-429 setup and staff-creation fixture/initials issues. Local
+  LibreOffice/render QA was unavailable; no browser, production backfill, commit, push, or deploy
+  was performed.
+
 codex changes - 2026-09-08
 
 - Started the owner-authorized Calibration Report correction recorded in `plans.md`: generated
