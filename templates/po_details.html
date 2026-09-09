@@ -271,6 +271,26 @@
         outline: 0;
     }
 
+    .po-chip-edit {
+        align-items: center;
+        background: transparent;
+        border: 0;
+        border-radius: 50%;
+        color: var(--app-primary, #0d6efd);
+        display: inline-flex;
+        height: 1.45rem;
+        justify-content: center;
+        padding: 0;
+        width: 1.45rem;
+    }
+
+    .po-chip-edit:hover,
+    .po-chip-edit:focus-visible {
+        background: var(--app-border, #d6e0ec);
+        color: var(--app-text, #16243a);
+        outline: 0;
+    }
+
     .po-confirm-backdrop {
         align-items: center;
         background: rgba(6, 17, 32, .68);
@@ -565,8 +585,58 @@
                     </div>
                 </div>
                 <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-primary me-auto d-none" id="po-refresh-dates-button">
+                        <i class="fa-solid fa-arrows-rotate me-1" aria-hidden="true"></i>Refresh from Product
+                    </button>
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary" id="po-save-button"><i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Save P.O.</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="po-machine-modal" tabindex="-1" aria-labelledby="po-machine-modal-title" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content po-modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="po-machine-modal-title">Edit machine coverage</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="po-machine-form">
+                <div class="modal-body">
+                    <input type="hidden" id="po-machine-serial">
+                    <div class="mb-3">
+                        <div class="small text-uppercase fw-bold po-muted">Machine</div>
+                        <div class="po-number" id="po-machine-identity">—</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="small text-uppercase fw-bold po-muted">Owner</div>
+                        <div id="po-machine-owner">—</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="small text-uppercase fw-bold po-muted">BSID</div>
+                        <div id="po-machine-bsid">—</div>
+                    </div>
+                    <div class="alert alert-info d-none" id="po-machine-snapshot-note" role="status"></div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold" for="po-machine-start-date">Product Start Date</label>
+                            <input class="form-control" type="date" id="po-machine-start-date">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold" for="po-machine-end-date">Product End Date</label>
+                            <input class="form-control" type="date" id="po-machine-end-date">
+                        </div>
+                    </div>
+                    <div class="form-check form-switch mt-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="po-machine-under-contract">
+                        <label class="form-check-label fw-bold" for="po-machine-under-contract">Under Contract</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="po-machine-save-button"><i class="fa-solid fa-check me-1" aria-hidden="true"></i>Save coverage</button>
                 </div>
             </form>
         </div>
@@ -600,6 +670,8 @@
         sortDirection: localStorage.getItem('po_details_sort_direction') || 'desc',
         editingId: null,
         modal: null,
+        machineModal: null,
+        machineEditingSerial: null,
     };
 
     const byId = (id) => document.getElementById(id);
@@ -689,35 +761,36 @@
         pageToast(message, kind);
     }
 
-    function setNativeModalVisibility(visible) {
-        const modal = byId('po-modal');
+    function setNativeModalVisibility(visible, modalId = 'po-modal') {
+        const modal = byId(modalId);
         if (!modal) return;
+        const backdropId = `${modalId}-backdrop`;
         modal.classList.toggle('show', visible);
         modal.style.display = visible ? 'block' : 'none';
         modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
         if (visible) {
             modal.setAttribute('aria-modal', 'true');
             document.body.classList.add('modal-open');
-            if (!byId('po-modal-backdrop')) {
+            if (!byId(backdropId)) {
                 const backdrop = document.createElement('div');
-                backdrop.id = 'po-modal-backdrop';
+                backdrop.id = backdropId;
                 backdrop.className = 'modal-backdrop fade show';
                 document.body.appendChild(backdrop);
             }
         } else {
             modal.removeAttribute('aria-modal');
-            document.body.classList.remove('modal-open');
-            byId('po-modal-backdrop')?.remove();
+            if (!document.querySelector('.modal.show')) document.body.classList.remove('modal-open');
+            byId(backdropId)?.remove();
         }
     }
 
-    function createModalController() {
+    function createModalController(modalId = 'po-modal') {
         if (window.bootstrap?.Modal) {
-            return window.bootstrap.Modal.getOrCreateInstance(byId('po-modal'));
+            return window.bootstrap.Modal.getOrCreateInstance(byId(modalId));
         }
         return {
-            show: () => setNativeModalVisibility(true),
-            hide: () => setNativeModalVisibility(false),
+            show: () => setNativeModalVisibility(true, modalId),
+            hide: () => setNativeModalVisibility(false, modalId),
         };
     }
 
@@ -973,6 +1046,16 @@
             label.textContent = state.pendingContractSerials.has(
                 String(machine?.serial_number || '').trim().toLowerCase()
             ) ? `${productDisplay(machine)} — Pending Under Contract` : productDisplay(machine);
+            const edit = document.createElement('button');
+            edit.type = 'button';
+            edit.className = 'po-chip-edit';
+            edit.setAttribute('aria-label', `Edit machine coverage for ${productDisplay(machine)}`);
+            edit.title = 'Edit machine coverage';
+            const editIcon = document.createElement('i');
+            editIcon.className = 'fa-solid fa-pen';
+            editIcon.setAttribute('aria-hidden', 'true');
+            edit.appendChild(editIcon);
+            edit.addEventListener('click', () => openMachineCoverageModal(machine));
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'po-chip-remove';
@@ -982,7 +1065,7 @@
             icon.setAttribute('aria-hidden', 'true');
             remove.appendChild(icon);
             remove.addEventListener('click', () => removeMachineSelection(machine.serial_number));
-            chip.append(label, remove);
+            chip.append(label, edit, remove);
             container.appendChild(chip);
         });
     }
@@ -1286,6 +1369,7 @@
         byId('po-id').value = '';
         byId('po-modal-title').textContent = 'Add P.O.';
         byId('po-save-button').innerHTML = '<i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i>Save P.O.';
+        byId('po-refresh-dates-button').classList.add('d-none');
         state.editingId = null;
         state.dateMode = 'product';
         byId('po-client').value = '';
@@ -1318,6 +1402,88 @@
         updateEndDateRequirement();
     }
 
+    function productRecordForMachine(machine) {
+        const serial = String(machine?.serial_number || '').trim().toLowerCase();
+        return state.products.find(
+            (product) => String(product?.serial_number || '').trim().toLowerCase() === serial
+        ) || machine || {};
+    }
+
+    function reconcileMachineState(machine) {
+        const serial = String(machine?.serial_number || '').trim().toLowerCase();
+        if (!serial) return;
+        state.selectedMachines = state.selectedMachines.map((selected) => (
+            String(selected?.serial_number || '').trim().toLowerCase() === serial
+                ? { ...selected, ...machine }
+                : selected
+        ));
+        renderSelectedMachineChips();
+    }
+
+    function openMachineCoverageModal(machine) {
+        const product = productRecordForMachine(machine);
+        const serial = String(product?.serial_number || machine?.serial_number || '').trim();
+        if (!serial) return;
+        const owner = product?.client_name
+            || state.clients.find((client) => Number(client.id) === Number(product?.client_id))?.name
+            || 'Owner not available';
+        state.machineEditingSerial = serial;
+        byId('po-machine-serial').value = serial;
+        byId('po-machine-identity').textContent = productDisplay(product) || serial;
+        byId('po-machine-owner').textContent = owner;
+        byId('po-machine-bsid').textContent = product?.bsid || 'Not set';
+        byId('po-machine-start-date').value = product?.start_date || product?.start_warranty_date || '';
+        byId('po-machine-end-date').value = product?.end_date || product?.end_warranty_date || '';
+        byId('po-machine-under-contract').checked = Boolean(product?.under_contract);
+        const snapshotNote = byId('po-machine-snapshot-note');
+        snapshotNote.classList.remove('d-none');
+        snapshotNote.textContent = state.editingId
+            ? 'This updates Product coverage only. The saved P.O. snapshot remains unchanged; use Refresh from Product to apply the new dates to this P.O.'
+            : 'This updates Product coverage and immediately reloads the dates used for this new P.O.';
+        state.machineModal.show();
+        setTimeout(() => byId('po-machine-start-date')?.focus(), 150);
+    }
+
+    async function saveMachineCoverage(event) {
+        event.preventDefault();
+        const serial = state.machineEditingSerial || byId('po-machine-serial').value;
+        if (!serial) return;
+        const button = byId('po-machine-save-button');
+        button.disabled = true;
+        const existingPo = Boolean(state.editingId);
+        try {
+            const response = await fetch(`/update_purchase_order_machine/${encodeURIComponent(serial)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf(), 'Accept': 'application/json' },
+                body: JSON.stringify({
+                    start_warranty_date: byId('po-machine-start-date').value,
+                    end_warranty_date: byId('po-machine-end-date').value,
+                    under_contract: byId('po-machine-under-contract').checked,
+                }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) throw new Error(data.error || 'Machine coverage could not be updated.');
+            await loadData();
+            const updated = state.products.find(
+                (product) => String(product?.serial_number || '').trim().toLowerCase() === serial.toLowerCase()
+            ) || data.machine;
+            reconcileMachineState(updated);
+            if (existingPo) {
+                setMachineNote('Product coverage updated. The saved P.O. snapshot remains unchanged; use Refresh from Product to apply the new dates.');
+            } else {
+                syncProductCoverageDates();
+            }
+            state.machineModal.hide();
+            notify(existingPo
+                ? 'Machine coverage updated. Refresh from Product to update this P.O. snapshot.'
+                : 'Machine coverage updated and new P.O. dates reloaded.', 'success');
+        } catch (error) {
+            notify(error.message, 'danger');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
     function openForm(row = null) {
         resetForm();
         if (row) {
@@ -1326,6 +1492,7 @@
             byId('po-id').value = row.id;
             byId('po-modal-title').textContent = 'Edit P.O.';
             byId('po-save-button').innerHTML = '<i class="fa-solid fa-check me-1" aria-hidden="true"></i>Update P.O.';
+            byId('po-refresh-dates-button').classList.remove('d-none');
             byId('po-client').value = row.client_id || '';
             byId('po-client-input').value = row.client_name || '';
             const radio = document.querySelector(`input[name="po-type"][value="${row.po_type}"]`);
@@ -1356,6 +1523,40 @@
         }
         state.modal.show();
         setTimeout(() => byId('po-client-input')?.focus(), 150);
+    }
+
+    async function refreshPurchaseOrderDates() {
+        const id = state.editingId;
+        const row = state.rows.find((item) => item.id === id);
+        if (!id || !row) return;
+        const confirmed = await confirmAction({
+            title: 'Refresh P.O. Dates from Product?',
+            message: `Replace the saved P.O. snapshot for ${row.po_number} with the current Product coverage dates? Other P.O. records will remain unchanged.`,
+            confirmText: 'Refresh Dates',
+        });
+        if (!confirmed) return;
+        const button = byId('po-refresh-dates-button');
+        button.disabled = true;
+        try {
+            const response = await fetch(`/refresh_purchase_order_dates/${id}`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrf(), 'Accept': 'application/json' },
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) throw new Error(data.error || 'The P.O. dates could not be refreshed.');
+            const refreshed = data.purchase_order;
+            const index = state.rows.findIndex((item) => item.id === id);
+            if (index >= 0) state.rows[index] = refreshed;
+            byId('po-date').value = refreshed.start_date || refreshed.po_date || '';
+            byId('po-end-date').value = refreshed.end_date || '';
+            renderKpis();
+            renderRows();
+            notify('P.O. dates refreshed from Product coverage.', 'success');
+        } catch (error) {
+            notify(error.message, 'danger');
+        } finally {
+            button.disabled = false;
+        }
     }
 
     async function loadData() {
@@ -1465,7 +1666,9 @@
 
     document.addEventListener('click', (event) => {
         if (event.target.closest('[data-bs-dismiss="modal"]')) {
-            state.modal?.hide();
+            const modal = event.target.closest('.modal');
+            if (modal?.id === 'po-machine-modal') state.machineModal?.hide();
+            else state.modal?.hide();
             return;
         }
         const sortButton = event.target.closest('[data-sort]');
@@ -1486,7 +1689,9 @@
 
     byId('po-add-button').addEventListener('click', () => openForm());
     byId('po-refresh-button').addEventListener('click', () => loadData().catch((error) => notify(error.message, 'danger')));
+    byId('po-refresh-dates-button').addEventListener('click', refreshPurchaseOrderDates);
     byId('po-form').addEventListener('submit', saveForm);
+    byId('po-machine-form').addEventListener('submit', saveMachineCoverage);
     byId('po-client-search').addEventListener('input', renderRows);
     byId('po-number-search').addEventListener('input', renderRows);
     byId('po-machine-search').addEventListener('input', renderRows);
@@ -1582,6 +1787,7 @@
 
     async function initializePage() {
         state.modal = createModalController();
+        state.machineModal = createModalController('po-machine-modal');
         setupPoAutocomplete('po-client-input', 'po-client-results', 'po-client', 'client');
         setupPoAutocomplete('po-machine-input', 'po-machine-results', 'po-machine', 'machine');
         renderHeader();

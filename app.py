@@ -43930,6 +43930,8 @@ def purchase_order_to_dict(purchase_order):
             'serial_number': serial,
             'name': name,
             'client_id': getattr(product, 'client_id', None) if product else None,
+            'client_name': getattr(getattr(product, 'client', None), 'name', '') if product else '',
+            'bsid': normalize_product_bsid(getattr(product, 'bsid', None)) if product else '',
             'start_date': purchase_order_product_dates(product)[0].isoformat() if purchase_order_product_dates(product)[0] else '',
             'end_date': purchase_order_product_dates(product)[1].isoformat() if purchase_order_product_dates(product)[1] else '',
             'under_contract': bool(getattr(product, 'under_contract', False)) if product else False,
@@ -44132,6 +44134,56 @@ def purchase_order_dates_from_products(products, po_type=PO_TYPE_SINGLE):
     if any(start != first_start or end != first_end for start, end in dates[1:]):
         return None, None, 'All selected machines must have matching Product Start Date and Product End Date.'
     return first_start, first_end, None
+
+
+def purchase_order_refresh_products(purchase_order):
+    """Resolve every current or legacy machine link for an explicit date refresh."""
+    machine_links = purchase_order_machine_rows(purchase_order)
+    serials = [
+        clean_str(getattr(machine_link, 'product_serial', None))
+        for machine_link in machine_links
+        if clean_str(getattr(machine_link, 'product_serial', None))
+    ]
+    if not serials:
+        legacy_serial = clean_str(getattr(purchase_order, 'product_serial', None))
+        if legacy_serial:
+            serials = [legacy_serial]
+    if not serials:
+        return None, 'This P.O. has no linked Product machine to refresh.'
+
+    products = []
+    for serial in serials:
+        product = db.session.get(Product, serial)
+        if not product:
+            product = Product.query.filter(
+                func.lower(Product.serial_number) == serial.lower()
+            ).first()
+        if not product:
+            return None, f'Equipment {serial} could not be found for this P.O.'
+        if product.client_id != purchase_order.client_id:
+            return None, f'Equipment {serial} is not registered to this P.O. medical center.'
+        products.append(product)
+    return products, None
+
+
+def purchase_order_refresh_dates(purchase_order):
+    """Validate current Product coverage before changing a saved P.O. snapshot."""
+    products, product_error = purchase_order_refresh_products(purchase_order)
+    if product_error:
+        return None, None, product_error
+    po_type = normalize_purchase_order_type(purchase_order.po_type) or PO_TYPE_SINGLE
+    for product in products:
+        start_date, end_date = purchase_order_product_dates(product)
+        if start_date and end_date and end_date < start_date:
+            return None, None, f'Equipment {product.serial_number} has an End Date before its Start Date.'
+    start_date, end_date, validation_error = purchase_order_dates_from_products(products, po_type)
+    if validation_error:
+        return None, None, validation_error
+    if not start_date:
+        return None, None, 'Selected machines must have a Product Start Date.'
+    if end_date and end_date < start_date:
+        return None, None, 'End Date cannot be earlier than Start Date.'
+    return start_date, end_date, None
 
 
 def validate_purchase_order_payload(payload, existing=None):
@@ -44378,6 +44430,8 @@ def get_purchase_orders():
             'serial_number': product.serial_number or '',
             'name': product.name or '',
             'client_id': product.client_id,
+            'client_name': getattr(getattr(product, 'client', None), 'name', '') or '',
+            'bsid': normalize_product_bsid(getattr(product, 'bsid', None)),
             'under_contract': bool(product.under_contract),
             'contract_status': product_contract_status(product),
             'one_time_eligible': purchase_order_product_is_one_time(product, PO_TYPE_SINGLE),
@@ -44803,6 +44857,39 @@ def update_purchase_order(id):
         if isinstance(save_error, ValueError):
             return jsonify({'success': False, 'error': str(save_error)}), 409
         return jsonify({'success': False, 'error': 'The P.O. could not be updated. Please try again.'}), 409
+    return jsonify({'success': True, 'purchase_order': purchase_order_to_dict(purchase_order)})
+
+
+@app.route('/refresh_purchase_order_dates/<int:id>', methods=['POST'])
+@login_required
+def refresh_purchase_order_dates(id):
+    """Explicitly replace one saved P.O. date snapshot with Product coverage dates."""
+    if not can_manage_purchase_orders():
+        return denied('You do not have access to P.O. Details.')
+    ensure_purchase_order_schema()
+    purchase_order = db.session.get(PurchaseOrder, id)
+    if not purchase_order:
+        return jsonify({'success': False, 'error': 'P.O. record not found.'}), 404
+
+    start_date, end_date, validation_error = purchase_order_refresh_dates(purchase_order)
+    if validation_error:
+        return jsonify({'success': False, 'error': validation_error}), 400
+
+    old_start = purchase_order.po_date.isoformat() if purchase_order.po_date else 'no start date'
+    old_end = purchase_order.end_date.isoformat() if purchase_order.end_date else 'no end date'
+    new_start = start_date.isoformat() if start_date else 'no start date'
+    new_end = end_date.isoformat() if end_date else 'no end date'
+    try:
+        purchase_order.po_date = start_date
+        purchase_order.end_date = end_date
+        add_activity_log_entry(
+            f"Refreshed P.O. {purchase_order.po_number} dates from Product coverage: "
+            f"{old_start} to {old_end} -> {new_start} to {new_end}"
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'The P.O. dates could not be refreshed. Please try again.'}), 409
     return jsonify({'success': True, 'purchase_order': purchase_order_to_dict(purchase_order)})
 
 
@@ -51317,6 +51404,100 @@ def purchase_order_count_for_machine(serial_number):
     ).filter(
         PurchaseOrderMachine.product_serial == serial_number
     ).scalar() or 0
+
+
+def purchase_order_machine_coverage_payload(product):
+    """Serialize the narrow coverage surface exposed from P.O. Details."""
+    start_date = getattr(product, 'start_warranty_date', None)
+    end_date = getattr(product, 'end_warranty_date', None)
+    return {
+        'serial_number': product.serial_number or '',
+        'name': product.name or '',
+        'client_id': product.client_id,
+        'client_name': getattr(getattr(product, 'client', None), 'name', '') or '',
+        'bsid': normalize_product_bsid(getattr(product, 'bsid', None)),
+        'start_date': start_date.isoformat() if start_date else '',
+        'end_date': end_date.isoformat() if end_date else '',
+        'start_warranty_date': start_date.isoformat() if start_date else '',
+        'end_warranty_date': end_date.isoformat() if end_date else '',
+        'under_contract': bool(getattr(product, 'under_contract', False)),
+        'contract_status': product_contract_status(product),
+    }
+
+
+def purchase_order_machine_date_value(payload, keys, current, label):
+    """Parse an optional coverage date while rejecting non-date strings."""
+    key = next((candidate for candidate in keys if candidate in payload), None)
+    if key is None:
+        return current, None
+    raw_value = payload.get(key)
+    if raw_value is None or (isinstance(raw_value, str) and not raw_value.strip()):
+        return None, None
+    if not isinstance(raw_value, str):
+        return None, f'{label} must be a valid date.'
+    parsed = parse_date(raw_value)
+    if not parsed:
+        return None, f'{label} must be a valid date.'
+    return parsed, None
+
+
+@app.route('/update_purchase_order_machine/<path:serial_number>', methods=['PUT'])
+@login_required
+def update_purchase_order_machine(serial_number):
+    """Update only Product coverage fields from the P.O. Details machine modal."""
+    if not can_manage_purchase_orders():
+        return denied('You do not have access to P.O. Details.')
+    ensure_product_contract_column()
+    payload = request.get_json(silent=True) or {}
+    requested_serial = clean_str(serial_number)
+    product = db.session.get(Product, requested_serial) if requested_serial else None
+    if not product and requested_serial:
+        product = Product.query.filter(
+            func.lower(Product.serial_number) == requested_serial.lower()
+        ).first()
+    if not product:
+        return jsonify({'success': False, 'error': 'Equipment not found.'}), 404
+
+    start_date, start_error = purchase_order_machine_date_value(
+        payload,
+        ('start_warranty_date', 'start_warranty'),
+        product.start_warranty_date,
+        'Product Start Date',
+    )
+    end_date, end_error = purchase_order_machine_date_value(
+        payload,
+        ('end_warranty_date', 'end_warranty'),
+        product.end_warranty_date,
+        'Product End Date',
+    )
+    if start_error or end_error:
+        return jsonify({'success': False, 'error': start_error or end_error}), 400
+    if start_date and end_date and end_date < start_date:
+        return jsonify({'success': False, 'error': 'Product End Date cannot be earlier than Product Start Date.'}), 400
+
+    old_start = product.start_warranty_date.isoformat() if product.start_warranty_date else 'no start date'
+    old_end = product.end_warranty_date.isoformat() if product.end_warranty_date else 'no end date'
+    old_contract = bool(product.under_contract)
+    under_contract = parse_bool_flag(payload.get('under_contract'), default=old_contract)
+    try:
+        product.start_warranty_date = start_date
+        product.end_warranty_date = end_date
+        product.under_contract = under_contract
+        add_activity_log_entry(
+            f"Updated Product coverage for {product.serial_number}: "
+            f"dates {old_start} to {old_end} -> "
+            f"{start_date.isoformat() if start_date else 'no start date'} to "
+            f"{end_date.isoformat() if end_date else 'no end date'}; "
+            f"Under Contract {old_contract} -> {under_contract}"
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'Machine coverage could not be updated. Please try again.'}), 409
+    return jsonify({
+        'success': True,
+        'machine': purchase_order_machine_coverage_payload(product),
+    })
 
 
 @app.route('/update_product/<path:serial_number>', methods=['PUT'])

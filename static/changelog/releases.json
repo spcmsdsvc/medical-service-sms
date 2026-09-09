@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-09-po-machine-date-refresh",
+      "release_date": "2026-09-09",
+      "title": "P.O. Machine Coverage Editing",
+      "summary": "P.O. Details can refresh saved coverage dates and edit machine coverage without leaving the page.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-09-po-machine-date-refresh-admins",
+          "category": "P.O. Details",
+          "description": "P.O. managers can explicitly refresh one P.O.'s saved dates from current Product coverage and edit Product Start Date, End Date, and Under Contract directly from the selected-machine chips. Existing P.O. snapshots remain unchanged until the explicit refresh action is used.",
+          "audiences": [
+            "admins"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-09-calibration-report-pdf-output",
       "release_date": "2026-09-09",
       "title": "Calibration Report PDF Output",

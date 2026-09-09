@@ -101,6 +101,12 @@ class ServiceContractAllocationHelperTests(unittest.TestCase):
         self.assertIn('This is a legacy P.O. type. Select Single, Semi Annual, or Quarterly before saving.', template)
         self.assertIn('under_contract_confirmation_required', template)
         self.assertIn('Computed Amount', template)
+        self.assertIn('Refresh from Product', template)
+        self.assertIn('/refresh_purchase_order_dates/', template)
+        self.assertIn('/update_purchase_order_machine/', template)
+        self.assertIn('Edit machine', template)
+        self.assertIn('Product Start Date', template)
+        self.assertIn('saved P.O. snapshot', template)
 
 
 class ServiceContractPurchaseOrderEndpointTests(unittest.TestCase):
@@ -120,10 +126,15 @@ class ServiceContractPurchaseOrderEndpointTests(unittest.TestCase):
                 password=app_module.generate_password_hash('test-password'),
                 role='staff', is_active=True, po_admin_access=True,
             )
+            cls.denied_user = app_module.User(
+                username=f'po_service_denied_{cls.suffix}',
+                password=app_module.generate_password_hash('test-password'),
+                role='staff', is_active=True, po_admin_access=False,
+            )
             cls.client_record = app_module.Client(
                 name=f'Service Contract Client {cls.suffix}', address='Service address',
             )
-            app_module.db.session.add_all([cls.user, cls.client_record])
+            app_module.db.session.add_all([cls.user, cls.denied_user, cls.client_record])
             app_module.db.session.flush()
             cls.product = app_module.Product(
                 serial_number=f'PO-SERVICE-{cls.suffix}', name='Service Machine',
@@ -135,6 +146,7 @@ class ServiceContractPurchaseOrderEndpointTests(unittest.TestCase):
             app_module.db.session.add(cls.product)
             app_module.db.session.commit()
             cls.user_id = cls.user.id
+            cls.denied_user_id = cls.denied_user.id
             cls.client_id = cls.client_record.id
             cls.serial = cls.product.serial_number
 
@@ -152,6 +164,9 @@ class ServiceContractPurchaseOrderEndpointTests(unittest.TestCase):
             user = app_module.db.session.get(app_module.User, cls.user_id)
             if user:
                 app_module.db.session.delete(user)
+            denied_user = app_module.db.session.get(app_module.User, cls.denied_user_id)
+            if denied_user:
+                app_module.db.session.delete(denied_user)
             app_module.db.session.commit()
 
     def setUp(self):
@@ -161,6 +176,28 @@ class ServiceContractPurchaseOrderEndpointTests(unittest.TestCase):
             'password': 'test-password',
         })
         self.assertIn(response.status_code, (302, 303))
+
+    def _create_po(self, number, serials=None, po_type='quarterly', amount='1200'):
+        response = self.client.post('/add_purchase_order', json={
+            'client_id': self.client_id,
+            'product_serials': serials or [self.serial],
+            'po_number': number,
+            'po_type': po_type,
+            'amount': amount,
+        })
+        self.assertEqual(response.status_code, 201, response.get_data(as_text=True))
+        return response.get_json()['purchase_order']
+
+    def _restore_service_product(self):
+        with self.app.app_context():
+            product = app_module.db.session.get(app_module.Product, self.serial)
+            if product:
+                product.name = 'Service Machine'
+                product.bsid = None
+                product.start_warranty_date = date(2026, 8, 25)
+                product.end_warranty_date = date(2028, 8, 25)
+                product.under_contract = False
+                app_module.db.session.commit()
 
     def test_status_confirmation_dates_and_schedule_are_server_owned(self):
         with self.app.app_context():
@@ -220,6 +257,211 @@ class ServiceContractPurchaseOrderEndpointTests(unittest.TestCase):
         self.assertEqual(updated.status_code, 200, updated.get_data(as_text=True))
         self.assertEqual(updated.get_json()['purchase_order']['start_date'], '2026-08-25')
         self.assertEqual(updated.get_json()['purchase_order']['end_date'], '2028-08-25')
+
+    def test_explicit_refresh_updates_only_selected_po_schedule_and_export(self):
+        self.addCleanup(self._restore_service_product)
+        with self.app.app_context():
+            product = app_module.db.session.get(app_module.Product, self.serial)
+            product.under_contract = True
+            product.start_warranty_date = date(2026, 8, 25)
+            product.end_warranty_date = date(2028, 8, 25)
+            app_module.db.session.commit()
+        first = self._create_po(f'REFRESH-FIRST-{self.suffix}')
+        second = self._create_po(f'REFRESH-SECOND-{self.suffix}')
+        with self.app.app_context():
+            product = app_module.db.session.get(app_module.Product, self.serial)
+            product.start_warranty_date = date(2030, 1, 1)
+            product.end_warranty_date = date(2031, 1, 1)
+            app_module.db.session.commit()
+
+        refreshed = self.client.post(f"/refresh_purchase_order_dates/{first['id']}")
+        self.assertEqual(refreshed.status_code, 200, refreshed.get_data(as_text=True))
+        refreshed_body = refreshed.get_json()['purchase_order']
+        self.assertEqual(refreshed_body['start_date'], '2030-01-01')
+        self.assertEqual(refreshed_body['end_date'], '2031-01-01')
+        self.assertEqual(refreshed_body['allocation_schedule'][0]['date_string'], '2030-01-01')
+
+        listing = self.client.get('/get_purchase_orders')
+        self.assertEqual(listing.status_code, 200)
+        rows = {row['id']: row for row in listing.get_json()['purchase_orders']}
+        self.assertEqual(rows[first['id']]['start_date'], '2030-01-01')
+        self.assertEqual(rows[second['id']]['start_date'], '2026-08-25')
+
+        exported = self.client.get(f'/export_purchase_orders?number={quote("REFRESH-FIRST-")}')
+        self.assertEqual(exported.status_code, 200)
+        worksheet = load_workbook(BytesIO(exported.data), data_only=False)['P.O. Register']
+        self.assertEqual(worksheet['B2'].value.date(), date(2030, 1, 1))
+        self.assertEqual(worksheet['C2'].value.date(), date(2031, 1, 1))
+
+        with self.app.app_context():
+            saved = app_module.db.session.get(app_module.PurchaseOrder, first['id'])
+            other = app_module.db.session.get(app_module.PurchaseOrder, second['id'])
+            self.assertEqual(saved.po_date, date(2030, 1, 1))
+            self.assertEqual(saved.end_date, date(2031, 1, 1))
+            self.assertEqual(other.po_date, date(2026, 8, 25))
+            self.assertEqual(other.end_date, date(2028, 8, 25))
+            self.assertTrue(app_module.ActivityLog.query.filter(
+                app_module.ActivityLog.action.like(f'%Refreshed P.O. {first["po_number"]}%')
+            ).first())
+
+    def test_explicit_refresh_keeps_one_time_single_end_date_null(self):
+        serial = f'PO-REFRESH-ONE-TIME-{self.suffix}'
+        with self.app.app_context():
+            app_module.db.session.add(app_module.Product(
+                serial_number=serial, name='Refresh One-time Machine', client_id=self.client_id,
+                start_warranty_date=date(2026, 8, 25), end_warranty_date=None,
+                under_contract=False,
+            ))
+            app_module.db.session.commit()
+        try:
+            record = self._create_po(f'REFRESH-ONE-TIME-{self.suffix}', [serial], po_type='single', amount='25')
+            with self.app.app_context():
+                product = app_module.db.session.get(app_module.Product, serial)
+                product.start_warranty_date = date(2030, 2, 1)
+                product.end_warranty_date = None
+                app_module.db.session.commit()
+            refreshed = self.client.post(f"/refresh_purchase_order_dates/{record['id']}")
+            self.assertEqual(refreshed.status_code, 200, refreshed.get_data(as_text=True))
+            body = refreshed.get_json()['purchase_order']
+            self.assertEqual(body['start_date'], '2030-02-01')
+            self.assertEqual(body['end_date'], '')
+            self.assertEqual(body['schedule_mode'], 'one_time')
+            with self.app.app_context():
+                saved = app_module.db.session.get(app_module.PurchaseOrder, record['id'])
+                self.assertIsNone(saved.end_date)
+        finally:
+            with self.app.app_context():
+                for po in app_module.PurchaseOrder.query.join(app_module.PurchaseOrderMachine).filter(
+                    app_module.PurchaseOrderMachine.product_serial == serial
+                ).all():
+                    app_module.db.session.delete(po)
+                product = app_module.db.session.get(app_module.Product, serial)
+                if product:
+                    app_module.db.session.delete(product)
+                app_module.db.session.commit()
+
+    def test_refresh_rejects_mismatched_or_incomplete_multi_machine_dates_atomically(self):
+        serials = [f'PO-REFRESH-MULTI-{self.suffix}-{index}' for index in (1, 2)]
+        with self.app.app_context():
+            app_module.db.session.add_all([
+                app_module.Product(
+                    serial_number=serials[0], name='Refresh Multi One', client_id=self.client_id,
+                    start_warranty_date=date(2026, 8, 25), end_warranty_date=date(2028, 8, 25),
+                    under_contract=True,
+                ),
+                app_module.Product(
+                    serial_number=serials[1], name='Refresh Multi Two', client_id=self.client_id,
+                    start_warranty_date=date(2026, 8, 25), end_warranty_date=date(2028, 8, 25),
+                    under_contract=True,
+                ),
+            ])
+            app_module.db.session.commit()
+        try:
+            record = self._create_po(f'REFRESH-MULTI-{self.suffix}', serials)
+            with self.app.app_context():
+                first_product = app_module.db.session.get(app_module.Product, serials[0])
+                first_product.start_warranty_date = date(2030, 1, 1)
+                first_product.end_warranty_date = date(2031, 1, 1)
+                second_product = app_module.db.session.get(app_module.Product, serials[1])
+                second_product.start_warranty_date = date(2030, 2, 1)
+                second_product.end_warranty_date = date(2031, 2, 1)
+                app_module.db.session.commit()
+            mismatch = self.client.post(f"/refresh_purchase_order_dates/{record['id']}")
+            self.assertEqual(mismatch.status_code, 400)
+            with self.app.app_context():
+                saved = app_module.db.session.get(app_module.PurchaseOrder, record['id'])
+                self.assertEqual(saved.po_date, date(2026, 8, 25))
+                self.assertEqual(saved.end_date, date(2028, 8, 25))
+
+                second_product = app_module.db.session.get(app_module.Product, serials[1])
+                second_product.start_warranty_date = date(2030, 1, 1)
+                second_product.end_warranty_date = None
+                app_module.db.session.commit()
+            incomplete = self.client.post(f"/refresh_purchase_order_dates/{record['id']}")
+            self.assertEqual(incomplete.status_code, 400)
+            with self.app.app_context():
+                saved = app_module.db.session.get(app_module.PurchaseOrder, record['id'])
+                self.assertEqual(saved.po_date, date(2026, 8, 25))
+                self.assertEqual(saved.end_date, date(2028, 8, 25))
+        finally:
+            with self.app.app_context():
+                for serial_value in serials:
+                    product = app_module.db.session.get(app_module.Product, serial_value)
+                    if product:
+                        app_module.db.session.delete(product)
+                app_module.db.session.commit()
+
+    def test_po_only_user_can_update_coverage_without_changing_identity_owner_or_bsid(self):
+        self.addCleanup(self._restore_service_product)
+        with self.app.app_context():
+            product = app_module.db.session.get(app_module.Product, self.serial)
+            product.name = 'Immutable Machine Name'
+            product.bsid = f'BSID-{self.suffix}'
+            product.under_contract = False
+            app_module.db.session.commit()
+        updated = self.client.put(f'/update_purchase_order_machine/{quote(self.serial, safe="")}', json={
+            'start_warranty_date': '2032-03-01',
+            'end_warranty_date': '2033-03-01',
+            'under_contract': True,
+            'name': 'FORGED NAME',
+            'client_id': self.client_id + 100,
+            'serial_number': 'FORGED SERIAL',
+            'bsid': 'FORGED BSID',
+        })
+        self.assertEqual(updated.status_code, 200, updated.get_data(as_text=True))
+        machine = updated.get_json()['machine']
+        self.assertEqual(machine['serial_number'], self.serial)
+        self.assertEqual(machine['name'], 'Immutable Machine Name')
+        self.assertEqual(machine['client_id'], self.client_id)
+        self.assertEqual(machine['bsid'], f'BSID-{self.suffix}')
+        self.assertEqual(machine['start_date'], '2032-03-01')
+        self.assertEqual(machine['end_date'], '2033-03-01')
+        self.assertTrue(machine['under_contract'])
+        with self.app.app_context():
+            product = app_module.db.session.get(app_module.Product, self.serial)
+            self.assertEqual(product.name, 'Immutable Machine Name')
+            self.assertEqual(product.client_id, self.client_id)
+            self.assertEqual(product.bsid, f'BSID-{self.suffix}')
+
+    def test_machine_coverage_rejects_malformed_and_reversed_dates_without_mutation(self):
+        self.addCleanup(self._restore_service_product)
+        with self.app.app_context():
+            product = app_module.db.session.get(app_module.Product, self.serial)
+            product.start_warranty_date = date(2026, 8, 25)
+            product.end_warranty_date = date(2028, 8, 25)
+            app_module.db.session.commit()
+        malformed = self.client.put(f'/update_purchase_order_machine/{quote(self.serial, safe="")}', json={
+            'start_warranty_date': 'not-a-date',
+            'end_warranty_date': '2028-08-25',
+            'under_contract': True,
+        })
+        self.assertEqual(malformed.status_code, 400)
+        reversed_dates = self.client.put(f'/update_purchase_order_machine/{quote(self.serial, safe="")}', json={
+            'start_warranty_date': '2030-01-02',
+            'end_warranty_date': '2030-01-01',
+            'under_contract': True,
+        })
+        self.assertEqual(reversed_dates.status_code, 400)
+        with self.app.app_context():
+            product = app_module.db.session.get(app_module.Product, self.serial)
+            self.assertEqual(product.start_warranty_date, date(2026, 8, 25))
+            self.assertEqual(product.end_warranty_date, date(2028, 8, 25))
+
+    def test_new_coverage_endpoints_require_po_access(self):
+        denied = self.app.test_client()
+        response = denied.post('/login', data={
+            'username': f'po_service_denied_{self.suffix}',
+            'password': 'test-password',
+        })
+        self.assertIn(response.status_code, (302, 303))
+        refresh = denied.post('/refresh_purchase_order_dates/999999')
+        self.assertEqual(refresh.status_code, 403)
+        machine = denied.put(f'/update_purchase_order_machine/{quote(self.serial, safe="")}', json={
+            'start_warranty_date': '2030-01-01',
+            'end_warranty_date': '2031-01-01',
+            'under_contract': True,
+        })
+        self.assertEqual(machine.status_code, 403)
 
     def test_one_time_single_saves_without_contract_confirmation_or_product_mutation(self):
         serial = f'PO-ONE-TIME-{self.suffix}'

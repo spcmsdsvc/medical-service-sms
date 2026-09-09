@@ -2,6 +2,36 @@
 
 codex changes - 2026-09-09
 
+- Started the owner-authorized P.O. Details date-refresh and in-page machine coverage package
+  recorded at the top of `plans.md`. The approved scope preserves existing P.O. snapshots by
+  default, adds an explicit immediate refresh for one selected P.O., and adds a coverage-only
+  machine editor for P.O. managers. Product identity/owner fields, Product Inventory routes,
+  database schema, service-worker cache, browser/Codex UI, production, Railway, commit, and push
+  remain outside the authorization.
+
+- Added `POST /refresh_purchase_order_dates/<id>` in `app.py`. The P.O.-manager-only endpoint
+  resolves association-table and legacy mirror machine links, validates current Product coverage
+  dates (including one-time Single blank End Dates and atomic multi-machine consistency), updates
+  only the selected P.O. snapshot, and records the old/new range in the same transaction.
+- Added the narrow P.O.-manager-only `PUT /update_purchase_order_machine/<serial_number>` endpoint
+  in `app.py`. It changes only Product Start Date, End Date, and Under Contract, rejects malformed
+  or reversed ranges, returns coverage and read-only identity context, and preserves the existing
+  Product Inventory mutation route and permissions.
+- Extended `templates/po_details.html` with custom-confirmed Refresh from Product, selected-machine
+  Edit machine controls, and a CSRF-protected coverage modal. Add-mode forms reload Product dates;
+  existing P.O. forms retain their saved P.O. snapshot and direct users to explicit refresh.
+- Added P.O. endpoint/template regression coverage and the dated P.O. Details release entry in
+  `static/changelog/releases.json`; no Product Inventory template, schema migration, or service-worker
+  cache change was made.
+- Validation passed: final focused P.O. coverage run completed **8/8**, and the full
+  `tests.test_purchase_orders` module completed **59/59** against unique external test databases
+  with the test-only login limiter disabled. AST/compile, Jinja, extracted inline JavaScript,
+  release-manifest JSON, and `git diff --check` checks also passed.
+- Full unittest discovery completed **1,043 tests: 1,029 passed and 14 failed**. The 14 failures
+  were unrelated baseline conditions: 12 existing P.O. login setup HTTP 429 throttle failures and
+  2 staff-creation duplicate-initials/fixture failures. No protected artifact, service-worker
+  cache, production data, Railway setting, commit, push, or browser/Codex UI state was changed.
+
 - Fixed Product Inventory edit/delete failures for serial numbers containing slashes (for
   example `N/A`) by changing the `/update_product` and `/delete_product` route converters to
   accept path-valued serial numbers. The existing product lookup, schedule/P.O. relinking,

@@ -1,5 +1,211 @@
 # Medical Service SMS — Approved Plans
 
+## P.O. Details Date Refresh and In-Page Machine Coverage Editing
+
+**Status:** In progress
+**Approved:** 2026-09-09 — the owner explicitly requested `PLEASE IMPLEMENT THIS PLAN:` with
+the complete scope below.
+**Detailed:** 2026-09-09
+**Execution authorization:** 2026-09-09 — the owner separately authorized implementation of
+this package. Commit, push, Railway, deployment, production database/storage, and browser/Codex
+UI actions remain separately unauthorized.
+
+### Context and intended outcome
+
+The P.O. Details workflow stores the P.O. Start Date and End Date as a snapshot of the Product
+coverage dates. Normal edits intentionally preserve that snapshot when the selected machine set is
+unchanged. Removing and re-adding the same machine therefore still leaves the old dates in place,
+forcing an operator to delete and recreate the P.O. after correcting the Product record.
+
+The intended result is an explicit, auditable correction path: a P.O. manager can refresh one
+existing P.O. from its current linked Product dates immediately, while all other P.O. snapshots
+remain unchanged by default. The same page also needs a narrow machine-coverage editor so the
+operator can correct Product Start Date, Product End Date, and Under Contract status without
+leaving P.O. Details or opening Product Inventory.
+
+### Decisions taken
+
+1. **Explicit refresh, not automatic synchronization.** Add a `Refresh from Product` action to
+   the existing-P.O. edit flow. After the existing custom confirmation, it immediately updates
+   only that P.O.'s stored `po_date`/`end_date` and writes an activity-log entry. Ordinary P.O.
+   edits continue preserving their stored snapshot, and changing a Product never silently rewrites
+   every linked P.O.
+2. **Coverage-focused machine modal.** The in-page modal edits only Product Start Date, Product
+   End Date, and Under Contract. Serial number, machine name, owner, and BSID are read-only
+   context and remain editable only through Product Inventory.
+3. **P.O.-manager authorization.** The new narrow machine-coverage endpoint is authorized by
+   `can_manage_purchase_orders()`, so every P.O. manager can use it. It cannot mutate Product
+   identity or ownership and is available for an add-mode selected Product even before that
+   Product has a saved P.O.
+4. **Existing P.O. behavior after machine editing.** Saving the machine modal changes the current
+   Product only. In add mode, the new Product dates flow into the new-P.O. form. In edit mode, the
+   existing P.O. date inputs remain the saved snapshot and the UI directs the user to the explicit
+   refresh action.
+5. **Refresh validation is shared with Product-owned date rules.** All linked machines must still
+   resolve to the P.O.'s client and produce one valid common range. One-time Single records may
+   retain a null End Date. Current and machine-linked legacy P.O. records are supported; missing,
+   incomplete, mismatched, or reversed coverage ranges fail without mutation.
+6. **No schema or cached-asset change.** The existing P.O. snapshot and Product fields are enough;
+   no migration or per-machine history table is added. P.O. Details is an inline dynamic template
+   outside the cached app shell, so the service-worker cache is not bumped.
+
+### Investigation
+
+- `app.py:1892-1960` defines `PurchaseOrder`, `PurchaseOrderMachine`, and the authoritative
+  association relationship. `app.py:2486-2520` stores Product coverage in
+  `start_warranty_date`/`end_warranty_date` and the `under_contract` flag.
+- `app.py:43820-43835` replaces machine links safely; `app.py:43838-43845` reads Product dates;
+  `app.py:43917-44080` serializes the P.O. root snapshot while nested machine dates remain live
+  Product values.
+- `app.py:44105-44135` validates common Product ranges and one-time Single eligibility.
+  `app.py:44137-44255` deliberately preserves an existing current-frequency snapshot when the
+  machine set is unchanged, which explains why remove/re-add cannot repair the dates.
+- `app.py:44657-44840` owns P.O. add/edit/delete transaction boundaries and activity logging.
+  The new refresh route belongs beside these endpoints and must use `add_activity_log_entry()`
+  before its commit so P.O. and audit entry remain atomic.
+- `app.py:51324-51475` is the broader Product Inventory mutation endpoint. It remains unchanged;
+  the new P.O. route must not reuse its identity/owner/BSID mutation surface or broaden its
+  existing Product-page permissions.
+- `templates/po_details.html:499-580` contains the existing P.O. modal and read-only Product
+  date inputs. Its inline script owns machine chips, date synchronization, edit loading, and save
+  submission in `renderSelectedMachineChips()`, `syncProductCoverageDates()`, `openForm()`, and
+  `saveForm()`.
+- `tests/test_purchase_orders.py` already protects Product-owned date spoof rejection, ordinary
+  same-machine snapshot preservation, one-time behavior, renewal isolation, schedules, export,
+  and the P.O.-capability boundary. New controls extend those seams rather than creating a second
+  test fixture or database model.
+- `static/changelog/releases.json` already has P.O. Details entries for Product dates and renewal;
+  the new user-facing entry must be a new dated release object, not a rewrite of historical items.
+
+### Numbered execution steps
+
+1. **Preflight and control records.** Re-read the complete applicable instructions, `changes.md`,
+   `plans.md`, affected source, and tests. Confirm `git status` and preserve the existing handoff,
+   `scheduler.db`, `.claude/`, `output/`, and `tmp/` work. This plan remains `In progress`. Add
+   the factual 2026-09-09 start bullets to `changes.md` before application/test edits. Done when
+   no protected path is part of the feature scope or staging plan.
+2. **Fail-first regression controls.** Extend `tests/test_purchase_orders.py` before or alongside
+   implementation with tests for the refresh route, immediate snapshot update, unchanged other
+   P.O.s, one-time null-End behavior, multi-machine atomic rejection, the P.O.-only machine
+   coverage update, immutable identity/owner/name/BSID fields, invalid dates, no-access `403`,
+   and template wiring. Run the focused controls against the unchanged application and record
+   expected failures before restoring/continuing with source edits.
+3. **Shared refresh helper and endpoint.** In `app.py`, add a narrow helper beside the existing
+   Product-date helpers that loads every authoritative machine association, verifies Product
+   existence and client ownership, calls `purchase_order_dates_from_products()`, and returns the
+   validated common range or an actionable error. Add `POST /refresh_purchase_order_dates/<int:id>`
+   with P.O. capability authorization, 404 handling, atomic validation/update/log/commit, and the
+   normal serialized P.O. response. Do not change `validate_purchase_order_payload()`'s normal
+   snapshot-preserving behavior or the renewal transaction.
+4. **Coverage-only machine endpoint.** In `app.py`, add `PUT
+   /update_purchase_order_machine/<path:serial_number>` with P.O.-manager authorization, Product
+   lookup, strict date parsing/order validation, and a transaction that changes only the three
+   coverage fields. Return the updated serial/name/client/date/status payload, add a factual audit
+   entry, and leave `/update_product/<path:serial_number>` and Product Inventory permissions
+   unchanged.
+5. **P.O. Details interactions.** In `templates/po_details.html`, add the explicit refresh button
+   and its immediate-confirm/save flow; update the active row, date fields, schedules, and totals
+   from the response without deleting/recreating the P.O. Add an Edit machine action to selected
+   chips, a coverage-only modal with read-only identity context, and a CSRF-protected save path.
+   Reconcile the local Product/selected-machine state after save. Ensure add mode rehydrates its
+   Product dates while edit mode keeps the existing snapshot until refresh. Preserve existing
+   custom confirmations/toasts, duplicate and Under Contract retry behavior, one-time/renewal
+   rules, mobile cards, dark theme, and accessibility labels.
+6. **Release metadata and implementation journal.** Add a new 2026-09-09 release entry in
+   `static/changelog/releases.json` under the `P.O. Details` category for explicit date refresh,
+   in-page coverage editing, and snapshot preservation. Append factual implementation and
+   verification bullets to the existing 2026-09-09 section of `changes.md`. Do not modify
+   `products.html`, add a migration, or bump the service worker.
+7. **Self-review and static verification.** Inspect the complete diff before broader testing. Run
+   in-memory Python AST/compile checks, Jinja parsing, inline JavaScript syntax validation, release
+   JSON/key checks, and `git diff --check`. Confirm all new routes enforce the intended capability,
+   all mutating requests send CSRF, no native browser dialogs were added, and no protected or
+   unrelated files changed.
+8. **Focused and full verification.** Run the focused P.O. and related analytics/export tests with
+   a unique external `MEDICAL_SERVICE_TEST_DB`, then run full unittest discovery where feasible.
+   Report exact pass/fail/skip totals and distinguish existing login-throttle or fixture failures
+   from this feature. Use Flask test-client/source checks only; browser/Codex UI verification is
+   excluded by the project safety rule unless separately authorized.
+9. **Closeout at the publication gate.** Amend this plan with truthful implementation evidence,
+   exact test results, deviations, and protected-artifact audit. Keep the plan `In progress` until
+   a commit is separately authorized, then use `Executed — <hash>` only after that commit. Do not
+   stage, commit, push, promote, deploy, modify Railway, or touch production data in this task.
+
+### Deliberately excluded
+
+- Automatic synchronization of all existing P.O.s when a Product changes.
+- Deleting/recreating P.O.s, a new per-P.O./machine history table, or any destructive migration.
+- Full Product identity editing from P.O. Details; serial, name, owner, and BSID remain in Product
+  Inventory.
+- Changes to the existing `/add_product`, `/update_product`, `/delete_product`, Product page,
+  permissions outside the new narrow P.O. route, analytics definitions, renewal rules, or export
+  column layout.
+- Service-worker cache changes, browser/Codex UI automation, Railway variables, deployment,
+  production database/storage, commit, push, merge, rebase, or cleanup of protected artifacts.
+
+### Verification and acceptance
+
+- An ordinary same-machine P.O. edit still preserves its stored snapshot.
+- After Product coverage changes, `Refresh from Product` updates only the chosen P.O., its root
+  dates, schedule, computed amount, and export output; other P.O.s remain unchanged.
+- One-time Single refresh keeps a blank End Date; invalid, incomplete, missing, or mismatched
+  machine coverage fails atomically.
+- A P.O.-only user can edit coverage through the narrow endpoint, while serial/name/client/BSID
+  remain unchanged and a user without P.O. access receives `403`.
+- Add-mode machine editing immediately supplies current Product dates to a new P.O.; existing-P.O.
+  editing leaves the old snapshot visible until the explicit refresh action.
+- Activity logs identify Product coverage edits and P.O. date refreshes with old/new values.
+- Existing P.O., renewal, one-time, schedule, export, permission, and Product Inventory tests pass
+  or any unrelated baseline failures are reported precisely.
+
+### After implementation
+
+1. Record the exact changed files, behavior, fail-first result, focused/full test totals, static
+   checks, release/change-log updates, service-worker decision, and protected-worktree audit here.
+2. Run a final `git diff --stat`, `git diff --check`, status review, and allowlist review. The
+   intended feature allowlist is `app.py`, `templates/po_details.html`,
+   `tests/test_purchase_orders.py`, `static/changelog/releases.json`, `plans.md`, and `changes.md`.
+3. Stop before commit/push/deployment. A later explicit publication request must stage only the
+   intended allowlist, exclude `scheduler.db`, handoffs, `.claude/`, `output/`, `tmp/`, and
+   unrelated work, and separately verify remote/deployment state.
+
+### Risks
+
+- Refreshing a multi-machine P.O. with divergent Product dates could create a misleading common
+  range; shared date validation rejects it before mutation.
+- A Product coverage edit affects future P.O. creation and every P.O.'s live nested machine
+  metadata; root P.O. snapshots remain stable until explicit refresh, and the modal explains this.
+- Granting the narrow endpoint to P.O. managers is broader than Product Inventory's existing edit
+  permission, so the endpoint must accept only the three coverage fields and must be covered by
+  positive/negative authorization and immutability tests.
+- Immediate refresh changes a financial/service schedule, so custom confirmation, activity logging,
+  atomic commit, and response-driven UI updates are required.
+
+### Implementation evidence — 2026-09-09
+
+- Implemented the approved feature in `app.py`, `templates/po_details.html`,
+  `tests/test_purchase_orders.py`, `static/changelog/releases.json`, `changes.md`, and this plan.
+  `products.html`, the Product Inventory mutation route, the database schema, and the service-worker
+  cache were not changed.
+- The initial fail-first control run executed 4 new endpoint/template tests against the unchanged
+  application and produced 4 expected failures: the refresh and coverage routes were 404, and the
+  new template contract was absent. After implementation, the final focused run passed 8/8 tests in
+  2.214 seconds, including normal snapshot preservation, explicit refresh isolation and export,
+  one-time null End Date, atomic multi-machine rejection, P.O.-only coverage editing, immutable
+  identity fields, invalid ranges, no-access 403s, and template wiring.
+- The full `tests.test_purchase_orders` module passed 59/59 when run against a unique external
+  `MEDICAL_SERVICE_TEST_DB` with the test-only login limiter disabled. Normal discovery ran 1,043
+  tests and recorded 1,029 passes and 14 failures: 12 existing P.O. fixture login HTTP 429 setup
+  failures and 2 unrelated `test_staff_creation` duplicate-initials/fixture failures.
+- Python AST/compile, Jinja parsing, extracted inline JavaScript syntax, release-manifest JSON/key,
+  and `git diff --check` validations passed. The dated P.O. Details release entry and factual
+  2026-09-09 change-log bullets were added; no service-worker bump was required.
+- Final worktree review preserved the pre-existing modified handoff and `scheduler.db`, plus the
+  pre-existing `.claude/`, detailed handoff, `output/`, and `tmp/` artifacts. No commit, push,
+  deployment, Railway, production-data, or browser/Codex UI action was performed. Plan status
+  remains `In progress` pending separate commit authorization.
+
+
 ## Calibration Reports: retain private DOCX sources and publish PDF outputs
 
 **Status:** Executed — `a9682aa` on 2026-09-09.
