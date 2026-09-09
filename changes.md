@@ -32,6 +32,49 @@ codex changes - 2026-09-09
   2 staff-creation duplicate-initials/fixture failures. No protected artifact, service-worker
   cache, production data, Railway setting, commit, push, or browser/Codex UI state was changed.
 
+- Started the owner-authorized Mobile/PWA Navigation and Product Inventory Stability package
+  recorded at the top of plans.md. The approved scope repairs the shared hamburger drawer's
+  mobile viewport lifecycle and makes /products_page render only its active phone or desktop
+  inventory representation. Existing Product Inventory APIs, authorization, data, schema,
+  Stock Inventory behavior, browser/Codex UI, production, Railway, commit, and push remain
+  outside this implementation.
+
+- Bumped the embedded service-worker cache marker in app.py to
+  medical-service-pwa-offline-navigation-v150-mobile-navigation-inventory-stability and updated
+  the exact current-marker assertions across the affected navigation, inventory, reimbursement,
+  timeline, and TSR regression tests. Added the published mobile navigation/inventory stability
+  release entry to static/changelog/releases.json; the template behavior and final validation
+  are being completed in the same authorized package.
+
+- Implemented the mobile drawer lifecycle repair in templates/layout.html. The shared below-993px
+  navigation boundary now preserves an active drawer during mobile synchronization, uses the
+  synchronized close helper for outside/link/desktop transitions, and leaves the <=768px
+  mobile-device styling class and desktop sidebar preference behavior unchanged.
+- Implemented active-only Product Inventory rendering in templates/products.html. Phone widths
+  now render mobile cards without product table rows or table layout observers; desktop widths
+  render the table once with a single HTML assignment and retain horizontal-scroll/freeze
+  behavior. Breakpoint changes reuse the loaded data and current filters/sort state without
+  refetching.
+
+- The implementation fail-first checkpoint recorded the planned red controls before the source
+  repair: Sidebar 22 tests had 2 intentional behavior failures plus the concurrent cache-marker
+  assertion, and Product source contracts had 1 intentional failure. After the repair, the
+  focused sidebar, Product Inventory markup, Product mutation, and service-worker cache modules
+  passed **41/41** against a unique external test database.
+
+- Full unittest discovery completed **1,045 tests: 1,026 passed, 18 failed, and 1 skipped**.
+  The 18 failures were unrelated baseline conditions: 16 Purchase Order setup login-throttle
+  HTTP-429 failures and 2 staff-creation fixture/initials failures. No mobile/PWA test failed;
+  no protected artifact, production data, Railway setting, commit, push, or browser/Codex UI
+  state was changed.
+
+- Final non-browser verification passed: Python AST parsing, rendered Product Inventory Jinja
+  output, Node syntax checks for all 8 rendered inline scripts, release-manifest uniqueness
+  validation (**84 releases and 246 unique items**), intended-file git diff checks, and an
+  isolated mobile User-Agent Flask probe covering login, /products_page, /get_products,
+  /get_clients, and /get_products_summary with 200 responses and no redirects. The actual
+  phone/PWA smoke test remains owner-authorized and was not run.
+
 - Fixed Product Inventory edit/delete failures for serial numbers containing slashes (for
   example `N/A`) by changing the `/update_product` and `/delete_product` route converters to
   accept path-valued serial numbers. The existing product lookup, schedule/P.O. relinking,

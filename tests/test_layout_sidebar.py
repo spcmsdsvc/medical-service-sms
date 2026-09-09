@@ -179,7 +179,7 @@ class SidebarSourceTests(unittest.TestCase):
 
     def test_shell_asset_and_service_worker_versions_are_bumped(self):
         self.assertIn("app-shell.css') }}?v=3", self.layout)
-        self.assertIn("medical-service-pwa-offline-navigation-v149-calibration-report-pdf", self.app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v150-mobile-navigation-inventory-stability", self.app_source)
         assert_cache_version_at_least(self, 126, self.app_source)
 
     def test_sidebar_visibility_preference_is_early_guarded_and_desktop_only(self):
@@ -239,11 +239,12 @@ class SidebarSourceTests(unittest.TestCase):
             }}
             const body = {{ classList: makeClassList() }};
             const sidebar = {{ classList: makeClassList() }};
+            const mobileMenuButton = {{ attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }} }};
             const controls = {{
                 sidebar,
                 'sidebar-toggle-desktop': {{ classList: makeClassList(), attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }} }},
                 'show-sidebar-btn': {{ classList: makeClassList(), attrs: {{}}, setAttribute(name, value) {{ this.attrs[name] = value; }} }},
-                'mobile-menu-button': {{ setAttribute() {{}} }}
+                'mobile-menu-button': mobileMenuButton
             }};
             const document = {{
                 body,
@@ -252,8 +253,19 @@ class SidebarSourceTests(unittest.TestCase):
             }};
             const window = {{ innerWidth: 1200 }};
             let mobileCloseCalls = 0;
+            const mobileEvents = [];
             function setMobileSidebar(open) {{
-                if (!open) {{ mobileCloseCalls += 1; sidebar.classList.remove('active'); }}
+                if (open) {{
+                    sidebar.classList.add('active');
+                    body.classList.add('mobile-sidebar-open');
+                    mobileMenuButton.setAttribute('aria-expanded', 'true');
+                    return;
+                }}
+                mobileCloseCalls += 1;
+                mobileEvents.push('close');
+                sidebar.classList.remove('active');
+                body.classList.remove('mobile-sidebar-open');
+                mobileMenuButton.setAttribute('aria-expanded', 'false');
             }}
             {helpers}
 
@@ -280,14 +292,23 @@ class SidebarSourceTests(unittest.TestCase):
             window.innerWidth = 800;
             body.classList.add('sidebar-collapsed');
             sidebar.classList.add('active');
+            body.classList.add('mobile-sidebar-open');
+            mobileMenuButton.setAttribute('aria-expanded', 'true');
             syncSidebarVisibilityForViewport();
             assert.strictEqual(body.classList.contains('sidebar-collapsed'), false);
             assert.strictEqual(document.documentElement.dataset.sidebarCollapsed, 'false');
             assert.strictEqual(stored.get(SIDEBAR_VISIBILITY_STORAGE_KEY), preferenceBeforeMobile);
-            assert.strictEqual(mobileCloseCalls, 1);
+            assert.strictEqual(sidebar.classList.contains('active'), true);
+            assert.strictEqual(body.classList.contains('mobile-sidebar-open'), true);
+            assert.strictEqual(mobileMenuButton.attrs['aria-expanded'], 'true');
+            assert.strictEqual(mobileCloseCalls, 0);
 
             window.innerWidth = 1200;
             syncSidebarVisibilityForViewport();
+            assert.strictEqual(sidebar.classList.contains('active'), false);
+            assert.strictEqual(body.classList.contains('mobile-sidebar-open'), false);
+            assert.strictEqual(mobileMenuButton.attrs['aria-expanded'], 'false');
+            assert.deepStrictEqual(mobileEvents, ['close']);
             assert.strictEqual(body.classList.contains('sidebar-collapsed'), true);
             assert.strictEqual(document.documentElement.dataset.sidebarCollapsed, 'true');
         """)
@@ -299,6 +320,32 @@ class SidebarSourceTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
+
+    def test_mobile_drawer_uses_the_shared_navigation_boundary_for_all_close_paths(self):
+        self.assertIn('function isMobileNavigationViewport()', self.layout)
+        self.assertIn('return window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT;', self.layout)
+
+        mobile_state = self.layout.split('function applyMobileState()', 1)[1].split(
+            '// Smooth anchor scroll support', 1
+        )[0]
+        self.assertIn('isMobileNavigationViewport()', mobile_state)
+        self.assertIn('const isMobile = window.innerWidth <= 768;', mobile_state)
+        self.assertNotIn("sidebar.classList.remove('active')", mobile_state)
+        self.assertIn('setMobileSidebar(false)', mobile_state)
+
+        outside_click = self.layout.split('// Close sidebar when clicking outside', 1)[1].split(
+            '// Auto-close mobile sidebar after nav click', 1
+        )[0]
+        self.assertIn('if(!isMobileNavigationViewport()) return;', outside_click)
+        self.assertIn('setMobileSidebar(false)', outside_click)
+        self.assertNotIn("sidebar.classList.remove('active')", outside_click)
+
+        nav_close = self.layout.split('// Auto-close mobile sidebar after nav click', 1)[1].split(
+            '// Smooth anchor scroll support', 1
+        )[0]
+        self.assertIn('isMobileNavigationViewport()', nav_close)
+        self.assertIn('setMobileSidebar(false)', nav_close)
+        self.assertNotIn("sidebar.classList.remove('active')", nav_close)
 
     def test_pending_summary_endpoint_is_lightweight(self):
         self.assertIn("@app.route('/api/nav/pending-summary')", self.app_source)

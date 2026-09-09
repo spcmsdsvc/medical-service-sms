@@ -367,6 +367,10 @@
         const SIDEBAR_VISIBILITY_STORAGE_KEY = 'medical_service_sidebar_visibility';
         const SIDEBAR_DESKTOP_BREAKPOINT = 993;
 
+        function isMobileNavigationViewport() {
+            return window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT;
+        }
+
         function readStoredSidebarVisibility() {
             try {
                 return localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE_KEY) === 'collapsed'
@@ -414,26 +418,24 @@
         }
 
         function syncSidebarVisibilityForViewport() {
-            if (window.innerWidth >= SIDEBAR_DESKTOP_BREAKPOINT) {
+            const sidebar = document.getElementById('sidebar');
+            if (!isMobileNavigationViewport()) {
+                if (sidebar && sidebar.classList.contains('active')) {
+                    setMobileSidebar(false);
+                }
                 applySidebarVisibility(readStoredSidebarVisibility() === 'collapsed', false);
                 return;
             }
 
-            // Mobile navigation is an independent drawer. Keep it closed and do
-            // not overwrite the desktop preference while crossing the breakpoint.
-            document.body.classList.remove('sidebar-collapsed');
-            document.documentElement.dataset.sidebarCollapsed = 'false';
-            syncSidebarVisibilityControls(false);
-            const sidebar = document.getElementById('sidebar');
-            if (sidebar && sidebar.classList.contains('active')) {
-                setMobileSidebar(false);
-            }
+            // Mobile navigation is an independent drawer. Keep desktop collapse
+            // state reset without closing an active drawer or changing preference.
+            applySidebarVisibility(false, false);
         }
 
         window.syncSidebarVisibilityForViewport = syncSidebarVisibilityForViewport;
 
         function toggleSidebarDesktop() {
-            if (window.innerWidth < SIDEBAR_DESKTOP_BREAKPOINT) return;
+            if (isMobileNavigationViewport()) return;
             const collapsed = !document.body.classList.contains('sidebar-collapsed');
             applySidebarVisibility(collapsed, true);
         }
@@ -725,6 +727,7 @@
 
         function applyMobileState(){
             const isMobile = window.innerWidth <= 768;
+            const isMobileNavigation = isMobileNavigationViewport();
 
             body.classList.toggle('mobile-device', isMobile);
 
@@ -732,9 +735,8 @@
                 window.syncSidebarVisibilityForViewport();
             }
 
-            if(!isMobile && sidebar && sidebar.classList.contains('active')){
-                window.setMobileSidebar ? window.setMobileSidebar(false) : sidebar.classList.remove('active');
-                body.classList.remove('mobile-sidebar-open');
+            if(!isMobileNavigation && sidebar && sidebar.classList.contains('active')){
+                setMobileSidebar(false);
             }
         }
 
@@ -748,7 +750,7 @@
 
         // Close sidebar when clicking outside
         document.addEventListener('click', function(e){
-            if(window.innerWidth > 768) return;
+            if(!isMobileNavigationViewport()) return;
             if(!sidebar) return;
 
             const mobileNav = document.querySelector('.mobile-nav');
@@ -756,19 +758,15 @@
             const clickedMenuButton = mobileNav && mobileNav.contains(e.target);
 
             if(sidebar.classList.contains('active') && !clickedInsideSidebar && !clickedMenuButton){
-                window.setMobileSidebar ? window.setMobileSidebar(false) : sidebar.classList.remove('active');
-                body.classList.remove('mobile-sidebar-open');
+                setMobileSidebar(false);
             }
         });
 
         // Auto-close mobile sidebar after nav click
         document.querySelectorAll('.sidebar a').forEach(link => {
             link.addEventListener('click', function(){
-                if(window.innerWidth <= 768 && sidebar){
-                    sidebar.classList.remove('active');
-                    body.classList.remove('mobile-sidebar-open');
-                    const menuButton = document.getElementById('mobile-menu-button');
-                    if(menuButton) menuButton.setAttribute('aria-expanded', 'false');
+                if(isMobileNavigationViewport() && sidebar && sidebar.classList.contains('active')){
+                    setMobileSidebar(false);
                 }
             });
         });

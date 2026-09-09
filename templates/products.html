@@ -382,6 +382,11 @@
     let productSortState = { key: '', direction: 'asc' };
     const PRODUCT_SORT_STORAGE_KEY = 'medicalServiceProductSortV1';
     const PRODUCT_SORT_KEYS = ['serial', 'name', 'bsid', 'owner', 'start', 'end', 'status'];
+    const PRODUCT_MOBILE_BREAKPOINT = 768;
+    let productViewportIsMobile = window.innerWidth <= PRODUCT_MOBILE_BREAKPOINT;
+    let productDataLoaded = false;
+    let productRequestState = 'loading';
+    let productTableResizeObserver = null;
     let productFreezeColumn = 'name';
     const PRODUCT_FREEZE_STORAGE_KEY = 'medicalServiceProductFreezeV1';
     const PRODUCT_FREEZE_COLUMN_COUNTS = Object.freeze({
@@ -403,6 +408,10 @@
 
     const productCanEdit = {{ product_can_edit|tojson }};
     const productCanDelete = {{ product_can_delete|tojson }};
+
+function isProductMobileViewport(){
+    return window.innerWidth <= PRODUCT_MOBILE_BREAKPOINT;
+}
 
 function showImportToast(type, title, message){
     const header = document.getElementById('importToastHeader');
@@ -461,6 +470,8 @@ function getProductFreezeCount(){
 }
 
 function applyProductFreezeColumn(){
+    if(isProductMobileViewport()) return;
+
     const table = document.querySelector('#product-table-wrap table');
     if(!table) return;
 
@@ -495,8 +506,18 @@ function applyProductFreezeColumn(){
 }
 
 function refreshProductTableLayout(){
+    if(isProductMobileViewport()){
+        disconnectProductTableResizeObserver();
+        return;
+    }
     applyProductFreezeColumn();
     updateProductTableHorizontalScroll();
+}
+
+function disconnectProductTableResizeObserver(){
+    if(!productTableResizeObserver) return;
+    productTableResizeObserver.disconnect();
+    productTableResizeObserver = null;
 }
 
 function updateProductTableHorizontalScroll(){
@@ -526,6 +547,11 @@ function updateProductTableHorizontalScroll(){
 }
 
 function setupProductTableHorizontalScroll(){
+    if(isProductMobileViewport()){
+        disconnectProductTableResizeObserver();
+        return;
+    }
+
     const scrollBar = document.getElementById('product-table-scrollbar');
     const tableWrap = document.getElementById('product-table-wrap');
     const table = tableWrap?.querySelector('table');
@@ -541,18 +567,36 @@ function setupProductTableHorizontalScroll(){
         scrollBar.addEventListener('scroll', () => syncScroll(scrollBar, tableWrap), { passive: true });
         tableWrap.addEventListener('scroll', () => syncScroll(tableWrap, scrollBar), { passive: true });
 
-        if(typeof ResizeObserver === 'function'){
-            const resizeObserver = new ResizeObserver(refreshProductTableLayout);
-            resizeObserver.observe(table);
-            resizeObserver.observe(tableWrap);
+        if(typeof ResizeObserver === 'function' && !productTableResizeObserver){
+            productTableResizeObserver = new ResizeObserver(refreshProductTableLayout);
+            productTableResizeObserver.observe(table);
+            productTableResizeObserver.observe(tableWrap);
         }
 
-        window.addEventListener('resize', refreshProductTableLayout, { passive: true });
         scrollBar.dataset.bound = 'true';
     }
 
     refreshProductTableLayout();
 }
+
+function handleProductViewportChange(){
+    const isMobile = isProductMobileViewport();
+    if(isMobile !== productViewportIsMobile){
+        productViewportIsMobile = isMobile;
+        if(isMobile) disconnectProductTableResizeObserver();
+
+        if(productDataLoaded){
+            applyFilters();
+        }else{
+            renderProductRequestState(productRequestState);
+        }
+        return;
+    }
+
+    if(!isMobile) refreshProductTableLayout();
+}
+
+window.addEventListener('resize', handleProductViewportChange, { passive: true });
 
 
     document.addEventListener('DOMContentLoaded', async () => { 
@@ -610,27 +654,32 @@ function setupProductTableHorizontalScroll(){
             }
         };
         const config = states[state] || states.error;
+        productRequestState = state;
 
-        if(body){
-            body.innerHTML = `
-                <tr class="product-table-state-row">
-                    <td colspan="7">
-                        <div class="product-table-state product-table-state-${state}">
-                            <i class="fa-solid ${config.icon}" aria-hidden="true"></i>
-                            <span>${config.message}</span>
-                            ${config.action}
-                        </div>
-                    </td>
-                </tr>`;
-        }
-
-        if(mobile){
-            mobile.innerHTML = `
-                <div class="product-mobile-empty product-mobile-state-${state}">
-                    <i class="fa-solid ${config.icon}" aria-hidden="true"></i>
-                    <span>${config.message}</span>
-                    ${config.action}
-                </div>`;
+        if(isProductMobileViewport()){
+            if(body) body.innerHTML = '';
+            if(mobile){
+                mobile.innerHTML = `
+                    <div class="product-mobile-empty product-mobile-state-${state}">
+                        <i class="fa-solid ${config.icon}" aria-hidden="true"></i>
+                        <span>${config.message}</span>
+                        ${config.action}
+                    </div>`;
+            }
+        }else{
+            if(mobile) mobile.innerHTML = '';
+            if(body){
+                body.innerHTML = `
+                    <tr class="product-table-state-row">
+                        <td colspan="7">
+                            <div class="product-table-state product-table-state-${state}">
+                                <i class="fa-solid ${config.icon}" aria-hidden="true"></i>
+                                <span>${config.message}</span>
+                                ${config.action}
+                            </div>
+                        </td>
+                    </tr>`;
+            }
         }
 
         if(summary) summary.innerText = config.summary;
@@ -656,6 +705,7 @@ function setupProductTableHorizontalScroll(){
             productsData = await resP.json();
             masterClients = await resC.json();
             productSummary = await summaryRes.json().catch(() => ({ total_products: productsData.length, active_warranty: 0, expired_warranty: 0, na_warranty: 0, linked_products: 0 }));
+            productDataLoaded = true;
 
             // Count occurrences of each client name to resolve naming conflicts
             nameCounts = {};
@@ -1110,57 +1160,63 @@ function setProductSort(key){
 
 function renderTable(data) {
         const body = document.getElementById('prod-table-body');
-        body.innerHTML = "";
+        const mobile = document.getElementById('product-mobile-list');
         updateProductSortIndicators();
 
         if(!data.length){
+            if(body) body.innerHTML = '';
+            if(mobile) mobile.innerHTML = '';
             renderProductRequestState('empty');
             updateProductCountFooter(data);
             return;
         }
 
-        renderProductMobileCards(data);
+        if(isProductMobileViewport()){
+            if(body) body.innerHTML = '';
+            renderProductMobileCards(data);
+        }else{
+            if(mobile) mobile.innerHTML = '';
+            body.innerHTML = data.map(p => {
+                const status = p.computed_status || getProductWarrantyStatus(p);
 
-        data.forEach(p => {
-            const status = p.computed_status || getProductWarrantyStatus(p);
+                let sBadge = `<span class="badge product-status-badge bg-secondary">${escapeHtml(status)}</span>`;
+                if(status === 'Under Warranty'){
+                    sBadge = `<span class="badge product-status-badge bg-success">Under Warranty</span>`;
+                } else if(status === 'Under Contract'){
+                    sBadge = `<span class="badge product-status-badge bg-warning text-dark">Under Contract</span>`;
+                } else if(status === 'Expired - Under Contract'){
+                    sBadge = `<span class="badge product-status-badge bg-warning text-dark">Expired - Under Contract</span>`;
+                } else if(status === 'Expired - No Contract'){
+                    sBadge = `<span class="badge product-status-badge bg-danger">Expired - No Contract</span>`;
+                }
 
-            let sBadge = `<span class="badge product-status-badge bg-secondary">${escapeHtml(status)}</span>`;
-            if(status === 'Under Warranty'){
-                sBadge = `<span class="badge product-status-badge bg-success">Under Warranty</span>`;
-            } else if(status === 'Under Contract'){
-                sBadge = `<span class="badge product-status-badge bg-warning text-dark">Under Contract</span>`;
-            } else if(status === 'Expired - Under Contract'){
-                sBadge = `<span class="badge product-status-badge bg-warning text-dark">Expired - Under Contract</span>`;
-            } else if(status === 'Expired - No Contract'){
-                sBadge = `<span class="badge product-status-badge bg-danger">Expired - No Contract</span>`;
-            }
+                const ownerDisplay = escapeHtml(p.client_name || '-');
 
-            const ownerDisplay = escapeHtml(p.client_name || '-');
+                const actionButtons = renderProductRowActions(p);
 
-            const actionButtons = renderProductRowActions(p);
-
-            body.innerHTML += `
-                <tr data-serial="${escapeHtml(p.serial_number)}">
-                    <td class="product-identity-cell">
+                return `
+                    <tr data-serial="${escapeHtml(p.serial_number)}">
+                        <td class="product-identity-cell">
                         <strong>${escapeHtml(p.serial_number)}</strong>
                         ${renderProductSerialCertificateLink(p)}
-                    </td>
-                    <td class="product-name-cell">
-                        <div class="product-name-content">
-                            <span class="product-name-value">${escapeHtml(p.name || '-')}</span>
-                            ${actionButtons}
-                        </div>
-                    </td>
-                    <td><span class="text-primary fw-bold">${escapeHtml(p.bsid || '-')}</span></td>
-                    <td><span class="text-primary fw-bold">${ownerDisplay}</span></td>
-                    <td><small>${escapeHtml(p.start_warranty || '-')}</small></td>
-                    <td><small>${escapeHtml(p.end_warranty || '-')}</small></td>
-                    <td>${sBadge}</td>
-                </tr>`;
-        });
+                        </td>
+                        <td class="product-name-cell">
+                            <div class="product-name-content">
+                                <span class="product-name-value">${escapeHtml(p.name || '-')}</span>
+                                ${actionButtons}
+                            </div>
+                        </td>
+                        <td><span class="text-primary fw-bold">${escapeHtml(p.bsid || '-')}</span></td>
+                        <td><span class="text-primary fw-bold">${ownerDisplay}</span></td>
+                        <td><small>${escapeHtml(p.start_warranty || '-')}</small></td>
+                        <td><small>${escapeHtml(p.end_warranty || '-')}</small></td>
+                        <td>${sBadge}</td>
+                    </tr>`;
+            }).join('');
+            setupProductTableHorizontalScroll();
+        }
 
         updateProductCountFooter(data);
-        setupProductTableHorizontalScroll();
     }
 
     // --- GRID FILTERING LOGIC ---

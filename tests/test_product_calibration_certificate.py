@@ -471,6 +471,34 @@ class ProductCalibrationCertificateTests(unittest.TestCase):
         self.assertNotIn('@media screen and (max-width: 1600px) {\n        .table-responsive {\n            display: none;', source)
         self.assertIn('@media screen and (max-width: 768px)', source)
 
+    def test_products_render_only_the_active_representation_and_reuse_loaded_data_on_breakpoint_change(self):
+        source = (ROOT / 'templates' / 'products.html').read_text(encoding='utf-8')
+
+        self.assertIn('const PRODUCT_MOBILE_BREAKPOINT = 768;', source)
+        self.assertIn('function isProductMobileViewport()', source)
+        self.assertIn('return window.innerWidth <= PRODUCT_MOBILE_BREAKPOINT;', source)
+        self.assertIn('function handleProductViewportChange()', source)
+        self.assertIn("window.addEventListener('resize', handleProductViewportChange", source)
+        self.assertIn('applyFilters();', source)
+        self.assertNotIn("window.addEventListener('resize', refreshProductTableLayout", source)
+
+        render = source.split('function renderTable(data)', 1)[1].split(
+            '// --- GRID FILTERING LOGIC ---', 1
+        )[0]
+        self.assertIn('if(isProductMobileViewport())', render)
+        self.assertIn("body.innerHTML = '';", render)
+        self.assertIn("mobile.innerHTML = '';", render)
+        self.assertIn('renderProductMobileCards(data);', render)
+        self.assertIn('body.innerHTML = data.map(p => {', render)
+        self.assertIn('setupProductTableHorizontalScroll();', render)
+
+        self.assertIn('let productTableResizeObserver = null;', source)
+        self.assertIn('function disconnectProductTableResizeObserver()', source)
+        self.assertIn('productTableResizeObserver.disconnect();', source)
+        self.assertIn('if(isProductMobileViewport()) return;', source)
+        self.assertNotIn('setInterval(', source)
+        self.assertNotIn('location.reload', source)
+
 
 if __name__ == '__main__':
     unittest.main()

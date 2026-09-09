@@ -1,5 +1,186 @@
 # Medical Service SMS — Approved Plans
 
+## Mobile/PWA Navigation and Product Inventory Stability
+
+**Status:** In progress — implementation and local verification complete; no commit was created
+and formal post-implementation review remains separately authorized.
+**Approved:** 2026-09-09 — the owner supplied the complete approved implementation plan.
+**Detailed:** 2026-09-09.
+**Execution authorized:** 2026-09-09 — the owner explicitly requested
+PLEASE IMPLEMENT THIS PLAN. Commit, push, Railway, deployment, production data/storage,
+and browser/Codex UI actions remain separately unauthorized.
+
+### Context
+
+On mobile/PWA widths, the shared hamburger drawer opens and then closes before it can be used.
+The drawer CSS is active through 992px, but the shared layout JavaScript closes an active drawer
+whenever viewport state is synchronized. Mobile browser chrome, keyboard, and orientation changes
+can emit resize events, so that close path makes the drawer unusable.
+
+The Product Inventory page at /products_page also appears to refresh repeatedly after opening
+from the mobile Inventory link. The route and API probe do not reproduce a redirect or server
+reload loop, and the page has no timer or explicit page reload. The page does, however, render
+both the complete desktop table and the complete mobile-card list on every load, while also
+initializing hidden-table measurement and ResizeObserver work. The targeted stability fix is to
+render only the active representation and keep the existing one-shot data load.
+
+### Decisions taken
+
+1. Use the existing CSS drawer boundary: widths below 993px are mobile navigation, while the
+   separate mobile-device styling class remains limited to widths at or below 768px.
+2. Mobile viewport synchronization must preserve an already-open drawer. Crossing into desktop
+   must close the drawer and then restore the saved desktop collapse preference.
+3. All drawer-close paths use setMobileSidebar(false) so body overflow, drawer classes, ARIA,
+   and focus stay synchronized.
+4. Product Inventory keeps its current /get_products, /get_clients, and
+   /get_products_summary APIs and one-shot load. It will render mobile cards only at or below
+   768px, and desktop table rows only above 768px.
+5. The Product renderer will re-render existing data only when crossing the 768px breakpoint.
+   It will not add polling, forced reloads, authentication changes, route changes, or schema
+   changes.
+6. Desktop horizontal scrolling, frozen-column layout, filters, sorting, mutations, certificate
+   links, summaries, and print behavior remain supported.
+7. Bump the embedded service-worker cache marker to
+   medical-service-pwa-offline-navigation-v150-mobile-navigation-inventory-stability because
+   the shared layout JavaScript is delivered inside cached app-shell HTML.
+8. Add a published release entry for all users and append factual implementation details to the
+   existing 2026-09-09 change-log section.
+
+### Investigation
+
+- templates/layout.html defines the mobile drawer, setMobileSidebar(),
+  toggleSidebarMobile(), syncSidebarVisibilityForViewport(), and the mobile resize/outside
+  click/navigation handlers. The drawer markup is shown through the 992px CSS breakpoint, while
+  the current synchronization and handler code uses inconsistent mobile thresholds and closes
+  the drawer during mobile synchronization.
+- static/css/app-shell.css already implements the intended mobile drawer at
+  @media (max-width: 992px) and body.mobile-sidebar-open; no CSS change is required.
+- templates/products.html loads the three Product Inventory APIs once from loadData().
+  renderTable() currently renders mobile cards and desktop table rows together, then always
+  calls setupProductTableHorizontalScroll(). The table layout helper creates a
+  ResizeObserver and window resize listener for the hidden mobile table.
+- app.py serves /products_page and the three existing JSON endpoints without a redirect in
+  the isolated standard-engineer online probe. The embedded service worker uses navigation
+  network-first behavior and has no Product-page reload action.
+- Existing focused source/runtime tests passed 29/29 before this change. The current sidebar
+  Node harness intentionally expects an active drawer to close at width 800, so that assertion
+  must be inverted and expanded for the repaired behavior.
+- pending-work.md is owner-maintained and explicitly must not be changed automatically.
+  Existing dirty Handoffs/08-11-26 handoff.md, scheduler.db, .claude/, output/, and
+  tmp/ artifacts are protected.
+
+### Numbered execution steps
+
+1. **Preflight and control records.** Reread AGENTS.md, the complete changes.md, this plan,
+   the affected templates, service-worker source, release manifest, and focused tests. Confirm
+   Git status and keep the protected owner artifacts outside the feature scope. Record this
+   package as In progress and append the dated start entry to changes.md. Done when the
+   intended file allowlist is explicit and no protected path is selected for editing.
+
+2. **Fail-first regression controls.** In tests/test_layout_sidebar.py, update the Node runtime
+   harness around syncSidebarVisibilityForViewport() to assert that an active drawer remains
+   active at mobile/tablet widths, its mobile ARIA state remains expanded, desktop collapse
+   storage is unchanged, and a transition to desktop closes the drawer before restoring the
+   preference. Add source/runtime assertions that outside-click and navigation auto-close use
+   the shared below-993px predicate. In
+   tests/test_product_calibration_certificate.py, add source contracts for active-only
+   rendering, desktop-only table setup, breakpoint re-rendering from current data, and no
+   polling or page reload. Run the changed tests against the unchanged implementation and record
+   the intentional failures before the source fix.
+
+3. **Repair shared navigation.** In templates/layout.html, add or reuse one
+   mobile-navigation viewport predicate based on SIDEBAR_DESKTOP_BREAKPOINT. Change
+   syncSidebarVisibilityForViewport() to reset desktop collapse state without closing an active
+   mobile drawer, and to close the drawer only in the desktop branch. Update applyMobileState(),
+   document outside-click handling, and sidebar-link auto-close to use that predicate. Keep the
+   existing mobile-device class threshold and desktop localStorage behavior. Done when opening
+   the drawer at phone/tablet widths survives synchronization and all close paths keep state,
+   ARIA, body overflow, and focus consistent.
+
+4. **Stabilize Product Inventory rendering.** In templates/products.html, add the 768px
+   viewport helper and a single breakpoint-change listener. Refactor renderTable(data) to
+   clear the inactive container, render only mobile cards on phone widths, and render desktop
+   rows with one HTML assignment above the phone breakpoint. Move table scrollbar/freeze setup
+   behind the desktop branch. Guard or disconnect hidden-table ResizeObserver and layout work
+   during mobile mode, and re-enable it when returning to desktop. Preserve the current filter
+   and sort state when re-rendering existing data and do not start another network load. Done
+   when the phone DOM contains no product table rows, the desktop DOM contains no duplicate
+   mobile cards, and all existing actions remain wired.
+
+5. **Cache and release records.** In app.py, change only the embedded CACHE_VERSION marker to
+   the v150 mobile-navigation/inventory-stability value. Update all exact current-marker
+   assertions in the affected test files: test_layout_sidebar.py, test_appearance_themes.py,
+   the reimbursement autosave/design/bulk/manual-category tests, timeline tests,
+   test_stock_inventory.py, and TSR tests. Leave cache-floor helper fixtures unchanged. Add
+   the published 2026-09-09-mobile-navigation-inventory-stability object to the top of
+   static/changelog/releases.json, preserving all historical entries.
+
+6. **Final verification and records.** Run focused tests with the project virtual environment
+   and a unique external MEDICAL_SERVICE_TEST_DB, then run the full unittest discovery.
+   Perform Python/AST and Jinja checks, Node syntax/runtime checks for affected inline JavaScript,
+   release JSON validation, git diff --check, and the existing Flask mobile-shaped page/API
+   probe confirming 200 responses and no redirects. Append final factual bullets to the existing
+   2026-09-09 section of changes.md, including exact test totals and any unrelated failures.
+   Do not update pending-work.md.
+
+### Deliberately excluded
+
+- No changes to HTTP routes, API payloads, authentication/session behavior, database models,
+  migrations, or Product data.
+- No changes to static/css/app-shell.css, Stock Inventory behavior, or unrelated pages.
+- No browser, in-app PWA automation, Codex navigation, or real-device test is performed under
+  the project rule; owner-authorized phone/PWA smoke confirmation remains separate.
+- No commit, push, branch promotion, Railway variable change, deployment, production operation,
+  or manual redeploy.
+- No edits to Handoffs/, scheduler.db, .claude/, output/, tmp/, or pending-work.md.
+
+### Verification and acceptance
+
+- The fail-first checkpoint proves the old drawer-close behavior and the missing Product
+  active-render contract fail before the implementation.
+- Focused sidebar/Product/service-worker tests pass after the fix, followed by full unittest
+  discovery with exact totals recorded.
+- At phone width, Menu stays open through resize synchronization, outside clicks and nav links
+  close it, and crossing to desktop closes it cleanly while preserving desktop preference.
+- At phone width, Product Inventory renders only mobile cards, does not initialize hidden-table
+  layout work, performs its existing one-shot API load, and does not issue a page reload.
+- At desktop/tablet width, the table, horizontal scrollbar, frozen columns, sorting, filtering,
+  mutation actions, certificate links, counts, and print behavior remain intact.
+- The Flask probe confirms /products_page and all three existing JSON endpoints return 200
+  without redirects for the online standard-user path.
+
+### After implementation
+
+**Locally finished:** 2026-09-09 — the shared drawer and Product renderer changes were
+implemented, focused and full local verification completed, and the protected worktree audit
+passed. The breakpoint transition uses one guarded window resize listener rather than a
+MediaQueryList listener; it re-renders only when crossing 768px and preserves the existing
+filter/sort state through applyFilters(), which satisfies the intended behavior without adding a
+compatibility branch.
+
+- Fail-first checkpoint: Sidebar 22 tests had 2 intentional behavior failures plus the
+  concurrent cache-marker assertion; Product source contracts had 1 intentional failure.
+- Final focused verification: **41/41 passed** across sidebar, Product markup/mutations, and
+  service-worker cache tests.
+- Full unittest discovery: **1,045 tests, 1,026 passed, 18 failed, 1 skipped**. The failures
+  were unrelated Purchase Order login-throttle HTTP-429 setup failures (16) and staff-creation
+  fixture/initials failures (2); no mobile/PWA test failed.
+- Python AST, rendered Jinja/inline JavaScript syntax for 8 scripts, release-manifest uniqueness
+  (84 releases and 246 unique items), mobile Product Inventory Flask/API probe, and intended-file
+  git diff checks passed.
+- No browser/Codex UI, commit, push, deployment, Railway, production, database, or protected
+  artifact operation was performed. Keep this plan In progress until a separately authorized
+  commit exists; formal post-implementation review also remains separately authorized.
+
+### Risks
+
+- The exact browser-visible refresh trigger was not reproducible without prohibited browser
+  automation. The active-only renderer removes the confirmed duplicate mobile DOM/layout
+  pressure and the tests explicitly prevent adding a self-reload or polling loop; a real-device
+  confirmation remains the owner's acceptance step.
+- Shared-shell JavaScript affects all cached app-shell pages, so the monotonic service-worker
+  bump is required to deliver the repaired layout to installed PWAs.
+
 ## P.O. Details Date Refresh and In-Page Machine Coverage Editing
 
 **Status:** Executed — `1db7cef` on 2026-09-09.

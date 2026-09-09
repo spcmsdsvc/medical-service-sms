@@ -81,7 +81,7 @@ class TsrNotificationSourceTests(unittest.TestCase):
 
     def test_service_worker_and_release_entry_are_bumped(self):
         assert_cache_version_at_least(self, 128, self.app_source)
-        self.assertIn('medical-service-pwa-offline-navigation-v149-calibration-report-pdf', self.app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v150-mobile-navigation-inventory-stability', self.app_source)
         manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
         matches = [item for release in manifest['releases'] for item in release.get('items', [])
                    if item.get('item_key') == '2026-09-05-tsr-notifications-everyone']

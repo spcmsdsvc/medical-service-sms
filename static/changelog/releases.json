@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-09-mobile-navigation-inventory-stability",
+      "release_date": "2026-09-09",
+      "title": "Mobile Navigation and Inventory Stability",
+      "summary": "Mobile/PWA navigation stays usable, and Product Inventory renders a stable phone view.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-09-mobile-navigation-inventory-stability-everyone",
+          "category": "Mobile",
+          "description": "The mobile hamburger drawer now remains open through normal viewport synchronization and closes cleanly when leaving mobile navigation. Product Inventory now renders only the active phone-card or desktop-table view, avoiding duplicate hidden inventory markup and unnecessary phone-side table layout work while preserving the existing data, filters, sorting, actions, and certificate links.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-09-po-machine-date-refresh",
       "release_date": "2026-09-09",
       "title": "P.O. Machine Coverage Editing",
