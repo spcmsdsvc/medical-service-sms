@@ -1,5 +1,193 @@
 # Medical Service SMS — Approved Plans
 
+## Calibration Report Approval-Gated TSR Workflow
+
+**Status:** In progress.
+**Approved:** 2026-09-09 — the owner supplied the complete implementation scope below.
+**Execution authorized:** 2026-09-09 — the owner explicitly requested **PLEASE IMPLEMENT THIS
+PLAN**. Commit, push, Railway/deployment, production data/storage, browser/Codex UI actions, and
+protected dirty-artifact changes remain separately unauthorized.
+**Detailed:** 2026-09-09.
+
+### Context
+
+An engineer's online TSR save persists the generated Calibration Report DOCX as a private
+source, converts it to a PDF, and creates a combined `CalibrationCertificateApproval` record.
+The current Timeline serializer exposes the ready report PDF independently of approval, and the
+Service Files manifest can select that PDF without checking the approval status. The certificate
+already has a revision-aware combined approval record and the Approval Center already renders
+the linked report PDF beside the certificate.
+
+The existing Create TSR revision path can load an exact saved submission, apply its payload,
+retain the Calibration Report editor state, clear the client signature, and create a new
+revision. The returned-approval notification currently points only to the generic Create TSR
+page, so the correction path is not directly discoverable.
+
+### Decisions
+
+1. Keep the existing combined `calibration_certificate` approval module and database record. One
+   manager decision covers the report and certificate; no second report-approval table is added.
+2. A generated report PDF is schedule-visible only when its exact linked approval is
+   `is_latest=True` and `status='Approved'`. Pending, Returned, Superseded, missing, and stale
+   approvals hide the report from schedule-card/timeline payloads. Approval Center access remains
+   available through its approval-scoped report URL, and ordinary archive behavior is unchanged.
+3. Preserve the current backend `Returned` status and revision-history behavior. Returned
+   notifications open `/offline-tsr?edit_submission_id=<submission_id>&mode=correct`.
+4. The existing Create TSR correction behavior remains the source of truth: the report is
+   editable, manager remarks are shown, the client signature must be captured again, and saving
+   creates a new revision and new pending combined approval while preserving the original.
+5. `can_manage_any_schedule()` is the calibration-document sending authority. Ordinary engineers
+   may continue sending TSR and ordinary supporting files; approved calibration rows are visible
+   in their Service Files modal with disabled checkboxes and cannot be selected through a crafted
+   request.
+6. The email manifest includes only the latest ready approved report PDF and latest approved
+   signed certificate. A TSR-only email is not blocked by a pending/failed calibration conversion.
+7. A calibration-only selection containing both report and certificate uses the dedicated subject
+   `Calibration Report and Certificate - {client} - {equipment} - {service date}` and the approved-
+   calibration body copy agreed with the owner. Mixed packages containing a TSR retain the
+   existing TSR subject/body. A one-file calibration-only selection retains the existing truthful
+   service-files wording.
+8. No database schema/migration change is required. Because Timeline and email UI behavior is
+   delivered through cached app-shell code, advance the embedded service-worker marker from v150
+   to v151 and add a published 2026-09-09 release entry.
+
+### Investigation
+
+- `app.py:15003-15045` (`online_tsr_submission_to_dict`) already returns the exact linked
+  calibration approval and report status for Create TSR revision loading.
+- `app.py:17480-17570` (`submit_calibration_certificate_for_submission`) creates the single
+  revision-aware approval after the generated report upload; `app.py:17767-17905` approve/return
+  routes already create signed artifacts, preserve history, and notify the requester.
+- `app.py:40860-40925` (`timeline_file_detail_payload` and
+  `get_user_visible_shift_file_records`) currently hides only private DOCX sources, not
+  unapproved report PDFs; `app.py:41080-41105` and `41229-41255` use those serializers for the
+  Timeline and schedule-details responses.
+- `app.py:478?`-`48185` (`get_linked_schedule_calibration_report_file_state` and
+  `get_tsr_email_files_for_shift`) currently filters report conversion readiness but not the
+  combined approval status; certificate selection already requires latest `Approved` status.
+- `app.py:48921-49320` builds the shared preview/send message and currently applies the report
+  conversion block before attachment selection, which can block an otherwise valid TSR-only
+  send.
+- `templates/timeline.html:15572-15845` renders the attachment manifest and selection controls;
+  `16299-16630` opens, previews, and sends the Service Files modal. Existing controls select all
+  manifest rows by default and do not understand role-disabled calibration rows.
+- `templates/approvals.html:6040-6145` renders the combined Calibration Certificate approval
+  detail, including the Calibration Report PDF panel and Return remarks.
+- `templates/offline_tsr.html:3876-3945` already loads an exact submission from
+  `edit_submission_id`, applies the report approval state, and prepares a corrected revision.
+- Relevant existing regression modules are `tests/test_calibration_certificate_approval_workflow.py`,
+  `tests/test_calibration_report_pdf.py`, `tests/test_timeline_tsr_file_details.py`,
+  `tests/test_schedule_email_attachments.py`, `tests/test_service_file_delivery.py`,
+  `tests/test_tsr_sync_reliability.py`, and `tests/test_tsr_calibration_report.py`.
+- The worktree contains protected pre-existing edits in `Handoffs/08-11-26 handoff.md`,
+  `scheduler.db`, `.claude/`, `output/`, `tmp/`, and the owner-maintained detailed handoff; none
+  is part of this package.
+
+### Numbered execution steps
+
+1. **Preflight and control records.** Reread the applicable `AGENTS.md`, complete `changes.md`,
+   this plan, affected source, release manifest, and focused tests. Confirm the existing dirty
+   worktree and keep protected paths outside the allowlist. Record this plan as In progress and
+   append the dated implementation-start entry to the existing 2026-09-09 section of
+   `changes.md`. Done when the intended feature/test/record allowlist is explicit.
+
+2. **Fail-first regression controls.** Add focused tests before changing behavior. In the timeline
+   and calibration PDF tests, cover report visibility for Pending, Returned, Superseded/stale,
+   absent, and latest Approved approvals, including that Approval Center report access remains
+   approval-scoped. In approval workflow tests, cover the exact returned notification URL and
+   revision-history contract. In service-file tests, cover engineer versus schedule-manager
+   manifest selection, crafted unauthorized IDs, TSR-only sends during pending conversion, and
+   calibration-only/mixed email modes. Run those tests against the unchanged implementation and
+   record intentional failures before the source fix.
+
+3. **Implement the authoritative approval gate.** In `app.py`, add the smallest helper/query
+   needed to resolve a generated report PDF to its exact approval through the online TSR
+   submission. Extend report-file state with approval/latest metadata. Update
+   `get_user_visible_shift_file_records()` and the timeline serializers so only the latest
+   Approved report is included in schedule-card and details payloads; keep private DOCX sources
+   excluded and keep Approval Center's approval-scoped preview/download path intact. Preserve
+   approved certificate/no-signature behavior and do not alter archive scope.
+
+4. **Implement returned correction routing.** Update the existing calibration return route's
+   requester notification target to include the exact `online_tsr_submission_id` and `mode=correct`.
+   Preserve `Returned`, remarks, audit, and historical approval rows. Verify the existing
+   `loadOnlineTSRRevisionFromUrl()` and Calibration Report `setApprovalStatus()` path keeps the
+   report controls editable, requires a new client signature, and causes the normal revision
+   save/upload flow to create a new Pending approval. Add only the minimal wording change needed
+   for the combined Report & Certificate identity.
+
+5. **Implement Service Files authorization and email modes.** In `app.py`, make the canonical
+   email manifest include only ready latest Approved calibration artifacts, annotate calibration
+   rows with `selectable`/disabled-reason metadata, and reject unauthorized calibration IDs in
+   `resolve_service_file_selection()` regardless of client UI. Scope the conversion readiness
+   error to selected calibration delivery so an engineer can still send a TSR-only package. Add
+   server-side calibration-only subject/body builders and return an `email_mode`/permission signal
+   in preview/send responses. Keep existing recipient, CC, stale-manifest, tracking, and mixed TSR
+   behavior intact.
+
+6. **Update Timeline and Approval Center UI.** In `templates/timeline.html`, render approved
+   calibration rows for engineers with disabled checkboxes and an explicit admin/scheduler-only
+   reason; prevent Select All/Select Unsent and default selection from including them. Make the
+   calibration-only mode bypass TSR subject-scenario requirements and show the server-provided
+   dedicated subject in preview. In `templates/approvals.html`, retain the existing module key
+   while making the combined Report & Certificate wording clear. Keep the existing Create TSR
+   editor structure unless a minimal status/remarks adjustment is required by the regression
+   path.
+
+7. **Delivery records and cache.** Bump only the embedded service-worker cache marker in `app.py`
+   from v150 to the next v151 calibration-approval-gated-service-documents label. Update exact
+   current-cache assertions touched by the focused tests. Add a published 2026-09-09 release
+   object to `static/changelog/releases.json` describing approval-gated schedule visibility,
+   returned corrections, and role-restricted calibration delivery.
+
+8. **Final verification and closeout.** Run the focused fail-first replacement suites, related
+   TSR/approval/archive/sync suites, and full isolated unittest discovery using a unique external
+   test database. Run Python AST/compile checks, Jinja validation, extracted inline JavaScript
+   syntax/runtime checks, release JSON/key validation, embedded service-worker checks, and
+   `git diff --check`. Append exact results and known unrelated baseline failures to the existing
+   2026-09-09 section of `changes.md`; update this plan to Executed with the commit hash only if a
+   later owner-authorized commit exists. Do not modify `pending-work.md` or protected artifacts.
+
+### Deliberately excluded
+
+- No new approval table, migration, database repair, data backfill, or change to existing
+  approval/audit storage semantics.
+- No ordinary archive visibility change; unapproved reports remain available only through the
+  existing authorized Approval Center flow for review.
+- No change to ordinary TSR/supporting-file sending, recipient/CC configuration, certificate PDF
+  templates, conversion worker architecture, or historical file contents.
+- No browser/in-app automation, Codex navigation, production database/storage work, Railway
+  variable change, deployment, manual redeploy, commit, push, branch promotion, or merge.
+- No edits to `scheduler.db`, `Handoffs/`, `.claude/`, `output/`, `tmp/`,
+  `medical-service-sms-detailed-handoff-2026-07-26.md`, or `pending-work.md`.
+
+### Verification and acceptance
+
+- Pending/Returned/Superseded/no-approval report PDFs are absent from Timeline and schedule
+  details for every role; the latest approved report appears together with the approved
+  certificate, and approval-scoped manager preview/download still works.
+- A returned approval notification opens the exact TSR revision. The engineer can edit the report,
+  sees return remarks, must capture the client signature again, and creates a new Pending approval
+  without overwriting the Returned history.
+- Engineers can send TSR/supporting files but cannot select or submit approved calibration files;
+  schedule managers can select and send them. Server enforcement rejects forged calibration IDs.
+- Pending/failed report conversion does not prevent TSR-only delivery. Paired calibration-only
+  delivery uses the dedicated subject/body; mixed TSR packages retain existing wording.
+- Focused and full test results, syntax/artifact checks, cache/release records, and protected-path
+  audit are recorded truthfully. Browser, production, Railway, commit, and push remain untouched.
+
+### Risks and mitigations
+
+- **Stale report leakage:** approval resolution is tied to the report's exact online TSR submission
+  and latest approval, not merely a shift-level ready PDF. Regression tests cover a newer pending
+  revision hiding an older approved report.
+- **UI-only authorization bypass:** selection metadata is advisory; the server revalidates source
+  type and `can_manage_any_schedule()` during preview/send.
+- **TSR delivery regression:** conversion blocking is applied only to selected calibration delivery,
+  with an explicit TSR-only test.
+- **Cached Timeline code:** the monotonic service-worker bump and exact marker checks prevent stale
+  app-shell JavaScript from hiding the new controls.
+
 ## Mobile/PWA Navigation and Product Inventory Stability
 
 **Status:** Executed — df7ab29 on 2026-09-09; formal post-implementation review remains

@@ -49,6 +49,9 @@ class ServiceFileDeliverySourceTests(unittest.TestCase):
             "refreshTimelineGrid()",
             "selected_attachment_ids",
             "attachments_changed",
+            "disabled_reason",
+            "input.disabled",
+            "selectedTSRSubjectScenarioIsRequired",
         ):
             self.assertIn(expected, self.timeline_source)
 
@@ -178,8 +181,9 @@ class ServiceFileDeliveryPureContractTests(unittest.TestCase):
             patch.object(app_module, "get_tsr_client_system_cc_emails", return_value=[]),
             patch.object(app_module, "get_current_user_email_for_tsr_cc", return_value=""),
             patch.object(app_module, "serialize_tsr_email_attachment", side_effect=lambda item: item),
+            patch.object(app_module, "can_manage_any_schedule", return_value=True),
         )
-        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9]:
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10]:
             message, error, status = app_module.prepare_tsr_client_email_message(
                 shift,
                 {"emails": ["client@example.com"], "selected_attachment_ids": [2]},
@@ -202,8 +206,9 @@ class ServiceFileDeliveryPureContractTests(unittest.TestCase):
             patch.object(app_module, "get_tsr_client_system_cc_emails", return_value=[]),
             patch.object(app_module, "get_current_user_email_for_tsr_cc", return_value=""),
             patch.object(app_module, "serialize_tsr_email_attachment", side_effect=lambda item: item),
+            patch.object(app_module, "can_manage_any_schedule", return_value=True),
         )
-        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9]:
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10]:
             message, error, status = app_module.prepare_tsr_client_email_message(shift, {"emails": ["client@example.com"]})
         self.assertIsNone(error)
         self.assertEqual(status, 200)
@@ -227,8 +232,9 @@ class ServiceFileDeliveryPureContractTests(unittest.TestCase):
             patch.object(app_module, "get_tsr_client_system_cc_emails", return_value=[]),
             patch.object(app_module, "get_current_user_email_for_tsr_cc", return_value=""),
             patch.object(app_module, "serialize_tsr_email_attachment", side_effect=lambda item: item),
+            patch.object(app_module, "can_manage_any_schedule", return_value=True),
         )
-        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9]:
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10]:
             message, error, status = app_module.prepare_tsr_client_email_message(
                 shift,
                 {"emails": ["client@example.com"], "selected_attachment_ids": [2]},
@@ -238,6 +244,160 @@ class ServiceFileDeliveryPureContractTests(unittest.TestCase):
         self.assertNotIn("Technical Service Report (TSR)", message["text_body"])
         self.assertIn("No TSR document is attached", message["text_body"])
         self.assertEqual([item["id"] for item in message["email_attachments"]], [2])
+
+    def test_engineer_cannot_select_calibration_attachment_from_the_server_manifest(self):
+        package = [{
+            "id": 71,
+            "source_type": "calibration_report",
+            "attachment_type": "supporting",
+            "selectable": False,
+            "disabled_reason": "Only schedule managers can send approved calibration files.",
+        }]
+        with patch.object(app_module, "can_manage_any_schedule", return_value=False):
+            selected, ids, error, status = app_module.resolve_service_file_selection(
+                package,
+                {"selected_attachment_ids": [71]},
+            )
+        self.assertIsNone(selected)
+        self.assertEqual(ids, [])
+        self.assertEqual(status, 403)
+        self.assertIn("manager", (error or "").lower())
+
+    def test_schedule_manager_can_select_calibration_attachment(self):
+        package = [{
+            "id": 72,
+            "source_type": "calibration_certificate",
+            "attachment_type": "supporting",
+            "selectable": False,
+        }]
+        with patch.object(app_module, "can_manage_any_schedule", return_value=True):
+            selected, ids, error, status = app_module.resolve_service_file_selection(
+                package,
+                {"selected_attachment_ids": [72]},
+            )
+        self.assertIsNone(error)
+        self.assertEqual(status, 200)
+        self.assertEqual(ids, [72])
+        self.assertEqual([item["id"] for item in selected], [72])
+
+    def test_calibration_selection_authority_uses_existing_manager_and_capability_roles(self):
+        ordinary_engineer = SimpleNamespace(
+            is_authenticated=True,
+            is_active=True,
+            role='engineer',
+            username='field-engineer',
+            schedule_admin_access=False,
+        )
+        named_manager = SimpleNamespace(
+            is_authenticated=True,
+            is_active=True,
+            role='superadmin',
+            username='robert',
+            schedule_admin_access=False,
+        )
+        capability_manager = SimpleNamespace(
+            is_authenticated=True,
+            is_active=True,
+            role='engineer',
+            username='field-engineer',
+            schedule_admin_access=True,
+        )
+        self.assertFalse(app_module.can_select_calibration_service_files(ordinary_engineer))
+        self.assertTrue(app_module.can_select_calibration_service_files(named_manager))
+        self.assertTrue(app_module.can_select_calibration_service_files(capability_manager))
+
+    def test_tsr_only_delivery_ignores_pending_calibration_conversion(self):
+        shift = SimpleNamespace(id=17, title="Service", files=[])
+        package = self._package()[:1]
+        patches = (
+            patch.object(app_module, "get_tsr_files_for_shift", return_value=package),
+            patch.object(app_module, "get_tsr_email_files_for_shift", return_value=package),
+            patch.object(app_module, "get_tsr_email_attachment_manifest_signature", return_value="manifest"),
+            patch.object(app_module, "get_calibration_report_email_block", return_value="pending conversion"),
+            patch.object(app_module, "get_tsr_subject_package_metadata", return_value={"mixed": False, "scenarios": ["standard"]}),
+            patch.object(app_module, "build_tsr_client_email_subject", return_value="Subject"),
+            patch.object(app_module, "build_tsr_client_email_bodies", return_value=("Body", "<p>Body</p>")),
+            patch.object(app_module, "append_tsr_email_correction_notice", side_effect=lambda shift, text, html: (text, html)),
+            patch.object(app_module, "get_tsr_client_system_cc_emails", return_value=[]),
+            patch.object(app_module, "get_current_user_email_for_tsr_cc", return_value=""),
+            patch.object(app_module, "serialize_tsr_email_attachment", side_effect=lambda item: item),
+            patch.object(app_module, "can_manage_any_schedule", return_value=True),
+        )
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10]:
+            message, error, status = app_module.prepare_tsr_client_email_message(
+                shift,
+                {"emails": ["client@example.com"], "selected_attachment_ids": [1]},
+            )
+        self.assertIsNone(error)
+        self.assertEqual(status, 200)
+        self.assertEqual(message["email_mode"], "tsr")
+
+    def test_paired_calibration_only_delivery_uses_dedicated_subject_and_body(self):
+        shift = SimpleNamespace(
+            id=17,
+            title="Calibration service",
+            files=[],
+            client=SimpleNamespace(name="Acme Clinic"),
+            product=SimpleNamespace(name="MobileDart MX8", serial_number="SN-100"),
+            start_time=datetime(2026, 9, 9, 8, 0),
+        )
+        package = [
+            {"id": 81, "source_type": "calibration_report", "attachment_type": "supporting", "selectable": True},
+            {"id": 82, "source_type": "calibration_certificate", "attachment_type": "supporting", "selectable": True},
+        ]
+        patches = (
+            patch.object(app_module, "get_tsr_files_for_shift", return_value=[]),
+            patch.object(app_module, "get_tsr_email_files_for_shift", return_value=package),
+            patch.object(app_module, "get_tsr_email_attachment_manifest_signature", return_value="manifest"),
+            patch.object(app_module, "get_tsr_subject_package_metadata", return_value={"mixed": False, "scenarios": []}),
+            patch.object(app_module, "append_tsr_email_correction_notice", side_effect=lambda shift, text, html: (text, html)),
+            patch.object(app_module, "get_tsr_client_system_cc_emails", return_value=[]),
+            patch.object(app_module, "get_current_user_email_for_tsr_cc", return_value=""),
+            patch.object(app_module, "serialize_tsr_email_attachment", side_effect=lambda item: item),
+            patch.object(app_module, "can_manage_any_schedule", return_value=True),
+        )
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8]:
+            message, error, status = app_module.prepare_tsr_client_email_message(
+                shift,
+                {"emails": ["client@example.com"], "selected_attachment_ids": [81, 82]},
+            )
+        self.assertIsNone(error)
+        self.assertEqual(status, 200)
+        self.assertEqual(message["email_mode"], "calibration_only")
+        self.assertEqual(
+            message["subject"],
+            "Calibration Report and Certificate - Acme Clinic - MobileDart MX8 - September 09, 2026",
+        )
+        self.assertIn("approved Calibration Report and Calibration Certificate", message["text_body"])
+
+    def test_mixed_tsr_and_calibration_keeps_existing_tsr_mode(self):
+        shift = SimpleNamespace(id=17, title="Service", files=[])
+        package = self._package()
+        patches = (
+            patch.object(app_module, "get_tsr_files_for_shift", return_value=package[:1]),
+            patch.object(app_module, "get_tsr_email_files_for_shift", return_value=package),
+            patch.object(app_module, "get_tsr_email_attachment_manifest_signature", return_value="manifest"),
+            patch.object(app_module, "get_tsr_subject_package_metadata", return_value={"mixed": False, "scenarios": ["standard"]}),
+            patch.object(app_module, "build_tsr_client_email_subject", return_value="Subject"),
+            patch.object(app_module, "build_tsr_client_email_bodies", return_value=(
+                "Attached is the Technical Service Report (TSR) for the completed service visit.",
+                "<p>Attached is the Technical Service Report (TSR) for the completed service visit.</p>",
+            )),
+            patch.object(app_module, "append_tsr_email_correction_notice", side_effect=lambda shift, text, html: (text, html)),
+            patch.object(app_module, "get_tsr_client_system_cc_emails", return_value=[]),
+            patch.object(app_module, "get_current_user_email_for_tsr_cc", return_value=""),
+            patch.object(app_module, "serialize_tsr_email_attachment", side_effect=lambda item: item),
+            patch.object(app_module, "can_manage_any_schedule", return_value=True),
+        )
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10]:
+            message, error, status = app_module.prepare_tsr_client_email_message(
+                shift,
+                {"emails": ["client@example.com"], "selected_attachment_ids": [1, 2]},
+            )
+        self.assertIsNone(error)
+        self.assertEqual(status, 200)
+        self.assertEqual(message["email_mode"], "mixed")
+        self.assertIn("Technical Service Report (TSR)", message["text_body"])
 
     def test_correction_notice_requires_selected_revised_tsr(self):
         shift = SimpleNamespace(id=17, _service_file_selected_ids=[41])

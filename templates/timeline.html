@@ -2869,6 +2869,12 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
     background: #f8fafc;
 }
 
+.tsr-attachment-row.is-disabled {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    opacity: 0.8;
+}
+
 .tsr-attachment-row-checkbox {
     width: 1.2rem;
     height: 1.2rem;
@@ -2899,6 +2905,18 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 .tsr-attachment-row-status small {
     font-size: 0.58rem;
     font-weight: 700;
+}
+
+.tsr-attachment-row-disabled {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.35rem;
+    padding: 0.12rem 0.4rem;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 0.62rem;
+    font-weight: 800;
 }
 
 .tsr-attachment-row[aria-disabled="true"] {
@@ -15646,7 +15664,8 @@ if(shift.engineers){
         const sendBtn = document.getElementById('tsr-send-client-btn');
         if(sendBtn){
             sendBtn.disabled = !currentTSRAttachmentManifestSignature
-                || !currentTSRSelectedAttachmentIds.length;
+                || !currentTSRSelectedAttachmentIds.length
+                || (selectedTSRSubjectScenarioIsRequired() && !getSelectedTSRSubjectScenario());
         }
         updateTSRAttachmentSelection(false);
     }
@@ -15727,10 +15746,43 @@ if(shift.engineers){
 
     function getSelectedTSRAttachmentIds(){
         const checkboxes = Array.from(document.querySelectorAll('#tsr-attachment-list input[data-tsr-attachment-id]'));
-        const checkboxIds = checkboxes.filter(input => input.checked)
+        const checkboxIds = checkboxes.filter(input => input.checked && !input.disabled)
             .map(input => Number(input.dataset.tsrAttachmentId))
             .filter(id => Number.isFinite(id) && id > 0);
-        return checkboxes.length ? checkboxIds : currentTSRSelectedAttachmentIds.slice();
+        if(checkboxes.length) return checkboxIds;
+        const selectableIds = new Set(currentTSRAttachmentFiles
+            .filter(file => file?.selectable !== false)
+            .map(getTSRAttachmentId)
+            .filter(Boolean));
+        return currentTSRSelectedAttachmentIds.filter(id => selectableIds.has(id));
+    }
+
+    function getSelectedTSRAttachmentFiles(){
+        const selectedIds = new Set(getSelectedTSRAttachmentIds());
+        return currentTSRAttachmentFiles.filter(file => selectedIds.has(getTSRAttachmentId(file)));
+    }
+
+    function getSelectedTSREmailMode(){
+        const selectedFiles = getSelectedTSRAttachmentFiles();
+        const hasTSR = selectedFiles.some(file => Boolean(file?.is_tsr) || file?.attachment_type === 'tsr');
+        const hasCalibration = selectedFiles.some(file => ['calibration_report', 'calibration_certificate'].includes(String(file?.source_type || '')));
+        if(hasTSR) return hasCalibration ? 'mixed' : 'tsr';
+        return hasCalibration ? 'calibration_only' : 'supporting_only';
+    }
+
+    function selectedTSRSubjectScenarioIsRequired(){
+        return currentTSRSubjectScenarioRequired && getSelectedTSREmailMode() !== 'calibration_only';
+    }
+
+    function updateTSRSubjectScenarioVisibility(){
+        const panel = document.getElementById('tsr-subject-scenario-panel');
+        const select = document.getElementById('tsr-email-subject-scenario');
+        if(!panel || !select) return;
+        if(!currentTSRSubjectScenarioRequired || getSelectedTSREmailMode() === 'calibration_only'){
+            panel.classList.add('d-none');
+            return;
+        }
+        panel.classList.remove('d-none');
     }
 
     function updateTSRAttachmentSelection(invalidate=true){
@@ -15746,11 +15798,12 @@ if(shift.engineers){
             summaryEl.classList.toggle('text-danger', !count && total > 0);
         }
 
-        const hasFiles = total > 0;
         ['tsr-select-unsent-btn', 'tsr-select-all-btn'].forEach(id => {
             const button = document.getElementById(id);
-            if(button) button.disabled = !hasFiles;
+            if(button) button.disabled = !currentTSRAttachmentFiles.some(file => file?.selectable !== false);
         });
+
+        updateTSRSubjectScenarioVisibility();
 
         const previewBtn = document.getElementById('tsr-preview-email-btn');
         if(previewBtn){
@@ -15760,7 +15813,7 @@ if(shift.engineers){
         if(sendBtn){
             sendBtn.disabled = !currentTSRAttachmentManifestSignature
                 || !count
-                || (currentTSRSubjectScenarioRequired && !getSelectedTSRSubjectScenario());
+                || (selectedTSRSubjectScenarioIsRequired() && !getSelectedTSRSubjectScenario());
         }
 
         if(invalidate){
@@ -15775,18 +15828,18 @@ if(shift.engineers){
 
     function selectTSRUnsentFiles(){
         const unsentIds = new Set(currentTSRAttachmentFiles
-            .filter(file => !file?.was_sent && !file?.last_emailed_at)
+            .filter(file => file?.selectable !== false && !file?.was_sent && !file?.last_emailed_at)
             .map(getTSRAttachmentId)
             .filter(Boolean));
         document.querySelectorAll('#tsr-attachment-list input[data-tsr-attachment-id]').forEach(input => {
-            input.checked = unsentIds.has(Number(input.dataset.tsrAttachmentId));
+            input.checked = !input.disabled && unsentIds.has(Number(input.dataset.tsrAttachmentId));
         });
         updateTSRAttachmentSelection(true);
     }
 
     function selectAllTSRFiles(){
         document.querySelectorAll('#tsr-attachment-list input[data-tsr-attachment-id]').forEach(input => {
-            input.checked = true;
+            input.checked = !input.disabled;
         });
         updateTSRAttachmentSelection(true);
     }
@@ -15801,11 +15854,15 @@ if(shift.engineers){
             const previousIds = new Set(currentTSRSelectedAttachmentIds);
             currentTSRAttachmentFiles = normalizedFiles.slice();
             const availableIds = new Set(normalizedFiles.map(getTSRAttachmentId).filter(Boolean));
-            const retainedIds = Array.from(previousIds).filter(id => availableIds.has(id));
+            const selectableIds = new Set(normalizedFiles
+                .filter(file => file?.selectable !== false)
+                .map(getTSRAttachmentId)
+                .filter(Boolean));
+            const retainedIds = Array.from(previousIds).filter(id => availableIds.has(id) && selectableIds.has(id));
             currentTSRSelectedAttachmentIds = retainedIds.length
                 ? retainedIds
                 : normalizedFiles
-                    .filter(file => !file?.was_sent && !file?.last_emailed_at)
+                    .filter(file => file?.selectable !== false && !file?.was_sent && !file?.last_emailed_at)
                     .map(getTSRAttachmentId)
                     .filter(Boolean);
         }
@@ -15832,12 +15889,16 @@ if(shift.engineers){
             const revisionLabel = file.revision_no && Number(file.revision_no) > 1 ? `REV${Number(file.revision_no)}` : '';
             const sourceIcon = file.source_type === 'generated'
                 ? 'fa-file-circle-check'
-                : (file.source_type === 'supporting_image' ? 'fa-file-image' : 'fa-file-arrow-up');
+                : (file.source_type === 'calibration_report' ? 'fa-file-pdf'
+                    : (file.source_type === 'calibration_certificate' ? 'fa-certificate'
+                        : (file.source_type === 'supporting_image' ? 'fa-file-image' : 'fa-file-arrow-up')));
             const previewUrl = file.preview_url || (file.id ? `/preview_tsr_archive_file/${encodeURIComponent(file.id)}` : '');
             const previewButton = previewUrl
                 ? `<a class="btn btn-outline-primary btn-sm tsr-attachment-preview-btn" href="${escapeHtml(previewUrl)}" target="_blank" rel="noopener"><i class="fa-solid fa-eye me-1"></i>Preview</a>`
                 : '<button type="button" class="btn btn-outline-secondary btn-sm tsr-attachment-preview-btn" disabled><i class="fa-solid fa-eye-slash me-1"></i>No Preview</button>';
             const attachmentId = getTSRAttachmentId(file);
+            const isSelectable = file.selectable !== false;
+            const disabledReason = String(file.disabled_reason || 'Calibration files can only be sent by schedule managers.').trim();
             const wasSent = Boolean(file.was_sent || file.last_emailed_at);
             const sentDate = wasSent && file.last_emailed_at
                 ? new Date(file.last_emailed_at).toLocaleString(undefined, {dateStyle: 'medium', timeStyle: 'short'})
@@ -15846,14 +15907,17 @@ if(shift.engineers){
                 ? `<span class="tsr-attachment-row-status" title="Sent ${escapeHtml(sentDate || 'previously')}" aria-label="Sent ${escapeHtml(sentDate || 'previously')}"><i class="fa-solid fa-check"></i>Sent${sentDate ? ` <small>${escapeHtml(sentDate)}</small>` : ''}</span>`
                 : '<span class="tsr-attachment-row-status" style="background:#f1f5f9;color:#475569;" aria-label="Unsent">Unsent</span>';
             const checkbox = isComposeList && attachmentId
-                ? `<input class="tsr-attachment-row-checkbox" type="checkbox" data-tsr-attachment-id="${attachmentId}" data-was-sent="${wasSent ? '1' : '0'}" ${currentTSRSelectedAttachmentIds.includes(attachmentId) ? 'checked' : ''} onchange="handleTSRAttachmentSelectionChange()" aria-label="Select ${escapeHtml(displayName)} for Service Files email" title="${wasSent ? 'Select to intentionally resend this file' : 'Select this service file'}">`
+                ? `<input class="tsr-attachment-row-checkbox" type="checkbox" data-tsr-attachment-id="${attachmentId}" data-was-sent="${wasSent ? '1' : '0'}" ${isSelectable && currentTSRSelectedAttachmentIds.includes(attachmentId) ? 'checked' : ''} ${isSelectable ? '' : 'disabled'} onchange="handleTSRAttachmentSelectionChange()" aria-label="Select ${escapeHtml(displayName)} for Service Files email" title="${isSelectable ? (wasSent ? 'Select to intentionally resend this file' : 'Select this service file') : escapeHtml(disabledReason)}">`
+                : '';
+            const disabledLabel = !isSelectable
+                ? `<span class="tsr-attachment-row-disabled" title="${escapeHtml(disabledReason)}" aria-label="${escapeHtml(disabledReason)}"><i class="fa-solid fa-lock me-1"></i>${escapeHtml(disabledReason)}</span>`
                 : '';
 
             return `
-                <div class="tsr-attachment-row ${wasSent ? 'is-sent' : ''} ${isComposeList ? '' : 'is-preview'}">
+                <div class="tsr-attachment-row ${wasSent ? 'is-sent' : ''} ${!isSelectable ? 'is-disabled' : ''} ${isComposeList ? '' : 'is-preview'}">
                     ${checkbox}
                     <div class="tsr-attachment-row-main">
-                        <div class="tsr-attachment-name">${escapeHtml(displayName)} ${statusLabel}</div>
+                        <div class="tsr-attachment-name">${escapeHtml(displayName)} ${statusLabel} ${disabledLabel}</div>
                         <div class="tsr-attachment-meta">
                             <span class="tsr-attachment-source"><i class="fa-solid ${sourceIcon} me-1"></i>${escapeHtml(sourceLabel)}</span>
                             ${revisionLabel ? `<span>${escapeHtml(revisionLabel)}</span>` : ''}
@@ -16655,6 +16719,7 @@ async function openTSRClientEmailModal(shiftId){
                 const attachmentCount = Number(document.getElementById('tsr-attachment-count')?.textContent || 0);
                 sendBtn.disabled = !currentTSRAttachmentManifestSignature
                     || !getSelectedTSRAttachmentIds().length
+                    || (selectedTSRSubjectScenarioIsRequired() && !getSelectedTSRSubjectScenario())
                     || attachmentCount < 1;
                 resetTSRSendConfirmState();
             }

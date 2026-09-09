@@ -160,7 +160,7 @@ class CalibrationReportPdfTests(unittest.TestCase):
             self.assertEqual(marker["pdf_filename"], pdf_file.original_filename)
             self.assertEqual(
                 app_module.get_user_visible_shift_file_records(source_file.shift),
-                [pdf_file],
+                [],
             )
 
     def test_conversion_failure_persists_retry_state_without_removing_source(self):

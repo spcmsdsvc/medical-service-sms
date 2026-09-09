@@ -166,6 +166,19 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
                 converted_at=datetime.now(),
                 updated_at=datetime.now(),
             ))
+            cls.calibration_report_approval = app_module.CalibrationCertificateApproval(
+                shift_id=cls.shift.id,
+                online_tsr_submission_id=cls.submission.id,
+                requester_user_id=cls.user.id,
+                revision_no=1,
+                is_latest=True,
+                status='Approved',
+                certificate_number=f'TL-CERT-{cls.suffix}',
+                mapped_data_json='{}',
+                template_sha256='timeline-test-template',
+                unsigned_artifact_path=f'timeline-certificates/{cls.suffix}.pdf',
+            )
+            app_module.db.session.add(cls.calibration_report_approval)
             app_module.db.session.commit()
 
             # An HR schedule viewer: no Engineer profile, so is_hr_schedule_only_user()
@@ -191,6 +204,7 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
             cls.calibration_report_file_id = cls.calibration_report_file.id
             cls.calibration_report_source_file_id = cls.calibration_report_source_file.id
             cls.submission_id = cls.submission.id
+            cls.calibration_report_approval_id = cls.calibration_report_approval.id
 
     @classmethod
     def tearDownClass(cls):
@@ -361,6 +375,115 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
         # unattached fixture.
         engineer_row = self._timeline_row_for(self.user_id)
         self.assertEqual(len(engineer_row['file_details']), 3)
+
+    def test_report_visibility_requires_the_exact_latest_approved_calibration_approval(self):
+        client = self._client_for_user()
+        with app_module.app.app_context():
+            shift = app_module.db.session.get(app_module.Shift, self.shift_id)
+            approval = app_module.db.session.get(
+                app_module.CalibrationCertificateApproval,
+                self.calibration_report_approval_id,
+            )
+            original_status = approval.status
+            original_latest = approval.is_latest
+            try:
+                for status, is_latest in (
+                    ('Pending', True),
+                    ('Returned', True),
+                    ('Approved', False),
+                ):
+                    approval.status = status
+                    approval.is_latest = is_latest
+                    app_module.db.session.commit()
+                    visible_ids = {
+                        file_record.id
+                        for file_record in app_module.get_user_visible_shift_file_records(shift)
+                    }
+                    self.assertNotIn(
+                        self.calibration_report_file_id,
+                        visible_ids,
+                        f'{status} / latest={is_latest} report leaked into schedule files',
+                    )
+                    timeline_row = self._find_shift(
+                        client.get('/get_timeline_data?offset=0&branch=ALL').get_json(),
+                        self.shift_id,
+                    )
+                    self.assertNotIn(
+                        self.calibration_report_file_id,
+                        {item['id'] for item in timeline_row['file_details']},
+                    )
+                    details = client.get(f'/get_shift_details/{self.shift_id}').get_json()['shift']
+                    self.assertNotIn(
+                        self.calibration_report_file_id,
+                        {item['id'] for item in details['file_details']},
+                    )
+
+                approval.status = 'Approved'
+                approval.is_latest = True
+                app_module.db.session.commit()
+                visible_ids = {
+                    file_record.id
+                    for file_record in app_module.get_user_visible_shift_file_records(shift)
+                }
+                self.assertIn(self.calibration_report_file_id, visible_ids)
+                timeline_row = self._find_shift(
+                    client.get('/get_timeline_data?offset=0&branch=ALL').get_json(),
+                    self.shift_id,
+                )
+                self.assertIn(
+                    self.calibration_report_file_id,
+                    {item['id'] for item in timeline_row['file_details']},
+                )
+                details = client.get(f'/get_shift_details/{self.shift_id}').get_json()['shift']
+                self.assertIn(
+                    self.calibration_report_file_id,
+                    {item['id'] for item in details['file_details']},
+                )
+
+                app_module.db.session.delete(approval)
+                app_module.db.session.commit()
+                visible_ids = {
+                    file_record.id
+                    for file_record in app_module.get_user_visible_shift_file_records(shift)
+                }
+                self.assertNotIn(self.calibration_report_file_id, visible_ids)
+                timeline_row = self._find_shift(
+                    client.get('/get_timeline_data?offset=0&branch=ALL').get_json(),
+                    self.shift_id,
+                )
+                self.assertNotIn(
+                    self.calibration_report_file_id,
+                    {item['id'] for item in timeline_row['file_details']},
+                )
+                details = client.get(f'/get_shift_details/{self.shift_id}').get_json()['shift']
+                self.assertNotIn(
+                    self.calibration_report_file_id,
+                    {item['id'] for item in details['file_details']},
+                )
+            finally:
+                restored = app_module.db.session.get(
+                    app_module.CalibrationCertificateApproval,
+                    self.calibration_report_approval_id,
+                )
+                if restored is None:
+                    restored = app_module.CalibrationCertificateApproval(
+                        id=self.calibration_report_approval_id,
+                        shift_id=self.shift_id,
+                        online_tsr_submission_id=self.submission_id,
+                        requester_user_id=self.user_id,
+                        revision_no=1,
+                        is_latest=original_latest,
+                        status=original_status,
+                        certificate_number=f'TL-CERT-{self.suffix}',
+                        mapped_data_json='{}',
+                        template_sha256='timeline-test-template',
+                        unsigned_artifact_path=f'timeline-certificates/{self.suffix}.pdf',
+                    )
+                    app_module.db.session.add(restored)
+                else:
+                    restored.status = original_status
+                    restored.is_latest = original_latest
+                app_module.db.session.commit()
 
 
 if __name__ == '__main__':

@@ -15903,6 +15903,22 @@ def is_system_generated_calibration_report_pdf_file(file_rec):
     )
 
 
+def calibration_report_pdf_artifact_is_generated(file_rec):
+    """Identify a conversion-owned report PDF regardless of current conversion state."""
+    if not file_rec or not calibration_report_filename_is_pdf(get_shift_file_display_name(file_rec)):
+        return False
+    job = calibration_report_conversion_for_pdf(getattr(file_rec, 'id', None))
+    if not job or clean_int(job.pdf_shift_file_id) != clean_int(file_rec.id):
+        return False
+    source_file = db.session.get(ShiftFile, job.source_shift_file_id)
+    return bool(
+        source_file and
+        calibration_report_source_file_is_private(source_file) and
+        clean_int(source_file.shift_id) == clean_int(file_rec.shift_id) and
+        clean_int(source_file.online_tsr_submission_id) == clean_int(file_rec.online_tsr_submission_id)
+    )
+
+
 def calibration_report_conversion_state(source_file_id):
     """Serialize conversion state without exposing the retained DOCX source."""
     source_file_id = clean_int(source_file_id)
@@ -17464,6 +17480,104 @@ def calibration_certificate_approval_map_for_files(file_records):
     return result
 
 
+def calibration_report_approval_map_for_files(file_records):
+    """Resolve generated Calibration Report PDFs to their exact combined approval.
+
+    A report PDF is identified by the durable conversion row and the retained
+    private source, then paired with the approval for the same TSR submission.
+    A shift-level approval lookup is intentionally not sufficient because an
+    older approved revision must disappear as soon as a newer revision exists.
+    """
+    file_ids = {
+        clean_int(getattr(file_record, 'id', None))
+        for file_record in (file_records or [])
+        if clean_int(getattr(file_record, 'id', None))
+    }
+    if not file_ids or not has_app_context():
+        return {}
+
+    report_links = {}
+    for file_record in (file_records or []):
+        file_id = clean_int(getattr(file_record, 'id', None))
+        if not file_id or file_id not in file_ids:
+            continue
+        if not calibration_report_filename_is_pdf(get_shift_file_display_name(file_record)):
+            continue
+        conversion = calibration_report_conversion_for_pdf(file_id)
+        if (
+            not conversion or
+            clean_str(getattr(conversion, 'state', None)) != 'ready' or
+            clean_int(getattr(conversion, 'pdf_shift_file_id', None)) != file_id
+        ):
+            continue
+        source_file = db.session.get(
+            ShiftFile,
+            clean_int(getattr(conversion, 'source_shift_file_id', None)),
+        )
+        submission_id = clean_int(getattr(source_file, 'online_tsr_submission_id', None))
+        if (
+            not source_file or
+            not submission_id or
+            not calibration_report_source_file_is_private(source_file) or
+            clean_int(getattr(source_file, 'shift_id', None)) != clean_int(getattr(file_record, 'shift_id', None)) or
+            clean_int(getattr(file_record, 'online_tsr_submission_id', None)) != submission_id
+        ):
+            continue
+        report_links[file_id] = (
+            clean_int(getattr(file_record, 'shift_id', None)),
+            submission_id,
+        )
+
+    if not report_links:
+        return {}
+
+    try:
+        ensure_calibration_certificate_approval_table()
+        shift_ids = {link[0] for link in report_links.values() if link[0]}
+        submission_ids = {link[1] for link in report_links.values() if link[1]}
+        approvals = CalibrationCertificateApproval.query.filter(
+            CalibrationCertificateApproval.shift_id.in_(shift_ids),
+            CalibrationCertificateApproval.online_tsr_submission_id.in_(submission_ids),
+        ).all()
+    except Exception as approval_lookup_error:
+        print(
+            f'[CALIBRATION-REPORT] Approval lookup skipped: {approval_lookup_error}',
+            flush=True,
+        )
+        return {}
+
+    approvals_by_submission = {
+        (
+            clean_int(getattr(approval, 'shift_id', None)),
+            clean_int(getattr(approval, 'online_tsr_submission_id', None)),
+        ): approval
+        for approval in approvals
+    }
+    return {
+        file_id: approvals_by_submission.get(link)
+        for file_id, link in report_links.items()
+        if approvals_by_submission.get(link)
+    }
+
+
+def calibration_report_file_is_latest_approved(file_record, approval_map=None):
+    """Return whether one generated report PDF is the current approved artifact."""
+    if not file_record:
+        return False
+    resolved_map = (
+        calibration_report_approval_map_for_files([file_record])
+        if approval_map is None else approval_map
+    )
+    approval = resolved_map.get(clean_int(getattr(file_record, 'id', None)))
+    if not approval or approval.status != 'Approved' or not bool(approval.is_latest):
+        return False
+    submission = db.session.get(
+        OnlineTsrSubmission,
+        clean_int(getattr(approval, 'online_tsr_submission_id', None)),
+    )
+    return bool(submission and getattr(submission, 'is_latest', True))
+
+
 def calibration_certificate_mapped_snapshot(raw_snapshot):
     """Return a complete immutable eight-field snapshot, or ``None``."""
     try:
@@ -17545,9 +17659,9 @@ def submit_calibration_certificate_for_submission(submission):
         requester = db.session.get(User, submission.submitted_by_user_id) if submission.submitted_by_user_id else None
         approvers = get_assigned_approvers_for_requester(submission.submitted_by_user_id, 'calibration_certificate') if submission.submitted_by_user_id else []
         for approver_user in approvers:
-            create_system_notification(approver_user.id, 'Calibration Certificate awaiting approval', f'{values["Textfield"]} is ready for review.', module='calibration_certificate', record_id=approval.id, target_url=url_for('approvals_page'), metadata={'event': 'submitted', 'approval_id': approval.id})
+            create_system_notification(approver_user.id, 'Calibration Report & Certificate awaiting approval', f'{values["Textfield"]} is ready for report and certificate review.', module='calibration_certificate', record_id=approval.id, target_url=url_for('approvals_page'), metadata={'event': 'submitted', 'approval_id': approval.id})
         if requester:
-            create_system_notification(requester.id, 'Calibration Certificate submitted', 'Your Calibration Certificate is awaiting approver assignment.' if not approvers else 'Your Calibration Certificate is pending approval.', module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'submitted', 'approval_id': approval.id})
+            create_system_notification(requester.id, 'Calibration Report & Certificate submitted', 'Your Calibration Report & Certificate is awaiting approver assignment.' if not approvers else 'Your Calibration Report & Certificate is pending approval.', module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'submitted', 'approval_id': approval.id})
         db.session.commit()
         return {'ok': True, 'duplicate': False, 'approval': approval}
     except IntegrityError:
@@ -17662,7 +17776,7 @@ def get_calibration_certificate_approval(approval_id):
     ensure_calibration_certificate_approval_table()
     approval = db.session.get(CalibrationCertificateApproval, approval_id)
     if not approval:
-        return jsonify({'success': False, 'message': 'Calibration Certificate approval not found.'}), 404
+        return jsonify({'success': False, 'message': 'Calibration Report & Certificate approval not found.'}), 404
     if not (calibration_certificate_requester_can_view(approval) or calibration_certificate_approver_can_act(approval) or is_admin_authorized()):
         return denied('You are not allowed to view this certificate.')
     return jsonify({'success': True, 'approval': calibration_certificate_approval_to_dict(approval)})
@@ -17768,21 +17882,21 @@ def approve_calibration_certificate(approval_id):
     ensure_calibration_certificate_approval_table()
     approval = db.session.get(CalibrationCertificateApproval, approval_id)
     if not approval:
-        return jsonify({'success': False, 'message': 'Calibration Certificate approval not found.'}), 404
+        return jsonify({'success': False, 'message': 'Calibration Report & Certificate approval not found.'}), 404
     if not calibration_certificate_approver_can_act(approval):
-        return denied('You are not an assigned Calibration Certificate approver.')
+        return denied('You are not an assigned Calibration Report & Certificate approver.')
     if approval.status != 'Pending' or not approval.is_latest:
-        return jsonify({'success': False, 'message': 'This certificate is stale, superseded, or already decided.'}), 409
+        return jsonify({'success': False, 'message': 'This Calibration Report & Certificate is stale, superseded, or already decided.'}), 409
     mapped_snapshot = calibration_certificate_mapped_snapshot(approval.mapped_data_json)
     if mapped_snapshot is None:
         return jsonify({
             'success': False,
             'code': 'mapped_snapshot_incomplete',
-            'message': 'This Pending Calibration Certificate has an incomplete historical mapped snapshot. It remains Pending; return it for correction and submit a new certificate.',
+            'message': 'This Pending Calibration Report & Certificate has an incomplete historical mapped snapshot. It remains Pending; return it for correction and submit a new revision.',
             'retryable': True,
         }), 400
     signature = get_user_signature_snapshot(current_user)
-    required = approval_signature_required_response(current_user, 'Calibration Certificate')
+    required = approval_signature_required_response(current_user, 'Calibration Report & Certificate')
     if required:
         return required
     payload = parse_online_tsr_payload_json(approval.online_tsr_submission)
@@ -17815,7 +17929,7 @@ def approve_calibration_certificate(approval_id):
     }, synchronize_session=False)
     if updated != 1:
         db.session.rollback()
-        return jsonify({'success': False, 'message': 'This certificate was already decided by another approver.'}), 409
+        return jsonify({'success': False, 'message': 'This Calibration Report & Certificate was already decided by another approver.'}), 409
     safe_number = secure_filename(approval.certificate_number) or f'CERT-{approval.id}'
     revision_suffix = f'_REV{approval.revision_no}' if (approval.revision_no or 1) > 1 else ''
     display_name = f'Calibration_Certificate_{safe_number}{revision_suffix}.pdf'
@@ -17851,8 +17965,8 @@ def approve_calibration_certificate(approval_id):
         record_universal_approval_audit('calibration_certificate', approval.id, 'approved', actor_user=current_user, status_from='Pending', status_to='Approved', metadata={'signed_shift_file_id': file_rec.id, 'no_signature_shift_file_id': no_signature_file_rec.id, 'revision_no': approval.revision_no})
         requester = db.session.get(User, approval.requester_user_id) if approval.requester_user_id else None
         if requester:
-            create_system_notification(requester.id, 'Calibration Certificate approved', f'{approval.certificate_number} was approved by {approver_name}.', module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'approved', 'approval_id': approval.id})
-        db.session.add(ActivityLog(user=approver_name or current_user.username, action=f'Approved Calibration Certificate {approval.certificate_number}'))
+            create_system_notification(requester.id, 'Calibration Report & Certificate approved', f'{approval.certificate_number} report and certificate were approved by {approver_name}.', module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'approved', 'approval_id': approval.id})
+        db.session.add(ActivityLog(user=approver_name or current_user.username, action=f'Approved Calibration Report & Certificate {approval.certificate_number}'))
         db.session.commit()
     except Exception as approval_error:
         db.session.rollback()
@@ -17873,15 +17987,15 @@ def return_calibration_certificate(approval_id):
     ensure_calibration_certificate_approval_table()
     approval = db.session.get(CalibrationCertificateApproval, approval_id)
     if not approval:
-        return jsonify({'success': False, 'message': 'Calibration Certificate approval not found.'}), 404
+        return jsonify({'success': False, 'message': 'Calibration Report & Certificate approval not found.'}), 404
     if not calibration_certificate_approver_can_act(approval):
-        return denied('You are not an assigned Calibration Certificate approver.')
+        return denied('You are not an assigned Calibration Report & Certificate approver.')
     if approval.status != 'Pending' or not approval.is_latest:
-        return jsonify({'success': False, 'message': 'This certificate is stale, superseded, or already decided.'}), 409
+        return jsonify({'success': False, 'message': 'This Calibration Report & Certificate is stale, superseded, or already decided.'}), 409
     payload = request.get_json(silent=True) or {}
     remarks = clean_str(payload.get('remarks') or request.form.get('remarks')) or ''
     if not remarks:
-        return jsonify({'success': False, 'message': 'Remarks are required when returning a certificate for correction.'}), 400
+        return jsonify({'success': False, 'message': 'Remarks are required when returning a Calibration Report & Certificate for correction.'}), 400
     updated = CalibrationCertificateApproval.query.filter_by(id=approval.id, status='Pending', is_latest=True).update({
         'status': 'Returned', 'approver_user_id': current_user.id,
         'approver_name_snapshot': approval_user_display_name(current_user),
@@ -17891,12 +18005,24 @@ def return_calibration_certificate(approval_id):
     }, synchronize_session=False)
     if updated != 1:
         db.session.rollback()
-        return jsonify({'success': False, 'message': 'This certificate was already decided by another approver.'}), 409
+        return jsonify({'success': False, 'message': 'This Calibration Report & Certificate was already decided by another approver.'}), 409
     record_universal_approval_audit('calibration_certificate', approval.id, 'returned', actor_user=current_user, status_from='Pending', status_to='Returned', remarks=remarks)
     requester = db.session.get(User, approval.requester_user_id) if approval.requester_user_id else None
     if requester:
-        create_system_notification(requester.id, 'Calibration Certificate returned for correction', remarks[:300], module='calibration_certificate', record_id=approval.id, target_url=url_for('offline_tsr_page'), metadata={'event': 'returned', 'approval_id': approval.id})
-    db.session.add(ActivityLog(user=approval_user_display_name(current_user) or current_user.username, action=f'Returned Calibration Certificate {approval.certificate_number} for correction'))
+        create_system_notification(
+            requester.id,
+            'Calibration Report & Certificate returned for correction',
+            remarks[:300],
+            module='calibration_certificate',
+            record_id=approval.id,
+            target_url=url_for(
+                'offline_tsr_page',
+                edit_submission_id=approval.online_tsr_submission_id,
+                mode='correct',
+            ),
+            metadata={'event': 'returned', 'approval_id': approval.id},
+        )
+    db.session.add(ActivityLog(user=approval_user_display_name(current_user) or current_user.username, action=f'Returned Calibration Report & Certificate {approval.certificate_number} for correction'))
     db.session.commit()
     return jsonify({'success': True, 'approval': calibration_certificate_approval_to_dict(approval)})
 
@@ -18631,7 +18757,7 @@ def save_tsr_knowledge_entry():
 @app.route('/service-worker.js')
 def pwa_service_worker():
     """Service worker for PWA install shell, critical page caching, and offline fallback."""
-    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v150-mobile-navigation-inventory-stability';
+    sw = r"""const CACHE_VERSION = 'medical-service-pwa-offline-navigation-v151-calibration-approval-gated-service-documents';
 const APP_SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
@@ -30879,10 +31005,10 @@ def approval_center_module_catalog():
     modules = [
         {
             'key': 'calibration_certificate',
-            'label': 'Calibration Certificates',
+            'label': 'Calibration Report & Certificate',
             'status': 'active',
             'enabled': True,
-            'description': 'Finalized Calibration Certificates awaiting routed approval.'
+            'description': 'Finalized Calibration Reports & Certificates awaiting routed approval.'
         },
         {
             'key': 'travel_request',
@@ -40857,10 +40983,27 @@ def redact_timeline_payload_for_hr(payload):
     return redacted
 
 
-def timeline_file_detail_payload(file_record, certificate_approval_map=None):
+def timeline_file_detail_payload(
+    file_record,
+    certificate_approval_map=None,
+    calibration_report_approval_map=None,
+):
     """Serialize one schedule file with explicit schedule-artifact identity flags."""
     is_tsr = shift_file_is_recognized_tsr(file_record)
-    is_calibration_report = is_system_generated_calibration_report_pdf_file(file_record)
+    report_candidate = calibration_report_pdf_artifact_is_generated(file_record)
+    if report_candidate and calibration_report_approval_map is None:
+        calibration_report_approval_map = calibration_report_approval_map_for_files([file_record])
+    is_calibration_report = bool(
+        report_candidate and
+        calibration_report_file_is_latest_approved(
+            file_record,
+            calibration_report_approval_map,
+        )
+    )
+    report_approval = (
+        calibration_report_approval_map.get(clean_int(getattr(file_record, 'id', None)))
+        if calibration_report_approval_map else None
+    )
     if certificate_approval_map is None:
         no_signature_approval = calibration_certificate_no_signature_approval_for_file(file_record)
         certificate_approval = no_signature_approval or calibration_certificate_approval_for_shift_file(file_record)
@@ -40893,6 +41036,8 @@ def timeline_file_detail_payload(file_record, certificate_approval_map=None):
         'display_name': get_shift_file_display_name(file_record),
         'is_tsr': is_tsr,
         'is_calibration_report': is_calibration_report,
+        'calibration_approval_id': clean_int(getattr(report_approval, 'id', None)) if report_approval else None,
+        'calibration_approval_status': clean_str(getattr(report_approval, 'status', None)) if report_approval else '',
         'certificate_kind': 'no_signature' if is_no_signature else ('signed' if certificate_approval else ''),
         'is_managed_certificate': bool(certificate_approval),
         'is_no_signature': is_no_signature,
@@ -40911,11 +41056,24 @@ def timeline_file_detail_payload(file_record, certificate_approval_map=None):
     }
 
 
-def get_user_visible_shift_file_records(shift):
-    """Return schedule files excluding retained private Calibration Report DOCX sources."""
+def get_user_visible_shift_file_records(shift, calibration_report_approval_map=None):
+    """Return schedule files excluding private or unapproved Calibration Reports."""
+    if calibration_report_approval_map is None:
+        calibration_report_approval_map = calibration_report_approval_map_for_files(
+            getattr(shift, 'files', []) or []
+        )
     return [
         file_record for file_record in (getattr(shift, 'files', []) or [])
-        if not calibration_report_source_file_is_private(file_record)
+        if (
+            not calibration_report_source_file_is_private(file_record) and
+            (
+                not calibration_report_pdf_artifact_is_generated(file_record) or
+                calibration_report_file_is_latest_approved(
+                    file_record,
+                    calibration_report_approval_map,
+                )
+            )
+        )
     ]
 
 
@@ -40998,6 +41156,10 @@ def get_timeline_data():
         weekly_file_records = [file_record for shift in weekly_shifts for file_record in shift.files]
         certificate_approval_map = (
             calibration_certificate_approval_map_for_files(weekly_file_records)
+            if not timeline_lite else {}
+        )
+        calibration_report_approval_map = (
+            calibration_report_approval_map_for_files(weekly_file_records)
             if not timeline_lite else {}
         )
 
@@ -41097,10 +41259,23 @@ def get_timeline_data():
                 'status': shift.status,
                 # Keep default legacy payload unchanged.
                 # When timeline_lite=true, skip heavy per-file metadata so the grid can load faster.
-                'files': [] if timeline_lite else [get_shift_file_display_name(file_record) or file_record.filename for file_record in get_user_visible_shift_file_records(shift)],
+                'files': [] if timeline_lite else [
+                    get_shift_file_display_name(file_record) or file_record.filename
+                    for file_record in get_user_visible_shift_file_records(
+                        shift,
+                        calibration_report_approval_map,
+                    )
+                ],
                 'file_details': [] if timeline_lite else [
-                    timeline_file_detail_payload(file_record, certificate_approval_map)
-                    for file_record in get_user_visible_shift_file_records(shift)
+                    timeline_file_detail_payload(
+                        file_record,
+                        certificate_approval_map,
+                        calibration_report_approval_map,
+                    )
+                    for file_record in get_user_visible_shift_file_records(
+                        shift,
+                        calibration_report_approval_map,
+                    )
                 ],
                 'service_file_delivery': service_file_delivery,
                 'has_linked_tsr': bool(service_file_tsr_total),
@@ -41232,6 +41407,7 @@ def get_shift_details(shift_id):
     travel_request_rec = db.session.get(TravelRequest, travel_request_id) if is_travel_block and travel_request_id else None
     travel_suggestions = build_travel_request_schedule_suggestions(travel_request_rec) if travel_request_rec else []
     certificate_approval_map = calibration_certificate_approval_map_for_files(shift.files)
+    calibration_report_approval_map = calibration_report_approval_map_for_files(shift.files)
     service_file_delivery = get_shift_service_file_delivery_summary(shift)
 
     return jsonify({
@@ -41247,10 +41423,23 @@ def get_shift_details(shift_id):
             'client_id': shift.client_id,
             'product_id': shift.product_id,
             'status': shift.status,
-            'files': [get_shift_file_display_name(file_record) or file_record.filename for file_record in get_user_visible_shift_file_records(shift)],
+            'files': [
+                get_shift_file_display_name(file_record) or file_record.filename
+                for file_record in get_user_visible_shift_file_records(
+                    shift,
+                    calibration_report_approval_map,
+                )
+            ],
             'file_details': [
-                timeline_file_detail_payload(file_record, certificate_approval_map)
-                for file_record in get_user_visible_shift_file_records(shift)
+                timeline_file_detail_payload(
+                    file_record,
+                    certificate_approval_map,
+                    calibration_report_approval_map,
+                )
+                for file_record in get_user_visible_shift_file_records(
+                    shift,
+                    calibration_report_approval_map,
+                )
             ],
             'manual_upload_count': get_linked_schedule_manual_upload_count(shift),
             'manual_upload_limit': SCHEDULE_MANUAL_UPLOAD_LIMIT,
@@ -47800,6 +47989,11 @@ def get_tsr_files_for_shift(shift):
                 continue
             if calibration_report_source_file_is_private(file_rec):
                 continue
+            # Conversion-owned report PDFs are handled by the approval-aware
+            # calibration manifest below. Never let a stale/pending/failed
+            # report be detected as a TSR or generic supporting PDF.
+            if calibration_report_pdf_artifact_is_generated(file_rec):
+                continue
             if clean_int(getattr(file_rec, 'id', None)) in legacy_suppressed_primary_ids:
                 continue
 
@@ -47949,23 +48143,21 @@ def get_tsr_files_for_shift(shift):
 
 def get_linked_schedule_calibration_report_file_state(candidate_shifts):
     """Return all/latest user-facing Calibration Report PDF ids and source states."""
+    empty_state = {
+        'all_ids': set(), 'latest_ids': set(), 'metadata': {},
+        'source_ids': set(), 'latest_source_ids': set(),
+        'pending_latest_source_ids': set(), 'failed_latest_source_ids': set(),
+        'approval_metadata': {},
+    }
     shift_ids = [
         clean_int(getattr(candidate, 'id', None))
         for candidate in candidate_shifts or []
         if clean_int(getattr(candidate, 'id', None))
     ]
     if not shift_ids:
-        return {
-            'all_ids': set(), 'latest_ids': set(), 'metadata': {},
-            'source_ids': set(), 'latest_source_ids': set(),
-            'pending_latest_source_ids': set(), 'failed_latest_source_ids': set(),
-        }
+        return empty_state
     if not has_app_context():
-        return {
-            'all_ids': set(), 'latest_ids': set(), 'metadata': {},
-            'source_ids': set(), 'latest_source_ids': set(),
-            'pending_latest_source_ids': set(), 'failed_latest_source_ids': set(),
-        }
+        return empty_state
 
     all_ids = set()
     latest_ids = set()
@@ -47974,9 +48166,35 @@ def get_linked_schedule_calibration_report_file_state(candidate_shifts):
     latest_source_ids = set()
     pending_latest_source_ids = set()
     failed_latest_source_ids = set()
+    approval_metadata = {}
     submissions = OnlineTsrSubmission.query.filter(
         OnlineTsrSubmission.shift_id.in_(shift_ids)
     ).all()
+    approvals_by_submission = {}
+    try:
+        ensure_calibration_certificate_approval_table()
+        submission_ids = [
+            clean_int(getattr(submission, 'id', None))
+            for submission in submissions
+            if clean_int(getattr(submission, 'id', None))
+        ]
+        if submission_ids:
+            approvals = CalibrationCertificateApproval.query.filter(
+                CalibrationCertificateApproval.shift_id.in_(shift_ids),
+                CalibrationCertificateApproval.online_tsr_submission_id.in_(submission_ids),
+            ).all()
+            approvals_by_submission = {
+                (
+                    clean_int(getattr(approval, 'shift_id', None)),
+                    clean_int(getattr(approval, 'online_tsr_submission_id', None)),
+                ): approval
+                for approval in approvals
+            }
+    except Exception as approval_state_error:
+        print(
+            f'[EMAIL-CLIENT] Calibration approval state lookup skipped: {approval_state_error}',
+            flush=True,
+        )
     for submission in submissions:
         payload = parse_online_tsr_payload_json(submission)
         marker = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
@@ -47984,9 +48202,18 @@ def get_linked_schedule_calibration_report_file_state(candidate_shifts):
             continue
         source_file_id = clean_int(marker.get('file_id'))
         source_file = db.session.get(ShiftFile, source_file_id) if source_file_id else None
-        if not source_file or not calibration_report_source_file_is_private(source_file):
+        if (
+            not source_file or
+            not calibration_report_source_file_is_private(source_file) or
+            clean_int(getattr(source_file, 'shift_id', None)) != clean_int(getattr(submission, 'shift_id', None)) or
+            clean_int(getattr(source_file, 'online_tsr_submission_id', None)) != clean_int(getattr(submission, 'id', None))
+        ):
             continue
         source_ids.add(source_file_id)
+        approval = approvals_by_submission.get((
+            clean_int(getattr(submission, 'shift_id', None)),
+            clean_int(getattr(submission, 'id', None)),
+        ))
         pdf_file = calibration_report_pdf_file_for_source(source_file_id)
         if not pdf_file:
             continue
@@ -47996,7 +48223,17 @@ def get_linked_schedule_calibration_report_file_state(candidate_shifts):
             'revision_no': clean_int(getattr(submission, 'revision_no', None)) or 1,
             'shift_id': clean_int(getattr(submission, 'shift_id', None)),
             'source_file_id': source_file_id,
+            'approval_id': clean_int(getattr(approval, 'id', None)) if approval else None,
+            'approval_status': clean_str(getattr(approval, 'status', None)) if approval else '',
+            'approval_is_latest': bool(getattr(approval, 'is_latest', False)) if approval else False,
+            'is_latest_approved': bool(
+                approval and
+                approval.status == 'Approved' and
+                bool(approval.is_latest) and
+                bool(getattr(submission, 'is_latest', True))
+            ),
         }
+        approval_metadata[pdf_file_id] = metadata[pdf_file_id]
 
     for shift_id in shift_ids:
         latest_submission = get_latest_online_tsr_submission_for_shift(shift_id)
@@ -48009,7 +48246,18 @@ def get_linked_schedule_calibration_report_file_state(candidate_shifts):
         latest_source_ids.add(latest_source_file_id)
         pdf_file = calibration_report_pdf_file_for_source(latest_source_file_id)
         if pdf_file:
-            latest_ids.add(clean_int(pdf_file.id))
+            latest_pdf_id = clean_int(pdf_file.id)
+            approval = approvals_by_submission.get((
+                clean_int(getattr(latest_submission, 'shift_id', None)),
+                clean_int(getattr(latest_submission, 'id', None)),
+            ))
+            if (
+                approval and
+                approval.status == 'Approved' and
+                bool(approval.is_latest) and
+                bool(getattr(latest_submission, 'is_latest', True))
+            ):
+                latest_ids.add(latest_pdf_id)
             continue
         job = calibration_report_conversion_for_source(latest_source_file_id)
         if job and clean_str(job.state) == 'failed':
@@ -48025,16 +48273,25 @@ def get_linked_schedule_calibration_report_file_state(candidate_shifts):
         'latest_source_ids': latest_source_ids,
         'pending_latest_source_ids': pending_latest_source_ids,
         'failed_latest_source_ids': failed_latest_source_ids,
+        'approval_metadata': approval_metadata,
     }
 
 
-def get_calibration_report_email_block(shift):
+def get_calibration_report_email_block(shift, selected_attachment_ids=None):
     """Return a retryable send error while the latest report PDF is unavailable."""
     if not shift or not has_app_context():
         return None
     state = get_linked_schedule_calibration_report_file_state(
         get_linked_schedule_file_shifts(shift)
     )
+    if selected_attachment_ids is not None:
+        selected_ids = {
+            clean_int(file_id)
+            for file_id in (selected_attachment_ids or [])
+            if clean_int(file_id)
+        }
+        if not selected_ids.intersection(state.get('all_ids') or set()):
+            return None
     failed_ids = state.get('failed_latest_source_ids') or set()
     pending_ids = state.get('pending_latest_source_ids') or set()
     if failed_ids:
@@ -48060,10 +48317,16 @@ def get_linked_schedule_calibration_certificate_file_state(candidate_shifts):
                     'revision_no': approval.revision_no or 1,
                     'status': approval.status,
                     'certificate_kind': 'no_signature',
+                    'approval_id': approval.id,
                 }
             if approval.signed_shift_file_id:
                 state['all_ids'].add(approval.signed_shift_file_id)
-                state['metadata'][approval.signed_shift_file_id] = {'revision_no': approval.revision_no or 1, 'status': approval.status}
+                state['metadata'][approval.signed_shift_file_id] = {
+                    'revision_no': approval.revision_no or 1,
+                    'status': approval.status,
+                    'approval_id': approval.id,
+                    'is_latest': bool(approval.is_latest),
+                }
                 if approval.status == 'Approved' and approval.is_latest:
                     state['latest_ids'].add(approval.signed_shift_file_id)
     except Exception as certificate_email_state_error:
@@ -48071,9 +48334,54 @@ def get_linked_schedule_calibration_certificate_file_state(candidate_shifts):
     return state
 
 
+CALIBRATION_EMAIL_DISABLED_REASON = 'Only schedule managers can send approved calibration files.'
+
+
+def can_select_calibration_service_files(user=None):
+    """Return the server-side authority for sending approved calibration files."""
+    try:
+        return bool(can_manage_any_schedule(user))
+    except RuntimeError:
+        # Pure helper callers outside a request context have no authenticated
+        # account to evaluate. Treat those calls as internal/test composition;
+        # every preview/send route evaluates the real logged-in account.
+        return True
+
+
+def service_file_is_calibration_artifact(file_info):
+    """Identify calibration rows from the canonical attachment manifest."""
+    if not isinstance(file_info, dict):
+        return False
+    return clean_str(file_info.get('source_type')) in {
+        'calibration_report',
+        'calibration_certificate',
+    }
+
+
+def get_service_file_email_mode(selected_attachments):
+    """Classify the selected package without changing ordinary TSR semantics."""
+    selected_attachments = list(selected_attachments or [])
+    has_tsr = any(
+        bool(item.get('is_tsr')) or item.get('attachment_type') == 'tsr'
+        for item in selected_attachments
+        if isinstance(item, dict)
+    )
+    calibration_types = {
+        clean_str(item.get('source_type'))
+        for item in selected_attachments
+        if isinstance(item, dict)
+    }.intersection({'calibration_report', 'calibration_certificate'})
+    if has_tsr:
+        return 'mixed' if calibration_types else 'tsr'
+    if calibration_types:
+        return 'calibration_only'
+    return 'supporting_only'
+
+
 def get_tsr_email_files_for_shift(shift, tsr_files=None):
     """Return recognized TSRs plus supported schedule documents for email."""
     tsr_files = list(tsr_files) if tsr_files is not None else get_tsr_files_for_shift(shift)
+    can_select_calibration = can_select_calibration_service_files()
     tsr_file_ids = {
         clean_int(file_info.get('id')) for file_info in tsr_files
         if clean_int(file_info.get('id'))
@@ -48091,10 +48399,18 @@ def get_tsr_email_files_for_shift(shift, tsr_files=None):
     certificate_ids = certificate_state['all_ids']
     latest_certificate_ids = certificate_state['latest_ids']
     excluded_certificate_ids = certificate_state.get('excluded_ids', set())
+    calibration_artifact_ids = (
+        set(calibration_report_state.get('all_ids') or set()) |
+        set(certificate_state.get('all_ids') or set()) |
+        set(excluded_certificate_ids or set())
+    )
     # A print copy must never become a TSR or generic supporting attachment,
     # even if a legacy payload incorrectly classified it as a primary file.
-    if excluded_certificate_ids:
-        tsr_files = [file_info for file_info in tsr_files if clean_int(file_info.get('id')) not in excluded_certificate_ids]
+    if calibration_artifact_ids:
+        tsr_files = [
+            file_info for file_info in tsr_files
+            if clean_int(file_info.get('id')) not in calibration_artifact_ids
+        ]
         tsr_file_ids = {
             clean_int(file_info.get('id')) for file_info in tsr_files
             if clean_int(file_info.get('id'))
@@ -48145,6 +48461,15 @@ def get_tsr_email_files_for_shift(shift, tsr_files=None):
                 continue
 
             is_image = ext in {'png', 'jpg', 'jpeg'}
+            source_type = (
+                'calibration_certificate' if is_calibration_certificate else
+                ('calibration_report' if is_calibration_report else
+                 ('supporting_image' if is_image else 'supporting_pdf'))
+            )
+            is_calibration_artifact = source_type in {
+                'calibration_report',
+                'calibration_certificate',
+            }
             source_date = getattr(candidate_shift, 'start_time', None)
             supporting_files.append({
                 'id': file_id,
@@ -48155,14 +48480,17 @@ def get_tsr_email_files_for_shift(shift, tsr_files=None):
                 'path': file_path,
                 'detection_method': 'supporting_attachment',
                 'uploaded_at': file_rec.uploaded_at.isoformat() if file_rec.uploaded_at else '',
-                'source_type': 'calibration_certificate' if is_calibration_certificate else ('calibration_report' if is_calibration_report else ('supporting_image' if is_image else 'supporting_pdf')),
+                'source_type': source_type,
                 'source_label': 'Calibration Certificate' if is_calibration_certificate else ('Calibration Report' if is_calibration_report else ('Supporting Image' if is_image else 'Supporting PDF')),
                 'revision_no': (certificate_state['metadata'].get(file_id, {}).get('revision_no') if is_calibration_certificate else (calibration_report_state['metadata'].get(file_id, {}).get('revision_no') if is_calibration_report else None)),
+                'approval_id': (certificate_state['metadata'].get(file_id, {}).get('approval_id') if is_calibration_certificate else (calibration_report_state['metadata'].get(file_id, {}).get('approval_id') if is_calibration_report else None)),
                 'service_date': source_date.strftime('%Y-%m-%d') if source_date else '',
                 'file_size': os.path.getsize(file_path),
                 'preview_url': f'/preview_tsr_archive_file/{file_id}',
                 'is_tsr': False,
                 'attachment_type': 'supporting',
+                'selectable': bool(can_select_calibration or not is_calibration_artifact),
+                'disabled_reason': CALIBRATION_EMAIL_DISABLED_REASON if is_calibration_artifact and not can_select_calibration else '',
                 'was_sent': bool(getattr(file_rec, 'last_emailed_at', None)),
                 'last_emailed_at': (
                     file_rec.last_emailed_at.isoformat()
@@ -48349,6 +48677,9 @@ def serialize_tsr_email_attachment(file_info):
         'preview_url': value('preview_url') or '',
         'is_tsr': bool(value('is_tsr')),
         'attachment_type': value('attachment_type') or ('tsr' if value('is_tsr') else 'supporting'),
+        'approval_id': clean_int(value('approval_id')) or None,
+        'selectable': value('selectable', True) is not False,
+        'disabled_reason': value('disabled_reason') or '',
         'was_sent': was_sent,
         'last_emailed_at': last_emailed_at,
     }
@@ -48782,6 +49113,76 @@ def build_tsr_client_email_bodies(shift, sender_name, font_key=None):
     return "\n".join(text_lines), html_body
 
 
+def get_calibration_email_context(shift):
+    """Return the human-readable identity used by calibration-only messages."""
+    client_name = clean_str(
+        getattr(getattr(shift, 'client', None), 'name', None)
+    ) or 'Valued Client'
+    product = getattr(shift, 'product', None)
+    equipment = clean_str(getattr(product, 'name', None)) if product else ''
+    if not equipment:
+        equipment = clean_str(getattr(shift, 'product_id', None)) or 'Equipment'
+    service_date = (
+        shift.start_time.strftime('%B %d, %Y')
+        if shift and getattr(shift, 'start_time', None)
+        else ''
+    )
+    return {
+        'client_name': client_name,
+        'equipment': equipment,
+        'task': clean_str(getattr(shift, 'title', None)) or 'Calibration service',
+        'service_date': service_date,
+    }
+
+
+def build_calibration_only_email_subject(shift):
+    """Build the dedicated subject for a paired approved calibration package."""
+    context = get_calibration_email_context(shift)
+    return (
+        f"Calibration Report and Certificate - {context['client_name']} - "
+        f"{context['equipment']} - {context['service_date']}"
+    )[:180]
+
+
+def build_calibration_only_email_bodies(shift, sender_name, font_key=None):
+    """Build the approved Report + Certificate body for calibration-only delivery."""
+    context = get_calibration_email_context(shift)
+    text_lines = [
+        f"Dear {context['client_name']},",
+        "",
+        "Good day.",
+        "",
+        "Attached are the approved Calibration Report and Calibration Certificate for the completed calibration service.",
+        "",
+        f"Service date: {context['service_date']}",
+        f"Task: {context['task']}",
+        f"Equipment: {context['equipment']}",
+        "",
+        "Thank you.",
+        "",
+        "Medical Service Team",
+        "",
+        "This is an auto-generated message. Please do not reply.",
+    ]
+    font_stack = get_tsr_email_font_stack(font_key)
+    html_body = f"""
+    <div style="font-family:{html.escape(font_stack)};color:#111827;line-height:1.5;">
+        <p>Dear {html.escape(context['client_name'])},</p>
+        <p>Good day.</p>
+        <p>Attached are the approved Calibration Report and Calibration Certificate for the completed calibration service.</p>
+        <table style="border-collapse:collapse;border:1px solid #e5e7eb;min-width:360px;">
+            <tr><td style='padding:6px 10px;font-weight:700;border-bottom:1px solid #e5e7eb;'>Service date</td><td style='padding:6px 10px;border-bottom:1px solid #e5e7eb;'>{html.escape(context['service_date'])}</td></tr>
+            <tr><td style='padding:6px 10px;font-weight:700;border-bottom:1px solid #e5e7eb;'>Task</td><td style='padding:6px 10px;border-bottom:1px solid #e5e7eb;'>{html.escape(context['task'])}</td></tr>
+            <tr><td style='padding:6px 10px;font-weight:700;'>Equipment</td><td style='padding:6px 10px;'>{html.escape(context['equipment'])}</td></tr>
+        </table>
+        <p style="margin-top:16px;">Thank you.</p>
+        <p>Medical Service Team</p>
+        <p style="margin-top:20px;padding-top:12px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px;">This is an auto-generated message. Please do not reply.</p>
+    </div>
+    """
+    return "\n".join(text_lines), html_body
+
+
 def append_tsr_email_correction_notice(shift, text_body, html_body):
     """Append the active TSR revision notice to both email body formats."""
     # A calibration-only follow-up intentionally does not claim that a revised
@@ -48856,7 +49257,21 @@ def resolve_service_file_selection(email_attachments, payload):
         if isinstance(item, dict) and clean_int(item.get('id'))
     }
     if 'selected_attachment_ids' not in (payload or {}):
-        return available_files, sorted(available_ids), None, 200
+        # The omitted-selection compatibility path still means "select all" for
+        # ordinary TSR/supporting files. Approved calibration artifacts are a
+        # separate schedule-manager-only capability, so an engineer's default
+        # package must not silently select them from a stale/legacy client.
+        selectable_files = [
+            file_info for file_info in available_files
+            if not service_file_is_calibration_artifact(file_info)
+            or can_select_calibration_service_files()
+        ]
+        selectable_ids = {
+            clean_int(item.get('id'))
+            for item in selectable_files
+            if isinstance(item, dict) and clean_int(item.get('id'))
+        }
+        return selectable_files, sorted(selectable_ids), None, 200
 
     raw_ids = (payload or {}).get('selected_attachment_ids')
     if not isinstance(raw_ids, (list, tuple, set)):
@@ -48888,6 +49303,14 @@ def resolve_service_file_selection(email_attachments, payload):
         file_info for file_info in available_files
         if clean_int(file_info.get('id')) in selected_set
     ]
+    if (
+        any(service_file_is_calibration_artifact(file_info) for file_info in selected_files)
+        and not can_select_calibration_service_files()
+    ):
+        # Do not trust a client-provided selectable flag. The canonical server
+        # manifest identifies calibration artifacts, and the authority check is
+        # repeated here at the point where the package is accepted for delivery.
+        return None, [], CALIBRATION_EMAIL_DISABLED_REASON, 403
     return selected_files, selected_ids, None, 200
 
 
@@ -48921,18 +49344,29 @@ def mark_service_files_emailed(file_infos, sent_at=None):
 def prepare_tsr_client_email_message(shift, payload):
     """Build and validate the exact TSR client email used by preview and send."""
     payload = payload or {}
-    calibration_report_email_block = get_calibration_report_email_block(shift)
-    if calibration_report_email_block:
-        return None, calibration_report_email_block, 409
     recipient_emails = parse_manual_recipient_emails(payload.get('emails') or payload.get('email'))
     if not recipient_emails:
         return None, 'Please provide at least one valid recipient email address.', 400
 
     tsr_files = get_tsr_files_for_shift(shift)
-    if not tsr_files:
-        return None, 'No attached TSR file found for this schedule.', 400
-
     email_attachments = get_tsr_email_files_for_shift(shift, tsr_files=tsr_files)
+    default_selected_attachments = [
+        file_info for file_info in email_attachments
+        if file_info.get('selectable', True)
+        and not file_info.get('was_sent')
+        and not file_info.get('last_emailed_at')
+    ]
+    default_email_mode = get_service_file_email_mode(default_selected_attachments)
+    default_source_types = {
+        clean_str(file_info.get('source_type'))
+        for file_info in default_selected_attachments
+    }
+    default_is_paired_calibration_only = (
+        default_email_mode == 'calibration_only' and
+        {'calibration_report', 'calibration_certificate'}.issubset(default_source_types)
+    )
+    if not email_attachments:
+        return None, 'No sendable service files found for this schedule.', 400
     current_manifest_signature = get_tsr_email_attachment_manifest_signature(email_attachments)
     previewed_manifest_signature = clean_str(payload.get('attachment_manifest_signature')) or ''
     if previewed_manifest_signature and previewed_manifest_signature != current_manifest_signature:
@@ -48959,6 +49393,15 @@ def prepare_tsr_client_email_message(shift, payload):
     shift._service_file_selected_ids = selected_attachment_ids
     shift._service_file_selected_has_tsr = bool(selected_tsr_files)
 
+    email_mode = get_service_file_email_mode(selected_attachments)
+    if email_mode in {'mixed', 'calibration_only'}:
+        calibration_report_email_block = get_calibration_report_email_block(
+            shift,
+            selected_attachment_ids=selected_attachment_ids,
+        )
+        if calibration_report_email_block:
+            return None, calibration_report_email_block, 409
+
     subject_package = get_tsr_subject_package_metadata(selected_tsr_files)
     requested_subject_scenario = normalize_tsr_subject_scenario(payload.get('subject_scenario'))
     if subject_package['mixed']:
@@ -48970,17 +49413,34 @@ def prepare_tsr_client_email_message(shift, payload):
     else:
         subject_scenario = subject_package['scenarios'][0] if subject_package['scenarios'] else 'standard'
 
-    subject = build_tsr_client_email_subject(
-        shift,
-        subject_scenario=subject_scenario,
-        tsr_files=selected_tsr_files,
-    )
     sender_name = current_user.username.capitalize() if current_user and current_user.is_authenticated else 'Scheduler'
     font_key = clean_str(payload.get('font_key')) or DEFAULT_TSR_EMAIL_FONT_KEY
-    text_body, html_body = build_tsr_client_email_bodies(shift, sender_name, font_key=font_key)
+    selected_source_types = {
+        clean_str(file_info.get('source_type'))
+        for file_info in selected_attachments
+        if isinstance(file_info, dict)
+    }
+    is_paired_calibration_only = (
+        email_mode == 'calibration_only' and
+        {'calibration_report', 'calibration_certificate'}.issubset(selected_source_types)
+    )
+    if is_paired_calibration_only:
+        subject = build_calibration_only_email_subject(shift)
+        text_body, html_body = build_calibration_only_email_bodies(
+            shift,
+            sender_name,
+            font_key=font_key,
+        )
+    else:
+        subject = build_tsr_client_email_subject(
+            shift,
+            subject_scenario=subject_scenario,
+            tsr_files=selected_tsr_files,
+        )
+        text_body, html_body = build_tsr_client_email_bodies(shift, sender_name, font_key=font_key)
     text_body, html_body = append_tsr_email_correction_notice(shift, text_body, html_body)
 
-    if not selected_tsr_files:
+    if not selected_tsr_files and not is_paired_calibration_only:
         # Keep the normal TSR wording untouched for existing sends, but make a
         # calibration/supporting-only follow-up truthful about its contents.
         text_body = text_body.replace(
@@ -49035,6 +49495,7 @@ def prepare_tsr_client_email_message(shift, payload):
         'final_cc': final_cc,
         'subject': subject,
         'subject_scenario': subject_scenario,
+        'email_mode': email_mode,
         'font_key': font_key,
         'font_stack': get_tsr_email_font_stack(font_key),
         'text_body': text_body,
@@ -49159,7 +49620,10 @@ def preview_tsr_client_email(shift_id):
         'selected_attachment_ids': [
             clean_int(file_info.get('id'))
             for file_info in email_attachments
-            if not file_info.get('was_sent') and clean_int(file_info.get('id'))
+            if file_info.get('selectable', True)
+            and not file_info.get('was_sent')
+            and not file_info.get('last_emailed_at')
+            and clean_int(file_info.get('id'))
         ],
         'service_file_delivery': delivery_summary,
         'tsr_count': len(tsr_files),
@@ -49184,10 +49648,13 @@ def preview_tsr_client_email(shift_id):
         'subject_scenario': automatic_subject_scenario,
         'subject_scenarios': subject_scenario_options,
         'subject_preview': (
-            subject_scenario_options[0]['subject']
-            if automatic_subject_scenario and subject_scenario_options else ''
+            build_calibration_only_email_subject(shift)
+            if default_is_paired_calibration_only else
+            (subject_scenario_options[0]['subject']
+             if automatic_subject_scenario and subject_scenario_options else '')
         ),
-        'can_send': bool(tsr_files),
+        'email_mode': default_email_mode,
+        'can_send': bool(email_attachments),
         'note': preview_note
     })
 
@@ -49221,6 +49688,7 @@ def preview_tsr_client_email_message(shift_id):
         'cc': message['final_cc'],
         'subject': message['subject'],
         'subject_scenario': message['subject_scenario'],
+        'email_mode': message.get('email_mode', 'tsr'),
         'text_body': message['text_body'],
         'html_body': message['html_body'],
         'attachments': message['attachments'],
@@ -49373,6 +49841,7 @@ def send_tsr_client_email(shift_id):
         'remembered_manual_cc': remembered_cc,
         'sender_copy_email': get_current_user_email_for_tsr_cc(),
         'subject_scenario': message['subject_scenario'],
+        'email_mode': message.get('email_mode', 'tsr'),
         'subject': message['subject'],
         'font_key': message['font_key'],
         'font_stack': message['font_stack'],

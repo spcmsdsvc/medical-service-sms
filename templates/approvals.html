@@ -2156,7 +2156,7 @@
             </div>
             <div class="approval-module-mini-grid">
                 <div class="approval-module-mini">
-                    <strong>Calibration Certificates</strong>
+                    <strong>Calibration Reports &amp; Certificates</strong>
                     <span id="approvalCalibrationCertificatePendingCount">0</span>
                     <small>Active workflow</small>
                 </div>
@@ -2359,7 +2359,7 @@
             pendingRemarks: 'Optional for approval. Required when returning for revision.'
         },
         calibration_certificate: {
-            label: 'Calibration Certificate',
+            label: 'Calibration Report & Certificate',
             negativeAction: 'Return for Correction',
             pendingRemarks: 'Optional for approval. Required when returning for correction.'
         },
@@ -6077,7 +6077,7 @@ async function dismissApprovalNotification(event, notificationId) {
         if (moduleKey !== 'calibration_certificate') return null;
         const pending = String(item.status || status || '').toLowerCase() === 'pending';
         return `<div class="approval-work-card"><div class="approval-work-top"><div>
-            <div class="approval-work-no">${approvalEscape(item.certificate_number || 'Calibration Certificate')}</div>
+            <div class="approval-work-no">${approvalEscape(item.certificate_number || 'Calibration Report & Certificate')}</div>
             <div class="approval-work-meta-grid"><div class="approval-work-meta"><small>Machine</small><strong>${approvalEscape(item.machine || item.bsid || '—')}</strong></div><div class="approval-work-meta"><small>TSR</small><strong>${approvalEscape(item.tsr_number || '—')}</strong></div><div class="approval-work-meta"><small>Revision</small><strong>REV${Number(item.revision_no || 1)}</strong></div><div class="approval-work-meta"><small>Status</small><strong>${approvalEscape(item.status || status || '')}</strong></div></div>
         </div><div class="approval-actions"><button type="button" class="approval-btn approval-btn-primary" onclick="openCalibrationCertificateApprovalDetail(${Number(item.id) || 0})">${pending ? 'Review' : 'View Details'}</button></div></div></div>`;
     }
@@ -6088,20 +6088,20 @@ async function dismissApprovalNotification(event, notificationId) {
         selectedApprovalModule = 'calibration_certificate';
         try {
             const response = await fetch(`/get_calibration_certificate_approval/${encodeURIComponent(approvalId)}`, {credentials:'same-origin', cache:'no-store', headers:{Accept:'application/json'}});
-            const payload = await parseApprovalJsonResponse(response, 'Unable to load Calibration Certificate details.');
+            const payload = await parseApprovalJsonResponse(response, 'Unable to load Calibration Report & Certificate details.');
             if (!approvalModalLoadIsCurrent(loadToken, 'calibration_certificate')) return;
             const data = payload.approval || {};
             const body = document.getElementById('approvalDetailBody');
             const title = document.getElementById('approvalModalTitle');
             const subtitle = document.getElementById('approvalModalSubtitle');
-            if (title) title.textContent = `Review ${data.certificate_number || 'Calibration Certificate'}`;
+            if (title) title.textContent = `Review ${data.certificate_number || 'Calibration Report & Certificate'}`;
             if (subtitle) subtitle.textContent = `${data.machine || data.bsid || 'Machine'} • REV${Number(data.revision_no || 1)}`;
             const calibrationReportPreviewUrl = data.calibration_report_preview_url || '';
             const calibrationReportReady = Boolean(data.calibration_report_download_url && calibrationReportPreviewUrl);
             const calibrationReportState = String(data.calibration_report_state || '').toLowerCase();
             const calibrationReportPanel = calibrationReportReady
                 ? `<div class="approval-modal-panel full"><h3>Calibration Report PDF</h3><div class="approval-actions"><button type="button" class="approval-btn approval-btn-secondary" data-calibration-report-preview data-calibration-report-preview-url="${approvalEscape(calibrationReportPreviewUrl)}" data-calibration-report-preview-filename="${approvalEscape(data.calibration_report_filename || 'Calibration Report.pdf')}"><i class="fa-solid fa-eye me-1"></i>Preview Calibration Report</button><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.calibration_report_download_url)}" target="_blank" rel="noopener"><i class="fa-solid fa-file-pdf me-1"></i>Download Calibration Report (PDF)</a><span class="approval-muted">${approvalEscape(data.calibration_report_filename || 'Calibration Report.pdf')}</span></div></div>`
-                : `<div class="approval-modal-panel full"><h3>Calibration Report PDF</h3><div class="approval-empty">${calibrationReportState === 'failed' ? 'PDF conversion failed. Retry the report conversion before reviewing this certificate.' : 'The Calibration Report PDF is still being prepared after TSR synchronization.'}${data.calibration_report_error ? ` <span class="approval-muted">${approvalEscape(data.calibration_report_error)}</span>` : ''}</div></div>`;
+                : `<div class="approval-modal-panel full"><h3>Calibration Report PDF</h3><div class="approval-empty">${calibrationReportState === 'failed' ? 'PDF conversion failed. Retry the report conversion before reviewing this Calibration Report & Certificate.' : 'The Calibration Report PDF is still being prepared after TSR synchronization.'}${data.calibration_report_error ? ` <span class="approval-muted">${approvalEscape(data.calibration_report_error)}</span>` : ''}</div></div>`;
             if (body) body.innerHTML = `<div class="approval-detail-grid"><div class="approval-stat"><small>Certificate No.</small><strong>${approvalEscape(data.certificate_number || '')}</strong></div><div class="approval-stat"><small>Machine / BSID</small><strong>${approvalEscape(data.machine || data.bsid || '—')}</strong></div><div class="approval-stat"><small>Facility</small><strong>${approvalEscape(data.facility || '—')}</strong></div><div class="approval-stat"><small>Status</small><strong>${approvalEscape(data.status || '')}</strong></div></div><div class="approval-detail-grid"><div class="approval-stat"><small>TSR</small><strong>${approvalEscape(data.tsr_number || '—')}</strong></div><div class="approval-stat"><small>Calibration Date</small><strong>${approvalEscape(data.calibration_date || '—')}</strong></div><div class="approval-stat"><small>Next Calibration</small><strong>${approvalEscape(data.next_calibration_date || '—')}</strong></div><div class="approval-stat"><small>Requester</small><strong>${approvalEscape(data.requester || '—')}</strong></div></div>${calibrationReportPanel}<div class="approval-modal-panel full"><h3>Certificate Preview</h3><iframe title="Calibration Certificate preview" src="${approvalEscape(data.signed_preview_url || data.unsigned_preview_url || '#')}" style="width:100%;min-height:520px;border:1px solid #e2e8f0;border-radius:10px;"></iframe>${data.no_signature_preview_url ? `<div class="approval-actions mt-2"><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.no_signature_preview_url)}" target="_blank" rel="noopener"><i class="fa-solid fa-print me-1"></i>Preview No-Signature Print Copy</a><a class="approval-btn approval-btn-secondary" href="${approvalEscape(data.no_signature_url || '#')}"><i class="fa-solid fa-download me-1"></i>Download No-Signature Print Copy</a></div>` : ''}</div>${data.return_remarks ? `<div class="approval-decision-panel rejected"><h3>Return Remarks</h3><div>${approvalEscape(data.return_remarks)}</div></div>` : ''}`;
             wireCalibrationReportPreview(body);
             const approveBtn = document.getElementById('approvalApproveBtn');
@@ -6113,7 +6113,7 @@ async function dismissApprovalNotification(event, notificationId) {
             const remarks = document.getElementById('approvalRemarks');
             if (remarks) { remarks.value = data.return_remarks || ''; remarks.disabled = !pending; remarks.readOnly = !pending; }
         } catch (error) {
-            showApprovalModalLoadError(loadToken, 'calibration_certificate', error, 'Unable to load Calibration Certificate details.');
+            showApprovalModalLoadError(loadToken, 'calibration_certificate', error, 'Unable to load Calibration Report & Certificate details.');
         }
     }
     window.openCalibrationCertificateApprovalDetail = openCalibrationCertificateApprovalDetail;
@@ -6121,26 +6121,26 @@ async function dismissApprovalNotification(event, notificationId) {
         if (!selectedCalibrationCertificateId) return;
         try {
             const response = await fetch(`/approve_calibration_certificate/${selectedCalibrationCertificateId}`, {method:'POST', credentials:'same-origin', headers:{Accept:'application/json','X-CSRFToken':getApprovalCsrfToken()}});
-            const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to approve Calibration Certificate.');
-            approvalAlert(payload.message || 'Calibration Certificate approved.', 'success'); closeApprovalModal(); await refreshAllApprovalCenterLists();
+            const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to approve Calibration Report & Certificate.');
+            approvalAlert(payload.message || 'Calibration Report & Certificate approved.', 'success'); closeApprovalModal(); await refreshAllApprovalCenterLists();
         } catch (error) {
             console.error(error);
             if (error?.payload?.requires_signature || error?.payload?.signature_required) { showApprovalSignatureRequiredPrompt(error); return; }
-            approvalAlert(error.message || 'Unable to approve Calibration Certificate.');
+            approvalAlert(error.message || 'Unable to approve Calibration Report & Certificate.');
         }
     }
     async function returnSelectedCalibrationCertificate() {
         if (!selectedCalibrationCertificateId) return;
         const remarks = (document.getElementById('approvalRemarks')?.value || '').trim();
-        if (!remarks) { approvalAlert('Please enter return remarks before returning this Calibration Certificate.'); return; }
+        if (!remarks) { approvalAlert('Please enter return remarks before returning this Calibration Report & Certificate.'); return; }
         try {
             const response = await fetch(`/return_calibration_certificate/${selectedCalibrationCertificateId}`, {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json',Accept:'application/json','X-CSRFToken':getApprovalCsrfToken()}, body:JSON.stringify({remarks})});
-            const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to return Calibration Certificate.');
-            approvalAlert(payload.message || 'Calibration Certificate returned for correction.'); closeApprovalModal(); await refreshAllApprovalCenterLists();
+            const payload = await parseApprovalJsonResponseWithPayload(response, 'Unable to return Calibration Report & Certificate.');
+            approvalAlert(payload.message || 'Calibration Report & Certificate returned for correction.'); closeApprovalModal(); await refreshAllApprovalCenterLists();
         } catch (error) {
             console.error(error);
             if (error?.payload?.requires_signature || error?.payload?.signature_required) { showApprovalSignatureRequiredPrompt(error); return; }
-            approvalAlert(error.message || 'Unable to return Calibration Certificate.');
+            approvalAlert(error.message || 'Unable to return Calibration Report & Certificate.');
         }
     }
     const originalBuildCalibrationCertificateApprovalItem = window.buildUnifiedApprovalItem;

@@ -2,6 +2,88 @@
 
 codex changes - 2026-09-09
 
+- Started the owner-authorized Calibration Report Approval-Gated TSR Workflow recorded at the
+  top of `plans.md`. The package reuses the existing combined Calibration Certificate approval,
+  hides unapproved generated report PDFs from schedule-card payloads, preserves the returned TSR
+  correction path, and restricts calibration-file email selection to schedule managers. The
+  existing private DOCX source/conversion lifecycle, ordinary TSR/supporting-file delivery,
+  Approval Center access, and archive behavior remain in scope-preserved or deliberately excluded
+  areas as documented. Protected `scheduler.db`, handoff files, `.claude/`, `output/`, `tmp/`,
+  and the detailed handoff remain untouched.
+
+- Added the fail-first regression controls for approval-gated Calibration Report schedule
+  visibility, exact returned-approval correction routing, role-restricted calibration-file
+  selection, TSR-only delivery during pending conversion, paired calibration-only messaging,
+  and mixed TSR/calibration email compatibility. The application behavior remains unchanged at
+  this checkpoint; the new controls are expected to fail until the approved implementation is
+  applied.
+
+- Corrected the fail-first test harness before implementation: direct Timeline visibility checks
+  now reload their fixture shift inside an active session, and mixed-package coverage uses its
+  complete patch set without changing application behavior or any protected artifact.
+
+- Narrowed the fail-first invocation to the intended ten-patch mixed-package contract after the
+  initial test-only checkpoint exposed an indexing mistake; no product behavior or protected path
+  was changed.
+
+- Implemented the Calibration Report Approval-Gated TSR Workflow in `app.py`. Generated report
+  PDFs are now resolved to their exact combined `CalibrationCertificateApproval` and are exposed
+  in Timeline/schedule-details payloads only for the latest approved revision; pending, returned,
+  superseded, stale, missing, private-source, and unready report artifacts stay hidden while the
+  approval-scoped Approval Center preview/download path remains available. Approval notifications,
+  Approval Center labels, activity wording, and returned correction links now identify the combined
+  Calibration Report & Certificate, with returned links opening the exact submission in Create TSR.
+
+- Aligned the backend Approval Center module catalog with the combined user-facing identity,
+  `Calibration Report & Certificate`, while preserving the existing `calibration_certificate`
+  module key and approval API compatibility.
+
+- Tightened Timeline/schedule-details artifact classification so a conversion-owned Calibration
+  Report PDF remains approval-gated even if a later conversion attempt leaves an old PDF record
+  linked while the conversion job is pending or failed; generic archive classification remains
+  unchanged.
+
+- Tightened Service Files manifest classification so conversion-owned Calibration Report PDFs
+  are never reclassified as TSR or generic supporting attachments when an old PDF remains linked
+  during a pending or failed conversion; approved ready reports continue through the dedicated
+  calibration-artifact path.
+
+- Post-audit focused reruns covering the tightened report classification, timeline responses,
+  Approval Center wording/catalog, calibration PDF behavior, and Service Files delivery completed
+  **46/46** and **10/10** successfully.
+
+- Final resumed-work validation after the stale-report Service Files guard completed the affected
+  calibration PDF, timeline, service-file, and schedule-email suites at **41/41**. In-memory
+  Python compilation, Jinja validation for Timeline/Approval Center/Create TSR, and
+  `git diff --check` remained clean.
+
+- Updated Service Files delivery in `app.py` and `templates/timeline.html`. The manifest carries
+  calibration approval metadata, `selectable`, and a disabled reason; ordinary engineers retain
+  TSR/supporting-file delivery but calibration rows are disabled and forged calibration selections
+  are rejected server-side. Only the latest ready approved report PDF and signed certificate are
+  sendable, TSR-only packages are not blocked by pending report conversion, mixed packages preserve
+  TSR wording, and a manager-selected report/certificate pair uses the dedicated calibration subject
+  and body. Timeline Select All/Select Unsent and subject-scenario behavior now respect these rules.
+
+- Bumped the embedded service-worker cache marker from v150 to v151 and added the dated release
+  entry in `static/changelog/releases.json`. No new database table or migration was added. Added
+  regression coverage for approval visibility and correction routing, role-gated service-file
+  selection, pending/approved calibration delivery, calibration-only/mixed email behavior, and the
+  service-worker/release contracts.
+
+- Verification passed: focused approval/calibration/timeline/service-file/email suites completed
+  **86/86**, related Approval Center/TSR/UI-contract suites completed **258/258**, and changelog,
+  cache-version, offline API, and reimbursement-manifest checks completed **93 tests with 1 skip**.
+  Python compilation, Jinja parsing, extracted inline JavaScript parsing, release JSON validation
+  (**85 releases, 248 unique items**), embedded service-worker v151 validation, and `git diff --check`
+  also passed.
+
+- Full isolated unittest discovery completed **1,053 tests: 1,034 passed, 18 failed, and 1
+  skipped**. The 18 failures were unrelated baseline conditions: 16 Purchase Order login-setup
+  HTTP-429 throttle failures and 2 staff-creation fixture/duplicate-initials failures. No browser
+  verification, commit, push, Railway/deployment, production data/storage operation, or intentional
+  protected-artifact edit was performed.
+
 - Started the owner-authorized P.O. Details date-refresh and in-page machine coverage package
   recorded at the top of `plans.md`. The approved scope preserves existing P.O. snapshots by
   default, adds an explicit immediate refresh for one selected P.O., and adds a coverage-only
@@ -128,6 +210,15 @@ codex changes - 2026-09-09
 - Published the implementation as commit `a9682aa` to `origin/main`; `git ls-remote origin
   refs/heads/main` verified the same commit. Railway deployment metadata could not be verified
   because no Railway CLI or connector is available in this environment.
+- The owner-authorized Railway production dry-run found four recognized Calibration Report DOCX
+  sources (ShiftFile IDs `994`, `1026`, `1028`, and `1071`); all four source bytes were present
+  and valid, with `missing: 0`, `corrupt: 0`, and `pending: 4`. This confirmed the original DOCX
+  reports had not been deleted and remained recoverable before backfill.
+- The owner-authorized Railway production backfill then converted all four retained DOCX sources
+  to separate PDF ShiftFiles (`1092`, `1093`, `1094`, and `1095`). Apply output reported
+  `converted: 4`, `pending: 0`, `failed: 0`, `missing: 0`, and `corrupt: 0`; each conversion
+  completed on its first attempt, and the source DOCX files were retained. This supersedes the
+  earlier implementation-time note that no production backfill had been executed.
 
 codex changes - 2026-09-08
 

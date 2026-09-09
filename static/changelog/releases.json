@@ -1,6 +1,35 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-09-calibration-approval-gated-service-documents",
+      "release_date": "2026-09-09",
+      "title": "Calibration Approval-Gated Service Documents",
+      "summary": "Calibration Reports stay out of schedule cards and client emails until their combined Report & Certificate approval is approved.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-09-calibration-approval-gated-service-documents-everyone",
+          "category": "Calibration Reports",
+          "description": "Calibration Report PDFs now enter the existing Calibration Report & Certificate approval workflow. Pending, returned, superseded, stale, or missing approvals keep reports out of schedule cards and sendable client packages, while Approval Center previews remain available. Returned submissions reopen directly in Create TSR for correction and resubmission as a new revision.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        },
+        {
+          "item_key": "2026-09-09-calibration-approval-gated-service-documents-schedulers",
+          "category": "Service Files",
+          "description": "Engineers can continue sending TSRs and supporting files, but approved Calibration Reports and signed Certificates are visibly disabled for them and protected server-side. Schedule managers can send an approved calibration-only pair with dedicated Report and Certificate wording; TSR-containing packages keep the existing TSR message.",
+          "audiences": [
+            "admins",
+            "schedulers",
+            "engineers"
+          ],
+          "sort_order": 20
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-09-mobile-navigation-inventory-stability",
       "release_date": "2026-09-09",
       "title": "Mobile Navigation and Inventory Stability",

@@ -304,7 +304,7 @@ globalThis.loadStandaloneTSRDraftFromLocalStorageFallback = () => ({{
         self.assertIn("Completed online TSRs and revision history are not recovery sources", " ".join(output["warnings"]))
 
     def test_worker_and_published_release_are_current(self):
-        self.assertIn("medical-service-pwa-offline-navigation-v150-mobile-navigation-inventory-stability", self.app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v151-calibration-approval-gated-service-documents", self.app_source)
         self.assertNotIn("medical-service-pwa-offline-navigation-v145-tsr-signature-recovery", self.app_source)
         manifest = json.loads(self.release)
         matches = [

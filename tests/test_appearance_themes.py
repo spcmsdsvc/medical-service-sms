@@ -380,7 +380,7 @@ class AppearanceThemeSourceTests(unittest.TestCase):
         app_source = (ROOT / 'app.py').read_text(encoding='utf-8')
         manifest = json.loads((ROOT / 'static' / 'changelog' / 'releases.json').read_text(encoding='utf-8'))
 
-        self.assertIn('medical-service-pwa-offline-navigation-v150-mobile-navigation-inventory-stability', app_source)
+        self.assertIn('medical-service-pwa-offline-navigation-v151-calibration-approval-gated-service-documents', app_source)
         matches = [
             item
             for release in manifest['releases']

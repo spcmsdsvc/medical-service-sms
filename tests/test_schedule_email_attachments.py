@@ -159,7 +159,7 @@ class ScheduleEmailAttachmentTests(unittest.TestCase):
         source = inspect.getsource(app_module.get_tsr_email_files_for_shift)
         self.assertIn('get_linked_schedule_calibration_report_file_state', source)
         self.assertIn('file_id in calibration_report_ids', source)
-        self.assertIn("'source_type': 'calibration_certificate'", source)
+        self.assertIn("'calibration_certificate' if is_calibration_certificate", source)
         self.assertIn("'calibration_report' if is_calibration_report", source)
         self.assertIn('excluded_certificate_ids', source)
         self.assertIn("get_linked_schedule_calibration_certificate_file_state", source)

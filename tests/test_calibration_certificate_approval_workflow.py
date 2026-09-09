@@ -614,6 +614,40 @@ class CalibrationCertificateReportApprovalLinkTests(unittest.TestCase):
             finally:
                 app.config['UPLOAD_FOLDER'] = original_upload_folder
 
+    def test_return_notification_opens_exact_submission_in_correction_mode(self):
+        fixture = self._create_fixture()
+        app = app_module.app
+        db = app_module.db
+        with app.app_context(), app.test_request_context(
+            f'/return_calibration_certificate/{fixture["approval_id"]}',
+            method='POST',
+            json={'remarks': 'Please correct the calibration details.'},
+        ):
+            approver = db.session.get(app_module.User, fixture['approver_id'])
+            app_module.login_user(approver)
+            try:
+                with patch.object(app_module, 'calibration_certificate_approver_can_act', return_value=True), \
+                        patch.object(app_module, 'record_universal_approval_audit'), \
+                        patch.object(app_module, 'ensure_system_notification_table'):
+                    response = app_module.return_calibration_certificate.__wrapped__(fixture['approval_id'])
+                self.assertEqual(response.status_code, 200)
+                approval = db.session.get(app_module.CalibrationCertificateApproval, fixture['approval_id'])
+                self.assertEqual(approval.status, 'Returned')
+                notification = (
+                    app_module.SystemNotification.query
+                    .filter_by(user_id=fixture['requester_id'], record_id=fixture['approval_id'])
+                    .order_by(app_module.SystemNotification.id.desc())
+                    .first()
+                )
+                self.assertIsNotNone(notification)
+                self.assertEqual(
+                    notification.target_url,
+                    f'/offline-tsr?edit_submission_id={fixture["submission_id"]}&mode=correct',
+                )
+            finally:
+                app_module.logout_user()
+                db.session.remove()
+
     def test_product_bsid_and_submission_contracts_are_present(self):
         source = (ROOT / "app.py").read_text(encoding="utf-8")
         template = (ROOT / "templates" / "products.html").read_text(encoding="utf-8")

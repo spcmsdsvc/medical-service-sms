@@ -492,7 +492,7 @@ class TimelineDesktopCollapsibleIntroTests(unittest.TestCase):
 
     def test_cache_version_and_everyone_release_are_present(self):
         self.assertIn(
-            "medical-service-pwa-offline-navigation-v150-mobile-navigation-inventory-stability",
+            "medical-service-pwa-offline-navigation-v151-calibration-approval-gated-service-documents",
             self.app,
         )
 
