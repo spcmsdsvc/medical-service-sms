@@ -224,6 +224,24 @@ codex changes - 2026-09-09
   `converted: 4`, `pending: 0`, `failed: 0`, `missing: 0`, and `corrupt: 0`; each conversion
   completed on its first attempt, and the source DOCX files were retained. This supersedes the
   earlier implementation-time note that no production backfill had been executed.
+- Fixed the desktop Timeline grid's unused right-side space in `templates/timeline.html`: the
+  weekly table now fills the available viewport, day columns share extra width on wide monitors,
+  and the existing minimum widths preserve horizontal scrolling for crowded or narrower views.
+  The deliberate fixed-width `mobile-engineer-desktop-forced` layout remains unchanged.
+- Removed the Timeline renderer's fixed `220px + 170px-per-day` table sizing and corresponding
+  generated cell caps, while retaining the 220px engineer identity minimum and 170px day minimum.
+  Added `tests/test_timeline_grid_width.py` for the responsive-width and mobile-preservation
+  contracts, bumped the app-shell service-worker marker to
+  `medical-service-pwa-offline-navigation-v152-timeline-desktop-auto-width`, and added the
+  published Responsive Timeline Width release entry to `static/changelog/releases.json`.
+- Corrected the new Timeline width regression test's CSS slice boundary after its first focused
+  run exposed a test-only selector lookup error; no application behavior changed in that correction.
+- Verification passed: Timeline width/cache/layout coverage completed **124/124**; Python AST
+  parsing, Jinja parsing, release-manifest JSON validation (**86 releases, 249 unique items**),
+  and `git diff --check` also passed. The normal `py_compile` check was not usable because the
+  local `__pycache__` target returned a permission/lock error, so syntax was verified read-only.
+  No browser/Codex UI automation, commit, push, Railway/deployment, production operation, or
+  intentional protected-artifact edit was performed.
 
 codex changes - 2026-09-08
 

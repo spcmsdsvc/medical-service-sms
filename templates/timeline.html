@@ -2038,7 +2038,7 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 .timeline-grid-table {
     min-width: 1180px;
     table-layout: fixed;
-    width: max-content;
+    width: 100%;
 }
 
 .timeline-grid-table th:first-child,
@@ -2050,9 +2050,9 @@ body.timeline-toolbar-compact .timeline-freeze-toolbar {
 
 .timeline-grid-table th:not(:first-child),
 .timeline-grid-table td:not(:first-child) {
-    width: 170px;
+    width: auto;
     min-width: 170px;
-    max-width: 170px;
+    max-width: none;
 }
 
 .timeline-scroll-hint {
@@ -14445,19 +14445,21 @@ async function loadGrid(options={}) {
         const gridBody = document.getElementById('grid-body');
         const mainGridTable = document.getElementById('main-grid-table');
         if(mainGridTable){
-            const timelineTableWidth = 220 + ((data.days || []).length * 170);
-            mainGridTable.style.width = `${timelineTableWidth}px`;
-            mainGridTable.style.minWidth = `${timelineTableWidth}px`;
+            // Keep the minimum cell widths for crowded views, but let the table
+            // fill the available desktop viewport instead of forcing a fixed
+            // pixel width that leaves unused space on wide monitors.
+            mainGridTable.style.width = '100%';
+            mainGridTable.style.minWidth = '1180px';
         }
 
         // Reset and generate date slot headers with a single DOM write.
         const headerCells = [
-            '<th style="width: 220px; min-width: 220px; max-width: 220px; position: sticky; left: 0; z-index: 12; background: #212529; color: white; border-right: 2px solid #444;">Engineer Name</th>'
+            '<th style="min-width: 220px; position: sticky; left: 0; z-index: 12; background: #212529; color: white; border-right: 2px solid #444;">Engineer Name</th>'
         ];
 
         data.days.forEach(function(day) {
             headerCells.push(`
-                <th class="text-center" style="width: 170px; min-width: 170px; max-width: 170px;">
+                <th class="text-center" style="min-width: 170px;">
                     <span class="d-block text-uppercase small">${day.display_day}</span>
                     <small class="text-info">${day.display_date}</small>
                 </th>`);
@@ -14728,7 +14730,7 @@ async function loadGrid(options={}) {
 
                     rowHtml += `
                         <td class="p-1 calendar-drop-cell ${canStartInThisCell ? '' : 'auth-readonly-cell'} ${workloadCellClass}"
-                            style="width:170px; min-width:170px; max-width:170px; min-height: 100px; cursor:${canStartInThisCell ? 'cell' : 'not-allowed'};"
+                            style="min-width:170px; min-height: 100px; cursor:${canStartInThisCell ? 'cell' : 'not-allowed'};"
                             data-cell-click="${canStartInThisCell ? '1' : '0'}"
                             data-args="${eng.id}, '${day.iso}', '${eng.name}'"
                             data-drop-engineer-id="${eng.id}"

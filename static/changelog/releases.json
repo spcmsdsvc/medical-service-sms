@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-09-timeline-desktop-auto-width",
+      "release_date": "2026-09-09",
+      "title": "Responsive Timeline Width",
+      "summary": "The desktop Timeline now uses the available screen width while retaining horizontal scrolling for crowded views.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-09-timeline-desktop-auto-width-everyone",
+          "category": "Calendar",
+          "description": "Weekly Timeline day columns now expand to fill unused desktop space on wide monitors. The existing minimum column widths and horizontal scrolling remain available when the viewport is too narrow.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-09-calibration-approval-gated-service-documents",
       "release_date": "2026-09-09",
       "title": "Calibration Approval-Gated Service Documents",
