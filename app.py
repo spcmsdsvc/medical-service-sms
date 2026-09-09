@@ -20372,7 +20372,11 @@ def products_page():
     """ Asset inventory - Modification permitted for all technical staff """
     if is_approver_only_user():
         return redirect(url_for('dashboard_page'))
-    return render_template('products.html')
+    return render_template(
+        'products.html',
+        product_can_edit=bool(is_admin_authorized() or current_user.role == 'engineer'),
+        product_can_delete=bool(is_admin_authorized()),
+    )
 
 
 @app.route('/stock_inventory')
@@ -51315,7 +51319,7 @@ def purchase_order_count_for_machine(serial_number):
     ).scalar() or 0
 
 
-@app.route('/update_product/<serial_number>', methods=['PUT'])
+@app.route('/update_product/<path:serial_number>', methods=['PUT'])
 @login_required
 def update_product(serial_number):
     """Modify a medical asset, including safe serial-number replacement.
@@ -51483,7 +51487,7 @@ def update_product(serial_number):
         return jsonify({'message': 'Unable to update product. Please try again.'}), 500
 
 
-@app.route('/delete_product/<serial_number>', methods=['DELETE'])
+@app.route('/delete_product/<path:serial_number>', methods=['DELETE'])
 @login_required
 def delete_product(serial_number):
     """ Restricted to Admin Levels. """

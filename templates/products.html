@@ -29,7 +29,7 @@
             </h2>
             <div class="btn-group">
                 <!-- BULK DATA IMPORT - Updated v5.4.2 to include Regional Admin -->
-                {% if current_user.role in ['superadmin', 'regional_admin'] %}
+                {% if product_can_delete %}
                 <input type="file" id="prod-csv-file" accept=".csv" style="display:none" onchange="handleImport(this)">
                 <button type="button" class="btn btn-outline-primary btn-sm" id="product-import-btn" title="Import products" aria-label="Import products" onclick="document.getElementById('prod-csv-file').click()">
                     <i class="fa-solid fa-file-import me-1"></i>Import
@@ -43,10 +43,11 @@
                     <i class="fa-solid fa-print me-1"></i>Print
                 </button>
                 
-                <!-- Add Button: Available to Admin and Engineers in v5.0 -->
+                {% if product_can_edit %}
                 <button type="button" class="btn btn-success btn-sm ms-2" title="Add product" aria-label="Add product" onclick="openAddModal()">
                     <i class="fa-solid fa-plus me-1"></i>Add Product
                 </button>
+                {% endif %}
             </div>
         </div>
 
@@ -400,7 +401,8 @@
         return `${url}${joiner}_fresh=${Date.now()}`;
     }
 
-    const authRole = "{{ current_user.role }}";
+    const productCanEdit = {{ product_can_edit|tojson }};
+    const productCanDelete = {{ product_can_delete|tojson }};
 
 function showImportToast(type, title, message){
     const header = document.getElementById('importToastHeader');
@@ -677,7 +679,7 @@ function setupProductTableHorizontalScroll(){
      * Transmits CSV file to backend and refreshes inventory grid.
      */
     async function handleImport(input) {
-        if (authRole === 'engineer') return; 
+        if (!productCanDelete) return;
         if (!input.files || !input.files[0]) return;
 
         const file = input.files[0];
@@ -848,21 +850,23 @@ function getProductIdentityLabel(product){
 function renderProductRowActions(product){
     const serial = escapeHtml(product.serial_number || '');
     const identity = escapeHtml(getProductIdentityLabel(product));
-    let actions = `
-        <div class="product-row-actions no-print" aria-label="Actions for ${identity}">
+    let actions = `<div class="product-row-actions no-print" aria-label="Actions for ${identity}">`;
+
+    if(productCanEdit){
+        actions += `
             <button type="button" class="product-row-action product-row-edit" onclick="openEditModal('${serial}')" title="Edit product" aria-label="Edit ${identity}" aria-controls="prodModal">
                 <i class="fa-solid fa-pen" aria-hidden="true"></i>
             </button>`;
+    }
 
-    if(authRole !== 'engineer'){
+    if(productCanDelete){
         actions += `
             <button type="button" class="product-row-action product-row-delete" onclick="deleteProduct('${serial}')" title="Delete product" aria-label="Delete ${identity}">
                 <i class="fa-solid fa-trash" aria-hidden="true"></i>
             </button>`;
     }
 
-    return `${actions}
-        </div>`;
+    return `${actions}</div>`;
 }
 
 function getWarrantyBadgeClass(status){
@@ -894,12 +898,15 @@ function renderProductMobileCards(data){
         const endWarranty = p.end_warranty || 'N/A';
 
         const identity = escapeHtml(getProductIdentityLabel(p));
-        let actions = `
-            <button type="button" class="product-mobile-btn product-mobile-edit" onclick="openEditModal('${escapeHtml(p.serial_number)}')" title="Edit product" aria-label="Edit ${identity}" aria-controls="prodModal">
-                <i class="fa-solid fa-pen" aria-hidden="true"></i>Edit
-            </button>`;
+        let actions = '';
+        if(productCanEdit){
+            actions += `
+                <button type="button" class="product-mobile-btn product-mobile-edit" onclick="openEditModal('${escapeHtml(p.serial_number)}')" title="Edit product" aria-label="Edit ${identity}" aria-controls="prodModal">
+                    <i class="fa-solid fa-pen" aria-hidden="true"></i>Edit
+                </button>`;
+        }
 
-        if(authRole !== 'engineer'){
+        if(productCanDelete){
             actions += `
                 <button type="button" class="product-mobile-btn product-mobile-delete" onclick="deleteProduct('${escapeHtml(p.serial_number)}')" title="Delete product" aria-label="Delete ${identity}">
                     <i class="fa-solid fa-trash" aria-hidden="true"></i>Delete
@@ -1263,6 +1270,15 @@ function renderTable(data) {
 
     // --- DATABASE OPERATIONS ---
 
+    async function productResponseData(response){
+        return await response.json().catch(() => ({}));
+    }
+
+    function productResponseMessage(response, payload, fallback){
+        const message = payload && (payload.message || payload.error);
+        return message || `${fallback} (HTTP ${response.status}).`;
+    }
+
     async function saveProduct() { 
         const editSN = document.getElementById('edit-prod-serial').value; 
         
@@ -1315,32 +1331,36 @@ function renderTable(data) {
         const url = editSN ? `/update_product/${encodeURIComponent(editSN)}` : '/add_product';
         const method = editSN ? 'PUT' : 'POST';
 
-        const res = await fetch(url, { 
-            method: method, 
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCSRFToken() // SECURITY TOKEN ADDED
-            }, 
-            body: JSON.stringify(data) 
-        }); 
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCSRFToken() // SECURITY TOKEN ADDED
+                },
+                body: JSON.stringify(data)
+            });
+            const responseData = await productResponseData(res);
 
-        if (res.ok) {
-            await res.json().catch(() => ({}));
-            const scrollX = window.scrollX;
-            const scrollY = window.scrollY;
-            prodModal.hide(); 
-            updateProductListAfterSave(data, editSN);
-            requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
-            productToast(editSN ? 'Product updated.' : 'Product added.', 'success');
-        } else {
-            const errData = await res.json();
-            productAlert("Database Error: " + (errData.message || "Action failed."));
+            if (res.ok) {
+                const scrollX = window.scrollX;
+                const scrollY = window.scrollY;
+                prodModal.hide();
+                updateProductListAfterSave(data, editSN);
+                requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
+                productToast(editSN ? 'Product updated.' : 'Product added.', 'success');
+            } else {
+                productAlert("Database Error: " + productResponseMessage(res, responseData, "Action failed"));
+            }
+        } catch (error) {
+            console.error('[Products] Unable to save product', error);
+            productAlert('Unable to save the product. Please check your connection and try again.');
         }
     }
 
     async function deleteProduct(s) { 
         // Updated Guard for v5.4.2
-        if (authRole === 'engineer') return; 
+        if (!productCanDelete) return;
 
         const product = productsData.find(item => item.serial_number === s);
         if(!product){
@@ -1357,16 +1377,21 @@ function renderTable(data) {
         });
         if(!confirmation) return;
 
-        // Logic Fix: Use encodeURIComponent for hyphenated IDs
-        const res = await fetch(`/delete_product/${encodeURIComponent(s)}`, {
-            method:'DELETE',
-            headers: { 'X-CSRFToken': getCSRFToken() } // SECURITY TOKEN ADDED
-        }); 
+        try {
+            const res = await fetch(`/delete_product/${encodeURIComponent(s)}`, {
+                method:'DELETE',
+                headers: { 'X-CSRFToken': getCSRFToken() } // SECURITY TOKEN ADDED
+            });
+            const responseData = await productResponseData(res);
 
-        if (res.ok) {
-            await loadData(); 
-        } else {
-            productAlert("Deletion failed on server.");
+            if (res.ok) {
+                await loadData();
+            } else {
+                productAlert(productResponseMessage(res, responseData, 'Deletion failed on server'));
+            }
+        } catch (error) {
+            console.error('[Products] Unable to delete product', error);
+            productAlert('Unable to delete the product. Please check your connection and try again.');
         }
     }
 </script>

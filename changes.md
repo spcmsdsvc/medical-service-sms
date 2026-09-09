@@ -2,6 +2,24 @@
 
 codex changes - 2026-09-09
 
+- Fixed Product Inventory edit/delete failures for serial numbers containing slashes (for
+  example `N/A`) by changing the `/update_product` and `/delete_product` route converters to
+  accept path-valued serial numbers. The existing product lookup, schedule/P.O. relinking,
+  authorization, and linked-purchase-order deletion block remain unchanged.
+- Aligned `templates/products.html` mutation controls with the server's effective edit/delete
+  permissions for superadmins, the regional admin, and engineers. Product mutation responses
+  now surface the server's JSON message or HTTP status, while network/HTML error responses are
+  handled without leaving the edit action as an uncaught promise failure.
+- Added `tests/test_product_inventory_mutations.py` covering encoded-slash edit/delete behavior
+  and the updated permission/error-response contracts; refreshed the existing Product Inventory
+  markup assertion in `tests/test_product_calibration_certificate.py`.
+- Verification passed: Product Inventory, calibration-certificate, contract-status, and the
+  linked purchase-order guard/rename checks completed **20/20**. No browser, database repair,
+  production, Railway, commit, push, or deployment action was performed.
+- The broader `tests.test_purchase_orders` run completed **53 tests: 49 passed and 4 failed**;
+  all four failures occurred during the existing login setup because the test rate limit returned
+  HTTP 429, not in the Product Inventory mutation or purchase-order guard assertions.
+
 - Started the owner-authorized Calibration Report PDF conversion implementation recorded at the top
   of `plans.md`. The approved behavior is PDF-only for engineers, approvers, archive/timeline,
   downloads, and service-document email; generated DOCX sources remain private and immutable.
