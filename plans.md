@@ -2,7 +2,7 @@
 
 ## Calibration Report Approval-Gated TSR Workflow
 
-**Status:** In progress.
+**Status:** Executed — implementation commit `e34a32e`.
 **Approved:** 2026-09-09 — the owner supplied the complete implementation scope below.
 **Execution authorized:** 2026-09-09 — the owner explicitly requested **PLEASE IMPLEMENT THIS
 PLAN**. Commit, push, Railway/deployment, production data/storage, browser/Codex UI actions, and

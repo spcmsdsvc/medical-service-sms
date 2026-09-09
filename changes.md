@@ -2,6 +2,11 @@
 
 codex changes - 2026-09-09
 
+- Owner authorized commit and push after implementation. The calibration workflow changes were
+  recorded in implementation commit `e34a32e`; only the 25 intended workflow, template, test,
+  release, plan, and change-log files were staged, while the protected database, handoff, and
+  generated-work directories remained unstaged.
+
 - Started the owner-authorized Calibration Report Approval-Gated TSR Workflow recorded at the
   top of `plans.md`. The package reuses the existing combined Calibration Certificate approval,
   hides unapproved generated report PDFs from schedule-card payloads, preserves the returned TSR
