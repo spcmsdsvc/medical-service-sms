@@ -26,8 +26,10 @@ codex changes - 2026-09-09
 - Verification completed: focused PDF/report/archive/approval/email/timeline/sync tests **87/87**;
   full discovery **1035 total, 1024 passed, 10 failed, 1 skipped**, with the ten failures limited
   to unrelated purchase-order HTTP-429 setup and staff-creation fixture/initials issues. Local
-  LibreOffice/render QA was unavailable; no browser, production backfill, commit, push, or deploy
-  was performed.
+  LibreOffice/render QA was unavailable; no browser, production backfill, or deploy was performed.
+- Published the implementation as commit `a9682aa` to `origin/main`; `git ls-remote origin
+  refs/heads/main` verified the same commit. Railway deployment metadata could not be verified
+  because no Railway CLI or connector is available in this environment.
 
 codex changes - 2026-09-08
 

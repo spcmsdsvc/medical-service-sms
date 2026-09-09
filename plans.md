@@ -2,7 +2,7 @@
 
 ## Calibration Reports: retain private DOCX sources and publish PDF outputs
 
-**Status:** In progress.
+**Status:** Executed — `a9682aa` on 2026-09-09.
 **Approved:** 2026-09-09 — the owner explicitly said “implement the plan” after choosing PDF-only
 user-facing reports, private DOCX retention, all historical revisions, LibreOffice on Railway,
 save-then-retry conversion, after-sync availability for offline saves, and blocking service-document
@@ -166,8 +166,8 @@ because they are either contrary to the selected PDF-only behavior or separately
 
 ### Implementation evidence — 2026-09-09
 
-The owner-authorized working-tree implementation is complete and remains uncommitted. Status remains
-`In progress` because commit/push/deployment were not authorized for this task.
+The owner-authorized implementation is complete and was published in `a9682aa` on `main`.
+Deployment and production backfill remain outside this task.
 
 - `app.py` now retains generated Calibration Report DOCX sources privately, stores durable
   source/checksum/converter/state/retry metadata, converts through an isolated headless LibreOffice
@@ -192,7 +192,7 @@ The owner-authorized working-tree implementation is complete and remains uncommi
   bundled development environment has no LibreOffice binary; the Railway image contains the
   renderer, and production deployment remains intentionally outside this authorization.
 - The pre-existing handoff, `scheduler.db`, `.claude/`, `output/`, and `tmp/` work was preserved;
-  no commit, push, deploy, destructive database/storage action, or browser/Codex UI test was run.
+  no deploy, destructive database/storage action, or browser/Codex UI test was run.
 
 
 ## Calibration Report Page 2 engineer name and filename cleanup
