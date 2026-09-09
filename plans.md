@@ -2,7 +2,7 @@
 
 ## P.O. Details Date Refresh and In-Page Machine Coverage Editing
 
-**Status:** In progress
+**Status:** Executed — `1db7cef` on 2026-09-09.
 **Approved:** 2026-09-09 — the owner explicitly requested `PLEASE IMPLEMENT THIS PLAN:` with
 the complete scope below.
 **Detailed:** 2026-09-09
@@ -201,9 +201,11 @@ leaving P.O. Details or opening Product Inventory.
   and `git diff --check` validations passed. The dated P.O. Details release entry and factual
   2026-09-09 change-log bullets were added; no service-worker bump was required.
 - Final worktree review preserved the pre-existing modified handoff and `scheduler.db`, plus the
-  pre-existing `.claude/`, detailed handoff, `output/`, and `tmp/` artifacts. No commit, push,
-  deployment, Railway, production-data, or browser/Codex UI action was performed. Plan status
-  remains `In progress` pending separate commit authorization.
+  pre-existing `.claude/`, detailed handoff, `output/`, and `tmp/` artifacts. Commit `1db7cef` was
+  pushed to `origin/main`, and `git ls-remote origin refs/heads/main` verified the same commit.
+  No deployment, Railway setting, production-data, or browser/Codex UI action was performed.
+  Railway deployment metadata was unavailable because no Railway project is linked in this
+  checkout.
 
 
 ## Calibration Reports: retain private DOCX sources and publish PDF outputs
