@@ -242,6 +242,10 @@ codex changes - 2026-09-09
   local `__pycache__` target returned a permission/lock error, so syntax was verified read-only.
   No browser/Codex UI automation, commit, push, Railway/deployment, production operation, or
   intentional protected-artifact edit was performed.
+- Published the Timeline desktop auto-width fix as commit `1b06444` to `origin/main`; the remote
+  ref was verified at `1b064446b08e57919cb56076be504e0bf0b63758`. Railway deployment metadata could
+  not be verified because the installed CLI reports no linked project; no Railway link, redeploy,
+  variable change, or other production operation was performed.
 
 codex changes - 2026-09-08
 
