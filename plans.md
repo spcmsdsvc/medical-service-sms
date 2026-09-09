@@ -2,13 +2,14 @@
 
 ## Mobile/PWA Navigation and Product Inventory Stability
 
-**Status:** In progress — implementation and local verification complete; no commit was created
-and formal post-implementation review remains separately authorized.
+**Status:** Executed — df7ab29 on 2026-09-09; formal post-implementation review remains
+separately authorized.
 **Approved:** 2026-09-09 — the owner supplied the complete approved implementation plan.
 **Detailed:** 2026-09-09.
 **Execution authorized:** 2026-09-09 — the owner explicitly requested
-PLEASE IMPLEMENT THIS PLAN. Commit, push, Railway, deployment, production data/storage,
-and browser/Codex UI actions remain separately unauthorized.
+PLEASE IMPLEMENT THIS PLAN. The owner later explicitly authorized commit and push. Railway
+variables/deployment, production data/storage, and browser/Codex UI actions remain separately
+unauthorized.
 
 ### Context
 
@@ -168,9 +169,11 @@ compatibility branch.
 - Python AST, rendered Jinja/inline JavaScript syntax for 8 scripts, release-manifest uniqueness
   (84 releases and 246 unique items), mobile Product Inventory Flask/API probe, and intended-file
   git diff checks passed.
-- No browser/Codex UI, commit, push, deployment, Railway, production, database, or protected
-  artifact operation was performed. Keep this plan In progress until a separately authorized
-  commit exists; formal post-implementation review also remains separately authorized.
+- No browser/Codex UI, deployment, Railway variable, production, database, or protected
+  artifact operation was performed. The implementation was committed as df7ab29 and pushed to
+  origin/main; git ls-remote verified the same commit. Railway metadata could not be verified
+  because the CLI has no linked project and its OAuth refresh failed. Formal post-implementation
+  review remains separately authorized.
 
 ### Risks
 

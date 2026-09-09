@@ -75,6 +75,13 @@ codex changes - 2026-09-09
   /get_clients, and /get_products_summary with 200 responses and no redirects. The actual
   phone/PWA smoke test remains owner-authorized and was not run.
 
+- The owner authorized publication of only this Mobile/PWA package. Commit df7ab29 contains the
+  20-file implementation/test/release/plan allowlist, excludes the pre-existing Handoff,
+  scheduler.db, .claude/, output/, tmp/, and unrelated worktree changes, and was pushed to
+  origin/main; git ls-remote verified df7ab2963b0ae4eab0880542e78ff28ddb9691a. Railway
+  deployment metadata could not be verified because the CLI had no linked project and its OAuth
+  refresh failed. No Railway variable change or manual redeploy was performed.
+
 - Fixed Product Inventory edit/delete failures for serial numbers containing slashes (for
   example `N/A`) by changing the `/update_product` and `/delete_product` route converters to
   accept path-valued serial numbers. The existing product lookup, schedule/P.O. relinking,
