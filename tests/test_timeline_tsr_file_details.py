@@ -284,6 +284,26 @@ class TimelineTsrFileDetailsApiTests(unittest.TestCase):
         self.assertTrue(details[self.calibration_report_file_id]['download_url'])
         self.assertTrue(details[self.calibration_report_file_id]['preview_url'])
 
+    def test_timeline_uses_bulk_report_context_without_email_storage_discovery(self):
+        client = self._client_for_user()
+        with patch.object(
+            app_module,
+            'get_tsr_email_files_for_shift',
+            side_effect=AssertionError('Timeline must not build the physical email manifest'),
+        ), patch.object(
+            app_module,
+            'calibration_report_conversion_for_pdf',
+            side_effect=AssertionError('Timeline must not query conversion state per PDF'),
+        ):
+            response = client.get('/get_timeline_data?offset=0&branch=ALL')
+        self.assertEqual(response.status_code, 200, response.get_json())
+        row = self._find_shift(response.get_json(), self.shift_id)
+        self.assertTrue(row['has_linked_tsr'])
+        self.assertIn(
+            self.calibration_report_file_id,
+            {item['id'] for item in row['file_details']},
+        )
+
     def test_generated_calibration_report_pdf_downloads_as_attachment(self):
         report_bytes = b'generated calibration report pdf bytes'
         with tempfile.TemporaryDirectory() as temp_dir:

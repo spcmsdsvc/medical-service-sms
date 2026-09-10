@@ -25,6 +25,7 @@ class ServiceFileDeliverySourceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app_source = (ROOT / "app.py").read_text(encoding="utf-8")
         cls.timeline_source = (ROOT / "templates" / "timeline.html").read_text(encoding="utf-8")
+        cls.offline_tsr_source = (ROOT / "templates" / "offline_tsr.html").read_text(encoding="utf-8")
         cls.settings_source = (ROOT / "templates" / "settings.html").read_text(encoding="utf-8")
         cls.releases_source = (ROOT / "static" / "changelog" / "releases.json").read_text(encoding="utf-8")
 
@@ -68,6 +69,21 @@ class ServiceFileDeliverySourceTests(unittest.TestCase):
             self.assertIn(expected, self.app_source)
         redaction = inspect.getsource(app_module.redact_timeline_payload_for_hr)
         self.assertIn("service_file_delivery", redaction)
+
+    def test_completed_tsr_invalidates_stale_timeline_snapshots(self):
+        self.assertIn("async function invalidateTimelineSnapshotsAfterTSRSave", self.offline_tsr_source)
+        self.assertGreaterEqual(
+            self.offline_tsr_source.count("await invalidateTimelineSnapshotsAfterTSRSave();"),
+            2,
+        )
+        self.assertIn("url.pathname === '/get_timeline_data'", self.offline_tsr_source)
+
+    def test_shift_modal_has_one_viewport_bounded_scroll_body_contract(self):
+        self.assertIn("height: calc(100dvh - 1rem);", self.timeline_source)
+        self.assertIn("min-height: 0;", self.timeline_source)
+        self.assertIn("padding: 0.95rem 0.9rem 7.25rem !important;", self.timeline_source)
+        self.assertNotIn("#shiftModal .modal-body {\n        padding: 1rem !important;", self.timeline_source)
+        self.assertIn("addEventListener('shown.bs.modal', resetMobileShiftModalScroll)", self.timeline_source)
 
 
 class ServiceFileDeliveryPureContractTests(unittest.TestCase):
@@ -556,6 +572,42 @@ class ServiceFileDeliveryRouteTests(unittest.TestCase):
             with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], patches[11], patches[12]:
                 response = app_module.send_tsr_client_email.__wrapped__(17)
         return response
+
+    def test_preview_get_builds_default_selection_without_server_error(self):
+        shift = SimpleNamespace(
+            id=17,
+            title="Route delivery",
+            status="Completed",
+            start_time=datetime(2026, 9, 10, 8, 0),
+            client=SimpleNamespace(name="Route Client"),
+        )
+        attachment = self._message()["email_attachments"][0]
+        fake_user = SimpleNamespace(is_authenticated=True, username="engineer")
+        patches = (
+            patch.object(app_module, "current_user", fake_user),
+            patch.object(app_module.db.session, "get", return_value=shift),
+            patch.object(app_module, "can_work_on_existing_schedule_shift", return_value=True),
+            patch.object(app_module, "get_tsr_files_for_shift", return_value=[attachment]),
+            patch.object(app_module, "get_tsr_email_files_for_shift", return_value=[attachment]),
+            patch.object(app_module, "get_tsr_email_attachment_manifest_signature", return_value="manifest"),
+            patch.object(app_module, "get_shift_service_file_delivery_summary", return_value={"total_count": 1}),
+            patch.object(app_module, "get_linked_schedule_manual_upload_count", return_value=0),
+            patch.object(app_module, "get_saved_tsr_email_metadata_candidates", return_value=[]),
+            patch.object(app_module, "detect_client_emails_from_tsr_files", return_value=[]),
+            patch.object(app_module, "get_shift_client_email_fallbacks", return_value=[]),
+            patch.object(app_module, "get_static_tsr_client_cc_emails", return_value=[]),
+            patch.object(app_module, "get_current_user_email_for_tsr_cc", return_value=""),
+            patch.object(app_module, "get_user_remembered_tsr_client_cc_emails", return_value=[]),
+            patch.object(app_module, "get_latest_online_tsr_submission_for_shift", return_value=None),
+        )
+        with app_module.app.test_request_context('/preview_tsr_client_email/17'):
+            with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8], patches[9], patches[10], patches[11], patches[12], patches[13]:
+                response = app_module.preview_tsr_client_email.__wrapped__(17)
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["selected_attachment_ids"], [21])
+        self.assertEqual(payload["email_mode"], "tsr")
+        self.assertTrue(payload["can_send"])
 
     def test_provider_failure_does_not_track_files(self):
         with patch.object(app_module, "mark_service_files_emailed") as marker:

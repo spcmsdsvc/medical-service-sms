@@ -304,7 +304,7 @@ globalThis.loadStandaloneTSRDraftFromLocalStorageFallback = () => ({{
         self.assertIn("Completed online TSRs and revision history are not recovery sources", " ".join(output["warnings"]))
 
     def test_worker_and_published_release_are_current(self):
-        self.assertIn("medical-service-pwa-offline-navigation-v152-timeline-desktop-auto-width", self.app_source)
+        self.assertIn("medical-service-pwa-offline-navigation-v153-tsr-calendar-regression-correction", self.app_source)
         self.assertNotIn("medical-service-pwa-offline-navigation-v145-tsr-signature-recovery", self.app_source)
         manifest = json.loads(self.release)
         matches = [
@@ -659,6 +659,43 @@ class TsrSignatureSubmissionRouteTests(unittest.TestCase):
             self.assertEqual(replay.status_code, 200, replay.get_json())
             self.assertTrue(replay.get_json()["duplicate"])
             self.assertNotIn("payload", replay.get_json())
+
+    def test_core_save_commits_schedule_completed_and_links_the_tsr(self):
+        token = f"route-completion-{uuid4().hex}"
+        real_complete = app_module.complete_schedules_for_online_tsr
+
+        def attach_real_file(shift, filename):
+            record = app_module.ShiftFile(
+                shift_id=shift.id,
+                filename=filename,
+                original_filename=filename,
+            )
+            app_module.db.session.add(record)
+            app_module.db.session.flush()
+            return record
+
+        with self.app.app_context():
+            shift = app_module.db.session.get(app_module.Shift, self.shift_id)
+            shift.status = "In Progress"
+            app_module.db.session.commit()
+
+        with self.app.app_context(), self.route_patches("completion.pdf"), \
+                patch.object(app_module, "complete_schedules_for_online_tsr", side_effect=real_complete), \
+                patch.object(app_module, "attach_online_tsr_pdf_to_shift", side_effect=attach_real_file):
+            response = self.client.post("/save_offline_tsr_online", json=self.payload(token))
+            self.assertEqual(response.status_code, 200, response.get_json())
+            result = response.get_json()
+            submission_id = result["submission_id"]
+            self.submission_ids.append(submission_id)
+            app_module.db.session.expire_all()
+            shift = app_module.db.session.get(app_module.Shift, self.shift_id)
+            self.assertEqual(shift.status, "Completed")
+            self.assertEqual(result["completed_shift_ids"], [self.shift_id])
+            linked = app_module.ShiftFile.query.filter_by(
+                shift_id=self.shift_id,
+                online_tsr_submission_id=submission_id,
+            ).one()
+            self.assertEqual(linked.original_filename, "completion.pdf")
 
     def test_revision_success_strips_client_signature_and_requires_it_before_save(self):
         original_token = f"route-original-{uuid4().hex}"

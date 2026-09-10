@@ -627,6 +627,34 @@ const TIMELINE_OFFLINE_SNAPSHOT_KEY = 'timelineOfflineSnapshot';
 const TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY = 'timelineOfflineSnapshots';
 const LEGACY_TIMELINE_OFFLINE_SNAPSHOT_KEY = 'medicalServiceTimelineOfflineSnapshotV1';
 const LEGACY_TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY = 'medicalServiceTimelineOfflineSnapshotMapV1';
+
+async function invalidateTimelineSnapshotsAfterTSRSave(){
+  [
+    TIMELINE_OFFLINE_SNAPSHOT_KEY,
+    TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY,
+    LEGACY_TIMELINE_OFFLINE_SNAPSHOT_KEY,
+    LEGACY_TIMELINE_OFFLINE_SNAPSHOT_MAP_KEY,
+    STANDALONE_TSR_SCHEDULES_KEY
+  ].forEach(key => {
+    try{ localStorage.removeItem(key); }catch(err){}
+  });
+  if(typeof caches === 'undefined') return;
+  try{
+    const cacheNames = await caches.keys();
+    await Promise.all(cacheNames.map(async cacheName => {
+      const cache = await caches.open(cacheName);
+      const requests = await cache.keys();
+      await Promise.all(requests.map(request => {
+        try{
+          const url = new URL(request.url);
+          return url.pathname === '/get_timeline_data' ? cache.delete(request) : false;
+        }catch(err){ return false; }
+      }));
+    }));
+  }catch(err){
+    console.warn('[Online TSR] Timeline snapshot invalidation skipped', err);
+  }
+}
 const LOGGED_IN_ENGINEER_NAME = "{{ (current_user.engineer_profile.name if current_user.engineer_profile else current_user.username)|e }}";
 const LOGGED_IN_ENGINEER_INITIALS = "{{ (current_user.engineer_profile.initials if current_user.engineer_profile and current_user.engineer_profile.initials else '')|e }}";
 const OFFLINE_TSR_STORAGE_HEALTH_ADMIN = String("{{ 'true' if offline_storage_health_admin else 'false' }}").toLowerCase() === 'true';
@@ -6423,6 +6451,7 @@ async function uploadQueuedOfflineTSR(item, numberRetryCount=0){
         result
       });
     }
+    await invalidateTimelineSnapshotsAfterTSRSave();
     await patchOfflineTSRQueueItem(item.id, {
       sync_phase:'uploading_attachments',
       server_submission_id:result.submission_id,
@@ -6779,6 +6808,7 @@ async function submitStandaloneTSROnline(data, options={}){
         result:coreResult
       });
     }
+    await invalidateTimelineSnapshotsAfterTSRSave();
     const attachmentResult = await uploadTSRSupportingAttachments(coreResult, currentAttachments, {
       uploadedTokens:uploadedAttachmentTokens,
       onUploaded: async ({ uploadedTokens }) => { uploadedAttachmentTokens = uploadedTokens; }

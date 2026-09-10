@@ -1930,14 +1930,20 @@ body.timeline-dev-preview-manager .timeline-engineer-focus-strip {
 }
 
 #shiftModal .modal-dialog {
+    height: calc(100dvh - 1.75rem);
     max-height: calc(100vh - 1.75rem);
 }
 
 #shiftModal .modal-content {
+    height: 100%;
+    min-height: 0;
     max-height: calc(100vh - 1.75rem);
+    overflow: hidden;
 }
 
 #shiftModal .modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
@@ -4660,17 +4666,21 @@ body.mobile-engineer-mode.mobile-desktop-grid-skipped .timeline-desktop-shell {
 
     #shiftModal .modal-dialog {
         max-width: none;
-        width: 100%;
-        margin: 0;
-        min-height: 100%;
+        width: calc(100% - 1rem);
+        height: calc(100dvh - 1rem);
+        max-height: calc(100dvh - 1rem);
+        margin: 0.5rem;
+        min-height: 0;
         display: flex;
         align-items: stretch;
     }
 
     #shiftModal .modal-content {
         width: 100%;
-        min-height: 100vh;
-        border-radius: 0 !important;
+        height: 100%;
+        min-height: 0;
+        max-height: 100%;
+        border-radius: 1.1rem !important;
         display: flex;
         flex-direction: column;
         overflow: hidden !important;
@@ -4881,18 +4891,6 @@ body.mobile-engineer-mode.mobile-desktop-grid-skipped .timeline-desktop-shell {
 
 
 @media (max-width: 768px) {
-    #shiftModal .modal-dialog {
-        margin: 0.5rem;
-    }
-
-    #shiftModal .modal-content {
-        border-radius: 1.1rem !important;
-    }
-
-    #shiftModal .modal-body {
-        padding: 1rem !important;
-    }
-
     #file-container {
         border-width: 2px !important;
         border-style: dashed !important;
@@ -15092,7 +15090,6 @@ async function loadGrid(options={}) {
      */
 
     function resetMobileShiftModalScroll(){
-        if(!window.matchMedia('(max-width: 768px)').matches) return;
         setTimeout(() => {
             const modalBody = document.querySelector('#shiftModal .modal-body');
             if(modalBody) modalBody.scrollTop = 0;
@@ -18120,6 +18117,7 @@ window.addEventListener('resize', handleTimelineResizeDebounced, { passive: true
         syncMobileRoleBadges();
         shiftModal = new bootstrap.Modal(document.getElementById('shiftModal'));
 
+        document.getElementById('shiftModal').addEventListener('shown.bs.modal', resetMobileShiftModalScroll);
         document.getElementById('shiftModal').addEventListener('hidden.bs.modal', function(){
             resetEngineerPicker();
             resetEditScopeControls();

@@ -1,5 +1,84 @@
 # Medical Service SMS — Approved Plans
 
+## Urgent TSR and Calendar Regression Correction
+
+**Status:** Executed locally on 2026-09-10; no commit authorized or created.
+**Approved:** 2026-09-10 — the owner supplied and explicitly authorized this implementation plan.
+**Execution authorized:** 2026-09-10 — the owner explicitly requested **PLEASE IMPLEMENT THIS PLAN**.
+Commit, push, Railway/deployment, production data/storage, browser/Codex UI actions, and protected
+dirty-artifact changes remain separately unauthorized.
+**Detailed:** 2026-09-10.
+
+### Context and decisions
+
+The approval-gated calibration workflow introduced four material regressions: the Service Files
+preview route raises a `NameError` while initializing its default package, slow per-file approval
+and conversion queries can make Timeline requests time out and show stale schedule snapshots, the
+Create TSR success path does not invalidate those stale snapshots, and conflicting shift-modal CSS
+can prevent the edit form from scrolling. The correction will preserve the combined Calibration
+Report & Certificate approval gate and its schedule-manager-only sending permission rather than
+reverting the workflow.
+
+The server remains authoritative for TSR completion and calibration-file authorization. Timeline
+will preload calibration conversion/approval state in bulk and reuse it for visibility, file
+details, and delivery summaries. The full physical attachment manifest remains deferred to the
+Service Files modal and schedule-details workflow. No schema or migration is required.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Preserve the existing Timeline width work and keep `scheduler.db`,
+   `Handoffs/`, `.claude/`, `output/`, `tmp/`, the detailed handoff, and all unrelated owner work
+   outside the allowlist. Record this plan as In progress and append implementation facts to the
+   2026-09-10 change-log section. Done when only intended source, template, test, release, plan,
+   and change-record files are modified.
+2. **Restore Service Files preview.** In `app.py`, centralize default selected attachment IDs,
+   email mode, and paired-calibration-only state so `/preview_tsr_client_email/<shift_id>` computes
+   them in its own request. Preserve engineer selection of TSR/supporting files, disabled
+   calibration rows for engineers, schedule-manager calibration selection, forged-selection
+   rejection, and calibration-only/mixed-package wording. Done when the GET route returns a
+   populated manifest or an explicit error instead of leaving the modal scanning.
+3. **Guarantee completion visibility.** Keep `save_offline_tsr_online()` and
+   `complete_schedules_for_online_tsr()` atomic. In `templates/offline_tsr.html`, clear Timeline
+   memory/PWA/localStorage snapshots after the server confirms the core save so a later Calendar
+   visit cannot render the pre-save status. Preserve durable queue behavior when only follow-up
+   attachment upload fails. Done when a real route test re-queries the schedule as `Completed`,
+   verifies its TSR link and `completed_shift_ids`, and confirms later calibration processing
+   cannot roll the completion back.
+4. **Remove Timeline N+1 work.** In `app.py`, bulk-load conversion-owned report IDs, source/report
+   links, exact approvals, and latest revision state for the weekly ShiftFiles. Pass that context
+   through visibility and file-detail serialization without per-file queries, compute visible
+   files once per shift, and build calendar delivery summaries from loaded database records rather
+   than physical storage discovery. Keep approved reports visible and pending, Returned,
+   Superseded, stale, missing, and unready reports hidden. Done when response shape is preserved
+   and query growth is bounded across multiple shifts/files.
+5. **Repair modal scrolling.** In `templates/timeline.html`, consolidate conflicting mobile
+   `#shiftModal` rules, bound dialog/content height to the viewport, give the flex body
+   `min-height:0` plus vertical overflow, preserve fixed-footer safe-area clearance, and reset the
+   modal body's scroll position whenever Add/Edit opens. Keep desktop and mobile layouts usable.
+6. **Regression coverage and release.** Add Flask-client tests for the preview GET route,
+   engineer/manager permissions, real TSR completion, post-save calibration failure isolation,
+   approval visibility, and bounded Timeline queries. Add template contracts for snapshot
+   invalidation and modal scrolling. Advance the embedded service-worker marker from v152 to v153
+   and add the dated release entry.
+7. **Verification and closeout.** Run focused TSR/email/approval/service-file/Timeline/revision
+   tests, then full isolated unittest discovery. Run Python compilation or read-only AST fallback,
+   Jinja parsing, extracted JavaScript checks, release JSON/service-worker validation, and
+   `git diff --check`. Record exact results in `changes.md` and mark this plan Executed without a
+   commit hash unless a later separately authorized commit exists.
+
+### Acceptance and exclusions
+
+- Saving a TSR commits the intended linked schedules as Completed and returning to Calendar cannot
+  resurrect stale In Progress data.
+- The Service Files modal loads a sendable TSR for engineers; calibration files remain protected
+  by both UI metadata and server authorization, and existing email wording modes remain correct.
+- Timeline performance no longer scales with repeated per-file conversion/approval/storage
+  lookups, while approval-gated report visibility remains exact.
+- The shift edit modal scrolls through all controls on desktop and mobile without obscuring the
+  final controls behind its footer.
+- No database migration/repair, browser automation, production/Railway operation, commit, push,
+  merge, or protected-artifact modification is included.
+
 ## Calibration Report Approval-Gated TSR Workflow
 
 **Status:** Executed — implementation commit `e34a32e`.

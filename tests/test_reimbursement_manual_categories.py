@@ -338,7 +338,7 @@ class ReimbursementManualCategorySourceTests(unittest.TestCase):
         self.assertIn('amounts.others_misc = amounts.others || 0;', TEMPLATE)
 
     def test_manual_category_release_and_cache_are_current(self):
-        self.assertIn('medical-service-pwa-offline-navigation-v152-timeline-desktop-auto-width', APP_SOURCE)
+        self.assertIn('medical-service-pwa-offline-navigation-v153-tsr-calendar-regression-correction', APP_SOURCE)
         matches = [
             release for release in RELEASES.get('releases', [])
             if release.get('release_key') == '2026-09-06-reimbursement-manual-categories'

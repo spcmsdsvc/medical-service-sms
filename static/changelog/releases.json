@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-10-tsr-calendar-regression-correction",
+      "release_date": "2026-09-10",
+      "title": "TSR and Calendar Reliability Fix",
+      "summary": "TSR completion and sending are reliable again, while Calendar loading and schedule editing are faster and usable.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-10-tsr-calendar-regression-correction-everyone",
+          "category": "Service Reports",
+          "description": "Fixed Service Files email initialization, refreshed Calendar status after a completed TSR save, removed repeated Calendar document lookups, and restored scrolling throughout the schedule edit form. Calibration Report & Certificate approval and sending permissions remain enforced.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-09-timeline-desktop-auto-width",
       "release_date": "2026-09-09",
       "title": "Responsive Timeline Width",

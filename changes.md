@@ -1,5 +1,50 @@
 # Project Change Log
 
+codex changes - 2026-09-10
+
+- Implemented the owner-authorized urgent TSR and Calendar regression correction recorded at the
+  top of `plans.md`. The focused package preserves the combined Calibration Report & Certificate
+  approval gate, schedule-manager-only calibration sending, the current responsive Timeline width,
+  and all protected owner artifacts.
+- Fixed `GET /preview_tsr_client_email/<shift_id>` in `app.py`. Default unsent/selectable attachment
+  IDs, email mode, and paired calibration-only state now come from one shared package helper instead
+  of undefined variables local to the POST message builder. The Service Files modal can load TSR and
+  supporting attachments again, while engineer-disabled calibration rows and server-side forged-ID
+  rejection remain unchanged.
+- Preserved the atomic online TSR completion transaction and added a real route regression proving
+  the schedule is committed as `Completed`, `completed_shift_ids` is accurate, and the generated TSR
+  ShiftFile remains linked to the saved submission. `templates/offline_tsr.html` now removes Timeline
+  localStorage, schedule-picker, and Cache API snapshots immediately after the server confirms the
+  core save, including the durable-queue continuation path when later attachment work must retry.
+- Reworked Calendar serialization in `app.py` to bulk-load generated Calibration Report conversion,
+  source, approval, and latest-submission state once per Timeline response. Visible files are filtered
+  once per shift and reused for names/details, while delivery badges are built from already-loaded
+  ShiftFile records without physical email attachment discovery. Approved reports remain visible;
+  pending, Returned, Superseded, stale, missing, and unready report artifacts remain hidden.
+- Corrected `#shiftModal` sizing and scrolling in `templates/timeline.html`. Desktop and mobile modal
+  content is viewport-bounded, the flex body has a real scroll area, mobile fixed-footer clearance and
+  safe-area padding are retained, the conflicting later body-padding override was removed, and modal
+  scroll position is reset on every shown event.
+- Added regression coverage for the formerly crashing Service Files GET route, real TSR completion
+  persistence/file linkage, stale Timeline snapshot invalidation, database-only Calendar report
+  serialization, and desktop/mobile modal scrolling. The final combined approval, calibration,
+  service-file, email, TSR, Timeline, offline, cache-marker, and UI-contract run passed **322/322**;
+  an earlier independently targeted source/Node group passed **38/38**.
+- Full isolated unittest discovery completed **1,062 tests: 1,043 passed, 18 failed, and 1 skipped**.
+  The 18 failures match pre-existing unrelated baselines: 16 Purchase Order login-setup HTTP-429
+  throttle failures and 2 staff-creation duplicate-initials/fixture failures. The affected focused
+  suites had no failures.
+- Warm isolated Timeline probing returned HTTP 200 in **45.9 ms** with **94 SQL statements**, versus
+  the pre-correction one-shift probe of about 124 statements; per-PDF conversion lookup and physical
+  email-manifest calls are also guarded by regression tests. Python AST parsing, Jinja parsing for
+  Timeline/Create TSR/Approval Center, release JSON uniqueness (**87 releases, 250 unique items**),
+  and `git diff --check` passed. Normal `py_compile` remained unavailable because the existing local
+  `__pycache__` target returned a permission/lock error.
+- Bumped the embedded service-worker cache from v152 to
+  `medical-service-pwa-offline-navigation-v153-tsr-calendar-regression-correction` and added the
+  published 2026-09-10 TSR and Calendar Reliability release entry. No schema/migration, database
+  repair, browser/Codex UI automation, production/Railway operation, commit, or push was performed.
+
 codex changes - 2026-09-09
 
 - Owner authorized commit and push after implementation. The calibration workflow changes were
