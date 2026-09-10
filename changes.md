@@ -44,6 +44,11 @@ codex changes - 2026-09-10
   `medical-service-pwa-offline-navigation-v153-tsr-calendar-regression-correction` and added the
   published 2026-09-10 TSR and Calendar Reliability release entry. No schema/migration, database
   repair, browser/Codex UI automation, production/Railway operation, commit, or push was performed.
+- The owner authorized publication of only this regression correction. Implementation commit
+  `61b0b8b` contains the 21-file source/template/test/release/plan/change-log allowlist; the
+  pre-existing `scheduler.db`, handoff, `.claude/`, `output/`, `tmp/`, and detailed-handoff changes
+  remained unstaged and excluded. The publication record is committed separately so the executed
+  plan can retain the immutable implementation commit hash.
 
 codex changes - 2026-09-09
 

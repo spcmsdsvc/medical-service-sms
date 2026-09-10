@@ -2,7 +2,7 @@
 
 ## Urgent TSR and Calendar Regression Correction
 
-**Status:** Executed locally on 2026-09-10; no commit authorized or created.
+**Status:** Executed — implementation commit `61b0b8b`.
 **Approved:** 2026-09-10 — the owner supplied and explicitly authorized this implementation plan.
 **Execution authorized:** 2026-09-10 — the owner explicitly requested **PLEASE IMPLEMENT THIS PLAN**.
 Commit, push, Railway/deployment, production data/storage, browser/Codex UI actions, and protected
