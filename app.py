@@ -16422,7 +16422,7 @@ def _run_calibration_report_conversion_worker():
 
 
 def queue_missing_calibration_report_conversions():
-    """Queue legacy generated report sources that predate conversion tracking."""
+    """Queue legacy sources and revive exhausted jobs for approved latest reports."""
     global _calibration_report_conversion_backfill_checked
     if _calibration_report_conversion_backfill_checked:
         return 0
@@ -16470,14 +16470,60 @@ def queue_missing_calibration_report_conversions():
         ))
         queued += 1
 
-    if queued:
+    recoverable_jobs = (
+        db.session.query(
+            CalibrationReportConversion,
+            ShiftFile,
+            OnlineTsrSubmission,
+        )
+        .join(
+            ShiftFile,
+            ShiftFile.id == CalibrationReportConversion.source_shift_file_id,
+        )
+        .join(
+            OnlineTsrSubmission,
+            OnlineTsrSubmission.id == ShiftFile.online_tsr_submission_id,
+        )
+        .join(
+            CalibrationCertificateApproval,
+            CalibrationCertificateApproval.online_tsr_submission_id == OnlineTsrSubmission.id,
+        )
+        .filter(CalibrationReportConversion.state == 'failed')
+        .filter(CalibrationReportConversion.attempts >= CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS)
+        .filter(CalibrationCertificateApproval.status == 'Approved')
+        .filter(CalibrationCertificateApproval.is_latest.is_(True))
+        .filter(OnlineTsrSubmission.is_latest.is_(True))
+        .all()
+    )
+    revived = 0
+    for job, source_file, submission in recoverable_jobs:
+        payload = parse_online_tsr_payload_json(submission)
+        marker = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
+        if not (
+            isinstance(marker, dict) and
+            marker.get('source') == 'generated_calibration_report' and
+            clean_int(marker.get('file_id')) == clean_int(source_file.id) and
+            clean_int(submission.shift_id) == clean_int(source_file.shift_id)
+        ):
+            continue
+        job.state = 'pending'
+        job.attempts = 0
+        job.claim_token = None
+        job.claimed_at = None
+        job.next_retry_at = None
+        job.last_error = None
+        job.updated_at = now
+        revived += 1
+
+    if queued or revived:
         db.session.commit()
         print(
-            f'[CalibrationReport] Queued {queued} historical report conversion(s).',
+            f'[CalibrationReport] Queued {queued} historical and revived {revived} '
+            'approved report conversion(s).',
             flush=True,
         )
     _calibration_report_conversion_backfill_checked = True
-    return queued
+    return queued + revived
 
 
 def schedule_calibration_report_conversion(source_file_id=None):

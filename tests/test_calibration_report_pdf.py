@@ -208,6 +208,59 @@ class CalibrationReportPdfTests(unittest.TestCase):
             finally:
                 app_module._calibration_report_conversion_backfill_checked = original_backfill_state
 
+    def test_exhausted_approved_report_conversion_is_revived(self):
+        source_id, submission_id, _ = self._create_source_fixture()
+        with self.app.app_context():
+            submission = self.db.session.get(app_module.OnlineTsrSubmission, submission_id)
+            job = app_module.CalibrationReportConversion(
+                source_shift_file_id=source_id,
+                state='failed',
+                attempts=app_module.CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS,
+                last_error='temporary conversion failure',
+                updated_at=datetime.now(),
+            )
+            approval = app_module.CalibrationCertificateApproval(
+                shift_id=submission.shift_id,
+                online_tsr_submission_id=submission.id,
+                revision_no=1,
+                is_latest=True,
+                status='Approved',
+                certificate_number=f'RETRY-{submission.id}',
+                mapped_data_json='{}',
+                template_sha256=app_module.CALIBRATION_CERTIFICATE_RUNTIME_SHA256,
+                unsigned_artifact_path=f'calibration-certificates/retry-{submission.id}.pdf',
+                approved_at=datetime.now(),
+            )
+            self.db.session.add_all([job, approval])
+            self.db.session.commit()
+
+            original_backfill_state = app_module._calibration_report_conversion_backfill_checked
+            app_module._calibration_report_conversion_backfill_checked = False
+            try:
+                recovered = app_module.queue_missing_calibration_report_conversions()
+                self.db.session.refresh(job)
+                self.assertGreaterEqual(recovered, 1)
+                self.assertEqual(job.state, 'pending')
+                self.assertEqual(job.attempts, 0)
+                self.assertIsNone(job.last_error)
+
+                with patch.object(
+                    app_module,
+                    'convert_calibration_report_docx_bytes',
+                    return_value=self.pdf_bytes,
+                ):
+                    app_module.convert_calibration_report_source(source_id)
+
+                source_file = self.db.session.get(app_module.ShiftFile, source_id)
+                shift = self.db.session.get(app_module.Shift, source_file.shift_id)
+                visible_files = app_module.get_user_visible_shift_file_records(shift)
+                self.assertEqual(len(visible_files), 1)
+                self.assertTrue(
+                    app_module.is_system_generated_calibration_report_pdf_file(visible_files[0])
+                )
+            finally:
+                app_module._calibration_report_conversion_backfill_checked = original_backfill_state
+
     def test_conversion_failure_persists_retry_state_without_removing_source(self):
         source_id, submission_id, disk_name = self._create_source_fixture()
         with self.app.app_context():

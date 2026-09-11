@@ -17,6 +17,12 @@ codex changes - 2026-09-11
   handoff, `.claude/`, `output/`, `tmp/`, and unrelated files remained unstaged. `origin/main` was
   verified at `117bad0c10eb6f793d9fe63aae75fe5aa5e1c5f2`; Railway deployment metadata could not be
   checked because this checkout is not linked to a Railway project.
+- Follow-up production diagnosis confirmed Railway successfully deployed `ac132a0` from the
+  LibreOffice-enabled Dockerfile, while an approved report still remained absent. Extended the
+  one-time startup recovery to revive exhausted conversion jobs only when both the combined
+  approval and TSR submission are latest and Approved. This preserves the approval gate while
+  allowing a previously failed report conversion to retry after deployment. Added an isolated
+  regression proving the exhausted job is reset, converted, and exposed on the schedule card.
 
 codex changes - 2026-09-10
 
