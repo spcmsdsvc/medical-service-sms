@@ -12,6 +12,11 @@ codex changes - 2026-09-11
   queued, converted, and returned by the schedule-file visibility gate. The backfill check is kept
   out of repeated Calendar serialization, and no owner database repair or production operation was
   performed.
+- The owner authorized publication of this fix only. Commit `117bad0` contains only `app.py`, the
+  focused Calibration Report PDF regression test, and this change log; the protected database,
+  handoff, `.claude/`, `output/`, `tmp/`, and unrelated files remained unstaged. `origin/main` was
+  verified at `117bad0c10eb6f793d9fe63aae75fe5aa5e1c5f2`; Railway deployment metadata could not be
+  checked because this checkout is not linked to a Railway project.
 
 codex changes - 2026-09-10
 
