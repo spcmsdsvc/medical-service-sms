@@ -2929,6 +2929,7 @@ _calibration_report_conversion_table_ready = False
 _calibration_report_conversion_worker = None
 _calibration_report_conversion_worker_lock = threading.Lock()
 _calibration_report_conversion_worker_wakeup = threading.Event()
+_calibration_report_conversion_backfill_checked = False
 
 
 def ensure_tsr_knowledge_entry_table():
@@ -16420,10 +16421,71 @@ def _run_calibration_report_conversion_worker():
         _calibration_report_conversion_worker = None
 
 
+def queue_missing_calibration_report_conversions():
+    """Queue legacy generated report sources that predate conversion tracking."""
+    global _calibration_report_conversion_backfill_checked
+    if _calibration_report_conversion_backfill_checked:
+        return 0
+
+    ensure_calibration_report_conversion_table()
+    candidates = (
+        db.session.query(ShiftFile, OnlineTsrSubmission)
+        .join(
+            OnlineTsrSubmission,
+            OnlineTsrSubmission.id == ShiftFile.online_tsr_submission_id,
+        )
+        .outerjoin(
+            CalibrationReportConversion,
+            CalibrationReportConversion.source_shift_file_id == ShiftFile.id,
+        )
+        .filter(CalibrationReportConversion.id.is_(None))
+        .filter(
+            or_(
+                ShiftFile.original_filename.ilike('%.docx'),
+                ShiftFile.filename.ilike('%.docx'),
+            )
+        )
+        .order_by(ShiftFile.uploaded_at.asc(), ShiftFile.id.asc())
+        .all()
+    )
+
+    queued = 0
+    now = get_manila_time()
+    for source_file, submission in candidates:
+        payload = parse_online_tsr_payload_json(submission)
+        marker = payload.get('_generated_calibration_report') if isinstance(payload, dict) else None
+        if not (
+            isinstance(marker, dict) and
+            marker.get('source') == 'generated_calibration_report' and
+            clean_int(marker.get('file_id')) == clean_int(source_file.id) and
+            clean_int(submission.shift_id) == clean_int(source_file.shift_id)
+        ):
+            continue
+        db.session.add(CalibrationReportConversion(
+            source_shift_file_id=source_file.id,
+            state='pending',
+            attempts=0,
+            created_at=now,
+            updated_at=now,
+        ))
+        queued += 1
+
+    if queued:
+        db.session.commit()
+        print(
+            f'[CalibrationReport] Queued {queued} historical report conversion(s).',
+            flush=True,
+        )
+    _calibration_report_conversion_backfill_checked = True
+    return queued
+
+
 def schedule_calibration_report_conversion(source_file_id=None):
     """Persist a pending job and wake the one serial conversion worker."""
     global _calibration_report_conversion_worker
     ensure_calibration_report_conversion_table()
+    if source_file_id is None:
+        queue_missing_calibration_report_conversions()
     if source_file_id:
         source_file = db.session.get(ShiftFile, clean_int(source_file_id))
         if source_file and calibration_report_source_file_is_private(source_file):

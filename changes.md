@@ -1,5 +1,18 @@
 # Project Change Log
 
+codex changes - 2026-09-11
+
+- Fixed approved legacy Calibration Reports missing from Calendar schedule cards. Application
+  startup now performs a one-time, exact-marker scan for generated report DOCX sources that predate
+  conversion tracking, creates their missing durable conversion jobs, and lets the existing serial
+  worker publish the PDF. The private DOCX remains hidden, and the PDF still appears only when its
+  linked combined Calibration Report & Certificate approval and TSR submission are both latest and
+  approved.
+- Added isolated regression coverage proving an older approved report with no conversion row is
+  queued, converted, and returned by the schedule-file visibility gate. The backfill check is kept
+  out of repeated Calendar serialization, and no owner database repair or production operation was
+  performed.
+
 codex changes - 2026-09-10
 
 - Implemented the owner-authorized urgent TSR and Calendar regression correction recorded at the
