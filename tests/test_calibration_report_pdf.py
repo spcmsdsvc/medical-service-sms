@@ -205,6 +205,28 @@ class CalibrationReportPdfTests(unittest.TestCase):
                 self.assertTrue(
                     app_module.is_system_generated_calibration_report_pdf_file(visible_files[0])
                 )
+
+                submission.is_latest = False
+                newer_submission = app_module.OnlineTsrSubmission(
+                    shift_id=shift.id,
+                    tsr_number=f'TSR-PDF-NEWER-{submission.id}',
+                    status='completed',
+                    submission_token=f'tsr-pdf-newer-{submission.id}',
+                    payload_json=json.dumps({'_attached_file_id': None}),
+                    revision_no=2,
+                    parent_submission_id=submission.id,
+                    is_latest=True,
+                )
+                self.db.session.add(newer_submission)
+                self.db.session.commit()
+
+                visible_after_tsr_only_revision = app_module.get_user_visible_shift_file_records(shift)
+                self.assertEqual(
+                    [file_record.id for file_record in visible_after_tsr_only_revision],
+                    [visible_files[0].id],
+                )
+                delivery_state = app_module.get_linked_schedule_calibration_report_file_state([shift])
+                self.assertIn(visible_files[0].id, delivery_state['latest_ids'])
             finally:
                 app_module._calibration_report_conversion_backfill_checked = original_backfill_state
 

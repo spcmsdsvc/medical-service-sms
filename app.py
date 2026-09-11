@@ -16492,7 +16492,6 @@ def queue_missing_calibration_report_conversions():
         .filter(CalibrationReportConversion.attempts >= CALIBRATION_REPORT_CONVERSION_MAX_ATTEMPTS)
         .filter(CalibrationCertificateApproval.status == 'Approved')
         .filter(CalibrationCertificateApproval.is_latest.is_(True))
-        .filter(OnlineTsrSubmission.is_latest.is_(True))
         .all()
     )
     revived = 0
@@ -17683,7 +17682,6 @@ def calibration_report_visibility_context_for_files(file_records):
     empty = {
         'artifact_ids': set(),
         'approval_map': {},
-        'latest_submission_ids': set(),
         'visible_ids': set(),
     }
     if not pdf_ids or not has_app_context():
@@ -17741,13 +17739,6 @@ def calibration_report_visibility_context_for_files(file_records):
             CalibrationCertificateApproval.shift_id.in_(shift_ids),
             CalibrationCertificateApproval.online_tsr_submission_id.in_(submission_ids),
         ).all()
-        latest_submission_ids = {
-            clean_int(submission.id)
-            for submission in OnlineTsrSubmission.query.filter(
-                OnlineTsrSubmission.id.in_(submission_ids),
-                OnlineTsrSubmission.is_latest.is_(True),
-            ).all()
-        }
     except Exception as context_error:
         print(f'[CALIBRATION-REPORT] Bulk approval lookup skipped: {context_error}', flush=True)
         return {**empty, 'artifact_ids': artifact_ids}
@@ -17768,14 +17759,12 @@ def calibration_report_visibility_context_for_files(file_records):
         file_id for file_id, approval in approval_map.items()
         if (
             clean_str(getattr(approval, 'status', None)) == 'Approved' and
-            bool(getattr(approval, 'is_latest', False)) and
-            clean_int(getattr(approval, 'online_tsr_submission_id', None)) in latest_submission_ids
+            bool(getattr(approval, 'is_latest', False))
         )
     }
     return {
         'artifact_ids': artifact_ids,
         'approval_map': approval_map,
-        'latest_submission_ids': latest_submission_ids,
         'visible_ids': visible_ids,
     }
 
@@ -17789,13 +17778,11 @@ def calibration_report_file_is_latest_approved(file_record, approval_map=None):
         if approval_map is None else approval_map
     )
     approval = resolved_map.get(clean_int(getattr(file_record, 'id', None)))
-    if not approval or approval.status != 'Approved' or not bool(approval.is_latest):
-        return False
-    submission = db.session.get(
-        OnlineTsrSubmission,
-        clean_int(getattr(approval, 'online_tsr_submission_id', None)),
+    return bool(
+        approval and
+        approval.status == 'Approved' and
+        bool(approval.is_latest)
     )
-    return bool(submission and getattr(submission, 'is_latest', True))
 
 
 def calibration_certificate_mapped_snapshot(raw_snapshot):
@@ -48566,11 +48553,12 @@ def get_linked_schedule_calibration_report_file_state(candidate_shifts):
             'is_latest_approved': bool(
                 approval and
                 approval.status == 'Approved' and
-                bool(approval.is_latest) and
-                bool(getattr(submission, 'is_latest', True))
+                bool(approval.is_latest)
             ),
         }
         approval_metadata[pdf_file_id] = metadata[pdf_file_id]
+        if metadata[pdf_file_id]['is_latest_approved']:
+            latest_ids.add(pdf_file_id)
 
     for shift_id in shift_ids:
         latest_submission = get_latest_online_tsr_submission_for_shift(shift_id)

@@ -23,6 +23,16 @@ codex changes - 2026-09-11
   approval and TSR submission are latest and Approved. This preserves the approval gate while
   allowing a previously failed report conversion to retry after deployment. Added an isolated
   regression proving the exhausted job is reset, converted, and exposed on the schedule card.
+- Authorized read-only production inspection identified the actual schedule-card exclusion for
+  certificate `2026-0909-192773`: its report PDF conversion was already ready and its combined
+  approval was latest and Approved, but later TSR-only revisions had marked the report's original
+  TSR submission non-latest without creating a replacement calibration approval. Corrected Calendar
+  visibility, Service Files eligibility, and failed-conversion recovery to follow the latest
+  calibration approval rather than the unrelated latest TSR revision. A genuinely superseded
+  calibration revision remains hidden through `CalibrationCertificateApproval.is_latest`.
+- Extended isolated coverage to prove an approved report remains visible and sendable after a later
+  TSR-only revision that contains no replacement Calibration Report. No production database row,
+  Railway variable, storage object, or deployment setting was changed during diagnosis.
 
 codex changes - 2026-09-10
 
