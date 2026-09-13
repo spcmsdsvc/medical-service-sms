@@ -2,12 +2,15 @@
 
 ## Reimbursement Package 3 — Worksheet Views and Faster Mobile Entry
 
-**Status:** Executed locally — implementation and repository verification are complete; no
-commit was created in this builder cycle, and publication, deployment, Railway, database,
-production, browser, and Codex UI operations remain excluded.
+**Status:** Executed — implementation committed as `780a428`; owner-authorized publication to
+`origin/main` is in progress. Railway variables, manual deployment, database, production data,
+browser, and Codex UI operations remain excluded.
 **Approved:** 2026-09-13 — the owner explicitly authorized implementation of the complete
 Package 3 plan.
 **Detailed:** 2026-09-13.
+**Publication authorized:** 2026-09-13 — the owner said “commit and push only these changes,”
+covering Package 3, its focus-height correction, focused tests, cache/release metadata, and these
+records only.
 
 ### Goal and boundaries
 

@@ -57,6 +57,12 @@ codex changes - 2026-09-13
   was performed for this CSS-only correction; Package 3's earlier verification remains recorded
   above.
 
+- Committed the isolated Package 3 allowlist as `780a428`, including the focus-height correction.
+  Staging reconstructed the v156 cache and exact Package 3 records from `bafef2f` so concurrent
+  uncommitted System Backup work at v157 remained entirely outside this commit. The owner authorized
+  publishing this Package 3 commit to `origin/main`; remote `main` was still `bafef2f` immediately
+  before publication.
+
 - Committed the 19-file Package 2 readiness and focus-space allowlist as `6a1a229`. This
   journal/plan closeout records that implementation commit before the authorized push to
   `origin/main`.
