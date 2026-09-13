@@ -1,5 +1,133 @@
 # Medical Service SMS — Approved Plans
 
+## Reimbursement Package 3 — Worksheet Views and Faster Mobile Entry
+
+**Status:** Executed locally — implementation and repository verification are complete; no
+commit was created in this builder cycle, and publication, deployment, Railway, database,
+production, browser, and Codex UI operations remain excluded.
+**Approved:** 2026-09-13 — the owner explicitly authorized implementation of the complete
+Package 3 plan.
+**Detailed:** 2026-09-13.
+
+### Goal and boundaries
+
+Make large Reimbursement worksheets easier to navigate and faster to enter on mobile while
+preserving the current worksheet viewport geometry and all entered data. The feature is a
+presentation-only worksheet view layer: search, row filters, expense-category visibility,
+desktop schedule-column preferences, and mobile card disclosure state must never remove values
+from the live worksheet, saved payload, selection set, receipt associations, readiness state, or
+complete claim total.
+
+The implementation is page-local to `templates/reimbursement.html`, with a focused source/Node
+contract in `tests/test_reimbursement_worksheet_views.py`, one Reimbursement release item, and
+the next monotonic embedded service-worker/cache marker. No endpoint, backend behavior, schema,
+dependency, migration, preset, bulk-entry, history, or receipt-workspace work is included.
+Protected `scheduler.db`, `Handoffs/`, `.claude/`, `medical-service-sms-detailed-handoff-2026-07-26.md`,
+`output/`, `tmp/`, and unrelated dirty work remain outside the package.
+
+### Numbered execution steps
+
+1. **Preflight and records.** Read all applicable `AGENTS.md` files, the complete `changes.md`,
+   this plan and the Package 2 outcome, current Git state, reimbursement template, related tests,
+   worker/cache assertions, and release JSON format. Preserve protected and unrelated dirty files.
+   Record this approved package as `In progress` before source edits.
+2. **Fail-first contract.** Add
+   `tests/test_reimbursement_worksheet_views.py` with source/Node contracts for row predicate and
+   classification, hidden-row save/full-total preservation, forced-positive category visibility,
+   input/selection preservation, mobile collapsed/expanded/populated-first/unused-category
+   disclosure behavior, View accessibility and overlay semantics, and unchanged focus geometry.
+   Run the new contract against the unchanged source and retain the truthful expected failure before
+   implementing the template behavior.
+3. **Compact View disclosure.** In `templates/reimbursement.html`, replace the Schedule columns
+   selector footprint with a compact View button and anchored non-modal popover. Provide client/
+   product/serial/schedule-task/manual-description search, All/With expenses/Zero amount/Manual
+   items filters, Pinned/Unpinned/Compact schedule-column choices, ten expense-category checkboxes,
+   and Show all. Keep Zoom beside View; close the popover on Escape, outside click, and close
+   button, with correct `aria-expanded`, `aria-controls`, and labels. Search/filter/category state
+   is page-session-only and resets on worksheet context changes; existing zoom and schedule-column
+   preferences remain persisted.
+4. **Non-destructive desktop views.** Add small page-local view state/helpers (for example
+   `rowMatchesReimbursementView`, `applyReimbursementWorksheetView`, and
+   `renderReimbursementWorksheetViewStatus`). Hide desktop rows and mobile cards by row key while
+   retaining `currentReimbursementRows`, inputs, and DOM values for hidden rows. Show `Showing X of
+   Y rows`, retain the complete claim total, and include every row in `collectReimbursementRowsForSave`
+   and total calculations. Add expense identifiers to table header/body/footer and hide only
+   user-disabled zero-total categories; any positive live category stays visible and cannot be
+   unchecked. Reapply after render, manual creation, remove/restore/bulk delete, amount/category
+   edits, draft load, and lifecycle changes. Preserve Select all active-row semantics and selection
+   across filters.
+5. **Faster mobile entry.** Render mobile cards collapsed after worksheet load, with date,
+   client/manual name, schedule/task, Manual badge, and live row total in the summary. Key expansion
+   state by row key and preserve it across ordinary rerenders and view changes. Put populated
+   categories first in expanded cards; place unused zero categories behind an inline Add expense
+   category disclosure. Manual cards show only their selected category and existing selector.
+   Preserve remarks, selection, deletion, locking, validation, autosave, desktop/mobile sync, and
+   receipt behavior.
+6. **Delivery records.** Immediately before editing the worker marker, reread its live value. If
+   it is v155, bump exactly once to
+   `medical-service-pwa-offline-navigation-v156-reimbursement-worksheet-views`; otherwise use the
+   next monotonic version. Update exact current-cache assertions, add one published Reimbursement
+   release entry, and keep `app.py` unchanged unless the existing marker structure requires it.
+7. **Verification and closeout.** Run the fail-first checkpoint before implementation, then the
+   focused worksheet-view module and once each directly related Reimbursement design/readiness,
+   autosave, bulk-selection, manual-category, total/layout/theme/cache/release checks. Run one
+   isolated full unittest discovery as repository practice; do not repeat without a real regression.
+   Run Python syntax, Jinja, inline JS, CSS balance, release JSON, and `git diff --check` checks.
+   Record truthful results, limitations, and protected-file confirmation in this plan and
+   `changes.md`. Browser visual verification remains owner-only.
+
+### Acceptance criteria
+
+- No persistent vertical space is added to desktop/focus worksheet; the closed View control fits
+  the former Schedule selector footprint and the open popover overlays without shortening the table.
+- Search, row filters, hidden categories, and mobile collapse/expansion do not alter values, saved
+  rows, selections, receipts, readiness, or the full claim total.
+- Empty matches are explicit while the worksheet remains intact; locked claims can search, filter,
+  and expand without editing.
+- New search/filter/category/mobile state is page-session-only; existing zoom and schedule-column
+  preferences remain persistent.
+
+### Implementation outcome (2026-09-13)
+
+- Implemented the compact worksheet View disclosure, anchored overlay controls, page-session
+  search/filter/category state, non-destructive desktop/mobile row visibility, forced-positive
+  expense columns, complete hidden-row save and total calculation, explicit empty-match status,
+  and keyboard/outside-click/close accessibility behavior in `templates/reimbursement.html`.
+  Existing zoom and Schedule column preferences remain persisted; no endpoint, backend, schema,
+  dependency, migration, preset, bulk-entry, history, or receipt-workspace behavior changed.
+- Reworked mobile cards in the same template to load collapsed, preserve expansion by row key,
+  summarize date/client/manual name/schedule/task/Manual/live total, and place populated expense
+  categories before an inline unused-category disclosure. Live DOM amounts are used by view
+  classification so filtering follows edits without replacing the live row set.
+- Added `tests/test_reimbursement_worksheet_views.py`. The unchanged-source fail-first checkpoint
+  ran before implementation with 8 tests: 6 expected failures and 2 expected missing-implementation
+  errors. The final worksheet-view module passed 8/8. The directly related Reimbursement design,
+  readiness, autosave, bulk-selection, total-consistency, and worksheet-view set passed 80 tests
+  with 4 skips and no failures.
+- Reread the worker marker at v155 before advancing it once to
+  `medical-service-pwa-offline-navigation-v156-reimbursement-worksheet-views`, updated all exact
+  current-cache assertions, and added the published `2026-09-13-reimbursement-worksheet-views`
+  Reimbursement release entry in `static/changelog/releases.json`.
+- One isolated full discovery was run with a unique temporary test database: 385 tests, 49 import
+  errors, and 44 skips. The errors are environment dependency failures (`flask`, `sqlalchemy`,
+  `jinja2`, PDF/image libraries, and related packages are unavailable); no source assertion or
+  product failure was reported by the tests that imported successfully. The manual-category
+  module and app-import layout/theme/cache/release checks were consequently not runnable.
+  Python AST, masked-Jinja inline JavaScript syntax, CSS brace balance (472/472), release JSON
+  uniqueness (90 releases/253 items), and `git diff --check` passed. Direct Jinja parsing remained
+  unavailable because `jinja2` is not installed. Browser visual verification remains owner-only.
+- Protected `scheduler.db`, `Handoffs/`, `.claude/`, `medical-service-sms-detailed-handoff-2026-07-26.md`,
+  `output/`, `tmp/`, and unrelated dirty work were preserved. No commit, push, deployment,
+  Railway, database, production, browser, or Codex UI operation was performed.
+- After the owner visually identified that the new View button enlarged the desktop focus toolbar,
+  a direct focus-only correction aligned that button to the existing 30px controls, fixed the wide
+  focus toolbar to its prior 32px row height, and hid the duplicate Showing X of Y text from the
+  focus selection row while retaining it in the View popover. The added geometry assertion failed
+  before the fix; worksheet-view, readiness, and reimbursement-design checks passed **59/59**
+  afterward. This correction did not change normal desktop/mobile controls, Package 3 behavior,
+  cache/release metadata, backend behavior, or protected artifacts.
+
+
 ## Reimbursement Package 2 — Focus View Space Correction
 
 **Status:** Executed — implementation committed as `6a1a229`; owner-authorized publication is

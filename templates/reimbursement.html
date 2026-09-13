@@ -309,6 +309,91 @@
         background: #fff;
     }
 
+    .reim-mobile-card-summary {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .reim-mobile-card-summary-main {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .reim-mobile-card-summary h3 {
+        margin: 0 0 5px;
+    }
+
+    .reim-mobile-card-summary-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+        color: var(--app-muted, #64748b);
+        font-size: 0.78rem;
+    }
+
+    .reim-mobile-card-total {
+        flex: 0 0 auto;
+        color: var(--app-text, #172033);
+        font-size: 0.9rem;
+        font-weight: 800;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .reim-mobile-card-toggle {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 7px 10px;
+    }
+
+    .reim-mobile-card-details {
+        display: none;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--app-border, #e2e8f0);
+    }
+
+    .reim-mobile-card.is-expanded .reim-mobile-card-details {
+        display: block;
+    }
+
+    .reim-mobile-expense-item {
+        display: contents;
+    }
+
+    .reim-mobile-expense-grid .reim-mobile-expense-item > label {
+        align-self: center;
+    }
+
+    .reim-mobile-expense-disclosure {
+        grid-column: 1 / -1;
+        margin-top: 6px;
+    }
+
+    .reim-mobile-expense-disclosure > button {
+        min-height: 40px;
+        border: 0;
+        padding: 4px 0;
+        background: transparent;
+        color: var(--app-primary, #198754);
+        font-weight: 800;
+        text-decoration: underline;
+        cursor: pointer;
+    }
+
+    .reim-mobile-expense-unused {
+        display: none;
+        grid-template-columns: minmax(120px, 0.8fr) minmax(0, 1fr);
+        gap: 8px;
+        margin-top: 6px;
+    }
+
+    .reim-mobile-expense-disclosure.is-open .reim-mobile-expense-unused {
+        display: grid;
+    }
+
     .reim-mobile-card h3 {
         margin: 0 0 6px;
         font-size: 1rem;
@@ -2201,9 +2286,11 @@
 
     /* Reimbursement column view controls */
     .reim-column-view-control {
+        position: relative;
         display: flex;
         align-items: center;
         gap: 8px;
+        flex: 0 0 auto;
         margin: 0 0 8px;
         color: var(--app-text, #172033);
     }
@@ -2231,6 +2318,150 @@
     .reim-row-details-btn:focus-visible {
         outline: 3px solid var(--app-focus, rgba(25, 135, 84, 0.25));
         outline-offset: 2px;
+    }
+
+    .reim-view-control {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        flex: 0 0 auto;
+        margin: 0;
+    }
+
+    .reim-view-toggle {
+        min-height: 36px;
+        white-space: nowrap;
+    }
+
+    .reim-view-popover {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        z-index: 3050;
+        display: none;
+        width: min(360px, calc(100vw - 24px));
+        max-height: min(76vh, 620px);
+        overflow: auto;
+        padding: 12px;
+        border: 1px solid var(--app-border, #cbd5e1);
+        border-radius: 12px;
+        background: var(--app-surface, #fff);
+        color: var(--app-text, #172033);
+        box-shadow: 0 18px 46px rgba(15, 23, 42, 0.24);
+    }
+
+    .reim-view-popover.show {
+        display: block;
+    }
+
+    .reim-view-popover-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--app-border, #dbe3ea);
+    }
+
+    .reim-view-popover-head .reim-btn {
+        min-height: 32px;
+        height: 32px;
+        padding: 4px 8px;
+        font-size: 0.76rem;
+    }
+
+    .reim-view-search-field,
+    .reim-view-filter-field,
+    .reim-view-fieldset {
+        margin: 0 0 10px;
+    }
+
+    .reim-view-search-field label,
+    .reim-view-filter-field label,
+    .reim-view-fieldset legend {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--app-muted, #64748b);
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+    }
+
+    .reim-view-search-field input,
+    .reim-view-filter-field select,
+    .reim-view-fieldset select {
+        width: 100%;
+        min-height: 38px;
+        box-sizing: border-box;
+        border: 1px solid var(--app-border, #cbd5e1);
+        border-radius: 8px;
+        padding: 7px 9px;
+        background: var(--app-surface, #fff);
+        color: var(--app-text, #172033);
+    }
+
+    .reim-view-fieldset {
+        min-width: 0;
+        padding: 8px;
+        border: 1px solid var(--app-border, #dbe3ea);
+        border-radius: 9px;
+    }
+
+    .reim-view-fieldset legend {
+        width: auto;
+        margin: 0 0 4px;
+        padding: 0 4px;
+    }
+
+    .reim-view-check-all,
+    .reim-view-category-list label {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 32px;
+        color: var(--app-text, #334155);
+        font-size: 0.8rem;
+        font-weight: 700;
+    }
+
+    .reim-view-check-all input,
+    .reim-view-category-list input {
+        width: 17px;
+        height: 17px;
+        margin: 0;
+        accent-color: var(--app-primary, #198754);
+    }
+
+    .reim-view-category-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 2px 8px;
+    }
+
+    .reim-view-category-list input:disabled {
+        cursor: not-allowed;
+        opacity: 0.7;
+    }
+
+    .reim-view-popover-status,
+    .reim-view-status {
+        color: var(--app-muted, #64748b);
+        font-size: 0.76rem;
+        font-weight: 700;
+    }
+
+    .reim-view-popover-status {
+        margin-top: 2px;
+    }
+
+    .reim-view-status {
+        min-width: 0;
+        margin-left: auto;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .reim-row-actions {
@@ -2730,6 +2961,18 @@
             margin: 0;
         }
 
+        body.reim-focus-active .reim-view-toggle {
+            min-height: 30px;
+            height: 30px;
+            padding: 3px 7px;
+            font-size: 0.74rem;
+            line-height: 1.1;
+        }
+
+        body.reim-focus-active .reim-view-status {
+            display: none;
+        }
+
         body.reim-focus-active .reim-column-view-control label {
             font-size: 0.68rem;
         }
@@ -2958,6 +3201,11 @@
             flex-wrap: nowrap !important;
         }
 
+        body.reim-focus-active .reim-focus-toolbar {
+            height: 32px;
+            max-height: 32px;
+        }
+
         body.reim-focus-active .reim-focus-utility-actions {
             flex-wrap: nowrap;
         }
@@ -2992,7 +3240,7 @@
             align-items: flex-start;
             flex-wrap: wrap;
             max-height: 74px;
-            overflow-y: auto;
+            overflow: visible;
         }
 
         body.reim-focus-active .reim-focus-utility-actions {
@@ -3044,6 +3292,31 @@
         .reim-page .reim-column-view-control,
         .reim-page .reim-zoom-control {
             display: none;
+        }
+
+        .reim-page #reimViewControl {
+            display: inline-flex;
+            align-items: center;
+            margin: 0 0 10px;
+        }
+
+        .reim-page .reim-view-toggle {
+            min-width: 44px;
+            min-height: 44px;
+            height: 44px;
+        }
+
+        .reim-page .reim-view-popover {
+            top: calc(100% + 4px);
+            left: 0;
+            right: auto;
+            width: min(360px, calc(100vw - 24px));
+            max-height: min(72vh, 560px);
+        }
+
+        .reim-page .reim-view-status {
+            flex: 1 1 100%;
+            margin-left: 0;
         }
     }
 
@@ -3220,14 +3493,59 @@
                 {% endif %}
                 <button type="button" class="reim-btn reim-btn-secondary reim-focus-compact-control" id="reimFocusRemovedBtn" data-focus-panel="reimRemovedRowsPanel" aria-controls="reimRemovedRowsPanel" aria-expanded="false" onclick="toggleReimbursementFocusPanel('reimRemovedRowsPanel')"><i class="fa-solid fa-trash-can-arrow-up" aria-hidden="true"></i> Removed</button>
             </div>
-            <div class="reim-column-view-control">
-            <label for="reimColumnView">Schedule columns
-                <select id="reimColumnView" aria-label="Schedule columns" onchange="handleReimbursementColumnViewChange(this)">
-                    <option value="pinned">Pinned</option>
-                    <option value="unpinned">Unpinned</option>
-                    <option value="compact">Compact</option>
-                </select>
-            </label>
+            <div class="reim-column-view-control" id="reimViewControl">
+                <button type="button" class="reim-btn reim-btn-secondary reim-view-toggle" id="reimViewToggle" aria-controls="reimViewPopover" aria-expanded="false" aria-label="Open worksheet view options" onclick="toggleReimbursementViewPopover()">
+                    <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                    <span>View</span>
+                </button>
+                <aside class="reim-view-popover" id="reimViewPopover" role="region" aria-label="Worksheet view options" aria-hidden="true">
+                    <header class="reim-view-popover-head">
+                        <strong>Worksheet view</strong>
+                        <button type="button" class="reim-btn reim-btn-secondary" id="reimViewClose" aria-label="Close worksheet view options" onclick="closeReimbursementViewPopover()">Close</button>
+                    </header>
+                    <section class="reim-view-search-field">
+                        <label for="reimViewSearch">Search rows</label>
+                        <input type="search" id="reimViewSearch" placeholder="Client, product, serial, task…" autocomplete="off" oninput="handleReimbursementViewSearch(this)">
+                    </section>
+                    <section class="reim-view-filter-field">
+                        <label for="reimViewFilter">Rows</label>
+                        <select id="reimViewFilter" aria-label="Filter reimbursement rows" onchange="handleReimbursementViewFilterChange(this)">
+                            <option value="all">All rows</option>
+                            <option value="with-expenses">With expenses</option>
+                            <option value="zero-amount">Zero amount</option>
+                            <option value="manual-items">Manual items</option>
+                        </select>
+                    </section>
+                    <fieldset class="reim-view-fieldset">
+                        <legend>Schedule columns</legend>
+                        <label for="reimColumnView" class="visually-hidden">Schedule columns</label>
+                        <select id="reimColumnView" aria-label="Schedule columns" onchange="handleReimbursementColumnViewChange(this)">
+                            <option value="pinned">Pinned</option>
+                            <option value="unpinned">Unpinned</option>
+                            <option value="compact">Compact</option>
+                        </select>
+                    </fieldset>
+                    <fieldset class="reim-view-fieldset reim-view-category-fieldset">
+                        <legend>Expense categories</legend>
+                        <label class="reim-view-check-all" for="reimViewShowAll">
+                            <input type="checkbox" id="reimViewShowAll" checked onchange="handleReimbursementShowAllCategories(this)">
+                            <span>Show all</span>
+                        </label>
+                        <span class="reim-view-category-list" id="reimViewCategoryList">
+                            <label><input type="checkbox" data-expense-category="representation" checked onchange="handleReimbursementCategoryVisibilityChange(this)"> <span>Representation</span></label>
+                            <label><input type="checkbox" data-expense-category="car_repair" checked onchange="handleReimbursementCategoryVisibilityChange(this)"> <span>Car Repair</span></label>
+                            <label><input type="checkbox" data-expense-category="toll_fee" checked onchange="handleReimbursementCategoryVisibilityChange(this)"> <span>Toll Fee</span></label>
+                            <label><input type="checkbox" data-expense-category="gasoline" checked onchange="handleReimbursementCategoryVisibilityChange(this)"> <span>Gasoline</span></label>
+                            <label><input type="checkbox" data-expense-category="transpo" checked onchange="handleReimbursementCategoryVisibilityChange(this)"> <span>Transpo</span></label>
+                            <label><input type="checkbox" data-expense-category="office_supplies" checked onchange="handleReimbursementCategoryVisibilityChange(this)"> <span>Office/Field Items</span></label>
+                            <label><input type="checkbox" data-expense-category="parking" checked onchange="handleReimbursementCategoryVisibilityChange(this)"> <span>Parking</span></label>
+                            <label><input type="checkbox" data-expense-category="per_diem" checked onchange="handleReimbursementCategoryVisibilityChange(this)"> <span>Per Diem</span></label>
+                            <label><input type="checkbox" data-expense-category="coding" checked onchange="handleReimbursementCategoryVisibilityChange(this)"> <span>Coding</span></label>
+                            <label><input type="checkbox" data-expense-category="others" checked onchange="handleReimbursementCategoryVisibilityChange(this)"> <span>Others</span></label>
+                        </span>
+                    </fieldset>
+                    <footer class="reim-view-popover-status" id="reimViewPopoverStatus" role="status" aria-live="polite">Showing 0 of 0 rows</footer>
+                </aside>
             <div class="reim-zoom-control" aria-label="Worksheet zoom">
                 <span class="reim-zoom-label">Worksheet zoom</span>
                 <button type="button" class="reim-btn reim-btn-secondary" id="reimZoomOutBtn" onclick="changeReimbursementZoom(-1)" aria-label="Zoom out">−</button>
@@ -3253,6 +3571,7 @@
             </label>
             <span class="reim-row-selection-status" id="reimSelectedRowsStatus" aria-live="polite">0 selected</span>
             <button type="button" class="reim-btn reim-btn-danger-outline" id="reimDeleteSelectedBtn" onclick="removeSelectedReimbursementRows()" disabled>Delete selected (0)</button>
+            <span class="reim-view-status" id="reimViewStatus" role="status" aria-live="polite">Showing 0 of 0 rows</span>
         </div>
 
         <div class="reim-table-wrap" id="reimTableWrap">
@@ -3262,16 +3581,16 @@
                         <th class="reimb-date-cell">Date</th>
                         <th>Schedule</th>
                         <th>Client / Product</th>
-                        <th>Representation</th>
-                        <th>Car Repair</th>
-                        <th>Toll Fee</th>
-                        <th>Gasoline</th>
-                        <th>Transpo</th>
-                        <th>Office/Field Items</th>
-                        <th>Parking</th>
-                        <th>Per Diem</th>
-                        <th>Coding</th>
-                        <th>Others</th>
+                        <th data-expense="representation">Representation</th>
+                        <th data-expense="car_repair">Car Repair</th>
+                        <th data-expense="toll_fee">Toll Fee</th>
+                        <th data-expense="gasoline">Gasoline</th>
+                        <th data-expense="transpo">Transpo</th>
+                        <th data-expense="office_supplies">Office/Field Items</th>
+                        <th data-expense="parking">Parking</th>
+                        <th data-expense="per_diem">Per Diem</th>
+                        <th data-expense="coding">Coding</th>
+                        <th data-expense="others">Others</th>
                         <th>Row Total</th>
                         <th>Remarks / Purpose</th>
                     </tr>
@@ -3286,16 +3605,16 @@
                         <td class="reimb-date-cell reim-grand-total-label reim-total-date-cell">Totals</td>
                         <td class="reim-total-schedule-cell"></td>
                         <td class="reim-total-client-cell"></td>
-                        <td class="reim-category-total" data-total-expense="representation">0.00</td>
-                        <td class="reim-category-total" data-total-expense="car_repair">0.00</td>
-                        <td class="reim-category-total" data-total-expense="toll_fee">0.00</td>
-                        <td class="reim-category-total" data-total-expense="gasoline">0.00</td>
-                        <td class="reim-category-total" data-total-expense="transpo">0.00</td>
-                        <td class="reim-category-total" data-total-expense="office_supplies">0.00</td>
-                        <td class="reim-category-total" data-total-expense="parking">0.00</td>
-                        <td class="reim-category-total" data-total-expense="per_diem">0.00</td>
-                        <td class="reim-category-total" data-total-expense="coding">0.00</td>
-                        <td class="reim-category-total" data-total-expense="others">0.00</td>
+                        <td class="reim-category-total" data-expense="representation" data-total-expense="representation">0.00</td>
+                        <td class="reim-category-total" data-expense="car_repair" data-total-expense="car_repair">0.00</td>
+                        <td class="reim-category-total" data-expense="toll_fee" data-total-expense="toll_fee">0.00</td>
+                        <td class="reim-category-total" data-expense="gasoline" data-total-expense="gasoline">0.00</td>
+                        <td class="reim-category-total" data-expense="transpo" data-total-expense="transpo">0.00</td>
+                        <td class="reim-category-total" data-expense="office_supplies" data-total-expense="office_supplies">0.00</td>
+                        <td class="reim-category-total" data-expense="parking" data-total-expense="parking">0.00</td>
+                        <td class="reim-category-total" data-expense="per_diem" data-total-expense="per_diem">0.00</td>
+                        <td class="reim-category-total" data-expense="coding" data-total-expense="coding">0.00</td>
+                        <td class="reim-category-total" data-expense="others" data-total-expense="others">0.00</td>
                         <td class="reim-total-cell reim-grand-total-cell" id="reimGrandTotal">0.00</td>
                         <td></td>
                     </tr>
@@ -3542,6 +3861,13 @@
     let currentReimbursementRows = [];
     let currentReimbursementExcludedRows = [];
     let reimbursementSelectedRowKeys = new Set();
+    let reimbursementMobileExpandedRowKeys = new Set();
+    let reimbursementWorksheetViewState = {
+        search: '',
+        filter: 'all',
+        hiddenCategories: new Set(),
+        open: false
+    };
     let reimbursementRowChangeBusy = false;
     let reimbursementBulkDeleteBusy = false;
     let reimbursementButtonsBusy = false;
@@ -4007,6 +4333,290 @@
         applyReimbursementColumnView(select && select.value, true);
     }
 
+    function reimbursementViewRowText(row) {
+        row = row || {};
+        return [
+            row.date,
+            row.client,
+            row.product,
+            row.serial_number,
+            row.task,
+            row.manual_description,
+            row.item_name,
+            row.description,
+            row.schedule,
+            row.start_time,
+            row.end_time,
+            row.remarks,
+            Array.isArray(row.engineers) ? row.engineers.join(' ') : row.engineers
+        ].filter(function(value) {
+            return value !== undefined && value !== null && String(value).trim();
+        }).join(' ').toLowerCase();
+    }
+
+    function getReimbursementViewRowTotal(row) {
+        row = row || {};
+        const rowKey = typeof getReimbursementRowKey === 'function'
+            ? getReimbursementRowKey(row)
+            : '';
+        if (rowKey && typeof document !== 'undefined'
+                && typeof getActiveReimbursementAmountSelector === 'function'
+                && typeof getReimAmountValue === 'function') {
+            try {
+                const selector = getActiveReimbursementAmountSelector();
+                const inputs = document.querySelectorAll(`${selector}[data-row-key="${CSS.escape(String(rowKey))}"]`);
+                if (inputs.length) {
+                    let liveTotal = 0;
+                    inputs.forEach(function(input) { liveTotal += getReimAmountValue(input); });
+                    return liveTotal;
+                }
+            } catch (error) {
+                // Fall back to the row payload while the worksheet DOM is being built.
+            }
+        }
+        const amounts = row.amounts && typeof row.amounts === 'object' ? row.amounts : {};
+        let total = 0;
+        reimbursementExpenseKeys.forEach(function(key) {
+            const value = Number(amounts[key] || 0);
+            if (Number.isFinite(value) && value > 0) total += value;
+        });
+        if (!total && row.manual) {
+            const fallback = Number(row.amount || row.row_total || 0);
+            if (Number.isFinite(fallback) && fallback > 0) total = fallback;
+        }
+        return total;
+    }
+
+    function rowMatchesReimbursementView(row) {
+        const state = reimbursementWorksheetViewState || {};
+        const search = String(state.search || '').trim().toLowerCase();
+        if (search && !reimbursementViewRowText(row).includes(search)) return false;
+        const filter = String(state.filter || 'all');
+        const total = getReimbursementViewRowTotal(row);
+        if (filter === 'with-expenses' && total <= 0) return false;
+        if (filter === 'zero-amount' && total > 0) return false;
+        if (filter === 'manual-items' && !row?.manual) return false;
+        return true;
+    }
+
+    function getReimbursementExpenseCategoryVisibility(key, amounts, hidden) {
+        const value = Number(amounts && amounts[key] || 0);
+        return !hidden || (Number.isFinite(value) && value > 0);
+    }
+
+    function getReimbursementWorksheetCategoryTotals() {
+        const totals = {};
+        reimbursementExpenseKeys.forEach(function(key) { totals[key] = 0; });
+        let rows = [];
+        if (typeof collectReimbursementRowsForSave === 'function') {
+            try {
+                rows = collectReimbursementRowsForSave();
+            } catch (error) {
+                rows = [];
+            }
+        }
+        if (!rows.length) rows = Array.isArray(currentReimbursementRows) ? currentReimbursementRows : [];
+        rows.forEach(function(row) {
+            const amounts = row && row.amounts && typeof row.amounts === 'object' ? row.amounts : {};
+            reimbursementExpenseKeys.forEach(function(key) {
+                const value = Number(amounts[key] || 0);
+                if (Number.isFinite(value) && value > 0) totals[key] += value;
+            });
+        });
+        return totals;
+    }
+
+    function renderReimbursementWorksheetViewStatus(visibleCount, totalCount) {
+        const visible = Number(visibleCount || 0);
+        const total = Number(totalCount || 0);
+        const message = `Showing ${visible} of ${total} rows`;
+        const status = document.getElementById('reimViewStatus');
+        const popoverStatus = document.getElementById('reimViewPopoverStatus');
+        if (status) status.textContent = message;
+        if (popoverStatus) popoverStatus.textContent = message;
+        const emptyDesktop = document.getElementById('reimViewEmptyDesktop');
+        const emptyMobile = document.getElementById('reimViewEmptyMobile');
+        const emptyMessage = total > 0 && visible === 0
+            ? 'No rows match this view. Your worksheet rows are still loaded.'
+            : '';
+        if (emptyDesktop) {
+            emptyDesktop.textContent = emptyMessage;
+            emptyDesktop.style.display = emptyMessage ? '' : 'none';
+        }
+        if (emptyMobile) {
+            emptyMobile.textContent = emptyMessage;
+            emptyMobile.style.display = emptyMessage ? '' : 'none';
+        }
+    }
+
+    function syncReimbursementViewControls(categoryTotals) {
+        if (typeof document === 'undefined') return;
+        const totals = categoryTotals || getReimbursementWorksheetCategoryTotals();
+        const hidden = reimbursementWorksheetViewState.hiddenCategories || new Set();
+        reimbursementExpenseKeys.forEach(function(key) {
+            if (Number(totals[key] || 0) > 0) hidden.delete(key);
+        });
+        document.querySelectorAll('#reimViewCategoryList input[data-expense-category]').forEach(function(input) {
+            const key = String(input.dataset.expenseCategory || '');
+            const positive = Number(totals[key] || 0) > 0;
+            input.checked = !hidden.has(key);
+            input.disabled = positive;
+            input.title = positive ? 'This category has a live amount and must remain visible.' : '';
+        });
+        const showAll = document.getElementById('reimViewShowAll');
+        if (showAll) {
+            showAll.checked = hidden.size === 0;
+            showAll.indeterminate = hidden.size > 0 && hidden.size < reimbursementExpenseKeys.length;
+        }
+        reimbursementWorksheetViewState.hiddenCategories = hidden;
+    }
+
+    function applyReimbursementExpenseCategoryVisibility(categoryTotals) {
+        if (typeof document === 'undefined') return;
+        const totals = categoryTotals || getReimbursementWorksheetCategoryTotals();
+        syncReimbursementViewControls(totals);
+        document.querySelectorAll('#reimExpenseTable :is(th, td)[data-expense]').forEach(function(cell) {
+            const key = String(cell.dataset.expense || '');
+            const show = getReimbursementExpenseCategoryVisibility(
+                key,
+                totals,
+                reimbursementWorksheetViewState.hiddenCategories.has(key)
+            );
+            cell.hidden = !show;
+            cell.style.display = show ? '' : 'none';
+        });
+        document.querySelectorAll('#reimMobileList [data-expense]').forEach(function(item) {
+            const key = String(item.dataset.expense || '');
+            const row = item.closest('.reim-mobile-card');
+            const rowData = row ? (currentReimbursementRows || []).find(function(entry) {
+                return String(getReimbursementRowKey(entry)) === String(row.dataset.rowKey || '');
+            }) : null;
+            const rowAmounts = rowData && rowData.amounts || {};
+            const hasPositiveAmount = Number(rowAmounts[key] || 0) > 0;
+            const show = !reimbursementWorksheetViewState.hiddenCategories.has(key)
+                || hasPositiveAmount;
+            item.hidden = !show;
+            item.style.display = show ? '' : 'none';
+        });
+    }
+
+    function applyReimbursementWorksheetView() {
+        if (typeof document === 'undefined') return;
+        const rows = Array.isArray(currentReimbursementRows) ? currentReimbursementRows : [];
+        const matchingKeys = new Set(rows.filter(rowMatchesReimbursementView).map(function(row) {
+            return String(getReimbursementRowKey(row));
+        }));
+        document.querySelectorAll('#reimTableBody tr[data-row-key]').forEach(function(row) {
+            const visible = matchingKeys.has(String(row.dataset.rowKey || ''));
+            row.hidden = !visible;
+            row.style.display = visible ? '' : 'none';
+        });
+        document.querySelectorAll('#reimMobileList .reim-mobile-card[data-row-key]').forEach(function(card) {
+            const visible = matchingKeys.has(String(card.dataset.rowKey || ''));
+            card.hidden = !visible;
+            card.style.display = visible ? '' : 'none';
+        });
+        renderReimbursementWorksheetViewStatus(matchingKeys.size, rows.length);
+        applyReimbursementExpenseCategoryVisibility();
+    }
+
+    function handleReimbursementViewSearch(input) {
+        reimbursementWorksheetViewState.search = String(input?.value || '');
+        applyReimbursementWorksheetView();
+    }
+
+    function handleReimbursementViewFilterChange(select) {
+        reimbursementWorksheetViewState.filter = ['all', 'with-expenses', 'zero-amount', 'manual-items'].includes(String(select?.value || ''))
+            ? String(select.value)
+            : 'all';
+        applyReimbursementWorksheetView();
+    }
+
+    function handleReimbursementCategoryVisibilityChange(input) {
+        const key = String(input?.dataset?.expenseCategory || '');
+        if (!reimbursementExpenseKeys.includes(key)) return;
+        const totals = getReimbursementWorksheetCategoryTotals();
+        if (Number(totals[key] || 0) > 0) {
+            input.checked = true;
+            reimbursementWorksheetViewState.hiddenCategories.delete(key);
+            applyReimbursementWorksheetView();
+            return;
+        }
+        if (input.checked) reimbursementWorksheetViewState.hiddenCategories.delete(key);
+        else reimbursementWorksheetViewState.hiddenCategories.add(key);
+        applyReimbursementWorksheetView();
+    }
+
+    function handleReimbursementShowAllCategories(input) {
+        const show = !!input?.checked;
+        const totals = getReimbursementWorksheetCategoryTotals();
+        reimbursementExpenseKeys.forEach(function(key) {
+            if (show || Number(totals[key] || 0) > 0) reimbursementWorksheetViewState.hiddenCategories.delete(key);
+            else reimbursementWorksheetViewState.hiddenCategories.add(key);
+        });
+        applyReimbursementWorksheetView();
+    }
+
+    function resetReimbursementWorksheetViewState() {
+        reimbursementWorksheetViewState = {
+            search: '',
+            filter: 'all',
+            hiddenCategories: new Set(),
+            open: false
+        };
+        reimbursementMobileExpandedRowKeys = new Set();
+        if (typeof document === 'undefined') return;
+        const search = document.getElementById('reimViewSearch');
+        const filter = document.getElementById('reimViewFilter');
+        if (search) search.value = '';
+        if (filter) filter.value = 'all';
+        closeReimbursementViewPopover();
+        applyReimbursementWorksheetView();
+    }
+
+    function toggleReimbursementViewPopover() {
+        reimbursementWorksheetViewState.open = !reimbursementWorksheetViewState.open;
+        const toggle = document.getElementById('reimViewToggle');
+        const popover = document.getElementById('reimViewPopover');
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', reimbursementWorksheetViewState.open ? 'true' : 'false');
+            toggle.setAttribute('aria-label', reimbursementWorksheetViewState.open
+                ? 'Close worksheet view options'
+                : 'Open worksheet view options');
+        }
+        if (popover) {
+            popover.classList.toggle('show', reimbursementWorksheetViewState.open);
+            popover.setAttribute('aria-hidden', reimbursementWorksheetViewState.open ? 'false' : 'true');
+        }
+        if (typeof reimbursementWorksheetViewState !== 'undefined' && reimbursementWorksheetViewState.open) {
+            syncReimbursementViewControls();
+            const search = document.getElementById('reimViewSearch');
+            if (search) search.focus();
+        }
+    }
+
+    function closeReimbursementViewPopover() {
+        reimbursementWorksheetViewState.open = false;
+        const toggle = document.getElementById('reimViewToggle');
+        const popover = document.getElementById('reimViewPopover');
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', 'false');
+            toggle.setAttribute('aria-label', 'Open worksheet view options');
+        }
+        if (popover) {
+            popover.classList.remove('show');
+            popover.setAttribute('aria-hidden', 'true');
+        }
+    }
+
+    function handleReimbursementViewKeydown(event) {
+        if (event && event.key === 'Escape'
+                && typeof reimbursementWorksheetViewState !== 'undefined'
+                && reimbursementWorksheetViewState.open) {
+            closeReimbursementViewPopover();
+        }
+    }
+
     const REIMBURSEMENT_FOCUS_PANEL_BUTTONS = {
         reimFilterCard: 'reimFocusDatesBtn',
         reimLifecycleBanner: 'reimFocusStatusBtn',
@@ -4206,6 +4816,11 @@
     function handleReimbursementFocusKeydown(event) {
         if (!reimbursementFocusViewActive || !event || event.key !== 'Escape') return;
         if (isReimbursementFocusDialogOpen()) return;
+        if (typeof reimbursementWorksheetViewState !== 'undefined' && reimbursementWorksheetViewState.open) {
+            closeReimbursementViewPopover();
+            event.preventDefault();
+            return;
+        }
         if (closeReimbursementFocusPanel()) {
             event.preventDefault();
             return;
@@ -4665,7 +5280,7 @@
             const value = Number(amounts[key] || 0) > 0 ? Number(amounts[key]).toFixed(2) : '';
             const readonly = row.manual && key !== manualCategory ? 'readonly tabindex="-1"' : '';
             const manualClass = row.manual && key !== manualCategory ? ' style="background:#f8fafc;color:#94a3b8;"' : '';
-            return `<td><input class="reim-amount" type="number" min="0" step="0.01" inputmode="decimal" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" data-expense="${key}" value="${reimEscape(value)}" placeholder="0.00" ${readonly}${manualClass} oninput="handleReimbursementAmountInput(this)"></td>`;
+            return `<td data-expense="${reimEscape(key)}"><input class="reim-amount" type="number" min="0" step="0.01" inputmode="decimal" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" data-expense="${key}" value="${reimEscape(value)}" placeholder="0.00" ${readonly}${manualClass} oninput="handleReimbursementAmountInput(this)"></td>`;
         }).join('');
     }
 
@@ -4736,6 +5351,7 @@
         }
         markReimbursementDirty();
         recalculateReimbursementTotals();
+        applyReimbursementWorksheetView();
     }
 
     function handleReimbursementRemarksInput(input) {
@@ -4769,32 +5385,29 @@
         reimbursementExpenseKeys.forEach(function(key) {
             categoryTotals[key] = 0;
         });
-
-        const seenRows = new Set();
-        const activeSelector = getActiveReimbursementAmountSelector();
-
-        document.querySelectorAll(activeSelector).forEach(function(input) {
-            const key = input.dataset.expense;
-            const rowKey = input.dataset.rowKey;
-            const value = getReimAmountValue(input);
-
-            if (key in categoryTotals) {
-                categoryTotals[key] += value;
-            }
-            if (rowKey) {
-                seenRows.add(rowKey);
-            }
+        const rowsForTotal = typeof collectReimbursementRowsForSave === 'function'
+            ? collectReimbursementRowsForSave()
+            : [];
+        const totalRows = rowsForTotal.length
+            ? rowsForTotal
+            : (Array.isArray(currentReimbursementRows) ? currentReimbursementRows : []);
+        let grandTotal = 0;
+        const rowTotals = new Map();
+        totalRows.forEach(function(row) {
+            const amounts = row && row.amounts && typeof row.amounts === 'object' ? row.amounts : {};
+            reimbursementExpenseKeys.forEach(function(key) {
+                const value = Number(amounts[key] || 0);
+                if (Number.isFinite(value) && value > 0) categoryTotals[key] += value;
+            });
+            const rowKey = String(getReimbursementRowKey(row) || '');
+            const rowTotal = getReimbursementPayloadRowTotal(row);
+            if (rowKey) rowTotals.set(rowKey, rowTotal);
+            grandTotal += rowTotal;
         });
 
-        let grandTotal = 0;
-
-        seenRows.forEach(function(rowKey) {
-            const rowTotal = calculateRowTotal(rowKey);
-            grandTotal += rowTotal;
-
-            document.querySelectorAll(`[data-row-total="${CSS.escape(rowKey)}"]`).forEach(function(el) {
-                el.textContent = formatMoney(rowTotal);
-            });
+        document.querySelectorAll('[data-row-total]').forEach(function(el) {
+            const rowKey = String(el.dataset.rowTotal || '');
+            el.textContent = formatMoney(rowTotals.get(rowKey) || 0);
         });
 
         reimbursementExpenseKeys.forEach(function(key) {
@@ -4809,6 +5422,36 @@
         }
         syncReimbursementWorksheetSummary();
         updateReimbursementReadiness();
+        applyReimbursementExpenseCategoryVisibility(categoryTotals);
+    }
+
+    function getPopulatedReimbursementExpenseKeys(row) {
+        const amounts = normalizeReimbursementAmounts(row && row.amounts || {});
+        return reimbursementExpenseKeys.filter(function(key) {
+            return Number(amounts[key] || 0) > 0;
+        });
+    }
+
+    function buildMobileExpenseInputItem(row, key, labels) {
+        const amounts = normalizeReimbursementAmounts(row && row.amounts || {});
+        const rowKey = getReimbursementRowKey(row);
+        const manualCategory = row && row.manual ? getReimbursementManualCategory(row) : '';
+        const value = Number(amounts[key] || 0) > 0 ? Number(amounts[key]).toFixed(2) : '';
+        const readonly = row && row.manual && key !== manualCategory ? 'readonly tabindex="-1"' : '';
+        const manualStyle = row && row.manual && key !== manualCategory ? ' style="background:#f8fafc;color:#94a3b8;"' : '';
+        return `<div class="reim-mobile-expense-item" data-expense="${reimEscape(key)}">
+            <label>${labels[key] || key}</label>
+            <input class="reim-amount" type="number" min="0" step="0.01" inputmode="decimal" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" data-expense="${reimEscape(key)}" value="${reimEscape(value)}" placeholder="0.00" ${readonly}${manualStyle} oninput="handleReimbursementAmountInput(this)">
+        </div>`;
+    }
+
+    function toggleReimbursementMobileCategories(button) {
+        if (!button) return;
+        const disclosure = button.closest('.reim-mobile-expense-disclosure');
+        if (!disclosure) return;
+        const open = !disclosure.classList.contains('is-open');
+        disclosure.classList.toggle('is-open', open);
+        button.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
     function buildMobileExpenseInputs(row) {
@@ -4827,16 +5470,46 @@
         const amounts = normalizeReimbursementAmounts(row.amounts || {});
         const rowKey = getReimbursementRowKey(row);
         const manualCategory = row.manual ? getReimbursementManualCategory(row) : '';
+        const populatedKeys = row.manual
+            ? [manualCategory || 'others']
+            : getPopulatedReimbursementExpenseKeys(row);
+        const unusedKeys = row.manual
+            ? []
+            : reimbursementExpenseKeys.filter(function(key) { return !populatedKeys.includes(key); });
+        const populatedMarkup = populatedKeys.map(function(key) {
+            return buildMobileExpenseInputItem(row, key, labels);
+        }).join('');
+        const unusedMarkup = unusedKeys.length
+            ? `<div class="reim-mobile-expense-disclosure">
+                <button type="button" aria-expanded="false" onclick="toggleReimbursementMobileCategories(this)">Add expense category</button>
+                <div class="reim-mobile-expense-unused">${unusedKeys.map(function(key) {
+                    return buildMobileExpenseInputItem(row, key, labels);
+                }).join('')}</div>
+            </div>`
+            : '';
 
-        return `<div class="reim-mobile-expense-grid">
-            ${reimbursementExpenseKeys.map(function(key) {
-                const value = Number(amounts[key] || 0) > 0 ? Number(amounts[key]).toFixed(2) : '';
-                const readonly = row.manual && key !== manualCategory ? 'readonly tabindex="-1"' : '';
-                const manualStyle = row.manual && key !== manualCategory ? ' style="background:#f8fafc;color:#94a3b8;"' : '';
-                return `<label>${labels[key] || key}</label><input class="reim-amount" type="number" min="0" step="0.01" inputmode="decimal" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" data-expense="${key}" value="${reimEscape(value)}" placeholder="0.00" ${readonly}${manualStyle} oninput="handleReimbursementAmountInput(this)">`;
-            }).join('')}
+        return `<div class="reim-mobile-expense-grid" data-mobile-expense-grid="${reimEscape(rowKey)}">
+            ${populatedMarkup}${unusedMarkup}
         </div>
         <div class="reim-mobile-total">Row Total: ₱ <span data-row-total="${reimEscape(rowKey)}">0.00</span></div>`;
+    }
+
+    function toggleReimbursementMobileCard(button) {
+        if (!button) return;
+        const rowKey = String(button.dataset.rowKey || '');
+        const card = button.closest('.reim-mobile-card');
+        if (!rowKey || !card) return;
+        const expanded = !reimbursementMobileExpandedRowKeys.has(rowKey);
+        if (expanded) reimbursementMobileExpandedRowKeys.add(rowKey);
+        else reimbursementMobileExpandedRowKeys.delete(rowKey);
+        card.classList.toggle('is-expanded', expanded);
+        button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        button.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} reimbursement row`);
+        const icon = button.querySelector('i');
+        if (icon) {
+            icon.classList.toggle('fa-chevron-down', !expanded);
+            icon.classList.toggle('fa-chevron-up', expanded);
+        }
     }
 
 
@@ -4965,12 +5638,13 @@ function renderReimbursementRows(rows) {
         countLabel.textContent = `${rows.length} row${rows.length === 1 ? '' : 's'}`;
 
         if (!rows.length) {
-            body.innerHTML = '<tr><td colspan="15" class="reim-empty">No active reimbursement rows for this date range.</td></tr>';
-            mobile.innerHTML = '<div class="reim-empty">No active reimbursement rows for this date range.</div>';
+            body.innerHTML = '<tr id="reimViewEmptyDesktop"><td colspan="15" class="reim-empty">No active reimbursement rows for this date range.</td></tr>';
+            mobile.innerHTML = '<div class="reim-empty" id="reimViewEmptyMobile">No active reimbursement rows for this date range.</div>';
             syncReimbursementRowSelectionUi();
             recalculateReimbursementTotals();
             syncReimbursementHorizontalScroll();
             renderRemovedReimbursementRows();
+            renderReimbursementWorksheetViewStatus(0, 0);
             return;
         }
 
@@ -5007,39 +5681,56 @@ function renderReimbursementRows(rows) {
                     <td><textarea class="reim-remarks" rows="3" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)">${reimEscape(row.remarks || '')}</textarea></td>
                 </tr>
             `;
-        }).join('');
+        }).join('') + '<tr id="reimViewEmptyDesktop" style="display:none"><td colspan="15" class="reim-empty"></td></tr>';
 
         mobile.innerHTML = rows.map(function(row) {
             const rowKey = getReimbursementRowKey(row);
             const productLine = [row.product, row.serial_number].filter(Boolean).join(' / ');
             const manualBadge = row.manual ? '<span class="reim-manual-badge">Manual</span>' : '';
+            const scheduleLine = row.manual
+                ? 'Manual item'
+                : [row.start_time, row.end_time].filter(Boolean).join(' - ') || 'Scheduled visit';
+            const expanded = reimbursementMobileExpandedRowKeys.has(String(rowKey));
             return `
-                <div class="reim-mobile-card" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}">
-                    <label class="reim-mobile-select">
-                        <input class="reim-row-select" type="checkbox" data-row-key="${reimEscape(rowKey)}" onchange="handleReimbursementRowSelection(this)" aria-label="Select ${reimEscape(row.task || 'reimbursement row')}" ${reimbursementSelectedRowKeys.has(String(rowKey)) ? 'checked' : ''}>
-                        <span>Select row</span>
-                    </label>
-                    <h3>${reimEscape(row.manual ? row.task : (row.client || row.task || 'Schedule'))} ${manualBadge}</h3>
-                    <div class="reim-mobile-meta">${reimEscape(formatExpenseDate(row.date))} • ${reimEscape(row.manual ? 'Manual item' : `${row.start_time || ''}-${row.end_time || ''}`)}</div>
-                    <div><strong>Task:</strong> ${reimEscape(row.task)}</div>
-                    <div><strong>Product:</strong> ${reimEscape(productLine)}</div>
-                    ${buildManualReimbursementCategoryControl(row)}
-                    ${buildMobileExpenseInputs(row)}
-                    <div style="margin-top:10px;">
-                        <textarea class="reim-remarks" rows="3" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)" placeholder="Purpose / remarks">${reimEscape(row.remarks || '')}</textarea>
+                <div class="reim-mobile-card${expanded ? ' is-expanded' : ''}" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}">
+                    <div class="reim-mobile-card-summary">
+                        <div class="reim-mobile-card-summary-main">
+                            <label class="reim-mobile-select">
+                                <input class="reim-row-select" type="checkbox" data-row-key="${reimEscape(rowKey)}" onchange="handleReimbursementRowSelection(this)" aria-label="Select ${reimEscape(row.task || 'reimbursement row')}" ${reimbursementSelectedRowKeys.has(String(rowKey)) ? 'checked' : ''}>
+                                <span>Select row</span>
+                            </label>
+                            <h3>${reimEscape(row.manual ? (row.task || 'Manual item') : (row.client || row.task || 'Schedule'))} ${manualBadge}</h3>
+                            <div class="reim-mobile-card-summary-meta">
+                                <span>${reimEscape(formatExpenseDate(row.date))}</span>
+                                <span>${reimEscape(scheduleLine)}</span>
+                                <span>${reimEscape(row.manual ? (row.task || row.item_name || 'Manual item') : (row.task || 'Scheduled task'))}</span>
+                            </div>
+                        </div>
+                        <div class="reim-mobile-card-total">Row Total: ₱ <span data-row-total="${reimEscape(rowKey)}">0.00</span></div>
+                        <button type="button" class="reim-btn reim-btn-secondary reim-mobile-card-toggle" data-row-key="${reimEscape(rowKey)}" onclick="toggleReimbursementMobileCard(this)" aria-expanded="${expanded ? 'true' : 'false'}" aria-label="${expanded ? 'Collapse' : 'Expand'} reimbursement row"><i class="fa-solid ${expanded ? 'fa-chevron-up' : 'fa-chevron-down'}" aria-hidden="true"></i></button>
                     </div>
-                    <div class="reim-mobile-row-actions">
-                        <button type="button" class="reim-row-delete-btn" data-row-key="${reimEscape(rowKey)}" onclick="removeReimbursementRow(this.dataset.rowKey)" title="Delete row" aria-label="Delete ${reimEscape(row.task || 'reimbursement row')}"><i class="fa-solid fa-trash"></i></button>
+                    <div class="reim-mobile-card-details">
+                        <div><strong>Client / Product:</strong> ${reimEscape(row.manual ? 'Manual Item' : `${row.client || ''}${productLine ? ` / ${productLine}` : ''}`)}</div>
+                        <div><strong>Task:</strong> ${reimEscape(row.task || row.item_name || '—')}</div>
+                        ${buildManualReimbursementCategoryControl(row)}
+                        ${buildMobileExpenseInputs(row)}
+                        <div style="margin-top:10px;">
+                            <textarea class="reim-remarks" rows="3" data-row-key="${reimEscape(rowKey)}" data-shift-id="${reimEscape(row.shift_id || '')}" oninput="handleReimbursementRemarksInput(this)" placeholder="Purpose / remarks">${reimEscape(row.remarks || '')}</textarea>
+                        </div>
+                        <div class="reim-mobile-row-actions">
+                            <button type="button" class="reim-row-delete-btn" data-row-key="${reimEscape(rowKey)}" onclick="removeReimbursementRow(this.dataset.rowKey)" title="Delete row" aria-label="Delete ${reimEscape(row.task || 'reimbursement row')}"><i class="fa-solid fa-trash"></i></button>
+                        </div>
                     </div>
                 </div>
             `;
-        }).join('');
+        }).join('') + '<div class="reim-empty" id="reimViewEmptyMobile" style="display:none"></div>';
         syncReimbursementRowSelectionUi();
         recalculateReimbursementTotals();
         syncReimbursementHorizontalScroll();
         refreshReimbursementReceiptCells();
         applyReimbursementStatusUi();
         renderRemovedReimbursementRows();
+        applyReimbursementWorksheetView();
     }
 
     function syncReimbursementHorizontalScroll() {
@@ -5127,6 +5818,9 @@ function renderReimbursementRows(rows) {
             approval_signed_at: source.approval_signed_at || source.approved_at || source.rejected_at || null,
             approval_has_signature_snapshot: !!(source.approval_has_signature_snapshot || source.approval_signature_snapshot)
         };
+        if (typeof applyReimbursementWorksheetView === 'function') {
+            applyReimbursementWorksheetView();
+        }
         return currentReimbursementLifecycle;
     }
 
@@ -5957,7 +6651,8 @@ function renderReimbursementRows(rows) {
 
     function reimbursementCaptureSaveEntry(silent, options) {
         const context = reimbursementCurrentContext();
-        const rows = collectReimbursementRowsForSave();
+        const rowsForSave = collectReimbursementRowsForSave();
+        const rows = rowsForSave;
         let resolveEntry;
         const entry = {
             contextRevision: reimbursementContextRevision,
@@ -6233,6 +6928,7 @@ function renderReimbursementRows(rows) {
                 const drained = await waitForReimbursementPendingSaves();
                 if (!drained) return false;
                 reimbursementInvalidatePendingSaves();
+                resetReimbursementWorksheetViewState();
                 reimbursementEditVersion = 0;
                 reimbursementSavedEditVersion = 0;
                 return true;
@@ -7565,6 +8261,7 @@ async function saveReimbursementDraft(silent, options) {
         reimbursementTransitionBusy = true;
         syncReimbursementRowSelectionUi();
         reimbursementInvalidatePendingSaves();
+        resetReimbursementWorksheetViewState();
         reimbursementReadinessState = {
             signature: 'pending',
             signatureToken: '',
@@ -7663,6 +8360,7 @@ async function saveReimbursementDraft(silent, options) {
 
             clearReimbursementRowSelection();
             renderReimbursementRows(rows);
+            applyReimbursementWorksheetView();
             if (draft.exists) {
                 const loadedTotalSummary = applyReimbursementTotalSummary(draft);
                 const loadedWarning = String(loadedTotalSummary && loadedTotalSummary.warning || '').trim();
@@ -8459,6 +9157,13 @@ async function dismissReimbursementNotification(event, notificationId) {
 
     document.addEventListener('DOMContentLoaded', async function() {
         initializeReimbursementFocusView();
+        document.addEventListener('keydown', handleReimbursementViewKeydown);
+        document.addEventListener('pointerdown', function(event) {
+            const control = document.getElementById('reimViewControl');
+            if (reimbursementWorksheetViewState.open && control && !control.contains(event.target)) {
+                closeReimbursementViewPopover();
+            }
+        });
         ['reimStartDate', 'reimEndDate'].forEach(function(id) {
             const input = document.getElementById(id);
             if (!input) return;

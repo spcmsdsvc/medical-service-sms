@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "release_key": "2026-09-13-reimbursement-worksheet-views",
+      "release_date": "2026-09-13",
+      "title": "Reimbursement Worksheet Views",
+      "summary": "Large reimbursement worksheets are easier to search, filter, and enter on phones while preserving the complete claim.",
+      "is_published": true,
+      "items": [
+        {
+          "item_key": "2026-09-13-reimbursement-worksheet-views-everyone",
+          "category": "Reimbursement",
+          "description": "Added a compact worksheet View disclosure for row search, expense filters, schedule-column preferences, and zero-total expense-category visibility, plus collapsed mobile cards that put populated categories first and keep hidden rows, selections, receipts, saved values, and complete totals intact.",
+          "audiences": [
+            "everyone"
+          ],
+          "sort_order": 10
+        }
+      ]
+    },
+    {
       "release_key": "2026-09-11-reimbursement-focus-space",
       "release_date": "2026-09-11",
       "title": "Reimbursement Focus View Space",

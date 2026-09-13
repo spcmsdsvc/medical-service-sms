@@ -2,6 +2,61 @@
 
 codex changes - 2026-09-13
 
+- Started the owner-authorized Reimbursement Package 3 implementation recorded at the top of
+  `plans.md`. The package is limited to presentation-only worksheet search/filter/category
+  visibility and faster mobile card entry in `templates/reimbursement.html`, its focused
+  worksheet-view contracts, the required cache/release records, and truthful verification notes.
+- Protected `scheduler.db`, `Handoffs/`, `.claude/`, `medical-service-sms-detailed-handoff-2026-07-26.md`,
+  `output/`, `tmp/`, and unrelated dirty work remain outside the implementation scope. No backend,
+  endpoint, schema, dependency, migration, production, Railway, database, browser, commit, or push
+  operation is authorized for this package.
+- Added the Package 3 worksheet View disclosure and page-session state to
+  `templates/reimbursement.html`: row search across client/product/serial/task/manual description,
+  All/With expenses/Zero amount/Manual items filters, persistent Schedule column choices inside
+  the overlay, ten expense-category visibility controls with positive-category protection, Escape/
+  outside-click/close handling, and a compact overlay that does not add worksheet height.
+- Reworked worksheet rendering so desktop rows and mobile cards are hidden by row key while all
+  inputs, selected row keys, receipt associations, save payload rows, readiness inputs, and complete
+  claim/category totals remain available. Added explicit Showing X of Y and empty-match messaging.
+  Mobile cards now load collapsed, preserve expansion by row key, summarize date/client/schedule/task/
+  Manual/live total, and put populated categories before an inline Add expense category disclosure.
+- Added `tests/test_reimbursement_worksheet_views.py` with the Package 3 source/Node contracts,
+  ran its unchanged-source fail-first checkpoint (8 tests: 6 expected failures and 2 expected
+  missing-implementation errors), then continued with implementation. The worker marker was reread
+  at v155 immediately before advancing it once to
+  `medical-service-pwa-offline-navigation-v156-reimbursement-worksheet-views`; exact current-cache
+  assertions were updated and a published `2026-09-13-reimbursement-worksheet-views` Reimbursement
+  release entry was added.
+
+- Completed the worksheet-view implementation with live-input classification, a tablet overlay
+  overflow correction, and the final page-local mobile expansion behavior. The closed View control
+  remains in the existing utility area; the popover is absolutely positioned and does not add
+  persistent worksheet height. Its toggle updates `aria-expanded` and the open/close label while
+  the popover remains open.
+- Final verification passed for the worksheet-view contract (8/8) and the related Reimbursement
+  design/readiness/autosave/bulk-selection/total-consistency set (80 tests, 4 skips, no failures).
+  Python AST, masked-Jinja inline JavaScript syntax, CSS brace balance (472/472), release JSON
+  uniqueness (90 releases/253 items), and `git diff --check` passed. The required isolated full
+  discovery ran once and reported 385 tests with 49 dependency import errors and 44 skips because
+  this environment lacks Flask, SQLAlchemy, Jinja, and related PDF/image packages; the
+  manual-category and app-import layout/theme/cache/release checks could not run for the same
+  reason. Browser visual verification remains owner-only.
+- Package 3 implementation is complete locally and recorded as executed in `plans.md`. Protected
+  scheduler/handoff/.claude/output/tmp artifacts and unrelated dirty work were preserved; no
+  commit, push, deployment, Railway, database, production, browser, or Codex UI operation was
+  performed.
+
+- Corrected the owner-observed Package 3 focus-view height regression in
+  `templates/reimbursement.html`. The View button now uses the same 30px focus-only height as its
+  neighboring controls, the wide desktop focus toolbar is fixed at its prior 32px row height, and
+  the Showing X of Y status stays inside the View popover while focused instead of consuming the
+  compact selection row. Normal desktop and mobile sizing remain unchanged.
+- Extended the existing worksheet-view geometry contract with the exact compact View/status rules.
+  The new assertion failed before the CSS correction and the focused worksheet-view, readiness,
+  and reimbursement-design modules then passed **59/59**. No additional full-suite or browser run
+  was performed for this CSS-only correction; Package 3's earlier verification remains recorded
+  above.
+
 - Committed the 19-file Package 2 readiness and focus-space allowlist as `6a1a229`. This
   journal/plan closeout records that implementation commit before the authorized push to
   `origin/main`.

@@ -190,7 +190,7 @@ class ReimbursementReadinessSourceTests(unittest.TestCase):
         self.assertIn("bottom: 52px", TEMPLATE)
 
     def test_current_cache_and_published_release_are_current(self):
-        self.assertIn("medical-service-pwa-offline-navigation-v155-reimbursement-focus-space", APP_SOURCE)
+        self.assertIn("medical-service-pwa-offline-navigation-v156-reimbursement-worksheet-views", APP_SOURCE)
         matches = [
             release for release in RELEASES.get("releases", [])
             if release.get("release_key") == "2026-09-11-reimbursement-readiness"
